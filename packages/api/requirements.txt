@@ -1,0 +1,42 @@
+# Facteur API - Dependencies
+# Python 3.12+
+
+# Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP Client
+httpx==0.26.0
+
+# RSS Parsing
+feedparser==6.0.10
+
+# Scheduling
+apscheduler==3.10.4
+
+# Logging
+structlog==24.1.0
+
+# Error Tracking
+sentry-sdk[fastapi]==1.40.0
+
+# Multipart (file uploads)
+python-multipart==0.0.6
+
+# Dev dependencies (install with: pip install -r requirements-dev.txt)
+# pytest==8.0.0
+# pytest-asyncio==0.23.4
+# pytest-cov==4.1.0
+# ruff==0.2.1
+# mypy==1.8.0
+

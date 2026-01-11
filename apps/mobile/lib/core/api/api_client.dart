@@ -1,0 +1,93 @@
+import 'package:dio/dio.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../config/constants.dart';
+import 'retry_interceptor.dart';
+
+/// Client API basé sur Dio avec authentification automatique
+class ApiClient {
+  late final Dio _dio;
+  final SupabaseClient _supabase;
+
+  ApiClient(this._supabase, {String? baseUrl}) {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl ?? ApiConstants.baseUrl,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: ApiConstants.timeout,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    _setupInterceptors();
+  }
+
+  /// Configure les interceptors Dio
+  void _setupInterceptors() {
+    // 1. Interceptor pour ajouter le JWT token automatiquement
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final session = _supabase.auth.currentSession;
+          if (session != null) {
+            // ignore: avoid_print
+            print(
+                'ApiClient: Attaching token ${session.accessToken.substring(0, 10)}...');
+            options.headers['Authorization'] = 'Bearer ${session.accessToken}';
+          } else {
+            // ignore: avoid_print
+            print(
+                'ApiClient: [WARNING] No session found, request will be anonymous.');
+          }
+          return handler.next(options);
+        },
+        onError: (error, handler) async {
+          // Logger les erreurs (sans les tokens)
+          _logError(error);
+          return handler.next(error);
+        },
+      ),
+    );
+
+    // 2. Interceptor de retry pour les erreurs réseau
+    _dio.interceptors.add(
+      RetryInterceptor(
+        dio: _dio,
+        maxRetries: 3,
+        retryDelays: const [
+          Duration(milliseconds: 500),
+          Duration(seconds: 1),
+          Duration(seconds: 2),
+        ],
+      ),
+    );
+  }
+
+  /// Logger les erreurs de manière sécurisée
+  void _logError(DioException error) {
+    // Ne jamais logger les tokens ou données sensibles
+    final sanitizedError = {
+      'statusCode': error.response?.statusCode,
+      'type': error.type.toString(),
+      'message': error.message,
+      'path': error.requestOptions.path,
+      'response': error.response?.data,
+    };
+
+    // En production, envoyer à Sentry
+    // En dev, print simple
+    // ignore: avoid_print
+    print('API Error: $sanitizedError');
+  }
+
+  /// Accès au client Dio
+  Dio get dio => _dio;
+
+  /// Fermer le client
+  void dispose() {
+    _dio.close();
+  }
+}

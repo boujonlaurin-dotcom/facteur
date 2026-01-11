@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Facteur Mobile (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k",
+        "--web-browser-flag",
+        "--disable-web-security"
+      ]
+    },
+    {
+      "name": "Facteur Mobile (macOS)",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "args": [
+        "-d",
+        "macos",
+        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+      ]
+    }
+  ]
+}

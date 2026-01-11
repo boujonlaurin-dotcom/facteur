@@ -1,0 +1,89 @@
+name: facteur
+description: Facteur - Curation intelligente de contenus
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+  
+  # Navigation
+  go_router: ^14.2.0
+  
+  # HTTP Client
+  dio: ^5.4.3+1
+  
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Supabase Auth
+  supabase_flutter: ^2.5.0
+  
+  # RevenueCat
+  purchases_flutter: ^7.0.0
+  
+  # UI & Icons
+  phosphor_flutter: ^2.1.0
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  
+  # WebView
+  webview_flutter: ^4.7.0
+  
+  # Utils
+  intl: ^0.19.0
+  url_launcher: ^6.2.5
+  flutter_secure_storage: ^9.0.0
+  
+  # Error Tracking
+  sentry_flutter: ^8.0.0
+  google_fonts: ^7.0.0
+  flutter_animate: ^4.5.2
+  haptic_feedback: ^0.6.4+3
+  uuid: ^4.4.0
+  timeago: ^3.7.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  riverpod_generator: ^2.4.0
+  build_runner: ^2.4.9
+  hive_generator: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  
+  # Fonts temporairement désactivées pour test (à télécharger plus tard)
+  # fonts:
+  #   - family: Fraunces
+  #     fonts:
+  #       - asset: assets/fonts/Fraunces-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/Fraunces-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Fraunces-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Fraunces-Bold.ttf
+  #         weight: 700
+  #   - family: DMSans
+  #     fonts:
+  #       - asset: assets/fonts/DMSans-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/DMSans-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/DMSans-Bold.ttf
+  #         weight: 700
+
+  assets:
+    - assets/images/
+    - assets/icons/
+

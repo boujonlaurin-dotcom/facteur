@@ -1,0 +1,119 @@
+import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_stamp.dart';
+import '../models/source_model.dart';
+
+class SourceListItem extends StatelessWidget {
+  final Source source;
+  final VoidCallback? onTap;
+
+  const SourceListItem({
+    super.key,
+    required this.source,
+    this.onTap,
+  });
+
+  IconData get _typeIcon {
+    switch (source.type) {
+      case SourceType.youtube:
+        return PhosphorIcons.video(PhosphorIconsStyle.fill);
+      case SourceType.podcast:
+        return PhosphorIcons.headphones(PhosphorIconsStyle.fill);
+      case SourceType.video:
+        return PhosphorIcons.filmStrip(PhosphorIconsStyle.fill);
+      default:
+        return PhosphorIcons.article(PhosphorIconsStyle.fill);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final isTrusted = source.isTrusted; // Mapped to isCustom in model
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque, // Ensures the whole area is tappable
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150), // Snappier duration
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isTrusted ? colors.surfaceElevated : colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          border: isTrusted
+              ? Border.all(
+                  color: colors.primary.withValues(alpha: 0.3), width: 1.5)
+              : Border.all(color: Colors.transparent, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            // Logo or Placeholder
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: colors.backgroundSecondary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: source.logoUrl != null && source.logoUrl!.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: source.logoUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colors.secondary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) =>
+                          Icon(_typeIcon, color: colors.secondary, size: 20),
+                    )
+                  : Icon(_typeIcon, color: colors.secondary, size: 20),
+            ),
+            const SizedBox(width: 12),
+
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    source.name,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: colors.textPrimary,
+                        ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (source.theme != null)
+                    Text(
+                      source.theme!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                    ),
+                ],
+              ),
+            ),
+
+            // Trusted Indicator
+            if (isTrusted)
+              FacteurStamp(
+                text: 'SOURCE DE CONFIANCE',
+                isNew: true,
+                color: colors.primary,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
