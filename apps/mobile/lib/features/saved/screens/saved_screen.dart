@@ -175,6 +175,8 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                               );
                             },
                             isBookmarked: true, // Always true in Saved Screen
+                            bookmarkIcon:
+                                PhosphorIcons.trash(PhosphorIconsStyle.regular),
                             onMoreOptions:
                                 () {}, // Can be implemented if needed
                           ),

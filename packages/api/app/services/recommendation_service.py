@@ -3,7 +3,7 @@ from typing import List, Optional, Set
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,7 +51,7 @@ class RecommendationService:
                      UserContentStatus.user_id == user_id,
                      UserContentStatus.is_saved == True
                  )
-                 .order_by(desc(UserContentStatus.updated_at))
+                 .order_by(desc(func.coalesce(UserContentStatus.saved_at, UserContentStatus.updated_at)))
                  .offset(offset)
                  .limit(limit)
              )
@@ -142,11 +142,7 @@ class RecommendationService:
 
     async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
-        # Subquery for seen/consumed OR hidden contents
-        # Note: We exclude SEEN contents from the feed as per current logic (feed only shows new stuff)
-        # We also strictly exclude is_hidden=True
-        
-        from sqlalchemy import or_, and_
+        from sqlalchemy import or_
 
         # Candidates to EXCLUDE:
         # 1. is_hidden == True

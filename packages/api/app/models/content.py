@@ -78,6 +78,9 @@ class UserContentStatus(Base):
         DateTime(timezone=True), nullable=True
     )
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    saved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

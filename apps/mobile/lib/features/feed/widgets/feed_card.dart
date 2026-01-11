@@ -12,6 +12,7 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onBookmark;
   final VoidCallback? onMoreOptions;
   final bool isBookmarked;
+  final IconData? bookmarkIcon;
 
   const FeedCard({
     super.key,
@@ -20,6 +21,7 @@ class FeedCard extends StatelessWidget {
     this.onBookmark,
     this.onMoreOptions,
     this.isBookmarked = false,
+    this.bookmarkIcon,
   });
 
   @override
@@ -162,11 +164,12 @@ class FeedCard extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Icon(
-                      isBookmarked
-                          ? PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.fill)
-                          : PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.regular),
+                      bookmarkIcon ??
+                          (isBookmarked
+                              ? PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.fill)
+                              : PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.regular)),
                       color:
                           isBookmarked ? colors.primary : colors.textSecondary,
                       size: 20,

@@ -80,6 +80,9 @@ class ContentService:
             "updated_at": now,
         }
         
+        if is_saved:
+            values["saved_at"] = now
+        
         stmt = (
             insert(UserContentStatus)
             .values(**values)
