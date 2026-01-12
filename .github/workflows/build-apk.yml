@@ -1,0 +1,45 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'URL de production de l API (ex: https://facteur.up.railway.app/api)'
+        required: true
+        default: 'https://facteur-production.up.railway.app/api'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0' # Correspond au SDK >=3.5.0 <4.0.0
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd apps/mobile
+          flutter build apk --release --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL }}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: facteur-app-release
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
