@@ -48,7 +48,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          "Sauvegardés",
+          "À consulter plus tard",
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         centerTitle: false,
@@ -66,13 +66,13 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
+                      PhosphorIcons.clockClockwise(PhosphorIconsStyle.duotone),
                       size: 64,
                       color: colors.textSecondary,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      "Aucun contenu sauvegardé",
+                      "Aucun contenu à consulter",
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -134,45 +134,46 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                   .read(savedFeedProvider.notifier)
                                   .toggleSave(content);
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
-                                      "Contenu retiré des sauvegardes"),
-                                  action: SnackBarAction(
-                                    label: 'Annuler',
-                                    textColor: colors.primary,
-                                    onPressed: () {
-                                      // Logic to undo (re-add)
-                                      // See previous note: difficult without explicit object state.
-                                      // But wait! If I toggleSave again, it *should* re-add it if backend supports simple toggle logic.
-                                      // Backend toggleSave implementation:
-                                      // IF isSaved -> POST /save (wait, isSaved arg sent is 'target state' or 'current state'?)
-                                      // Look at feed_repository.dart: toggleSave(contentId, bool isSaved)
-                                      // if (isSaved) POST /save ELSE DELETE /save.
-                                      // Ah! The second arg is 'isSaved' state we WANT?
-                                      // feed_repository.dart line 69: toggleSave(String contentId, bool isSaved)
-                                      // if (isSaved) POST ... else DELETE ...
-                                      // So 'isSaved' implies Target State.
+                              ScaffoldMessenger.of(context)
+                                ..hideCurrentSnackBar()
+                                ..showSnackBar(
+                                  SnackBar(
+                                    content: const Text("Contenu retiré"),
+                                    action: SnackBarAction(
+                                      label: 'Annuler',
+                                      textColor: colors.primary,
+                                      onPressed: () {
+                                        // Logic to undo (re-add)
+                                        // See previous note: difficult without explicit object state.
+                                        // But wait! If I toggleSave again, it *should* re-add it if backend supports simple toggle logic.
+                                        // Backend toggleSave implementation:
+                                        // IF isSaved -> POST /save (wait, isSaved arg sent is 'target state' or 'current state'?)
+                                        // Look at feed_repository.dart: toggleSave(contentId, bool isSaved)
+                                        // if (isSaved) POST /save ELSE DELETE /save.
+                                        // Ah! The second arg is 'isSaved' state we WANT?
+                                        // feed_repository.dart line 69: toggleSave(String contentId, bool isSaved)
+                                        // if (isSaved) POST ... else DELETE ...
+                                        // So 'isSaved' implies Target State.
 
-                                      // In SavedFeedNotifier.toggleSave(content):
-                                      // if (content.isSaved) -> We want to remove -> isSaved=False.
-                                      // So we remove from list and call repo.toggleSave(id, false); -> DELETE.
+                                        // In SavedFeedNotifier.toggleSave(content):
+                                        // if (content.isSaved) -> We want to remove -> isSaved=False.
+                                        // So we remove from list and call repo.toggleSave(id, false); -> DELETE.
 
-                                      // On Undo:
-                                      // We want to add it back -> isSaved=True.
-                                      // We call repo.toggleSave(id, true); -> POST.
-                                      // And add to list.
+                                        // On Undo:
+                                        // We want to add it back -> isSaved=True.
+                                        // We call repo.toggleSave(id, true); -> POST.
+                                        // And add to list.
 
-                                      // To do this here in SnackBar callback:
-                                      ref
-                                          .read(savedFeedProvider.notifier)
-                                          .undoRemove(content);
-                                    },
+                                        // To do this here in SnackBar callback:
+                                        ref
+                                            .read(savedFeedProvider.notifier)
+                                            .undoRemove(content);
+                                      },
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 2),
                                   ),
-                                  behavior: SnackBarBehavior.floating,
-                                  duration: const Duration(seconds: 4),
-                                ),
-                              );
+                                );
                             },
                             isBookmarked: true, // Always true in Saved Screen
                             bookmarkIcon:

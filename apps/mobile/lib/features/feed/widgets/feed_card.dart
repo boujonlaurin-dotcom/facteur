@@ -82,26 +82,18 @@ class FeedCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: FacteurSpacing.space2),
-                // Métadonnées (Type • Durée • Date)
+                // Métadonnées (Type • Durée)
                 Row(
                   children: [
                     _buildTypeIcon(context, content.contentType),
                     const SizedBox(width: FacteurSpacing.space2),
-                    if (content.durationSeconds != null) ...[
+                    if (content.durationSeconds != null)
                       Text(
                         _formatDuration(content.durationSeconds!),
                         style: textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary,
                             fontWeight: FontWeight.w500),
                       ),
-                      Text(' • ',
-                          style: TextStyle(color: colors.textSecondary)),
-                    ],
-                    Text(
-                      timeago.format(content.publishedAt, locale: 'fr_short'),
-                      style: textTheme.labelSmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
                   ],
                 ),
               ],
@@ -125,38 +117,87 @@ class FeedCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // Source
-                if (content.source.logoUrl != null &&
-                    content.source.logoUrl!.isNotEmpty) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: CachedNetworkImage(
-                      imageUrl: content.source.logoUrl!,
-                      width: 16,
-                      height: 16,
-                      fit: BoxFit.cover,
-                      errorWidget: (context, url, error) =>
-                          _buildSourcePlaceholder(colors),
-                    ),
-                  ),
-                  const SizedBox(width: FacteurSpacing.space2),
-                ] else ...[
-                  _buildSourcePlaceholder(colors),
-                  const SizedBox(width: FacteurSpacing.space2),
-                ],
                 Expanded(
-                  child: Text(
-                    content.source.name,
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      // Source Logo
+                      if (content.source.logoUrl != null &&
+                          content.source.logoUrl!.isNotEmpty) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: CachedNetworkImage(
+                            imageUrl: content.source.logoUrl!,
+                            width: 16,
+                            height: 16,
+                            fit: BoxFit.cover,
+                            errorWidget: (context, url, error) =>
+                                _buildSourcePlaceholder(colors),
+                          ),
+                        ),
+                        const SizedBox(width: FacteurSpacing.space2),
+                      ] else ...[
+                        _buildSourcePlaceholder(colors),
+                        const SizedBox(width: FacteurSpacing.space2),
+                      ],
+
+                      // Source Name
+                      Flexible(
+                        flex: 2,
+                        fit: FlexFit.loose,
+                        child: Text(
+                          content.source.name,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+
+                      // Récence
+                      const SizedBox(width: FacteurSpacing.space2),
+                      Text(
+                        timeago
+                            .format(content.publishedAt, locale: 'fr_short')
+                            .replaceAll('il y a ', ''),
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+
+                      // Recommendation Badge (Optional)
+                      if (content.recommendationReason != null) ...[
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Text(
+                          "•",
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.textSecondary.withOpacity(0.5),
+                            fontSize: 10,
+                          ),
+                        ),
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Flexible(
+                          flex: 3,
+                          fit: FlexFit.loose,
+                          child: Text(
+                            content.recommendationReason!.label,
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
 
-                // Actions
+                // Actions (Fixed on the right)
                 InkWell(
                   key: const Key('feed_card_bookmark_button'),
                   onTap: onBookmark,
@@ -166,9 +207,9 @@ class FeedCard extends StatelessWidget {
                     child: Icon(
                       bookmarkIcon ??
                           (isBookmarked
-                              ? PhosphorIcons.bookmarkSimple(
+                              ? PhosphorIcons.clockClockwise(
                                   PhosphorIconsStyle.fill)
-                              : PhosphorIcons.bookmarkSimple(
+                              : PhosphorIcons.clockClockwise(
                                   PhosphorIconsStyle.regular)),
                       color:
                           isBookmarked ? colors.primary : colors.textSecondary,
@@ -231,8 +272,8 @@ class FeedCard extends StatelessWidget {
         icon = PhosphorIcons.headphones(PhosphorIconsStyle.fill);
         break;
       default:
-        icon = PhosphorIcons.article(PhosphorIconsStyle.fill);
-        break;
+        // No icon for articles to reduce clutter
+        return const SizedBox.shrink();
     }
 
     return Icon(icon, size: 14, color: colors.textSecondary);

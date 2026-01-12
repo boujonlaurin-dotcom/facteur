@@ -669,9 +669,7 @@ class AvailableThemes {
 class ThemeOption {
   final String slug;
   final String label;
-  final String emoji;
-
-  const ThemeOption({
+  final String emoji;  const ThemeOption({
     required this.slug,
     required this.label,
     required this.emoji,

@@ -40,6 +40,10 @@ class Content(Base):
         Enum(ContentType, native_enum=False, length=20), nullable=False
     )
     guid: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Story clustering (Story 7.2)
+    cluster_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

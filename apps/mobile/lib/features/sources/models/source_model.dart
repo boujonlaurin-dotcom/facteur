@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum SourceType {
   article,
   podcast,
@@ -16,6 +18,12 @@ class Source {
   final bool isCurated;
   final bool isCustom;
   final bool isTrusted;
+  final String biasStance;
+  final String reliabilityScore;
+  final String biasOrigin;
+  final double? scoreIndependence;
+  final double? scoreRigor;
+  final double? scoreUx;
 
   Source({
     required this.id,
@@ -28,6 +36,12 @@ class Source {
     this.isCurated = false,
     this.isCustom = false,
     this.isTrusted = false,
+    this.biasStance = 'unknown',
+    this.reliabilityScore = 'unknown',
+    this.biasOrigin = 'unknown',
+    this.scoreIndependence,
+    this.scoreRigor,
+    this.scoreUx,
   });
 
   Source copyWith({
@@ -41,6 +55,12 @@ class Source {
     bool? isCurated,
     bool? isCustom,
     bool? isTrusted,
+    String? biasStance,
+    String? reliabilityScore,
+    String? biasOrigin,
+    double? scoreIndependence,
+    double? scoreRigor,
+    double? scoreUx,
   }) {
     return Source(
       id: id ?? this.id,
@@ -53,6 +73,12 @@ class Source {
       isCurated: isCurated ?? this.isCurated,
       isCustom: isCustom ?? this.isCustom,
       isTrusted: isTrusted ?? this.isTrusted,
+      biasStance: biasStance ?? this.biasStance,
+      reliabilityScore: reliabilityScore ?? this.reliabilityScore,
+      biasOrigin: biasOrigin ?? this.biasOrigin,
+      scoreIndependence: scoreIndependence ?? this.scoreIndependence,
+      scoreRigor: scoreRigor ?? this.scoreRigor,
+      scoreUx: scoreUx ?? this.scoreUx,
     );
   }
 
@@ -71,6 +97,110 @@ class Source {
       isCurated: json['is_curated'] as bool? ?? false,
       isCustom: json['is_custom'] as bool? ?? false,
       isTrusted: json['is_trusted'] as bool? ?? false,
+      biasStance: (json['bias_stance'] as String?)?.toLowerCase() ?? 'unknown',
+      reliabilityScore:
+          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
+      biasOrigin: (json['bias_origin'] as String?)?.toLowerCase() ?? 'unknown',
+      scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
+      scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
+      scoreUx: (json['score_ux'] as num?)?.toDouble(),
     );
+  }
+
+  Color getBiasColor() {
+    switch (biasStance) {
+      case 'left':
+        return const Color(0xFFEF5350); // red.shade400
+      case 'center-left':
+        return const Color(0xFFFFA726); // orange.shade400
+      case 'center':
+        return const Color(0xFFAB47BC); // purple.shade400
+      case 'center-right':
+        return const Color(0xFF64B5F6); // blue.shade300
+      case 'right':
+        return const Color(0xFF1E88E5); // blue.shade600
+      default:
+        return const Color(0xFFBDBDBD); // grey.shade400
+    }
+  }
+
+  String getBiasLabel() {
+    switch (biasStance) {
+      case 'left':
+        return 'Gauche';
+      case 'center-left':
+        return 'Centre-G';
+      case 'center':
+        return 'Centre';
+      case 'center-right':
+        return 'Centre-D';
+      case 'right':
+        return 'Droite';
+      case 'specialized':
+        return 'Spécialisé';
+      case 'alternative':
+        return 'Alternatif';
+      default:
+        return 'Neutre';
+    }
+  }
+
+  Color getReliabilityColor() {
+    switch (reliabilityScore) {
+      case 'high':
+        return const Color(0xFF4CAF50); // green.shade500
+      case 'medium':
+      case 'mixed':
+        return const Color(0xFFFFB74D); // orange.shade300
+      case 'low':
+        return const Color(0xFFEF5350); // red.shade400
+      default:
+        return const Color(0xFFBDBDBD); // grey.shade400
+    }
+  }
+
+  String getReliabilityLabel() {
+    switch (reliabilityScore) {
+      case 'high':
+        return 'Fiabilité Élevée';
+      case 'medium':
+      case 'mixed':
+        return 'Fiabilité Moyenne';
+      case 'low':
+        return 'Controversé';
+      default:
+        return 'Non évalué';
+    }
+  }
+
+  IconData getReliabilityIcon() {
+    // Requires phosphor_flutter import, but we can return dynamic or let UI handle it.
+    // Ideally put UI logic in widgets, but for color/label helpers it's fine here.
+    return Icons.shield_outlined; // Placeholder
+  }
+
+  String getThemeLabel() {
+    switch (theme?.toLowerCase()) {
+      case 'tech':
+        return 'Tech & Futur';
+      case 'geopolitics':
+      case 'géopolitique':
+        return 'Géopolitique';
+      case 'economy':
+      case 'économie':
+        return 'Économie';
+      case 'society_climate':
+      case 'société_climat':
+        return 'Société & Climat';
+      case 'culture_ideas':
+      case 'culture_idées':
+        return 'Culture & Idées';
+      case 'other':
+        return 'Autre';
+      default:
+        // Capitalize first letter if not in mapping
+        if (theme == null || theme!.isEmpty) return 'Général';
+        return theme![0].toUpperCase() + theme!.substring(1);
+    }
   }
 }

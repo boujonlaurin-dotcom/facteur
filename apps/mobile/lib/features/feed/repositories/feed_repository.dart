@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
 
@@ -11,6 +12,7 @@ class FeedRepository {
     int limit = 20,
     String? contentType,
     bool savedOnly = false,
+    String? mode,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -28,6 +30,10 @@ class FeedRepository {
 
       if (savedOnly) {
         queryParams['saved'] = true;
+      }
+
+      if (mode != null) {
+        queryParams['mode'] = mode;
       }
 
       final response = await _apiClient.dio.get<List<dynamic>>(
@@ -103,12 +109,111 @@ class FeedRepository {
     try {
       await _apiClient.dio.post<void>(
         '/contents/$contentId/status',
-        data: {'status': status.name.toUpperCase()},
+        data: {'status': status.name},
       );
     } catch (e) {
       // ignore: avoid_print
-      print('FeedRepository: [ERROR] updateContentStatus: $e');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🔴 FEED REPOSITORY ERROR: updateContentStatus');
+      print('ID: $contentId');
+      if (e is DioException) {
+        print('STATUS: ${e.response?.statusCode}');
+        print('DATA: ${e.response?.data}');
+        print('MESSAGE: ${e.message}');
+      } else {
+        print('EXCEPTION: $e');
+      }
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       // No rethrow for tracking calls to avoid disrupting UX
     }
+  }
+
+  /// Fetch perspectives for a content via Google News search
+  Future<PerspectivesResponse> getPerspectives(String contentId) async {
+    try {
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+        '/contents/$contentId/perspectives',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return PerspectivesResponse.fromJson(response.data!);
+      }
+      throw Exception('Failed to load perspectives: ${response.statusCode}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] getPerspectives: $e');
+      // Return empty response instead of throwing to not break UX
+      return PerspectivesResponse(
+          perspectives: [], keywords: [], biasDistribution: {});
+    }
+  }
+}
+
+/// Response from perspectives API
+class PerspectivesResponse {
+  final List<PerspectiveData> perspectives;
+  final List<String> keywords;
+  final Map<String, int> biasDistribution;
+
+  PerspectivesResponse({
+    required this.perspectives,
+    required this.keywords,
+    required this.biasDistribution,
+  });
+
+  factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
+    final perspectivesList = (json['perspectives'] as List<dynamic>?)
+            ?.map((e) => PerspectiveData.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    final keywordsList = (json['keywords'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
+
+    final biasMap = <String, int>{};
+    final rawBias = json['bias_distribution'] as Map<String, dynamic>?;
+    if (rawBias != null) {
+      rawBias.forEach((key, value) {
+        biasMap[key] = (value as num?)?.toInt() ?? 0;
+      });
+    }
+
+    return PerspectivesResponse(
+      perspectives: perspectivesList,
+      keywords: keywordsList,
+      biasDistribution: biasMap,
+    );
+  }
+}
+
+/// Individual perspective data
+class PerspectiveData {
+  final String title;
+  final String url;
+  final String sourceName;
+  final String sourceDomain;
+  final String biasStance;
+  final String? publishedAt;
+
+  PerspectiveData({
+    required this.title,
+    required this.url,
+    required this.sourceName,
+    required this.sourceDomain,
+    required this.biasStance,
+    this.publishedAt,
+  });
+
+  factory PerspectiveData.fromJson(Map<String, dynamic> json) {
+    return PerspectiveData(
+      title: (json['title'] as String?) ?? '',
+      url: (json['url'] as String?) ?? '',
+      sourceName: (json['source_name'] as String?) ?? 'Unknown',
+      sourceDomain: (json['source_domain'] as String?) ?? '',
+      biasStance: (json['bias_stance'] as String?) ?? 'unknown',
+      publishedAt: json['published_at'] as String?,
+    );
   }
 }

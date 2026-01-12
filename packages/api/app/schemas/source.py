@@ -23,6 +23,12 @@ class SourceResponse(BaseModel):
     is_custom: bool = False
     is_trusted: bool = False
     content_count: int = 0
+    bias_stance: str = "unknown"
+    reliability_score: str = "unknown"
+    bias_origin: str = "unknown"
+    score_independence: Optional[float] = None
+    score_rigor: Optional[float] = None
+    score_ux: Optional[float] = None
 
     class Config:
         from_attributes = True

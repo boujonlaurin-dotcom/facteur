@@ -351,7 +351,7 @@ erDiagram
 | `unseen` | Jamais vu |
 | `seen` | Vu dans le feed |
 | `consumed` | Consommé (seuil atteint) |
-| `saved` | Sauvegardé pour plus tard |
+| `saved` | Ajouté à la liste "À consulter plus tard" |
 | `hidden` | Masqué ("pas intéressé") |
 
 #### User Subscriptions
@@ -614,7 +614,7 @@ sequenceDiagram
         API->>DB: SELECT user preferences, interests
         DB-->>API: User profile data
         
-        API->>DB: SELECT contents (non vus, non masqués, non sauvegardés)
+        API->>DB: SELECT contents (non vus, non masqués, non mis à consulter)
         DB-->>API: Raw contents
         
         API->>Algo: Appliquer scoring
@@ -794,10 +794,10 @@ servers:
 | `GET` | `/contents/{id}` | Détail d'un contenu |
 | `POST` | `/contents/{id}/seen` | Marquer comme vu |
 | `POST` | `/contents/{id}/consumed` | Marquer comme consommé |
-| `POST` | `/contents/{id}/save` | Sauvegarder |
-| `DELETE` | `/contents/{id}/save` | Retirer des sauvegardés |
+| `POST` | `/contents/{id}/save` | Ajouter à "À consulter plus tard" |
+| `DELETE` | `/contents/{id}/save` | Retirer de "À consulter plus tard" |
 | `POST` | `/contents/{id}/hide` | Masquer ("pas intéressé") |
-| `GET` | `/contents/saved` | Liste des sauvegardés |
+| `GET` | `/contents/saved` | Liste "À consulter plus tard" |
 
 ### 8.6 Source Endpoints
 

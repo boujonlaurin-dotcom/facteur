@@ -50,6 +50,7 @@ dependencies:
   haptic_feedback: ^0.6.4+3
   uuid: ^4.4.0
   timeago: ^3.7.1
+  webview_flutter_wkwebview: ^3.23.5
 
 dev_dependencies:
   flutter_test:

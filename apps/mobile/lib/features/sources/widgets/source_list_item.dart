@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_stamp.dart';
 import '../models/source_model.dart';
+import 'source_detail_modal.dart';
 
 class SourceListItem extends StatelessWidget {
   final Source source;
@@ -31,13 +32,23 @@ class SourceListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final isTrusted = source.isTrusted; // Mapped to isCustom in model
+    final isTrusted = source.isTrusted;
 
     return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque, // Ensures the whole area is tappable
+      onTap: () {
+        showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) => SourceDetailModal(
+            source: source,
+            onToggleTrust: onTap ?? () {},
+          ),
+        );
+      },
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150), // Snappier duration
+        duration: const Duration(milliseconds: 150),
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -95,7 +106,7 @@ class SourceListItem extends StatelessWidget {
                   ),
                   if (source.theme != null)
                     Text(
-                      source.theme!,
+                      source.getThemeLabel(),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: colors.textTertiary,
                           ),

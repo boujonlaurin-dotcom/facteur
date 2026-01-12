@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models.source import Source
-from app.models.enums import SourceType
+from app.models.enums import BiasOrigin, BiasStance, ReliabilityScore, SourceType
 
 load_dotenv()
 
@@ -58,7 +58,13 @@ CURATED_FEED_FALLBACKS = {
     "https://le1hebdo.fr/": "https://le1hebdo.fr/rss.php",
     "https://theconversation.com/fr": "https://theconversation.com/fr/articles.atom",
     "https://www.socialter.fr/": "https://www.socialter.fr/rss",
-    "https://www.alternatives-economiques.fr/": "https://www.alternatives-economiques.fr/flux-rss"
+    "https://www.alternatives-economiques.fr/": "https://www.alternatives-economiques.fr/flux-rss",
+    "https://www.lefigaro.fr/": "https://www.lefigaro.fr/rss/figaro_actualites.xml",
+    "https://www.lesechos.fr/": "https://services.lesechos.fr/rss/les-echos-une.xml",
+    "https://www.lopinion.fr/": "https://www.lopinion.fr/index.rss",
+    "https://www.lepoint.fr/": "https://www.lepoint.fr/rss.xml",
+    "https://www.politico.eu/": "https://www.politico.eu/feed/",
+    "https://www.commentaire.fr/": "https://www.commentaire.fr/rss"
 }
 
 async def detect_youtube_feed(url: str) -> Optional[str]:
@@ -116,10 +122,28 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
     csv_type = source_data.get("Type")
     csv_theme = source_data.get("Thème")
     rationale = source_data.get("Rationale")
+    csv_bias = source_data.get("Bias", "unknown")
+    csv_reliability = source_data.get("Reliability", "unknown")
     
     internal_type = TYPE_MAPPING.get(csv_type, "article")
     internal_theme = THEME_MAPPING.get(csv_theme, "other")
     
+    # Map bias string to enum value (handling hyphens etc)
+    bias_val = csv_bias.lower()
+    reliability_val = csv_reliability.lower()
+    
+    # Heuristic mapping for FQS pillars (Story 7.5)
+    score_indep = None
+    score_rigor = None
+    score_ux = None
+    
+    if reliability_val == "high":
+        score_indep, score_rigor, score_ux = 0.9, 0.9, 0.8
+    elif reliability_val in ["medium", "mixed"]:
+        score_indep, score_rigor, score_ux = 0.6, 0.6, 0.6
+    elif reliability_val == "low":
+        score_indep, score_rigor, score_ux = 0.3, 0.3, 0.4
+
     feed_url = None
     if internal_type == "youtube":
         feed_url = await detect_youtube_feed(url)
@@ -147,12 +171,24 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
         existing_source.theme = internal_theme
         existing_source.description = rationale
         existing_source.logo_url = logo_url
+        existing_source.bias_stance = BiasStance(bias_val)
+        existing_source.reliability_score = ReliabilityScore(reliability_val)
+        existing_source.bias_origin = BiasOrigin.CURATED
+        existing_source.score_independence = score_indep
+        existing_source.score_rigor = score_rigor
+        existing_source.score_ux = score_ux
     else:
         new_source = Source(
             name=name, url=url, feed_url=feed_url,
             type=SourceType(internal_type), theme=internal_theme,
             description=rationale, logo_url=logo_url,
-            is_curated=True, is_active=True
+            is_curated=True, is_active=True,
+            bias_stance=BiasStance(bias_val),
+            reliability_score=ReliabilityScore(reliability_val),
+            bias_origin=BiasOrigin.CURATED,
+            score_independence=score_indep,
+            score_rigor=score_rigor,
+            score_ux=score_ux
         )
         session.add(new_source)
 

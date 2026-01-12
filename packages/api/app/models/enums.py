@@ -36,3 +36,45 @@ class HiddenReason(str, Enum):
 
     SOURCE = "source"
     TOPIC = "topic"
+
+
+class BiasStance(str, Enum):
+    """Positionnement éditorial (biais) d'une source."""
+
+    LEFT = "left"
+    CENTER_LEFT = "center-left"
+    CENTER = "center"
+    CENTER_RIGHT = "center-right"
+    RIGHT = "right"
+    ALTERNATIVE = "alternative"
+    SPECIALIZED = "specialized"
+    UNKNOWN = "unknown"
+
+
+class ReliabilityScore(str, Enum):
+    """Score de fiabilité d'une source."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    MIXED = "mixed"
+    HIGH = "high"
+    UNKNOWN = "unknown"
+
+
+
+class BiasOrigin(str, Enum):
+    """Origine de l'information de biais."""
+
+    EXTERNAL_DB = "external-db"
+    CURATED = "curated"
+    LLM = "llm"
+    UNKNOWN = "unknown"
+
+
+class FeedFilterMode(str, Enum):
+    """Mode de filtrage du feed (Intent-based)."""
+
+    INSPIRATION = "inspiration"
+    PERSPECTIVES = "perspectives"
+    DEEP_DIVE = "deep_dive"
+    BREAKING = "breaking"

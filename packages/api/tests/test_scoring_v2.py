@@ -1,0 +1,110 @@
+import pytest
+from datetime import datetime, timedelta
+from uuid import uuid4
+
+from app.models.content import Content
+from app.models.source import Source
+from app.models.enums import ContentType, ContentStatus
+from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
+from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer
+
+# --- Fixtures ---
+
+@pytest.fixture
+def mock_now():
+    return datetime.utcnow()
+
+@pytest.fixture
+def mock_content():
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    return Content(
+        id=uuid4(),
+        title="Test Content",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow() - timedelta(hours=2), # 2 hours old
+        content_type=ContentType.ARTICLE,
+        duration_seconds=300 # 5 min
+    )
+
+@pytest.fixture
+def base_context(mock_now):
+    return ScoringContext(
+        user_profile=None, # Not used directly by layers for now
+        user_interests={"tech"},
+        user_interest_weights={"tech": 1.0},
+        followed_source_ids=set(),
+        user_prefs={},
+        now=mock_now
+    )
+
+# --- CoreLayer Tests ---
+
+def test_core_layer_theme_match(mock_content, base_context):
+    layer = CoreLayer()
+    score = layer.score(mock_content, base_context)
+    # Theme Match (50) + Recency (~27) + Source Standard (10)
+    assert score > 80.0
+    assert "Theme match: tech" in [r['details'] for r in base_context.reasons[mock_content.id]]
+
+def test_core_layer_source_affinity(mock_content, base_context):
+    base_context.followed_source_ids.add(mock_content.source_id)
+    layer = CoreLayer()
+    score = layer.score(mock_content, base_context)
+    # +20 compared to standard (30 vs 10)
+    assert score > 100.0 # 50 + 30 + ~27 = 107
+
+# --- StaticPreferenceLayer Tests ---
+
+def test_static_prefs_recency_boost(mock_content, base_context):
+    base_context.user_prefs["content_recency"] = "recent"
+    # Content is 2h old, should get boost
+    layer = StaticPreferenceLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == 15.0 # Boost value
+
+def test_static_prefs_format_short(mock_content, base_context):
+    base_context.user_prefs["format_preference"] = "short"
+    mock_content.duration_seconds = 200 # < 300
+    layer = StaticPreferenceLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == 15.0
+
+def test_static_prefs_format_audio(mock_content, base_context):
+    base_context.user_prefs["format_preference"] = "audio"
+    mock_content.content_type = ContentType.PODCAST
+    layer = StaticPreferenceLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == 20.0
+
+# --- BehavioralLayer Tests ---
+
+def test_behavioral_layer_bonus(mock_content, base_context):
+    # User LOVES tech (weight 1.5)
+    base_context.user_interest_weights["tech"] = 1.5
+    layer = BehavioralLayer()
+    score = layer.score(mock_content, base_context)
+    # Bonus = 50 * 0.5 = 25
+    assert score == 25.0
+
+def test_behavioral_layer_malus(mock_content, base_context):
+    # User bored of tech (weight 0.5)
+    base_context.user_interest_weights["tech"] = 0.5
+    layer = BehavioralLayer()
+    score = layer.score(mock_content, base_context)
+    # Malus = 50 * 0.5 = 25 (negative)
+    assert score == -25.0
+
+# --- Engine Test ---
+
+def test_scoring_engine_integration(mock_content, base_context):
+    base_context.user_prefs["format_preference"] = "short" # +15
+    base_context.user_interest_weights["tech"] = 1.2 # +10 bonus (50*0.2)
+    # Core: ~50 (theme) + 10 (source) + 27 (recency) = 87
+    
+    engine = ScoringEngine([CoreLayer(), StaticPreferenceLayer(), BehavioralLayer()])
+    total_score = engine.compute_score(mock_content, base_context)
+    
+    # Expected: 87 + 15 + 10 = ~112
+    assert total_score > 110.0

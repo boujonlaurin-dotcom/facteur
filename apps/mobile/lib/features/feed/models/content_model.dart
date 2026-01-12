@@ -13,6 +13,23 @@ enum ContentStatus {
   consumed,
 }
 
+class RecommendationReason {
+  final String label;
+  final double confidence;
+
+  RecommendationReason({
+    required this.label,
+    required this.confidence,
+  });
+
+  factory RecommendationReason.fromJson(Map<String, dynamic> json) {
+    return RecommendationReason(
+      label: json['label'] as String,
+      confidence: (json['confidence'] as num).toDouble(),
+    );
+  }
+}
+
 enum HiddenReason {
   source,
   topic,
@@ -30,6 +47,7 @@ class Content {
   final ContentStatus status;
   final bool isSaved;
   final bool isHidden;
+  final RecommendationReason? recommendationReason;
 
   Content({
     required this.id,
@@ -43,6 +61,7 @@ class Content {
     this.status = ContentStatus.unseen,
     this.isSaved = false,
     this.isHidden = false,
+    this.recommendationReason,
   });
 
   factory Content.fromJson(Map<String, dynamic> json) {
@@ -64,6 +83,10 @@ class Content {
       ),
       isSaved: json['is_saved'] as bool? ?? false,
       isHidden: json['is_hidden'] as bool? ?? false,
+      recommendationReason: json['recommendation_reason'] != null
+          ? RecommendationReason.fromJson(
+              json['recommendation_reason'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -79,6 +102,7 @@ class Content {
     ContentStatus? status,
     bool? isSaved,
     bool? isHidden,
+    RecommendationReason? recommendationReason,
   }) {
     return Content(
       id: id ?? this.id,
@@ -92,6 +116,7 @@ class Content {
       status: status ?? this.status,
       isSaved: isSaved ?? this.isSaved,
       isHidden: isHidden ?? this.isHidden,
+      recommendationReason: recommendationReason ?? this.recommendationReason,
     );
   }
 }

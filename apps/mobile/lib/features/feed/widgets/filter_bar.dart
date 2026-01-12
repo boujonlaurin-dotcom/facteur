@@ -17,13 +17,13 @@ class FilterBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
         children: [
-          _buildFilterChip(context, 'Tous', null),
+          _buildFilterChip(context, "Dernières news", 'breaking'),
           const SizedBox(width: 8),
-          _buildFilterChip(context, 'À lire', 'article'),
+          _buildFilterChip(context, 'Rester serein', 'inspiration'),
           const SizedBox(width: 8),
-          _buildFilterChip(context, 'À écouter', 'podcast'),
+          _buildFilterChip(context, 'Mes angles morts', 'perspectives'),
           const SizedBox(width: 8),
-          _buildFilterChip(context, 'À voir', 'youtube'),
+          _buildFilterChip(context, 'Longs formats', 'deep_dive'),
         ],
       ),
     );
@@ -34,32 +34,35 @@ class FilterBar extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // Design System Alignment:
+    // Selected: Primary Orange (Highly visible)
+    // Unselected: "Ghost" state (Low-opacity text, no background/border)
+    final selectedBg = colorScheme.primary;
+    final unselectedBg = Colors.transparent;
+    final selectedText = colorScheme.onPrimary;
+    final unselectedText = colorScheme.onSurface.withOpacity(0.5);
+
     return ChoiceChip(
-      label: Text(label),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? selectedText : unselectedText,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          fontSize: 14,
+        ),
+      ),
       selected: isSelected,
       onSelected: (bool selected) {
-        if (selected) {
-          onFilterChanged(value);
-        } else {
-          // Optionnel : Si l'utilisateur décoche le filtre actif, revenir à "Tous" ?
-          // Comportement standard : ChoiceChip souvent nécessite une selection.
-          // Ici si on clique sur celui déjà sélectionné, on ne fait rien ou on reset ?
-          // Si on veut permettre "désélectionner pour revenir à tous", on passerait null.
-          if (value != null) {
-            onFilterChanged(null);
-          }
-        }
+        onFilterChanged(selected ? value : null);
       },
-      selectedColor: colorScheme.primary,
-      backgroundColor: colorScheme.surfaceVariant,
-      labelStyle: TextStyle(
-        color:
-            isSelected ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      showCheckmark: false,
+      selectedColor: selectedBg,
+      backgroundColor: unselectedBg,
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
       ),
-      checkmarkColor: colorScheme.onPrimary,
-      // Supprimer le checkmark pour un look plus "Tab" si désiré, ou le garder.
-      // showCheckmark: false,
+      visualDensity: VisualDensity.compact,
     );
   }
 }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
@@ -15,7 +18,10 @@ import '../../../config/constants.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/filter_bar.dart';
+import '../widgets/article_viewer_modal.dart';
+import '../widgets/animated_feed_card.dart';
 import '../../gamification/widgets/streak_indicator.dart';
+import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 
 /// Écran principal du feed
@@ -165,17 +171,62 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
+  void _showArticleModal(Content content) {
+    // Si on est sur Desktop (macOS, Windows, Linux) hors Web, on ouvre direct dans le navigateur
+    if (!kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+      launchUrl(Uri.parse(content.url));
+
+      // Sur desktop on marque tout de suite comme consommé car pas de modal
+      if (mounted) {
+        ref.read(feedProvider.notifier).markContentAsConsumed(content);
+
+        // Update Streak after animation completes
+        Future<void>.delayed(const Duration(milliseconds: 1100), () {
+          if (mounted) {
+            ref.read(streakProvider.notifier).refreshSilent();
+          }
+        });
+      }
+      return;
+    }
+
+    // Sinon (Mobile/Web), on utilise la modal WebView
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      useSafeArea: true,
+      builder: (context) => ArticleViewerModal(content: content),
+    ).then((_) {
+      // Au retour (fermeture de la modal), marquer comme consommé si monté
+      if (mounted) {
+        ref.read(feedProvider.notifier).markContentAsConsumed(content);
+
+        // Update Streak after animation completes (1 second delay)
+        Future<void>.delayed(const Duration(milliseconds: 1100), () {
+          if (mounted) {
+            ref.read(streakProvider.notifier).refreshSilent();
+          }
+        });
+      }
+    });
+  }
+
   void _hideContent(Content content, HiddenReason reason) {
     ref.read(feedProvider.notifier).hideContent(content, reason);
 
     // Feedback
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text("Contenu masqué"),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text("Contenu masqué"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   @override
@@ -224,6 +275,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               ),
                             ),
                             const StreakIndicator(),
+                            const SizedBox(width: 8),
+                            const DailyProgressIndicator(),
                           ],
                         ),
                       ),
@@ -287,71 +340,54 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 }
 
                                 final content = contents[index];
+                                final isConsumed = ref
+                                    .read(feedProvider.notifier)
+                                    .isContentConsumed(content.id);
+
                                 return Padding(
+                                  key: ValueKey(content.id),
                                   padding: const EdgeInsets.only(bottom: 16),
-                                  child: FeedCard(
-                                    content: content,
-                                    onTap: () async {
-                                      final uri = Uri.parse(content.url);
-                                      if (await canLaunchUrl(uri)) {
-                                        await launchUrl(
-                                          uri,
-                                          mode: LaunchMode.inAppWebView,
-                                        );
+                                  child: AnimatedFeedCard(
+                                    isConsumed: isConsumed,
+                                    child: FeedCard(
+                                      content: content,
+                                      onTap: () => _showArticleModal(content),
+                                      onBookmark: () {
+                                        ref
+                                            .read(feedProvider.notifier)
+                                            .toggleSave(content);
 
-                                        // Au retour, marquer comme consommé
-                                        if (context.mounted) {
-                                          ref
-                                              .read(feedProvider.notifier)
-                                              .markContentAsConsumed(content);
-
-                                          // Update Streak
-                                          ref
-                                              .read(streakProvider.notifier)
-                                              .refreshSilent();
-                                        }
-                                      } else {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                        ScaffoldMessenger.of(context)
+                                          ..hideCurrentSnackBar()
+                                          ..showSnackBar(
                                             SnackBar(
                                               content: Text(
-                                                  'Impossible d\'ouvrir le lien : ${content.url}'),
+                                                UIConstants.savedConfirmMessage(
+                                                    UIConstants
+                                                        .savedSectionName),
+                                              ),
+                                              action: SnackBarAction(
+                                                label: 'Annuler',
+                                                textColor: colors.primary,
+                                                onPressed: () {
+                                                  ref
+                                                      .read(
+                                                          feedProvider.notifier)
+                                                      .toggleSave(content);
+                                                },
+                                              ),
+                                              behavior:
+                                                  SnackBarBehavior.floating,
+                                              duration:
+                                                  const Duration(seconds: 2),
                                             ),
                                           );
-                                        }
-                                      }
-                                    },
-                                    onBookmark: () {
-                                      ref
-                                          .read(feedProvider.notifier)
-                                          .toggleSave(content);
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            UIConstants.savedConfirmMessage(
-                                                UIConstants.savedSectionName),
-                                          ),
-                                          action: SnackBarAction(
-                                            label: 'Annuler',
-                                            textColor: colors.primary,
-                                            onPressed: () {
-                                              ref
-                                                  .read(feedProvider.notifier)
-                                                  .toggleSave(content);
-                                            },
-                                          ),
-                                          behavior: SnackBarBehavior.floating,
-                                          duration: const Duration(seconds: 4),
-                                        ),
-                                      );
-                                    },
-                                    isBookmarked: content.isSaved,
-                                    onMoreOptions: () {
-                                      _showMoreOptions(context, content);
-                                    },
+                                      },
+                                      isBookmarked: content.isSaved,
+                                      onMoreOptions: () {
+                                        _showMoreOptions(context, content);
+                                      },
+                                    ),
                                   ),
                                 );
                               },

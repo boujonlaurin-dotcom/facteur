@@ -128,7 +128,7 @@ class UIConstants {
   UIConstants._();
 
   /// Nom de la section des contenus sauvegardés
-  static const String savedSectionName = 'Sauvegardé';
+  static const String savedSectionName = 'À consulter plus tard';
 
   /// Message de confirmation après sauvegarde
   static String savedConfirmMessage(String section) =>

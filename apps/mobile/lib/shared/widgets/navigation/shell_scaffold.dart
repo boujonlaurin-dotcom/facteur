@@ -76,10 +76,10 @@ class _BottomNavBar extends StatelessWidget {
                 onTap: () => _onItemTapped(context, 0),
               ),
               _NavItem(
-                icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
+                icon: PhosphorIcons.clockClockwise(PhosphorIconsStyle.regular),
                 activeIcon:
-                    PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill),
-                label: 'Sauvegardés',
+                    PhosphorIcons.clockClockwise(PhosphorIconsStyle.fill),
+                label: 'À consulter',
                 isSelected: selectedIndex == 1,
                 onTap: () => _onItemTapped(context, 1),
               ),

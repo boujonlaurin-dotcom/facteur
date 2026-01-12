@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.content import Content
-from app.models.enums import ContentType
+from app.models.enums import ContentType, FeedFilterMode
 from app.services.recommendation_service import RecommendationService
 from app.schemas.content import ContentResponse
 
@@ -17,7 +17,8 @@ router = APIRouter()
 async def get_personalized_feed(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
-    content_type: Optional[ContentType] = Query(None, alias="type"),
+    content_type: Optional[ContentType] = Query(None, alias="type"), # Deprecated but kept for compat
+    mode: Optional[FeedFilterMode] = Query(None),
     saved_only: bool = Query(False, alias="saved"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
@@ -41,6 +42,7 @@ async def get_personalized_feed(
         limit=limit, 
         offset=offset,
         content_type=content_type,
+        mode=mode,
         saved_only=saved_only
     )
     return feed

@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
-from app.models.enums import SourceType
+from app.models.enums import BiasOrigin, BiasStance, ReliabilityScore, SourceType
 
 
 class Source(Base):
@@ -39,9 +39,33 @@ class Source(Base):
     last_synced_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Biais et fiabilité (Story 7.1)
+    bias_stance: Mapped[BiasStance] = mapped_column(
+        Enum(BiasStance, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        nullable=False,
+        default=BiasStance.UNKNOWN,
+        server_default=BiasStance.UNKNOWN.value,
+    )
+    reliability_score: Mapped[ReliabilityScore] = mapped_column(
+        Enum(ReliabilityScore, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        nullable=False,
+        default=ReliabilityScore.UNKNOWN,
+        server_default=ReliabilityScore.UNKNOWN.value,
+    )
+    bias_origin: Mapped[BiasOrigin] = mapped_column(
+        Enum(BiasOrigin, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        nullable=False,
+        default=BiasOrigin.UNKNOWN,
+        server_default=BiasOrigin.UNKNOWN.value,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
+
+    # Scores granulaires (FQS Pillars - Story 7.5)
+    score_independence: Mapped[Optional[float]] = mapped_column(nullable=True)
+    score_rigor: Mapped[Optional[float]] = mapped_column(nullable=True)
+    score_ux: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     # Relations
     contents: Mapped[list["Content"]] = relationship(

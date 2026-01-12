@@ -55,6 +55,12 @@ class SourceService:
                 is_curated=False,
                 is_custom=True,
                 content_count=0,  # TODO
+                bias_stance=s.bias_stance.value,
+                reliability_score=s.reliability_score.value,
+                bias_origin=s.bias_origin.value,
+                score_independence=s.score_independence,
+                score_rigor=s.score_rigor,
+                score_ux=s.score_ux,
             )
             for s in custom_sources
         ]
@@ -88,6 +94,12 @@ class SourceService:
                 is_custom=False,
                 is_trusted=s.id in trusted_source_ids,
                 content_count=0,  # TODO
+                bias_stance=s.bias_stance.value,
+                reliability_score=s.reliability_score.value,
+                bias_origin=s.bias_origin.value,
+                score_independence=s.score_independence,
+                score_rigor=s.score_rigor,
+                score_ux=s.score_ux,
             )
             for s in sources
         ]
@@ -145,6 +157,12 @@ class SourceService:
             is_curated=False,
             is_custom=True,
             content_count=0,
+            bias_stance=source.bias_stance.value,
+            reliability_score=source.reliability_score.value,
+            bias_origin=source.bias_origin.value,
+            score_independence=source.score_independence,
+            score_rigor=source.score_rigor,
+            score_ux=source.score_ux,
         )
 
     async def delete_custom_source(self, user_id: str, source_id: str) -> bool:

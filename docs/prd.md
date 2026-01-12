@@ -12,6 +12,7 @@
 | Date | Version | Description | Auteur |
 |------|---------|-------------|--------|
 | 07/01/2026 | 1.0 | Création initiale | BMad Method |
+| 12/01/2026 | 1.1 | Mise à jour Algorithme V2 & Transparence | Antigravity |
 
 ---
 
@@ -23,6 +24,9 @@
 - Proposer une sélection curée de sources de qualité (catalogue de 24 sources)
 - Monétiser via un modèle premium simple dès le lancement (trial 7 jours puis paywall)
 - Valider l'hypothèse : "Les gens paieront pour une UX fluide de consommation d'info"
+- Lutter contre les bulles informationnelles via une fonctionnalité de "mise en perspective" (Ground News style)
+- Garantir la qualité via le FQS (Facteur Quality Score) : Scoring objectif des sources sur l'indépendance, la rigueur et l'expérience utilisateur (paywalls).
+- Maintenir une pluralité d'opinions : Équilibrer le catalogue avec des sources de bords politiques variés (Gauche, Libéral, Conservateur) de haute tenue.
 
 ---
 
@@ -46,19 +50,22 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **FR4** | L'utilisateur peut ajouter des sources personnalisées via URL (flux RSS, podcast, chaîne YouTube) |
 | **FR5** | Le système détecte automatiquement le type de source (RSS article, RSS podcast, RSS YouTube) |
 | **FR6** | Le système agrège et synchronise les contenus de toutes les sources toutes les 30 minutes |
-| **FR7** | L'algorithme trie et priorise les contenus selon le profil utilisateur (règles simples : thèmes, fraîcheur, format, type) |
-| **FR8** | L'utilisateur voit un feed personnalisé avec preview de chaque contenu (thumbnail, titre, source, durée/temps de lecture estimé) |
+| **FR7** | L'algorithme trie et priorise les contenus selon le profil utilisateur (moteur modulaire V2 : thèmes, feedback comportemental, préférences statiques) |
+| **FR8** | L'utilisateur voit un feed personnalisé avec preview de chaque contenu (thumbnail, titre, source, raison de recommandation, durée) |
 | **FR9** | L'utilisateur peut cliquer sur un contenu pour voir un écran détail enrichi avant redirect |
 | **FR10** | Le système marque automatiquement un contenu comme "consommé" après un temps suffisant (~30s article, ~60s vidéo/podcast) |
 | **FR10bis** | Le système affiche un streak quotidien pour encourager l'habitude (si gamification activée) |
 | **FR10ter** | Le système affiche une barre de progression hebdomadaire (si gamification activée) |
-| **FR11** | L'utilisateur peut sauvegarder un contenu pour plus tard (bookmark), ce qui l'archive automatiquement du feed principal (triage) |
+| **FR11** | L'utilisateur peut ajouter un contenu à sa liste "À consulter plus tard", ce qui l'archive automatiquement du feed principal (triage) |
 | **FR12** | L'utilisateur peut indiquer "pas intéressé" pour masquer un contenu et affiner l'algo |
 | **FR13** | L'utilisateur peut gérer ses sources personnalisées (ajouter, supprimer, voir la liste) |
 | **FR14** | L'utilisateur peut souscrire à un abonnement premium via l'App Store (iOS) |
 | **FR15** | L'utilisateur peut gérer son abonnement (voir statut, gérer via iOS) |
 | **FR16** | L'utilisateur peut modifier son profil et ses préférences |
 | **FR17** | Après 7 jours de trial, l'accès est bloqué sans abonnement (paywall obligatoire) |
+| **FR18** | L'utilisateur peut accéder à d'autres points de vue sur une même actualité depuis l'écran détail |
+| **FR19** | Le système regroupe automatiquement les articles similaires par "Story" (clustering) |
+| **FR20** | Le système affiche le positionnement éditorial (biais) des sources via une échelle visuelle |
 
 ---
 
@@ -99,7 +106,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 |-------------|--------------|
 | **Scroll vertical** | Navigation dans le feed principal |
 | **Tap sur card** | Ouvre l'écran détail |
-| **Tap sur bookmark** | Sauvegarder pour plus tard et retirer du feed principal (triage) |
+| **Tap sur bookmark** | Ajouter à la liste "À consulter plus tard" et retirer du feed principal (triage) |
 | **Menu "..."** | Actions secondaires (pas intéressé, voir source) |
 | **Pull to refresh** | Actualiser le feed |
 
@@ -110,7 +117,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | 1 | **Onboarding** | Questionnaire 10-12 questions en 3 sections + animation finale |
 | 2 | **Feed principal** | Liste de contenus personnalisés avec preview cards |
 | 3 | **Détail contenu** | Preview enrichi avant redirect |
-| 4 | **Sauvegardés** | Liste des contenus bookmarkés |
+| 4 | **À consulter plus tard** | Liste des contenus mis de côté |
 | 5 | **Progression** | Streak + barre hebdo + stats |
 | 6 | **Mes sources** | Gestion des sources custom |
 | 7 | **Profil / Settings** | Paramètres compte, préférences, abonnement |
@@ -215,6 +222,7 @@ facteur/
 | 4 | Feed & Algorithme | Algo de tri, feed personnalisé, actions | 6 |
 | 5 | Consommation & Gamification | Détail, tracking auto, streak, progression | 7 |
 | 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement | 6 |
+| 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
 
 **Total : 36 stories**
 
@@ -517,10 +525,11 @@ facteur/
 **so that** les contenus les plus pertinents apparaissent en premier.
 
 **Acceptance Criteria :**
-1. Endpoint API `/api/feed` avec contenus triés
-2. Algorithme combinant : thèmes, fraîcheur, format, type
-3. Exclusion des contenus vus et masqués
-4. Pagination (20/page, infinite scroll)
+1. ✅ Endpoint API `/api/feed` avec contenus triés
+2. ✅ Algorithme modulaire V2 (Core, Static, Behavioral)
+3. ✅ Transparence : affichage de la raison de recommandation (badge discret)
+4. ✅ Exclusion des contenus vus et masqués
+5. ✅ Pagination (20/page, infinite scroll)
 
 ---
 
@@ -555,14 +564,14 @@ facteur/
 
 ---
 
-### Story 4.4 : Action "Sauvegarder pour plus tard"
+### Story 4.4 : Action "À consulter plus tard"
 
 **As a** utilisateur,  
-**I want** sauvegarder un contenu pour plus tard,  
+**I want** ajouter un contenu à ma liste "À consulter plus tard",  
 **so that** je puisse y revenir quand j'ai le temps.
 
 **Acceptance Criteria :**
-1. Tap 🔖 → sauvegarde
+1. Tap 🔖 → ajout à la liste
 2. Feedback visuel immédiat
 3. Toggle (re-tap = retirer)
 
@@ -589,9 +598,15 @@ facteur/
 **so that** je puisse me concentrer sur ce que je veux.
 
 **Acceptance Criteria :**
-1. Barre de filtres horizontale
-2. Filtres par type et thème
-3. Mise à jour instantanée
+**Acceptance Criteria :**
+1. Barre de filtres horizontale ("Chips")
+2. Filtres "Intent" :
+   - "Douceur" (Positive vibes, évite Pol/Eco)
+   - "Penser contre" (Perspective, sources opposées)
+   - "Deep Dive" (Formats longs)
+   - "À la une" (Articles récents < 24h)
+3. Mise à jour instantanée du feed
+4. Reset possible ("Tout voir")
 
 ---
 
@@ -686,14 +701,14 @@ facteur/
 
 ---
 
-### Story 5.7 : Écran Sauvegardés
+### Story 5.7 : Écran "À consulter plus tard"
 
 **As a** utilisateur,  
 **I want** accéder à mes contenus sauvegardés,  
-**so that** je puisse les consulter plus tard.
+**so that** je puisse les consulter plus tard (liste "À consulter").
 
 **Acceptance Criteria :**
-1. Liste des contenus `saved`
+1. Liste des contenus mis à consulter (`saved`)
 2. Même format cards
 3. Tri par date de sauvegarde
 4. Action "Retirer"
@@ -793,6 +808,68 @@ facteur/
 5. Premium expiré : paywall bloquant
 
 ---
+
+
+---
+
+## Epic 7 : Mise en perspective (Ground News Style)
+
+**Objectif :** Lutter contre les bulles informationnelles en permettant de comparer les angles éditoriaux sur un même sujet.
+
+**Status : ✅ MVP Done (12/01/2026)**
+
+> **Pivot MVP**: L'approche initiale de clustering interne a été abandonnée au profit d'une recherche live via Google News RSS, offrant un meilleur taux de couverture (~100% vs ~20%) sans infrastructure additionnelle.
+
+---
+
+### Story 7.1 : Profiling éditorial des sources ✅
+
+**As a** développeur,  
+**I want** enrichir le modèle des sources avec des données de positionnement éditorial,  
+**so that** le système puisse qualifier la perspective de chaque contenu.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Table `sources` enrichie : `bias_stance`, `reliability_score`, `bias_origin`
+2. ✅ Script d'import mis à jour pour intégrer ces données depuis CSV
+3. ✅ Gestion des sources sans données (cas par défaut: `UNKNOWN`)
+4. ✅ 22/27 sources curées avec données de biais
+
+---
+
+### Story 7.2 : MVP Perspectives - Backend ✅
+
+**As a** utilisateur,  
+**I want** voir des points de vue alternatifs sur un article,  
+**so that** je puisse me forger une opinion plus nuancée.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Endpoint `GET /contents/{id}/perspectives` fonctionnel
+2. ✅ Extraction de mots-clés significatifs (noms propres prioritaires)
+3. ✅ Recherche Google News RSS (~400ms latence)
+4. ✅ Mapping de biais pour ~50 sources françaises
+
+---
+
+### Story 7.3 : MVP Perspectives - Frontend ✅
+
+**As a** utilisateur,  
+**I want** accéder aux perspectives alternatives depuis l'écran article,  
+**so that** je puisse facilement consulter d'autres points de vue.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Bouton ⚖️ dans le header (articles uniquement)
+2. ✅ Bottom sheet avec Bias Bar et liste de perspectives
+3. ✅ Tap ouvre l'article externe
+4. ✅ Loading state pendant la recherche
+
+---
+
 
 ## Next Steps
 

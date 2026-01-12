@@ -25,6 +25,8 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
   bool _hasNext = true;
   bool _isLoadingMore = false;
   String? _selectedFilter;
+  final Set<String> _consumedContentIds =
+      {}; // Track content being animated out
 
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
@@ -56,7 +58,7 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
   Future<List<Content>> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getFeed(
-        page: page, limit: _limit, contentType: _selectedFilter);
+        page: page, limit: _limit, mode: _selectedFilter);
 
     // Update pagination state
     _hasNext = response.pagination.hasNext;
@@ -183,21 +185,43 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
     }
   }
 
+  /// Check if content is currently being consumed (animating out)
+  bool isContentConsumed(String contentId) {
+    return _consumedContentIds.contains(contentId);
+  }
+
   Future<void> markContentAsConsumed(Content content) async {
     final currentItems = state.value;
     if (currentItems == null) return;
 
-    // Optimistic update: Remove from feed as it is consumed
-    final updatedItems = List<Content>.from(currentItems);
-    updatedItems.removeWhere((c) => c.id == content.id);
+    // Mark as consumed to trigger animation
+    _consumedContentIds.add(content.id);
 
-    state = AsyncData(updatedItems);
+    // Notify listeners to start animation
+    state = AsyncData(List<Content>.from(currentItems));
 
+    // Call API immediately (don't wait for animation)
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.updateContentStatus(content.id, ContentStatus.consumed);
     } catch (e) {
       // Silent failure for tracking
     }
+
+    // Wait for "Lu" overlay animation then remove
+    // Show overlay for ~1 second before removing
+    await Future<void>.delayed(const Duration(milliseconds: 1000));
+
+    // Get fresh state in case it changed during the delay
+    final freshItems = state.value;
+    if (freshItems == null) return;
+
+    // Remove from list after animation
+    final updatedItems = List<Content>.from(freshItems);
+    updatedItems.removeWhere((c) => c.id == content.id);
+    _consumedContentIds.remove(content.id);
+
+    // Force state update
+    state = AsyncData(updatedItems);
   }
 }

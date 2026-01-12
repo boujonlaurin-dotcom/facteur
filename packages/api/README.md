@@ -112,8 +112,8 @@ app/
 ### Contents
 - `GET /api/contents/{id}` - Détail d'un contenu
 - `POST /api/contents/{id}/status` - Mise à jour consommation (seen/consumed)
-- `POST /api/contents/{id}/save` - Sauvegarder (archive l'item du feed)
-- `DELETE /api/contents/{id}/save` - Retirer des sauvegardés
+- `POST /api/contents/{id}/save` - Ajouter à "À consulter plus tard" (archive l'item du feed)
+- `DELETE /api/contents/{id}/save` - Retirer de la liste "À consulter plus tard"
 - `POST /api/contents/{id}/hide` - Masquer
 
 ## 🧠 Recommendation Engine

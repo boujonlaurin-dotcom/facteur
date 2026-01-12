@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.enums import ContentStatus, ContentType, HiddenReason
+from app.models.enums import BiasOrigin, BiasStance, ContentStatus, ContentType, HiddenReason, ReliabilityScore
 
 
 class HideContentRequest(BaseModel):
@@ -23,10 +23,18 @@ class SourceMini(BaseModel):
     logo_url: Optional[str]
     type: str  # Ajout pour éviter le crash mobile
     theme: Optional[str] # Ajout pour l'UI mobile
+    bias_stance: BiasStance = BiasStance.UNKNOWN
+    reliability_score: ReliabilityScore = ReliabilityScore.UNKNOWN
+    bias_origin: BiasOrigin = BiasOrigin.UNKNOWN
 
     class Config:
         from_attributes = True
 
+
+class RecommendationReason(BaseModel):
+    """Raison de la recommandation."""
+    label: str  # ex: "Pour toi", "Incontournable", "Analyse de fond"
+    confidence: float # 0.0 à 1.0
 
 class ContentResponse(BaseModel):
     """Réponse contenu (card dans le feed)."""
@@ -43,6 +51,7 @@ class ContentResponse(BaseModel):
     is_saved: bool = False
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
+    recommendation_reason: Optional[RecommendationReason] = None
 
     class Config:
         from_attributes = True

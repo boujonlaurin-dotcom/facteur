@@ -42,7 +42,7 @@ class SourcesScreen extends ConsumerWidget {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 24.0),
                   child: Text(
-                    "Sélectionnez vos sources de confiance. Celles-ci seront privilégiées par défaut dans votre algorithme.",
+                    "Indiquez-nous les sources auxquelles vous faites le plus confiance. Nous les privilégierons par défaut dans votre feed.",
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                           height: 1.5,
