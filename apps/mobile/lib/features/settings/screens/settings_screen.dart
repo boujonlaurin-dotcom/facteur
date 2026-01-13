@@ -6,6 +6,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../providers/theme_provider.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
 
 /// Écran des paramètres (placeholder)
 class SettingsScreen extends ConsumerWidget {
@@ -38,8 +39,9 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'Sources de confiance',
                   subtitle: 'Gérer vos préférences',
                   onTap: () {
-                    context.pushNamed(RouteNames
-                        .sources); // Changed from .sources to .trustedSources implicitly if renamed, but relying on existing RouteNames.sources for now as pivot
+                    context.pushNamed(
+                      RouteNames.sources,
+                    ); // Changed from .sources to .trustedSources implicitly if renamed, but relying on existing RouteNames.sources for now as pivot
                   },
                 ),
               ],
@@ -64,6 +66,20 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.notifications_none,
                   title: 'Notifications',
                   onTap: () {},
+                ),
+                _buildTile(
+                  context,
+                  icon: Icons.settings_suggest_outlined,
+                  title: 'Refaire le questionnaire',
+                  subtitle: 'Ajuster mon profil et mes préférences',
+                  onTap: () {
+                    // 1. Reset l'onboarding state
+                    ref.read(onboardingProvider.notifier).restartOnboarding();
+                    // 2. Déclencher la redirection via authState
+                    ref
+                        .read(authStateProvider.notifier)
+                        .setNeedsOnboarding(true);
+                  },
                 ),
               ],
             ),
@@ -102,8 +118,9 @@ class SettingsScreen extends ConsumerWidget {
 
             // Logout
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space4,
+              ),
               child: SizedBox(
                 width: double.infinity,
                 child: TextButton(
@@ -113,13 +130,14 @@ class SettingsScreen extends ConsumerWidget {
                   style: TextButton.styleFrom(
                     foregroundColor: colors.error,
                     padding: const EdgeInsets.symmetric(
-                        vertical: FacteurSpacing.space3),
+                      vertical: FacteurSpacing.space3,
+                    ),
                   ),
                   child: Text(
                     'Se déconnecter',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: colors.error,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelLarge?.copyWith(color: colors.error),
                   ),
                 ),
               ),
@@ -131,8 +149,11 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSection(BuildContext context,
-      {required String title, required List<Widget> children}) {
+  Widget _buildSection(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) {
     final colors = context.facteurColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,9 +166,9 @@ class SettingsScreen extends ConsumerWidget {
           child: Text(
             title,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textTertiary,
-                  letterSpacing: 1.5,
-                ),
+              color: colors.textTertiary,
+              letterSpacing: 1.5,
+            ),
           ),
         ),
         Container(
@@ -157,9 +178,7 @@ class SettingsScreen extends ConsumerWidget {
             borderRadius: BorderRadius.circular(FacteurRadius.large),
             border: Border.all(color: colors.surfaceElevated),
           ),
-          child: Column(
-            children: children,
-          ),
+          child: Column(children: children),
         ),
       ],
     );
@@ -188,16 +207,16 @@ class SettingsScreen extends ConsumerWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                 ],

@@ -29,7 +29,7 @@ class FinalizeQuestion extends ConsumerWidget {
 
           // Illustration
           const Text(
-            '🎉',
+            '✨',
             style: TextStyle(fontSize: 80),
             textAlign: TextAlign.center,
           ),
@@ -38,7 +38,7 @@ class FinalizeQuestion extends ConsumerWidget {
 
           // Titre
           Text(
-            'Tout est prêt !',
+            'Ok. On a maintenant une meilleure idée de comment nettoyer votre espace mental.',
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
@@ -46,10 +46,10 @@ class FinalizeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'On va préparer ton feed personnalisé',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            'Votre feed personnalisé est prêt.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -102,11 +102,8 @@ class FinalizeQuestion extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
-                  'Découvrir mon feed',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  'Ouvrir mon feed transparent',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(width: FacteurSpacing.space2),
                 const Icon(Icons.arrow_forward_rounded, size: 20),
@@ -155,25 +152,16 @@ class _SummaryRow extends StatelessWidget {
   final String emoji;
   final String label;
 
-  const _SummaryRow({
-    required this.emoji,
-    required this.label,
-  });
+  const _SummaryRow({required this.emoji, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          emoji,
-          style: const TextStyle(fontSize: 20),
-        ),
+        Text(emoji, style: const TextStyle(fontSize: 20)),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
         ),
         Icon(
           Icons.check_circle,

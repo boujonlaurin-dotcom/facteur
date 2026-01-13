@@ -60,7 +60,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
 
           // Illustration
           const Text(
-            '🎨',
+            '🤝',
             style: TextStyle(fontSize: 64),
             textAlign: TextAlign.center,
           ),
@@ -69,7 +69,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
 
           // Question
           Text(
-            'Tes thèmes préférés ?',
+            'Construisons ensemble un front de sources fiables.',
             style: Theme.of(context).textTheme.displayMedium,
             textAlign: TextAlign.center,
           ),
@@ -77,10 +77,10 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Sélectionne au moins 1 thème',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            'Notre catalogue est co-construit avec notre communauté. Parmi les sources actuellement validées, lesquelles résonnent avec vos exigences ?',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -152,27 +152,25 @@ class _ThemeChip extends StatelessWidget {
               : context.facteurColors.surface,
           borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
-            color:
-                isSelected ? context.facteurColors.primary : Colors.transparent,
+            color: isSelected
+                ? context.facteurColors.primary
+                : Colors.transparent,
             width: 2,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              theme.emoji,
-              style: const TextStyle(fontSize: 18),
-            ),
+            Text(theme.emoji, style: const TextStyle(fontSize: 18)),
             const SizedBox(width: FacteurSpacing.space2),
             Text(
               theme.label,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: isSelected
-                        ? context.facteurColors.primary
-                        : context.facteurColors.textPrimary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
+                color: isSelected
+                    ? context.facteurColors.primary
+                    : context.facteurColors.textPrimary,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
             ),
           ],
         ),

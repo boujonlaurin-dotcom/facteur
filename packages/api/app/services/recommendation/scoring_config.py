@@ -36,3 +36,9 @@ class ScoringWeights:
     
     # Multiplicateur appliqué au poids de l'intérêt si l'utilisateur consomme beaucoup ce thème.
     INTEREST_BOOST_FACTOR = 1.2
+
+    # --- VISUAL LAYER (Attractivité) ---
+
+    # Boost pour les contenus possédant une image de couverture.
+    # Aide à rendre le feed plus engageant visuellement.
+    IMAGE_BOOST = 10.0

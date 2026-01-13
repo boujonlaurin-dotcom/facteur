@@ -15,7 +15,7 @@ from app.models.enums import ContentStatus, FeedFilterMode, ContentType, BiasSta
 logger = structlog.get_logger()
 
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer
+from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer
 from app.schemas.content import RecommendationReason
 
 class RecommendationService:
@@ -27,7 +27,8 @@ class RecommendationService:
             CoreLayer(),
             StaticPreferenceLayer(),
             BehavioralLayer(),
-            QualityLayer()
+            QualityLayer(),
+            VisualLayer()
         ])
 
     async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False) -> List[Content]:
@@ -214,6 +215,8 @@ class RecommendationService:
                         label = "Source de Confiance"
                     elif "Low reliability" in top['details']:
                         label = "Source Controversée"
+                elif top['layer'] == 'visual':
+                    label = "Aperçu disponible"
 
                 content.recommendation_reason = RecommendationReason(
                     label=label,

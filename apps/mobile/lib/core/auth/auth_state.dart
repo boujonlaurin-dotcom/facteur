@@ -63,12 +63,14 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         final persistenceBox = Hive.box<String>('supabase_auth_persistence');
         if (!persistenceBox.containsKey('supabase_session')) {
           debugPrint(
-              'AuthStateNotifier: No persisted session found in Hive. Skipping wait.');
+            'AuthStateNotifier: No persisted session found in Hive. Skipping wait.',
+          );
         } else {
           final sessionCompleter = Completer<Session?>();
           final subscription = _supabase.auth.onAuthStateChange.listen((data) {
             debugPrint(
-                'AuthStateNotifier: INITIAL STREAM EVENT: ${data.event} - Session: ${data.session != null} - User: ${data.session?.user.email ?? "None"}');
+              'AuthStateNotifier: INITIAL STREAM EVENT: ${data.event} - Session: ${data.session != null} - User: ${data.session?.user.email ?? "None"}',
+            );
 
             if (data.session != null) {
               if (!sessionCompleter.isCompleted) {
@@ -77,13 +79,16 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
               }
             } else if (data.event == AuthChangeEvent.initialSession) {
               debugPrint(
-                  'AuthStateNotifier: initialSession is null, waiting up to 3s for potential delayed signedIn...');
+                'AuthStateNotifier: initialSession is null, waiting up to 3s for potential delayed signedIn...',
+              );
               // On attend un peu plus pour un éventuel signedIn différé
-              Future<void>.delayed(const Duration(milliseconds: 3000))
-                  .then((_) {
+              Future<void>.delayed(const Duration(milliseconds: 3000)).then((
+                _,
+              ) {
                 if (!sessionCompleter.isCompleted) {
                   debugPrint(
-                      'AuthStateNotifier: Timeout after initialSession null.');
+                    'AuthStateNotifier: Timeout after initialSession null.',
+                  );
                   sessionCompleter.complete(null);
                 }
               });
@@ -92,8 +97,9 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
           try {
             // Timeout global de sécurité (8s car macOS peut être lent)
-            session = await sessionCompleter.future
-                .timeout(const Duration(milliseconds: 8000));
+            session = await sessionCompleter.future.timeout(
+              const Duration(milliseconds: 8000),
+            );
           } catch (_) {
             debugPrint('AuthStateNotifier: Global 8s timeout reached.');
             session = _supabase.auth.currentSession;
@@ -104,12 +110,14 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       }
 
       debugPrint(
-          'AuthStateNotifier: Resolved session for final state: ${session?.user.email ?? "None"}');
+        'AuthStateNotifier: Resolved session for final state: ${session?.user.email ?? "None"}',
+      );
 
       // 3. Si on ne doit pas rester connecté, on force la déconnexion
       if (!rememberMe && session != null) {
         debugPrint(
-            'AuthStateNotifier: rememberMe is false, signing out... TRACE:');
+          'AuthStateNotifier: rememberMe is false, signing out... TRACE:',
+        );
         debugPrint(StackTrace.current.toString());
         await _supabase.auth.signOut();
         await box.delete('remember_me');
@@ -117,12 +125,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       }
 
       // 4. Mettre à jour l'état initial
-      state = state.copyWith(
-        user: session?.user,
-        isLoading: false,
-      );
+      state = state.copyWith(user: session?.user, isLoading: false);
       debugPrint(
-          'AuthStateNotifier: Initial state set. Authenticated: ${state.isAuthenticated}');
+        'AuthStateNotifier: Initial state set. Authenticated: ${state.isAuthenticated}',
+      );
 
       if (session != null) {
         await _checkOnboardingStatus();
@@ -132,15 +138,13 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       _supabase.auth.onAuthStateChange.listen((data) {
         final user = data.session?.user;
         debugPrint(
-            'AuthStateNotifier: Auth listener event: ${data.event}, User: ${user?.email ?? "None"}');
+          'AuthStateNotifier: Auth listener event: ${data.event}, User: ${user?.email ?? "None"}',
+        );
 
         // Éviter les mises à jour inutiles si l'user n'a pas changé
         if (state.user?.id == user?.id && !state.isLoading) return;
 
-        state = state.copyWith(
-          user: user,
-          isLoading: false,
-        );
+        state = state.copyWith(user: user, isLoading: false);
 
         if (user != null) {
           _checkOnboardingStatus();
@@ -202,8 +206,11 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     await _checkOnboardingStatus();
   }
 
-  Future<void> signInWithEmail(String email, String password,
-      {bool rememberMe = true}) async {
+  Future<void> signInWithEmail(
+    String email,
+    String password, {
+    bool rememberMe = true,
+  }) async {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
@@ -211,16 +218,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       final box = await Hive.openBox<dynamic>('auth_prefs');
       await box.put('remember_me', rememberMe);
 
-      await _supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
+      await _supabase.auth.signInWithPassword(email: email, password: password);
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -233,19 +234,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      await _supabase.auth.signUp(
-        email: email,
-        password: password,
-      );
-      state = state.copyWith(
-        isLoading: false,
-        needsOnboarding: true,
-      );
+      await _supabase.auth.signUp(email: email, password: password);
+      state = state.copyWith(isLoading: false, needsOnboarding: true);
     } on AuthException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -260,10 +252,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       await _supabase.auth.resetPasswordForEmail(email);
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
       rethrow;
     } catch (e) {
       state = state.copyWith(
@@ -280,10 +269,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.apple);
     } on AuthException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -298,10 +284,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.google);
     } on AuthException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -314,13 +297,23 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(needsOnboarding: false);
   }
 
+  /// Change le statut d'onboarding (utilisé pour reset/refaire)
+  Future<void> setNeedsOnboarding(bool value) async {
+    state = state.copyWith(needsOnboarding: value);
+
+    // Mettre à jour le cache local
+    final box = await Hive.openBox<dynamic>('user_profile');
+    await box.put('onboarding_completed', !value);
+  }
+
   void clearError() {
     state = state.copyWith(error: null);
   }
 }
 
 /// Provider de l'état d'authentification
-final authStateProvider =
-    StateNotifierProvider<AuthStateNotifier, AuthState>((ref) {
+final authStateProvider = StateNotifierProvider<AuthStateNotifier, AuthState>((
+  ref,
+) {
   return AuthStateNotifier();
 });

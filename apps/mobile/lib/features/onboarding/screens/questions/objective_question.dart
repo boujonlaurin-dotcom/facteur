@@ -25,7 +25,7 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           // Illustration
           const Text(
-            '👋',
+            '⚡',
             style: TextStyle(fontSize: 64),
             textAlign: TextAlign.center,
           ),
@@ -34,7 +34,7 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           // Question
           Text(
-            'Pourquoi es-tu là ?',
+            "Qu'est-ce qui vous épuise le plus dans l'information aujourd'hui ?",
             style: Theme.of(context).textTheme.displayMedium,
             textAlign: TextAlign.center,
           ),
@@ -42,10 +42,10 @@ class ObjectiveQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Dis-nous ce qui t\'amène',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            'Identifions le problème principal',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -53,36 +53,36 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            emoji: '📚',
-            label: 'Apprendre de nouvelles choses',
-            subtitle: 'Élargir mes connaissances au quotidien',
-            isSelected: selectedObjective == 'learn',
+            emoji: '📢',
+            label: 'Le Bruit',
+            subtitle: "Trop d'info, impossible de trier.",
+            isSelected: selectedObjective == 'noise',
             onTap: () {
-              ref.read(onboardingProvider.notifier).selectObjective('learn');
+              ref.read(onboardingProvider.notifier).selectObjective('noise');
             },
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            emoji: '🌍',
-            label: 'Me cultiver et comprendre le monde',
-            subtitle: 'Avoir une vision plus large',
-            isSelected: selectedObjective == 'culture',
+            emoji: '⚖️',
+            label: 'Les Biais',
+            subtitle: 'Doute permanent sur la neutralité.',
+            isSelected: selectedObjective == 'bias',
             onTap: () {
-              ref.read(onboardingProvider.notifier).selectObjective('culture');
+              ref.read(onboardingProvider.notifier).selectObjective('bias');
             },
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            emoji: '💼',
-            label: 'Faire ma veille professionnelle',
-            subtitle: 'Rester pertinent dans mon domaine',
-            isSelected: selectedObjective == 'work',
+            emoji: '😰',
+            label: "L'Anxiété",
+            subtitle: 'Le sentiment que le monde devient fou.',
+            isSelected: selectedObjective == 'anxiety',
             onTap: () {
-              ref.read(onboardingProvider.notifier).selectObjective('work');
+              ref.read(onboardingProvider.notifier).selectObjective('anxiety');
             },
           ),
 

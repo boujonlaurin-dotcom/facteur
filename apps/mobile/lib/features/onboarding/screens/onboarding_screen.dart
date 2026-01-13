@@ -19,6 +19,7 @@ import 'questions/format_question.dart';
 import 'questions/source_comparison_question.dart';
 import 'questions/personal_goal_question.dart';
 import 'questions/finalize_question.dart';
+import 'questions/intro_screen.dart';
 
 /// Écran d'onboarding principal
 /// Gère la navigation entre les sections et questions
@@ -55,13 +56,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   return FadeTransition(
                     opacity: animation,
                     child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0.05, 0),
-                        end: Offset.zero,
-                      ).animate(CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOut,
-                      )),
+                      position:
+                          Tween<Offset>(
+                            begin: const Offset(0.05, 0),
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOut,
+                            ),
+                          ),
                       child: child,
                     ),
                   );
@@ -91,6 +95,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final question = state.currentSection1Question;
 
     switch (question) {
+      case Section1Question.intro:
+        return const IntroScreen(key: ValueKey('intro'));
+
       case Section1Question.objective:
         return const ObjectiveQuestion(key: ValueKey('objective'));
 
@@ -136,6 +143,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           perspective: state.answers.perspective,
           responseStyle: state.answers.responseStyle,
           contentRecency: state.answers.contentRecency,
+          objective: state.answers.objective,
+          themes: state.answers.themes,
         );
         return ReactionScreen(
           key: const ValueKey('preferences_reaction'),
@@ -169,7 +178,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section3Question.sourceComparison1:
         return const SourceComparisonQuestion(
-            key: ValueKey('source_comparison'));
+          key: ValueKey('source_comparison'),
+        );
 
       case Section3Question.personalGoal:
         return const PersonalGoalQuestion(key: ValueKey('personal_goal'));

@@ -63,5 +63,4 @@ ios/Flutter/flutter_export_environment.sh
 *.log
 
 # Project specific
-.agent/
 web-bundles/.DS_Store

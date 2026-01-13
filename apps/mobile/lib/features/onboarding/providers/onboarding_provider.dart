@@ -66,19 +66,19 @@ class OnboardingAnswers {
   }
 
   Map<String, dynamic> toJson() => {
-        'objective': objective,
-        'age_range': ageRange,
-        'gender': gender,
-        'approach': approach,
-        'perspective': perspective,
-        'response_style': responseStyle,
-        'content_recency': contentRecency,
-        'gamification_enabled': gamificationEnabled,
-        'weekly_goal': weeklyGoal,
-        'themes': themes,
-        'format_preference': formatPreference,
-        'personal_goal': personalGoal,
-      };
+    'objective': objective,
+    'age_range': ageRange,
+    'gender': gender,
+    'approach': approach,
+    'perspective': perspective,
+    'response_style': responseStyle,
+    'content_recency': contentRecency,
+    'gamification_enabled': gamificationEnabled,
+    'weekly_goal': weeklyGoal,
+    'themes': themes,
+    'format_preference': formatPreference,
+    'personal_goal': personalGoal,
+  };
 
   factory OnboardingAnswers.fromJson(Map<String, dynamic> json) {
     return OnboardingAnswers(
@@ -112,7 +112,8 @@ enum OnboardingSection {
 
 /// Questions de la Section 1 (Overview)
 enum Section1Question {
-  objective, // Q1: Pourquoi es-tu là ?
+  intro, // Intro: L'info ressemble à un champ de bataille
+  objective, // Q1: Diagnostic
   objectiveReaction, // R1: Réaction personnalisée
   ageRange, // Q2: Tranche d'âge
   gender, // Q3: Genre (optionnel)
@@ -253,13 +254,25 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
           currentSection: savedSection != null && savedSection is int
               ? OnboardingSection.values[savedSection as int]
               : OnboardingSection.overview,
-          currentQuestionIndex:
-              savedQuestion is int ? (savedQuestion as int) : 0,
+          currentQuestionIndex: savedQuestion is int
+              ? (savedQuestion as int)
+              : 0,
         );
       }
     } catch (e) {
       // Ignorer les erreurs de chargement
     }
+  }
+
+  /// Reset l'onboarding pour le recommencer (garde les réponses actuelles comme base)
+  void restartOnboarding() {
+    state = state.copyWith(
+      currentSection: OnboardingSection.overview,
+      currentQuestionIndex: 0,
+      showReaction: false,
+      isTransitioning: false,
+    );
+    _saveAnswers();
   }
 
   /// Sauvegarde les réponses localement
@@ -284,7 +297,15 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     }
   }
 
-  /// Sélectionne un objectif (Q1)
+  /// Continue après l'intro screen (vers Q1 - Diagnostic)
+  void continueAfterIntro() {
+    state = state.copyWith(
+      currentQuestionIndex: Section1Question.objective.index,
+      isTransitioning: false,
+    );
+  }
+
+  /// Sélectionne un objectif (Q1 - Diagnostic)
   void selectObjective(String objective) {
     state = state.copyWith(
       answers: state.answers.copyWith(objective: objective),
@@ -531,9 +552,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
   /// Continue après la comparaison de sources (Q11)
   void continueAfterSourceComparison() {
-    state = state.copyWith(
-      isTransitioning: true,
-    );
+    state = state.copyWith(isTransitioning: true);
 
     Future.delayed(const Duration(milliseconds: 300), () {
       // Si gamification activée, aller à Q13 (personal goal)
@@ -607,8 +626,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 /// Provider de l'état d'onboarding
 final onboardingProvider =
     StateNotifierProvider<OnboardingNotifier, OnboardingState>((ref) {
-  return OnboardingNotifier();
-});
+      return OnboardingNotifier();
+    });
 
 /// Provider pour vérifier si Section 1 est complète
 final isSection1CompleteProvider = Provider<bool>((ref) {
@@ -623,7 +642,8 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
 final isSection2CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  final baseComplete = answers.perspective != null &&
+  final baseComplete =
+      answers.perspective != null &&
       answers.responseStyle != null &&
       answers.contentRecency != null &&
       answers.gamificationEnabled != null;
@@ -669,7 +689,8 @@ class AvailableThemes {
 class ThemeOption {
   final String slug;
   final String label;
-  final String emoji;  const ThemeOption({
+  final String emoji;
+  const ThemeOption({
     required this.slug,
     required this.label,
     required this.emoji,

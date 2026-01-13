@@ -25,7 +25,7 @@ class GamificationQuestion extends ConsumerWidget {
 
           // Illustration
           const Text(
-            '🎮',
+            '🧠',
             style: TextStyle(fontSize: 64),
             textAlign: TextAlign.center,
           ),
@@ -34,7 +34,7 @@ class GamificationQuestion extends ConsumerWidget {
 
           // Question
           Text(
-            'Activer les objectifs ?',
+            'Votre temps de cerveau est précieux. Combien nous en confiez-vous ?',
             style: Theme.of(context).textTheme.displayMedium,
             textAlign: TextAlign.center,
           ),
@@ -42,10 +42,10 @@ class GamificationQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Pour te motiver à apprendre régulièrement',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            "Plus qu'un engagement, c'est un jeu. Défiez-vous !",
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -121,10 +121,7 @@ class _FeatureRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          emoji,
-          style: const TextStyle(fontSize: 24),
-        ),
+        Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Column(
@@ -132,15 +129,15 @@ class _FeatureRow extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
               Text(
                 description,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: context.facteurColors.textSecondary,
-                    ),
+                  color: context.facteurColors.textSecondary,
+                ),
               ),
             ],
           ),
