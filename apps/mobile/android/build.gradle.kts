@@ -23,7 +23,7 @@ subprojects {
     configurations.all {
         resolutionStrategy.eachDependency {
             if (requested.group == "org.jetbrains.kotlin") {
-                useVersion("2.1.0")
+                useVersion("2.0.21")
             }
         }
     }
@@ -31,6 +31,7 @@ subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         kotlinOptions {
             jvmTarget = "17"
+            languageVersion = "2.0"
         }
     }
 
