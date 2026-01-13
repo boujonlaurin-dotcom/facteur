@@ -29,7 +29,7 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 ### 4. Verify (Phase: VERIFICATION)
 *Objectif : Preuve de succès (Proof of Work).*
 - **Action** : Exécute les tests unitaires/intégration. 
-- **Walkthrough** : Produit un `walkthrough.md` incluant les preuves techniques (logs, captures de scripts de test).
+- **Walkthrough** : Produit un `walkthrough.md` en français, simplifié, incluant les preuves techniques (logs, captures de scripts de test).
 - **Health-Check** : Pour le backend, le serveur doit tourner (`uvicorn`) et répondre (`curl`).
 ## 🛠 Commandes Utiles (BMad Core)
 - `*help` : Liste tous les outils disponibles.
