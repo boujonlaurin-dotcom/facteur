@@ -16,11 +16,20 @@ import sys
 # DEBUG STARTUP
 print("\n" + "!"*60, flush=True)
 print("🚀 BACKEND STARTING...", flush=True)
+db_url = os.environ.get('DATABASE_URL')
 print(f"🌍 RAILWAY_ENV: {os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'unknown')}", flush=True)
 print(f"📦 RAILWAY_SERVICE: {os.environ.get('RAILWAY_SERVICE_NAME', 'unknown')}", flush=True)
-print(f"🏗️ RAILWAY_PROJECT: {os.environ.get('RAILWAY_PROJECT_NAME', 'unknown')}", flush=True)
 print(f"📌 COMMIT_SHA: {os.environ.get('RAILWAY_GIT_COMMIT_SHA', 'unknown')[:7]}", flush=True)
-print(f"🔑 DATABASE_URL_PRESENT: {'YES' if 'DATABASE_URL' in os.environ else 'NO'}", flush=True)
+print(f"🔑 DATABASE_URL_PRESENT: {'YES' if db_url else 'NO'}", flush=True)
+if db_url:
+    print(f"📏 DATABASE_URL_LENGTH: {len(db_url)}", flush=True)
+    # Masked host for safety: postgresql://***@host:port/...
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(db_url.replace("postgresql+asyncpg://", "http://")) # urlparse trick
+        print(f"🎯 DATABASE_TARGET: {parsed.hostname}:{parsed.port}", flush=True)
+    except:
+        print(f"🎯 DATABASE_TARGET: PARSE_ERROR", flush=True)
 print(f"🌍 ALL_KEYS: {sorted(list(os.environ.keys()))}", flush=True)
 print("!"*60 + "\n", flush=True)
 
