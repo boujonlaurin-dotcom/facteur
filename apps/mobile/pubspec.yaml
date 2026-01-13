@@ -44,7 +44,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
   
   # Error Tracking
-  sentry_flutter: ^9.11.0
+  sentry_flutter: ^9.9.2
   google_fonts: ^7.0.0
   flutter_animate: ^4.5.2
   haptic_feedback: ^0.6.4+3
