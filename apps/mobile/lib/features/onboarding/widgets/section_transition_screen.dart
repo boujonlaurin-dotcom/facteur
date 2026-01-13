@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
 import '../providers/onboarding_provider.dart';
+import '../onboarding_strings.dart';
 
 /// Écran de transition entre les sections de l'onboarding
 /// Affiche un emoji thématique et le numéro de section avec auto-transition
@@ -44,18 +45,14 @@ class _SectionTransitionScreenState extends State<SectionTransitionScreen>
     _scaleAnimation = Tween<double>(
       begin: 0.5,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutBack,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-    ));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      ),
+    );
 
     // Démarrer l'animation
     _controller.forward();
@@ -104,9 +101,9 @@ class _SectionTransitionScreenState extends State<SectionTransitionScreen>
               opacity: _fadeAnimation,
               child: Text(
                 widget.title,
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.displayLarge?.copyWith(fontWeight: FontWeight.w600),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -126,11 +123,11 @@ class _SectionTransitionScreenState extends State<SectionTransitionScreen>
                   borderRadius: BorderRadius.circular(FacteurRadius.pill),
                 ),
                 child: Text(
-                  'Section ${widget.section.number}/3',
+                  OnboardingStrings.sectionCount(widget.section.number, 3),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: context.facteurColors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    color: context.facteurColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

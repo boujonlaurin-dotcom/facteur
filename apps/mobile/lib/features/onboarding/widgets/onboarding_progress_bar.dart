@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
 import '../providers/onboarding_provider.dart';
+import '../onboarding_strings.dart';
 
 /// Barre de progression pour l'onboarding
 /// Affiche la progression globale et l'indicateur de section
@@ -41,7 +42,7 @@ class OnboardingProgressBar extends StatelessWidget {
         ),
         const SizedBox(width: FacteurSpacing.space3),
         Text(
-          'Section ${section.number}/3',
+          OnboardingStrings.sectionCount(section.number, 3),
           style: Theme.of(context).textTheme.labelMedium,
         ),
       ],

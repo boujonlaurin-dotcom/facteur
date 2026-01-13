@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q2 : "Quelle est ta tranche d'âge ?"
 class AgeQuestion extends ConsumerWidget {
@@ -22,29 +23,20 @@ class AgeQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '🎂',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Quelle est ta tranche d\'âge ?',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q2Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Pour mieux personnaliser ton expérience',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q2Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -52,7 +44,7 @@ class AgeQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            label: '18 - 24 ans',
+            label: OnboardingStrings.q2Option18_24,
             isSelected: selectedAge == '18-24',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectAgeRange('18-24');
@@ -62,7 +54,7 @@ class AgeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            label: '25 - 34 ans',
+            label: OnboardingStrings.q2Option25_34,
             isSelected: selectedAge == '25-34',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectAgeRange('25-34');
@@ -72,7 +64,7 @@ class AgeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            label: '35 - 44 ans',
+            label: OnboardingStrings.q2Option35_44,
             isSelected: selectedAge == '35-44',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectAgeRange('35-44');
@@ -82,7 +74,7 @@ class AgeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            label: '45 ans et plus',
+            label: OnboardingStrings.q2Option45_plus,
             isSelected: selectedAge == '45+',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectAgeRange('45+');

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../config/theme.dart';
 import '../../../../config/routes.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../onboarding_strings.dart';
 
 /// Écran de finalisation avant l'animation de conclusion
 class FinalizeQuestion extends ConsumerWidget {
@@ -27,18 +28,9 @@ class FinalizeQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '✨',
-            style: TextStyle(fontSize: 80),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space6),
-
-          // Titre
+          // Titre (larger without emoji)
           Text(
-            'Ok. On a maintenant une meilleure idée de comment nettoyer votre espace mental.',
+            OnboardingStrings.finalizeTitle,
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
@@ -46,7 +38,7 @@ class FinalizeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Votre feed personnalisé est prêt.',
+            OnboardingStrings.finalizeSubtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
@@ -66,8 +58,7 @@ class FinalizeQuestion extends ConsumerWidget {
               children: [
                 _SummaryRow(
                   emoji: '🎨',
-                  label:
-                      '$themesCount thème${themesCount > 1 ? 's' : ''} sélectionné${themesCount > 1 ? 's' : ''}',
+                  label: OnboardingStrings.finalizeThemeSummary(themesCount),
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _SummaryRow(
@@ -78,8 +69,9 @@ class FinalizeQuestion extends ConsumerWidget {
                   const SizedBox(height: FacteurSpacing.space3),
                   _SummaryRow(
                     emoji: '🎯',
-                    label:
-                        'Objectif : ${answers.weeklyGoal ?? 10} contenus/semaine',
+                    label: OnboardingStrings.finalizeGoalSummary(
+                      answers.weeklyGoal ?? 10,
+                    ),
                   ),
                 ],
               ],
@@ -102,7 +94,7 @@ class FinalizeQuestion extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
-                  'Ouvrir mon feed transparent',
+                  OnboardingStrings.finalizeButton,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(width: FacteurSpacing.space2),
@@ -135,15 +127,15 @@ class FinalizeQuestion extends ConsumerWidget {
   String _getFormatLabel(String? format) {
     switch (format) {
       case 'short':
-        return 'Articles courts préférés';
+        return OnboardingStrings.finalizeFormatShort;
       case 'long':
-        return 'Articles longs préférés';
+        return OnboardingStrings.finalizeFormatLong;
       case 'audio':
-        return 'Podcasts préférés';
+        return OnboardingStrings.finalizeFormatAudio;
       case 'video':
-        return 'Vidéos préférées';
+        return OnboardingStrings.finalizeFormatVideo;
       default:
-        return 'Format mixte';
+        return OnboardingStrings.finalizeFormatMixed;
     }
   }
 }

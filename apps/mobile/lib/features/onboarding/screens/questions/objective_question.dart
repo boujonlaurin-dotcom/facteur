@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q1 : "Pourquoi es-tu là ?"
 /// Permet à l'utilisateur de définir son objectif principal
@@ -23,26 +24,17 @@ class ObjectiveQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '⚡',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            "Qu'est-ce qui vous épuise le plus dans l'information aujourd'hui ?",
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q1Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Identifions le problème principal',
+            OnboardingStrings.q1Subtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
@@ -54,8 +46,8 @@ class ObjectiveQuestion extends ConsumerWidget {
           // Options
           SelectionCard(
             emoji: '📢',
-            label: 'Le Bruit',
-            subtitle: "Trop d'info, impossible de trier.",
+            label: OnboardingStrings.q1NoiseLabel,
+            subtitle: OnboardingStrings.q1NoiseSubtitle,
             isSelected: selectedObjective == 'noise',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectObjective('noise');
@@ -66,8 +58,8 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           SelectionCard(
             emoji: '⚖️',
-            label: 'Les Biais',
-            subtitle: 'Doute permanent sur la neutralité.',
+            label: OnboardingStrings.q1BiasLabel,
+            subtitle: OnboardingStrings.q1BiasSubtitle,
             isSelected: selectedObjective == 'bias',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectObjective('bias');
@@ -78,8 +70,8 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           SelectionCard(
             emoji: '😰',
-            label: "L'Anxiété",
-            subtitle: 'Le sentiment que le monde devient fou.',
+            label: OnboardingStrings.q1AnxietyLabel,
+            subtitle: OnboardingStrings.q1AnxietySubtitle,
             isSelected: selectedObjective == 'anxiety',
             onTap: () {
               ref.read(onboardingProvider.notifier).selectObjective('anxiety');

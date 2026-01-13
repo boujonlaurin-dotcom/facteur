@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q4 : "Tu préfères..."
 /// Dernière question de la Section 1
@@ -23,29 +24,20 @@ class ApproachQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '🎯',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Tu préfères...',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q4Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Comment aimes-tu consommer l\'information ?',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q4Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -57,8 +49,8 @@ class ApproachQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '⚡',
-                  label: 'Aller droit au but',
-                  subtitle: 'L\'essentiel, rapidement',
+                  label: OnboardingStrings.q4DirectLabel,
+                  subtitle: OnboardingStrings.q4DirectSubtitle,
                   isSelected: selectedApproach == 'direct',
                   onTap: () {
                     ref
@@ -71,8 +63,8 @@ class ApproachQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '🌿',
-                  label: 'Prendre le temps',
-                  subtitle: 'Explorer en profondeur',
+                  label: OnboardingStrings.q4DetailedLabel,
+                  subtitle: OnboardingStrings.q4DetailedSubtitle,
                   isSelected: selectedApproach == 'detailed',
                   onTap: () {
                     ref

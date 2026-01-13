@@ -1,16 +1,21 @@
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load .env from packages/api relative to this script, override existing env vars
+# MUST be done before any imports from 'app' to ensure settings aren't pre-loaded
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+
 import asyncio
 import csv
 import os
 import re
 import sys
-from pathlib import Path
 from typing import Optional, Dict, Any
 
 import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 
 # Add parent directory to path to allow imports from app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,12 +23,23 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.models.source import Source
 from app.models.enums import BiasOrigin, BiasStance, ReliabilityScore, SourceType
 
-load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.strip()
+    # Normalize to postgresql+asyncpg://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Correct path to project root
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 CSV_PATH = os.path.join(PROJECT_ROOT, "sources", "sources.csv")
+
+
+
 
 TYPE_MAPPING = {
     "Site": "article",
@@ -64,7 +80,13 @@ CURATED_FEED_FALLBACKS = {
     "https://www.lopinion.fr/": "https://www.lopinion.fr/index.rss",
     "https://www.lepoint.fr/": "https://www.lepoint.fr/rss.xml",
     "https://www.politico.eu/": "https://www.politico.eu/feed/",
-    "https://www.commentaire.fr/": "https://www.commentaire.fr/rss"
+    "https://www.commentaire.fr/": "https://www.commentaire.fr/rss",
+    "https://www.lemonde.fr/": "https://www.lemonde.fr/rss/une.xml",
+    "https://www.mediapart.fr/": "https://www.mediapart.fr/articles/feed",
+    "https://www.liberation.fr/": "https://www.liberation.fr/rss/",
+    "https://reporterre.net/": "https://reporterre.net/spip.php?page=backend-simple",
+    "https://www.lecanardenchaine.fr/": "https://www.lecanardenchaine.fr/feed/",
+    "https://www.sismique.world/": "https://feeds.acast.com/public/shows/60f7e411b058c4001306e903"
 }
 
 async def detect_youtube_feed(url: str) -> Optional[str]:
@@ -193,20 +215,25 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
         session.add(new_source)
 
 async def main():
-    if not DATABASE_URL or not os.path.exists(CSV_PATH):
+    if not os.path.exists(CSV_PATH):
+        print(f"❌ CSV not found at {CSV_PATH}")
         return
 
-    engine = create_async_engine(DATABASE_URL)
-    AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    from app.database import async_session_maker, init_db
+    
+    # We use the app's native init_db to ensure all settings (like statement_cache_size=0)
+    # are correctly applied as they are in production.
+    print("🛠️ Initializing database connection using app settings...")
+    await init_db()
 
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            with open(CSV_PATH, mode='r', encoding='utf-8') as csvfile:
-                reader = csv.DictReader(csvfile)
-                for row in reader:
-                    await process_source(row, session)
+    async with async_session_maker() as session:
+        with open(CSV_PATH, mode='r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                await process_source(row, session)
         await session.commit()
-    await engine.dispose()
+    print("🎉 Import successful!")
 
 if __name__ == "__main__":
     asyncio.run(main())
+

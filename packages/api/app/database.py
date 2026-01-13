@@ -8,18 +8,23 @@ from app.config import get_settings
 
 settings = get_settings()
 
+from sqlalchemy.pool import NullPool
+
 # Engine async
+# Diagnostic: Print engine target
+print(f"🛠️  Engine initializing with target: {settings.database_url.split('@')[-1] if settings.database_url else 'NONE'}", flush=True)
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    poolclass=NullPool,
     connect_args={
-        "statement_cache_size": 0,
+        "command_timeout": 30,
     },
-    prepared_statement_cache_size=0,
 )
+
+
 
 # Session factory
 async_session_maker = async_sessionmaker(

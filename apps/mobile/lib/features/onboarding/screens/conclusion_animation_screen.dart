@@ -8,7 +8,7 @@ import '../../../core/auth/auth_state.dart';
 import '../providers/conclusion_notifier.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
-import '../widgets/particles_animation.dart';
+import '../widgets/minimal_loader.dart';
 
 /// Écran d'animation de conclusion de l'onboarding
 /// Affiche une animation élégante pendant la sauvegarde des réponses
@@ -38,14 +38,11 @@ class _ConclusionAnimationScreenState
     final colors = context.facteurColors;
 
     // Écouter les changements d'état pour naviguer
-    ref.listen<ConclusionState>(
-      conclusionNotifierProvider,
-      (previous, next) {
-        if (next is ConclusionSuccess) {
-          _completeOnboarding();
-        }
-      },
-    );
+    ref.listen<ConclusionState>(conclusionNotifierProvider, (previous, next) {
+      if (next is ConclusionSuccess) {
+        _completeOnboarding();
+      }
+    });
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -86,10 +83,10 @@ class _LoadingView extends StatelessWidget {
         children: [
           Spacer(flex: 2),
 
-          // Animation visuelle (particules)
-          ParticlesAnimation(),
+          // Animation propre et minimaliste
+          MinimalLoader(),
 
-          SizedBox(height: FacteurSpacing.space8),
+          SizedBox(height: FacteurSpacing.space6),
 
           // Messages animés
           AnimatedMessageText(),
@@ -119,10 +116,7 @@ class _ErrorView extends ConsumerWidget {
           const Spacer(flex: 2),
 
           // Emoji d'erreur
-          const Text(
-            '⚠️',
-            style: TextStyle(fontSize: 64),
-          ),
+          const Text('⚠️', style: TextStyle(fontSize: 64)),
 
           const SizedBox(height: FacteurSpacing.space6),
 
@@ -138,9 +132,9 @@ class _ErrorView extends ConsumerWidget {
           // Message d'erreur
           Text(
             'Impossible de sauvegarder ton profil',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -154,9 +148,9 @@ class _ErrorView extends ConsumerWidget {
               ),
               child: Text(
                 errorMessage,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.textTertiary,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -177,10 +171,7 @@ class _ErrorView extends ConsumerWidget {
               ),
               child: const Text(
                 'Réessayer',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -195,9 +186,9 @@ class _ErrorView extends ConsumerWidget {
             child: Text(
               'Continuer quand même',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                    decoration: TextDecoration.underline,
-                  ),
+                color: colors.textSecondary,
+                decoration: TextDecoration.underline,
+              ),
             ),
           ),
 

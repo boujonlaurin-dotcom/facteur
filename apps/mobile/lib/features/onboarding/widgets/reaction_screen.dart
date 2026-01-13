@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
+import '../onboarding_strings.dart';
 
 /// Écran de réaction personnalisée après une réponse clé
 /// Affiche un message engageant avec animation de fade-in
@@ -135,7 +136,7 @@ class _ReactionScreenState extends State<ReactionScreen>
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: const Text('Continuer'),
+                child: const Text(OnboardingStrings.continueButton),
               ),
             ),
           ),
@@ -151,115 +152,41 @@ class _ReactionScreenState extends State<ReactionScreen>
 class ObjectiveReactionMessages {
   static const Map<String, ReactionContent> messages = {
     'noise': ReactionContent(
-      title: 'Le signal, pas le bruit.',
-      message:
-          'Nous allons drastiquement filtrer l\'info pour vous.\n\nVotre feed ne gardera que les signaux faibles pertinents, zéro buzz.',
+      title: OnboardingStrings.r1NoiseTitle,
+      message: OnboardingStrings.r1NoiseMessage,
     ),
     'bias': ReactionContent(
-      title: 'La transparence avant tout.',
-      message:
-          'Facteur affiche systématiquement le positionnement des sources.\n\nVous saurez toujours d\'où vient l\'information.',
+      title: OnboardingStrings.r1BiasTitle,
+      message: OnboardingStrings.r1BiasMessage,
     ),
     'anxiety': ReactionContent(
-      title: 'Prendre de la hauteur.',
-      message:
-          'Nous privilégions le temps long et l\'analyse.\n\nLe meilleur remède au chaos immédiat est de comprendre ses racines.',
+      title: OnboardingStrings.r1AnxietyTitle,
+      message: OnboardingStrings.r1AnxietyMessage,
     ),
   };
 }
 
 /// Messages de réaction pour la Section 2 (préférences d'app)
-/// Basés sur la combinaison de diagnostic (objective) + thèmes
+/// Basés uniquement sur la dernière réponse (contentRecency) pour éviter les répétitions
 class PreferencesReactionMessages {
-  static ReactionContent getReaction({
-    required String? perspective,
-    required String? responseStyle,
-    required String? contentRecency,
-    String? objective, // Diagnostic: noise, bias, anxiety
-    List<String>? themes,
-  }) {
-    // Compound logic: Diagnostic + Themes
-    final hasTech = themes?.contains('tech') ?? false;
-    final hasGeopolitics =
-        themes?.contains('politics') ?? themes?.contains('society') ?? false;
-
-    // Case: Bruit + Tech
-    if (objective == 'noise' && hasTech) {
+  static ReactionContent getReaction({required String? contentRecency}) {
+    // Simple logic: based only on contentRecency (last answered question)
+    if (contentRecency == 'recent') {
       return const ReactionContent(
-        title: 'Zéro buzz, zéro bruit.',
-        message:
-            'Nous allons drastiquement filtrer le signal.\n\nVotre veille Tech ne gardera que les signaux faibles pertinents.',
+        title: OnboardingStrings.r2RecentTitle,
+        message: OnboardingStrings.r2RecentMessage,
       );
-    }
-
-    // Case: Anxiété + Géopo
-    if (objective == 'anxiety' && hasGeopolitics) {
+    } else if (contentRecency == 'timeless') {
       return const ReactionContent(
-        title: 'Prendre de la hauteur.',
-        message:
-            'Le meilleur remède au chaos immédiat.\n\nNos sources Slow Media vous donneront le temps de comprendre.',
-      );
-    }
-
-    // Case: Biais (transparency focus)
-    if (objective == 'bias') {
-      return const ReactionContent(
-        title: 'Transparence totale.',
-        message:
-            'Facteur affiche systématiquement le positionnement des sources.\n\nVous saurez toujours d\'où vient l\'information.',
-      );
-    }
-
-    // Fallback: Use perspective/style preferences
-    final isBigPicture = perspective == 'big_picture';
-    final isDecisive = responseStyle == 'decisive';
-    final isRecent = contentRecency == 'recent';
-
-    if (isBigPicture && isDecisive && isRecent) {
-      return const ReactionContent(
-        title: 'Vous allez droit au but !',
-        message:
-            'Vous aimez avoir une vision claire et actuelle des choses.\n\nOn va vous préparer un feed concis et percutant.',
-      );
-    }
-
-    if (isBigPicture && isDecisive && !isRecent) {
-      return const ReactionContent(
-        title: 'L\'essentiel, sans le bruit.',
-        message:
-            'Vous cherchez des insights clairs qui traversent le temps.\n\nParfait pour construire une vraie vision.',
-      );
-    }
-
-    if (isBigPicture && !isDecisive) {
-      return const ReactionContent(
-        title: 'Vous aimez comprendre le contexte !',
-        message:
-            'Une vue d\'ensemble avec toutes les perspectives.\n\nOn va enrichir votre compréhension du monde.',
-      );
-    }
-
-    if (!isBigPicture && isDecisive && isRecent) {
-      return const ReactionContent(
-        title: 'Efficace et précis !',
-        message:
-            'Vous voulez les détails qui comptent, avec des avis clairs.\n\nOn va creuser les sujets pour vous.',
-      );
-    }
-
-    if (!isBigPicture && !isDecisive && !isRecent) {
-      return const ReactionContent(
-        title: 'Vous préférez la profondeur !',
-        message:
-            'La nuance et le détail, pour vraiment maîtriser les sujets.\n\nDes contenus riches qui font réfléchir.',
+        title: OnboardingStrings.r2TimelessTitle,
+        message: OnboardingStrings.r2TimelessMessage,
       );
     }
 
     // Message par défaut
     return const ReactionContent(
-      title: 'On vous connaît mieux !',
-      message:
-          'Vos préférences vont nous aider à personnaliser votre expérience.\n\nEncore quelques questions et on y est.',
+      title: OnboardingStrings.r2DefaultTitle,
+      message: OnboardingStrings.r2DefaultMessage,
     );
   }
 }

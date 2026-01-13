@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../models/user_profile.dart';
+import '../../../features/sources/providers/sources_providers.dart';
 import 'onboarding_provider.dart';
 
 /// État de l'animation de conclusion
@@ -81,16 +82,21 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     if (result.success) {
       // Succès : sauvegarder le profil localement
       await _saveProfileLocally(result.profile!);
-      
+
+      // Marquer les sources sélectionnées comme "de confiance"
+      await _trustSelectedSources(answers.preferredSources);
+
       // Effacer les réponses temporaires d'onboarding
       await _ref.read(onboardingProvider.notifier).clearSavedData();
-      
+
       // Logger le succès
       // ignore: avoid_print
-      print('Onboarding sauvegardé avec succès ! '
-          'Profil: ${result.profile!.id}, '
-          'Intérêts: ${result.interestsCreated}, '
-          'Préférences: ${result.preferencesCreated}');
+      print(
+        'Onboarding sauvegardé avec succès ! '
+        'Profil: ${result.profile!.id}, '
+        'Intérêts: ${result.interestsCreated}, '
+        'Préférences: ${result.preferencesCreated}',
+      );
     } else {
       // Erreur retournée par l'API
       // ignore: avoid_print
@@ -106,13 +112,32 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       await box.put('profile', profile.toJson());
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', false); // Synchronisé avec succès
-      
+
       // ignore: avoid_print
       print('Profil sauvegardé localement');
     } catch (e) {
       // Ignorer les erreurs de cache local
       // ignore: avoid_print
       print('Erreur sauvegarde locale (non-bloquant): $e');
+    }
+  }
+
+  /// Marque les sources sélectionnées comme "de confiance"
+  Future<void> _trustSelectedSources(List<String>? sourceIds) async {
+    if (sourceIds == null || sourceIds.isEmpty) return;
+
+    final repository = _ref.read(sourcesRepositoryProvider);
+
+    for (final sourceId in sourceIds) {
+      try {
+        await repository.trustSource(sourceId);
+        // ignore: avoid_print
+        print('Source $sourceId marquée comme de confiance');
+      } catch (e) {
+        // Non-bloquant: continuer même si une source échoue
+        // ignore: avoid_print
+        print('Erreur trust source $sourceId: $e');
+      }
     }
   }
 
@@ -125,12 +150,12 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
   Future<void> continueAnyway() async {
     // Marquer comme complété localement uniquement (mode dégradé)
     await _saveProfileLocallyDegraded();
-    
+
     // Marquer l'onboarding comme finalisé
     _ref.read(onboardingProvider.notifier).finalizeOnboarding();
-    
+
     state = const ConclusionSuccess();
-    
+
     // ignore: avoid_print
     print('Mode dégradé activé : onboarding complété localement uniquement');
   }
@@ -140,14 +165,14 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     try {
       final answers = _ref.read(onboardingProvider).answers;
       final box = await Hive.openBox('user_profile');
-      
+
       // Marquer comme complété localement
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', true); // Flag pour sync future
-      
+
       // Sauvegarder les réponses pour sync future
       await box.put('answers_backup', answers.toJson());
-      
+
       // ignore: avoid_print
       print('Mode dégradé : données sauvegardées localement pour sync future');
     } catch (e) {
@@ -166,6 +191,5 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 /// Provider du notifier de conclusion
 final conclusionNotifierProvider =
     StateNotifierProvider.autoDispose<ConclusionNotifier, ConclusionState>(
-  (ref) => ConclusionNotifier(ref),
-);
-
+      (ref) => ConclusionNotifier(ref),
+    );

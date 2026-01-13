@@ -93,10 +93,16 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       return this;
     }
     return FacteurColors(
-      backgroundPrimary:
-          Color.lerp(backgroundPrimary, other.backgroundPrimary, t)!,
-      backgroundSecondary:
-          Color.lerp(backgroundSecondary, other.backgroundSecondary, t)!,
+      backgroundPrimary: Color.lerp(
+        backgroundPrimary,
+        other.backgroundPrimary,
+        t,
+      )!,
+      backgroundSecondary: Color.lerp(
+        backgroundSecondary,
+        other.backgroundSecondary,
+        t,
+      )!,
       surface: Color.lerp(surface, other.surface, t)!,
       surfaceElevated: Color.lerp(surfaceElevated, other.surfaceElevated, t)!,
       surfacePaper: Color.lerp(surfacePaper, other.surfacePaper, t)!,
@@ -166,77 +172,77 @@ class FacteurPalettes {
 class FacteurTypography {
   FacteurTypography._();
 
-  static TextStyle displayLarge(Color color) => GoogleFonts.fraunces(
-        fontSize: 32,
-        fontWeight: FontWeight.w600,
-        height: 1.2,
-        color: color,
-      );
+  static TextStyle displayLarge(Color color) => GoogleFonts.dmSans(
+    fontSize: 28,
+    fontWeight: FontWeight.w700,
+    height: 1.25,
+    color: color,
+  );
 
-  static TextStyle displayMedium(Color color) => GoogleFonts.fraunces(
-        fontSize: 24,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        color: color,
-      );
+  static TextStyle displayMedium(Color color) => GoogleFonts.dmSans(
+    fontSize: 22,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: color,
+  );
 
-  static TextStyle displaySmall(Color color) => GoogleFonts.fraunces(
-        fontSize: 20,
-        fontWeight: FontWeight.w500,
-        height: 1.3,
-        color: color,
-      );
+  static TextStyle displaySmall(Color color) => GoogleFonts.dmSans(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+    color: color,
+  );
 
   static TextStyle bodyLarge(Color color) => GoogleFonts.dmSans(
-        fontSize: 17,
-        fontWeight: FontWeight.w400,
-        height: 1.5,
-        color: color,
-      );
+    fontSize: 17,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+    color: color,
+  );
 
   static TextStyle bodyMedium(Color color) => GoogleFonts.dmSans(
-        fontSize: 15,
-        fontWeight: FontWeight.w400,
-        height: 1.5,
-        color: color,
-      );
+    fontSize: 15,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+    color: color,
+  );
 
   static TextStyle bodySmall(Color color) => GoogleFonts.dmSans(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        height: 1.4,
-        color: color,
-      );
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    height: 1.4,
+    color: color,
+  );
 
   static TextStyle labelLarge(Color color) => GoogleFonts.dmSans(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        height: 1.3,
-        color: color,
-      );
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    height: 1.3,
+    color: color,
+  );
 
   static TextStyle labelMedium(Color color) => GoogleFonts.dmSans(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-        height: 1.3,
-        color: color,
-      );
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    height: 1.3,
+    color: color,
+  );
 
   static TextStyle labelSmall(Color color) => GoogleFonts.dmSans(
-        fontSize: 11,
-        fontWeight: FontWeight.w500,
-        height: 1.2,
-        letterSpacing: 0.5,
-        color: color,
-      );
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    height: 1.2,
+    letterSpacing: 0.5,
+    color: color,
+  );
 
   static TextStyle stamp(Color color) => GoogleFonts.courierPrime(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        height: 1.2,
-        letterSpacing: 0.5,
-        color: color,
-      );
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    height: 1.2,
+    letterSpacing: 0.5,
+    color: color,
+  );
 }
 
 class FacteurSpacing {
@@ -315,8 +321,9 @@ class FacteurTheme {
         type: BottomNavigationBarType.fixed,
         showUnselectedLabels: true,
         selectedLabelStyle: FacteurTypography.labelMedium(colors.textSecondary),
-        unselectedLabelStyle:
-            FacteurTypography.labelMedium(colors.textTertiary),
+        unselectedLabelStyle: FacteurTypography.labelMedium(
+          colors.textTertiary,
+        ),
       ),
 
       cardTheme: CardThemeData(

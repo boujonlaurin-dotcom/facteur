@@ -20,8 +20,10 @@ import '../widgets/feed_card.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/article_viewer_modal.dart';
 import '../widgets/animated_feed_card.dart';
+import '../widgets/caught_up_card.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
+import '../../gamification/widgets/daily_reading_counter.dart';
 import '../../gamification/providers/streak_provider.dart';
 
 /// Écran principal du feed
@@ -34,6 +36,8 @@ class FeedScreen extends ConsumerStatefulWidget {
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _showWelcome = false;
+  bool _caughtUpDismissed = false;
+  static const int _caughtUpThreshold = 8;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -255,9 +259,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space4,
                         ),
-                        child: Center(
-                          child: const FacteurLogo(size: 32),
-                        ),
+                        child: Center(child: const FacteurLogo(size: 32)),
                       ),
                     ),
 
@@ -270,10 +272,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             Expanded(
                               child: Text(
                                 'Bonjour ${authState.user?.email?.split('@')[0] ?? 'Vous'},',
-                                style:
-                                    Theme.of(context).textTheme.displayMedium,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.displayMedium,
                               ),
                             ),
+                            const DailyReadingCounter(),
+                            const SizedBox(width: 12),
                             const StreakIndicator(),
                             const SizedBox(width: 8),
                             const DailyProgressIndicator(),
@@ -286,18 +291,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'Voici votre tournée du jour.',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: colors.textSecondary,
-                                  ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: colors.textSecondary),
                         ),
                       ),
                     ),
 
                     SliverToBoxAdapter(
                       child: FilterBar(
-                        selectedFilter:
-                            ref.read(feedProvider.notifier).selectedFilter,
+                        selectedFilter: ref
+                            .read(feedProvider.notifier)
+                            .selectedFilter,
                         onFilterChanged: (String? filter) {
                           ref.read(feedProvider.notifier).setFilter(filter);
                         },
@@ -309,37 +313,67 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     // Feed Content
                     feedAsync.when(
                       data: (contents) {
+                        // Check streak for caught-up card (computed outside builder for childCount access)
+                        final streakAsync = ref.watch(streakProvider);
+                        final dailyCount =
+                            streakAsync.valueOrNull?.weeklyCount ?? 0;
+                        final showCaughtUp =
+                            dailyCount >= _caughtUpThreshold &&
+                            !_caughtUpDismissed;
+                        final caughtUpIndex = showCaughtUp ? 3 : -1;
+
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
+                                final adjustedLength =
+                                    contents.length + (showCaughtUp ? 1 : 0);
+
                                 // Add loading indicator at the bottom
-                                if (index == contents.length) {
-                                  // Check if we are loading more
-                                  // Since we don't watch isLoadingMore directly to avoid full rebuilds,
-                                  // we can check if notifier has next page.
-                                  // If hasNext is true, we might show a spinner or nothing (it will trigger load).
-                                  // Let's verify with the provider logic.
-                                  // For better UX, we can show a small spinner if we are at the end.
-                                  // Note: ref.read is typically okay here, but a watch would be better if we exposed 'isLoadingMore' via state.
-                                  // Given the current implementation, we'll just check if we have more pages.
-                                  final notifier =
-                                      ref.read(feedProvider.notifier);
+                                if (index == adjustedLength) {
+                                  final notifier = ref.read(
+                                    feedProvider.notifier,
+                                  );
                                   if (notifier.hasNext) {
                                     return const Center(
                                       child: Padding(
                                         padding: EdgeInsets.all(16.0),
-                                        child: CircularProgressIndicator
-                                            .adaptive(),
+                                        child:
+                                            CircularProgressIndicator.adaptive(),
                                       ),
                                     );
                                   } else {
-                                    return const SizedBox(height: 64); // Spacer
+                                    return const SizedBox(height: 64);
                                   }
                                 }
 
-                                final content = contents[index];
+                                // Show caught-up card at position 3
+                                if (showCaughtUp && index == caughtUpIndex) {
+                                  return Padding(
+                                    key: const ValueKey('caught_up_card'),
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: CaughtUpCard(
+                                      onDismiss: () {
+                                        setState(
+                                          () => _caughtUpDismissed = true,
+                                        );
+                                      },
+                                    ),
+                                  );
+                                }
+
+                                // Adjust content index for caught-up card
+                                final contentIndex =
+                                    showCaughtUp && index > caughtUpIndex
+                                    ? index - 1
+                                    : index;
+
+                                if (contentIndex >= contents.length) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                final content = contents[contentIndex];
                                 final isConsumed = ref
                                     .read(feedProvider.notifier)
                                     .isContentConsumed(content.id);
@@ -363,8 +397,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             SnackBar(
                                               content: Text(
                                                 UIConstants.savedConfirmMessage(
-                                                    UIConstants
-                                                        .savedSectionName),
+                                                  UIConstants.savedSectionName,
+                                                ),
                                               ),
                                               action: SnackBarAction(
                                                 label: 'Annuler',
@@ -372,14 +406,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                 onPressed: () {
                                                   ref
                                                       .read(
-                                                          feedProvider.notifier)
+                                                        feedProvider.notifier,
+                                                      )
                                                       .toggleSave(content);
                                                 },
                                               ),
                                               behavior:
                                                   SnackBarBehavior.floating,
-                                              duration:
-                                                  const Duration(seconds: 2),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
                                             ),
                                           );
                                       },
@@ -391,8 +427,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   ),
                                 );
                               },
-                              // Add +1 for the loader/spacer
-                              childCount: contents.length + 1,
+                              // Add +1 for the loader/spacer, +1 if showing caught-up card
+                              childCount:
+                                  contents.length + 1 + (showCaughtUp ? 1 : 0),
                             ),
                           ),
                         );
@@ -402,7 +439,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           child: Padding(
                             padding: const EdgeInsets.all(32),
                             child: CircularProgressIndicator(
-                                color: colors.primary),
+                              color: colors.primary,
+                            ),
                           ),
                         ),
                       ),
@@ -414,29 +452,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               children: [
                                 Icon(
                                   PhosphorIcons.warning(
-                                      PhosphorIconsStyle.duotone),
+                                    PhosphorIconsStyle.duotone,
+                                  ),
                                   size: 48,
                                   color: colors.error,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
                                   'Erreur de chargement',
-                                  style:
-                                      Theme.of(context).textTheme.titleMedium,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
                                 ),
                                 Text(
                                   err.toString(), // A améliorer pour prod
                                   textAlign: TextAlign.center,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
+                                  style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: colors.error),
                                 ),
                                 const SizedBox(height: 16),
                                 FacteurButton(
                                   label: "Réessayer",
                                   icon: PhosphorIcons.arrowClockwise(
-                                      PhosphorIconsStyle.bold),
+                                    PhosphorIconsStyle.bold,
+                                  ),
                                   onPressed: () => ref.refresh(feedProvider),
                                 ),
                               ],

@@ -13,16 +13,20 @@ security = HTTPBearer()
 # Cache pour les clés JWKS
 _jwks_cache = None
 
+import certifi
+
 async def fetch_jwks():
     global _jwks_cache
     if _jwks_cache:
         return _jwks_cache
     
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-    async with httpx.AsyncClient() as client:
+    # Use certifi bundle for SSL verification (fix for macOS local issuer error)
+    async with httpx.AsyncClient(verify=certifi.where()) as client:
         response = await client.get(jwks_url)
         _jwks_cache = response.json()
         return _jwks_cache
+
 
 async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),

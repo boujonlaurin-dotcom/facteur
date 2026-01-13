@@ -113,15 +113,17 @@ class UserService:
 
         # Sauvegarder les intérêts
         interest_count = 0
-        for interest_slug in answers.themes:
-            interest = UserInterest(
-                id=uuid4(),
-                user_id=UUID(user_id),
-                interest_slug=interest_slug,
-                weight=1.0,
-            )
-            self.db.add(interest)
-            interest_count += 1
+        if answers.themes:
+            for interest_slug in answers.themes:
+                interest = UserInterest(
+                    id=uuid4(),
+                    user_id=UUID(user_id),
+                    interest_slug=interest_slug,
+                    weight=1.0,
+                )
+                self.db.add(interest)
+                interest_count += 1
+
 
         await self.db.flush()
         return {

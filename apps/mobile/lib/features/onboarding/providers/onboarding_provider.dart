@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../onboarding_strings.dart';
 
 /// Modèle pour les réponses de l'onboarding
 class OnboardingAnswers {
@@ -17,6 +18,7 @@ class OnboardingAnswers {
 
   // Section 3
   final List<String>? themes;
+  final List<String>? preferredSources;
   final String? formatPreference; // short, long, audio, video
   final String? personalGoal; // culture, work, conversations, learning
 
@@ -31,6 +33,7 @@ class OnboardingAnswers {
     this.gamificationEnabled,
     this.weeklyGoal,
     this.themes,
+    this.preferredSources,
     this.formatPreference,
     this.personalGoal,
   });
@@ -46,6 +49,7 @@ class OnboardingAnswers {
     bool? gamificationEnabled,
     int? weeklyGoal,
     List<String>? themes,
+    List<String>? preferredSources,
     String? formatPreference,
     String? personalGoal,
   }) {
@@ -60,6 +64,7 @@ class OnboardingAnswers {
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
       themes: themes ?? this.themes,
+      preferredSources: preferredSources ?? this.preferredSources,
       formatPreference: formatPreference ?? this.formatPreference,
       personalGoal: personalGoal ?? this.personalGoal,
     );
@@ -76,6 +81,7 @@ class OnboardingAnswers {
     'gamification_enabled': gamificationEnabled,
     'weekly_goal': weeklyGoal,
     'themes': themes,
+    'preferred_sources': preferredSources,
     'format_preference': formatPreference,
     'personal_goal': personalGoal,
   };
@@ -92,6 +98,8 @@ class OnboardingAnswers {
       gamificationEnabled: json['gamification_enabled'] as bool?,
       weeklyGoal: json['weekly_goal'] as int?,
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
+      preferredSources: (json['preferred_sources'] as List<dynamic>?)
+          ?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
       personalGoal: json['personal_goal'] as String?,
     );
@@ -100,9 +108,9 @@ class OnboardingAnswers {
 
 /// Sections de l'onboarding
 enum OnboardingSection {
-  overview(1, 'Overview'),
-  appPreferences(2, 'App Preferences'),
-  sourcePreferences(3, 'Source Preferences');
+  overview(1, OnboardingStrings.section1Label),
+  appPreferences(2, OnboardingStrings.section2Label),
+  sourcePreferences(3, OnboardingStrings.section3Label);
 
   final int number;
   final String label;
@@ -112,12 +120,12 @@ enum OnboardingSection {
 
 /// Questions de la Section 1 (Overview)
 enum Section1Question {
-  intro, // Intro: L'info ressemble à un champ de bataille
+  intro1, // Intro: L'info est aujourd'hui un champ de bataille
+  intro2, // Intro: Facteur vise à être un outil de résistance
   objective, // Q1: Diagnostic
   objectiveReaction, // R1: Réaction personnalisée
   ageRange, // Q2: Tranche d'âge
-  gender, // Q3: Genre (optionnel)
-  approach, // Q4: Tu préfères...
+  approach, // Q3: Tu préfères...
 }
 
 /// Questions de la Section 2 (App Preferences)
@@ -132,10 +140,8 @@ enum Section2Question {
 
 /// Questions de la Section 3 (Source Preferences)
 enum Section3Question {
-  themes, // Q9: Tes thèmes préférés
-  formatPreference, // Q10: Format préféré
-  sourceComparison1, // Q11: Comparaison sources A vs B
-  personalGoal, // Q13: Objectif personnel (conditionnel)
+  sources, // Q9: Vos sources préférées
+  themes, // Q10: Vos thèmes préférés
   finalize, // Écran de finalisation
 }
 
@@ -156,10 +162,11 @@ class OnboardingState {
   });
 
   /// Nombre total de questions dans la Section 1
-  static const int section1QuestionCount = 5; // 4 questions + 1 réaction
+  static const int section1QuestionCount = 6;
 
   /// Nombre total de questions dans la Section 2 (sans Q8b conditionnel)
-  static const int section2QuestionCount = 5; // 4 questions + 1 réaction
+  static const int section2QuestionCount =
+      5; // 4 questions + 1 réaction (Q8b est en plus)
 
   /// Index de la question actuelle dans toutes les sections
   int get globalQuestionIndex {
@@ -176,7 +183,7 @@ class OnboardingState {
   }
 
   /// Nombre total d'étapes estimées pour l'onboarding
-  static const int totalSteps = 14; // 5 + 6 + 4 (avec Q8b)
+  static const int totalSteps = 15; // 6 + 6 + 3
 
   /// Progression globale (0.0 à 1.0)
   double get progress => (globalQuestionIndex + 1) / totalSteps;
@@ -191,7 +198,7 @@ class OnboardingState {
         final maxQuestions = answers.gamificationEnabled == true ? 6 : 5;
         return (currentQuestionIndex + 1) / maxQuestions;
       case OnboardingSection.sourcePreferences:
-        return (currentQuestionIndex + 1) / 4;
+        return (currentQuestionIndex + 1) / 3;
     }
   }
 
@@ -297,7 +304,15 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     }
   }
 
-  /// Continue après l'intro screen (vers Q1 - Diagnostic)
+  /// Continue de l'intro 1 vers l'intro 2
+  void continueToIntro2() {
+    state = state.copyWith(
+      currentQuestionIndex: Section1Question.intro2.index,
+      isTransitioning: false,
+    );
+  }
+
+  /// Continue après l'intro 2 (vers Q1 - Diagnostic)
   void continueAfterIntro() {
     state = state.copyWith(
       currentQuestionIndex: Section1Question.objective.index,
@@ -342,34 +357,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section1Question.gender.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Sélectionne le genre (Q3) - optionnel
-  void selectGender(String? gender) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(gender: gender),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
         currentQuestionIndex: Section1Question.approach.index,
         isTransitioning: false,
       );
     });
   }
 
-  /// Passe la question du genre
-  void skipGender() {
-    selectGender(null);
-  }
-
-  /// Sélectionne l'approche (Q4) - dernière question Section 1
+  /// Sélectionne l'approche (Q3) - dernière question Section 1
   void selectApproach(String approach) {
     state = state.copyWith(
       answers: state.answers.copyWith(approach: approach),
@@ -390,22 +384,50 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   /// Revient à la question précédente
   void goBack() {
     if (state.currentQuestionIndex > 0) {
-      // Si on est sur la réaction, revenir à Q1
       if (state.showReaction) {
-        state = state.copyWith(
-          currentQuestionIndex: Section1Question.objective.index,
-          showReaction: false,
-        );
+        if (state.currentSection == OnboardingSection.overview) {
+          state = state.copyWith(
+            currentQuestionIndex: Section1Question.objective.index,
+            showReaction: false,
+          );
+        } else {
+          state = state.copyWith(
+            currentQuestionIndex: Section2Question.contentRecency.index,
+            showReaction: false,
+          );
+        }
       } else {
         state = state.copyWith(
           currentQuestionIndex: state.currentQuestionIndex - 1,
+        );
+      }
+    } else {
+      // Revenir à la section précédente
+      if (state.currentSection == OnboardingSection.sourcePreferences) {
+        final lastSection2Index = state.answers.gamificationEnabled == true
+            ? Section2Question.weeklyGoal.index
+            : Section2Question.gamification.index;
+        state = state.copyWith(
+          currentSection: OnboardingSection.appPreferences,
+          currentQuestionIndex: lastSection2Index,
+        );
+      } else if (state.currentSection == OnboardingSection.appPreferences) {
+        state = state.copyWith(
+          currentSection: OnboardingSection.overview,
+          currentQuestionIndex: Section1Question.approach.index,
         );
       }
     }
   }
 
   /// Vérifie si on peut revenir en arrière
-  bool get canGoBack => state.currentQuestionIndex > 0;
+  bool get canGoBack {
+    if (state.currentSection == OnboardingSection.overview &&
+        state.currentQuestionIndex == 0) {
+      return false;
+    }
+    return true;
+  }
 
   // ============================================================
   // SECTION 2 : App Preferences
@@ -518,7 +540,23 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // SECTION 3 : Source Preferences
   // ============================================================
 
-  /// Sélectionne les thèmes (Q9) - multi-sélection
+  /// Sélectionne les sources (Q9) - multi-sélection
+  void selectSources(List<String> sources) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(preferredSources: sources),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section3Question.themes.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
+  /// Sélectionne les thèmes (Q10) - multi-sélection
   void selectThemes(List<String> themes) {
     state = state.copyWith(
       answers: state.answers.copyWith(themes: themes),
@@ -526,63 +564,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section3Question.formatPreference.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Sélectionne le format préféré (Q10)
-  void selectFormatPreference(String format) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(formatPreference: format),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section3Question.sourceComparison1.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Continue après la comparaison de sources (Q11)
-  void continueAfterSourceComparison() {
-    state = state.copyWith(isTransitioning: true);
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      // Si gamification activée, aller à Q13 (personal goal)
-      // Sinon, aller directement à la finalisation
-      final shouldShowPersonalGoal = state.answers.gamificationEnabled == true;
-
-      if (shouldShowPersonalGoal) {
-        // Aller à Q13 - Personal Goal
-        state = state.copyWith(
-          currentQuestionIndex: Section3Question.personalGoal.index,
-          isTransitioning: false,
-        );
-      } else {
-        // Aller directement à Finalize
-        state = state.copyWith(
-          currentQuestionIndex: Section3Question.finalize.index,
-          isTransitioning: false,
-        );
-      }
-    });
-  }
-
-  /// Sélectionne l'objectif personnel (Q13) - conditionnel
-  void selectPersonalGoal(String goal) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(personalGoal: goal),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
+    // Go directly to finalize
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
         currentQuestionIndex: Section3Question.finalize.index,
@@ -675,14 +657,42 @@ final isOnboardingCompleteProvider = Provider<bool>((ref) {
 /// Liste des thèmes disponibles
 class AvailableThemes {
   static const List<ThemeOption> all = [
-    ThemeOption(slug: 'tech', label: 'Tech', emoji: '💻'),
-    ThemeOption(slug: 'business', label: 'Business', emoji: '💼'),
-    ThemeOption(slug: 'science', label: 'Science', emoji: '🔬'),
-    ThemeOption(slug: 'culture', label: 'Culture', emoji: '🎭'),
-    ThemeOption(slug: 'politics', label: 'Politique', emoji: '🏛️'),
-    ThemeOption(slug: 'society', label: 'Société', emoji: '👥'),
-    ThemeOption(slug: 'environment', label: 'Environnement', emoji: '🌍'),
-    ThemeOption(slug: 'economy', label: 'Économie', emoji: '📈'),
+    ThemeOption(slug: 'tech', label: OnboardingStrings.themeTech, emoji: '💻'),
+    ThemeOption(
+      slug: 'business',
+      label: OnboardingStrings.themeBusiness,
+      emoji: '💼',
+    ),
+    ThemeOption(
+      slug: 'science',
+      label: OnboardingStrings.themeScience,
+      emoji: '🔬',
+    ),
+    ThemeOption(
+      slug: 'culture',
+      label: OnboardingStrings.themeCulture,
+      emoji: '🎭',
+    ),
+    ThemeOption(
+      slug: 'politics',
+      label: OnboardingStrings.themePolitics,
+      emoji: '🏛️',
+    ),
+    ThemeOption(
+      slug: 'society',
+      label: OnboardingStrings.themeSociety,
+      emoji: '👥',
+    ),
+    ThemeOption(
+      slug: 'environment',
+      label: OnboardingStrings.themeEnvironment,
+      emoji: '🌍',
+    ),
+    ThemeOption(
+      slug: 'economy',
+      label: OnboardingStrings.themeEconomy,
+      emoji: '📈',
+    ),
   ];
 }
 

@@ -74,6 +74,8 @@ class Perspective:
     published_at: Optional[str] = None
 
 
+import certifi
+
 class PerspectiveService:
     """Service for fetching perspectives via Google News RSS."""
 
@@ -104,13 +106,14 @@ class PerspectiveService:
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=fr&gl=FR&ceid=FR:fr"
         
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=certifi.where()) as client:
                 response = await client.get(url)
                 
                 if response.status_code != 200:
                     return []
                 
                 return self._parse_rss(response.content, exclude_url, exclude_title)
+
                 
         except Exception:
             return []

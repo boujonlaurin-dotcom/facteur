@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-
 import '../../../config/theme.dart';
+import '../onboarding_strings.dart';
 
 /// Widget qui affiche des messages qui changent avec animation
-/// Cycle de 3 messages pendant la conclusion de l'onboarding
+/// Cycle de messages pendant la conclusion de l'onboarding
 class AnimatedMessageText extends StatefulWidget {
   const AnimatedMessageText({super.key});
 
@@ -16,21 +16,15 @@ class _AnimatedMessageTextState extends State<AnimatedMessageText>
   late AnimationController _controller;
   int _currentMessageIndex = 0;
 
-  final List<String> _messages = const [
-    'Chargement de tes sources...',
-    'Configuration de tes préférences...',
-    'Préparation de ton feed...',
-  ];
+  final List<String> _messages = OnboardingStrings.conclusionMessages;
 
   @override
   void initState() {
     super.initState();
-
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 600), // Slower fade
       vsync: this,
     );
-
     _startSequence();
   }
 
@@ -38,21 +32,17 @@ class _AnimatedMessageTextState extends State<AnimatedMessageText>
     for (int i = 0; i < _messages.length; i++) {
       if (!mounted) return;
 
-      // Fade in
       setState(() => _currentMessageIndex = i);
       await _controller.forward(from: 0.0);
 
-      // Hold
-      await Future.delayed(const Duration(milliseconds: 900));
+      // Longer hold time for readability
+      await Future.delayed(const Duration(seconds: 2));
 
-      // Fade out (sauf pour le dernier message)
       if (i < _messages.length - 1) {
         await _controller.reverse();
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
-
-    // Garder le dernier message visible
   }
 
   @override
@@ -64,12 +54,14 @@ class _AnimatedMessageTextState extends State<AnimatedMessageText>
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: _controller,
+      opacity: CurvedAnimation(parent: _controller, curve: Curves.easeOut),
       child: Text(
         _messages[_currentMessageIndex],
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: context.facteurColors.textSecondary,
-            ),
+          color: context.facteurColors.textSecondary,
+          fontWeight: FontWeight.w500, // Slightly bolder
+          letterSpacing: 0.5,
+        ),
         textAlign: TextAlign.center,
       ),
     );

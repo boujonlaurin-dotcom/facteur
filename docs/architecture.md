@@ -1711,5 +1711,20 @@ Suivre l'ordre des Epics défini dans le PRD :
 
 ---
 
+## 18. Technical Standards
+
+### 18.1 String Management (Flutter)
+
+Pour faciliter les itérations éditoriales et le futur support multi-langues, les textes de l'application (wordings) ne doivent pas être codés en dur dans les widgets.
+
+**Directives :**
+- Les wordings d'une fonctionnalité spécifique (ex: Onboarding) doivent être centralisés dans un fichier `*_strings.dart`.
+- Utiliser des constantes de classe static (`static const`).
+- Le fichier doit se situer dans le dossier `widgets` ou `providers` de la feature concernée.
+
+Exemple : `lib/features/onboarding/onboarding_strings.dart`
+
+---
+
 *Document généré via BMad Method — Architect Agent*
 

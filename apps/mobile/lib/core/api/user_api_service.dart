@@ -70,10 +70,7 @@ class UserApiService {
 
   /// Met à jour le profil utilisateur
   Future<UserProfile> updateProfile(Map<String, dynamic> updates) async {
-    final response = await _apiClient.dio.put(
-      '/users/profile',
-      data: updates,
-    );
+    final response = await _apiClient.dio.put('/users/profile', data: updates);
     final data = response.data as Map<String, dynamic>;
     return UserProfile.fromJson(data);
   }
@@ -91,6 +88,7 @@ class UserApiService {
       'gamification_enabled': answers.gamificationEnabled,
       'weekly_goal': answers.weeklyGoal,
       'themes': answers.themes,
+      'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
       'personal_goal': answers.personalGoal,
     };
@@ -113,10 +111,7 @@ class UserApiService {
         }
       }
 
-      return OnboardingResult.error(
-        message,
-        type: ErrorType.validation,
-      );
+      return OnboardingResult.error(message, type: ErrorType.validation);
     }
 
     // Erreur d'authentification (401)

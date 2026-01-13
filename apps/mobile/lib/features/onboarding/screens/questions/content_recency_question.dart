@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q7 : "Tu préfères..."
 /// Actu récente vs analyses intemporelles
@@ -23,29 +24,20 @@ class ContentRecencyQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '📅',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Tu préfères...',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q7Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Quel type de contenu t\'attire ?',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q7Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -57,8 +49,8 @@ class ContentRecencyQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '📰',
-                  label: 'L\'actu du moment',
-                  subtitle: 'Ce qui se passe maintenant',
+                  label: OnboardingStrings.q7RecentLabel,
+                  subtitle: OnboardingStrings.q7RecentSubtitle,
                   isSelected: selectedRecency == 'recent',
                   onTap: () {
                     ref
@@ -71,8 +63,8 @@ class ContentRecencyQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '📚',
-                  label: 'Des analyses intemporelles',
-                  subtitle: 'Des contenus qui durent',
+                  label: OnboardingStrings.q7TimelessLabel,
+                  subtitle: OnboardingStrings.q7TimelessSubtitle,
                   isSelected: selectedRecency == 'timeless',
                   onTap: () {
                     ref

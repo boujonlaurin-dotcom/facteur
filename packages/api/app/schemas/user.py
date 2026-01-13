@@ -76,8 +76,9 @@ class OnboardingAnswers(BaseModel):
     weekly_goal: Optional[int] = Field(10, ge=5, le=15)
 
     # Section 3 - Source Preferences
-    themes: list[str] = Field(..., description="Liste des thèmes sélectionnés")
-    format_preference: str = Field(..., description="short, long, mixed")
+    preferred_sources: Optional[list[str]] = Field(default_factory=list, description="Liste des sources sélectionnées")
+    themes: Optional[list[str]] = Field(default_factory=list, description="Liste des thèmes sélectionnés")
+    format_preference: Optional[str] = Field("mixed", description="short, long, mixed")
     personal_goal: Optional[str] = Field(None, description="Objectif personnel")
 
     class Config:

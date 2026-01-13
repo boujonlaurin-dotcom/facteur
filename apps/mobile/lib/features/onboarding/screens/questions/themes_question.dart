@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../onboarding_strings.dart';
 
 /// Q9 : "Tes thèmes préférés ?"
 /// Multi-sélection avec chips (minimum 1 requis)
@@ -58,26 +59,17 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
         children: [
           const Spacer(flex: 1),
 
-          // Illustration
-          const Text(
-            '🤝',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space6),
-
           // Question
           Text(
-            'Construisons ensemble un front de sources fiables.',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q10Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Notre catalogue est co-construit avec notre communauté. Parmi les sources actuellement validées, lesquelles résonnent avec vos exigences ?',
+            OnboardingStrings.q10Subtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
@@ -113,7 +105,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               child: Text(
-                'Continuer (${_selectedThemes.length} sélectionné${_selectedThemes.length > 1 ? 's' : ''})',
+                OnboardingStrings.selectedCount(_selectedThemes.length),
               ),
             ),
           ),

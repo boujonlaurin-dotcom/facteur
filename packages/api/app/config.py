@@ -5,6 +5,12 @@ from typing import Literal, Any
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+
+# Force load .env from the package directory to avoid shadowing by external env vars
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 
 class Settings(BaseSettings):
@@ -35,10 +41,16 @@ class Settings(BaseSettings):
         """Transforme postgres:// ou postgresql:// en postgresql+asyncpg://"""
         if isinstance(v, str):
             if v.startswith("postgres://"):
-                return v.replace("postgres://", "postgresql+asyncpg://", 1)
+                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://") and "+asyncpg" not in v:
-                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            
+            # Add statement_cache_size=0 for PgBouncer compatibility if not present
+            if "statement_cache_size" not in v:
+                separator = "&" if "?" in v else "?"
+                v = f"{v}{separator}statement_cache_size=0"
         return v
+
 
     # Supabase
     supabase_url: str = ""

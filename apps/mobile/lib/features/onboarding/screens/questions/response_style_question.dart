@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q6 : "Quand tu lis, tu aimes..."
 /// Réponses tranchées vs nuancées
@@ -23,29 +24,20 @@ class ResponseStyleQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '💭',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Quand tu lis, tu aimes...',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q6Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Quel ton te parle le plus ?',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q6Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -57,8 +49,8 @@ class ResponseStyleQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '⚔️',
-                  label: 'Des avis tranchés',
-                  subtitle: 'Des opinions claires',
+                  label: OnboardingStrings.q6DecisiveLabel,
+                  subtitle: OnboardingStrings.q6DecisiveSubtitle,
                   isSelected: selectedStyle == 'decisive',
                   onTap: () {
                     ref
@@ -71,8 +63,8 @@ class ResponseStyleQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '🤔',
-                  label: 'Toutes les perspectives',
-                  subtitle: 'Voir tous les angles',
+                  label: OnboardingStrings.q6NuancedLabel,
+                  subtitle: OnboardingStrings.q6NuancedSubtitle,
                   isSelected: selectedStyle == 'nuanced',
                   onTap: () {
                     ref

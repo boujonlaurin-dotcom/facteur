@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q8 : "Activer les objectifs ?"
 /// Gamification oui/non
@@ -23,26 +24,17 @@ class GamificationQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '🧠',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Votre temps de cerveau est précieux. Combien nous en confiez-vous ?',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q8Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            "Plus qu'un engagement, c'est un jeu. Défiez-vous !",
+            OnboardingStrings.q8Subtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
@@ -62,14 +54,14 @@ class GamificationQuestion extends ConsumerWidget {
               children: [
                 _FeatureRow(
                   emoji: '🔥',
-                  title: 'Streak quotidien',
-                  description: 'Garde ta flamme allumée chaque jour',
+                  title: OnboardingStrings.q8StreakTitle,
+                  description: OnboardingStrings.q8StreakDesc,
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _FeatureRow(
                   emoji: '📊',
-                  title: 'Progression hebdo',
-                  description: 'Visualise tes objectifs de la semaine',
+                  title: OnboardingStrings.q8WeeklyTitle,
+                  description: OnboardingStrings.q8WeeklyDesc,
                 ),
               ],
             ),
@@ -80,7 +72,7 @@ class GamificationQuestion extends ConsumerWidget {
           // Options
           SelectionCard(
             emoji: '✅',
-            label: 'Oui, j\'aime me fixer des objectifs',
+            label: OnboardingStrings.q8YesLabel,
             isSelected: gamificationEnabled == true,
             onTap: () {
               ref.read(onboardingProvider.notifier).selectGamification(true);
@@ -91,8 +83,8 @@ class GamificationQuestion extends ConsumerWidget {
 
           SelectionCard(
             emoji: '🙅',
-            label: 'Non, je préfère sans',
-            subtitle: 'Tu pourras activer ça plus tard',
+            label: OnboardingStrings.q8NoLabel,
+            subtitle: OnboardingStrings.q8NoSubtitle,
             isSelected: gamificationEnabled == false,
             onTap: () {
               ref.read(onboardingProvider.notifier).selectGamification(false);

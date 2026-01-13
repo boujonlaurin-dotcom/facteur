@@ -3,8 +3,7 @@
 from typing import Any
 
 import feedparser
-import httpx
-
+import certifi
 
 class RSSParser:
     """Parser de flux RSS/Atom."""
@@ -23,9 +22,10 @@ class RSSParser:
         - image: Image du flux (si disponible)
         - entries: Liste des entrées
         """
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.timeout, verify=certifi.where()) as client:
             response = await client.get(url, follow_redirects=True)
             response.raise_for_status()
+
 
         feed = feedparser.parse(response.text)
 

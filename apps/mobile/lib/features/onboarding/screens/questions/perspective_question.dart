@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q5 : "Tu préfères avoir..."
 /// Big-picture vs details
@@ -23,29 +24,20 @@ class PerspectiveQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '🎯',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Tu préfères avoir...',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q5Title,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Comment aimes-tu appréhender l\'info ?',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q5Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -57,8 +49,8 @@ class PerspectiveQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '🔭',
-                  label: 'La vue d\'ensemble',
-                  subtitle: 'Comprendre les grandes lignes',
+                  label: OnboardingStrings.q5BigPictureLabel,
+                  subtitle: OnboardingStrings.q5BigPictureSubtitle,
                   isSelected: selectedPerspective == 'big_picture',
                   onTap: () {
                     ref
@@ -71,8 +63,8 @@ class PerspectiveQuestion extends ConsumerWidget {
               Expanded(
                 child: BinarySelectionCard(
                   emoji: '🔬',
-                  label: 'Dans le détail',
-                  subtitle: 'Aller en profondeur',
+                  label: OnboardingStrings.q5DetailsLabel,
+                  subtitle: OnboardingStrings.q5DetailsSubtitle,
                   isSelected: selectedPerspective == 'details',
                   onTap: () {
                     ref

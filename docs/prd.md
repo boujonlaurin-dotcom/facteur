@@ -81,8 +81,9 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **NFR6** | L'authentification doit utiliser des standards sécurisés (OAuth 2.0, JWT) |
 | **NFR7** | Le système doit supporter au moins 1000 utilisateurs simultanés pour le MVP |
 | **NFR8** | Les sources doivent être synchronisées au moins toutes les 30 minutes |
-| **NFR9** | L'app doit fonctionner en mode hors-ligne avec les contenus déjà chargés |
-| **NFR10** | Le code doit être cross-platform (Flutter) pour faciliter le portage Android |
+| **NFR9** | Le code doit être maintenable : centralisation des wordings pour faciliter les itérations éditoriales |
+| **NFR10** | L'app doit fonctionner en mode hors-ligne avec les contenus déjà chargés |
+| **NFR11** | Le code doit être cross-platform (Flutter) pour faciliter le portage Android |
 
 ---
 

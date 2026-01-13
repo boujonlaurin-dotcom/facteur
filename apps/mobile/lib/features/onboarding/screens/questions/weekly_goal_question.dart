@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
+import '../../onboarding_strings.dart';
 
 /// Q8b : "Ton objectif hebdo ?"
 /// Choix du nombre de contenus par semaine
@@ -23,29 +24,20 @@ class WeeklyGoalQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Illustration
-          const Text(
-            '🎯',
-            style: TextStyle(fontSize: 64),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
-
-          // Question
+          // Question (larger without emoji)
           Text(
-            'Ton objectif hebdo ?',
-            style: Theme.of(context).textTheme.displayMedium,
+            OnboardingStrings.q8bTitle,
+            style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Combien de contenus veux-tu consommer par semaine ?',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            OnboardingStrings.q8bSubtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -54,8 +46,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
           // Options
           SelectionCard(
             emoji: '🌱',
-            label: '5 contenus',
-            subtitle: '~20 min par semaine • Tranquille',
+            label: OnboardingStrings.q8bGoal5Label,
+            subtitle: OnboardingStrings.q8bGoal5Subtitle,
             isSelected: selectedGoal == 5,
             onTap: () {
               ref.read(onboardingProvider.notifier).selectWeeklyGoal(5);
@@ -70,8 +62,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
             children: [
               SelectionCard(
                 emoji: '🌿',
-                label: '10 contenus',
-                subtitle: '~40 min par semaine • Équilibré',
+                label: OnboardingStrings.q8bGoal10Label,
+                subtitle: OnboardingStrings.q8bGoal10Subtitle,
                 isSelected: selectedGoal == 10,
                 onTap: () {
                   ref.read(onboardingProvider.notifier).selectWeeklyGoal(10);
@@ -90,11 +82,11 @@ class WeeklyGoalQuestion extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(FacteurRadius.small),
                   ),
                   child: Text(
-                    'Recommandé',
+                    OnboardingStrings.q8bGoal10Recommended,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -105,8 +97,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
 
           SelectionCard(
             emoji: '🌳',
-            label: '15 contenus',
-            subtitle: '~1h par semaine • Ambitieux',
+            label: OnboardingStrings.q8bGoal15Label,
+            subtitle: OnboardingStrings.q8bGoal15Subtitle,
             isSelected: selectedGoal == 15,
             onTap: () {
               ref.read(onboardingProvider.notifier).selectWeeklyGoal(15);

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import feedparser
 import httpx
+import certifi
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -24,8 +25,10 @@ class SyncService:
         self.client = httpx.AsyncClient(
             timeout=30.0, 
             follow_redirects=True,
+            verify=certifi.where(),
             headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         )
+
 
     async def close(self):
         await self.client.aclose()
