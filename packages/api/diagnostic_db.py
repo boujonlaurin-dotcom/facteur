@@ -23,7 +23,14 @@ async def check_connection():
     print(f"🔍 Testing connection to: {db_url.split('@')[-1]}") # Hide credentials
     
     try:
-        engine = create_async_engine(db_url, connect_args={"command_timeout": 5})
+        engine = create_async_engine(
+            db_url, 
+            connect_args={
+                "command_timeout": 5,
+                "prepared_statement_cache_size": 0,
+                "statement_cache_size": 0,
+            }
+        )
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         print("✅ Connection successful!")

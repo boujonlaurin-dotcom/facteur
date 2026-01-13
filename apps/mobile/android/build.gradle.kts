@@ -29,6 +29,11 @@ allprojects {
                 useVersion("1.9.24")
             }
         }
+        // Force specific standard libraries which are often pinned by plugins
+        resolutionStrategy.force("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
+        resolutionStrategy.force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.24")
+        resolutionStrategy.force("org.jetbrains.kotlin:kotlin-stdlib-common:1.9.24")
+        resolutionStrategy.force("org.jetbrains.kotlin:kotlin-reflect:1.9.24")
     }
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
@@ -37,6 +42,7 @@ allprojects {
             apiVersion = "1.9"
             languageVersion = "1.9"
             allWarningsAsErrors = false
+            freeCompilerArgs = freeCompilerArgs + listOf("-Xjdk-release=17", "-language-version", "1.9", "-api-version", "1.9")
         }
     }
 }
