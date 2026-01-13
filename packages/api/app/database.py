@@ -44,13 +44,25 @@ async def init_db() -> None:
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
     try:
+        import socket
+        from urllib.parse import urlparse
+        
+        # Diagnostic DNS préventif
+        try:
+            db_host = engine.url.host
+            if db_host:
+                socket.gethostbyname(db_host)
+        except socket.gaierror:
+            print(f"❌ DNS Error: Host '{db_host}' could not be resolved.", flush=True)
+            print(f"💡 Hint: Check your DATABASE_URL on Railway. Ensure it's correctly formatted (e.g., aws-0-eu-west-1.pooler.supabase.com).", flush=True)
+        
         async with engine.begin() as conn:
             # Test connection
             await conn.execute(text("SELECT 1"))
         print("✅ Database connection successful", flush=True)
     except Exception as e:
         print(f"❌ Database connection failed: {e}", flush=True)
-        print(f"💡 Diagnostic: If target is 'localhost', check your DATABASE_URL environment variable on Railway.", flush=True)
+        print(f"💡 Diagnostic context: target={target_url}", flush=True)
         raise
 
 

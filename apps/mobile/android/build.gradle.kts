@@ -31,7 +31,7 @@ subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         kotlinOptions {
             jvmTarget = "17"
-            languageVersion = "2.0"
+            // languageVersion = "2.0" // Désactivé temporairement car peut bloquer la compilation de certains plugins (Sentry)
         }
     }
 
