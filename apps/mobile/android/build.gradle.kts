@@ -16,11 +16,13 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
-
-subprojects {
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    
+    // Force Kotlin version and language compatibility for ALL modules (root + plugins)
     configurations.all {
         resolutionStrategy.eachDependency {
             if (requested.group == "org.jetbrains.kotlin") {
@@ -29,24 +31,19 @@ subprojects {
         }
     }
 
-    // Force language version for ALL Kotlin compilation tasks (aggressive)
-    afterEvaluate {
-        tasks.matching { it.name.contains("Compile") && it.name.contains("Kotlin") }.configureEach {
-            try {
-                // Use reflection-like access or dynamic property to avoid compile-time issues
-                // but since it's a .kts file, we can try the standard way with a safety check
-                (this as? org.jetbrains.kotlin.gradle.tasks.KotlinCompile)?.kotlinOptions {
-                    jvmTarget = "17"
-                    apiVersion = "1.9"
-                    languageVersion = "1.9"
-                    allWarningsAsErrors = false
-                }
-            } catch (e: Exception) {
-                // Ignore tasks that don't support these options
-            }
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        kotlinOptions {
+            jvmTarget = "17"
+            apiVersion = "1.9"
+            languageVersion = "1.9"
+            allWarningsAsErrors = false
         }
     }
+}
 
+subprojects {
+    project.evaluationDependsOn(":app")
+    
     afterEvaluate {
         if (project.hasProperty("android")) {
             val android = project.property("android") as com.android.build.gradle.BaseExtension
