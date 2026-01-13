@@ -77,7 +77,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
               color: colors.surface,
               borderRadius: BorderRadius.circular(FacteurRadius.large),
               border: Border.all(
-                color: colors.success.withOpacity(0.2),
+                color: colors.success.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
@@ -89,7 +89,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: colors.success.withOpacity(0.1),
+                    color: colors.success.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(

@@ -20,6 +20,7 @@ engine = create_async_engine(
     pool_pre_ping=True,
     poolclass=NullPool,
     connect_args={
+        "statement_cache_size": 0,
         "command_timeout": 30,
     },
 )

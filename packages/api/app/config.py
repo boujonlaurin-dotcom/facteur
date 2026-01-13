@@ -44,11 +44,6 @@ class Settings(BaseSettings):
                 v = v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://") and "+asyncpg" not in v:
                 v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
-            
-            # Add statement_cache_size=0 for PgBouncer compatibility if not present
-            if "statement_cache_size" not in v:
-                separator = "&" if "?" in v else "?"
-                v = f"{v}{separator}statement_cache_size=0"
         return v
 
 

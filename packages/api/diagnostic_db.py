@@ -27,6 +27,7 @@ async def check_connection():
             db_url, 
             connect_args={
                 "command_timeout": 5,
+                "statement_cache_size": 0,
             }
         )
         async with engine.begin() as conn:
