@@ -35,11 +35,19 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """Initialise la connexion à la base de données."""
+    # Log connection target (safely)
+    print(f"🔍 Database connection check: target={engine.url.host}:{engine.url.port}, db={engine.url.database}")
+    
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
-    async with engine.begin() as conn:
-        # Test connection
-        await conn.execute(text("SELECT 1"))
+    try:
+        async with engine.begin() as conn:
+            # Test connection
+            await conn.execute(text("SELECT 1"))
+        print("✅ Database connection successful")
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        raise
 
 
 async def close_db() -> None:

@@ -1,8 +1,8 @@
 """Configuration de l'application via variables d'environnement."""
 
 from functools import lru_cache
-from typing import Literal
-
+from typing import Literal, Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,17 @@ class Settings(BaseSettings):
 
     # Database (Supabase PostgreSQL)
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:54322/postgres"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url(cls, v: Any) -> Any:
+        """Transforme postgres:// ou postgresql:// en postgresql+asyncpg://"""
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif v.startswith("postgresql://") and "+asyncpg" not in v:
+                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # Supabase
     supabase_url: str = ""
