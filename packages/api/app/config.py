@@ -2,8 +2,9 @@
 
 from functools import lru_cache
 from typing import Literal, Any
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 
 class Settings(BaseSettings):
@@ -59,6 +60,16 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    @model_validator(mode="after")
+    def validate_production_db(self) -> "Settings":
+        """Empêche l'utilisation de localhost en production."""
+        if self.is_production and "localhost" in self.database_url:
+            raise ValueError(
+                f"❌ CRITICAL ERROR: DATABASE_URL points to localhost in production ({self.database_url}). "
+                "Check your environment variables on Railway."
+            )
+        return self
+
     @property
     def is_production(self) -> bool:
         """Vérifie si on est en production."""
@@ -68,5 +79,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Retourne les settings (cached)."""
+    # Diagnostic: Log all environment variable keys (NOT values)
+    print(f"🛠️ Diagnostic: Available environment variables: {sorted(list(os.environ.keys()))}", flush=True)
     return Settings()
 
