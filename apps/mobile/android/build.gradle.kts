@@ -29,10 +29,13 @@ subprojects {
         }
     }
 
+    // Force language version for ALL Kotlin compilation tasks
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         kotlinOptions {
             jvmTarget = "17"
+            apiVersion = "1.9"
             languageVersion = "1.9"
+            allWarningsAsErrors = false
         }
     }
 
