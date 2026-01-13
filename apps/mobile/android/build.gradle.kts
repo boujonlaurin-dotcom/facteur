@@ -58,6 +58,16 @@ subprojects {
                 targetCompatibility = JavaVersion.VERSION_17
             }
         }
+        
+        // Aggressively force Kotlin options for all tasks, including those from plugins
+        project.tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            kotlinOptions {
+                jvmTarget = "17"
+                apiVersion = "1.9"
+                languageVersion = "1.9"
+                freeCompilerArgs = freeCompilerArgs + listOf("-Xjdk-release=17")
+            }
+        }
     }
 }
 
