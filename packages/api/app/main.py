@@ -7,6 +7,16 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import os
+import sys
+
+# DEBUG STARTUP
+print("\n" + "="*50, flush=True)
+print("🚀 BACKEND STARTING...", flush=True)
+print(f"🌍 ENV_KEYS: {sorted(list(os.environ.keys()))}", flush=True)
+print(f"📍 DATABASE_URL: {os.environ.get('DATABASE_URL', 'NOT_SET')[:20]}...", flush=True)
+print("="*50 + "\n", flush=True)
+
 from app.config import get_settings
 from app.database import init_db, close_db
 from app.routers import (
