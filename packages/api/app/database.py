@@ -33,10 +33,13 @@ class Base(DeclarativeBase):
     pass
 
 
+import sys
+
 async def init_db() -> None:
     """Initialise la connexion à la base de données."""
     # Log connection target (safely)
-    print(f"🔍 Database connection check: target={engine.url.host}:{engine.url.port}, db={engine.url.database}")
+    target_url = engine.url.render_as_string(hide_password=True)
+    print(f"🔍 Database connection check: target={target_url}", flush=True)
     
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
@@ -44,9 +47,10 @@ async def init_db() -> None:
         async with engine.begin() as conn:
             # Test connection
             await conn.execute(text("SELECT 1"))
-        print("✅ Database connection successful")
+        print("✅ Database connection successful", flush=True)
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"❌ Database connection failed: {e}", flush=True)
+        print(f"💡 Diagnostic: If target is 'localhost', check your DATABASE_URL environment variable on Railway.", flush=True)
         raise
 
 
