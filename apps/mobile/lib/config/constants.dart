@@ -51,13 +51,19 @@ class SupabaseConstants {
   static String _cleanEnvVar(String value) {
     if (value.isEmpty) return value;
     // Supprimer les guillemets éventuels si passés via --dart-define="KEY=VAL"
-    if (value.startsWith('"') && value.endsWith('"')) {
-      return value.substring(1, value.length - 1);
+    String cleaned = value;
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = cleaned.substring(1, cleaned.length - 1);
     }
-    if (value.startsWith("'") && value.endsWith("'")) {
-      return value.substring(1, value.length - 1);
+    if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+      cleaned = cleaned.substring(1, cleaned.length - 1);
     }
-    return value.trim();
+    cleaned = cleaned.trim();
+    // Supprimer le slash final pour éviter les doubles slashes dans les URLs
+    while (cleaned.endsWith('/')) {
+      cleaned = cleaned.substring(0, cleaned.length - 1);
+    }
+    return cleaned;
   }
 }
 

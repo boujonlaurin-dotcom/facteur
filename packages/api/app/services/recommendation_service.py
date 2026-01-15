@@ -283,13 +283,12 @@ class RecommendationService:
             
             elif mode == FeedFilterMode.DEEP_DIVE:
                 # Mode "Grand Format" : Contenus > 10min (videos, podcasts, OU articles longs)
-                # Pour les articles, on estime ~200 mots/minute, donc 10min = 2000 mots
-                # On utilise duration_seconds > 600 (10min) pour tous les types
+                # Note: 45 videos ont duration_seconds=NULL en base. On les inclut par défaut.
                 query = query.where(
                     or_(
-                        # Videos et Podcasts avec durée > 10 min
+                        # Videos et Podcasts: Durée inconnue (NULL) ou > 10 min
                         and_(
-                            Content.duration_seconds > 600,
+                            or_(Content.duration_seconds > 600, Content.duration_seconds == None),
                             Content.content_type.in_([ContentType.PODCAST, ContentType.YOUTUBE])
                         ),
                         # Articles longs (estimation basée sur description length comme proxy)
