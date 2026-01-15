@@ -14,26 +14,26 @@ class OnboardingStrings {
 
   // Intro Screen 1
   static const String intro1Title =
-      "L'info d'aujourd'hui est un vrai champ de bataille.";
+      "L'info est devenue un vrai champ de bataille.";
   static const String intro1Subtitle =
-      "D'un côté, des médias principalement détenus par des milliardaires. De l'autre, des réseaux sociaux qui contrôlent votre attention.";
+      "D'un côté, des médias principalement détenus par des milliardaires. \nDe l'autre, des réseaux sociaux qui contrôlent notre attention.";
 
   // Intro Screen 2
   static const String intro2Title =
-      "Facteur vise à être votre outil de résistance.";
+      "Facteur se veut être un outil de résistance.";
   static const String intro2Subtitle =
-      "Un espace pour reprendre le contrôle de son attention, et où la compréhension du monde prime.";
+      "Un espace pour reprendre le contrôle de son attention. Un espace où la transparence prime.";
   static const String intro2Button = '(Re)prendre le contrôle';
 
   // Q1: Objective
   static const String q1Title =
-      "Faisons le constat. Qu'est-ce qui vous épuise le + aujourd'hui avec l'information ?";
-  static const String q1Subtitle = "(Si vous ne deviez en choisir qu'un...)";
+      "Faisons le constat. \nQu'est-ce qui vous épuise le plus en ce moment avec l'info ?";
+  static const String q1Subtitle = "(Si vous ne deviez en choisir qu'un)";
   static const String q1NoiseLabel = 'Le Bruit';
-  static const String q1NoiseSubtitle = "Trop d'info, impossible de bientrier.";
+  static const String q1NoiseSubtitle =
+      "Trop d'info. Impossible de bien trier.";
   static const String q1BiasLabel = 'Les Biais';
-  static const String q1BiasSubtitle =
-      'Vous doutez constamment de la neutralité.';
+  static const String q1BiasSubtitle = 'Je doute constamment de la neutralité.';
   static const String q1AnxietyLabel = "La négativité";
   static const String q1AnxietySubtitle =
       'Le sentiment que le monde devient fou.';
@@ -66,7 +66,7 @@ class OnboardingStrings {
   static const String q6Title = 'Quand vous lisez, vous aimez...';
   static const String q6Subtitle = '';
   static const String q6DecisiveLabel = 'Des avis tranchés';
-  static const String q6DecisiveSubtitle = 'Des opinions claires';
+  static const String q6DecisiveSubtitle = 'Pour des opinions claires';
   static const String q6NuancedLabel = 'Toutes les perspectives';
   static const String q6NuancedSubtitle = 'Voir tous les angles';
 
@@ -80,7 +80,7 @@ class OnboardingStrings {
 
   // Q8: Gamification
   static const String q8Title =
-      'Votre attention est précieuse. Combien nous en confiez-vous ?';
+      'Votre attention est précieuse. Combien voulez-vous investir ?';
   static const String q8Subtitle =
       "Passer du temps à bien s'informer est difficile. Travaillons-le ! Exemples d'objectifs :";
   static const String q8StreakTitle = 'Streak quotidien';
@@ -154,7 +154,7 @@ class OnboardingStrings {
   static const String r2RecentTitle = 'Ne pas perdre le fil !';
   static const String r2RecentMessage =
       'Facteur priorisera les contenus récents pour vous maintenir à jour.\n\n';
-  static const String r2TimelessTitle = 'L\'Histoire se répète.';
+  static const String r2TimelessTitle = '"L\'Histoire se répète."';
   static const String r2TimelessMessage =
       'Facteur privilégiera les analyses qui traversent le temps.\n\n';
   static const String r2DefaultTitle = 'Préférences bien enregistrées.';

@@ -50,14 +50,13 @@ DOMAIN_BIAS_MAP = {
     "lepoint.fr": "center-right",
     "lejdd.fr": "center-right",
     "challenges.fr": "center-right",
-    "bfmtv.com": "center-right",  # Economic liberal, pro-business
-    "europe1.fr": "center-right",
     # RIGHT
     "lefigaro.fr": "right",
     "valeursactuelles.com": "right",
     "atlantico.fr": "right",
     "contrepoints.org": "right",
     "bfmtv.com": "right",  # Pro-business, liberal economics
+    "europe1.fr": "center-right",
     # FAR-RIGHT
     "cnews.fr": "far-right",  # Bolloré-owned, very conservative
 }

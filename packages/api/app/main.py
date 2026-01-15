@@ -43,7 +43,9 @@ from app.routers import (
     streaks,
     subscription,
     users,
+    users,
     webhooks,
+    analytics,
     internal,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
@@ -88,6 +90,7 @@ app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(subscription.router, prefix="/api/subscription", tags=["Subscription"])
 app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 
 

@@ -96,13 +96,32 @@ class SourceListItem extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    source.name,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: colors.textPrimary,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          source.name,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: colors.textPrimary,
+                                  ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                      ),
+                      if (source.biasStance != 'unknown' &&
+                          source.biasStance != 'neutral') ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: source.getBiasColor(),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   if (source.theme != null)
                     Text(

@@ -145,7 +145,7 @@ class FacteurPalettes {
     textPrimary: const Color(0xFF2C2A29), // Charbon Doux
     textSecondary: const Color(0xFF5D5B5A),
     textTertiary: const Color(0xFF959392),
-    textStamp: const Color(0xFFD35400).withValues(alpha: 0.8),
+    textStamp: const Color(0xFFD35400).withOpacity(0.8),
   );
 
   static final FacteurColors dark = FacteurColors(
@@ -164,7 +164,7 @@ class FacteurPalettes {
     textPrimary: const Color(0xFFEAEAEA), // Blanc Craie
     textSecondary: const Color(0xFFA6A6A6),
     textTertiary: const Color(0xFF606060),
-    textStamp: const Color(0xFFC0392B).withValues(alpha: 0.8),
+    textStamp: const Color(0xFFC0392B).withOpacity(0.8),
   );
 }
 
@@ -173,76 +173,76 @@ class FacteurTypography {
   FacteurTypography._();
 
   static TextStyle displayLarge(Color color) => GoogleFonts.dmSans(
-    fontSize: 28,
-    fontWeight: FontWeight.w700,
-    height: 1.25,
-    color: color,
-  );
+        fontSize: 28,
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+        color: color,
+      );
 
   static TextStyle displayMedium(Color color) => GoogleFonts.dmSans(
-    fontSize: 22,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-    color: color,
-  );
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        color: color,
+      );
 
   static TextStyle displaySmall(Color color) => GoogleFonts.dmSans(
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-    color: color,
-  );
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+        color: color,
+      );
 
   static TextStyle bodyLarge(Color color) => GoogleFonts.dmSans(
-    fontSize: 17,
-    fontWeight: FontWeight.w400,
-    height: 1.5,
-    color: color,
-  );
+        fontSize: 17,
+        fontWeight: FontWeight.w400,
+        height: 1.5,
+        color: color,
+      );
 
   static TextStyle bodyMedium(Color color) => GoogleFonts.dmSans(
-    fontSize: 15,
-    fontWeight: FontWeight.w400,
-    height: 1.5,
-    color: color,
-  );
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        height: 1.5,
+        color: color,
+      );
 
   static TextStyle bodySmall(Color color) => GoogleFonts.dmSans(
-    fontSize: 13,
-    fontWeight: FontWeight.w400,
-    height: 1.4,
-    color: color,
-  );
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        height: 1.4,
+        color: color,
+      );
 
   static TextStyle labelLarge(Color color) => GoogleFonts.dmSans(
-    fontSize: 14,
-    fontWeight: FontWeight.w500,
-    height: 1.3,
-    color: color,
-  );
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        height: 1.3,
+        color: color,
+      );
 
   static TextStyle labelMedium(Color color) => GoogleFonts.dmSans(
-    fontSize: 12,
-    fontWeight: FontWeight.w500,
-    height: 1.3,
-    color: color,
-  );
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        height: 1.3,
+        color: color,
+      );
 
   static TextStyle labelSmall(Color color) => GoogleFonts.dmSans(
-    fontSize: 11,
-    fontWeight: FontWeight.w500,
-    height: 1.2,
-    letterSpacing: 0.5,
-    color: color,
-  );
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+        height: 1.2,
+        letterSpacing: 0.5,
+        color: color,
+      );
 
   static TextStyle stamp(Color color) => GoogleFonts.courierPrime(
-    fontSize: 11,
-    fontWeight: FontWeight.w700,
-    height: 1.2,
-    letterSpacing: 0.5,
-    color: color,
-  );
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+        letterSpacing: 0.5,
+        color: color,
+      );
 }
 
 class FacteurSpacing {

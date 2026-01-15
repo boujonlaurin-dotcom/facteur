@@ -29,7 +29,7 @@ class Source(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     feed_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, native_enum=False, length=20), nullable=False
+        Enum(SourceType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20), nullable=False
     )
     theme: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

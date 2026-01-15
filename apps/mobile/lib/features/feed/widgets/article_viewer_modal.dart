@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,29 +12,29 @@ import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
+import '../../../core/providers/analytics_provider.dart';
 import 'perspectives_bottom_sheet.dart';
 
-class ArticleViewerModal extends StatefulWidget {
+class ArticleViewerModal extends ConsumerStatefulWidget {
   final Content content;
 
-  const ArticleViewerModal({
-    super.key,
-    required this.content,
-  });
+  const ArticleViewerModal({super.key, required this.content});
 
   @override
-  State<ArticleViewerModal> createState() => _ArticleViewerModalState();
+  ConsumerState<ArticleViewerModal> createState() => _ArticleViewerModalState();
 }
 
-class _ArticleViewerModalState extends State<ArticleViewerModal> {
+class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
   WebViewController? _controller;
   int _loadingProgress = 0;
   bool _hasError = false;
   bool _isSupported = true;
+  late DateTime _startTime;
 
   @override
   void initState() {
     super.initState();
+    _startTime = DateTime.now();
 
     // Check platform support
     if (!kIsWeb &&
@@ -100,6 +101,24 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
     }
   }
 
+  @override
+  void dispose() {
+    // Track article read on close
+    final duration = DateTime.now().difference(_startTime).inSeconds;
+    // We use ref.read here because dispose is called when the widget is unmounted
+    // but the provider container should still be alive.
+    // However, if the whole app is closing, it might be too late.
+    // For modal close, it's fine.
+    ref
+        .read(analyticsServiceProvider)
+        .trackArticleRead(
+          widget.content.id,
+          widget.content.source.id,
+          duration,
+        );
+    super.dispose();
+  }
+
   Future<void> _showPerspectives(BuildContext context) async {
     // Show loading indicator
     showModalBottomSheet<void>(
@@ -145,14 +164,16 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
           backgroundColor: Colors.transparent,
           builder: (ctx) => PerspectivesBottomSheet(
             perspectives: response.perspectives
-                .map((PerspectiveData p) => Perspective(
-                      title: p.title,
-                      url: p.url,
-                      sourceName: p.sourceName,
-                      sourceDomain: p.sourceDomain,
-                      biasStance: p.biasStance,
-                      publishedAt: p.publishedAt,
-                    ))
+                .map(
+                  (PerspectiveData p) => Perspective(
+                    title: p.title,
+                    url: p.url,
+                    sourceName: p.sourceName,
+                    sourceDomain: p.sourceDomain,
+                    biasStance: p.biasStance,
+                    publishedAt: p.publishedAt,
+                  ),
+                )
                 .toList(),
             biasDistribution: response.biasDistribution,
             keywords: response.keywords,
@@ -165,7 +186,8 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Impossible de charger les perspectives')),
+            content: Text('Impossible de charger les perspectives'),
+          ),
         );
       }
     }
@@ -178,9 +200,7 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
 
     return Container(
       height: MediaQuery.of(context).size.height,
-      decoration: BoxDecoration(
-        color: colors.backgroundPrimary,
-      ),
+      decoration: BoxDecoration(color: colors.backgroundPrimary),
       child: Column(
         children: [
           // Handle & Header
@@ -235,10 +255,13 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                                   const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: colors.textSecondary
-                                          .withOpacity(0.08),
+                                      color: colors.textSecondary.withOpacity(
+                                        0.08,
+                                      ),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
@@ -258,11 +281,16 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                                     widget.content.source.reliabilityScore ==
                                             'high'
                                         ? PhosphorIcons.sealCheck(
-                                            PhosphorIconsStyle.fill)
+                                            PhosphorIconsStyle.fill,
+                                          )
                                         : PhosphorIcons.warningCircle(
-                                            PhosphorIconsStyle.fill),
+                                            PhosphorIconsStyle.fill,
+                                          ),
                                     size: 13,
-                                    color: widget.content.source
+                                    color:
+                                        widget
+                                                .content
+                                                .source
                                                 .reliabilityScore ==
                                             'high'
                                         ? Colors.blue.shade300
@@ -280,7 +308,9 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                           onPressed: () => _showPerspectives(context),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             backgroundColor: colors.primary.withOpacity(0.1),
@@ -311,8 +341,11 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                       const SizedBox(width: 4),
                       // Actions (Optional: Share/Save)
                       IconButton(
-                        icon: Icon(PhosphorIcons.shareNetwork(
-                            PhosphorIconsStyle.regular)),
+                        icon: Icon(
+                          PhosphorIcons.shareNetwork(
+                            PhosphorIconsStyle.regular,
+                          ),
+                        ),
                         onPressed: () {
                           // TODO: Implement share
                         },
@@ -374,7 +407,8 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                             onPressed: () =>
                                 launchUrl(Uri.parse(widget.content.url)),
                             icon: Icon(
-                                PhosphorIcons.browser(PhosphorIconsStyle.bold)),
+                              PhosphorIcons.browser(PhosphorIconsStyle.bold),
+                            ),
                             label: const Text("Ouvrir dans le navigateur"),
                           ),
                         ],
@@ -390,7 +424,8 @@ class _ArticleViewerModalState extends State<ArticleViewerModal> {
                         children: [
                           Icon(
                             PhosphorIcons.warningCircle(
-                                PhosphorIconsStyle.duotone),
+                              PhosphorIconsStyle.duotone,
+                            ),
                             size: 64,
                             color: colors.error,
                           ),

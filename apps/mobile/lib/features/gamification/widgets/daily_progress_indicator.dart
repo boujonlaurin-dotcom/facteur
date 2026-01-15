@@ -98,12 +98,12 @@ class _DailyProgressIndicatorState extends ConsumerState<DailyProgressIndicator>
                   color: colors.backgroundSecondary,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: colors.primary.withOpacity(0.1),
+                    color: colors.primary.withValues(alpha: 0.1),
                     width: 1,
                   ),
                 ),
                 child: Text(
-                  '${streak.weeklyCount}/${streak.weeklyGoal}',
+                  '${streak.weeklyCount} / ${streak.weeklyGoal} lus',
                   style: textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.textPrimary,

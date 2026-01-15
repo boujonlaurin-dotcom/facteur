@@ -13,6 +13,7 @@
 |------|---------|-------------|--------|
 | 07/01/2026 | 1.0 | Création initiale | BMad Method |
 | 12/01/2026 | 1.1 | Mise à jour Algorithme V2 & Transparence | Antigravity |
+| 14/01/2026 | 1.2 | Ajout des nudges "Slow Media" (Finitude) | Antigravity |
 
 ---
 
@@ -56,6 +57,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **FR10** | Le système marque automatiquement un contenu comme "consommé" après un temps suffisant (~30s article, ~60s vidéo/podcast) |
 | **FR10bis** | Le système affiche un streak quotidien pour encourager l'habitude (si gamification activée) |
 | **FR10ter** | Le système affiche une barre de progression hebdomadaire (si gamification activée) |
+| **FR10quater**| Le système affiche des nudges "Slow Media" (compteur de lecture quotidien et card "Tu es à jour") pour renforcer la finitude |
 | **FR11** | L'utilisateur peut ajouter un contenu à sa liste "À consulter plus tard", ce qui l'archive automatiquement du feed principal (triage) |
 | **FR12** | L'utilisateur peut indiquer "pas intéressé" pour masquer un contenu et affiner l'algo |
 | **FR13** | L'utilisateur peut gérer ses sources personnalisées (ajouter, supprimer, voir la liste) |
@@ -714,6 +716,22 @@ facteur/
 3. Tri par date de sauvegarde
 4. Action "Retirer"
 5. État vide
+
+---
+
+### Story 5.8 : Nudges "Slow Media"
+
+**As a** utilisateur,  
+**I want** recevoir des feedbacks sur ma consommation quotidienne et savoir quand je suis à jour,  
+**so that** je puisse consommer l'information de manière plus intentionnelle.
+
+**Acceptance Criteria :**
+1. Affichage d'un compteur minimaliste "X lu(s)" dans le header
+2. Affichage d'une card "Tu es à jour !" inline dans le feed après ≥8 articles lus ce jour
+3. Card dismissable d'un tap et persistante durant la session
+4. Animations fluides d'apparition et de disparition
+5. Tracking analytics associé (complet du feed, scroll depth)
+
 
 ---
 

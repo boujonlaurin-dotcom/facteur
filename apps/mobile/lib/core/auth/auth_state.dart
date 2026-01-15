@@ -46,86 +46,29 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   Future<void> _init() async {
     try {
       debugPrint('AuthStateNotifier: Starting initialization...');
-      // 1. Charger la préférence de persistence en premier
+
+      // 1. Charger la préférence de persistence
       final box = await Hive.openBox<dynamic>('auth_prefs');
       final rememberMe = box.get('remember_me', defaultValue: true) as bool;
       debugPrint('AuthStateNotifier: rememberMe preference is $rememberMe');
 
-      // 2. Attendre que Supabase soit prêt et récupère la session
-      debugPrint('AuthStateNotifier: Waiting for initial session recovery...');
-
+      // 2. Récupérer la session actuelle (restaurée par Supabase.initialize)
       Session? session = _supabase.auth.currentSession;
 
-      if (session == null) {
-        // OPTIMIZATION: Check if we even HAVE a stored session before waiting.
-        // If no session is stored locally, we are definitely logged out.
-        // This prevents the 3s delay for first-time users.
-        final persistenceBox = Hive.box<String>('supabase_auth_persistence');
-        if (!persistenceBox.containsKey('supabase_session')) {
-          debugPrint(
-            'AuthStateNotifier: No persisted session found in Hive. Skipping wait.',
-          );
-        } else {
-          final sessionCompleter = Completer<Session?>();
-          final subscription = _supabase.auth.onAuthStateChange.listen((data) {
-            debugPrint(
-              'AuthStateNotifier: INITIAL STREAM EVENT: ${data.event} - Session: ${data.session != null} - User: ${data.session?.user.email ?? "None"}',
-            );
-
-            if (data.session != null) {
-              if (!sessionCompleter.isCompleted) {
-                debugPrint('AuthStateNotifier: Session acquired via stream.');
-                sessionCompleter.complete(data.session);
-              }
-            } else if (data.event == AuthChangeEvent.initialSession) {
-              debugPrint(
-                'AuthStateNotifier: initialSession is null, waiting up to 3s for potential delayed signedIn...',
-              );
-              // On attend un peu plus pour un éventuel signedIn différé
-              Future<void>.delayed(const Duration(milliseconds: 3000)).then((
-                _,
-              ) {
-                if (!sessionCompleter.isCompleted) {
-                  debugPrint(
-                    'AuthStateNotifier: Timeout after initialSession null.',
-                  );
-                  sessionCompleter.complete(null);
-                }
-              });
-            }
-          });
-
-          try {
-            // Timeout global de sécurité (8s car macOS peut être lent)
-            session = await sessionCompleter.future.timeout(
-              const Duration(milliseconds: 8000),
-            );
-          } catch (_) {
-            debugPrint('AuthStateNotifier: Global 8s timeout reached.');
-            session = _supabase.auth.currentSession;
-          } finally {
-            await subscription.cancel();
-          }
-        }
-      }
-
-      debugPrint(
-        'AuthStateNotifier: Resolved session for final state: ${session?.user.email ?? "None"}',
-      );
-
-      // 3. Si on ne doit pas rester connecté, on force la déconnexion
+      // 3. Appliquer la règle remember_me si une session est restaurée
       if (!rememberMe && session != null) {
-        debugPrint(
-          'AuthStateNotifier: rememberMe is false, signing out... TRACE:',
-        );
-        debugPrint(StackTrace.current.toString());
+        debugPrint('AuthStateNotifier: rememberMe is false, signing out...');
         await _supabase.auth.signOut();
         await box.delete('remember_me');
         session = null;
       }
 
       // 4. Mettre à jour l'état initial
-      state = state.copyWith(user: session?.user, isLoading: false);
+      state = state.copyWith(
+        user: session?.user,
+        isLoading: false,
+      );
+
       debugPrint(
         'AuthStateNotifier: Initial state set. Authenticated: ${state.isAuthenticated}',
       );
@@ -134,15 +77,18 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         await _checkOnboardingStatus();
       }
 
-      // 5. Écouter les changements futurs pour les mises à jour en temps réel
+      // 5. Écouter les changements futurs
       _supabase.auth.onAuthStateChange.listen((data) {
         final user = data.session?.user;
         debugPrint(
-          'AuthStateNotifier: Auth listener event: ${data.event}, User: ${user?.email ?? "None"}',
+          'AuthStateNotifier: Auth event: ${data.event}, User: ${user?.email ?? "None"}',
         );
 
         // Éviter les mises à jour inutiles si l'user n'a pas changé
-        if (state.user?.id == user?.id && !state.isLoading) return;
+        if (state.user?.id == user?.id &&
+            !state.isLoading &&
+            state.user != null) return;
+        if (state.user == null && user == null && !state.isLoading) return;
 
         state = state.copyWith(user: user, isLoading: false);
 

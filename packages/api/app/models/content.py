@@ -37,7 +37,7 @@ class Content(Base):
     )
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     content_type: Mapped[ContentType] = mapped_column(
-        Enum(ContentType, native_enum=False, length=20), nullable=False
+        Enum(ContentType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20), nullable=False
     )
     guid: Mapped[str] = mapped_column(String(500), nullable=False)
     # Story clustering (Story 7.2)
@@ -71,7 +71,7 @@ class UserContentStatus(Base):
         PGUUID(as_uuid=True), ForeignKey("contents.id", ondelete="CASCADE")
     )
     status: Mapped[ContentStatus] = mapped_column(
-        Enum(ContentStatus, native_enum=False, length=20),
+        Enum(ContentStatus, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
         nullable=False,
         default=ContentStatus.UNSEEN,
     )

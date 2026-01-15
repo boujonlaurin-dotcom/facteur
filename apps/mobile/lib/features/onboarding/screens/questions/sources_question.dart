@@ -131,9 +131,8 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
               ),
               data: (sources) {
                 // Filtrer pour n'afficher que les sources curées
-                var filteredSources = sources
-                    .where((s) => s.isCurated)
-                    .toList();
+                var filteredSources =
+                    sources.where((s) => s.isCurated).toList();
 
                 // Trier par ordre alphabétique
                 filteredSources.sort(
@@ -146,8 +145,8 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                   filteredSources = filteredSources
                       .where(
                         (s) => s.name.toLowerCase().contains(
-                          _searchQuery.toLowerCase(),
-                        ),
+                              _searchQuery.toLowerCase(),
+                            ),
                       )
                       .toList();
                 }
@@ -277,10 +276,23 @@ class _SourceChip extends StatelessWidget {
             Text(
               source.name,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: isSelected ? colors.primary : colors.textPrimary,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
+                    color: isSelected ? colors.primary : colors.textPrimary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
             ),
+            // Indicateur de biais politique
+            if (source.biasStance != 'unknown' &&
+                source.biasStance != 'neutral') ...[
+              const SizedBox(width: FacteurSpacing.space2),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: source.getBiasColor(),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ],
         ),
       ),

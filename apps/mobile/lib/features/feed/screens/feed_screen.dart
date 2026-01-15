@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
 import '../../../widgets/design/facteur_logo.dart';
@@ -23,7 +24,6 @@ import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
-import '../../gamification/widgets/daily_reading_counter.dart';
 import '../../gamification/providers/streak_provider.dart';
 
 /// Écran principal du feed
@@ -39,6 +39,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _caughtUpDismissed = false;
   static const int _caughtUpThreshold = 8;
   final ScrollController _scrollController = ScrollController();
+  double _maxScrollPercent = 0.0;
+  int _itemsViewed = 0;
 
   @override
   void initState() {
@@ -61,11 +63,31 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   void dispose() {
+    // Capture des ressources avant la destruction
+    try {
+      final analytics = ref.read(analyticsServiceProvider);
+      analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
+    } catch (e) {
+      debugPrint('FeedScreen: Could not track analytics on dispose: $e');
+    }
+
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
+    // Update max scroll percent
+    if (_scrollController.hasClients) {
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      final currentScroll = _scrollController.position.pixels;
+      if (maxScroll > 0) {
+        final percent = (currentScroll / maxScroll).clamp(0.0, 1.0);
+        if (percent > _maxScrollPercent) {
+          _maxScrollPercent = percent;
+        }
+      }
+    }
+
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       // Load more when reading bottom
@@ -277,8 +299,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 ).textTheme.displayMedium,
                               ),
                             ),
-                            const DailyReadingCounter(),
-                            const SizedBox(width: 12),
                             const StreakIndicator(),
                             const SizedBox(width: 8),
                             const DailyProgressIndicator(),
@@ -291,7 +311,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'Voici votre tournée du jour.',
-                          style: Theme.of(context).textTheme.bodyMedium
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
                               ?.copyWith(color: colors.textSecondary),
                         ),
                       ),
@@ -299,9 +321,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                     SliverToBoxAdapter(
                       child: FilterBar(
-                        selectedFilter: ref
-                            .read(feedProvider.notifier)
-                            .selectedFilter,
+                        selectedFilter:
+                            ref.read(feedProvider.notifier).selectedFilter,
                         onFilterChanged: (String? filter) {
                           ref.read(feedProvider.notifier).setFilter(filter);
                         },
@@ -317,8 +338,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
-                        final showCaughtUp =
-                            dailyCount >= _caughtUpThreshold &&
+                        final showCaughtUp = dailyCount >= _caughtUpThreshold &&
                             !_caughtUpDismissed;
                         final caughtUpIndex = showCaughtUp ? 3 : -1;
 
@@ -339,8 +359,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     return const Center(
                                       child: Padding(
                                         padding: EdgeInsets.all(16.0),
-                                        child:
-                                            CircularProgressIndicator.adaptive(),
+                                        child: CircularProgressIndicator
+                                            .adaptive(),
                                       ),
                                     );
                                   } else {
@@ -350,6 +370,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                                 // Show caught-up card at position 3
                                 if (showCaughtUp && index == caughtUpIndex) {
+                                  // Track completion if shown
+                                  // We use addPostFrameCallback to avoid build-time side effects
+                                  // logging only once per session/screen view would be better but duplicate events are okay for now
+                                  // or we can use a flag
+
                                   return Padding(
                                     key: const ValueKey('caught_up_card'),
                                     padding: const EdgeInsets.only(bottom: 16),
@@ -366,8 +391,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 // Adjust content index for caught-up card
                                 final contentIndex =
                                     showCaughtUp && index > caughtUpIndex
-                                    ? index - 1
-                                    : index;
+                                        ? index - 1
+                                        : index;
 
                                 if (contentIndex >= contents.length) {
                                   return const SizedBox.shrink();
@@ -377,6 +402,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final isConsumed = ref
                                     .read(feedProvider.notifier)
                                     .isContentConsumed(content.id);
+
+                                // Update items viewed count approx
+                                if (index > _itemsViewed) {
+                                  _itemsViewed = index;
+                                  // Track completion if we reached the end or caught up
+                                  if (showCaughtUp && index >= caughtUpIndex) {
+                                    // This is dynamic tracking, maybe simpler in onScroll?
+                                    // Let's Stick to scroll depth + explicit "caught up" card check
+                                    if (contentIndex == caughtUpIndex) {
+                                      ref
+                                          .read(analyticsServiceProvider)
+                                          .trackFeedComplete();
+                                    }
+                                  }
+                                }
 
                                 return Padding(
                                   key: ValueKey(content.id),
@@ -467,7 +507,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 Text(
                                   err.toString(), // A améliorer pour prod
                                   textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodySmall
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
                                       ?.copyWith(color: colors.error),
                                 ),
                                 const SizedBox(height: 16),

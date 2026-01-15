@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
@@ -19,6 +20,7 @@ import '../shared/widgets/navigation/shell_scaffold.dart';
 class RouteNames {
   RouteNames._();
 
+  static const String splash = 'splash';
   static const String login = 'login';
   static const String onboarding = 'onboarding';
   static const String onboardingConclusion = 'onboarding-conclusion';
@@ -36,6 +38,7 @@ class RouteNames {
 class RoutePaths {
   RoutePaths._();
 
+  static const String splash = '/splash';
   static const String login = '/login';
   static const String onboarding = '/onboarding';
   static const String onboardingConclusion = '/onboarding/conclusion';
@@ -54,17 +57,30 @@ final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
-    initialLocation: RoutePaths.feed,
+    initialLocation: RoutePaths.splash,
     debugLogDiagnostics: true,
     redirect: (context, state) {
       // Attendre que l'auth state soit initialisé
-      if (authState.isLoading) return null;
+      if (authState.isLoading) {
+        return RoutePaths.splash;
+      }
 
       final isLoggedIn = authState.isAuthenticated;
+      final isOnSplash = state.matchedLocation == RoutePaths.splash;
       final isOnLoginPage = state.matchedLocation == RoutePaths.login;
       final isOnOnboarding = state.matchedLocation == RoutePaths.onboarding;
       final isOnOnboardingConclusion =
           state.matchedLocation == RoutePaths.onboardingConclusion;
+
+      // Si on est sur splash et que le chargement est fini, rediriger vers feed ou login
+      if (isOnSplash) {
+        if (isLoggedIn) {
+          return authState.needsOnboarding
+              ? RoutePaths.onboarding
+              : RoutePaths.feed;
+        }
+        return RoutePaths.login;
+      }
 
       // Si non connecté et pas sur login → rediriger vers login
       if (!isLoggedIn && !isOnLoginPage) {
@@ -96,6 +112,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      // Splash
+      GoRoute(
+        path: RoutePaths.splash,
+        name: RouteNames.splash,
+        builder: (context, state) => const SplashScreen(),
+      ),
+
       // Auth
       GoRoute(
         path: RoutePaths.login,

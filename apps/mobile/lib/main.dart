@@ -42,13 +42,16 @@ Future<void> main() async {
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
-      'Main: Hive auth_prefs remember_me: ${authBox.get('remember_me')}');
+    'Main: Hive auth_prefs remember_me: ${authBox.get('remember_me')}',
+  );
   debugPrint(
-      'Main: Hive supabase_auth_persistence keys: ${supabaseBox.keys.toList()}');
+    'Main: Hive supabase_auth_persistence keys: ${supabaseBox.keys.toList()}',
+  );
   if (supabaseBox.containsKey('supabase_session')) {
     final session = supabaseBox.get('supabase_session');
     debugPrint(
-        'Main: Hive supabase_session found (length: ${session?.length})');
+      'Main: Hive supabase_session found (length: ${session?.length})',
+    );
   } else {
     debugPrint('Main: Hive supabase_session NOT FOUND in box.');
   }
@@ -57,9 +60,16 @@ Future<void> main() async {
   if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
     debugPrint('ERROR: Supabase URL or Anon Key is missing.');
     _runErrorApp(
-        'Configuration Supabase manquante. Vérifiez vos paramètres --dart-define.');
+      'Configuration Supabase manquante. Vérifiez vos paramètres --dart-define.',
+    );
     return;
   }
+
+  // Initialisation Analytics
+  // Note: On le fait tôt pour choper le launch
+  // Mais on a besoin de Dio qui est dans le container...
+  // On va le faire via le provider plus tard ou ici si on instancie manuellement
+  // Pour l'instant on laisse le provider s'en occuper au premier build de FacteurApp
 
   try {
     final url = SupabaseConstants.url;
@@ -75,22 +85,21 @@ Future<void> main() async {
         localStorage: SupabaseHiveStorage(),
       ),
     );
-    debugPrint('Main: Supabase initialized.');
+    debugPrint('Main: Supabase initialized correctly.');
     final hasSession = Supabase.instance.client.auth.currentSession != null;
     debugPrint('Main: Supabase Session restored immediately: $hasSession');
   } catch (e) {
     debugPrint('ERROR: Failed to initialize Supabase: $e');
     _runErrorApp(
-        'Erreur d\'initialisation Supabase. Vérifiez la validité de vos clés.');
+      'Erreur d\'initialisation Supabase. Vérifiez la validité de vos clés.',
+    );
     return;
   }
 
   // Lancer l'app
-  runApp(
-    const ProviderScope(
-      child: FacteurApp(),
-    ),
-  );
+  debugPrint('Main: Calling runApp...');
+  runApp(const ProviderScope(child: FacteurApp()));
+  debugPrint('Main: runApp called.');
 }
 
 void _runErrorApp(String message) {

@@ -11,6 +11,7 @@ class FacteurApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    debugPrint('FacteurApp: build() called');
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeNotifierProvider);
 
