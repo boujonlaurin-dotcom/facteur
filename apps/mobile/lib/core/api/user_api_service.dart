@@ -23,7 +23,7 @@ class UserApiService {
   Future<OnboardingResult> saveOnboarding(OnboardingAnswers answers) async {
     try {
       final response = await _apiClient.dio.post(
-        '/users/onboarding',
+        'users/onboarding',
         data: {'answers': _formatAnswersForApi(answers)},
       );
 
@@ -57,7 +57,7 @@ class UserApiService {
   /// Récupère le profil utilisateur
   Future<UserProfile?> getProfile() async {
     try {
-      final response = await _apiClient.dio.get('/users/profile');
+      final response = await _apiClient.dio.get('users/profile');
       final data = response.data as Map<String, dynamic>;
       return UserProfile.fromJson(data);
     } on DioException catch (e) {
@@ -70,7 +70,7 @@ class UserApiService {
 
   /// Met à jour le profil utilisateur
   Future<UserProfile> updateProfile(Map<String, dynamic> updates) async {
-    final response = await _apiClient.dio.put('/users/profile', data: updates);
+    final response = await _apiClient.dio.put('users/profile', data: updates);
     final data = response.data as Map<String, dynamic>;
     return UserProfile.fromJson(data);
   }

@@ -9,7 +9,7 @@ class StreakRepository {
   Future<StreakModel> getStreak() async {
     try {
       final response =
-          await _apiClient.dio.get<Map<String, dynamic>>('/users/streak');
+          await _apiClient.dio.get<Map<String, dynamic>>('users/streak');
 
       if (response.statusCode == 200 && response.data != null) {
         return StreakModel.fromJson(response.data!);

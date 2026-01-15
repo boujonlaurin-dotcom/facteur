@@ -97,7 +97,7 @@ class AnalyticsService {
       if (_deviceId == null) await init();
 
       await _apiClient.dio.post(
-        '/analytics/events',
+        'analytics/events',
         data: {
           'event_type': eventType,
           'event_data': eventData,

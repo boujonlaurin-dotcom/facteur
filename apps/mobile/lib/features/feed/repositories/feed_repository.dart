@@ -37,7 +37,7 @@ class FeedRepository {
       }
 
       final response = await _apiClient.dio.get<List<dynamic>>(
-        '/feed',
+        'feed',
         queryParameters: queryParams,
       );
 
@@ -80,9 +80,9 @@ class FeedRepository {
   Future<void> toggleSave(String contentId, bool isSaved) async {
     try {
       if (isSaved) {
-        await _apiClient.dio.post<void>('/contents/$contentId/save');
+        await _apiClient.dio.post<void>('contents/$contentId/save');
       } else {
-        await _apiClient.dio.delete<void>('/contents/$contentId/save');
+        await _apiClient.dio.delete<void>('contents/$contentId/save');
       }
     } catch (e) {
       // ignore: avoid_print
@@ -94,7 +94,7 @@ class FeedRepository {
   Future<void> hideContent(String contentId, HiddenReason reason) async {
     try {
       await _apiClient.dio.post<void>(
-        '/contents/$contentId/hide',
+        'contents/$contentId/hide',
         data: {'reason': reason.name},
       );
     } catch (e) {
@@ -108,7 +108,7 @@ class FeedRepository {
       String contentId, ContentStatus status) async {
     try {
       await _apiClient.dio.post<void>(
-        '/contents/$contentId/status',
+        'contents/$contentId/status',
         data: {'status': status.name},
       );
     } catch (e) {
@@ -132,7 +132,7 @@ class FeedRepository {
   Future<PerspectivesResponse> getPerspectives(String contentId) async {
     try {
       final response = await _apiClient.dio.get<Map<String, dynamic>>(
-        '/contents/$contentId/perspectives',
+        'contents/$contentId/perspectives',
       );
 
       if (response.statusCode == 200 && response.data != null) {
