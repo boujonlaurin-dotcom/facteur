@@ -9,6 +9,7 @@ class SelectionCard extends StatefulWidget {
   final String label;
   final String? emoji;
   final IconData? icon;
+  final Color? iconColor; // New: Allow specific color for the icon
   final bool isSelected;
   final VoidCallback onTap;
   final String? subtitle;
@@ -18,6 +19,7 @@ class SelectionCard extends StatefulWidget {
     required this.label,
     this.emoji,
     this.icon,
+    this.iconColor,
     this.isSelected = false,
     required this.onTap,
     this.subtitle,
@@ -109,12 +111,21 @@ class _SelectionCardState extends State<SelectionCard>
                     ),
                     const SizedBox(width: FacteurSpacing.space3),
                   ] else if (widget.icon != null) ...[
-                    Icon(
-                      widget.icon,
-                      size: 24,
-                      color: widget.isSelected
-                          ? colors.primary
-                          : colors.textPrimary,
+                    // Container pour l'icone premium avec fond subtil
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: (widget.iconColor ?? colors.primary)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(
+                          FacteurRadius.small,
+                        ),
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        size: 20,
+                        color: widget.iconColor ?? colors.primary,
+                      ),
                     ),
                     const SizedBox(width: FacteurSpacing.space3),
                   ],
@@ -187,7 +198,8 @@ class _SelectionCardState extends State<SelectionCard>
 
 /// Carte de sélection binaire (2 options côte à côte)
 class BinarySelectionCard extends StatelessWidget {
-  final String emoji;
+  final IconData icon; // REMPLACÉ: String emoji -> IconData icon
+  final Color? iconColor;
   final String label;
   final String? subtitle;
   final bool isSelected;
@@ -195,7 +207,8 @@ class BinarySelectionCard extends StatelessWidget {
 
   const BinarySelectionCard({
     super.key,
-    required this.emoji,
+    required this.icon,
+    this.iconColor,
     required this.label,
     this.subtitle,
     this.isSelected = false,
@@ -215,6 +228,7 @@ class BinarySelectionCard extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         curve: Curves.easeOut,
         padding: const EdgeInsets.all(FacteurSpacing.space4),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected
               ? colors.primary.withValues(alpha: 0.15)
@@ -228,11 +242,25 @@ class BinarySelectionCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              emoji,
-              style: const TextStyle(fontSize: 40),
+            // Icone Centrée Premium
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                // Fond coloré si sélectionné, sinon gris très très léger ou transparent
+                color: isSelected
+                    ? colors.primary.withValues(alpha: 0.2)
+                    : colors.backgroundPrimary,
+                borderRadius: BorderRadius.circular(FacteurRadius.full),
+              ),
+              child: Icon(
+                icon,
+                size: 32,
+                color: iconColor ?? colors.primary,
+              ),
             ),
+
             const SizedBox(height: FacteurSpacing.space3),
+
             Text(
               label,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(

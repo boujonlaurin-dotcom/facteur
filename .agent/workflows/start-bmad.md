@@ -16,6 +16,14 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Action** : Utilise `task document-project` si tu découvres une nouvelle zone de code.
 - **Mesure** : Crée des scripts de diagnostic ou analyse les logs réels pour isoler la cause racine.
 - **Rigueur** : Ne conclus jamais sur une intuition sans une donnée technique mesurable.
+
+> [!IMPORTANT]
+> **Gating (PRE-VÉROU) - Vérification User Story / PRD :**
+> Avant TOUTE création de `implementation_plan.md`, vérifie :
+> 1. Existe-t-il une **User Story** dans `docs/stories/` couvrant la fonctionnalité ?
+> 2. Cette fonctionnalité est-elle documentée dans le **PRD** (`docs/prd.md`) ?
+>
+> **Si NON** : ARRÊTE-TOI. Crée la User Story et/ou mets à jour le PRD **AVANT** de proposer un plan technique. Ne jamais sauter le « Quoi » (Analyst/PO) pour aller directement au « Comment » (Architect).
 ### 2. Decide (Phase: PLANNING)
 *Objectif : Contrat d'implémentation validé.*
 - **Action** : Produit ou met à jour `implementation_plan.md`.

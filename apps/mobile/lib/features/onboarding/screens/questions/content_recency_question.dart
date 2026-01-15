@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -7,7 +8,7 @@ import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
 /// Q7 : "Tu préfères..."
-/// Actu récente vs analyses intemporelles
+/// Actualité chaude vs Analyses de fond
 class ContentRecencyQuestion extends ConsumerWidget {
   const ContentRecencyQuestion({super.key});
 
@@ -24,7 +25,7 @@ class ContentRecencyQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Question (larger without emoji)
+          // Question
           Text(
             OnboardingStrings.q7Title,
             style: Theme.of(context).textTheme.displayLarge,
@@ -44,36 +45,45 @@ class ContentRecencyQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space8),
 
           // Options binaires
-          Row(
-            children: [
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '📰',
-                  label: OnboardingStrings.q7RecentLabel,
-                  subtitle: OnboardingStrings.q7RecentSubtitle,
-                  isSelected: selectedRecency == 'recent',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectContentRecency('recent');
-                  },
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.newspaper(
+                      PhosphorIconsStyle.bold,
+                    ), // Récent -> Journal
+                    iconColor: colors.warning, // Orange/Urgent
+                    label: OnboardingStrings.q7RecentLabel,
+                    subtitle: OnboardingStrings.q7RecentSubtitle,
+                    isSelected: selectedRecency == 'recent',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectContentRecency('recent');
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: FacteurSpacing.space3),
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '📚',
-                  label: OnboardingStrings.q7TimelessLabel,
-                  subtitle: OnboardingStrings.q7TimelessSubtitle,
-                  isSelected: selectedRecency == 'timeless',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectContentRecency('timeless');
-                  },
+                const SizedBox(width: FacteurSpacing.space3),
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.hourglass(
+                      PhosphorIconsStyle.bold,
+                    ), // Intemporel -> Sablier
+                    iconColor: colors.secondary, // Beige/Classique
+                    label: OnboardingStrings.q7TimelessLabel,
+                    subtitle: OnboardingStrings.q7TimelessSubtitle,
+                    isSelected: selectedRecency == 'timeless',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectContentRecency('timeless');
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
 
           const Spacer(flex: 3),

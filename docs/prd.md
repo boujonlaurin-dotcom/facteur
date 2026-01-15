@@ -224,10 +224,10 @@ facteur/
 | 3 | Gestion des Sources | Catalogue curé, sync RSS, sources custom | 5 |
 | 4 | Feed & Algorithme | Algo de tri, feed personnalisé, actions | 6 |
 | 5 | Consommation & Gamification | Détail, tracking auto, streak, progression | 7 |
-| 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement | 6 |
+| 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement, paramètres Compte/Notif | 8 |
 | 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
 
-**Total : 36 stories**
+**Total : 38 stories**
 
 ---
 
@@ -828,6 +828,34 @@ facteur/
 
 ---
 
+### Story 6.7 : Écran Paramètres Compte
+
+**As a** utilisateur,  
+**I want** accéder à un écran dédié pour gérer mon compte,  
+**so that** je puisse voir mes informations et me déconnecter ou supprimer mon compte.
+
+**Acceptance Criteria :**
+1. Tile "Compte" dans Settings → nouvel écran
+2. Affiche l'email utilisateur
+3. Bouton "Se déconnecter" (déplacé de Settings principal)
+4. Bouton "Supprimer mon compte" avec confirmation modale
+5. Suppression appelle Supabase Auth et redirige vers Login
+
+---
+
+### Story 6.8 : Écran Paramètres Notifications
+
+**As a** utilisateur,  
+**I want** gérer mes préférences de notifications,  
+**so that** je contrôle les alertes que je reçois.
+
+**Acceptance Criteria :**
+1. Tile "Notifications" dans Settings → nouvel écran
+2. Toggles : Push Notifications (ON par défaut), Emails périodiques (OFF)
+3. Persistance locale via Hive
+4. Changements instantanés (pas de bouton Sauvegarder)
+
+---
 
 ---
 

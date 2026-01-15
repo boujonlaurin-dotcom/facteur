@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -43,37 +44,46 @@ class ResponseStyleQuestion extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space8),
 
-          // Options binaires
-          Row(
-            children: [
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '⚔️',
-                  label: OnboardingStrings.q6DecisiveLabel,
-                  subtitle: OnboardingStrings.q6DecisiveSubtitle,
-                  isSelected: selectedStyle == 'decisive',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectResponseStyle('decisive');
-                  },
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.sword(
+                      PhosphorIconsStyle.bold,
+                    ), // Tranché -> Épée
+                    iconColor: colors
+                        .error, // Rouge/Action (using error for bold color)
+                    label: OnboardingStrings.q6DecisiveLabel,
+                    subtitle: OnboardingStrings.q6DecisiveSubtitle,
+                    isSelected: selectedStyle == 'decisive',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectResponseStyle('decisive');
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: FacteurSpacing.space3),
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '🤔',
-                  label: OnboardingStrings.q6NuancedLabel,
-                  subtitle: OnboardingStrings.q6NuancedSubtitle,
-                  isSelected: selectedStyle == 'nuanced',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectResponseStyle('nuanced');
-                  },
+                const SizedBox(width: FacteurSpacing.space3),
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.scales(
+                      PhosphorIconsStyle.bold,
+                    ), // Nuancé -> Balance
+                    iconColor: colors.info, // Bleu/Calme
+                    label: OnboardingStrings.q6NuancedLabel,
+                    subtitle: OnboardingStrings.q6NuancedSubtitle,
+                    isSelected: selectedStyle == 'nuanced',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectResponseStyle('nuanced');
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
 
           const Spacer(flex: 3),

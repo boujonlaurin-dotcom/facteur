@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart'; // Import icons
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
-/// Q1 : "Pourquoi es-tu là ?"
-/// Permet à l'utilisateur de définir son objectif principal
+/// Q1 : "Faisons le constat."
+/// Sélection des problèmes principaux avec l'info
 class ObjectiveQuestion extends ConsumerWidget {
   const ObjectiveQuestion({super.key});
 
@@ -24,28 +25,27 @@ class ObjectiveQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Question (larger without emoji)
+          // Question
           Text(
             OnboardingStrings.q1Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
+          const SizedBox(height: FacteurSpacing.space2),
           Text(
             OnboardingStrings.q1Subtitle,
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
 
           // Options
           SelectionCard(
-            emoji: '📢',
+            icon: PhosphorIcons.waves(PhosphorIconsStyle.bold), // Bruit
+            iconColor: colors.info, // Bleu
             label: OnboardingStrings.q1NoiseLabel,
             subtitle: OnboardingStrings.q1NoiseSubtitle,
             isSelected: selectedObjective == 'noise',
@@ -57,7 +57,8 @@ class ObjectiveQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            emoji: '⚖️',
+            icon: PhosphorIcons.scales(PhosphorIconsStyle.bold), // Biais
+            iconColor: colors.warning, // Orange
             label: OnboardingStrings.q1BiasLabel,
             subtitle: OnboardingStrings.q1BiasSubtitle,
             isSelected: selectedObjective == 'bias',
@@ -69,7 +70,8 @@ class ObjectiveQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            emoji: '😰',
+            icon: PhosphorIcons.heartBreak(PhosphorIconsStyle.bold), // Anxiété
+            iconColor: colors.error, // Rouge
             label: OnboardingStrings.q1AnxietyLabel,
             subtitle: OnboardingStrings.q1AnxietySubtitle,
             isSelected: selectedObjective == 'anxiety',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -7,7 +8,7 @@ import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
 /// Q5 : "Tu préfères avoir..."
-/// Big-picture vs details
+/// Vue d'ensemble vs Détails
 class PerspectiveQuestion extends ConsumerWidget {
   const PerspectiveQuestion({super.key});
 
@@ -24,7 +25,7 @@ class PerspectiveQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Question (larger without emoji)
+          // Question
           Text(
             OnboardingStrings.q5Title,
             style: Theme.of(context).textTheme.displayLarge,
@@ -43,37 +44,45 @@ class PerspectiveQuestion extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space8),
 
-          // Options binaires
-          Row(
-            children: [
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '🔭',
-                  label: OnboardingStrings.q5BigPictureLabel,
-                  subtitle: OnboardingStrings.q5BigPictureSubtitle,
-                  isSelected: selectedPerspective == 'big_picture',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectPerspective('big_picture');
-                  },
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.binoculars(
+                      PhosphorIconsStyle.bold,
+                    ), // Vue d'ensemble -> Jumelles
+                    iconColor: colors.info, // Bleu/Large
+                    label: OnboardingStrings.q5BigPictureLabel,
+                    subtitle: OnboardingStrings.q5BigPictureSubtitle,
+                    isSelected: selectedPerspective == 'big_picture',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectPerspective('big_picture');
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: FacteurSpacing.space3),
-              Expanded(
-                child: BinarySelectionCard(
-                  emoji: '🔬',
-                  label: OnboardingStrings.q5DetailsLabel,
-                  subtitle: OnboardingStrings.q5DetailsSubtitle,
-                  isSelected: selectedPerspective == 'details',
-                  onTap: () {
-                    ref
-                        .read(onboardingProvider.notifier)
-                        .selectPerspective('details');
-                  },
+                const SizedBox(width: FacteurSpacing.space3),
+                Expanded(
+                  child: BinarySelectionCard(
+                    icon: PhosphorIcons.microscope(
+                      PhosphorIconsStyle.bold,
+                    ), // Détails -> Microscope
+                    iconColor: colors.primary, // Rouge/Précis
+                    label: OnboardingStrings.q5DetailsLabel,
+                    subtitle: OnboardingStrings.q5DetailsSubtitle,
+                    isSelected: selectedPerspective == 'details',
+                    onTap: () {
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectPerspective('details');
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
 
           const Spacer(flex: 3),

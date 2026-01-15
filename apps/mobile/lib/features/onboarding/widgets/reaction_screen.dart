@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_logo.dart';
 import '../onboarding_strings.dart';
 
 /// Écran de réaction personnalisée après une réponse clé
@@ -18,7 +19,8 @@ class ReactionScreen extends StatefulWidget {
     required this.message,
     required this.onContinue,
     this.autoContinue = false,
-    this.autoContinueDelay = const Duration(seconds: 3),
+    this.autoContinueDelay =
+        const Duration(seconds: 4), // Augmenté un peu pour lire
   });
 
   @override
@@ -91,10 +93,10 @@ class _ReactionScreenState extends State<ReactionScreen>
         children: [
           const Spacer(flex: 2),
 
-          // Emoji de célébration
+          // Logo Facteur animé (fade in)
           FadeTransition(
             opacity: _fadeAnimation,
-            child: const Text('✨', style: TextStyle(fontSize: 64)),
+            child: const FacteurLogo(size: 80),
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
@@ -117,9 +119,9 @@ class _ReactionScreenState extends State<ReactionScreen>
             child: Text(
               widget.message,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: context.facteurColors.textSecondary,
-                height: 1.6,
-              ),
+                    color: context.facteurColors.textSecondary,
+                    height: 1.6,
+                  ),
               textAlign: TextAlign.center,
             ),
           ),

@@ -33,13 +33,25 @@ class _AnimatedMessageTextState extends State<AnimatedMessageText>
       if (!mounted) return;
 
       setState(() => _currentMessageIndex = i);
-      await _controller.forward(from: 0.0);
+      try {
+        await _controller.forward(from: 0.0).orCancel;
+      } on TickerCanceled {
+        return;
+      }
 
+      if (!mounted) return;
       // Longer hold time for readability
       await Future.delayed(const Duration(seconds: 2));
 
+      if (!mounted) return;
       if (i < _messages.length - 1) {
-        await _controller.reverse();
+        try {
+          await _controller.reverse().orCancel;
+        } on TickerCanceled {
+          return;
+        }
+
+        if (!mounted) return;
         await Future.delayed(const Duration(milliseconds: 200));
       }
     }
@@ -58,10 +70,10 @@ class _AnimatedMessageTextState extends State<AnimatedMessageText>
       child: Text(
         _messages[_currentMessageIndex],
         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          color: context.facteurColors.textSecondary,
-          fontWeight: FontWeight.w500, // Slightly bolder
-          letterSpacing: 0.5,
-        ),
+              color: context.facteurColors.textSecondary,
+              fontWeight: FontWeight.w500, // Slightly bolder
+              letterSpacing: 0.5,
+            ),
         textAlign: TextAlign.center,
       ),
     );

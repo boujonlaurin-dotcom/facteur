@@ -41,8 +41,8 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     _apiCompleted = false;
     _animationCompleted = false;
 
-    // 1. Démarrer le timer d'animation minimum (3 secondes)
-    _minAnimationTimer = Timer(const Duration(seconds: 3), () {
+    // 1. Démarrer le timer d'animation minimum (8 secondes)
+    _minAnimationTimer = Timer(const Duration(seconds: 8), () {
       _animationCompleted = true;
       _checkCompletion();
     });
@@ -191,5 +191,5 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 /// Provider du notifier de conclusion
 final conclusionNotifierProvider =
     StateNotifierProvider.autoDispose<ConclusionNotifier, ConclusionState>(
-      (ref) => ConclusionNotifier(ref),
-    );
+  (ref) => ConclusionNotifier(ref),
+);

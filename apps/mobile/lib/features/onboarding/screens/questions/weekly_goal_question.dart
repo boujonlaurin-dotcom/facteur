@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -24,7 +25,7 @@ class WeeklyGoalQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Question (larger without emoji)
+          // Question
           Text(
             OnboardingStrings.q8bTitle,
             style: Theme.of(context).textTheme.displayLarge,
@@ -45,7 +46,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            emoji: '🌱',
+            icon: PhosphorIcons.plant(PhosphorIconsStyle.bold),
+            iconColor: colors.primary.withValues(alpha: 0.6), // Vert léger
             label: OnboardingStrings.q8bGoal5Label,
             subtitle: OnboardingStrings.q8bGoal5Subtitle,
             isSelected: selectedGoal == 5,
@@ -61,7 +63,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
             clipBehavior: Clip.none,
             children: [
               SelectionCard(
-                emoji: '🌿',
+                icon: PhosphorIcons.pottedPlant(PhosphorIconsStyle.bold),
+                iconColor: colors.primary.withValues(alpha: 0.8), // Vert moyen
                 label: OnboardingStrings.q8bGoal10Label,
                 subtitle: OnboardingStrings.q8bGoal10Subtitle,
                 isSelected: selectedGoal == 10,
@@ -84,9 +87,9 @@ class WeeklyGoalQuestion extends ConsumerWidget {
                   child: Text(
                     OnboardingStrings.q8bGoal10Recommended,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
               ),
@@ -96,7 +99,8 @@ class WeeklyGoalQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            emoji: '🌳',
+            icon: PhosphorIcons.tree(PhosphorIconsStyle.bold),
+            iconColor: colors.primary, // Vert complet
             label: OnboardingStrings.q8bGoal15Label,
             subtitle: OnboardingStrings.q8bGoal15Subtitle,
             isSelected: selectedGoal == 15,

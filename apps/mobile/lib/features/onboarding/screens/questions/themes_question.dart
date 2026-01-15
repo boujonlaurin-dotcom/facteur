@@ -140,29 +140,33 @@ class _ThemeChip extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: isSelected
-              ? context.facteurColors.primary.withValues(alpha: 0.15)
+              ? theme.color.withValues(alpha: 0.15)
               : context.facteurColors.surface,
           borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
-            color: isSelected
-                ? context.facteurColors.primary
-                : Colors.transparent,
+            color: isSelected ? theme.color : Colors.transparent,
             width: 2,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(theme.emoji, style: const TextStyle(fontSize: 18)),
+            Icon(
+              theme.icon,
+              size: 20,
+              color: isSelected
+                  ? theme.color
+                  : context.facteurColors.textSecondary,
+            ),
             const SizedBox(width: FacteurSpacing.space2),
             Text(
               theme.label,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: isSelected
-                    ? context.facteurColors.primary
-                    : context.facteurColors.textPrimary,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
+                    color: isSelected
+                        ? theme.color
+                        : context.facteurColors.textPrimary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  ),
             ),
           ],
         ),

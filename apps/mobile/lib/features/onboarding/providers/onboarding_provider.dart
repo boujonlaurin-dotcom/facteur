@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../onboarding_strings.dart';
 
 /// Modèle pour les réponses de l'onboarding
@@ -653,42 +655,54 @@ final isOnboardingCompleteProvider = Provider<bool>((ref) {
 
 /// Liste des thèmes disponibles
 class AvailableThemes {
-  static const List<ThemeOption> all = [
-    ThemeOption(slug: 'tech', label: OnboardingStrings.themeTech, emoji: '💻'),
+  static final List<ThemeOption> all = [
+    ThemeOption(
+      slug: 'tech',
+      label: OnboardingStrings.themeTech,
+      icon: PhosphorIcons.cpu(PhosphorIconsStyle.bold),
+      color: Colors.blue,
+    ),
     ThemeOption(
       slug: 'business',
       label: OnboardingStrings.themeBusiness,
-      emoji: '💼',
+      icon: PhosphorIcons.briefcase(PhosphorIconsStyle.bold),
+      color: Colors.blueGrey,
     ),
     ThemeOption(
       slug: 'science',
       label: OnboardingStrings.themeScience,
-      emoji: '🔬',
+      icon: PhosphorIcons.atom(PhosphorIconsStyle.bold),
+      color: Colors.purple,
     ),
     ThemeOption(
       slug: 'culture',
       label: OnboardingStrings.themeCulture,
-      emoji: '🎭',
+      icon: PhosphorIcons.palette(PhosphorIconsStyle.bold),
+      color: Colors.pink,
     ),
     ThemeOption(
       slug: 'politics',
       label: OnboardingStrings.themePolitics,
-      emoji: '🏛️',
+      icon: PhosphorIcons.bank(PhosphorIconsStyle.bold),
+      color: Colors.brown,
     ),
     ThemeOption(
       slug: 'society',
       label: OnboardingStrings.themeSociety,
-      emoji: '👥',
+      icon: PhosphorIcons.users(PhosphorIconsStyle.bold),
+      color: Colors.teal,
     ),
     ThemeOption(
       slug: 'environment',
       label: OnboardingStrings.themeEnvironment,
-      emoji: '🌍',
+      icon: PhosphorIcons.leaf(PhosphorIconsStyle.bold),
+      color: Colors.green,
     ),
     ThemeOption(
       slug: 'economy',
       label: OnboardingStrings.themeEconomy,
-      emoji: '📈',
+      icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
+      color: Colors.indigo,
     ),
   ];
 }
@@ -696,10 +710,13 @@ class AvailableThemes {
 class ThemeOption {
   final String slug;
   final String label;
-  final String emoji;
+  final IconData icon;
+  final Color color;
+
   const ThemeOption({
     required this.slug,
     required this.label,
-    required this.emoji,
+    required this.icon,
+    required this.color,
   });
 }
