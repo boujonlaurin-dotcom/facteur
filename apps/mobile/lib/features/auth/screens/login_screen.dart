@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/constants.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../shared/widgets/buttons/secondary_button.dart';
@@ -272,22 +273,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       color: colors.error.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: colors.error,
-                          size: 20,
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              color: colors.error,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                authState.error!,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: colors.error),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            authState.error!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: colors.error),
-                          ),
+                        // DEBUG: Afficher l'URL Supabase
+                        const SizedBox(height: 8),
+                        Text(
+                          'Supabase URL: ${SupabaseConstants.url}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                  color: colors.textSecondary, fontSize: 10),
                         ),
                       ],
                     ),

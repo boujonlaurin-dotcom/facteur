@@ -303,14 +303,18 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           onPressed: () => _showPerspectives(context),
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
+                              horizontal: 16,
+                              vertical: 8,
                             ),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            backgroundColor: colors.primary.withOpacity(0.1),
+                            backgroundColor: colors.primary.withOpacity(0.18),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: colors.primary.withOpacity(0.4),
+                                width: 1.2,
+                              ),
                             ),
                           ),
                           child: Row(
@@ -318,16 +322,17 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                             children: [
                               Icon(
                                 PhosphorIcons.scales(PhosphorIconsStyle.fill),
-                                size: 16,
+                                size: 18,
                                 color: colors.primary,
                               ),
-                              const SizedBox(width: 4),
+                              const SizedBox(width: 5),
                               Text(
                                 'Comparer',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
                                   color: colors.primary,
+                                  letterSpacing: 0.2,
                                 ),
                               ),
                             ],

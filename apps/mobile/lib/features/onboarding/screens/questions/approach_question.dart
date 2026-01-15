@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -51,10 +50,7 @@ class ApproachQuestion extends ConsumerWidget {
               children: [
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.lightning(
-                      PhosphorIconsStyle.bold,
-                    ), // Direct -> Éclair
-                    iconColor: colors.warning,
+                    emoji: '⚡', // Direct
                     label: OnboardingStrings.q4DirectLabel,
                     subtitle: OnboardingStrings.q4DirectSubtitle,
                     isSelected: selectedApproach == 'direct',
@@ -68,10 +64,7 @@ class ApproachQuestion extends ConsumerWidget {
                 const SizedBox(width: FacteurSpacing.space3),
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.magnifyingGlass(
-                      PhosphorIconsStyle.bold,
-                    ), // Détail -> Loupe
-                    iconColor: colors.textSecondary,
+                    emoji: '🔍', // Détaillé
                     label: OnboardingStrings.q4DetailedLabel,
                     subtitle: OnboardingStrings.q4DetailedSubtitle,
                     isSelected: selectedApproach == 'detailed',

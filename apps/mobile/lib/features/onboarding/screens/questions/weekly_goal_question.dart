@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -46,8 +45,7 @@ class WeeklyGoalQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            icon: PhosphorIcons.plant(PhosphorIconsStyle.bold),
-            iconColor: colors.primary.withValues(alpha: 0.6), // Vert léger
+            emoji: '🌱', // 5/sem
             label: OnboardingStrings.q8bGoal5Label,
             subtitle: OnboardingStrings.q8bGoal5Subtitle,
             isSelected: selectedGoal == 5,
@@ -63,8 +61,7 @@ class WeeklyGoalQuestion extends ConsumerWidget {
             clipBehavior: Clip.none,
             children: [
               SelectionCard(
-                icon: PhosphorIcons.pottedPlant(PhosphorIconsStyle.bold),
-                iconColor: colors.primary.withValues(alpha: 0.8), // Vert moyen
+                emoji: '🪴', // 10/sem
                 label: OnboardingStrings.q8bGoal10Label,
                 subtitle: OnboardingStrings.q8bGoal10Subtitle,
                 isSelected: selectedGoal == 10,
@@ -99,8 +96,7 @@ class WeeklyGoalQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            icon: PhosphorIcons.tree(PhosphorIconsStyle.bold),
-            iconColor: colors.primary, // Vert complet
+            emoji: '🌳', // 15/sem
             label: OnboardingStrings.q8bGoal15Label,
             subtitle: OnboardingStrings.q8bGoal15Subtitle,
             isSelected: selectedGoal == 15,

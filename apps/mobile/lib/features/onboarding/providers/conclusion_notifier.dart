@@ -41,8 +41,8 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     _apiCompleted = false;
     _animationCompleted = false;
 
-    // 1. Démarrer le timer d'animation minimum (8 secondes)
-    _minAnimationTimer = Timer(const Duration(seconds: 8), () {
+    // 1. Démarrer le timer d'animation minimum (10 secondes)
+    _minAnimationTimer = Timer(const Duration(seconds: 10), () {
       _animationCompleted = true;
       _checkCompletion();
     });

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../onboarding_strings.dart';
 
 /// Modèle pour les réponses de l'onboarding
@@ -659,49 +658,49 @@ class AvailableThemes {
     ThemeOption(
       slug: 'tech',
       label: OnboardingStrings.themeTech,
-      icon: PhosphorIcons.cpu(PhosphorIconsStyle.bold),
+      emoji: '💻',
       color: Colors.blue,
     ),
     ThemeOption(
       slug: 'business',
       label: OnboardingStrings.themeBusiness,
-      icon: PhosphorIcons.briefcase(PhosphorIconsStyle.bold),
+      emoji: '💼',
       color: Colors.blueGrey,
     ),
     ThemeOption(
       slug: 'science',
       label: OnboardingStrings.themeScience,
-      icon: PhosphorIcons.atom(PhosphorIconsStyle.bold),
+      emoji: '🔬',
       color: Colors.purple,
     ),
     ThemeOption(
       slug: 'culture',
       label: OnboardingStrings.themeCulture,
-      icon: PhosphorIcons.palette(PhosphorIconsStyle.bold),
+      emoji: '🎨',
       color: Colors.pink,
     ),
     ThemeOption(
       slug: 'politics',
       label: OnboardingStrings.themePolitics,
-      icon: PhosphorIcons.bank(PhosphorIconsStyle.bold),
+      emoji: '🏛️',
       color: Colors.brown,
     ),
     ThemeOption(
       slug: 'society',
       label: OnboardingStrings.themeSociety,
-      icon: PhosphorIcons.users(PhosphorIconsStyle.bold),
+      emoji: '👥',
       color: Colors.teal,
     ),
     ThemeOption(
       slug: 'environment',
       label: OnboardingStrings.themeEnvironment,
-      icon: PhosphorIcons.leaf(PhosphorIconsStyle.bold),
+      emoji: '🌿',
       color: Colors.green,
     ),
     ThemeOption(
       slug: 'economy',
       label: OnboardingStrings.themeEconomy,
-      icon: PhosphorIcons.trendUp(PhosphorIconsStyle.bold),
+      emoji: '📈',
       color: Colors.indigo,
     ),
   ];
@@ -710,13 +709,13 @@ class AvailableThemes {
 class ThemeOption {
   final String slug;
   final String label;
-  final IconData icon;
+  final String emoji;
   final Color color;
 
   const ThemeOption({
     required this.slug,
     required this.label,
-    required this.icon,
+    required this.emoji,
     required this.color,
   });
 }

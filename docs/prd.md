@@ -14,6 +14,8 @@
 | 07/01/2026 | 1.0 | Création initiale | BMad Method |
 | 12/01/2026 | 1.1 | Mise à jour Algorithme V2 & Transparence | Antigravity |
 | 14/01/2026 | 1.2 | Ajout des nudges "Slow Media" (Finitude) | Antigravity |
+| 15/01/2026 | 1.3 | Story 4.6 V2 : filtres feed améliorés | Antigravity |
+| 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
 
 ---
 
@@ -226,8 +228,9 @@ facteur/
 | 5 | Consommation & Gamification | Détail, tracking auto, streak, progression | 7 |
 | 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement, paramètres Compte/Notif | 8 |
 | 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
+| 8 | Approfondissement & Progression | Le "Duolingo de l'info" — badges, quiz, écran Progressions | 7 |
 
-**Total : 38 stories**
+**Total : 45 stories**
 
 ---
 
@@ -594,22 +597,23 @@ facteur/
 
 ---
 
-### Story 4.6 : Filtres rapides
+### Story 4.6 : Filtres rapides (V2)
 
 **As a** utilisateur,  
-**I want** filtrer mon feed par type ou thème,  
-**so that** je puisse me concentrer sur ce que je veux.
+**I want** filtrer mon feed selon mon intention du moment,  
+**so that** je puisse adapter ma lecture à mon état d'esprit.
 
 **Acceptance Criteria :**
-**Acceptance Criteria :**
-1. Barre de filtres horizontale ("Chips")
-2. Filtres "Intent" :
-   - "Douceur" (Positive vibes, évite Pol/Eco)
-   - "Penser contre" (Perspective, sources opposées)
-   - "Deep Dive" (Formats longs)
-   - "À la une" (Articles récents < 24h)
+1. Barre de filtres horizontale ("Chips") avec description courte sous les chips
+2. Filtres "Intent" avec logique backend affinée :
+   - "Dernières news" (< 12h, thèmes hard news) → *Les actus de moins de 12h*
+   - "Rester serein" (exclut hard news) → *Loin des sujets chauds*
+   - "Longs formats" (> 10 min, inclut articles) → *Contenus de plus de 10 min*
+   - "Mes angles morts" (biais opposé, description dynamique) → *Selon biais utilisateur*
 3. Mise à jour instantanée du feed
-4. Reset possible ("Tout voir")
+4. Reset possible (re-tap = désélection)
+5. Référence détaillée : voir [Story 4.6b](stories/4.6b.filtres-v2.story.md)
+
 
 ---
 
@@ -914,6 +918,138 @@ facteur/
 2. ✅ Bottom sheet avec Bias Bar et liste de perspectives
 3. ✅ Tap ouvre l'article externe
 4. ✅ Loading state pendant la recherche
+
+---
+
+
+## Epic 8 : Approfondissement & Progression
+
+**Objectif :** Permettre aux utilisateurs de progresser sur des thèmes granulaires via un système gamifié — le **"Duolingo de l'information"**.
+
+**Status : 🟡 En cours de développement**
+
+> **Vision :** L'utilisateur ne se contente plus de consommer du contenu passivement. Il monte en compétence sur des sous-thèmes spécifiques (IA, Climat, Géopolitique Europe...) avec une progression visible, des quiz de validation, et un sentiment d'accomplissement.
+
+> [!IMPORTANT]
+> Cette Epic **remplace l'onglet "À consulter plus tard"** par un nouvel onglet **"Progressions"**. Les articles bookmarkés sont intégrés à l'écran Progressions comme contenus "À lire" par thème.
+
+---
+
+### Story 8.1 : Enrichissement du catalogue avec sous-thèmes granulaires
+
+**As a** développeur,  
+**I want** enrichir le modèle des sources avec des sous-thèmes granulaires,  
+**so that** le système puisse identifier précisément le domaine de chaque contenu.
+
+**Acceptance Criteria :**
+1. Table `sources` enrichie : nouvelle colonne `granular_topics TEXT[]`
+2. Taxonomie de 20-30 sous-thèmes définie (ex: `ai`, `crypto`, `climate`, `europe`, `startups`...)
+3. Les 24 sources curées sont enrichies manuellement avec leurs sous-thèmes
+4. Script d'import mis à jour pour intégrer `granular_topics` depuis CSV
+5. Seuil : un sous-thème n'est proposé à l'utilisateur que si ≥3 articles sont disponibles
+
+---
+
+### Story 8.2 : Modèle de données Progression utilisateur
+
+**As a** développeur,  
+**I want** un modèle de données pour stocker la progression par thème,  
+**so that** l'utilisateur puisse voir son niveau sur chaque sous-thème suivi.
+
+**Acceptance Criteria :**
+1. Table `user_topic_progress` créée : `user_id`, `topic_slug`, `articles_read`, `quizzes_passed`, `level`, `is_active`, `last_activity`
+2. Niveau calculé automatiquement : `level = articles_read / 5 + quizzes_passed * 2`
+3. Champ `is_active` pour différencier les thèmes explicitement suivis vs détectés
+4. API endpoint `GET /api/user/progress` retourne la liste des progressions
+5. API endpoint `POST /api/user/progress/{topic}/activate` pour suivre un thème
+6. Row Level Security (RLS) configuré
+
+---
+
+### Story 8.3 : Badge "Lu" discret sur les cards
+
+**As a** utilisateur,  
+**I want** voir un badge discret sur les articles que j'ai lus,  
+**so that** je puisse identifier rapidement ce que j'ai déjà consommé.
+
+**Acceptance Criteria :**
+1. Badge "✓ Lu" affiché en top-right de la card après consommation confirmée (temps >30s)
+2. Badge discret (petite taille, couleur terracotta/accent)
+3. Remplace le bouton "Marquer comme lu" actuel (moins intrusif)
+4. Le badge persiste lors du scroll et du refresh
+5. Design cohérent avec le thème sombre
+
+---
+
+### Story 8.4 : CTA "Approfondir" post-lecture
+
+**As a** utilisateur,  
+**I want** être invité à approfondir un thème après avoir lu un article,  
+**so that** je puisse construire une expertise sur les sujets qui m'intéressent.
+
+**Acceptance Criteria :**
+1. Bottom sheet affiché au retour sur le feed si temps de lecture >30s
+2. Message : "Tu veux progresser en [sous-thème] ?"
+3. Bouton "Oui, suivre" → ajoute le thème à `user_topic_progress` avec `is_active = true`
+4. Bouton "Explorer le thème" → ouvre le feed avec filtre pré-appliqué sur ce sous-thème
+5. Bouton "Non merci" → ferme le bottom sheet sans action
+6. Le CTA n'apparaît que pour les sous-thèmes avec ≥3 articles disponibles
+7. Fréquence limitée : 1 CTA max par session ou par nouveau thème rencontré
+
+---
+
+### Story 8.5 : Écran "Progressions" (remplace "À consulter plus tard")
+
+**As a** utilisateur,  
+**I want** voir ma progression sur les thèmes que je suis,  
+**so that** je ressente un sentiment d'accomplissement et sache où progresser.
+
+**Acceptance Criteria :**
+1. Nouvel onglet "Progressions" (icône 📈) remplace "À consulter" dans la bottom nav
+2. Liste des sous-thèmes suivis avec :
+   - Nom du thème + icône
+   - Jauge de progression (ex: 8/10 articles)
+   - Niveau actuel (Débutant, Niveau 1, Niveau 2...)
+3. Par thème, section "À lire pour progresser" avec 2-3 articles suggérés (non lus, du même sous-thème)
+4. Les articles bookmarkés (ancienne fonctionnalité) apparaissent dans cette section, classés par thème
+5. Tap sur "Explorer" → ouvre le feed filtré sur ce sous-thème
+6. État vide : message encourageant + explication du concept
+7. Indicateur si un quiz est disponible pour valider le niveau
+
+---
+
+### Story 8.6 : Quiz de validation (V0 - Memory Check)
+
+**As a** utilisateur,  
+**I want** valider ma progression via un quiz simple,  
+**so that** je prouve que j'ai retenu ce que j'ai lu.
+
+**Acceptance Criteria :**
+1. Quiz accessible depuis l'écran Progressions quand ≥5 articles lus sur un thème
+2. Format V0 : "Memory Check" — reconnaissance d'articles lus
+   - Affiche 3-5 titres d'articles
+   - L'utilisateur coche ceux qu'il a vraiment lus
+   - Validation si ≥60% correct
+3. Succès → `quizzes_passed` incrémenté, niveau augmenté
+4. Échec → message encourageant + liste des articles à relire
+5. Animation de célébration au passage de niveau
+6. Préparation pour V1/V2 : génération de quiz par LLM depuis descriptions RSS
+
+---
+
+### Story 8.7 : Migration de la fonctionnalité Bookmark
+
+**As a** utilisateur,  
+**I want** que mes articles sauvegardés soient intégrés à ma progression,  
+**so that** je puisse utiliser le bookmark pour contribuer à mon apprentissage.
+
+**Acceptance Criteria :**
+1. L'icône bookmark 🔖 reste présente sur les cards du feed
+2. Les articles bookmarkés apparaissent dans l'écran Progressions, section "À lire" par thème
+3. Si l'article n'a pas de thème identifié → section "Non classés" en bas de l'écran
+4. Suppression de la route `/saved` et de l'ancien écran "À consulter plus tard"
+5. Migration des données existantes : `user_content_status.status = 'saved'` → visible dans Progressions
+6. Toast de confirmation au bookmark : "Ajouté à Progressions"
 
 ---
 

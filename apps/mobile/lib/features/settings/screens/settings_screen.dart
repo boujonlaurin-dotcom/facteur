@@ -59,13 +59,17 @@ class SettingsScreen extends ConsumerWidget {
                   icon: Icons.person_outline,
                   title: 'Compte',
                   subtitle: 'Gérer vos informations',
-                  onTap: () {},
+                  onTap: () {
+                    context.pushNamed(RouteNames.account);
+                  },
                 ),
                 _buildTile(
                   context,
                   icon: Icons.notifications_none,
                   title: 'Notifications',
-                  onTap: () {},
+                  onTap: () {
+                    context.pushNamed(RouteNames.notifications);
+                  },
                 ),
                 _buildTile(
                   context,
@@ -115,34 +119,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
 
             const SizedBox(height: FacteurSpacing.space8),
-
-            // Logout
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space4,
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () {
-                    ref.read(authStateProvider.notifier).signOut();
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: colors.error,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: FacteurSpacing.space3,
-                    ),
-                  ),
-                  child: Text(
-                    'Se déconnecter',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelLarge?.copyWith(color: colors.error),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: FacteurSpacing.space8),
           ],
         ),
       ),
@@ -166,9 +142,9 @@ class SettingsScreen extends ConsumerWidget {
           child: Text(
             title,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.textTertiary,
-              letterSpacing: 1.5,
-            ),
+                  color: colors.textTertiary,
+                  letterSpacing: 1.5,
+                ),
           ),
         ),
         Container(
@@ -207,16 +183,16 @@ class SettingsScreen extends ConsumerWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                          fontWeight: FontWeight.w500,
+                        ),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
+                            color: colors.textSecondary,
+                          ),
                     ),
                   ],
                 ],

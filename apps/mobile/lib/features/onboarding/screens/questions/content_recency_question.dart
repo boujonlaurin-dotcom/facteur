@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -51,10 +50,7 @@ class ContentRecencyQuestion extends ConsumerWidget {
               children: [
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.newspaper(
-                      PhosphorIconsStyle.bold,
-                    ), // Récent -> Journal
-                    iconColor: colors.warning, // Orange/Urgent
+                    emoji: '🗞️', // Récent
                     label: OnboardingStrings.q7RecentLabel,
                     subtitle: OnboardingStrings.q7RecentSubtitle,
                     isSelected: selectedRecency == 'recent',
@@ -68,10 +64,7 @@ class ContentRecencyQuestion extends ConsumerWidget {
                 const SizedBox(width: FacteurSpacing.space3),
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.hourglass(
-                      PhosphorIconsStyle.bold,
-                    ), // Intemporel -> Sablier
-                    iconColor: colors.secondary, // Beige/Classique
+                    emoji: '⏳', // Intemporel
                     label: OnboardingStrings.q7TimelessLabel,
                     subtitle: OnboardingStrings.q7TimelessSubtitle,
                     isSelected: selectedRecency == 'timeless',

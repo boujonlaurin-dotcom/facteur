@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../../../config/routes.dart';
@@ -58,18 +57,18 @@ class FinalizeQuestion extends ConsumerWidget {
             child: Column(
               children: [
                 _SummaryRow(
-                  icon: PhosphorIcons.paintBrush(PhosphorIconsStyle.fill),
+                  emoji: '🎨',
                   label: OnboardingStrings.finalizeThemeSummary(themesCount),
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _SummaryRow(
-                  icon: _getFormatIcon(answers.formatPreference),
+                  emoji: _getFormatEmoji(answers.formatPreference),
                   label: _getFormatLabel(answers.formatPreference),
                 ),
                 if (hasGamification) ...[
                   const SizedBox(height: FacteurSpacing.space3),
                   _SummaryRow(
-                    icon: PhosphorIcons.target(PhosphorIconsStyle.fill),
+                    emoji: '🎯',
                     label: OnboardingStrings.finalizeGoalSummary(
                       answers.weeklyGoal ?? 10,
                     ),
@@ -110,18 +109,18 @@ class FinalizeQuestion extends ConsumerWidget {
     );
   }
 
-  IconData _getFormatIcon(String? format) {
+  String _getFormatEmoji(String? format) {
     switch (format) {
       case 'short':
-        return PhosphorIcons.fileText(PhosphorIconsStyle.fill);
+        return '📝';
       case 'long':
-        return PhosphorIcons.bookOpen(PhosphorIconsStyle.fill);
+        return '📖';
       case 'audio':
-        return PhosphorIcons.headphones(PhosphorIconsStyle.fill);
+        return '🎧';
       case 'video':
-        return PhosphorIcons.filmStrip(PhosphorIconsStyle.fill);
+        return '🎬';
       default:
-        return PhosphorIcons.fileText(PhosphorIconsStyle.fill);
+        return '📝';
     }
   }
 
@@ -142,23 +141,22 @@ class FinalizeQuestion extends ConsumerWidget {
 }
 
 class _SummaryRow extends StatelessWidget {
-  final IconData icon;
+  final String emoji;
   final String label;
 
-  const _SummaryRow({required this.icon, required this.label});
+  const _SummaryRow({required this.emoji, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return Row(
       children: [
-        Icon(icon, size: 24, color: colors.primary),
+        Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
         ),
-        Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-            color: colors.success, size: 20),
+        Icon(Icons.check_circle, color: colors.success, size: 20),
       ],
     );
   }

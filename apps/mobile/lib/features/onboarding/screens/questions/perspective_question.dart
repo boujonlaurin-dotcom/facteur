@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -50,10 +49,7 @@ class PerspectiveQuestion extends ConsumerWidget {
               children: [
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.binoculars(
-                      PhosphorIconsStyle.bold,
-                    ), // Vue d'ensemble -> Jumelles
-                    iconColor: colors.info, // Bleu/Large
+                    emoji: '🔭', // Vue d'ensemble
                     label: OnboardingStrings.q5BigPictureLabel,
                     subtitle: OnboardingStrings.q5BigPictureSubtitle,
                     isSelected: selectedPerspective == 'big_picture',
@@ -67,10 +63,7 @@ class PerspectiveQuestion extends ConsumerWidget {
                 const SizedBox(width: FacteurSpacing.space3),
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.microscope(
-                      PhosphorIconsStyle.bold,
-                    ), // Détails -> Microscope
-                    iconColor: colors.primary, // Rouge/Précis
+                    emoji: '🔬', // Détails
                     label: OnboardingStrings.q5DetailsLabel,
                     subtitle: OnboardingStrings.q5DetailsSubtitle,
                     isSelected: selectedPerspective == 'details',

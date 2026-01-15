@@ -11,6 +11,8 @@ import '../features/detail/screens/content_detail_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/sources/screens/sources_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
+import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/notifications_screen.dart';
 import '../features/progress/screens/progress_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../core/auth/auth_state.dart';
@@ -30,6 +32,8 @@ class RouteNames {
   static const String sources = 'sources';
   static const String addSource = 'add-source';
   static const String settings = 'settings';
+  static const String account = 'account';
+  static const String notifications = 'notifications';
   static const String progress = 'progress';
   static const String paywall = 'paywall';
 }
@@ -48,6 +52,8 @@ class RoutePaths {
   static const String sources = '/settings/sources'; // Moved to settings
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
+  static const String account = '/settings/account';
+  static const String notifications = '/settings/notifications';
   static const String progress = '/progress';
   static const String paywall = '/paywall';
 }
@@ -180,6 +186,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames
                     .sources, // Reusing existing name for trusted sources
                 builder: (context, state) => const SourcesScreen(),
+              ),
+              GoRoute(
+                path: 'account', // /settings/account
+                name: RouteNames.account,
+                builder: (context, state) => const AccountScreen(),
+              ),
+              GoRoute(
+                path: 'notifications', // /settings/notifications
+                name: RouteNames.notifications,
+                builder: (context, state) => const NotificationsScreen(),
               ),
             ],
           ),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_logo.dart';
 import '../onboarding_strings.dart';
 
 /// Écran de réaction personnalisée après une réponse clé
@@ -93,10 +92,17 @@ class _ReactionScreenState extends State<ReactionScreen>
         children: [
           const Spacer(flex: 2),
 
-          // Logo Facteur animé (fade in)
+          // Élément visuel neutre et minimaliste
           FadeTransition(
             opacity: _fadeAnimation,
-            child: const FacteurLogo(size: 80),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
           ),
 
           const SizedBox(height: FacteurSpacing.space8),

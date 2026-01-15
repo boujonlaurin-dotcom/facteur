@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -50,11 +49,7 @@ class ResponseStyleQuestion extends ConsumerWidget {
               children: [
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.sword(
-                      PhosphorIconsStyle.bold,
-                    ), // Tranché -> Épée
-                    iconColor: colors
-                        .error, // Rouge/Action (using error for bold color)
+                    emoji: '⚔️', // Tranché
                     label: OnboardingStrings.q6DecisiveLabel,
                     subtitle: OnboardingStrings.q6DecisiveSubtitle,
                     isSelected: selectedStyle == 'decisive',
@@ -68,10 +63,7 @@ class ResponseStyleQuestion extends ConsumerWidget {
                 const SizedBox(width: FacteurSpacing.space3),
                 Expanded(
                   child: BinarySelectionCard(
-                    icon: PhosphorIcons.scales(
-                      PhosphorIconsStyle.bold,
-                    ), // Nuancé -> Balance
-                    iconColor: colors.info, // Bleu/Calme
+                    emoji: '⚖️', // Nuancé
                     label: OnboardingStrings.q6NuancedLabel,
                     subtitle: OnboardingStrings.q6NuancedSubtitle,
                     isSelected: selectedStyle == 'nuanced',

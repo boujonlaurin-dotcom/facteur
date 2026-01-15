@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -54,15 +53,13 @@ class GamificationQuestion extends ConsumerWidget {
             child: Column(
               children: [
                 _FeatureRow(
-                  icon: PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                  iconColor: colors.warning, // Feu -> Orange
+                  emoji: '🔥', // Streak
                   title: OnboardingStrings.q8StreakTitle,
                   description: OnboardingStrings.q8StreakDesc,
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _FeatureRow(
-                  icon: PhosphorIcons.chartBar(PhosphorIconsStyle.fill),
-                  iconColor: colors.info, // Stats -> Bleu
+                  emoji: '📊', // Weekly stats
                   title: OnboardingStrings.q8WeeklyTitle,
                   description: OnboardingStrings.q8WeeklyDesc,
                 ),
@@ -74,8 +71,7 @@ class GamificationQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            icon: PhosphorIcons.checkCircle(PhosphorIconsStyle.bold),
-            iconColor: colors.success, // Oui -> Vert
+            emoji: '✅', // Oui
             label: OnboardingStrings.q8YesLabel,
             isSelected: gamificationEnabled == true,
             onTap: () {
@@ -86,8 +82,7 @@ class GamificationQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            icon: PhosphorIcons.prohibit(PhosphorIconsStyle.bold),
-            iconColor: colors.secondary, // Non -> Gris
+            emoji: '🚫', // Non
             label: OnboardingStrings.q8NoLabel,
             subtitle: OnboardingStrings.q8NoSubtitle,
             isSelected: gamificationEnabled == false,
@@ -104,14 +99,12 @@ class GamificationQuestion extends ConsumerWidget {
 }
 
 class _FeatureRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
+  final String emoji;
   final String title;
   final String description;
 
   const _FeatureRow({
-    required this.icon,
-    required this.iconColor,
+    required this.emoji,
     required this.title,
     required this.description,
   });
@@ -120,7 +113,7 @@ class _FeatureRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 24, color: iconColor),
+        Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: Column(

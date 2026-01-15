@@ -151,12 +151,9 @@ class _ThemeChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              theme.icon,
-              size: 20,
-              color: isSelected
-                  ? theme.color
-                  : context.facteurColors.textSecondary,
+            Text(
+              theme.emoji,
+              style: const TextStyle(fontSize: 20),
             ),
             const SizedBox(width: FacteurSpacing.space2),
             Text(

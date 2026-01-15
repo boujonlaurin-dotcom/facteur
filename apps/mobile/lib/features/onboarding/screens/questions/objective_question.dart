@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart'; // Import icons
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
@@ -44,8 +43,7 @@ class ObjectiveQuestion extends ConsumerWidget {
 
           // Options
           SelectionCard(
-            icon: PhosphorIcons.waves(PhosphorIconsStyle.bold), // Bruit
-            iconColor: colors.info, // Bleu
+            emoji: '🔊', // Bruit
             label: OnboardingStrings.q1NoiseLabel,
             subtitle: OnboardingStrings.q1NoiseSubtitle,
             isSelected: selectedObjective == 'noise',
@@ -57,8 +55,7 @@ class ObjectiveQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            icon: PhosphorIcons.scales(PhosphorIconsStyle.bold), // Biais
-            iconColor: colors.warning, // Orange
+            emoji: '⚖️', // Biais
             label: OnboardingStrings.q1BiasLabel,
             subtitle: OnboardingStrings.q1BiasSubtitle,
             isSelected: selectedObjective == 'bias',
@@ -70,8 +67,7 @@ class ObjectiveQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           SelectionCard(
-            icon: PhosphorIcons.heartBreak(PhosphorIconsStyle.bold), // Anxiété
-            iconColor: colors.error, // Rouge
+            emoji: '👎', // Négativité
             label: OnboardingStrings.q1AnxietyLabel,
             subtitle: OnboardingStrings.q1AnxietySubtitle,
             isSelected: selectedObjective == 'anxiety',

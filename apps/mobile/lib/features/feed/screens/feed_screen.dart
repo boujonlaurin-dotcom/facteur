@@ -25,6 +25,8 @@ import '../widgets/caught_up_card.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
+import '../../settings/providers/user_profile_provider.dart';
+import '../providers/user_bias_provider.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -293,7 +295,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Bonjour ${authState.user?.email?.split('@')[0] ?? 'Vous'},',
+                                'Bonjour ${ref.watch(userProfileProvider).firstName ?? authState.user?.email?.split('@')[0] ?? 'Vous'},',
                                 style: Theme.of(
                                   context,
                                 ).textTheme.displayMedium,
@@ -323,6 +325,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: FilterBar(
                         selectedFilter:
                             ref.read(feedProvider.notifier).selectedFilter,
+                        userBias: ref.watch(userBiasProvider).valueOrNull,
                         onFilterChanged: (String? filter) {
                           ref.read(feedProvider.notifier).setFilter(filter);
                         },

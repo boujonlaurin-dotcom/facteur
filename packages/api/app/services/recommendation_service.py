@@ -282,17 +282,28 @@ class RecommendationService:
                 query = query.where(Source.theme.notin_(['politics', 'geopolitics', 'economy']))
             
             elif mode == FeedFilterMode.DEEP_DIVE:
-                # Mode "Grand Format" : Strictly immersive media (Video/Podcast > 10m). Exclude Articles.
+                # Mode "Grand Format" : Contenus > 10min (videos, podcasts, OU articles longs)
+                # Pour les articles, on estime ~200 mots/minute, donc 10min = 2000 mots
+                # On utilise duration_seconds > 600 (10min) pour tous les types
                 query = query.where(
-                    and_(
-                        Content.duration_seconds > 600,
-                        Content.content_type.in_([ContentType.PODCAST, ContentType.YOUTUBE])
+                    or_(
+                        # Videos et Podcasts avec durée > 10 min
+                        and_(
+                            Content.duration_seconds > 600,
+                            Content.content_type.in_([ContentType.PODCAST, ContentType.YOUTUBE])
+                        ),
+                        # Articles longs (estimation basée sur description length comme proxy)
+                        # TODO: Ajouter un vrai champ reading_time_minutes à Content
+                        and_(
+                            Content.content_type == ContentType.ARTICLE,
+                            func.length(Content.description) > 2000  # ~10 min de lecture
+                        )
                     )
                 )
 
             elif mode == FeedFilterMode.BREAKING:
-                 # Mode "L'Actualité" : Fresh news (< 24h) from Hard News themes.
-                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+                 # Mode "Dernières news" : Fresh news (< 12h) from Hard News themes.
+                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
                  query = query.where(
                     and_(
                         Content.published_at >= limit_date,
