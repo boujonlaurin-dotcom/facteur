@@ -168,7 +168,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Column(
                   children: [
                     Icon(
-                      PhosphorIcons.envelopeSimple(PhosphorIconsStyle.fill),
+                      PhosphorIcons.envelopeOpen(PhosphorIconsStyle.fill),
                       size: 64,
                       color: colors.primary,
                     ),
@@ -177,13 +177,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       'Facteur',
                       style: Theme.of(context).textTheme.displayLarge?.copyWith(
                             color: colors.textPrimary,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Tes contenus, triés avec soin.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: colors.textSecondary,
                           ),
                     ),
                   ],

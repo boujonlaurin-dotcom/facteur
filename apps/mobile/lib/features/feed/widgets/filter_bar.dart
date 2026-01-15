@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 /// Map des descriptions courtes pour chaque filtre (1 ligne max)
 const Map<String, String> filterDescriptions = {
   'breaking': 'Les actus chaudes des dernières 12h',
-  'inspiration': 'Une pause respiration loin de l\'agitation',
+  'inspiration': 'Sans thèmes anxiogènes (Politique, Géopolitique...)',
   'deep_dive': 'Des formats longs pour comprendre',
-  // 'perspectives' est dynamique, géré séparément
 };
 
 /// Descriptions dynamiques pour le filtre "perspectives" selon le biais utilisateur
@@ -13,12 +12,12 @@ String getPerspectivesDescription(String? userBias) {
   switch (userBias) {
     case 'left':
     case 'center-left':
-      return 'Vos lectures penchent à gauche. Voici de quoi équilibrer.';
+      return 'Du contenu à droite, pour changer de prisme (gauche)';
     case 'right':
     case 'center-right':
-      return 'Vos lectures penchent à droite. Voici de quoi équilibrer.';
+      return 'Du contenu à gauche, pour changer de prisme (droite)';
     case 'center':
-      return 'Vos lectures sont équilibrées. Voici de quoi explorer ailleurs.';
+      return 'Du contenu varié, pour changer de prisme (centre)';
     default:
       return 'Changez d\'angle de vue pour enrichir votre opinion.';
   }
@@ -49,25 +48,67 @@ class _FilterBarState extends State<FilterBar> {
     'deep_dive': GlobalKey(),
   };
 
-  // LayerLinks pour l'alignement précis
-  final Map<String, LayerLink> _layerLinks = {
-    'breaking': LayerLink(),
-    'inspiration': LayerLink(),
-    'perspectives': LayerLink(),
-    'deep_dive': LayerLink(),
-  };
+  // Position d'alignement calculée (entre -1.0 et 1.0)
+  double _descriptionAlignX = 0.0;
+
+  String? _currentDescription;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateDescription();
+    // Calculer l'alignement initial après le premier build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateAlignX();
+    });
+  }
 
   @override
   void didUpdateWidget(FilterBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Si le filtre change, on essaye de scroller vers le nouveau filtre
-    if (widget.selectedFilter != oldWidget.selectedFilter &&
-        widget.selectedFilter != null) {
-      // On attend la fin du frame pour que la taille soit correcte
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToSelected();
-      });
+    if (oldWidget.selectedFilter != widget.selectedFilter) {
+      _updateDescription();
+      _scrollToSelected();
+      _updateAlignX();
     }
+  }
+
+  void _updateAlignX() {
+    if (widget.selectedFilter == null) return;
+
+    // Attendre que le layout soit fait
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _keys[widget.selectedFilter];
+      final context = key?.currentContext;
+      if (context == null) return;
+
+      final box = context.findRenderObject() as RenderBox;
+      final position = box.localToGlobal(Offset.zero);
+      final centerX = position.dx + box.size.width / 2;
+      final screenWidth = MediaQuery.of(context).size.width;
+
+      setState(() {
+        // Mapper de [0, screenWidth] vers [-1, 1]
+        // Avec une petite marge de sécurité pour ne pas coller aux bords extrêmes
+        _descriptionAlignX = (centerX / screenWidth) * 2 - 1;
+
+        // Brider l'alignement pour éviter que le texte ne sorte de l'écran
+        // (le texte a son propre padding de 16px)
+        _descriptionAlignX = _descriptionAlignX.clamp(-0.8, 0.8);
+      });
+    });
+  }
+
+  void _updateDescription() {
+    setState(() {
+      if (widget.selectedFilter == null) {
+        _currentDescription = null;
+      } else if (widget.selectedFilter == 'perspectives') {
+        _currentDescription = getPerspectivesDescription(widget.userBias);
+      } else {
+        _currentDescription = filterDescriptions[widget.selectedFilter];
+      }
+    });
   }
 
   void _scrollToSelected() {
@@ -101,27 +142,13 @@ class _FilterBarState extends State<FilterBar> {
     super.dispose();
   }
 
-  String? get _currentDescription {
-    if (widget.selectedFilter == null) return null;
-    if (widget.selectedFilter == 'perspectives') {
-      return getPerspectivesDescription(widget.userBias);
-    }
-    return filterDescriptions[widget.selectedFilter];
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // Trouver le LayerLink actif
-    final activeLink = widget.selectedFilter != null
-        ? _layerLinks[widget.selectedFilter]
-        : null;
-
     return Column(
-      crossAxisAlignment: CrossAxisAlignment
-          .start, // Alignement par défaut, le follower gère la position
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         // Chips scrollables
@@ -142,43 +169,34 @@ class _FilterBarState extends State<FilterBar> {
             ],
           ),
         ),
-        // Description alignée précisément avec LayerLink
-        if (_currentDescription != null && activeLink != null)
-          CompositedTransformFollower(
-            link: activeLink,
-            showWhenUnlinked: false,
-            // Ancrage : le centre haut de la description au centre bas du chip
-            targetAnchor: Alignment.bottomCenter,
-            followerAnchor: Alignment.topCenter,
-            offset: const Offset(0, 8), // Petit espace vertical
-            child: Material(
-              // Nécessaire car LayerLink sort du contexte normal
-              type: MaterialType.transparency,
-              child: AnimatedOpacity(
-                opacity: _currentDescription != null ? 1.0 : 0.0,
+        // Description avec alignement dynamique pour suivre le chip
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: Container(
+            height: _currentDescription != null ? null : 0,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment(_descriptionAlignX, 0),
+              child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
-                child: Container(
-                  // Largeur max contrainte pour éviter débordement écran
-                  constraints: BoxConstraints(
-                    maxWidth:
-                        MediaQuery.of(context).size.width - 32, // Padding écran
-                  ),
-                  child: Text(
-                    _currentDescription!,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.5),
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
+                child: _currentDescription != null
+                    ? Text(
+                        _currentDescription!,
+                        key: ValueKey(_currentDescription),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withOpacity(0.5),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
-          )
-        // Espace réservé pour éviter sauts de layout si besoin,
-        // ou widget invisible si on veut garder la place prise par l'ancien AnimatedSize
-        else
-          const SizedBox(height: 24),
+          ),
+        ),
       ],
     );
   }
@@ -187,40 +205,36 @@ class _FilterBarState extends State<FilterBar> {
     final isSelected = widget.selectedFilter == value;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final link = _layerLinks[value]!;
 
     final selectedBg = colorScheme.primary;
     const unselectedBg = Colors.transparent;
     final selectedText = colorScheme.onPrimary;
     final unselectedText = colorScheme.onSurface.withOpacity(0.5);
 
-    return CompositedTransformTarget(
-      link: link,
-      child: Padding(
-        key: _keys[value],
-        padding: EdgeInsets.zero,
-        child: ChoiceChip(
-          label: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? selectedText : unselectedText,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              fontSize: 14,
-            ),
+    return Padding(
+      key: _keys[value],
+      padding: EdgeInsets.zero,
+      child: ChoiceChip(
+        label: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? selectedText : unselectedText,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            fontSize: 14,
           ),
-          selected: isSelected,
-          onSelected: (bool selected) {
-            widget.onFilterChanged(selected ? value : null);
-          },
-          showCheckmark: false,
-          selectedColor: selectedBg,
-          backgroundColor: unselectedBg,
-          side: BorderSide.none,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          visualDensity: VisualDensity.compact,
         ),
+        selected: isSelected,
+        onSelected: (bool selected) {
+          widget.onFilterChanged(selected ? value : null);
+        },
+        showCheckmark: false,
+        selectedColor: selectedBg,
+        backgroundColor: unselectedBg,
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        visualDensity: VisualDensity.compact,
       ),
     );
   }

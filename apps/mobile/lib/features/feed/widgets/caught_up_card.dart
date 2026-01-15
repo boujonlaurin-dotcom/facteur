@@ -112,7 +112,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
 
                 // Message
                 Text(
-                  'Que dis-tu d\'une pause ?\nTu peux continuer à scroller si tu veux.',
+                  'Que dis-tu d\'une pause ?\nRien ne vaut un point de temps loin des écrans.',
                   style: textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
