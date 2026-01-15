@@ -43,7 +43,11 @@ jobs:
       - name: Build APK
         run: |
           cd apps/mobile
-          flutter build apk --release --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL }}"
+          flutter build apk --release \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
+            --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
