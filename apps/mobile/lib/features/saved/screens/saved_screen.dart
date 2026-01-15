@@ -48,7 +48,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          "À consulter plus tard",
+          'À consulter plus tard',
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         centerTitle: false,
@@ -72,7 +72,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      "Aucun contenu à consulter",
+                      'Aucun contenu à consulter',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textSecondary,
                           ),
@@ -138,7 +138,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                 ..hideCurrentSnackBar()
                                 ..showSnackBar(
                                   SnackBar(
-                                    content: const Text("Contenu retiré"),
+                                    content: const Text('Contenu retiré'),
                                     action: SnackBarAction(
                                       label: 'Annuler',
                                       textColor: colors.primary,
@@ -192,7 +192,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
           },
           loading: () =>
               Center(child: CircularProgressIndicator(color: colors.primary)),
-          error: (err, stack) => Center(child: Text("Erreur: $err")),
+          error: (err, stack) => Center(child: Text('Erreur: $err')),
         ),
       ),
     );

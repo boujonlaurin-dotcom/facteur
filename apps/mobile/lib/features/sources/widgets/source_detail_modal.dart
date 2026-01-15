@@ -110,7 +110,7 @@ class SourceDetailModal extends StatelessWidget {
                         color: source.getReliabilityColor()),
                     const SizedBox(width: 8),
                     Text(
-                      "Qualité Facteur (FQS)",
+                      'Qualité Facteur (FQS)',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.bold,
@@ -128,13 +128,13 @@ class SourceDetailModal extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 _buildFqsPillar(
-                    context, "Indépendance", source.scoreIndependence ?? 0.0),
+                    context, 'Indépendance', source.scoreIndependence ?? 0.0),
                 const SizedBox(height: 8),
-                _buildFqsPillar(context, "Rigueur Journalistique",
+                _buildFqsPillar(context, 'Rigueur Journalistique',
                     source.scoreRigor ?? 0.0),
                 const SizedBox(height: 8),
                 _buildFqsPillar(
-                    context, "UX & Publicité", source.scoreUx ?? 0.0),
+                    context, 'UX & Publicité', source.scoreUx ?? 0.0),
               ],
             ),
           ),
@@ -166,8 +166,8 @@ class SourceDetailModal extends StatelessWidget {
               Navigator.pop(context);
             },
             label: source.isTrusted
-                ? "Ne plus suivre"
-                : "Ajouter comme source de confiance",
+                ? 'Ne plus suivre'
+                : 'Ajouter comme source de confiance',
             type: !source.isTrusted
                 ? FacteurButtonType.primary
                 : FacteurButtonType.secondary,

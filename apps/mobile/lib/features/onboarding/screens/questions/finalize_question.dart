@@ -90,15 +90,15 @@ class FinalizeQuestion extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: 18),
               backgroundColor: colors.primary,
             ),
-            child: Row(
+            child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
+                Text(
                   OnboardingStrings.finalizeButton,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(width: FacteurSpacing.space2),
-                const Icon(Icons.arrow_forward_rounded, size: 20),
+                SizedBox(width: FacteurSpacing.space2),
+                Icon(Icons.arrow_forward_rounded, size: 20),
               ],
             ),
           ),

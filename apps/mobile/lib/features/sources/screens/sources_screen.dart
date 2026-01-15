@@ -41,7 +41,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sources de confiance'),
-        actions: [],
+        actions: const [],
       ),
       body: sourcesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -110,12 +110,13 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   itemCount: filteredSources.length + 1,
                   itemBuilder: (context, index) {
                     if (index == 0) {
-                      if (_searchQuery.isNotEmpty)
+                      if (_searchQuery.isNotEmpty) {
                         return const SizedBox.shrink();
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 24.0),
                         child: Text(
-                          "Indiquez-nous les sources auxquelles vous faites le plus confiance. Nous les privilégierons par défaut dans votre feed.",
+                          'Indiquez-nous les sources auxquelles vous faites le plus confiance. Nous les privilégierons par défaut dans votre feed.',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: colors.textSecondary,

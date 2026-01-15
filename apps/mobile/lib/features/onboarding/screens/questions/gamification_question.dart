@@ -50,14 +50,14 @@ class GamificationQuestion extends ConsumerWidget {
               color: colors.surface,
               borderRadius: BorderRadius.circular(FacteurRadius.medium),
             ),
-            child: Column(
+            child: const Column(
               children: [
                 _FeatureRow(
                   emoji: '🔥',
                   title: OnboardingStrings.q8StreakTitle,
                   description: OnboardingStrings.q8StreakDesc,
                 ),
-                const SizedBox(height: FacteurSpacing.space3),
+                SizedBox(height: FacteurSpacing.space3),
                 _FeatureRow(
                   emoji: '📊',
                   title: OnboardingStrings.q8WeeklyTitle,
@@ -128,8 +128,8 @@ class _FeatureRow extends StatelessWidget {
               Text(
                 description,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: context.facteurColors.textSecondary,
-                ),
+                      color: context.facteurColors.textSecondary,
+                    ),
               ),
             ],
           ),

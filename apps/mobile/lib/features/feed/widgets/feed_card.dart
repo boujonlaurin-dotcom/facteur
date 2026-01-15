@@ -171,7 +171,7 @@ class FeedCard extends StatelessWidget {
                       if (content.recommendationReason != null) ...[
                         const SizedBox(width: FacteurSpacing.space2),
                         Text(
-                          "•",
+                          '•',
                           style: textTheme.labelSmall?.copyWith(
                             color: colors.textSecondary.withOpacity(0.5),
                             fontSize: 10,
@@ -301,6 +301,6 @@ class FeedCard extends StatelessWidget {
   String _formatDuration(int seconds) {
     if (seconds < 60) return '${seconds}s';
     final minutes = (seconds / 60).ceil();
-    return '${minutes} min';
+    return '$minutes min';
   }
 }

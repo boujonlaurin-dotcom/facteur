@@ -67,12 +67,12 @@ class _MinimalLoaderPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width / 2) - 2; // Padding de 2px
-    final strokeWidth = 3.5; // Trait fin mais visible
+    const strokeWidth = 3.5; // Trait fin mais visible
 
     // 1. Fond du cercle (Track) - subtil et rassurant
     final trackPaint = Paint()
-      ..color = color
-          .withValues(alpha: 0.1) // Très léger rappel de la couleur primaire
+      ..color = color.withValues(
+          alpha: 0.1) // Très léger rappel de la couleur primaire
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
 
@@ -82,13 +82,12 @@ class _MinimalLoaderPainter extends CustomPainter {
     final arcPaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap
-          .round // Bouts arrondis pour le côté "soft"
+      ..strokeCap = StrokeCap.round // Bouts arrondis pour le côté "soft"
       ..strokeWidth = strokeWidth;
 
     // Animation de rotation + longueur d'arc variable (Material style, mais plus doux)
     final startAngle = -math.pi / 2 + (progress * 2 * math.pi);
-    final sweepAngle =
+    const sweepAngle =
         math.pi * 0.7; // Longueur d'arc constante pour la sobriété
 
     canvas.drawArc(

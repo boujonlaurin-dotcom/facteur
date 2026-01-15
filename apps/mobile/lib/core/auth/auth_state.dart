@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/auth/utils/auth_error_messages.dart';
+
 /// État d'authentification
 class AuthState {
   final User? user;
@@ -11,11 +13,15 @@ class AuthState {
   final bool needsOnboarding;
   final String? error;
 
+  /// Email en attente de confirmation après signup
+  final String? pendingEmailConfirmation;
+
   const AuthState({
     this.user,
     this.isLoading = false,
     this.needsOnboarding = false,
     this.error,
+    this.pendingEmailConfirmation,
   });
 
   bool get isAuthenticated => user != null;
@@ -25,12 +31,17 @@ class AuthState {
     bool? isLoading,
     bool? needsOnboarding,
     String? error,
+    String? pendingEmailConfirmation,
+    bool clearPendingEmail = false,
   }) {
     return AuthState(
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       needsOnboarding: needsOnboarding ?? this.needsOnboarding,
       error: error,
+      pendingEmailConfirmation: clearPendingEmail
+          ? null
+          : (pendingEmailConfirmation ?? this.pendingEmailConfirmation),
     );
   }
 }
@@ -87,7 +98,9 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         // Éviter les mises à jour inutiles si l'user n'a pas changé
         if (state.user?.id == user?.id &&
             !state.isLoading &&
-            state.user != null) return;
+            state.user != null) {
+          return;
+        }
         if (state.user == null && user == null && !state.isLoading) return;
 
         state = state.copyWith(user: user, isLoading: false);
@@ -167,7 +180,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       await _supabase.auth.signInWithPassword(email: email, password: password);
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -181,9 +197,16 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
     try {
       await _supabase.auth.signUp(email: email, password: password);
-      state = state.copyWith(isLoading: false, needsOnboarding: true);
+      // Signaler que l'email de confirmation a été envoyé
+      state = state.copyWith(
+        isLoading: false,
+        pendingEmailConfirmation: email,
+      );
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -198,7 +221,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       await _supabase.auth.resetPasswordForEmail(email);
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
       rethrow;
     } catch (e) {
       state = state.copyWith(
@@ -215,7 +241,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.apple);
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -230,7 +259,10 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.google);
     } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -254,6 +286,11 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
   void clearError() {
     state = state.copyWith(error: null);
+  }
+
+  /// Efface l'état de pending email confirmation (après navigation vers l'écran de confirmation)
+  void clearPendingEmailConfirmation() {
+    state = state.copyWith(clearPendingEmail: true);
   }
 }
 

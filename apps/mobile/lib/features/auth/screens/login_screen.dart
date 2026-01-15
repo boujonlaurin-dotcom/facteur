@@ -6,6 +6,7 @@ import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../shared/widgets/buttons/secondary_button.dart';
+import 'email_confirmation_screen.dart';
 
 /// Écran de connexion / inscription
 class LoginScreen extends ConsumerStatefulWidget {
@@ -135,6 +136,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
     final colors = context.facteurColors;
+
+    // Naviguer vers l'écran de confirmation email après signup
+    ref.listen<AuthState>(authStateProvider, (previous, next) {
+      if (next.pendingEmailConfirmation != null &&
+          previous?.pendingEmailConfirmation == null) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => EmailConfirmationScreen(
+              email: next.pendingEmailConfirmation!,
+            ),
+          ),
+        );
+        // Effacer l'état pour éviter une 2ème navigation
+        ref.read(authStateProvider.notifier).clearPendingEmailConfirmation();
+      }
+    });
 
     return Scaffold(
       body: SafeArea(
@@ -286,19 +303,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   isLoading: authState.isLoading,
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
-                // Toggle inscription/connexion
-                Center(
-                  child: TextButton(
-                    onPressed: _toggleMode,
-                    child: Text(
-                      _isSignUp
-                          ? 'Déjà un compte ? Se connecter'
-                          : 'Pas de compte ? S\'inscrire',
+                // Toggle inscription/connexion amélioré
+                if (!_isSignUp) ...[
+                  // Mode login : afficher un encart attractif pour l'inscription
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: colors.primary.withOpacity(0.3),
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      color: colors.primary.withOpacity(0.05),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Pas encore de compte ?',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: colors.textSecondary,
+                                  ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _toggleMode,
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                              color: colors.primary,
+                              width: 1.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 24,
+                            ),
+                          ),
+                          child: Text(
+                            'Créer un compte gratuitement',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                  color: colors.primary,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                ] else ...[
+                  // Mode signup : simple lien pour revenir au login
+                  Center(
+                    child: TextButton(
+                      onPressed: _toggleMode,
+                      child: Text(
+                        'Déjà un compte ? Se connecter',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.textSecondary,
+                              decoration: TextDecoration.underline,
+                            ),
+                      ),
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 32),
 

@@ -5,10 +5,10 @@ class FilterBar extends StatelessWidget {
   final ValueChanged<String?> onFilterChanged;
 
   const FilterBar({
-    Key? key,
+    super.key,
     required this.selectedFilter,
     required this.onFilterChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +17,7 @@ class FilterBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
         children: [
-          _buildFilterChip(context, "Dernières news", 'breaking'),
+          _buildFilterChip(context, 'Dernières news', 'breaking'),
           const SizedBox(width: 8),
           _buildFilterChip(context, 'Rester serein', 'inspiration'),
           const SizedBox(width: 8),
@@ -38,7 +38,7 @@ class FilterBar extends StatelessWidget {
     // Selected: Primary Orange (Highly visible)
     // Unselected: "Ghost" state (Low-opacity text, no background/border)
     final selectedBg = colorScheme.primary;
-    final unselectedBg = Colors.transparent;
+    const unselectedBg = Colors.transparent;
     final selectedText = colorScheme.onPrimary;
     final unselectedText = colorScheme.onSurface.withOpacity(0.5);
 

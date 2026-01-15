@@ -71,20 +71,20 @@ class OnboardingAnswers {
   }
 
   Map<String, dynamic> toJson() => {
-    'objective': objective,
-    'age_range': ageRange,
-    'gender': gender,
-    'approach': approach,
-    'perspective': perspective,
-    'response_style': responseStyle,
-    'content_recency': contentRecency,
-    'gamification_enabled': gamificationEnabled,
-    'weekly_goal': weeklyGoal,
-    'themes': themes,
-    'preferred_sources': preferredSources,
-    'format_preference': formatPreference,
-    'personal_goal': personalGoal,
-  };
+        'objective': objective,
+        'age_range': ageRange,
+        'gender': gender,
+        'approach': approach,
+        'perspective': perspective,
+        'response_style': responseStyle,
+        'content_recency': contentRecency,
+        'gamification_enabled': gamificationEnabled,
+        'weekly_goal': weeklyGoal,
+        'themes': themes,
+        'preferred_sources': preferredSources,
+        'format_preference': formatPreference,
+        'personal_goal': personalGoal,
+      };
 
   factory OnboardingAnswers.fromJson(Map<String, dynamic> json) {
     return OnboardingAnswers(
@@ -98,8 +98,8 @@ class OnboardingAnswers {
       gamificationEnabled: json['gamification_enabled'] as bool?,
       weeklyGoal: json['weekly_goal'] as int?,
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
-      preferredSources: (json['preferred_sources'] as List<dynamic>?)
-          ?.cast<String>(),
+      preferredSources:
+          (json['preferred_sources'] as List<dynamic>?)?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
       personalGoal: json['personal_goal'] as String?,
     );
@@ -259,11 +259,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
         state = state.copyWith(
           answers: answers,
           currentSection: savedSection != null && savedSection is int
-              ? OnboardingSection.values[savedSection as int]
+              ? OnboardingSection.values[savedSection]
               : OnboardingSection.overview,
-          currentQuestionIndex: savedQuestion is int
-              ? (savedQuestion as int)
-              : 0,
+          currentQuestionIndex: savedQuestion is int ? savedQuestion : 0,
         );
       }
     } catch (e) {
@@ -608,8 +606,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 /// Provider de l'état d'onboarding
 final onboardingProvider =
     StateNotifierProvider<OnboardingNotifier, OnboardingState>((ref) {
-      return OnboardingNotifier();
-    });
+  return OnboardingNotifier();
+});
 
 /// Provider pour vérifier si Section 1 est complète
 final isSection1CompleteProvider = Provider<bool>((ref) {
@@ -624,8 +622,7 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
 final isSection2CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  final baseComplete =
-      answers.perspective != null &&
+  final baseComplete = answers.perspective != null &&
       answers.responseStyle != null &&
       answers.contentRecency != null &&
       answers.gamificationEnabled != null;

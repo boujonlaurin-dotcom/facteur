@@ -95,8 +95,9 @@ class _WelcomeBannerState extends State<WelcomeBanner>
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     return SlideTransition(
-      position:
-          reduceMotion ? AlwaysStoppedAnimation(Offset.zero) : _slideAnimation,
+      position: reduceMotion
+          ? const AlwaysStoppedAnimation(Offset.zero)
+          : _slideAnimation,
       child: FadeTransition(
         opacity:
             reduceMotion ? const AlwaysStoppedAnimation(1.0) : _fadeAnimation,

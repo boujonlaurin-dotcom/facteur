@@ -36,7 +36,7 @@ class FacteurButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Shared content
-    Widget content = Row(
+    final Widget content = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [

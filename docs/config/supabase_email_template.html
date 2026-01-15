@@ -1,0 +1,117 @@
+<!--
+  Template Email de Confirmation - Facteur
+  =========================================
+  
+  CONFIGURATION SUPABASE:
+  1. Aller dans le Dashboard Supabase
+  2. Authentication → Email Templates
+  3. Sélectionner "Confirm signup"
+  4. Coller ce template HTML
+  5. Subject: Confirme ton compte Facteur 📬
+  
+  VARIABLES DISPONIBLES:
+  - {{ .ConfirmationURL }} : Lien de confirmation
+  - {{ .Email }} : Adresse email de l'utilisateur
+  - {{ .SiteURL }} : URL du site
+-->
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirme ton compte Facteur</title>
+</head>
+
+<body
+    style="margin: 0; padding: 0; background-color: #121212; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #121212; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table width="100%" style="max-width: 480px;" cellpadding="0" cellspacing="0">
+
+                    <!-- Card principale -->
+                    <tr>
+                        <td style="background-color: #1E1E1E; border-radius: 16px; overflow: hidden;">
+
+                            <!-- Header -->
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="padding: 32px 32px 24px; text-align: center;">
+                                        <div style="font-size: 32px; margin-bottom: 8px;">📬</div>
+                                        <h1 style="margin: 0; font-size: 24px; font-weight: 600; color: #F5F5F5;">
+                                            Bienvenue sur Facteur !
+                                        </h1>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Body -->
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="padding: 0 32px 24px;">
+                                        <p
+                                            style="margin: 0 0 16px; font-size: 16px; line-height: 24px; color: #B0B0B0;">
+                                            Salut,
+                                        </p>
+                                        <p
+                                            style="margin: 0 0 24px; font-size: 16px; line-height: 24px; color: #B0B0B0;">
+                                            Plus qu'une étape pour accéder à ton fil d'actualités personnalisé. Clique
+                                            sur le bouton ci-dessous pour confirmer ton adresse email.
+                                        </p>
+
+                                        <!-- CTA Button -->
+                                        <table width="100%" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" style="padding: 8px 0;">
+                                                    <a href="{{ .ConfirmationURL }}"
+                                                        style="display: inline-block; padding: 16px 32px; background-color: #E07A5F; color: #FFFFFF; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                                                        Confirmer mon email
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+
+                                        <p
+                                            style="margin: 24px 0 0; font-size: 14px; line-height: 22px; color: #808080;">
+                                            Si le bouton ne fonctionne pas, copie ce lien dans ton navigateur :
+                                        </p>
+                                        <p
+                                            style="margin: 8px 0 0; font-size: 12px; line-height: 18px; color: #606060; word-break: break-all;">
+                                            {{ .ConfirmationURL }}
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Footer -->
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td style="padding: 24px 32px; border-top: 1px solid #333333;">
+                                        <p
+                                            style="margin: 0; font-size: 12px; line-height: 18px; color: #606060; text-align: center;">
+                                            Tu n'as pas créé de compte Facteur ? Ignore cet email.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                        </td>
+                    </tr>
+
+                    <!-- Brand footer -->
+                    <tr>
+                        <td style="padding: 24px 0 0; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; color: #606060;">
+                                Facteur — Tes contenus, triés avec soin.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

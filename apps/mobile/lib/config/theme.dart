@@ -296,9 +296,6 @@ class FacteurTheme {
         onSurface: colors.textPrimary,
         error: colors.error,
         onError: colors.textPrimary,
-        // Legacy/Fallback mapping
-        background: colors.backgroundPrimary,
-        onBackground: colors.textPrimary,
       ),
 
       scaffoldBackgroundColor: colors.backgroundPrimary,

@@ -70,7 +70,7 @@ class _FacteurCardState extends State<FacteurCard>
     // Determine color based on context if not provided
     final cardColor = widget.backgroundColor ?? context.facteurColors.surface;
 
-    Widget cardContent = Container(
+    final Widget cardContent = Container(
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),

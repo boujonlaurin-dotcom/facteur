@@ -16,7 +16,7 @@ class PaywallScreen extends StatefulWidget {
 
 class _PaywallScreenState extends State<PaywallScreen> {
   // ignore: unused_field
-  bool _isYearly = true; // Kept for logic
+  final bool _isYearly = true; // Kept for logic
 
   @override
   Widget build(BuildContext context) {

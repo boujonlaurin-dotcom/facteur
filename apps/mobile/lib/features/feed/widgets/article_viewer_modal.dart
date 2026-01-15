@@ -109,9 +109,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
     // but the provider container should still be alive.
     // However, if the whole app is closing, it might be too late.
     // For modal close, it's fine.
-    ref
-        .read(analyticsServiceProvider)
-        .trackArticleRead(
+    ref.read(analyticsServiceProvider).trackArticleRead(
           widget.content.id,
           widget.content.source.id,
           duration,
@@ -287,10 +285,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                             PhosphorIconsStyle.fill,
                                           ),
                                     size: 13,
-                                    color:
-                                        widget
-                                                .content
-                                                .source
+                                    color: widget.content.source
                                                 .reliabilityScore ==
                                             'high'
                                         ? Colors.blue.shade300
@@ -328,7 +323,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                "Comparer",
+                                'Comparer',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -390,7 +385,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           ),
                           const SizedBox(height: 24),
                           Text(
-                            "WebView non supportée sur cette plateforme desktop",
+                            'WebView non supportée sur cette plateforme desktop',
                             textAlign: TextAlign.center,
                             style: textTheme.titleMedium,
                           ),
@@ -409,7 +404,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                             icon: Icon(
                               PhosphorIcons.browser(PhosphorIconsStyle.bold),
                             ),
-                            label: const Text("Ouvrir dans le navigateur"),
+                            label: const Text('Ouvrir dans le navigateur'),
                           ),
                         ],
                       ),
@@ -431,7 +426,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            "Erreur de chargement",
+                            'Erreur de chargement',
                             style: textTheme.titleMedium,
                           ),
                           const SizedBox(height: 8),
@@ -449,7 +444,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                               foregroundColor: Colors.white,
                             ),
                             onPressed: () => _controller?.reload(),
-                            child: const Text("Réessayer"),
+                            child: const Text('Réessayer'),
                           ),
                         ],
                       ),

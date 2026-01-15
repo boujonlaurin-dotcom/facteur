@@ -247,10 +247,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: const Text("Contenu masqué"),
+        const SnackBar(
+          content: Text('Contenu masqué'),
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: 2),
         ),
       );
   }
@@ -275,13 +275,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     // Header
-                    SliverToBoxAdapter(
+                    const SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
+                        padding: EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space4,
                         ),
-                        child: Center(child: const FacteurLogo(size: 32)),
+                        child: Center(child: FacteurLogo(size: 32)),
                       ),
                     ),
 
@@ -514,7 +514,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 FacteurButton(
-                                  label: "Réessayer",
+                                  label: 'Réessayer',
                                   icon: PhosphorIcons.arrowClockwise(
                                     PhosphorIconsStyle.bold,
                                   ),

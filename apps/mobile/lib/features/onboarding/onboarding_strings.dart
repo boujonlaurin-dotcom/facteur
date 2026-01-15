@@ -20,9 +20,9 @@ class OnboardingStrings {
 
   // Intro Screen 2
   static const String intro2Title =
-      "Facteur se veut être un outil de résistance.";
+      'Facteur se veut être un outil de résistance.';
   static const String intro2Subtitle =
-      "Un espace pour reprendre le contrôle de son attention. Un espace où la transparence prime.";
+      'Un espace pour reprendre le contrôle de son attention. Un espace où la transparence prime.';
   static const String intro2Button = '(Re)prendre le contrôle';
 
   // Q1: Objective
@@ -34,12 +34,12 @@ class OnboardingStrings {
       "Trop d'info. Impossible de bien trier.";
   static const String q1BiasLabel = 'Les Biais';
   static const String q1BiasSubtitle = 'Je doute constamment de la neutralité.';
-  static const String q1AnxietyLabel = "La négativité";
+  static const String q1AnxietyLabel = 'La négativité';
   static const String q1AnxietySubtitle =
       'Le sentiment que le monde devient fou.';
 
   // Q2: Age
-  static const String q2Title = "Apprenons à se connaitre.";
+  static const String q2Title = 'Apprenons à se connaitre.';
   static const String q2Subtitle = 'Quelle est votre tranche d\'âge ?';
   static const String q2Option18_24 = '18 - 24 ans';
   static const String q2Option25_34 = '25 - 34 ans';
