@@ -70,29 +70,28 @@ class _ConclusionAnimationScreenState
   }
 }
 
-/// Vue de chargement avec animation
+/// Vue de chargement avec animation centrée
 class _LoadingView extends StatelessWidget {
   const _LoadingView();
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(FacteurSpacing.space6),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Spacer(flex: 2),
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Animation minimaliste et élégante
+            MinimalLoader(),
 
-          // Animation propre et minimaliste
-          MinimalLoader(),
+            SizedBox(height: FacteurSpacing.space4),
 
-          SizedBox(height: FacteurSpacing.space6),
-
-          // Messages animés
-          AnimatedMessageText(),
-
-          Spacer(flex: 3),
-        ],
+            // Messages animés
+            AnimatedMessageText(),
+          ],
+        ),
       ),
     );
   }
@@ -186,9 +185,9 @@ class _ErrorView extends ConsumerWidget {
             child: Text(
               'Continuer quand même',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
-                decoration: TextDecoration.underline,
-              ),
+                    color: colors.textSecondary,
+                    decoration: TextDecoration.underline,
+                  ),
             ),
           ),
 
