@@ -7,6 +7,7 @@ import '../../../config/constants.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../shared/widgets/buttons/secondary_button.dart';
+import '../../../widgets/design/facteur_logo.dart';
 import 'email_confirmation_screen.dart';
 
 /// Écran de connexion / inscription
@@ -165,22 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 40),
 
                 // Logo / Titre
-                Column(
-                  children: [
-                    Icon(
-                      PhosphorIcons.envelopeOpen(PhosphorIconsStyle.fill),
-                      size: 64,
-                      color: colors.primary,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Facteur',
-                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                            color: colors.textPrimary,
-                          ),
-                    ),
-                  ],
-                ),
+                const Center(child: FacteurLogo(size: 48)),
 
                 const SizedBox(height: 48),
 

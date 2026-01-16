@@ -1,10 +1,6 @@
 /// Constantes globales de l'application Facteur
 library;
 
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
-
 /// Configuration API
 class ApiConstants {
   ApiConstants._();
@@ -18,11 +14,10 @@ class ApiConstants {
       return configured.endsWith('/') ? configured : '$configured/';
     }
 
-    if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api/';
-    }
-
-    return 'http://localhost:8000/api/';
+    // DEBUG: Hardcoded pour Release
+    // Si pas de variable d'env, on utilise l'URL de prod par défaut
+    // Cela corrige le problème sur les builds release qui tombaient sur localhost
+    return 'https://facteur-production.up.railway.app/api/';
   }
 
   /// Timeout des requêtes HTTP

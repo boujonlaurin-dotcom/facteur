@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/auth/debug_http_client.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart' as fr_messages;
 
@@ -84,6 +85,10 @@ Future<void> main() async {
       authOptions: FlutterAuthClientOptions(
         localStorage: SupabaseHiveStorage(),
       ),
+      httpClient: DebugHttpClient(),
+      headers: {
+        'X-Client-Info': 'supabase-flutter/2.5.0',
+      },
     );
     debugPrint('Main: Supabase initialized correctly.');
     final hasSession = Supabase.instance.client.auth.currentSession != null;

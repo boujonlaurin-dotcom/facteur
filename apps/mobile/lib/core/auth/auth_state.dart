@@ -121,6 +121,11 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     await _supabase.auth.signOut();
     final box = await Hive.openBox<dynamic>('auth_prefs');
     await box.delete('remember_me'); // Reset preference on sign out
+
+    // Vider le cache du profil utilisateur (pour que le prochain user ne soit pas considéré comme "onboardé" par erreur)
+    final profileBox = await Hive.openBox<dynamic>('user_profile');
+    await profileBox.clear();
+
     state = const AuthState();
   }
 
