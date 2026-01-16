@@ -128,7 +128,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 
 
-@app.get("/api/health", tags=["Health"])
+@app.get("/api/health/", tags=["Health"])
 async def health_check() -> dict[str, str]:
     """Endpoint de health check."""
     return {"status": "ok", "version": settings.app_version}
