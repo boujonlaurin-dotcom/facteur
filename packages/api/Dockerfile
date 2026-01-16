@@ -14,10 +14,8 @@ COPY app/ app/
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser
 
-# Expose port
+# Expose port (documentation only)
 EXPOSE 8000
 
-# Run application
-# On utilise une chaine pour shell execution afin que $PORT soit interprété
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
-
+# Run application - using explicit shell to ensure $PORT expansion
+CMD ["/bin/sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
