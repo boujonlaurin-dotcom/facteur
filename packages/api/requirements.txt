@@ -9,7 +9,7 @@ pydantic-settings==2.1.0
 
 # Database
 sqlalchemy[asyncio]==2.0.25
-asyncpg==0.29.0
+psycopg[binary,pool]==3.1.18
 
 # Auth
 python-jose[cryptography]==3.3.0

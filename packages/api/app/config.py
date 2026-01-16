@@ -33,17 +33,20 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # Database (Supabase PostgreSQL)
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:54322/postgres"
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:54322/postgres"
 
     @field_validator("database_url", mode="before")
     @classmethod
     def fix_database_url(cls, v: Any) -> Any:
-        """Transforme postgres:// ou postgresql:// en postgresql+asyncpg://"""
+        """Transforme postgres:// ou postgresql:// en postgresql+psycopg://"""
         if isinstance(v, str):
-            if v.startswith("postgres://"):
-                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
-            elif v.startswith("postgresql://") and "+asyncpg" not in v:
-                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            # Remove any existing driver suffix first
+            if "+asyncpg" in v:
+                v = v.replace("+asyncpg", "+psycopg")
+            elif v.startswith("postgres://"):
+                v = v.replace("postgres://", "postgresql+psycopg://", 1)
+            elif v.startswith("postgresql://") and "+psycopg" not in v:
+                v = v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
 
 

@@ -18,13 +18,9 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
-    # IMPORTANT: Use NullPool with PgBouncer transaction pooling
-    # Double pooling (SQLAlchemy pool + PgBouncer) causes prepared statement conflicts
+    # Use NullPool with PgBouncer to avoid double-pooling issues
     poolclass=NullPool,
-    connect_args={
-        "statement_cache_size": 0,  # Required for PgBouncer transaction mode
-        "command_timeout": 30,
-    },
+    # psycopg doesn't need special connect_args for PgBouncer
 )
 
 
