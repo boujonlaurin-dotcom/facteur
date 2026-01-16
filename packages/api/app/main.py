@@ -86,7 +86,7 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Simple request logger middleware
+# Simple request logger middleware (defined first, executed last)
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()
@@ -103,13 +103,16 @@ async def log_requests(request: Request, call_next):
         print(f"💥 Error: {method} {path} - {str(e)} ({duration:.2f}s)", flush=True)
         raise e
 
-# Configuration CORS
+# Configuration CORS - MUST be added AFTER the @middleware decorator to execute FIRST
+# Note: allow_credentials=True is incompatible with allow_origins=["*"]
+# For Flutter Web, we need to be permissive but also handle preflight correctly
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins for now (Flutter Web, production apps)
+    allow_credentials=False,  # Must be False when using wildcard origins
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Routes
