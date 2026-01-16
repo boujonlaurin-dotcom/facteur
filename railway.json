@@ -6,7 +6,7 @@
         "context": "packages/api"
     },
     "deploy": {
-        "healthcheckPath": "/api/health",
+        "healthcheckPath": "/api/health/",
         "restartPolicyType": "ON_FAILURE"
     }
 }
