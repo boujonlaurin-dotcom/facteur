@@ -31,7 +31,15 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final session = _supabase.auth.currentSession;
+          // Try to get session, with a short wait if not immediately available
+          var session = _supabase.auth.currentSession;
+
+          // If no session, wait a bit and try again (race condition fix for Android release)
+          if (session == null) {
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            session = _supabase.auth.currentSession;
+          }
+
           if (session != null) {
             // ignore: avoid_print
             print(

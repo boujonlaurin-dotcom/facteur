@@ -17,10 +17,19 @@ print(f"🛠️  Engine initializing with target: {settings.database_url.split('
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    pool_pre_ping=True,
-    # Use NullPool with PgBouncer to avoid double-pooling issues
+    # IMPORTANT: Disable pool_pre_ping as it can cause prepared statement issues with PgBouncer
+    pool_pre_ping=False,
+    # Use NullPool with PgBouncer transaction pooling
     poolclass=NullPool,
-    # psycopg doesn't need special connect_args for PgBouncer
+    connect_args={
+        # CRITICAL: These parameters are needed for PgBouncer transaction mode
+        # statement_cache_size=0 alone is not enough for asyncpg
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        # Force asyncpg to use unnamed prepared statements
+        "prepared_statement_name_func": lambda: None,
+        "command_timeout": 30,
+    },
 )
 
 

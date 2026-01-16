@@ -12,12 +12,12 @@ String getPerspectivesDescription(String? userBias) {
   switch (userBias) {
     case 'left':
     case 'center-left':
-      return 'Du contenu à droite, pour changer de prisme (gauche)';
+      return 'Du contenu à droite, pour changer de prisme (Gauche)';
     case 'right':
     case 'center-right':
-      return 'Du contenu à gauche, pour changer de prisme (droite)';
+      return 'Du contenu à gauche, pour changer de prisme (Droite)';
     case 'center':
-      return 'Du contenu varié, pour changer de prisme (centre)';
+      return 'Du contenu varié, pour changer de prisme (Centre)';
     default:
       return 'Changez d\'angle de vue pour enrichir votre opinion.';
   }
@@ -48,18 +48,21 @@ class _FilterBarState extends State<FilterBar> {
     'deep_dive': GlobalKey(),
   };
 
+  double _descriptionAlignX = 0;
   String? _currentDescription;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_updateAlignment);
     _updateDescription();
   }
 
   @override
   void didUpdateWidget(FilterBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedFilter != widget.selectedFilter) {
+    if (oldWidget.selectedFilter != widget.selectedFilter ||
+        oldWidget.userBias != widget.userBias) {
       _updateDescription();
       _scrollToSelected();
     }
@@ -75,6 +78,29 @@ class _FilterBarState extends State<FilterBar> {
         _currentDescription = filterDescriptions[widget.selectedFilter];
       }
     });
+    // Attendre le prochain frame pour avoir les positions à jour
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAlignment());
+  }
+
+  void _updateAlignment() {
+    if (!mounted || widget.selectedFilter == null) return;
+
+    final key = _keys[widget.selectedFilter];
+    final box = key?.currentContext?.findRenderObject() as RenderBox?;
+    final parentBox = context.findRenderObject() as RenderBox?;
+
+    if (box != null && parentBox != null) {
+      final chipCenter =
+          box.localToGlobal(Offset(box.size.width / 2, 0), ancestor: parentBox);
+      final parentWidth = parentBox.size.width;
+
+      setState(() {
+        // Map 0..parentWidth to -1..1
+        _descriptionAlignX = (chipCenter.dx / parentWidth) * 2 - 1;
+        // Clamp pour éviter que le texte ne dépasse trop des bords
+        _descriptionAlignX = _descriptionAlignX.clamp(-0.85, 0.85);
+      });
+    }
   }
 
   void _scrollToSelected() {
@@ -104,6 +130,7 @@ class _FilterBarState extends State<FilterBar> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_updateAlignment);
     _scrollController.dispose();
     super.dispose();
   }
@@ -112,17 +139,6 @@ class _FilterBarState extends State<FilterBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
-    // Calcul de l'alignement strict demandé par l'utilisateur
-    Alignment alignment = Alignment.center;
-    TextAlign textAlign = TextAlign.center;
-    if (widget.selectedFilter == 'breaking') {
-      alignment = Alignment.centerLeft;
-      textAlign = TextAlign.left;
-    } else if (widget.selectedFilter == 'deep_dive') {
-      alignment = Alignment.centerRight;
-      textAlign = TextAlign.right;
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -146,22 +162,24 @@ class _FilterBarState extends State<FilterBar> {
             ],
           ),
         ),
-        // Description avec alignement strict (Gauche/Droite/Centre)
+        // Description avec alignement dynamique qui suit le chip (anchor)
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           child: Container(
             height: _currentDescription != null ? null : 0,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: alignment,
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment(_descriptionAlignX, 0),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 child: _currentDescription != null
                     ? Text(
                         _currentDescription!,
                         key: ValueKey(_currentDescription),
-                        textAlign: textAlign,
+                        textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurface.withOpacity(0.5),
                           fontStyle: FontStyle.italic,
@@ -209,7 +227,8 @@ class _FilterBarState extends State<FilterBar> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        visualDensity: VisualDensity.compact,
+        // Suppression de visualDensity compact pour éviter la troncation
+        visualDensity: VisualDensity.standard,
       ),
     );
   }

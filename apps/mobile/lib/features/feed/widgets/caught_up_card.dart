@@ -112,7 +112,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
 
                 // Message
                 Text(
-                  'Que dis-tu d\'une pause ?\nRien ne vaut un point de temps loin des écrans.',
+                  'Que dis-tu d\'une pause ?\nRien ne vaut un peu de temps loin des écrans.',
                   style: textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
@@ -122,7 +122,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
 
                 // Dismiss hint
                 Text(
-                  'Appuie pour continuer',
+                  'Appuie pour continuer ⬇️',
                   style: textTheme.labelSmall?.copyWith(
                     color: colors.textTertiary,
                   ),
