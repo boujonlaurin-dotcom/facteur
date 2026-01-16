@@ -16,9 +16,9 @@ async def check_connection():
 
     # Fix URL if needed (like in app/config.py)
     if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif db_url.startswith("postgresql://") and "+asyncpg" not in db_url:
-        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
     print(f"🔍 Testing connection to: {db_url.split('@')[-1]}") # Hide credentials
     
@@ -27,7 +27,6 @@ async def check_connection():
             db_url, 
             connect_args={
                 "command_timeout": 5,
-                "statement_cache_size": 0,
             }
         )
         async with engine.begin() as conn:

@@ -18,4 +18,5 @@ USER appuser
 EXPOSE 8000
 
 # Run application - using explicit shell to ensure $PORT expansion
-CMD ["/bin/sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Added --proxy-headers to trust Railway's proxy (fixes https -> http redirects)
+CMD ["/bin/sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
