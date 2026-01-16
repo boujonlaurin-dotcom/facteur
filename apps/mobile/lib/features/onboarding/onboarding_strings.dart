@@ -13,20 +13,21 @@ class OnboardingStrings {
       'Section $current/$total';
 
   // Intro Screen 1
-  static const String intro1Title = "L'info est devenue un champ de bataille.";
+  static const String intro1Title =
+      "L'info est devenue un vrai champ de bataille.";
   static const String intro1Subtitle =
-      "Certains milliardaires détiennent les médias. \nD'autres contrôlent maintenant nos réseaux sociaux.\n\Mais tous se battent tous pour une chose : influer sur nos idées.";
+      "Certains milliardaires détiennent les médias. \n\nD'autres détiennent les réseaux sociaux.\n\nMais tous se battent pour une seule chose : influencer nos opinions.";
 
   // Intro Screen 2
   static const String intro2Title =
       'Facteur se veut être un outil de résistance.';
   static const String intro2Subtitle =
-      'Une app Open-Source pour reprendre le contrôle de son attention. Un espace où la transparence et la qualité de l\'information priment.';
+      'Une app Open-Source pour reprendre le contrôle de son attention. \nUn espace où la transparence et la qualité de l\'information protègent des \'fake news\'.';
   static const String intro2Button = 'Reprendre le contrôle';
 
   // Q1: Objective
   static const String q1Title =
-      "Faisons le constat. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
+      "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
   static const String q1Subtitle = "(Si vous ne deviez en choisir qu'un)";
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
@@ -79,9 +80,9 @@ class OnboardingStrings {
 
   // Q8: Gamification
   static const String q8Title =
-      'Notre attention est précieuse. Combien voulez-vous investir ?';
-  static const String q8Subtitle =
       'Passer du temps à bien s\'informer est difficile. Travaillons-le !';
+  static const String q8Subtitle =
+      'Facteur t\'aide à progresser et à rester motivé';
   static const String q8StreakTitle = 'Streak quotidien';
   static const String q8StreakDesc = '';
   static const String q8WeeklyTitle = 'Progression hebdomadaire';
@@ -94,7 +95,7 @@ class OnboardingStrings {
   // Q8b: Weekly Goal
   static const String q8bTitle = 'Votre objectif hebdo ?';
   static const String q8bSubtitle =
-      'Combien de contenus à s\'approprier chaque semaine ?';
+      'Combien de contenus à consulter et s\'approprier chaque semaine ?';
   static const String q8bGoal5Label = '5 contenus';
   static const String q8bGoal5Subtitle = '~20 min / semaine • Découverte';
   static const String q8bGoal10Label = '10 contenus';
@@ -130,14 +131,14 @@ class OnboardingStrings {
 
   // Finalize
   static const String finalizeTitle =
-      'Ok. On voit maintenant mieux comment vous aider.';
+      'Ok.\nOn voit maintenant mieux comment aider.';
   static const String finalizeSubtitle = 'Votre flux personnalisé est prêt.';
   static const String finalizeFormatShort = 'Articles courts préférés';
   static const String finalizeFormatLong = 'Articles longs préférés';
   static const String finalizeFormatAudio = 'Podcasts préférés';
   static const String finalizeFormatVideo = 'Vidéos préférées';
   static const String finalizeFormatMixed = 'Format mixte';
-  static const String finalizeButton = 'Ouvrir mon flux transparent';
+  static const String finalizeButton = 'Créer mon flux transparent';
 
   // Reactions: Objective (Q1)
   static const String r1NoiseTitle = 'Trop de bruit tue le signal.';

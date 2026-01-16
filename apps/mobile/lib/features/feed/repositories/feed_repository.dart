@@ -37,7 +37,7 @@ class FeedRepository {
       }
 
       final response = await _apiClient.dio.get<List<dynamic>>(
-        'feed',
+        'feed/', // Trailing slash to avoid 307 redirect which strips auth header
         queryParameters: queryParams,
       );
 
