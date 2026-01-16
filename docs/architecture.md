@@ -134,13 +134,17 @@ graph TB
 | **Backend Framework** | FastAPI | 0.109.x | API REST Python | Performance async, auto-doc, typing |
 | **Backend Language** | Python | 3.12.x | Langage backend | Écosystème data/ML, feedparser |
 | **ORM** | SQLAlchemy | 2.0.x | Mapping objet-relationnel | Maturité, async support |
+| **DB Driver** | psycopg (v3) | 3.1.x | Driver PostgreSQL | Meilleure stabilité avec les pools et PgBouncer |
 | **Database** | PostgreSQL | 15.x | Base de données relationnelle | Via Supabase, JSONB, full-text search |
+| **PGBouncer Mode**| Transaction | - | Pooling Supabase | Nécessite `NullPool` et désactivation des prepared statements |
 | **Auth** | Supabase Auth | - | Authentification | OAuth intégré, JWT, RLS |
 | **Payments** | RevenueCat | 7.x | Gestion abonnements | SDK Flutter, webhooks, analytics |
 | **RSS Parser** | feedparser | 6.0.x | Parsing RSS/Atom | Robuste, gère les edge cases |
 | **Task Scheduler** | APScheduler | 3.10.x | Jobs périodiques | Cron-like, persistance jobs |
 | **Validation** | Pydantic | 2.6.x | Validation données | Intégré FastAPI, performance |
-| **Testing (Python)** | pytest | 8.0.x | Tests unitaires/intégration | Standard Python, fixtures |
+| **Test (Python)** | pytest | 8.0.x | Tests unitaires/intégration | Standard Python, fixtures |
+| **Hosting** | Railway | - | PaaS Infrastructure | Déploiement via Docker, SSL managé |
+| **Docker Base** | python:3.12-slim | - | Image de base backend | Légèreté et sécurité |
 | **Testing (Flutter)** | flutter_test | - | Tests unitaires Flutter | Intégré Flutter SDK |
 | **Linting (Python)** | ruff | 0.2.x | Linting + formatting | Rapide, remplace black/isort/flake8 |
 | **Linting (Dart)** | flutter_lints | 3.0.x | Linting Dart | Règles officielles Flutter |
@@ -1479,9 +1483,25 @@ facteur/
 |-----------|---------|------|
 | **Database** | Supabase | Free tier → Pro |
 | **Auth** | Supabase Auth | Inclus |
-| **API Backend** | Railway | Starter → Pro |
-| **RSS Worker** | Railway (même service) | Inclus |
-| **CDN/Assets** | Supabase Storage | Inclus |
+| **API Backend** | Railway | Starter → Pro | Déployé avec `--proxy-headers` |
+| **RSS Worker** | Railway (même service) | Inclus | |
+| **CDN/Assets** | Supabase Storage | Inclus | |
+
+### 12.2 Configuration Critique (Production)
+
+#### Proxy & SSL Termination
+Railway gère la terminaison SSL. Pour que FastAPI génère des URLs correctes (notamment lors des redirections 307 de trailing slash) et gère correctement les en-têtes CORS, Uvicorn doit être lancé avec :
+- `--proxy-headers` : Trust les headers `X-Forwarded-*`.
+- `--forwarded-allow-ips='*'` : Autorise le proxy Railway.
+
+#### CORS Middleware
+L'ordre des middlewares est critique dans FastAPI. Le `CORSMiddleware` doit être ajouté **APRES** les décorateurs `@app.middleware("http")` pour être exécuté **AVANT** dans la pile (les middlewares ajoutés via `app.add_middleware` s'empilent à l'extérieur).
+Configuration recommandée :
+- `allow_origins=["*"]`
+- `allow_credentials=False` (obligatoire avec wildcard origin)
+- `allow_methods=["*"]`
+- `allow_headers=["*"]`
+- `expose_headers=["*"]`
 
 ### 12.2 Infrastructure as Code
 

@@ -79,11 +79,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await close_db()
 
 # Application FastAPI
+# redirect_slashes=False prevents 307 redirects that break fetch API (used by Dio/Flutter Web)
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     lifespan=lifespan,
     debug=settings.debug,
+    redirect_slashes=False,
 )
 
 # Simple request logger middleware (defined first, executed last)
@@ -128,7 +130,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 
 
-@app.get("/api/health/", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 async def health_check() -> dict[str, str]:
     """Endpoint de health check."""
     return {"status": "ok", "version": settings.app_version}

@@ -122,7 +122,7 @@ class _CaughtUpCardState extends State<CaughtUpCard>
 
                 // Dismiss hint
                 Text(
-                  'Appuie pour continuer ⬇️',
+                  'Appuie pour continuer',
                   style: textTheme.labelSmall?.copyWith(
                     color: colors.textTertiary,
                   ),

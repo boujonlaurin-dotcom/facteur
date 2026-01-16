@@ -88,7 +88,7 @@
 
     <div id="test1" class="test pending">
         <h3>Test 1: Health Check (GET without Auth)</h3>
-        <p>Simple GET to <code>/api/health/</code> - should return 200 OK</p>
+        <p>Simple GET to <code>/api/health</code> - should return 200 OK</p>
         <div class="result" id="result1"></div>
     </div>
 
@@ -147,7 +147,7 @@ ${[...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n')}
             const start = Date.now();
 
             try {
-                const response = await fetch(`${API_URL}/api/health/`);
+                const response = await fetch(`${API_URL}/api/health`);
                 const data = await response.json();
                 result.innerHTML = `<pre>${formatResponse(response, data, start)}</pre>`;
                 el.className = response.ok ? 'test success' : 'test error';
@@ -164,7 +164,7 @@ ${[...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n')}
             const start = Date.now();
 
             try {
-                const response = await fetch(`${API_URL}/api/health/`, {
+                const response = await fetch(`${API_URL}/api/health`, {
                     method: 'OPTIONS',
                     headers: {
                         'Access-Control-Request-Method': 'GET',
@@ -239,7 +239,7 @@ ${[...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n')}
             const start = Date.now();
 
             const xhr = new XMLHttpRequest();
-            xhr.open('GET', `${API_URL}/api/health/`, true);
+            xhr.open('GET', `${API_URL}/api/health`, true);
 
             xhr.onload = function () {
                 const duration = Date.now() - start;
