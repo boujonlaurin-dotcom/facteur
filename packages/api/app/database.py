@@ -18,7 +18,9 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
-    poolclass=NullPool,
+    # poolclass=NullPool,  # Re-enabling pooling for better performance
+    pool_size=5,           # Small pool to be safe for Supabase/PgBouncer
+    max_overflow=10,
     connect_args={
         "statement_cache_size": 0,
         "command_timeout": 30,

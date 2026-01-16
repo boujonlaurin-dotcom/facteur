@@ -43,11 +43,14 @@ from app.routers import (
     streaks,
     subscription,
     users,
-    users,
     webhooks,
     analytics,
     internal,
 )
+import time
+from fastapi import Request
+
+
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
 # Configuration
@@ -57,8 +60,18 @@ settings = get_settings()
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Gère le cycle de vie de l'application (startup/shutdown)."""
     # Startup
-    await init_db()
+    print("⏳ Lifespan: Initializing DB...", flush=True)
+    try:
+        await init_db()
+        print("⏳ Lifespan: DB initialized.", flush=True)
+    except Exception as e:
+        print(f"❌ Lifespan: DB initialization failed: {e}", flush=True)
+        # On continue quand même pour ne pas empêcher le démarrage de l'app 
+        # (ce qui permet d'avoir accès au healthcheck et docs même si DB down)
+        
+    print("⏳ Lifespan: Starting scheduler...", flush=True)
     start_scheduler()
+    print("⏳ Lifespan: Startup complete.", flush=True)
     yield
     # Shutdown
     stop_scheduler()
@@ -71,6 +84,23 @@ app = FastAPI(
     lifespan=lifespan,
     debug=settings.debug,
 )
+
+# Simple request logger middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    path = request.url.path
+    method = request.method
+    print(f"📥 Incoming: {method} {path}", flush=True)
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+        print(f"📤 Outgoing: {method} {path} - {response.status_code} ({duration:.2f}s)", flush=True)
+        return response
+    except Exception as e:
+        duration = time.time() - start_time
+        print(f"💥 Error: {method} {path} - {str(e)} ({duration:.2f}s)", flush=True)
+        raise e
 
 # Configuration CORS
 app.add_middleware(

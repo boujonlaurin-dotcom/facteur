@@ -13,21 +13,20 @@ class OnboardingStrings {
       'Section $current/$total';
 
   // Intro Screen 1
-  static const String intro1Title =
-      "L'info est devenue un vrai champ de bataille.";
+  static const String intro1Title = "L'info est devenue un champ de bataille.";
   static const String intro1Subtitle =
-      "D'un côté, des médias principalement détenus par des milliardaires. \nDe l'autre, des réseaux sociaux qui contrôlent notre attention.";
+      "Certains milliardaires détiennent les médias. \nD'autres contrôlent maintenant nos réseaux sociaux.\n\Mais tous se battent tous pour une chose : influer sur nos idées.";
 
   // Intro Screen 2
   static const String intro2Title =
       'Facteur se veut être un outil de résistance.';
   static const String intro2Subtitle =
-      'Un espace pour reprendre le contrôle de son attention. Un espace où la transparence prime.';
-  static const String intro2Button = '(Re)prendre le contrôle';
+      'Une app Open-Source pour reprendre le contrôle de son attention. Un espace où la transparence et la qualité de l\'information priment.';
+  static const String intro2Button = 'Reprendre le contrôle';
 
   // Q1: Objective
   static const String q1Title =
-      "Faisons le constat. \nQu'est-ce qui vous épuise le plus en ce moment avec l'info ?";
+      "Faisons le constat. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
   static const String q1Subtitle = "(Si vous ne deviez en choisir qu'un)";
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
@@ -39,8 +38,8 @@ class OnboardingStrings {
       'Le sentiment que le monde devient fou.';
 
   // Q2: Age
-  static const String q2Title = 'Apprenons à se connaitre.';
-  static const String q2Subtitle = 'Quelle est votre tranche d\'âge ?';
+  static const String q2Title = 'Apprenons à se connaitre';
+  static const String q2Subtitle = 'Où est-ce que tu te situes ?';
   static const String q2Option18_24 = '18 - 24 ans';
   static const String q2Option25_34 = '25 - 34 ans';
   static const String q2Option35_44 = '35 - 44 ans';
@@ -80,33 +79,34 @@ class OnboardingStrings {
 
   // Q8: Gamification
   static const String q8Title =
-      'Votre attention est précieuse. Combien voulez-vous investir ?';
+      'Notre attention est précieuse. Combien voulez-vous investir ?';
   static const String q8Subtitle =
-      "Passer du temps à bien s'informer est difficile. Travaillons-le ! Exemples d'objectifs :";
+      'Passer du temps à bien s\'informer est difficile. Travaillons-le !';
   static const String q8StreakTitle = 'Streak quotidien';
-  static const String q8StreakDesc = 'Garde ta flamme allumée chaque jour';
-  static const String q8WeeklyTitle = 'Progression hebdo';
-  static const String q8WeeklyDesc = 'Visualise tes objectifs de la semaine';
-  static const String q8YesLabel = "Oui, j'aime me fixer des objectifs";
-  static const String q8NoLabel = 'Non, je préfère sans';
+  static const String q8StreakDesc = '';
+  static const String q8WeeklyTitle = 'Progression hebdomadaire';
+  static const String q8WeeklyDesc =
+      'Valide que tu retiens vraiment l\'information';
+  static const String q8YesLabel = 'Essayons !';
+  static const String q8NoLabel = 'Je préfère sans';
   static const String q8NoSubtitle = 'Tu pourras activer ça plus tard';
 
   // Q8b: Weekly Goal
   static const String q8bTitle = 'Votre objectif hebdo ?';
   static const String q8bSubtitle =
-      'Combien de contenus à consommer chaque semaine ?';
+      'Combien de contenus à s\'approprier chaque semaine ?';
   static const String q8bGoal5Label = '5 contenus';
-  static const String q8bGoal5Subtitle = '~20 min par semaine • Tranquille';
+  static const String q8bGoal5Subtitle = '~20 min / semaine • Découverte';
   static const String q8bGoal10Label = '10 contenus';
-  static const String q8bGoal10Subtitle = '~40 min par semaine • Équilibré';
+  static const String q8bGoal10Subtitle = '~40 min / semaine • Proactif';
   static const String q8bGoal10Recommended = 'Recommandé';
   static const String q8bGoal15Label = '15 contenus';
-  static const String q8bGoal15Subtitle = '~1h par semaine • Ambitieux';
+  static const String q8bGoal15Subtitle = '~1h / semaine • Expert';
 
   // Q9: Sources
-  static const String q9Title = 'Construisons un front de sources fiables.';
+  static const String q9Title = 'Construisons votre front de sources fiables.';
   static const String q9Subtitle =
-      'Sélectionnez les sources qui vous inspirent confiance. Elles seront toujours privilégiées dans votre feed.';
+      'Sélectionnez les sources qui seront privilégiées pour votre flux.';
   static const String q9SearchHint = 'Rechercher une source...';
   static const String q9LoadingError = 'Erreur de chargement des sources';
   static const String q9EmptyList = 'Aucune source disponible';
@@ -116,7 +116,7 @@ class OnboardingStrings {
   // Q10: Themes
   static const String q10Title = 'Quels sont vos centres d\'intérêt ?';
   static const String q10Subtitle =
-      'Sélectionnez les thèmes qui vous importent pour personnaliser votre feed.';
+      'Sélectionnez les thèmes qui vous importent pour personnaliser votre flux.';
 
   // Theme Labels
   static const String themeTech = 'Tech';
@@ -131,13 +131,13 @@ class OnboardingStrings {
   // Finalize
   static const String finalizeTitle =
       'Ok. On voit maintenant mieux comment vous aider.';
-  static const String finalizeSubtitle = 'Votre feed personnalisé est prêt.';
+  static const String finalizeSubtitle = 'Votre flux personnalisé est prêt.';
   static const String finalizeFormatShort = 'Articles courts préférés';
   static const String finalizeFormatLong = 'Articles longs préférés';
   static const String finalizeFormatAudio = 'Podcasts préférés';
   static const String finalizeFormatVideo = 'Vidéos préférées';
   static const String finalizeFormatMixed = 'Format mixte';
-  static const String finalizeButton = 'Ouvrir mon feed transparent';
+  static const String finalizeButton = 'Ouvrir mon flux transparent';
 
   // Reactions: Objective (Q1)
   static const String r1NoiseTitle = 'Trop de bruit tue le signal.';
@@ -153,7 +153,7 @@ class OnboardingStrings {
   // Reactions: Preferences (Section 2)
   static const String r2RecentTitle = 'Ne pas perdre le fil !';
   static const String r2RecentMessage =
-      'Facteur priorisera les contenus récents pour vous maintenir à jour.\n\n';
+      'Facteur priorisera les contenus récents pour vous garder à jour.\n\n';
   static const String r2TimelessTitle = '"L\'Histoire se répète."';
   static const String r2TimelessMessage =
       'Facteur privilégiera les analyses qui traversent le temps.\n\n';
@@ -166,7 +166,7 @@ class OnboardingStrings {
     'Analyse de vos sélections...',
     'Construction de votre profil...',
     'Filtrage de votre bruit...',
-    'Création du feed...',
+    'Création du flux...',
   ];
 
   // Helper for pluralization (French)
