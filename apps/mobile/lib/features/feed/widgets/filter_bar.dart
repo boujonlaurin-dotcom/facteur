@@ -48,19 +48,12 @@ class _FilterBarState extends State<FilterBar> {
     'deep_dive': GlobalKey(),
   };
 
-  // Position d'alignement calculée (entre -1.0 et 1.0)
-  double _descriptionAlignX = 0.0;
-
   String? _currentDescription;
 
   @override
   void initState() {
     super.initState();
     _updateDescription();
-    // Calculer l'alignement initial après le premier build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateAlignX();
-    });
   }
 
   @override
@@ -69,34 +62,7 @@ class _FilterBarState extends State<FilterBar> {
     if (oldWidget.selectedFilter != widget.selectedFilter) {
       _updateDescription();
       _scrollToSelected();
-      _updateAlignX();
     }
-  }
-
-  void _updateAlignX() {
-    if (widget.selectedFilter == null) return;
-
-    // Attendre que le layout soit fait
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final key = _keys[widget.selectedFilter];
-      final context = key?.currentContext;
-      if (context == null) return;
-
-      final box = context.findRenderObject() as RenderBox;
-      final position = box.localToGlobal(Offset.zero);
-      final centerX = position.dx + box.size.width / 2;
-      final screenWidth = MediaQuery.of(context).size.width;
-
-      setState(() {
-        // Mapper de [0, screenWidth] vers [-1, 1]
-        // Avec une petite marge de sécurité pour ne pas coller aux bords extrêmes
-        _descriptionAlignX = (centerX / screenWidth) * 2 - 1;
-
-        // Brider l'alignement pour éviter que le texte ne sorte de l'écran
-        // (le texte a son propre padding de 16px)
-        _descriptionAlignX = _descriptionAlignX.clamp(-0.8, 0.8);
-      });
-    });
   }
 
   void _updateDescription() {
@@ -147,6 +113,17 @@ class _FilterBarState extends State<FilterBar> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // Calcul de l'alignement strict demandé par l'utilisateur
+    Alignment alignment = Alignment.center;
+    TextAlign textAlign = TextAlign.center;
+    if (widget.selectedFilter == 'breaking') {
+      alignment = Alignment.centerLeft;
+      textAlign = TextAlign.left;
+    } else if (widget.selectedFilter == 'deep_dive') {
+      alignment = Alignment.centerRight;
+      textAlign = TextAlign.right;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -169,24 +146,22 @@ class _FilterBarState extends State<FilterBar> {
             ],
           ),
         ),
-        // Description avec alignement dynamique pour suivre le chip
+        // Description avec alignement strict (Gauche/Droite/Centre)
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           child: Container(
             height: _currentDescription != null ? null : 0,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: AnimatedAlign(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment(_descriptionAlignX, 0),
+            child: Align(
+              alignment: alignment,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 child: _currentDescription != null
                     ? Text(
                         _currentDescription!,
                         key: ValueKey(_currentDescription),
-                        textAlign: TextAlign.center,
+                        textAlign: textAlign,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurface.withOpacity(0.5),
                           fontStyle: FontStyle.italic,

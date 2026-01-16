@@ -259,7 +259,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authStateProvider);
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
 
@@ -294,11 +293,50 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                'Bonjour ${ref.watch(userProfileProvider).firstName ?? authState.user?.email?.split('@')[0] ?? 'Vous'},',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.displayMedium,
+                              child: Builder(
+                                builder: (context) {
+                                  final profile =
+                                      ref.watch(userProfileProvider);
+                                  final authUser =
+                                      ref.watch(authStateProvider).user;
+
+                                  String displayName = 'Vous';
+
+                                  if (profile.firstName != null &&
+                                      profile.firstName!.isNotEmpty) {
+                                    displayName = profile.firstName!;
+                                  } else if (authUser?.email != null) {
+                                    // Extraction du prénom de l'email (format boujon.laurin@... ou laurin.boujon@...)
+                                    final part = authUser!.email!.split('@')[0];
+                                    final subParts = part.contains('.')
+                                        ? part.split('.')
+                                        : part.split('-');
+
+                                    // On prend le segment qui n'est probablement pas le nom
+                                    // ou par défaut le premier segment capitalisé
+                                    if (subParts.length > 1) {
+                                      // Heuristique simple : on capitalise le segment qui semble être le prénom
+                                      // Souvent [nom].[prenom] ou [prenom].[nom]
+                                      // On va prendre le dernier segment si il y en a un (souvent le cas pour les emails pro/scolaires)
+                                      // ou rester sur le premier si c'est ambigu.
+                                      final candidate = subParts.last.length > 2
+                                          ? subParts.last
+                                          : subParts.first;
+                                      displayName = candidate[0].toUpperCase() +
+                                          candidate.substring(1).toLowerCase();
+                                    } else {
+                                      displayName = part[0].toUpperCase() +
+                                          part.substring(1).toLowerCase();
+                                    }
+                                  }
+
+                                  return Text(
+                                    'Bonjour $displayName,',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .displayMedium,
+                                  );
+                                },
                               ),
                             ),
                             const StreakIndicator(),
@@ -322,13 +360,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
 
                     SliverToBoxAdapter(
-                      child: FilterBar(
-                        selectedFilter:
-                            ref.read(feedProvider.notifier).selectedFilter,
-                        userBias: ref.watch(userBiasProvider).valueOrNull,
-                        onFilterChanged: (String? filter) {
-                          ref.read(feedProvider.notifier).setFilter(filter);
-                        },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: FilterBar(
+                          selectedFilter:
+                              ref.read(feedProvider.notifier).selectedFilter,
+                          userBias: ref.watch(userBiasProvider).valueOrNull,
+                          onFilterChanged: (String? filter) {
+                            ref.read(feedProvider.notifier).setFilter(filter);
+                          },
+                        ),
                       ),
                     ),
 

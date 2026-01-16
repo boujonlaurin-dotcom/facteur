@@ -18,11 +18,11 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     pool_pre_ping=True,
-    # poolclass=NullPool,  # Re-enabling pooling for better performance
-    pool_size=5,           # Small pool to be safe for Supabase/PgBouncer
-    max_overflow=10,
+    # IMPORTANT: Use NullPool with PgBouncer transaction pooling
+    # Double pooling (SQLAlchemy pool + PgBouncer) causes prepared statement conflicts
+    poolclass=NullPool,
     connect_args={
-        "statement_cache_size": 0,
+        "statement_cache_size": 0,  # Required for PgBouncer transaction mode
         "command_timeout": 30,
     },
 )

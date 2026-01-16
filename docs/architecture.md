@@ -12,6 +12,7 @@
 | Date | Version | Description | Auteur |
 |------|---------|-------------|--------|
 | 07/01/2026 | 1.0 | Création initiale | Architect Agent |
+| 16/01/2026 | 1.1 | Mise à jour Epic 8 : Approfondissement & Progression | Antigravity |
 
 ---
 
@@ -153,24 +154,38 @@ graph TB
 
 ```mermaid
 erDiagram
-    USERS ||--o{ USER_PROFILES : has
-    USERS ||--o{ USER_PREFERENCES : has
-    USERS ||--o{ USER_INTERESTS : has
-    USERS ||--o{ USER_SOURCES : subscribes
-    USERS ||--o{ USER_CONTENT_STATUS : tracks
-    USERS ||--o{ USER_SUBSCRIPTIONS : has
-    USERS ||--o{ USER_STREAKS : maintains
+    USERS ||--o{ USER_TOPIC_PROGRESS : has
+    USER_TOPIC_PROGRESS }|--o{ TOPIC_QUIZZES : validates_level
     
     SOURCES ||--o{ CONTENTS : publishes
     SOURCES ||--o{ USER_SOURCES : subscribed_by
     
     CONTENTS ||--o{ USER_CONTENT_STATUS : status_of
+    CONTENTS ||--o{ TOPIC_QUIZZES : referenced_in
     
     USERS {
         uuid id PK
         string email
         timestamp created_at
         timestamp last_login
+    }
+    
+    USER_TOPIC_PROGRESS {
+        uuid user_id FK
+        string topic_slug PK
+        int articles_read
+        int quizzes_passed
+        int level
+        boolean is_active
+        timestamp last_activity
+    }
+    
+    TOPIC_QUIZZES {
+        uuid id PK
+        string topic_slug
+        string question_type
+        uuid[] content_ids
+        timestamp created_at
     }
     
     USER_PROFILES {
@@ -212,6 +227,7 @@ erDiagram
         string description
         string logo_url
         boolean is_curated
+        string[] granular_topics
         boolean is_active
         timestamp last_synced_at
         timestamp created_at
@@ -332,6 +348,7 @@ erDiagram
 | `type` | enum | "article", "podcast", "youtube" |
 | `theme` | string | Thème principal |
 | `is_curated` | boolean | Source du catalogue officiel |
+| `granular_topics` | string[] | Sous-thèmes fins (ex: ["ai", "crypto"]) |
 | `feed_url` | string | URL du flux RSS (peut différer de url) |
 
 #### Contents
@@ -351,7 +368,7 @@ erDiagram
 | `unseen` | Jamais vu |
 | `seen` | Vu dans le feed |
 | `consumed` | Consommé (seuil atteint) |
-| `saved` | Ajouté à la liste "À consulter plus tard" |
+| `saved` | Ajouté aux Progressions (anciennement "À consulter") |
 | `hidden` | Masqué ("pas intéressé") |
 
 #### User Subscriptions
@@ -373,6 +390,30 @@ erDiagram
 | `longest_streak` | int | Record personnel |
 | `weekly_count` | int | Contenus consommés cette semaine |
 | `week_start` | date | Début de la semaine en cours |
+
+#### User Topic Progress
+**Purpose:** Progression gamifiée par sous-thème (Duolingo de l'info)
+
+| Attribut | Type | Description |
+|----------|------|-------------|
+| `user_id` | UUID | FK vers users |
+| `topic_slug` | string | Identifiant du sous-thème (ex: "ai") |
+| `articles_read`| int | Nombre d'articles du thème consommés |
+| `quizzes_passed`| int | Nombre de quiz validés sur ce thème |
+| `level` | int | Niveau calculé (articles/5 + quiz*2) |
+| `is_active` | boolean | Si le thème est activement suivi |
+| `last_activity`| timestamp| Date de dernière lecture/quiz |
+
+#### Topic Quizzes (V0)
+**Purpose:** Quiz simples pour valider les paliers de progression
+
+| Attribut | Type | Description |
+|----------|------|-------------|
+| `id` | UUID | PK |
+| `topic_slug` | string | Lien vers le thème |
+| `question_type`| enum | "memory_check" |
+| `content_ids` | UUID[] | Articles utilisés pour le quiz |
+| `created_at` | timestamp | Date de génération |
 
 ---
 
@@ -406,6 +447,7 @@ erDiagram
 - `/api/sources/*` : Gestion des sources
 - `/api/contents/*` : Interactions contenus
 - `/api/subscription/*` : État abonnement
+- `/api/progress/*` : Endpoints de progression thématique
 - `/api/webhooks/revenuecat` : Webhooks paiement
 
 **Dependencies:** PostgreSQL (Supabase), RevenueCat API
@@ -794,10 +836,19 @@ servers:
 | `GET` | `/contents/{id}` | Détail d'un contenu |
 | `POST` | `/contents/{id}/seen` | Marquer comme vu |
 | `POST` | `/contents/{id}/consumed` | Marquer comme consommé |
-| `POST` | `/contents/{id}/save` | Ajouter à "À consulter plus tard" |
-| `DELETE` | `/contents/{id}/save` | Retirer de "À consulter plus tard" |
+| `POST` | `/contents/{id}/save` | Ajouter aux Progressions ("À lire") |
+| `DELETE` | `/contents/{id}/save` | Retirer des Progressions |
 | `POST` | `/contents/{id}/hide` | Masquer ("pas intéressé") |
-| `GET` | `/contents/saved` | Liste "À consulter plus tard" |
+
+### 8.6 Progress Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/progress` | Liste des progressions utilisateur |
+| `GET` | `/progress/{topic}` | Détail d'un thème (progression + suggestions) |
+| `POST` | `/progress/{topic}/activate` | Suivre activement un thème |
+| `POST` | `/progress/{topic}/quiz` | Soumettre un quiz de validation |
+| `GET` | `/progress/quiz/{topic}` | Récupérer un quiz disponible |
 
 ### 8.6 Source Endpoints
 
