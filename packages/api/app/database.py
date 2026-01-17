@@ -22,11 +22,8 @@ engine = create_async_engine(
     pool_pre_ping=False,
     # Use NullPool with PgBouncer transaction pooling
     poolclass=NullPool,
-    connect_args={
-        # psycopg-specific args (if any needed). 
-        # For PgBouncer in transaction mode, keeping it simple is best.
-        "command_timeout": 30,
-    },
+    # Note: psycopg v3 doesn't support command_timeout in connect_args
+    # Timeouts are handled at the statement level with statement_timeout if needed
 )
 
 

@@ -51,3 +51,34 @@ Race condition entre l'initialisation de l'`ApiClient` et la restauration de la 
 
 ### Solution
 Ajout d'un délai préventif de 100ms dans l'intercepteur de l'`ApiClient` pour laisser le temps au SDK Supabase de récupérer le token depuis le stockage local.
+
+## 5. Erreur 405 via fetch API sur Flutter Web (17/01/2026)
+
+### Symptôme
+`DioException [connection error]` sur Flutter Web/Chrome malgré API fonctionnelle via curl et XHR. Les tests montrent que `fetch` retourne 405, mais `XHR` retourne 200 pour le même endpoint.
+
+### Cause racine
+Le paramètre `redirect_slashes` (activé par défaut dans FastAPI) cause des redirections **307** pour les endpoints définis sans trailing slash. L'API `fetch` (utilisée par Dio sur Flutter Web) gère ces redirections différemment de XHR, perdant le contexte CORS.
+
+### Solution
+Désactivation des redirections automatiques dans FastAPI :
+```python
+app = FastAPI(
+    ...
+    redirect_slashes=False,
+```
+
+## 6. Erreur 500 sur tous les endpoints DB (17/01/2026)
+
+### Symptôme
+Tous les endpoints authentifiés (`/feed/`, `/streak/`, `/catalog`) retournent 500, alors que `/api/health` retourne 200.
+
+### Cause racine
+Le paramètre `command_timeout` dans `connect_args` de SQLAlchemy n'est **pas supporté** par le driver `psycopg` (v3). Cela cause une exception lors de toute tentative de connexion à la base de données :
+```
+sqlalchemy.exc.ProgrammingError: invalid connection option "command_timeout"
+```
+
+### Solution
+Suppression du paramètre `connect_args` dans `database.py`.
+
