@@ -40,6 +40,9 @@ class Content(Base):
         Enum(ContentType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20), nullable=False
     )
     guid: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Story 5.2: In-App Reading Mode
+    html_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    audio_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Story clustering (Story 7.2)
     cluster_id: Mapped[Optional[UUID]] = mapped_column(
         PGUUID(as_uuid=True), nullable=True, index=True

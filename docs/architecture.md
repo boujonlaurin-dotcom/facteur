@@ -137,6 +137,14 @@ graph TB
 | **DB Driver** | psycopg (v3) | 3.1.x | Driver PostgreSQL | Meilleure stabilité avec les pools et PgBouncer |
 | **Database** | PostgreSQL | 15.x | Base de données relationnelle | Via Supabase, JSONB, full-text search |
 | **PGBouncer Mode**| Transaction | - | Pooling Supabase | Nécessite `NullPool` et désactivation des prepared statements |
+
+> [!IMPORTANT]
+> **Compatibilité psycopg v3 :**
+> - Ne pas utiliser `command_timeout` dans `connect_args` (non supporté)
+> - Utiliser `NullPool` avec PgBouncer en mode Transaction
+> 
+> **Compatibilité Flutter Web :**
+> - Définir `redirect_slashes=False` dans FastAPI pour éviter les 307 qui cassent `fetch`
 | **Auth** | Supabase Auth | - | Authentification | OAuth intégré, JWT, RLS |
 | **Payments** | RevenueCat | 7.x | Gestion abonnements | SDK Flutter, webhooks, analytics |
 | **RSS Parser** | feedparser | 6.0.x | Parsing RSS/Atom | Robuste, gère les edge cases |
@@ -252,6 +260,8 @@ erDiagram
         string url
         string thumbnail_url
         text description
+        text html_content
+        string audio_url
         timestamp published_at
         int duration_seconds
         string content_type
@@ -361,8 +371,10 @@ erDiagram
 | Attribut | Type | Description |
 |----------|------|-------------|
 | `content_type` | enum | "article", "podcast", "youtube" |
-| `duration_seconds` | int | Durée estimée (lecture ou écoute) |
-| `guid` | string | Identifiant unique RSS pour déduplication |
+| `duration_seconds` | int | Duration (reading or listening) |
+| `html_content` | text | Parsed HTML for in-app reading |
+| `audio_url` | string | Direct link to audio enclosure |
+| `guid` | string | Unique RSS ID for deduplication |
 
 #### User Content Status
 **Purpose:** Suivi de l'interaction utilisateur avec les contenus
@@ -678,27 +690,31 @@ sequenceDiagram
     App-->>User: Append au feed
 ```
 
-### 7.3 Workflow : Consommation de contenu
+### 7.3 Workflow : Consommation de contenu (In-App Reader)
 
 ```mermaid
 sequenceDiagram
     actor User
     participant App as Flutter App
-    participant WebView as In-App Browser
+    participant Reader as In-App Reader
+    participant WebView as WebView Fallback
     participant API as FastAPI
     participant DB as PostgreSQL
 
     User->>App: Tap sur une card
     App-->>User: Afficher écran Détail
     
-    User->>App: Tap "Lire/Écouter/Voir"
-    App->>App: Démarrer timer
-    App->>WebView: Ouvrir URL contenu
+    User->>App: Navigation vers Détail
     
-    Note over User,WebView: Utilisateur consomme le contenu
+    alt In-App Content available
+        App->>Reader: Render (Article/Podcast/YouTube)
+    else Content insufficient
+        App->>WebView: Load original URL
+    end
     
-    User->>WebView: Fermer / Retour
-    WebView-->>App: Temps passé
+    Note over User,Reader: Utilisateur consomme le contenu
+    
+    User->>App: Retour au Feed
     
     alt Temps > seuil (30s article, 60s vidéo/podcast)
         App->>API: POST /api/contents/{id}/consumed

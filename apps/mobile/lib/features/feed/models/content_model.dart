@@ -40,6 +40,9 @@ class Content {
   final String title;
   final String url;
   final String? thumbnailUrl;
+  final String? description;
+  final String? htmlContent; // Story 5.2: In-App Reading Mode
+  final String? audioUrl; // Story 5.2: In-App Reading Mode
   final ContentType contentType;
   final int? durationSeconds;
   final DateTime publishedAt;
@@ -54,6 +57,9 @@ class Content {
     required this.title,
     required this.url,
     this.thumbnailUrl,
+    this.description,
+    this.htmlContent,
+    this.audioUrl,
     required this.contentType,
     this.durationSeconds,
     required this.publishedAt,
@@ -70,6 +76,9 @@ class Content {
       title: json['title'] as String,
       url: json['url'] as String,
       thumbnailUrl: json['thumbnail_url'] as String?,
+      description: json['description'] as String?,
+      htmlContent: json['html_content'] as String?,
+      audioUrl: json['audio_url'] as String?,
       contentType: ContentType.values.firstWhere(
         (e) => e.name == (json['content_type'] as String).toLowerCase(),
         orElse: () => ContentType.article,
@@ -95,6 +104,9 @@ class Content {
     String? title,
     String? url,
     String? thumbnailUrl,
+    String? description,
+    String? htmlContent,
+    String? audioUrl,
     ContentType? contentType,
     int? durationSeconds,
     DateTime? publishedAt,
@@ -109,6 +121,9 @@ class Content {
       title: title ?? this.title,
       url: url ?? this.url,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      description: description ?? this.description,
+      htmlContent: htmlContent ?? this.htmlContent,
+      audioUrl: audioUrl ?? this.audioUrl,
       contentType: contentType ?? this.contentType,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       publishedAt: publishedAt ?? this.publishedAt,
@@ -118,6 +133,20 @@ class Content {
       isHidden: isHidden ?? this.isHidden,
       recommendationReason: recommendationReason ?? this.recommendationReason,
     );
+  }
+
+  /// Story 5.2: Check if content has enough data for in-app reading
+  bool get hasInAppContent {
+    switch (contentType) {
+      case ContentType.article:
+        return (htmlContent?.length ?? 0) > 100 ||
+            (description?.length ?? 0) > 100;
+      case ContentType.audio:
+        return audioUrl != null && audioUrl!.isNotEmpty;
+      case ContentType.youtube:
+      case ContentType.video:
+        return true; // YouTube can always be embedded
+    }
   }
 }
 

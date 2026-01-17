@@ -12,12 +12,12 @@ String getPerspectivesDescription(String? userBias) {
   switch (userBias) {
     case 'left':
     case 'center-left':
-      return 'Du contenu à droite, pour changer de prisme (Gauche)';
+      return 'Du contenu plus à droite, pour changer de prisme';
     case 'right':
     case 'center-right':
-      return 'Du contenu à gauche, pour changer de prisme (Droite)';
+      return 'Du contenu plus à gauche, pour changer de prisme';
     case 'center':
-      return 'Du contenu varié, pour changer de prisme (Centre)';
+      return 'Du contenu plus varié, pour changer de prisme';
     default:
       return 'Changez d\'angle de vue pour enrichir votre opinion.';
   }

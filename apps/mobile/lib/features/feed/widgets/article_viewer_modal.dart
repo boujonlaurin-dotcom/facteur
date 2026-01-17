@@ -339,19 +339,6 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           ),
                         ),
                       const SizedBox(width: 4),
-                      // Actions (Optional: Share/Save)
-                      IconButton(
-                        icon: Icon(
-                          PhosphorIcons.shareNetwork(
-                            PhosphorIconsStyle.regular,
-                          ),
-                        ),
-                        onPressed: () {
-                          // TODO: Implement share
-                        },
-                        color: colors.textPrimary,
-                        visualDensity: VisualDensity.compact,
-                      ),
                     ],
                   ),
                 ),

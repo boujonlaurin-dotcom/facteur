@@ -635,16 +635,19 @@ facteur/
 
 ---
 
-### Story 5.2 : Redirect vers source externe
+### Story 5.2 : Mode Lecture In-App
 
-**As a** utilisateur,  
-**I want** ouvrir le contenu dans un navigateur,  
-**so that** je puisse le consulter sur le site d'origine.
+**As a** utilisateur,
+**I want** consulter les contenus directement dans l'app sans ouvrir le navigateur,
+**so that** j'ai une expérience de lecture fluide, sans pubs, paywalls ou latence.
 
 **Acceptance Criteria :**
-1. Ouverture WebView in-app
-2. Option navigateur externe (Settings)
-3. Tracking du temps passé
+1. Articles affichés en mode lecture natif avec HTML formaté + images inline
+2. Player audio fonctionnel pour les podcasts (play/pause, seek, durée)
+3. Player vidéo embarqué pour YouTube avec contrôles natifs
+4. FAB "Voir l'original" présent sur tous les formats
+5. Fallback WebView (ou UI de redirection sur Web) si contenu insuffisant
+6. Respect du dark/light mode sur toutes les vues
 
 ---
 

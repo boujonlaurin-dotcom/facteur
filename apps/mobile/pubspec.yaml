@@ -38,6 +38,11 @@ dependencies:
   # WebView
   webview_flutter: ^4.7.0
   
+  # Story 5.2: In-App Reading Mode
+  flutter_html: ^3.0.0-beta.2  # HTML rendering for articles
+  just_audio: ^0.9.36          # Audio player for podcasts
+  youtube_player_flutter: ^9.1.1  # YouTube player for videos
+  
   # Utils
   intl: ^0.20.2
   url_launcher: ^6.2.5

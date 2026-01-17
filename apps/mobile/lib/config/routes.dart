@@ -7,6 +7,7 @@ import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
+import '../features/feed/models/content_model.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/sources/screens/sources_screen.dart';
@@ -162,7 +163,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames.contentDetail,
                 builder: (context, state) {
                   final contentId = state.pathParameters['id']!;
-                  return ContentDetailScreen(contentId: contentId);
+                  // Story 5.2: Pass Content via extra for in-app reading
+                  final content = state.extra as Content?;
+                  return ContentDetailScreen(
+                    contentId: contentId,
+                    content: content,
+                  );
                 },
               ),
             ],

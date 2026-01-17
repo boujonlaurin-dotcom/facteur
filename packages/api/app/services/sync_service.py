@@ -133,6 +133,8 @@ class SyncService:
                 "description": None,
                 "thumbnail_url": None,
                 "duration_seconds": None,
+                "html_content": None,  # Story 5.2: In-App Reading
+                "audio_url": None,     # Story 5.2: In-App Reading
             }
             
             # Type specific parsing
@@ -163,6 +165,13 @@ class SyncService:
                 if "itunes_duration" in entry:
                     duration_str = entry.itunes_duration
                     content_data["duration_seconds"] = self._parse_duration(duration_str)
+                
+                # Story 5.2: Extract audio URL from enclosure
+                if "enclosures" in entry:
+                    for enclosure in entry.enclosures:
+                        if enclosure.get("type", "").startswith("audio"):
+                            content_data["audio_url"] = enclosure.get("href") or enclosure.get("url")
+                            break
                 
                 # Thumbnail extraction
                 if "image" in entry and "href" in entry.image:
@@ -218,6 +227,17 @@ class SyncService:
                 
                 if content_data["thumbnail_url"]:
                     content_data["thumbnail_url"] = self._optimize_thumbnail_url(content_data["thumbnail_url"])
+                
+                # Story 5.2: Extract content:encoded for in-app reading
+                if "content" in entry:
+                    for c in entry.content:
+                        content_type = c.get("type", "")
+                        if content_type in ("text/html", "html") or "html" in content_type:
+                            content_data["html_content"] = c.get("value")
+                            break
+                    # Fallback to first content if no HTML found
+                    if not content_data["html_content"] and entry.content:
+                        content_data["html_content"] = entry.content[0].get("value")
 
             return content_data
 
@@ -305,6 +325,12 @@ class SyncService:
             if not existing.description and data.get("description"):
                 existing.description = data["description"]
             
+            # Story 5.2: Backfill html_content and audio_url if missing
+            if not existing.html_content and data.get("html_content"):
+                existing.html_content = data["html_content"]
+            if not existing.audio_url and data.get("audio_url"):
+                existing.audio_url = data["audio_url"]
+            
             return False
             
         # Create new content
@@ -319,6 +345,8 @@ class SyncService:
             description=data["description"],
             thumbnail_url=data["thumbnail_url"],
             duration_seconds=data["duration_seconds"],
+            html_content=data.get("html_content"),  # Story 5.2
+            audio_url=data.get("audio_url"),        # Story 5.2
             created_at=datetime.datetime.utcnow()
         )
         

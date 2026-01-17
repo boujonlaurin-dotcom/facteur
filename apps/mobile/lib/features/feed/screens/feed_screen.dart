@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
@@ -19,7 +20,6 @@ import '../../../config/constants.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/filter_bar.dart';
-import '../widgets/article_viewer_modal.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../../gamification/widgets/streak_indicator.dart';
@@ -142,6 +142,33 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
               const SizedBox(height: 8),
               ListTile(
                 leading: Icon(
+                  PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
+                  color: colors.textPrimary,
+                ),
+                title: Text(
+                  'Copier le lien',
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: colors.textPrimary,
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await Clipboard.setData(ClipboardData(text: content.url));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Lien copié dans le presse-papier'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: Icon(
                   PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
                   color: colors.textPrimary,
                 ),
@@ -219,16 +246,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       return;
     }
 
-    // Sinon (Mobile/Web), on utilise la modal WebView
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      useSafeArea: true,
-      builder: (context) => ArticleViewerModal(content: content),
-    ).then((_) {
-      // Au retour (fermeture de la modal), marquer comme consommé si monté
+    // Story 5.2: Navigate to in-app reader screen with Content passed via extra
+    context.push('/feed/content/${content.id}', extra: content).then((_) {
+      // Au retour, marquer comme consommé si monté
       if (mounted) {
         ref.read(feedProvider.notifier).markContentAsConsumed(content);
 

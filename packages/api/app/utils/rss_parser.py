@@ -59,15 +59,29 @@ class RSSParser:
 
         # Extraire l'enclosure (pour podcasts)
         enclosure = None
+        audio_url = None
         if hasattr(entry, "enclosures") and entry.enclosures:
             for enc in entry.enclosures:
                 if enc.get("type", "").startswith("audio"):
+                    audio_url = enc.get("href") or enc.get("url")
                     enclosure = {
-                        "url": enc.get("href") or enc.get("url"),
+                        "url": audio_url,
                         "type": enc.get("type"),
                         "length": enc.get("length"),
                     }
                     break
+
+        # Extraire le contenu HTML (content:encoded ou content)
+        html_content = None
+        if hasattr(entry, "content") and entry.content:
+            # content:encoded est souvent dans entry.content[0].value
+            for content_item in entry.content:
+                if content_item.get("type") in ("text/html", "html"):
+                    html_content = content_item.get("value")
+                    break
+            # Fallback: premier content disponible
+            if not html_content and entry.content:
+                html_content = entry.content[0].get("value")
 
         # Durée (pour podcasts/vidéos)
         duration = None
@@ -82,6 +96,8 @@ class RSSParser:
             "guid": entry.get("id") or entry.get("link"),
             "thumbnail": thumbnail,
             "enclosure": enclosure,
+            "audio_url": audio_url,
+            "html_content": html_content,
             "duration_seconds": duration,
         }
 

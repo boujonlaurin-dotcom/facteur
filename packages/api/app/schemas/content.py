@@ -65,6 +65,8 @@ class ContentDetailResponse(BaseModel):
     url: str
     thumbnail_url: Optional[str]
     description: Optional[str]
+    html_content: Optional[str] = None  # Story 5.2: In-App Reading Mode
+    audio_url: Optional[str] = None     # Story 5.2: In-App Reading Mode
     content_type: ContentType
     duration_seconds: Optional[int]
     published_at: datetime
