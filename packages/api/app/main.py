@@ -4,7 +4,7 @@ import structlog
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import os
@@ -35,7 +35,8 @@ print(f"🌍 ALL_KEYS: {sorted(list(os.environ.keys()))}", flush=True)
 print("!"*60 + "\n", flush=True)
 
 from app.config import get_settings
-from app.database import init_db, close_db
+from app.database import init_db, close_db, get_db, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import (
     auth,
     contents,
@@ -49,7 +50,6 @@ from app.routers import (
     internal,
 )
 import time
-from fastapi import Request
 
 
 from app.workers.scheduler import start_scheduler, stop_scheduler
@@ -131,9 +131,20 @@ app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 
 
 @app.get("/api/health", tags=["Health"])
-async def health_check() -> dict[str, str]:
-    """Endpoint de health check."""
-    return {"status": "ok", "version": settings.app_version}
+async def health_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Endpoint de health check avec vérification DB."""
+    try:
+        await db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+        
+    return {
+        "status": "ok", 
+        "version": settings.app_version,
+        "database": db_status,
+        "environment": settings.environment
+    }
 
 
 if __name__ == "__main__":
