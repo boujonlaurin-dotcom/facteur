@@ -21,11 +21,27 @@ async def fetch_jwks():
         return _jwks_cache
     
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-    # Use certifi bundle for SSL verification (fix for macOS local issuer error)
-    async with httpx.AsyncClient(verify=certifi.where()) as client:
-        response = await client.get(jwks_url)
-        _jwks_cache = response.json()
-        return _jwks_cache
+    
+    try:
+        # Use certifi bundle for SSL verification (fix for macOS local issuer error)
+        # Add timeout to prevent hanging indefinite requests
+        async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+            print(f"🔐 Auth: Fetching JWKS from {jwks_url}...", flush=True)
+            response = await client.get(jwks_url)
+            response.raise_for_status()
+            _jwks_cache = response.json()
+            print("✅ Auth: JWKS fetched successfully.", flush=True)
+            return _jwks_cache
+    except Exception as e:
+        print(f"❌ Auth: Failed to fetch JWKS: {str(e)}", flush=True)
+        # Log response content if available (for 4xx/5xx errors)
+        if 'response' in locals():
+            print(f"   Response: {response.text}", flush=True)
+        # Rethrow as 500 (will be caught by main.py logger) but with clear message
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, # 501 or 503 might be more appropriate, but keeping it simple
+            detail=f"Auth configuration error: Could not fetch JWKS. {str(e)}"
+        )
 
 
 async def get_current_user_id(

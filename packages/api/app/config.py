@@ -47,6 +47,14 @@ class Settings(BaseSettings):
                 v = v.replace("postgres://", "postgresql+psycopg://", 1)
             elif v.startswith("postgresql://") and "+psycopg" not in v:
                 v = v.replace("postgresql://", "postgresql+psycopg://", 1)
+            
+            # Ensure sslmode=require is present if not already (important for Railway/Supabase pooling)
+            # But only append if query params don't already exist or if sslmode is missing
+            if "?" not in v:
+                v += "?sslmode=require"
+            elif "sslmode=" not in v:
+                v += "&sslmode=require"
+                
         return v
 
 
