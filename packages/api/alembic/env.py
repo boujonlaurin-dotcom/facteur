@@ -16,8 +16,17 @@ load_dotenv()
 # access to the values within the .ini file in use.
 config = context.config
 
-# Get DATABASE_URL from .env
+# Get DATABASE_URL from .env and convert for async psycopg
 database_url = os.getenv("DATABASE_URL")
+
+# Convert postgresql:// or postgres:// to postgresql+psycopg:// for async engine
+if database_url:
+    if "+asyncpg" in database_url:
+        database_url = database_url.replace("+asyncpg", "+psycopg")
+    elif database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif database_url.startswith("postgresql://") and "+psycopg" not in database_url:
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
