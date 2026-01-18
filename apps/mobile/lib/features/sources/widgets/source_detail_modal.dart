@@ -134,7 +134,7 @@ class SourceDetailModal extends StatelessWidget {
                     source.scoreRigor ?? 0.0),
                 const SizedBox(height: 8),
                 _buildFqsPillar(
-                    context, 'UX & Publicité', source.scoreUx ?? 0.0),
+                    context, 'Accessibilité', source.scoreUx ?? 0.0),
               ],
             ),
           ),

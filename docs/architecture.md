@@ -26,7 +26,9 @@ Ce document définit l'architecture technique complète de **Facteur**, l'applic
 **Relation avec les autres documents :**
 - `prd.md` : Exigences fonctionnelles et non-fonctionnelles
 - `front-end-spec.md` : Spécifications UI/UX détaillées
-- `sources.csv` : Catalogue des 24 sources curées
+- `prd.md` : Exigences fonctionnelles et non-fonctionnelles
+- `front-end-spec.md` : Spécifications UI/UX détaillées
+- `sources/sources_master.csv` : Catalogue des sources (Curated & Indexed)
 
 ### 1.1 Starter Template
 
@@ -370,6 +372,16 @@ erDiagram
 | `is_curated` | boolean | Source du catalogue officiel |
 | `granular_topics` | string[] | Sous-thèmes fins (ex: ["ai", "crypto"]) |
 | `feed_url` | string | URL du flux RSS (peut différer de url) |
+
+#### 4.3 Source Lifecycle Management
+
+| État (Status) | Description | `is_curated` | Critères |
+| :--- | :--- | :--- | :--- |
+| **ARCHIVED** | Backlog / Inactif | - | URL connue uniquement. |
+| **INDEXED** | Pour Comparaison | `false` | Feed RSS valide + Biais/Fiabilité macro. |
+| **CURATED** | Catalogue Officiel | `true` | Full FQS (Scores Indep, Rigueur, UX) + Rationale. |
+
+**Transition :** La promotion d'une source s'effectue via `sources_master.csv`. L'importateur valide les critères minimaux avant mise à jour en base.
 
 #### Contents
 **Purpose:** Contenus individuels (articles, épisodes, vidéos)

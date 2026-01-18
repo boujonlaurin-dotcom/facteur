@@ -36,7 +36,7 @@ if DATABASE_URL:
 
 # Correct path to project root
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-CSV_PATH = os.path.join(PROJECT_ROOT, "sources", "sources.csv")
+CSV_PATH = os.path.join(PROJECT_ROOT, "sources", "sources_master.csv")
 
 
 TYPE_MAPPING = {
@@ -154,14 +154,20 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     if not name or not url or name == "Name": # Skip empty rows or repeated headers
         return
 
+    # --- NEW STATUS LOGIC ---
+    status = source_data.get("Status", "INDEXED").upper() # Default to INDEXED if missing
+    
+    if status == "ARCHIVED":
+        print(f"📦 Source {name} is ARCHIVED. Skipping.")
+        return
+
+    is_curated = (status == "CURATED")
+    
     csv_type = source_data.get("Type")
     csv_theme = source_data.get("Thème")
     rationale = source_data.get("Rationale")
     csv_bias = source_data.get("Bias", "unknown")
     csv_reliability = source_data.get("Reliability", "unknown")
-    # Handle In_Catalog: default to True for backward compatibility if missing, 
-    in_catalog_str = source_data.get("In_Catalog", "true").lower()
-    is_curated = in_catalog_str == "true"
     
     internal_type = TYPE_MAPPING.get(csv_type, "article")
     internal_theme = THEME_MAPPING.get(csv_theme, "other")
@@ -170,17 +176,28 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     bias_val = csv_bias.lower()
     reliability_val = csv_reliability.lower()
     
-    # Heuristic mapping for FQS pillars (Story 7.5)
-    score_indep = None
-    score_rigor = None
-    score_ux = None
+    # Scores: Read from CSV, fallback to heuristics ONLY if missing and strictly needed?
+    # Actually, for Master CSV, we expect scores to be present (empty string if None)
+    # We convert empty strings to None
+    def parse_score(val):
+        try:
+            return float(val) if val and val.strip() else None
+        except ValueError:
+            return None
+
+    score_indep = parse_score(source_data.get("Score_Independence"))
+    score_rigor = parse_score(source_data.get("Score_Rigor"))
+    score_ux = parse_score(source_data.get("Score_UX"))
     
-    if reliability_val == "high":
-        score_indep, score_rigor, score_ux = 0.9, 0.9, 0.8
-    elif reliability_val in ["medium", "mixed"]:
-        score_indep, score_rigor, score_ux = 0.6, 0.6, 0.6
-    elif reliability_val == "low":
-        score_indep, score_rigor, score_ux = 0.3, 0.3, 0.4
+    # Fallback Heuristic if scores are missing (Legacy / Indexing phase)
+    # But only if they are absolutely None
+    if score_indep is None:
+        if reliability_val == "high":
+            score_indep, score_rigor, score_ux = 0.9, 0.9, 0.8
+        elif reliability_val in ["medium", "mixed"]:
+            score_indep, score_rigor, score_ux = 0.6, 0.6, 0.6
+        elif reliability_val == "low":
+            score_indep, score_rigor, score_ux = 0.3, 0.3, 0.4
 
     feed_url = None
     if internal_type == "youtube":
@@ -204,7 +221,7 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     existing_source = result.scalars().first()
     
     if existing_source:
-        print(f"🔄 Updating existing source: {name}")
+        print(f"🔄 Updating existing source: {name} [{status}]")
         existing_source.name = name
         existing_source.url = url
         existing_source.type = SourceType(internal_type)
@@ -220,7 +237,7 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
         existing_source.is_curated = is_curated
         existing_source.is_active = True # Revive if inactive
     else:
-        print(f"✨ Creating new source: {name} (Curated: {is_curated})")
+        print(f"✨ Creating new source: {name} ([{status}] Curated: {is_curated})")
         new_source = Source(
             name=name, url=url, feed_url=feed_url,
             type=SourceType(internal_type), theme=internal_theme,
@@ -238,7 +255,9 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
 async def main():
     import argparse
     parser = argparse.ArgumentParser(description="Import sources from CSV")
-    parser.add_argument("--file", type=str, default="sources/sources.csv", help="Path to CSV file relative to project root")
+    parser.add_argument("--file", type=str, default="sources/sources_master.csv", help="Path to CSV file relative to project root")
+    parser.add_argument("--start-at", type=int, default=1, help="Row number to start at (1-indexed)")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum number of rows to process (0 for no limit)")
     args = parser.parse_args()
 
     # Resolve path relative to project root
@@ -259,27 +278,37 @@ async def main():
         reader = csv.DictReader(csvfile)
         rows = list(reader)
     
+    total_total_rows = len(rows)
+    
+    # Slice rows based on start_at and limit
+    start_idx = max(0, args.start_at - 1)
+    if args.limit > 0:
+        rows = rows[start_idx : start_idx + args.limit]
+    else:
+        rows = rows[start_idx:]
+        
     total_rows = len(rows)
-    print(f"👉 Found {total_rows} sources to process.")
+    print(f"👉 Processing {total_rows} sources (Starting at row {args.start_at}, Total in file: {total_total_rows}).")
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
         for i, row in enumerate(rows, 1):
+            current_row_num = start_idx + i
             name = row.get("Name")
             url = row.get("URL")
             
             if not name or not url or name == "Name": # Skip empty rows or repeated headers
-                print(f"[{i}/{total_rows}] Skipping invalid/empty row...")
+                print(f"[{current_row_num}/{total_total_rows}] Skipping invalid/empty row...")
                 continue
                 
-            print(f"[{i}/{total_rows}] Processing {name} ({url})...")
+            print(f"[{current_row_num}/{total_total_rows}] Processing {name} ({url})...")
             try:
                 async with async_session_maker() as session:
                     await process_source(row, session, client)
                     await session.commit()
-                # Use a small sleep to avoid saturating resources in tight loop
-                await asyncio.sleep(0.05) 
+                # Small sleep to be nice to CPUs and DB
+                await asyncio.sleep(0.1) 
             except Exception as e:
-                print(f"❌ Error processing {row.get('Name')}: {e}")
+                print(f"❌ Error processing {row.get('Name')} at row {current_row_num}: {e}")
                 continue
             
     print("🎉 Import process finished!")

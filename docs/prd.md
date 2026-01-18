@@ -450,10 +450,11 @@ facteur/
 **so that** l'app puisse stocker et servir les articles/podcasts/vidéos.
 
 **Acceptance Criteria :**
-1. Table `sources` : id, name, url, type, theme, description, logo_url, is_curated
-2. **Flag `is_curated`** :
-   - `true` : Source du catalogue officiel, visible dans l'onboarding.
-   - `false` : Source "analysée" uniquement (utilisée pour comparaison/perspectives), invisible dans l'onboarding.
+1. Table `sources` : id, name, url, type, theme, description, logo_url, **status**, **feed_url**
+2. **Champ `status` (Lifecycle)** :
+   - `ARCHIVED` : Source connue mais inactive/non-traitée. Invisible partout.
+   - `INDEXED` : Source techniquement valide (RSS OK). Invisible catalogue, utilisée pour Comparaison. Scores basiques (Bias/Reliability) requis.
+   - `CURATED` : Source "Trusted". Visible catalogue & onboarding. Tous scores (FQS + UX) et Rationale requis.
 3. Table `contents` : id, source_id, title, url, thumbnail_url, description, published_at, duration_seconds, content_type
 4. Table `user_sources` : user_id, source_id, is_custom, added_at
 5. Table `user_content_status` : user_id, content_id, status, seen_at, time_spent_seconds

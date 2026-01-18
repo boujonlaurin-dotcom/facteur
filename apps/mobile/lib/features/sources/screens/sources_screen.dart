@@ -116,7 +116,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 24.0),
                         child: Text(
-                          'Indiquez-nous les sources auxquelles vous faites le plus confiance. Nous les privilégierons par défaut dans votre feed.',
+                          'Indiquez-nous vos sources de confiance.\n(La liste ci-dessous est une pré-sélection qui sera prochainement élargie).',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: colors.textSecondary,
