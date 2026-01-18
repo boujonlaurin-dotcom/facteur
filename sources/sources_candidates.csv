@@ -1,0 +1,238 @@
+Name,URL,Type,Thème,Rôle,Rationale,Statut,Bias,Reliability,In_Catalog
+France Info,https://www.francetvinfo.fr/,Site,Société & Climat,Fréquence,"Service public d'information en continu.",À valider,center,high,true
+TF1 Info,https://www.tf1info.fr/,Site,Société & Climat,Mainstream Deep,"Information grand public du groupe TF1.",À valider,center-right,medium,false
+France Inter,https://www.radiofrance.fr/franceinter,Podcast,Société & Climat,Mainstream Deep,"Première radio de France, généraliste.",À valider,center-left,high,true
+Public Sénat,https://www.publicsenat.fr/,Site,Géopolitique,Deep Dive,"Chaîne politique et parlementaire.",À valider,center,high,false
+TV5 Monde,https://information.tv5monde.com/,Site,Géopolitique,Pluralité,"Le regard francophone mondial.",À valider,center,high,false
+Sudinfo,https://www.sudinfo.be/,Site,Société & Climat,Fréquence,"Presse quotidienne belge francophone.",À valider,center,medium,false
+France Bleu,https://www.francebleu.fr/,Site,Société & Climat,Proximité,"Le réseau des radios locales de service public.",À valider,center,high,false
+Le Soir,https://www.lesoir.be/,Site,Géopolitique,Mainstream Deep,"Quotidien belge de référence.",À valider,center,high,false
+Paris Match,https://www.parismatch.com/,Site,Culture & Idées,Divertissement,"Actualité et photojournalisme.",À valider,center-right,mixed,false
+La Presse,https://www.lapresse.ca/,Site,Géopolitique,Mainstream Deep,"Grand média francophone du Québec.",À valider,center-left,high,false
+20 Minutes,https://www.20minutes.fr/,Site,Société & Climat,Fréquence,"Information gratuite et concise.",À valider,center,medium,false
+BFMTV,https://www.bfmtv.com/,Site,Société & Climat,Fréquence,"Chaîne d'info en continu.",À valider,center-right,mixed,false
+CNEWS,https://www.cnews.fr/,Site,Société & Climat,Opinion,"Chaîne d'info et de débats.",À valider,right,mixed,false
+RTL,https://www.rtl.fr/,Site,Société & Climat,Mainstream Deep,"Radio généraliste privée.",À valider,center-right,medium,true
+Europe 1,https://www.europe1.fr/,Site,Société & Climat,Opinion,"Radio généraliste privée.",À valider,right,medium,true
+Ouest-France,https://www.ouest-france.fr/,Site,Société & Climat,Proximité,"Premier quotidien régional français.",À valider,center,high,false
+Sud Ouest,https://www.sudouest.fr/,Site,Société & Climat,Proximité,"Quotidien régional du Sud-Ouest.",À valider,center,high,false
+La Voix du Nord,https://www.lavoixdunord.fr/,Site,Société & Climat,Proximité,"Quotidien régional du Nord.",À valider,center,high,false
+Le Parisien,https://www.leparisien.fr/,Site,Société & Climat,Mainstream Deep,"Quotidien national et régional Île-de-France.",À valider,center-right,medium,false
+La Croix,https://www.la-croix.com/,Site,Société & Climat,Deep Dive,"Quotidien catholique d'intérêt général.",À valider,center,high,false
+L'Humanité,https://www.humanite.fr/,Site,Société & Climat,Opinion,"Journal d'opinion communiste/gauche radicale.",À valider,left,medium,false
+Valeurs Actuelles,https://www.valeursactuelles.com/,Site,Société & Climat,Opinion,"Hebdomadaire conservateur.",À valider,right,mixed,false
+BBC News,https://www.bbc.com/news,Site,Géopolitique,Mainstream Deep,"Service public britannique, référence mondiale.",À valider,center,high,false
+CNN,https://edition.cnn.com/,Site,Géopolitique,Mainstream Deep,"Chaîne d'info américaine.",À valider,center-left,medium,false
+The New York Times,https://www.nytimes.com/,Site,Géopolitique,Mainstream Deep,"Journal de référence américain.",À valider,center-left,high,false
+The Guardian,https://www.theguardian.com/,Site,Société & Climat,Mainstream Deep,"Journal britannique de centre-gauche.",À valider,center-left,high,false
+Al Jazeera (English),https://www.aljazeera.com/,Site,Géopolitique,Pluralité,"Perspective du Moyen-Orient.",À valider,center,medium,false
+Reuters,https://www.reuters.com/,Site,Économie,Factuel,"Agence de presse mondiale, factuelle.",À valider,center,high,false
+Associated Press,https://apnews.com/,Site,Géopolitique,Factuel,"Agence de presse américaine, factuelle.",À valider,center,high,false
+Deutsche Welle,https://www.dw.com/,Site,Géopolitique,Pluralité,"Service public allemand international.",À valider,center,high,false
+RFI,https://www.rfi.fr/,Site,Géopolitique,Pluralité,"Radio France Internationale.",À valider,center,high,false
+L'Express,https://www.lexpress.fr/,Site,Économie,Mainstream Deep,"Hebdomadaire libéral.",À valider,center-right,high,false
+Marianne,https://www.marianne.net/,Site,Société & Climat,Opinion,"Hebdomadaire souverainiste de gauche.",À valider,alternative,medium,false
+Charlie Hebdo,https://charliehebdo.fr/,Site,Société & Climat,Satire,"Hebdomadaire satirique.",À valider,left,mixed,false
+Le HuffPost,https://www.huffingtonpost.fr/,Site,Société & Climat,Mainstream Deep,"Pure player d'info.",À valider,left,medium,false
+Slate.fr,https://www.slate.fr/,Site,Culture & Idées,Deep Dive,"Magazine d'analyse et de société.",À valider,center-left,high,false
+Konbini,https://www.konbini.com/,Site,Culture & Idées,Divertissement,"Média pop culture et jeunesse.",À valider,left,medium,false
+Brut,https://www.brut.media/fr,Site,Société & Climat,Divertissement,"Vidéo sociale et engagée. Racheté récemment par milliardaire à droite.",À valider,center-left,medium,true
+Loopsider,https://loopsider.com/,Site,Société & Climat,Divertissement,"Vidéo sociale d'investigation.",À valider,left,medium,false
+Blast,https://www.blast-info.fr/,Site,Société & Climat,Opinion,"Web TV indépendante engagée.",À valider,left,mixed,true
+Livre Noir,https://livrenoir.fr/,Site,Société & Climat,Opinion,"Média indépendant de droite radicale.",À valider,right,mixed,false
+Front Populaire,https://frontpopulaire.fr/,Site,Société & Climat,Opinion,"Revue souverainiste.",À valider,alternative,medium,false
+Midi Libre,https://www.midilibre.fr/,Site,Société & Climat,Proximité,"PQR Occitanie.",À valider,center,high,false
+La Montagne,https://www.lamontagne.fr/,Site,Société & Climat,Proximité,"PQR Auvergne-Limousin.",À valider,center,high,false
+Le Télégramme,https://www.letelegramme.fr/,Site,Société & Climat,Proximité,"PQR Bretagne.",À valider,center,high,false
+Nice-Matin,https://www.nicematin.com/,Site,Société & Climat,Proximité,"PQR Côte d'Azur.",À valider,center,high,false
+La Dépêche,https://www.ladepeche.fr/,Site,Société & Climat,Proximité,"PQR Midi-Pyrénées.",À valider,center,high,false
+L'Est Républicain,https://www.estrepublicain.fr/,Site,Société & Climat,Proximité,"PQR Lorraine/Franche-Comté.",À valider,center,high,false
+Dernières Nouvelles d'Alsace,https://www.dna.fr/,Site,Société & Climat,Proximité,"PQR Alsace.",À valider,center,high,false
+Le Dauphiné Libéré,https://www.ledauphine.com/,Site,Société & Climat,Proximité,"PQR Alpes.",À valider,center,high,false
+Le Progrès,https://www.leprogres.fr/,Site,Société & Climat,Proximité,"PQR Lyon/Est.",À valider,center,high,false
+La Provence,https://www.laprovence.com/,Site,Société & Climat,Proximité,"PQR Marseille/Provence.",À valider,center,high,false
+Corse Matin,https://www.corsematin.com/,Site,Société & Climat,Proximité,"PQR Corse.",À valider,center,high,false
+Paris-Normandie,https://www.paris-normandie.fr/,Site,Société & Climat,Proximité,"PQR Normandie.",À valider,center,high,false
+La Nouvelle République,https://www.lanouvellerepublique.fr/,Site,Société & Climat,Proximité,"PQR Centre-Ouest.",À valider,center,high,false
+Charente Libre,https://www.charentelibre.fr/,Site,Société & Climat,Proximité,"PQR Charente.",À valider,center,high,false
+L'Indépendant,https://www.lindependant.fr/,Site,Société & Climat,Proximité,"PQR Pyrénées-Orientales/Aude.",À valider,center,high,false
+Var-Matin,https://www.varmatin.com/,Site,Société & Climat,Proximité,"PQR Var.",À valider,center,high,false
+L'Union,https://www.lunion.fr/,Site,Société & Climat,Proximité,"PQR Champagne-Ardenne/Picardie.",À valider,center,high,false
+Le Bien Public,https://www.bienpublic.com/,Site,Société & Climat,Proximité,"PQR Côte-d'Or.",À valider,center,high,false
+JIM (Journal International de Médecine),https://www.jim.fr/,Site,Tech & Futur,Specialized,"Actualité médicale pro.",À valider,specialized,high,false
+Usine Nouvelle,https://www.usinenouvelle.com/,Site,Économie,Pro,"L'industrie et les technologies.",À valider,specialized,high,false
+01net,https://www.01net.com/,Site,Tech & Futur,Mainstream Deep,"Actualité High-Tech grand public.",À valider,specialized,medium,false
+Frandroid,https://www.frandroid.com/,Site,Tech & Futur,Mainstream Deep,"Tech et mobilité.",À valider,specialized,medium,false
+Numerama,https://www.numerama.com/,Site,Tech & Futur,Mainstream Deep,"Tech, science et société numérique.",À valider,center-left,high,false
+Futura Sciences,https://www.futura-sciences.com/,Site,Tech & Futur,Mainstream Deep,"Vulgarisation scientifique.",À valider,specialized,medium,false
+Trust My Science,https://trustmyscience.com/,Site,Tech & Futur,Mainstream Deep,"Actualité scientifique.",À valider,specialized,medium,false
+Science & Vie,https://www.science-et-vie.com/,Site,Tech & Futur,Mainstream Deep,"Magazine scientifique grand public.",À valider,specialized,medium,false
+Geo,https://www.geo.fr/,Site,Société & Climat,Mainstream Deep,"Voyage et environnement.",À valider,center,high,false
+National Geographic,https://www.nationalgeographic.fr/,Site,Société & Climat,Mainstream Deep,"Science, exploration et photo.",À valider,center,high,false
+Cahiers du Cinéma,https://www.cahiersducinema.com/,Site,Culture & Idées,Specialized,"Critique de cinéma historique.",À valider,specialized,high,false
+Télérama,https://www.telerama.fr/,Site,Culture & Idées,Mainstream Deep,"Culture et société.",À valider,center-left,high,false
+Les Inrockuptibles,https://www.lesinrocks.com/,Site,Culture & Idées,Mainstream Deep,"Culture et société.",À valider,left,medium,false
+Première,https://www.premiere.fr/,Site,Culture & Idées,Mainstream Deep,"Actualité cinéma.",À valider,specialized,medium,false
+Allociné,https://www.allocine.fr/,Site,Culture & Idées,Mainstream Deep,"Base de données cinéma/séries.",À valider,specialized,medium,false
+Gamekult,https://www.gamekult.com/,Site,Tech & Futur,Specialized,"Jeu vidéo (approche critique).",À valider,specialized,high,false
+Jeuxvideo.com,https://www.jeuxvideo.com/,Site,Tech & Futur,Mainstream Deep,"Jeu vidéo grand public.",À valider,specialized,medium,false
+Canard PC,https://www.canardpc.com/,Site,Tech & Futur,Specialized,"Jeu vidéo indépendant et critique.",À valider,specialized,high,false
+Arrêt sur Images,https://www.arretsurimages.net/,Site,Culture & Idées,Deep Dive,"Critique des médias.",À valider,left,high,false
+Acrimed,https://www.acrimed.org/,Site,Culture & Idées,Deep Dive,"Observatoire critique des médias.",À valider,left,high,false
+Observatoire des Inégalités,https://www.inegalites.fr/,Site,Société & Climat,Deep Dive,"Données sur les inégalités.",À valider,left,high,false
+Institut Montaigne,https://www.institutmontaigne.org/,Site,Économie,Deep Dive,"Think tank libéral.",À valider,right,high,false
+Fondation Jean-Jaurès,https://www.jean-jaures.org/,Site,Société & Climat,Deep Dive,"Think tank social-démocrate.",À valider,left,high,false
+Terra Nova,https://tnova.fr/,Site,Société & Climat,Deep Dive,"Think tank progressiste.",À valider,center-left,high,false
+Ifri,https://www.ifri.org/,Site,Géopolitique,Deep Dive,"Relations internationales.",À valider,center,high,false
+IRIS,https://www.iris-france.org/,Site,Géopolitique,Deep Dive,"Relations internationales et stratégiques.",À valider,center-left,high,false
+The Economist,https://www.economist.com/,Site,Économie,Mainstream Deep,"Hebdomadaire libéral britannique.",À valider,center-right,high,false
+Financial Times,https://www.ft.com/,Site,Économie,Mainstream Deep,"Quotidien économique de référence.",À valider,center,high,false
+Bloomberg,https://www.bloomberg.com/,Site,Économie,Factuel,"Actualité financière.",À valider,center,high,false
+Wall Street Journal,https://www.wsj.com/,Site,Économie,Mainstream Deep,"Quotidien économique conservateur.",À valider,right,high,false
+Washington Post,https://www.washingtonpost.com/,Site,Géopolitique,Mainstream Deep,"Quotidien américain de référence.",À valider,center-left,high,false
+Fox News,https://www.foxnews.com/,Site,Géopolitique,Opinion,"Chaîne d'info conservatrice USA.",À valider,right,mixed,false
+MSNBC,https://www.msnbc.com/,Site,Géopolitique,Opinion,"Chaîne d'info progressiste USA.",À valider,left,mixed,false
+RT (Russia Today),https://www.rt.com/,Site,Géopolitique,Opinion,"Média d'état russe (souvent bloqué/taggué).",À valider,alternative,low,false
+Sputnik,https://sputniknews.com/,Site,Géopolitique,Opinion,"Agence presse russe.",À valider,alternative,low,false
+Global Times,https://www.globaltimes.cn/,Site,Géopolitique,Opinion,"Média d'état chinois.",À valider,alternative,low,false
+Kyiv Independent,https://kyivindependent.com/,Site,Géopolitique,Mainstream Deep,"Média ukrainien anglophone.",À valider,center,high,false
+Haaretz,https://www.haaretz.com/,Site,Géopolitique,Mainstream Deep,"Quotidien israélien de gauche.",À valider,left,high,false
+Jerusalem Post,https://www.jpost.com/,Site,Géopolitique,Mainstream Deep,"Quotidien israélien de centre-droit.",À valider,right,high,false
+Al Arabiya,https://english.alarabiya.net/,Site,Géopolitique,Pluralité,"Chaîne d'info saoudienne.",À valider,right,medium,false
+France 24,https://www.france24.com/fr/,Site,Géopolitique,Pluralité,"Chaîne d'info internationale française.",À valider,center,high,false
+Euronews,https://fr.euronews.com/,Site,Géopolitique,Pluralité,"Chaîne d'info européenne.",À valider,center,high,false
+Arte,https://www.arte.tv/fr/,Site,Culture & Idées,Mainstream Deep,"Chaîne culturelle franco-allemande.",À valider,center-left,high,false
+Vatican News,https://www.vaticannews.va/fr.html,Site,Culture & Idées,Specialized,"Info du Vatican.",À valider,right,high,false
+La Tribune,https://www.latribune.fr/,Site,Économie,Pro,"Actualité économique et financière.",À valider,center-right,high,false
+Boursorama,https://www.boursorama.com/,Site,Économie,Fréquence,"Portail boursier et info éco.",À valider,center,medium,false
+Investir,https://investir.lesechos.fr/,Site,Économie,Specialized,"Conseil boursier.",À valider,center,medium,false
+Challenges,https://www.challenges.fr/,Site,Économie,Mainstream Deep,"Hebdomadaire économique.",À valider,center-right,medium,false
+Capital,https://www.capital.fr/,Site,Économie,Mainstream Deep,"Mensuel économique grand public.",À valider,center-right,medium,false
+HuffPost Québec,https://quebec.huffingtonpost.ca/,Site,Société & Climat,Mainstream Deep,"Edition Québec.",À valider,left,medium,false
+Le Devoir,https://www.ledevoir.com/,Site,Géopolitique,Mainstream Deep,"Quotidien indépendant québécois.",À valider,center-left,high,false
+Radio-Canada,https://ici.radio-canada.ca/,Site,Société & Climat,Mainstream Deep,"Service public canadien francophone.",À valider,center-left,high,false
+RTS (Radio Télévision Suisse),https://www.rts.ch/,Site,Société & Climat,Mainstream Deep,"Service public suisse francophone.",À valider,center,high,false
+Le Temps,https://www.letemps.ch/,Site,Géopolitique,Mainstream Deep,"Quotidien suisse de référence.",À valider,center-right,high,false
+RTBF Info,https://www.rtbf.be/info,Site,Société & Climat,Mainstream Deep,"Service public belge francophone.",À valider,center,high,false
+La Libre Belgique,https://www.lalibre.be/,Site,Géopolitique,Mainstream Deep,"Quotidien belge centre-droit.",À valider,center-right,high,false
+L'Echo,https://www.lecho.be/,Site,Économie,Mainstream Deep,"Quotidien économique belge.",À valider,center-right,high,false
+VRT NWS,https://www.vrt.be/vrtnws/fr/,Site,Société & Climat,Mainstream Deep,"Service public belge flamand (français).",À valider,center,high,false
+Vox,https://www.vox.com/,Site,Société & Climat,Deep Dive,"Journalisme explicatif US.",À valider,left,high,false
+The Atlantic,https://www.theatlantic.com/,Site,Culture & Idées,Deep Dive,"Magazine culturel et politique US.",À valider,center-left,high,false
+New Yorker,https://www.newyorker.com/,Site,Culture & Idées,Deep Dive,"Magazine littéraire et journalistique.",À valider,left,high,false
+Foreign Affairs,https://www.foreignaffairs.com/,Site,Géopolitique,Deep Dive,"Revue de relations internationales.",À valider,center,high,false
+Politico US,https://www.politico.com/,Site,Géopolitique,Fréquence,"Politique américaine.",À valider,center,high,false
+Axios,https://www.axios.com/,Site,Géopolitique,Fréquence,"Info concise et factuelle.",À valider,center,high,false
+ProPublica,https://www.propublica.org/,Site,Société & Climat,Deep Dive,"Investigation d'intérêt public.",À valider,left,high,false
+The Intercept,https://theintercept.com/,Site,Géopolitique,Angle Mort,"Investigation et surveillance.",À valider,left,mixed,false
+WikiLeaks,https://wikileaks.org/,Site,Géopolitique,Angle Mort,"Fuites de documents classifiés.",À valider,alternative,mixed,false
+Bellingcat,https://www.bellingcat.com/,Site,Géopolitique,Deep Dive,"Investigation open-source.",À valider,center,high,false
+Mediapart (English),https://www.mediapart.fr/en/english,Site,Société & Climat,Angle Mort,"English version.",À valider,left,high,false
+Le Monde (English),https://www.lemonde.fr/en/,Site,Géopolitique,Mainstream Deep,"English version.",À valider,center-left,high,false
+France 24 (English),https://www.france24.com/en/,Site,Géopolitique,Pluralité,"English version.",À valider,center,high,false
+DW (English),https://www.dw.com/en/,Site,Géopolitique,Pluralité,"English version.",À valider,center,high,false
+El Pais (English),https://english.elpais.com/,Site,Géopolitique,Mainstream Deep,"Journal espagnol ref.",À valider,center-left,high,false
+Der Spiegel (International),https://www.spiegel.de/international/,Site,Géopolitique,Mainstream Deep,"Hebdo allemand ref.",À valider,center-left,high,false
+SCMP (South China Morning Post),https://www.scmp.com/,Site,Géopolitique,Mainstream Deep,"Journal de Hong Kong (propriété Alibaba).",À valider,center,mixed,false
+Times of India,https://timesofindia.indiatimes.com/,Site,Géopolitique,Pluralité,"Journal indien anglophone.",À valider,center-right,mixed,false
+Japan Times,https://www.japantimes.co.jp/,Site,Géopolitique,Mainstream Deep,"Journal japonais anglophone.",À valider,center,high,false
+Korea Herald,https://www.koreaherald.com/,Site,Géopolitique,Pluralité,"Journal coréen anglophone.",À valider,center-right,medium,false
+Moscow Times,https://www.themoscowtimes.com/,Site,Géopolitique,Angle Mort,"Média russe indépendant (basé hors Russie).",À valider,center,high,false
+Meduza,https://meduza.io/en,Site,Géopolitique,Angle Mort,"Média russe indépendant (Lettonie).",À valider,center-left,high,false
+Novaya Gazeta Europe,https://novayagazeta.eu/,Site,Géopolitique,Angle Mort,"Média russe indépendant.",À valider,left,high,false
+Kyiv Post,https://www.kyivpost.com/,Site,Géopolitique,Pluralité,"Média ukrainien.",À valider,center,medium,false
+Al Monitor,https://www.al-monitor.com/,Site,Géopolitique,Deep Dive,"Analyse du Moyen-Orient.",À valider,center,high,false
+Middle East Eye,https://www.middleeasteye.net/,Site,Géopolitique,Angle Mort,"Couverture Moyen-Orient.",À valider,left,mixed,false
+Africa News,https://www.africanews.com/,Site,Géopolitique,Pluralité,"Info pan-africaine.",À valider,center,medium,false
+Jeune Afrique,https://www.jeuneafrique.com/,Site,Géopolitique,Mainstream Deep,"Hebdo panafricain.",À valider,center,high,false
+Courrier de l'Ouest,https://www.courrierdelouest.fr/,Site,Société & Climat,Proximité,"PQR Anjou/Poitou.",À valider,center,high,false
+Le Maine Libre,https://www.lemainelibre.fr/,Site,Société & Climat,Proximité,"PQR Sarthe.",À valider,center,high,false
+Presse Océan,https://www.presseocean.fr/,Site,Société & Climat,Proximité,"PQR Nantes.",À valider,center,high,false
+L'Alsace,https://www.lalsace.fr/,Site,Société & Climat,Proximité,"PQR Alsace.",À valider,center,high,false
+Republicain Lorrain,https://www.republicain-lorrain.fr/,Site,Société & Climat,Proximité,"PQR Lorraine.",À valider,center,high,false
+Vosges Matin,https://www.vosgesmatin.fr/,Site,Société & Climat,Proximité,"PQR Vosges.",À valider,center,high,false
+Le Journal de Saône-et-Loire,https://www.lejsl.com/,Site,Société & Climat,Proximité,"PQR Saône-et-Loire.",À valider,center,high,false
+Le Berry Républicain,https://www.leberry.fr/,Site,Société & Climat,Proximité,"PQR Cher.",À valider,center,high,false
+L'Echo Républicain,https://www.lechorepublicain.fr/,Site,Société & Climat,Proximité,"PQR Eure-et-Loir.",À valider,center,high,false
+La République du Centre,https://www.larep.fr/,Site,Société & Climat,Proximité,"PQR Loiret.",À valider,center,high,false
+Le Populaire du Centre,https://www.lepopulaire.fr/,Site,Société & Climat,Proximité,"PQR Limousin.",À valider,center,high,false
+L'Yonne Républicaine,https://www.lyonne.fr/,Site,Société & Climat,Proximité,"PQR Yonne.",À valider,center,high,false
+La Montagne (Centre France),https://www.lamontagne.fr/,Site,Société & Climat,Proximité,"Groupe Centre France.",À valider,center,high,false
+Sud Ouest (Groupe),https://www.sudouest.fr/,Site,Société & Climat,Proximité,"Groupe Sud Ouest.",À valider,center,high,false
+Ebra (Groupe),https://www.ebra.fr/,Site,Société & Climat,Proximité,"Groupe Est Bourgogne Rhône Alpes.",À valider,center,high,false
+Groupe La Dépêche,https://www.groupe-ladepeche.fr/,Site,Société & Climat,Proximité,"Groupe La Dépêche.",À valider,center,high,false
+Rossel (Groupe),https://www.rossel.be/,Site,Société & Climat,Proximité,"Groupe Rossel (Belgique/Nord).",À valider,center,high,false
+Sipa - Ouest-France,https://www.sipa.of/,Site,Société & Climat,Proximité,"Groupe Ouest-France.",À valider,center,high,false
+Revue des Deux Mondes,https://www.revuedesdeuxmondes.fr/,Site,Culture & Idées,Deep Dive,"Revue littéraire et politique.",À valider,right,high,false
+Esprit,https://esprit.presse.fr/,Site,Culture & Idées,Deep Dive,"Revue intellectuelle.",À valider,center-left,high,false
+Le Débat,https://le-debat.gallimard.fr/,Site,Culture & Idées,Deep Dive,"Revue de débat (historique).",À valider,center,high,false
+Zadig,https://www.zadigmag.com/,Site,Société & Climat,Deep Dive,"Le tour de la France.",À valider,center-left,high,false
+L'Incorrect,https://lincorrect.org/,Site,Société & Climat,Opinion,"Mensuel conservateur.",À valider,right,mixed,false
+Causeur,https://www.causeur.fr/,Site,Société & Climat,Opinion,"Mensuel polémiste.",À valider,right,mixed,false
+Politis,https://www.politis.fr/,Site,Société & Climat,Opinion,"Hebdo antilibéral et écolo.",À valider,left,high,false
+Lutte Ouvrière,https://journal.lutte-ouvriere.org/,Site,Société & Climat,Opinion,"Presse trotskiste.",À valider,left,mixed,false
+Révolution Permanente,https://www.revolutionpermanente.fr/,Site,Société & Climat,Opinion,"Presse anticapitaliste.",À valider,left,mixed,false
+Contrepoints,https://www.contrepoints.org/,Site,Économie,Opinion,"Libéralisme classique.",À valider,center-right,medium,false
+Institut Sapience,https://www.institutsapience.fr/,Site,Tech & Futur,Deep Dive,"Think tank techno-optimiste.",À valider,center-right,high,false
+The Shift Project,https://theshiftproject.org/,Site,Société & Climat,Specialized,"Think tank transition carbone.",À valider,specialized,high,false
+Négawatt,https://www.negawatt.org/,Site,Société & Climat,Specialized,"Expertise transition énergétique.",À valider,specialized,high,false
+Greenpeace France,https://www.greenpeace.fr/,Site,Société & Climat,Angle Mort,"ONG altermondialiste.",À valider,left,mixed,false
+WWF France,https://www.wwf.fr/,Site,Société & Climat,Specialized,"Protection nature.",À valider,specialized,high,false
+Oxfam France,https://www.oxfamfrance.org/,Site,Société & Climat,Opinion,"ONG inégalités.",À valider,left,medium,false
+Attac France,https://france.attac.org/,Site,Économie,Opinion,"Altermondialisme.",À valider,left,mixed,false
+iFRAP,https://www.ifrap.org/,Site,Économie,Deep Dive,"Think tank libéral, dépense publique.",À valider,right,medium,false
+GénérationLibre,https://www.generationlibre.eu/,Site,Société & Climat,Deep Dive,"Think tank libéral progressiste.",À valider,center-right,high,false
+Fondation Jean Jaurès,https://www.jean-jaures.org/,Site,Société & Climat,Deep Dive,"Fondation politique PS.",À valider,center-left,high,false
+Fondation pour l'innovation politique,https://www.fondapol.org/,Site,Société & Climat,Deep Dive,"Think tank libéral.",À valider,center-right,high,false
+Institut Montaigne,https://www.institutmontaigne.org/,Site,Société & Climat,Deep Dive,"Think tank libéral.",À valider,right,high,false
+OFCE,https://www.ofce.sciences-po.fr/,Site,Économie,Deep Dive,"Observatoire économie (Sciences Po).",À valider,center,high,false
+France Stratégie,https://www.strategie.gouv.fr/,Site,Société & Climat,Deep Dive,"Organisme réflexion du PM.",À valider,center,high,false
+INSEE,https://www.insee.fr/,Site,Société & Climat,Factuel,"Statistique publique.",À valider,center,high,false
+Cour des Comptes,https://www.ccomptes.fr/,Site,Économie,Factuel,"Juridiction financière.",À valider,center,high,false
+ARCOM,https://www.arcom.fr/,Site,Tech & Futur,Factuel,"Régulateur audiovisuel.",À valider,center,high,false
+CNIL,https://www.cnil.fr/,Site,Tech & Futur,Factuel,"Régulateur données perso.",À valider,center,high,false
+ANSSI,https://www.ssi.gouv.fr/,Site,Tech & Futur,Factuel,"Sécurité systèmes info.",À valider,center,high,false
+Vie Publique,https://www.vie-publique.fr/,Site,Société & Climat,Factuel,"Info citoyenne.",À valider,center,high,false
+Légifrance,https://www.legifrance.gouv.fr/,Site,Société & Climat,Factuel,"Droit français.",À valider,center,high,false
+Service-Public.fr,https://www.service-public.fr/,Site,Société & Climat,Factuel,"Administration française.",À valider,center,high,false
+Météo-France,https://meteofrance.com/,Site,Société & Climat,Factuel,"Prévision météo.",À valider,center,high,false
+IGN,https://ign.fr/,Site,Géopolitique,Factuel,"Information géographique.",À valider,center,high,false
+BRGM,https://www.brgm.fr/,Site,Tech & Futur,Factuel,"Service géologique.",À valider,center,high,false
+ADEME,https://www.ademe.fr/,Site,Société & Climat,Specialized,"Transition écologique.",À valider,center,high,false
+ANSES,https://www.anses.fr/,Site,Société & Climat,Factuel,"Sécurité sanitaire.",À valider,center,high,false
+Santé Publique France,https://www.santepubliquefrance.fr/,Site,Société & Climat,Factuel,"Santé publique.",À valider,center,high,false
+Institut Pasteur,https://www.pasteur.fr/,Site,Tech & Futur,Specialized,"Recherche médicale.",À valider,center,high,false
+CNRS Le Journal,https://lejournal.cnrs.fr/,Site,Tech & Futur,Mainstream Deep,"Actualité recherche.",À valider,specialized,high,false
+INRAE,https://www.inrae.fr/,Site,Tech & Futur,Specialized,"Agriculture et environnement.",À valider,center,high,false
+IFREMER,https://www.ifremer.fr/,Site,Tech & Futur,Specialized,"Mer et océan.",À valider,center,high,false
+CEA,https://www.cea.fr/,Site,Tech & Futur,Specialized,"Énergie atomique.",À valider,center,high,false
+CNES,https://cnes.fr/,Site,Tech & Futur,Specialized,"Espace.",À valider,center,high,false
+ESA,https://www.esa.int/,Site,Tech & Futur,Specialized,"Agence spatiale européenne.",À valider,center,high,false
+NASA,https://www.nasa.gov/,Site,Tech & Futur,Specialized,"Agence spatiale US.",À valider,center,high,false
+CERN,https://home.cern/,Site,Tech & Futur,Specialized,"Physique particules.",À valider,center,high,false
+WHO (OMS),https://www.who.int/,Site,Société & Climat,Factuel,"Santé mondiale.",À valider,center,high,false
+UN News,https://news.un.org/,Site,Géopolitique,Factuel,"Info Nations Unies.",À valider,center,high,false
+IMF (FMI),https://www.imf.org/,Site,Économie,Factuel,"Fond monétaire international.",À valider,center,high,false
+World Bank,https://www.worldbank.org/,Site,Économie,Factuel,"Banque mondiale.",À valider,center,high,false
+WTO (OMC),https://www.wto.org/,Site,Économie,Factuel,"Commerce mondial.",À valider,center,high,false
+OECD (OCDE),https://www.oecd.org/,Site,Économie,Factuel,"Coopération économique.",À valider,center,high,false
+NATO (OTAN),https://www.nato.int/,Site,Géopolitique,Factuel,"Alliance atlantique.",À valider,center,high,false
+European Commission,https://ec.europa.eu/,Site,Géopolitique,Factuel,"Commission européenne.",À valider,center,high,false
+European Parliament,https://www.europarl.europa.eu/,Site,Géopolitique,Factuel,"Parlement européen.",À valider,center,high,false
+Council of Europe,https://www.coe.int/,Site,Géopolitique,Factuel,"Conseil de l'Europe.",À valider,center,high,false
+Amnesty International,https://www.amnesty.org/,Site,Géopolitique,Angle Mort,"Droits de l'homme.",À valider,left,high,false
+HRW (Human Rights Watch),https://www.hrw.org/,Site,Géopolitique,Angle Mort,"Droits de l'homme.",À valider,left,high,false
+MSF (Médecins Sans Frontières),https://www.msf.org/,Site,Géopolitique,Factuel,"Aide humanitaire.",À valider,center,high,false
+ICRC (Croix-Rouge),https://www.icrc.org/,Site,Géopolitique,Factuel,"Aide humanitaire.",À valider,center,high,false
+UNHCR,https://www.unhcr.org/,Site,Géopolitique,Factuel,"Réfugiés.",À valider,center,high,false
+UNICEF,https://www.unicef.org/,Site,Société & Climat,Factuel,"Enfance.",À valider,center,high,false
+UNESCO,https://www.unesco.org/,Site,Culture & Idées,Factuel,"Éducation, science, culture.",À valider,center,high,false
+IPCC (GIEC),https://www.ipcc.ch/,Site,Société & Climat,Factuel,"Changement climatique.",À valider,center,high,false
+IEA (AIE),https://www.iea.org/,Site,Économie,Factuel,"Agence énergie.",À valider,center,high,false
+OPEC (OPEP),https://www.opec.org/,Site,Économie,Factuel,"Pétrole.",À valider,center,medium,false
+WTO (OMT),https://www.unwto.org/,Site,Économie,Factuel,"Tourisme.",À valider,center,high,false
+WMO (OMM),https://public.wmo.int/,Site,Société & Climat,Factuel,"Météo mondiale.",À valider,center,high,false
+ITU (UIT),https://www.itu.int/,Site,Tech & Futur,Factuel,"Télécoms.",À valider,center,high,false
+WIPO (OMPI),https://www.wipo.int/,Site,Économie,Factuel,"Propriété intellectuelle.",À valider,center,high,false
+ILO (OIT),https://www.ilo.org/,Site,Société & Climat,Factuel,"Travail.",À valider,center,high,false
+FAO,https://www.fao.org/,Site,Société & Climat,Factuel,"Alimentation.",À valider,center,high,false
