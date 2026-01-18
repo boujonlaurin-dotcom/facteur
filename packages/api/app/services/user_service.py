@@ -33,12 +33,18 @@ class UserService:
         self.db.add(profile)
         await self.db.flush()
 
-        # Créer le streak associé
-        streak = UserStreak(
-            id=uuid4(),
-            user_id=UUID(user_id),
+        # Tenter de créer le streak s'il n'existe pas déjà
+        # Utiliser une vérification explicite pour éviter les erreurs de contrainte unique
+        # si le streak a été créé par un autre processus (ex: appel API parallèle)
+        result = await self.db.execute(
+            select(UserStreak).where(UserStreak.user_id == UUID(user_id))
         )
-        self.db.add(streak)
+        if not result.scalar_one_or_none():
+            streak = UserStreak(
+                id=uuid4(),
+                user_id=UUID(user_id),
+            )
+            self.db.add(streak)
 
         return profile
 
@@ -47,6 +53,21 @@ class UserService:
         profile = await self.get_profile(user_id)
         if not profile:
             profile = await self.create_profile(user_id)
+
+        # Vérifier si le streak existe, sinon le créer (pour les anciens users ou race conditions)
+        # Note: ceci est une mesure de sécurité car create_profile devrait le créer
+        # mais si l'onboarding est relancé ou s'il y a eu une erreur, on s'assure qu'il existe.
+        result = await self.db.execute(
+            select(UserStreak).where(UserStreak.user_id == UUID(user_id))
+        )
+        if not result.scalar_one_or_none():
+            streak = UserStreak(
+                id=uuid4(),
+                user_id=UUID(user_id),
+            )
+            self.db.add(streak)
+            await self.db.flush()
+
         return profile
 
     async def update_profile(
