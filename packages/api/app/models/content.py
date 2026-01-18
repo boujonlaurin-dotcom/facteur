@@ -20,7 +20,11 @@ class Content(Base):
     """Contenu individuel (article, épisode podcast, vidéo)."""
 
     __tablename__ = "contents"
-    __table_args__ = (Index("ix_contents_guid", "guid"),)
+    __table_args__ = (
+        Index("ix_contents_guid", "guid"),
+        Index("ix_contents_published_at", "published_at"),
+        Index("ix_contents_source_id", "source_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4

@@ -16,6 +16,7 @@
 | 14/01/2026 | 1.2 | Ajout des nudges "Slow Media" (Finitude) | Antigravity |
 | 15/01/2026 | 1.3 | Story 4.6 V2 : filtres feed améliorés | Antigravity |
 | 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
+| 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
 
 ---
 
@@ -77,7 +78,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 
 | ID | Exigence |
 |----|----------|
-| **NFR1** | Le feed doit charger en moins de 2 secondes |
+| **NFR1** | Le feed doit charger en moins de 500ms (P95) indépendamment du volume |
 | **NFR2** | Le scroll du feed doit être fluide à 60fps |
 | **NFR3** | L'app doit fonctionner sur iOS 15+ |
 | **NFR4** | L'app doit respecter le RGPD (consentement, droit à l'oubli, export données) |
