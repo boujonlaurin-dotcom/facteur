@@ -6,10 +6,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.enums import ContentStatus
-from app.schemas.content import ContentStatusUpdate, HideContentRequest
+from app.schemas.content import ContentStatusUpdate, HideContentRequest, ContentDetailResponse
 from app.services.content_service import ContentService
 
 router = APIRouter()
+
+@router.get("/{content_id}", status_code=status.HTTP_200_OK, response_model=ContentDetailResponse)
+async def get_content_detail(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Récupère le détail d'un contenu.
+    """
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+    
+    content = await service.get_content_detail(content_id, user_uuid)
+    if not content:
+        raise HTTPException(status_code=404, detail="Contenu non trouvé")
+        
+    return content
 
 @router.post("/{content_id}/status", status_code=status.HTTP_200_OK)
 async def update_content_status(

@@ -9,7 +9,9 @@ from app.routers import (
     subscription,
     users,
     webhooks,
+    webhooks,
     internal,
+    progress,
 )
 
 __all__ = [
@@ -22,5 +24,6 @@ __all__ = [
     "users",
     "webhooks",
     "internal",
+    "progress",
 ]
 

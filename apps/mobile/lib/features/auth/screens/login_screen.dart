@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../config/constants.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
-import '../../../shared/widgets/buttons/secondary_button.dart';
+
 import '../../../widgets/design/facteur_logo.dart';
 import 'email_confirmation_screen.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran de connexion / inscription
 class LoginScreen extends ConsumerStatefulWidget {
@@ -60,7 +60,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _forgotPassword() async {
     final email = _emailController.text.trim();
     final controller = TextEditingController(text: email);
-    final colors = context.facteurColors;
 
     showDialog<void>(
       context: context,
@@ -101,21 +100,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     .read(authStateProvider.notifier)
                     .sendPasswordResetEmail(resetEmail);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Email de réinitialisation envoyé !'),
-                      backgroundColor: colors.success,
-                    ),
-                  );
+                  NotificationService.showSuccess(
+                      'Email de réinitialisation envoyé !');
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(e.toString()),
-                      backgroundColor: colors.error,
-                    ),
-                  );
+                  NotificationService.showError(e.toString());
                 }
               }
             },
@@ -124,14 +114,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _signInWithApple() async {
-    await ref.read(authStateProvider.notifier).signInWithApple();
-  }
-
-  Future<void> _signInWithGoogle() async {
-    await ref.read(authStateProvider.notifier).signInWithGoogle();
   }
 
   @override
@@ -365,40 +347,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 ],
-
-                const SizedBox(height: 32),
-
-                // Divider
-                Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'ou',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    const Expanded(child: Divider()),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Social login
-                SecondaryButton(
-                  label: 'Continuer avec Apple',
-                  icon: PhosphorIcons.appleLogo(PhosphorIconsStyle.fill),
-                  onPressed: _signInWithApple,
-                ),
-
-                const SizedBox(height: 12),
-
-                SecondaryButton(
-                  label: 'Continuer avec Google',
-                  icon: PhosphorIcons.googleLogo(PhosphorIconsStyle.fill),
-                  onPressed: _signInWithGoogle,
-                ),
 
                 const SizedBox(height: 24),
 

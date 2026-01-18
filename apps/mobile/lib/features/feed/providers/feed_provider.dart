@@ -135,18 +135,14 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
 
     if (newIsSaved) {
       if (currentlyInList) {
-        updatedItems.removeAt(index);
+        updatedItems[index] = content.copyWith(isSaved: true);
       }
     } else {
-      if (!currentlyInList) {
-        // Undo / Unsave case: On réinsère l'item
-        updatedItems.add(content.copyWith(isSaved: false));
-        // On trie par date de publication (décroissant) pour maintenir un ordre cohérent
-        // même si on n'a pas accès au score exact du serveur ici.
-        updatedItems.sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
-      } else {
+      if (currentlyInList) {
         updatedItems[index] = content.copyWith(isSaved: false);
       }
+      // Note: If undoing save but item wasn't in list (e.g. from saved screen),
+      // we don't necessarily want to add it back to feed here as it might break feed order/ relevance.
     }
 
     // Mise à jour optimiste immédiate

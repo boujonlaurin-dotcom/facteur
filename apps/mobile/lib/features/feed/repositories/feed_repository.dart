@@ -77,6 +77,22 @@ class FeedRepository {
     }
   }
 
+  Future<Content?> getContent(String contentId) async {
+    try {
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+        'contents/$contentId',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return Content.fromJson(response.data!);
+      }
+      return null;
+    } catch (e) {
+      print('FeedRepository: [ERROR] getContent: $e');
+      return null;
+    }
+  }
+
   Future<void> toggleSave(String contentId, bool isSaved) async {
     try {
       if (isSaved) {

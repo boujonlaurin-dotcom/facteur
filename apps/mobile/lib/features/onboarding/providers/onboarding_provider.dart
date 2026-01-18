@@ -710,9 +710,7 @@ class ThemeOption {
   final String slug;
   final String label;
   final String emoji;
-  final Color color;
-
-  const ThemeOption({
+  final Color color;  const ThemeOption({
     required this.slug,
     required this.label,
     required this.emoji,

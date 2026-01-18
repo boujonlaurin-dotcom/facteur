@@ -33,20 +33,20 @@ class Perspective {
     );
   }
 
-  Color getBiasColor() {
+  Color getBiasColor(FacteurColors colors) {
     switch (biasStance) {
       case 'left':
-        return Colors.red.shade400;
+        return colors.biasLeft;
       case 'center-left':
-        return Colors.orange.shade400;
+        return colors.biasCenterLeft;
       case 'center':
-        return Colors.purple.shade400;
+        return colors.biasCenter;
       case 'center-right':
-        return Colors.blue.shade300;
+        return colors.biasCenterRight;
       case 'right':
-        return Colors.blue.shade600;
+        return colors.biasRight;
       default:
-        return Colors.grey.shade400;
+        return colors.biasUnknown;
     }
   }
 
@@ -173,59 +173,104 @@ class PerspectivesBottomSheet extends StatelessWidget {
   }
 
   Widget _buildBiasBar(BuildContext context, FacteurColors colors) {
-    final total = biasDistribution.values.fold(0, (a, b) => a + b);
-    if (total == 0) return const SizedBox.shrink();
+    // Liste ordonnée des biais pour la barre
+    final orderedBiases = [
+      'left',
+      'center-left',
+      'center',
+      'center-right',
+      'right'
+    ];
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
+          // Barre de segments fixes
           Row(
-            children: [
-              _buildBiasSegment('left', Colors.red.shade400,
-                  biasDistribution['left'] ?? 0, total),
-              _buildBiasSegment('center-left', Colors.orange.shade400,
-                  biasDistribution['center-left'] ?? 0, total),
-              _buildBiasSegment('center', Colors.purple.shade400,
-                  biasDistribution['center'] ?? 0, total),
-              _buildBiasSegment('center-right', Colors.blue.shade300,
-                  biasDistribution['center-right'] ?? 0, total),
-              _buildBiasSegment('right', Colors.blue.shade600,
-                  biasDistribution['right'] ?? 0, total),
-              _buildBiasSegment('unknown', Colors.grey.shade400,
-                  biasDistribution['unknown'] ?? 0, total),
-            ],
+            children: orderedBiases.map((bias) {
+              final count = biasDistribution[bias] ?? 0;
+              final Color baseColor;
+              switch (bias) {
+                case 'left':
+                  baseColor = colors.biasLeft;
+                  break;
+                case 'center-left':
+                  baseColor = colors.biasCenterLeft;
+                  break;
+                case 'center':
+                  baseColor = colors.biasCenter;
+                  break;
+                case 'center-right':
+                  baseColor = colors.biasCenterRight;
+                  break;
+                case 'right':
+                  baseColor = colors.biasRight;
+                  break;
+                default:
+                  baseColor = colors.biasUnknown;
+              }
+
+              return Expanded(
+                child: Container(
+                  height: 8,
+                  margin: const EdgeInsets.symmetric(
+                      horizontal: 1.0), // 2px total gap
+                  decoration: BoxDecoration(
+                    // Approche Expert : Saturation progressive + Gaps nets
+                    // Évite l'effet "cheap" des bordures tout en préservant l'identité colorimétrique
+                    color: count > 0
+                        ? baseColor.withOpacity(
+                            count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
+                        : baseColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(4),
+                    // Bordure sombre subtile pour faire ressortir les blocs actifs
+                    border: count > 0
+                        ? Border.all(
+                            color: Colors.black.withOpacity(0.25),
+                            width: 0.8,
+                          )
+                        : null,
+                  ),
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 8),
+          // Labels alignés sur les segments extrêmes et centre
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Gauche',
-                  style: TextStyle(fontSize: 10, color: colors.textSecondary)),
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: (biasDistribution['left'] ?? 0) > 0
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: (biasDistribution['left'] ?? 0) > 0
+                          ? colors.biasLeft
+                          : colors.textTertiary)),
               Text('Centre',
-                  style: TextStyle(fontSize: 10, color: colors.textSecondary)),
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: (biasDistribution['center'] ?? 0) > 0
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: (biasDistribution['center'] ?? 0) > 0
+                          ? colors.biasCenter
+                          : colors.textTertiary)),
               Text('Droite',
-                  style: TextStyle(fontSize: 10, color: colors.textSecondary)),
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: (biasDistribution['right'] ?? 0) > 0
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: (biasDistribution['right'] ?? 0) > 0
+                          ? colors.biasRight
+                          : colors.textTertiary)),
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildBiasSegment(String bias, Color color, int count, int total) {
-    if (count == 0) return const SizedBox.shrink();
-    final flex = (count / total * 10).round().clamp(1, 10);
-
-    return Expanded(
-      flex: flex,
-      child: Container(
-        height: 8,
-        margin: const EdgeInsets.symmetric(horizontal: 1),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(4),
-        ),
       ),
     );
   }
@@ -292,7 +337,7 @@ class _PerspectiveCard extends StatelessWidget {
                   width: 4,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: perspective.getBiasColor(),
+                    color: perspective.getBiasColor(colors),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -321,8 +366,9 @@ class _PerspectiveCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color:
-                                  perspective.getBiasColor().withOpacity(0.15),
+                              color: perspective
+                                  .getBiasColor(colors)
+                                  .withOpacity(0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -330,7 +376,7 @@ class _PerspectiveCard extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
-                                color: perspective.getBiasColor(),
+                                color: perspective.getBiasColor(colors),
                               ),
                             ),
                           ),

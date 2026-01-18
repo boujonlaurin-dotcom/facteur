@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../widgets/design/facteur_logo.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran de paywall (placeholder)
 class PaywallScreen extends StatefulWidget {
@@ -118,13 +119,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 label: 'S\'abonner',
                 onPressed: () {
                   // TODO: RevenueCat purchase
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Intégration RevenueCat à venir',
-                      ),
-                    ),
-                  );
+                  NotificationService.showInfo(
+                      'Intégration RevenueCat à venir');
                 },
               ),
 

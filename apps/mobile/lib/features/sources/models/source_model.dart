@@ -110,17 +110,17 @@ class Source {
   Color getBiasColor() {
     switch (biasStance) {
       case 'left':
-        return const Color(0xFFEF5350); // red.shade400
+        return const Color(0xFFEF5350); // Red 400
       case 'center-left':
-        return const Color(0xFFFFA726); // orange.shade400
+        return const Color(0xFFEF9A9A); // Red 200
       case 'center':
-        return const Color(0xFFAB47BC); // purple.shade400
+        return const Color(0xFF9E9E9E); // Grey 500
       case 'center-right':
-        return const Color(0xFF64B5F6); // blue.shade300
+        return const Color(0xFF90CAF9); // Blue 200
       case 'right':
-        return const Color(0xFF1E88E5); // blue.shade600
+        return const Color(0xFF42A5F5); // Blue 400
       default:
-        return const Color(0xFFBDBDBD); // grey.shade400
+        return const Color(0xFFBDBDBD); // Grey 400
     }
   }
 

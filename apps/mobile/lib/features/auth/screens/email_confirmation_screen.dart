@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../shared/widgets/buttons/secondary_button.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran de confirmation après création de compte
 /// Affiché lorsque l'utilisateur doit valider son email
@@ -48,12 +49,8 @@ class _EmailConfirmationScreenState
     } catch (e) {
       if (mounted) {
         setState(() => _resending = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-                'Impossible de renvoyer l\'email. Réessaie plus tard.'),
-            backgroundColor: context.facteurColors.error,
-          ),
+        NotificationService.showError(
+          'Impossible de renvoyer l\'email. Réessaie plus tard.',
         );
       }
     }

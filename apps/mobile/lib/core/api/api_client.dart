@@ -94,6 +94,36 @@ class ApiClient {
   /// Accès au client Dio
   Dio get dio => _dio;
 
+  /// Helper GET
+  Future<dynamic> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    final response = await _dio.get(
+      path,
+      queryParameters: queryParameters,
+      options: options,
+    );
+    return response.data;
+  }
+
+  /// Helper POST
+  Future<dynamic> post(
+    String path, {
+    dynamic body,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    final response = await _dio.post(
+      path,
+      data: body,
+      queryParameters: queryParameters,
+      options: options,
+    );
+    return response.data;
+  }
+
   /// Fermer le client
   void dispose() {
     _dio.close();

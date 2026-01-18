@@ -4,6 +4,7 @@ from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak
 from app.models.source import Source, UserSource
 from app.models.content import Content, UserContentStatus
+from app.models.progress import UserTopicProgress, TopicQuiz
 from app.models.analytics import AnalyticsEvent
 from app.models.subscription import UserSubscription
 
@@ -27,5 +28,7 @@ __all__ = [
     "AnalyticsEvent",
     # Subscription
     "UserSubscription",
+    # Progress (Epic 8)
+    "UserTopicProgress",
+    "TopicQuiz",
 ]
-

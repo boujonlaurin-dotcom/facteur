@@ -445,16 +445,19 @@ facteur/
 
 ### Story 3.1 : Modèle de données Sources & Contenus
 
-**As a** développeur,  
-**I want** un modèle de données pour les sources et leurs contenus,  
+**As a** développeur,
+**I want** un modèle de données pour les sources et leurs contenus,
 **so that** l'app puisse stocker et servir les articles/podcasts/vidéos.
 
 **Acceptance Criteria :**
 1. Table `sources` : id, name, url, type, theme, description, logo_url, is_curated
-2. Table `contents` : id, source_id, title, url, thumbnail_url, description, published_at, duration_seconds, content_type
-3. Table `user_sources` : user_id, source_id, is_custom, added_at
-4. Table `user_content_status` : user_id, content_id, status, seen_at, time_spent_seconds
-5. Index et RLS configurés
+2. **Flag `is_curated`** :
+   - `true` : Source du catalogue officiel, visible dans l'onboarding.
+   - `false` : Source "analysée" uniquement (utilisée pour comparaison/perspectives), invisible dans l'onboarding.
+3. Table `contents` : id, source_id, title, url, thumbnail_url, description, published_at, duration_seconds, content_type
+4. Table `user_sources` : user_id, source_id, is_custom, added_at
+5. Table `user_content_status` : user_id, content_id, status, seen_at, time_spent_seconds
+6. Index et RLS configurés
 
 ---
 
@@ -905,6 +908,7 @@ facteur/
 2. ✅ Extraction de mots-clés significatifs (noms propres prioritaires)
 3. ✅ Recherche Google News RSS (~400ms latence)
 4. ✅ Mapping de biais pour ~50 sources françaises
+5. [MOD] Augmentation à 10 sources par défaut (Story 7.6+)
 
 ---
 
@@ -921,6 +925,7 @@ facteur/
 2. ✅ Bottom sheet avec Bias Bar et liste de perspectives
 3. ✅ Tap ouvre l'article externe
 4. ✅ Loading state pendant la recherche
+5. [MOD] Bias Bar : Saturation dynamique (niveaux), bordures noires subtiles (0.8px) et espaces de 2px.
 
 ---
 

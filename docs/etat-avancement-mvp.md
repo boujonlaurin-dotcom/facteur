@@ -13,16 +13,16 @@
 |------|---------|------------|----------|-------|-------------|
 | **Epic 1 : Fondations & Infrastructure** | 5 | 4 | 0 | 1 | **80%** ✅ |
 | **Epic 2 : Onboarding & Profil** | 8 | 8 | 0 | 0 | **100%** ✅ |
-| **Epic 3 : Gestion des Sources** | 4 | 3 | 0 | 0 | **75%** ✅ |
+| **Epic 3 : Gestion des Sources** | 4 | 5 | 0 | 0 | **100%** ✅ |
 | **Epic 4 : Feed & Algorithme** | 6 | 3 | 1 | 2 | **50%** 🚧 |
 | **Epic 5 : Consommation & Gamification** | 4 | 0 | 0 | 4 | **0%** ⏳ |
 | **Epic 6 : Premium & Paiement** | 0 | 0 | 0 | 0 | **0%** ❌ |
 | **Epic 7 : Mise en perspective** | 5 | 2 | 0 | 3 | **40%** 🚧 |
 
 **Total MVP :** 32 stories identifiées  
-**Complétées :** 20 stories (62.5%)  
+**Complétées :** 21 stories (65.6%)  
 **En cours :** 1 story (3.1%)  
-**Draft/Ready :** 11 stories (34.4%)
+**Draft/Ready :** 10 stories (31.3%)
 
 ---
 
@@ -74,6 +74,7 @@
 - ✅ **3.2** : Import catalogue de sources curées (24 sources, upsert, détection RSS)
 - ✅ **3.3** : Service de synchronisation RSS (articles, podcasts, YouTube, toutes les 30min)
 - ✅ **3.5** : Configuration des "Trusted Sources" (toggle sources du catalogue)
+- ✅ **7.6** : Expansion de la Base de Sources Analysées (114+ sources candidates importées, filtrage "Ghost" implémenté)
 
 ### Stories manquantes
 - ❌ **3.4** : Ajout de source personnalisée par URL (reporté V0)
@@ -115,7 +116,7 @@
 **Statut :** Non démarré, mais backend prêt
 
 ### Stories prêtes
-- ⏳ **5.1** : Écran Détail Contenu (à faire - navigation, preview enrichi)
+- 🚧 **5.1** : Écran Détail Contenu (Core fait, support Vidéo robuste ajouté, reste Article Reader)
 - ⏳ **5.3** : Tracking automatique "Contenu consommé" (Ready - API faite, WebView à intégrer)
 - ⏳ **5.4** : Système de Streak quotidien (Ready - backend fait, UI à compléter)
 - ⏳ **5.7** : Écran Sauvegardés (à faire - liste, tri, actions)
@@ -209,7 +210,7 @@
 - ✅ **Onboarding** : 100% (3 sections, animations, sauvegarde)
 - ✅ **Sources** : 100% (écran sources, trusted toggle)
 - ✅ **Feed** : 80% (UI complète, algo à connecter)
-- ⏳ **Détail** : 0% (écran à créer)
+- 🚧 **Détail** : 50% (écran créé, player vidéo mobile/web implémenté, à finaliser : mode lecture article)
 - ⏳ **Gamification** : 20% (streak indicator fait, animations à compléter)
 - ⏳ **Perspectives** : 0% (UI à créer)
 
@@ -247,8 +248,13 @@
 
 ### MVP Complet (avec Premium)
 - **Complétion :** ~55%
-- **Blocages :** Epic 6 non démarré
+- **Blocages :** Epic 6 non démarré, Timeout Backend (Epic 8) bloquant
 - **Temps estimé restant :** 4-5 semaines de dev
+
+### Epic 8 : Progression & Stabilisation
+- **Statut :** Mobile 95%, Backend 100% (Stabilisation effectuée)
+- **Résolution :** Port standardisé à 8080. Optimisation des pools de connexion DB et redirection active des slashes.
+- ✅ **8.0** : Stabilisation Backend (Concurrence sync RSS limitée à 5, import optimisé avec fallbacks pour médias français, fix httpx leakage).
 
 ---
 

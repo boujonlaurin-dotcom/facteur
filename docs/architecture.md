@@ -13,6 +13,9 @@
 |------|---------|-------------|--------|
 | 07/01/2026 | 1.0 | Création initiale | Architect Agent |
 | 16/01/2026 | 1.1 | Mise à jour Epic 8 : Approfondissement & Progression | Antigravity |
+| 17/01/2026 | 1.2 | Implémentation complète Module Progression | Antigravity |
+| 17/01/2026 | 1.3 | Restauration Backend & Optimisation Import (Port 8080) | Antigravity |
+| 18/01/2026 | 1.4 | Stabilisation Vidéo (Web/Mobile) & Fix Logs | Antigravity |
 
 ---
 
@@ -126,7 +129,7 @@ graph TB
 
 | Category | Technology | Version | Purpose | Rationale |
 |----------|------------|---------|---------|-----------|
-| **Mobile Framework** | Flutter | 3.24.x | Application iOS cross-platform | UX fluide, codebase unique iOS/Android |
+| **Mobile Framework** | Flutter | 3.24.x | Application iOS/Web cross-platform | UX fluide, codebase unique |
 | **Mobile Language** | Dart | 3.5.x | Langage Flutter | Performance, null safety |
 | **State Management** | Riverpod | 2.5.x | Gestion d'état Flutter | Simplicité, testabilité, compile-time safety |
 | **HTTP Client** | Dio | 5.4.x | Requêtes HTTP Flutter | Interceptors, retry, logging |
@@ -138,13 +141,16 @@ graph TB
 | **Database** | PostgreSQL | 15.x | Base de données relationnelle | Via Supabase, JSONB, full-text search |
 | **PGBouncer Mode**| Transaction | - | Pooling Supabase | Nécessite `NullPool` et désactivation des prepared statements |
 
+| **Video Player (Web)** | youtube_player_iframe | 5.1.x | Support Vidéo Web | Compatible Web (vs mobile plugin) |
 > [!IMPORTANT]
-> **Compatibilité psycopg v3 :**
-> - Ne pas utiliser `command_timeout` dans `connect_args` (non supporté)
-> - Utiliser `NullPool` avec PgBouncer en mode Transaction
-> 
-> **Compatibilité Flutter Web :**
-> - Définir `redirect_slashes=False` dans FastAPI pour éviter les 307 qui cassent `fetch`
+> **Compatibilité psycopg v3 & PgBouncer (Railway/Supabase) :**
+> - **Prepared Statements** : Désactiver via `connect_args={"prepare_threshold": None}`.
+> - **SSL Mode** : Forcer `sslmode=require` dans la `DATABASE_URL` pour éviter les échecs de négociation.
+> - **Timeouts** : Ne pas utiliser `command_timeout` dans `connect_args` (non supporté).
+> - **Pool** : Utiliser `sqlalchemy.pool.NullPool` car PgBouncer gère déjà le pooling.
+> - **Port Local** : Forcer le port **8080** (standardisé pour Mobile/Web/Simulator).
+> - **Service Stability** : Les scripts d'importation massifs doivent utiliser un client HTTP singleton (ex: `httpx.AsyncClient`) pour éviter la saturation des ports locaux et les erreurs de pool DB.
+> - **Port Local** : Forcer le port **8080** (standardisé pour Mobile/Web/Simulator).
 | **Auth** | Supabase Auth | - | Authentification | OAuth intégré, JWT, RLS |
 | **Payments** | RevenueCat | 7.x | Gestion abonnements | SDK Flutter, webhooks, analytics |
 | **RSS Parser** | feedparser | 6.0.x | Parsing RSS/Atom | Robuste, gère les edge cases |
@@ -473,6 +479,12 @@ erDiagram
 - SQLAlchemy 2.0 async
 - Pydantic 2.6.x
 
+> [!WARNING]
+> **Adressage Mobile Local (Android vs iOS/Web) :**
+> - **Web / iOS Simulator** : Utiliser `http://localhost:8080/api/`
+> - **Android Emulator** : Utiliser `http://10.0.2.2:8080/api/`
+> *Configuration gérée dans `apps/mobile/lib/config/constants.dart`.*
+
 ### 5.3 RSS Sync Worker
 
 **Responsibility:** Synchronisation périodique des flux RSS
@@ -729,6 +741,59 @@ sequenceDiagram
         API-->>App: OK
         App-->>User: Retour au détail
     end
+```
+
+### 7.5 Workflow : Progression & Quiz
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as Flutter App
+    participant Repo as ProgressRepository
+    participant API as FastAPI
+    participant DB as PostgreSQL
+
+    User->>App: Clic "Suivre ce thème" (Bottom Sheet)
+    App->>Repo: followTopic("geopolitics")
+    Repo->>API: POST /api/progress/follow
+    API->>DB: INSERT user_topic_progress
+    DB-->>API: Success
+    API-->>Repo: Success
+    Repo-->>App: Success
+    App-->>User: Feedback ("Thème suivi !")
+
+    User->>App: Ouvre "Mes Progressions"
+    App->>Repo: getMyProgress()
+    Repo->>API: GET /api/progress
+    API->>DB: SELECT user_topic_progress
+    DB-->>API: List[UserTopicProgress]
+    API-->>Repo: List[UserTopicProgress]
+    Repo-->>App: List[UserTopicProgress]
+    App-->>User: Affiche liste avec niveaux
+
+    User->>App: Tap sur Carte Progression -> "Quiz"
+    App->>Repo: getQuiz("geopolitics")
+    Repo->>API: GET /api/progress/quiz?topic=geopolitics
+    API->>DB: SELECT random quiz
+    DB-->>API: Quiz Data
+    API-->>Repo: TopicQuiz
+    Repo-->>App: TopicQuiz
+    App-->>User: Affiche QuizScreen
+
+    User->>App: Répond au Quiz
+    App->>Repo: submitQuiz(quizId, answerIdx)
+    Repo->>API: POST /api/progress/quiz/{id}/submit
+    API->>DB: Verify answer
+    
+    alt Correct
+        API->>DB: UPDATE user_topic_progress (points+, level+)
+        API-->>Repo: QuizResult (correct, points, newLevel)
+    else Incorrect
+        API-->>Repo: QuizResult (incorrect)
+    end
+    
+    Repo-->>App: QuizResult
+    App-->>User: Affiche Résultat + Animation
 ```
 
 ### 7.4 Workflow : Synchronisation RSS

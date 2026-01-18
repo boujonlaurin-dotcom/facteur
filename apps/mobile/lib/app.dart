@@ -5,6 +5,8 @@ import 'config/theme.dart';
 import 'config/routes.dart';
 import 'features/settings/providers/theme_provider.dart';
 
+import 'core/ui/notification_service.dart';
+
 /// Application principale Facteur
 class FacteurApp extends ConsumerWidget {
   const FacteurApp({super.key});
@@ -18,6 +20,7 @@ class FacteurApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Facteur',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: NotificationService.messengerKey,
 
       // Thème
       theme: FacteurTheme.lightTheme,

@@ -10,14 +10,21 @@ class ApiConstants {
   static String get baseUrl {
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.isNotEmpty) {
-      // S'assurer que l'URL se termine par un slash pour Dio
       return configured.endsWith('/') ? configured : '$configured/';
     }
 
-    // DEBUG: Hardcoded pour Release
-    // Si pas de variable d'env, on utilise l'URL de prod par défaut
-    // Cela corrige le problème sur les builds release qui tombaient sur localhost
-    return 'https://facteur-production.up.railway.app/api/';
+    // fallback local pour le développement
+    // 1. DEV LOCAL (Décommenter une ligne selon votre device)
+    // -----------------------------------------------------
+    // Android Emulator :
+    // return 'http://10.0.2.2:8080/api/';
+    //
+    // iOS Simulator / Web / Mac :
+    return 'http://localhost:8080/api/';
+
+    // 2. PRODUCTION (Par défaut pour les Releases)
+    // -----------------------------------------------------
+    // return 'https://facteur-production.up.railway.app/api/';
   }
 
   /// Timeout des requêtes HTTP

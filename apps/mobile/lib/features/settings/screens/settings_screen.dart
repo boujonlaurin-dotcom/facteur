@@ -16,111 +16,118 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      appBar: AppBar(
-        title: const Text('Paramètres'),
-        backgroundColor: colors.backgroundPrimary,
-        elevation: 0,
-        titleTextStyle: Theme.of(context).textTheme.displaySmall,
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: FacteurSpacing.space4),
-            // Profil Section
-            _buildSection(
-              context,
-              title: 'CONTENU',
-              children: [
-                _buildTile(
-                  context,
-                  icon: Icons.star_outline,
-                  title: 'Sources de confiance',
-                  subtitle: 'Gérer vos préférences',
-                  onTap: () {
-                    context.pushNamed(
-                      RouteNames.sources,
-                    ); // Changed from .sources to .trustedSources implicitly if renamed, but relying on existing RouteNames.sources for now as pivot
-                  },
-                ),
-              ],
+    return Material(
+      color: colors.backgroundPrimary,
+      child: Column(
+        children: [
+          AppBar(
+            title: const Text('Paramètres'),
+            backgroundColor: colors.backgroundPrimary,
+            elevation: 0,
+            titleTextStyle: Theme.of(context).textTheme.displaySmall,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: FacteurSpacing.space4),
+                  // Profil Section
+                  _buildSection(
+                    context,
+                    title: 'CONTENU',
+                    children: [
+                      _buildTile(
+                        context,
+                        icon: Icons.star_outline,
+                        title: 'Sources de confiance',
+                        subtitle: 'Gérer vos préférences',
+                        onTap: () {
+                          context.pushNamed(RouteNames.sources);
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
+
+                  // Profil Section
+                  _buildSection(
+                    context,
+                    title: 'PROFIL',
+                    children: [
+                      _buildTile(
+                        context,
+                        icon: Icons.person_outline,
+                        title: 'Compte',
+                        subtitle: 'Gérer vos informations',
+                        onTap: () {
+                          context.pushNamed(RouteNames.account);
+                        },
+                      ),
+                      _buildTile(
+                        context,
+                        icon: Icons.notifications_none,
+                        title: 'Notifications',
+                        onTap: () {
+                          context.pushNamed(RouteNames.notifications);
+                        },
+                      ),
+                      _buildTile(
+                        context,
+                        icon: Icons.settings_suggest_outlined,
+                        title: 'Refaire le questionnaire',
+                        subtitle: 'Ajuster mon profil et mes préférences',
+                        onTap: () {
+                          ref
+                              .read(onboardingProvider.notifier)
+                              .restartOnboarding();
+                          ref
+                              .read(authStateProvider.notifier)
+                              .setNeedsOnboarding(true);
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
+
+                  // App Section
+                  _buildSection(
+                    context,
+                    title: 'APPLICATION',
+                    children: [
+                      _buildTile(
+                        context,
+                        icon: Icons.palette_outlined,
+                        title: 'Thème',
+                        subtitle:
+                            _getThemeName(ref.watch(themeNotifierProvider)),
+                        onTap: () {
+                          final current = ref.read(themeNotifierProvider);
+                          final next = current == ThemeMode.light
+                              ? ThemeMode.dark
+                              : ThemeMode.light;
+                          ref
+                              .read(themeNotifierProvider.notifier)
+                              .setThemeMode(next);
+                        },
+                      ),
+                      _buildTile(
+                        context,
+                        icon: Icons.info_outline,
+                        title: 'À propos',
+                        subtitle: 'Version 1.0.0',
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space8),
+                ],
+              ),
             ),
-
-            const SizedBox(height: FacteurSpacing.space6),
-
-            // Profil Section
-            _buildSection(
-              context,
-              title: 'PROFIL',
-              children: [
-                _buildTile(
-                  context,
-                  icon: Icons.person_outline,
-                  title: 'Compte',
-                  subtitle: 'Gérer vos informations',
-                  onTap: () {
-                    context.pushNamed(RouteNames.account);
-                  },
-                ),
-                _buildTile(
-                  context,
-                  icon: Icons.notifications_none,
-                  title: 'Notifications',
-                  onTap: () {
-                    context.pushNamed(RouteNames.notifications);
-                  },
-                ),
-                _buildTile(
-                  context,
-                  icon: Icons.settings_suggest_outlined,
-                  title: 'Refaire le questionnaire',
-                  subtitle: 'Ajuster mon profil et mes préférences',
-                  onTap: () {
-                    // 1. Reset l'onboarding state
-                    ref.read(onboardingProvider.notifier).restartOnboarding();
-                    // 2. Déclencher la redirection via authState
-                    ref
-                        .read(authStateProvider.notifier)
-                        .setNeedsOnboarding(true);
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: FacteurSpacing.space6),
-
-            // App Section
-            _buildSection(
-              context,
-              title: 'APPLICATION',
-              children: [
-                _buildTile(
-                  context,
-                  icon: Icons.palette_outlined,
-                  title: 'Thème',
-                  subtitle: _getThemeName(ref.watch(themeNotifierProvider)),
-                  onTap: () {
-                    final current = ref.read(themeNotifierProvider);
-                    final next = current == ThemeMode.light
-                        ? ThemeMode.dark
-                        : ThemeMode.light;
-                    ref.read(themeNotifierProvider.notifier).setThemeMode(next);
-                  },
-                ),
-                _buildTile(
-                  context,
-                  icon: Icons.info_outline,
-                  title: 'À propos',
-                  subtitle: 'Version 1.0.0',
-                  onTap: () {},
-                ),
-              ],
-            ),
-
-            const SizedBox(height: FacteurSpacing.space8),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -198,7 +205,7 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: colors.textTertiary, size: 20),
+            const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
           ],
         ),
       ),

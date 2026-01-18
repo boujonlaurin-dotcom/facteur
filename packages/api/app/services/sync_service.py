@@ -20,8 +20,9 @@ from app.models.source import Source
 logger = structlog.get_logger()
 
 class SyncService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, session_maker=None):
         self.session = session
+        self.session_maker = session_maker
         self.client = httpx.AsyncClient(
             timeout=30.0, 
             follow_redirects=True,
@@ -34,7 +35,7 @@ class SyncService:
         await self.client.aclose()
 
     async def sync_all_sources(self):
-        """Synchronise toutes les sources actives."""
+        """Synchronise toutes les sources actives avec une limite de concomitance."""
         logger.info("Starting sync of all sources")
         
         # Récupérer les sources actives
@@ -47,17 +48,44 @@ class SyncService:
         
         results = {"success": 0, "failed": 0, "total_new": 0}
         
-        # Idéalement on pourrait paralléliser avec asyncio.gather, 
-        # mais attention à ne pas surcharger la base ou les services externes.
-        # Pour l'instant on fait séquentiel ou par petits batchs.
-        for source in sources:
-            try:
-                new_count = await self.process_source(source)
-                results["success"] += 1
-                results["total_new"] += new_count
-            except Exception as e:
-                logger.error("Failed to sync source", source_id=str(source.id), source_name=source.name, error=str(e))
+        # Concurrency control
+        semaphore = asyncio.Semaphore(5)  # 5 sources à la fois max
+        
+        async def sync_with_semaphore(source: Source):
+            async with semaphore:
+                # Si on a un session_maker, on crée une session dédiée pour la tâche
+                if self.session_maker:
+                    async with self.session_maker() as session:
+                        # On ré-associe l'objet source à la nouvelle session si nécessaire
+                        # Mais plus simple : on repasse par l'ID
+                        stmt = select(Source).where(Source.id == source.id)
+                        res = await session.execute(stmt)
+                        source_obj = res.scalar_one()
+                        
+                        # Temporairement on "patche" self.session pour process_source
+                        # Hackish mais évite de refactorer tout process_source(session, source)
+                        old_session = self.session
+                        self.session = session
+                        try:
+                            return await self.process_source(source_obj)
+                        finally:
+                            self.session = old_session
+                else:
+                    # Fallback séquentiel sécurisé si pas de session_maker
+                    return await self.process_source(source)
+
+        tasks = [sync_with_semaphore(s) for s in sources]
+        
+        # Exécution et collecte des résultats
+        sync_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for res in sync_results:
+            if isinstance(res, Exception):
+                logger.error("Source sync task failed", error=str(res))
                 results["failed"] += 1
+            elif isinstance(res, int):
+                results["success"] += 1
+                results["total_new"] += res
                 
         logger.info("Sync completed", results=results)
         return results

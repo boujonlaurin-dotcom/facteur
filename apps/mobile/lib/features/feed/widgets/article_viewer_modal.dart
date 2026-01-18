@@ -14,6 +14,7 @@ import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../../../core/providers/analytics_provider.dart';
 import 'perspectives_bottom_sheet.dart';
+import '../../../core/ui/notification_service.dart';
 
 class ArticleViewerModal extends ConsumerStatefulWidget {
   final Content content;
@@ -182,11 +183,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
       debugPrint('Error fetching perspectives: $e');
       if (context.mounted) Navigator.pop(context);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Impossible de charger les perspectives'),
-          ),
-        );
+        NotificationService.showError('Impossible de charger les perspectives');
       }
     }
   }

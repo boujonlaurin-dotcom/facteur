@@ -27,6 +27,9 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../../progress/widgets/progression_bottom_sheet.dart';
+import '../../progress/repositories/progress_repository.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -154,16 +157,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 onTap: () async {
                   Navigator.pop(context);
                   await Clipboard.setData(ClipboardData(text: content.url));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Lien copié dans le presse-papier'),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  }
+                  NotificationService.showInfo(
+                      'Lien copié dans le presse-papier');
                 },
               ),
               const Divider(),
@@ -226,7 +221,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
-  void _showArticleModal(Content content) {
+  Future<void> _showArticleModal(Content content) async {
     // Si on est sur Desktop (macOS, Windows, Linux) hors Web, on ouvre direct dans le navigateur
     if (!kIsWeb &&
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
@@ -247,34 +242,67 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
 
     // Story 5.2: Navigate to in-app reader screen with Content passed via extra
-    context.push('/feed/content/${content.id}', extra: content).then((_) {
-      // Au retour, marquer comme consommé si monté
-      if (mounted) {
-        ref.read(feedProvider.notifier).markContentAsConsumed(content);
+    // We await the result to know if the content was consumed (read for > 30s)
+    final result = await context.push<bool>(
+      '/feed/content/${content.id}',
+      extra: content,
+    );
 
-        // Update Streak after animation completes (1 second delay)
-        Future<void>.delayed(const Duration(milliseconds: 1100), () {
-          if (mounted) {
-            ref.read(streakProvider.notifier).refreshSilent();
-          }
+    // Au retour, si marqué comme consommé
+    if (mounted && result == true) {
+      ref.read(feedProvider.notifier).markContentAsConsumed(content);
+
+      // Update Streak after animation completes
+      Future<void>.delayed(const Duration(milliseconds: 1100), () {
+        if (mounted) {
+          ref.read(streakProvider.notifier).refreshSilent();
+        }
+      });
+
+      // Show Progression CTA if topic is available and valid
+      final topic = content.source.theme;
+      if (topic != null && topic.isNotEmpty) {
+        // Simple delay to let the UI settle before showing bottom sheet
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _showProgressionCTA(context, topic);
         });
       }
-    });
+    }
+  }
+
+  void _showProgressionCTA(BuildContext context, String topicName) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => ProgressionBottomSheet(
+        topicName: topicName,
+        onFollow: () async {
+          Navigator.pop(context);
+          try {
+            await ref.read(progressRepositoryProvider).followTopic(topicName);
+            NotificationService.showSuccess(
+                'Suivi du thème "$topicName" activé !');
+          } catch (e) {
+            if (context.mounted) {
+              NotificationService.showError('Erreur lors du suivi : $e');
+            }
+          }
+        },
+        onExplore: () {
+          Navigator.pop(context);
+          context.goNamed(RouteNames.progress);
+        },
+        onDismiss: () => Navigator.pop(context),
+      ),
+    );
   }
 
   void _hideContent(Content content, HiddenReason reason) {
     ref.read(feedProvider.notifier).hideContent(content, reason);
 
     // Feedback
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Contenu masqué'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
-      );
+    NotificationService.showInfo('Contenu masqué');
   }
 
   @override
@@ -284,8 +312,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     return PopScope(
       canPop: false,
-      child: Scaffold(
-        body: Stack(
+      child: Material(
+        color: colors.backgroundPrimary,
+        child: Stack(
           children: [
             SafeArea(
               child: RefreshIndicator(
@@ -495,33 +524,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             .read(feedProvider.notifier)
                                             .toggleSave(content);
 
-                                        ScaffoldMessenger.of(context)
-                                          ..hideCurrentSnackBar()
-                                          ..showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                UIConstants.savedConfirmMessage(
-                                                  UIConstants.savedSectionName,
-                                                ),
-                                              ),
-                                              action: SnackBarAction(
-                                                label: 'Annuler',
-                                                textColor: colors.primary,
-                                                onPressed: () {
-                                                  ref
-                                                      .read(
-                                                        feedProvider.notifier,
-                                                      )
-                                                      .toggleSave(content);
-                                                },
-                                              ),
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                              duration: const Duration(
-                                                seconds: 2,
-                                              ),
-                                            ),
-                                          );
+                                        NotificationService.showInfo(
+                                          UIConstants.savedConfirmMessage(
+                                            UIConstants.savedSectionName,
+                                          ),
+                                          actionLabel: 'Annuler',
+                                          context: context,
+                                          onAction: () {
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .toggleSave(content);
+                                          },
+                                        );
                                       },
                                       isBookmarked: content.isSaved,
                                       onMoreOptions: () {

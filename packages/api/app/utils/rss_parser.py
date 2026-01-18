@@ -4,6 +4,7 @@ from typing import Any
 
 import feedparser
 import certifi
+import httpx
 
 class RSSParser:
     """Parser de flux RSS/Atom."""

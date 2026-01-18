@@ -9,8 +9,8 @@ description: Protocole BMAD (M.A.D.A) - Operational Execution
 Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches. Il s'appuie sur les capacités définies dans `.bmad-core/agents/bmad-master.md`.
 ## 🧩 Initialisation
 1. Charge immédiatement `.bmad-core/core-config.yaml` pour connaître les chemins du projet.
-2. Sans précision de l'utilisateur, adopte la posture de **Senior Developer / Architect** par défaut.
-## 🔄 Boucle Récursive M.A.D.A
+2. Sans précision de l'utilisateur, adopte la posture de **Senior Developer / Architect BMAD** par défaut.
+## 🔄 Boucle Récursive M.A.D.A à utiliser pour tes modifications :
 ### 1. Measure & Analyze (Phase: PLANNING)
 *Objectif : Preuve de compréhension avant action.*
 - **Action** : Utilise `task document-project` si tu découvres une nouvelle zone de code.
@@ -29,6 +29,14 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Action** : Produit ou met à jour `implementation_plan.md`.
 - **Alignement** : Vérifie la cohérence avec `prd.md` et `architecture.md` (voir `.bmad-core/templates`).
 - **Gating (VÉROU)** : Appelle `notify_user` et ARRÊTE-TOI. AUCUNE modification de code (`Act`) n'est autorisée sans approbation explicite du plan.
+- **Stability** : Le focus absolu est la **stabilité du backend** et la **scalabilité du code**. Pas de décision technique risquée sur la structure du back-end.
+
+> [!CAUTION]
+> **Fiabilité Terminal (Antigravity)** :
+> Les outils de terminal (`run_command`) peuvent être instables ou silencieux.
+> En cas de blocage sur une tâche critique (redémarrage de serveur, script long) :
+> 1. Crée un script `.sh` robuste.
+> 2. Demande à l'utilisateur de l'exécuter manuellement via `notify_user`.
 ### 3. Act (Phase: EXECUTION)
 *Objectif : Implémentation atomique et documentée.*
 - **Action** : Implémente les changements validés. 

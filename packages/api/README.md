@@ -159,3 +159,20 @@ docker run -p 8000:8000 --env-file .env facteur-api
 - [PRD](/docs/prd.md)
 - [Architecture](/docs/architecture.md)
 
+
+## 🛠️ Scripts & Maintenance
+
+### Importer des sources
+Pour exécuter les scripts de maintenance (import, vérification, etc.), il est **impératif** d'utiliser l'environnement virtuel du projet pour avoir accès aux dépendances (comme `psycopg`, `sqlalchemy`).
+
+**Commande recommandée (depuis la racine du projet) :**
+```bash
+# Utiliser directement l'exécutable python du venv
+packages/api/venv/bin/python packages/api/scripts/import_sources.py --file sources/sources_candidates.csv
+```
+
+**Alternative (si vous êtes déjà dans `packages/api`) :**
+```bash
+source venv/bin/activate
+python scripts/import_sources.py --file ../../sources/sources_candidates.csv
+```

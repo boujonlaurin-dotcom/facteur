@@ -102,7 +102,8 @@ class RecommendationService:
             user_id, 
             limit_candidates=500,
             content_type=content_type,
-            mode=mode
+            mode=mode,
+            followed_source_ids=followed_source_ids
         )
         
         # 3. Score Candidates using ScoringEngine
@@ -244,7 +245,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -269,6 +270,14 @@ class RecommendationService:
             .join(Content.source) # Join needed for all mode filters
             .options(selectinload(Content.source)) 
             .where(Content.id.notin_(exclude_query))
+        )
+
+        # Base filter: Priority to Curated sources OR explicitly Followed sources
+        query = query.where(
+            or_(
+                Source.is_curated == True,
+                Source.id.in_(list(followed_source_ids)) if followed_source_ids else False
+            )
         )
         
         # Apply content_type filter if provided

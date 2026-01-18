@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../core/ui/notification_service.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 
@@ -30,18 +31,19 @@ class _BottomNavBar extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
 
     if (location.startsWith(RoutePaths.feed)) return 0;
-    if (location.startsWith(RoutePaths.saved)) return 1;
+    if (location.startsWith(RoutePaths.progress)) return 1;
     if (location.startsWith(RoutePaths.settings)) return 2;
 
     return 0;
   }
 
   void _onItemTapped(BuildContext context, int index) {
+    NotificationService.hide();
     switch (index) {
       case 0:
         context.goNamed(RouteNames.feed);
       case 1:
-        context.goNamed(RouteNames.saved);
+        context.goNamed(RouteNames.progress);
       case 2:
         context.goNamed(RouteNames.settings);
     }
@@ -76,10 +78,9 @@ class _BottomNavBar extends StatelessWidget {
                 onTap: () => _onItemTapped(context, 0),
               ),
               _NavItem(
-                icon: PhosphorIcons.clockClockwise(PhosphorIconsStyle.regular),
-                activeIcon:
-                    PhosphorIcons.clockClockwise(PhosphorIconsStyle.fill),
-                label: 'À consulter',
+                icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
+                activeIcon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.fill),
+                label: 'Progressions',
                 isSelected: selectedIndex == 1,
                 onTap: () => _onItemTapped(context, 1),
               ),

@@ -16,7 +16,7 @@ async def sync_all_sources() -> dict:
     logger.info("Executing periodic RSS sync job")
     
     async with async_session_maker() as session:
-        service = SyncService(session)
+        service = SyncService(session, session_maker=async_session_maker)
         try:
             return await service.sync_all_sources()
         finally:
@@ -35,7 +35,7 @@ async def sync_source(source_id: str) -> bool:
     logger.info("Executing manual RSS sync for source", source_id=source_id)
     
     async with async_session_maker() as session:
-        service = SyncService(session)
+        service = SyncService(session, session_maker=async_session_maker)
         try:
             # Récupérer la source
             from app.models.source import Source
@@ -58,4 +58,3 @@ async def sync_source(source_id: str) -> bool:
             return False
         finally:
             await service.close()
-

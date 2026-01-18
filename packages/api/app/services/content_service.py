@@ -19,6 +19,46 @@ class ContentService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_content_detail(self, content_id: UUID, user_id: UUID):
+        """Récupère les détails d'un contenu avec le statut utilisateur."""
+        from app.models.content import Content
+        from app.models.content import UserContentStatus
+        from sqlalchemy.orm import selectinload
+        
+        # Query Content with source
+        stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
+        content = await self.session.scalar(stmt)
+        
+        if not content:
+            return None
+            
+        # Query UserStatus
+        stmt_status = select(UserContentStatus).where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id == content_id
+        )
+        user_status = await self.session.scalar(stmt_status)
+        
+        # Construct response
+        return {
+            "id": content.id,
+            "title": content.title,
+            "url": content.url,
+            "thumbnail_url": content.thumbnail_url,
+            "description": content.description,
+            "html_content": content.html_content,
+            "audio_url": content.audio_url,
+            "content_type": content.content_type,
+            "duration_seconds": content.duration_seconds,
+            "published_at": content.published_at,
+            "source": content.source,
+            "status": user_status.status if user_status else ContentStatus.UNSEEN,
+            "is_saved": user_status.is_saved if user_status else False,
+            "is_hidden": user_status.is_hidden if user_status else False,
+            "hidden_reason": user_status.hidden_reason if user_status else None,
+            "time_spent_seconds": user_status.time_spent_seconds if user_status else 0,
+        }
+
     async def update_content_status(
         self, user_id: UUID, content_id: UUID, update_data: ContentStatusUpdate
     ) -> UserContentStatus:

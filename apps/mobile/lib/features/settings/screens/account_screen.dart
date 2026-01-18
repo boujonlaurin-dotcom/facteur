@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../providers/user_profile_provider.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran de gestion du compte utilisateur
 class AccountScreen extends ConsumerWidget {
@@ -166,13 +167,8 @@ class AccountScreen extends ConsumerWidget {
               Navigator.of(context).pop();
               // TODO: Implémenter la suppression via Supabase RPC
               // Pour l'instant, on se contente de déconnecter
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
-                    'Contactez le support pour supprimer votre compte.',
-                  ),
-                  backgroundColor: colors.error,
-                ),
+              NotificationService.showError(
+                'Contactez le support pour supprimer votre compte.',
               );
             },
             child: Text('Supprimer', style: TextStyle(color: colors.error)),

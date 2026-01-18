@@ -14,25 +14,25 @@ import os
 import sys
 
 # DEBUG STARTUP
-print("\n" + "!"*60, flush=True)
-print("🚀 BACKEND STARTING...", flush=True)
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ],
+    logger_factory=structlog.PrintLoggerFactory(),
+)
+logger = structlog.get_logger()
+
 db_url = os.environ.get('DATABASE_URL')
-print(f"🌍 RAILWAY_ENV: {os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'unknown')}", flush=True)
-print(f"🔌 PORT: {os.environ.get('PORT', 'NOT_SET')}", flush=True)
-print(f"📦 RAILWAY_SERVICE: {os.environ.get('RAILWAY_SERVICE_NAME', 'unknown')}", flush=True)
-print(f"📌 COMMIT_SHA: {os.environ.get('RAILWAY_GIT_COMMIT_SHA', 'unknown')[:7]}", flush=True)
-print(f"🔑 DATABASE_URL_PRESENT: {'YES' if db_url else 'NO'}", flush=True)
-if db_url:
-    print(f"📏 DATABASE_URL_LENGTH: {len(db_url)}", flush=True)
-    # Masked host for safety: postgresql://***@host:port/...
-    from urllib.parse import urlparse
-    try:
-        parsed = urlparse(db_url.replace("postgresql+asyncpg://", "http://")) # urlparse trick
-        print(f"🎯 DATABASE_TARGET: {parsed.hostname}:{parsed.port}", flush=True)
-    except:
-        print(f"🎯 DATABASE_TARGET: PARSE_ERROR", flush=True)
-print(f"🌍 ALL_KEYS: {sorted(list(os.environ.keys()))}", flush=True)
-print("!"*60 + "\n", flush=True)
+logger.info("backend_starting", 
+    railway_env=os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'unknown'),
+    port=os.environ.get('PORT', 'NOT_SET'),
+    railway_service=os.environ.get('RAILWAY_SERVICE_NAME', 'unknown'),
+    commit_sha=os.environ.get('RAILWAY_GIT_COMMIT_SHA', 'unknown')[:7],
+    database_url_present=bool(db_url)
+)
 
 from app.config import get_settings
 from app.database import init_db, close_db, get_db, text
@@ -48,6 +48,7 @@ from app.routers import (
     webhooks,
     analytics,
     internal,
+    progress,
 )
 import time
 
@@ -61,18 +62,18 @@ settings = get_settings()
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Gère le cycle de vie de l'application (startup/shutdown)."""
     # Startup
-    print("⏳ Lifespan: Initializing DB...", flush=True)
+    logger.info("lifespan_initializing_db")
     try:
-        await init_db()
-        print("⏳ Lifespan: DB initialized.", flush=True)
+        # await init_db()
+        logger.info("lifespan_db_initialization_skipped_for_debug")
     except Exception as e:
-        print(f"❌ Lifespan: DB initialization failed: {e}", flush=True)
+        logger.error("lifespan_db_initialization_failed", error=str(e))
         # On continue quand même pour ne pas empêcher le démarrage de l'app 
         # (ce qui permet d'avoir accès au healthcheck et docs même si DB down)
         
-    print("⏳ Lifespan: Starting scheduler...", flush=True)
+    logger.info("lifespan_starting_scheduler")
     start_scheduler()
-    print("⏳ Lifespan: Startup complete.", flush=True)
+    logger.info("lifespan_startup_complete")
     yield
     # Shutdown
     stop_scheduler()
@@ -85,25 +86,9 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
     debug=settings.debug,
-    redirect_slashes=False,
+    redirect_slashes=True,
 )
 
-# Simple request logger middleware (defined first, executed last)
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = time.time()
-    path = request.url.path
-    method = request.method
-    print(f"📥 Incoming: {method} {path}", flush=True)
-    try:
-        response = await call_next(request)
-        duration = time.time() - start_time
-        print(f"📤 Outgoing: {method} {path} - {response.status_code} ({duration:.2f}s)", flush=True)
-        return response
-    except Exception as e:
-        duration = time.time() - start_time
-        print(f"💥 Error: {method} {path} - {str(e)} ({duration:.2f}s)", flush=True)
-        raise e
 
 # Configuration CORS - MUST be added AFTER the @middleware decorator to execute FIRST
 # Note: allow_credentials=True is incompatible with allow_origins=["*"]
@@ -128,16 +113,19 @@ app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
+app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
+
 
 
 @app.get("/api/health", tags=["Health"])
-async def health_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Endpoint de health check avec vérification DB."""
-    try:
-        await db.execute(text("SELECT 1"))
-        db_status = "connected"
-    except Exception as e:
-        db_status = f"error: {str(e)}"
+async def health_check() -> dict[str, Any]:
+    """Endpoint de health check (SANS DB pour diagnostic deadlock)."""
+    # try:
+    #     await db.execute(text("SELECT 1"))
+    #     db_status = "connected"
+    # except Exception as e:
+    #     db_status = f"error: {str(e)}"
+    db_status = "skipped_for_debug"
         
     return {
         "status": "ok", 

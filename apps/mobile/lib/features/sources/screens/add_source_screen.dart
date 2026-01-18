@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran d'ajout de source (placeholder)
 class AddSourceScreen extends StatefulWidget {
@@ -70,11 +71,7 @@ class _AddSourceScreenState extends State<AddSourceScreen> {
               label: 'Détecter la source',
               onPressed: () {
                 // TODO: Implémenter la détection
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Fonctionnalité à venir'),
-                  ),
-                );
+                NotificationService.showInfo('Fonctionnalité à venir');
               },
             ),
 

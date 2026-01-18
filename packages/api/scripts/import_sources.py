@@ -39,8 +39,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 CSV_PATH = os.path.join(PROJECT_ROOT, "sources", "sources.csv")
 
 
-
-
 TYPE_MAPPING = {
     "Site": "article",
     "Newsletter": "article",
@@ -86,10 +84,25 @@ CURATED_FEED_FALLBACKS = {
     "https://www.liberation.fr/": "https://www.liberation.fr/rss/",
     "https://reporterre.net/": "https://reporterre.net/spip.php?page=backend-simple",
     "https://www.lecanardenchaine.fr/": "https://www.lecanardenchaine.fr/feed/",
-    "https://www.sismique.world/": "https://feeds.acast.com/public/shows/60f7e411b058c4001306e903"
+    "https://www.sismique.world/": "https://feeds.acast.com/public/shows/60f7e411b058c4001306e903",
+    "https://www.rtl.fr/": "https://www.rtl.fr/podcast/le-journal-rtl.xml",
+    "https://www.ouest-france.fr/": "https://www.ouest-france.fr/rss/une",
+    "https://www.francetvinfo.fr/": "https://www.francetvinfo.fr/titres.rss",
+    "https://www.la-croix.com/": "https://www.la-croix.com/RSS/UNIVERS/ACTUALITE", 
+    "https://www.tf1info.fr/": "https://www.tf1info.fr/flux-rss.xml",
+    "https://www.midilibre.fr/": "https://www.midilibre.fr/rss",
+    "https://www.cnews.fr/": "https://www.cnews.fr/rss", 
+    "https://www.rts.ch/": "https://www.rts.ch/info/monde/rss",
+    "https://www.lecho.be/": "https://www.lecho.be/rss/actualite.xml",
+    "https://rmc.bfmtv.com/": "https://rmc.bfmtv.com/rss/info/flux-rss/flux-toutes-les-actualites/",
 }
 
-async def detect_youtube_feed(url: str) -> Optional[str]:
+# Standard Chrome User-Agent to avoid being blocked
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+async def detect_youtube_feed(url: str, client: httpx.AsyncClient) -> Optional[str]:
     """Detect YouTube RSS feed URL from a channel URL."""
     if url in CURATED_FEED_FALLBACKS:
         return CURATED_FEED_FALLBACKS[url]
@@ -100,52 +113,55 @@ async def detect_youtube_feed(url: str) -> Optional[str]:
         return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = await client.get(url, follow_redirects=True, headers=headers)
-            if response.status_code == 200:
-                id_match = re.search(r'"channelId":"(UC[\w-]+)"', response.text) or \
-                           re.search(r'"externalId":"(UC[\w-]+)"', response.text)
-                if id_match:
-                    return f"https://www.youtube.com/feeds/videos.xml?channel_id={id_match.group(1)}"
-    except:
-        pass
+        response = await client.get(url, follow_redirects=True, headers=DEFAULT_HEADERS)
+        if response.status_code == 200:
+            id_match = re.search(r'"channelId":"(UC[\w-]+)"', response.text) or \
+                       re.search(r'"externalId":"(UC[\w-]+)"', response.text)
+            if id_match:
+                return f"https://www.youtube.com/feeds/videos.xml?channel_id={id_match.group(1)}"
+    except Exception as e:
+        print(f"  ❌ YouTube detection error for {url}: {e}")
     return None
 
-async def detect_site_feed(url: str) -> Optional[str]:
+async def detect_site_feed(url: str, client: httpx.AsyncClient) -> Optional[str]:
     """Detect RSS feed for a website."""
     if url in CURATED_FEED_FALLBACKS:
         return CURATED_FEED_FALLBACKS[url]
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = await client.get(url, follow_redirects=True, headers=headers)
-            if response.status_code == 200:
-                patterns = [
-                    r'<link[^>]+type="application/rss\+xml"[^>]+href="([^"]+)"',
-                    r'<link[^>]+type="application/atom\+xml"[^>]+href="([^"]+)"'
-                ]
-                for pattern in patterns:
-                    match = re.search(pattern, response.text)
-                    if match:
-                        feed_url = match.group(1)
-                        if not feed_url.startswith("http"):
-                            from urllib.parse import urljoin
-                            feed_url = urljoin(url, feed_url)
-                        return feed_url
-    except:
-        pass
+        response = await client.get(url, follow_redirects=True, headers=DEFAULT_HEADERS)
+        if response.status_code == 200:
+            patterns = [
+                r'<link[^>]+type="application/rss\+xml"[^>]+href="([^"]+)"',
+                r'<link[^>]+type="application/atom\+xml"[^>]+href="([^"]+)"'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, response.text)
+                if match:
+                    feed_url = match.group(1)
+                    if not feed_url.startswith("http"):
+                        from urllib.parse import urljoin
+                        feed_url = urljoin(url, feed_url)
+                    return feed_url
+    except Exception as e:
+        print(f"  ❌ Site feed detection error for {url}: {e}")
     return None
 
-async def process_source(source_data: Dict[str, str], session: AsyncSession):
+async def process_source(source_data: Dict[str, str], session: AsyncSession, client: httpx.AsyncClient):
     name = source_data.get("Name")
     url = source_data.get("URL")
+    
+    if not name or not url or name == "Name": # Skip empty rows or repeated headers
+        return
+
     csv_type = source_data.get("Type")
     csv_theme = source_data.get("Thème")
     rationale = source_data.get("Rationale")
     csv_bias = source_data.get("Bias", "unknown")
     csv_reliability = source_data.get("Reliability", "unknown")
+    # Handle In_Catalog: default to True for backward compatibility if missing, 
+    in_catalog_str = source_data.get("In_Catalog", "true").lower()
+    is_curated = in_catalog_str == "true"
     
     internal_type = TYPE_MAPPING.get(csv_type, "article")
     internal_theme = THEME_MAPPING.get(csv_theme, "other")
@@ -168,11 +184,11 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
 
     feed_url = None
     if internal_type == "youtube":
-        feed_url = await detect_youtube_feed(url)
+        feed_url = await detect_youtube_feed(url, client)
     elif internal_type == "podcast" and "radiofrance.fr" in url:
         feed_url = f"{url.rstrip('/')}.rss"
     else:
-        feed_url = await detect_site_feed(url)
+        feed_url = await detect_site_feed(url, client)
         
     if not feed_url:
         print(f"⚠️ Warning: No feed found for {name} ({url}). Skipping.")
@@ -183,10 +199,12 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
     domain = urlparse(url).netloc
     logo_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
 
-    result = await session.execute(select(Source).where(Source.feed_url == feed_url))
+    # Try to find by feed_url OR by original url to avoid easy dupes
+    result = await session.execute(select(Source).where((Source.feed_url == feed_url) | (Source.url == url)))
     existing_source = result.scalars().first()
     
     if existing_source:
+        print(f"🔄 Updating existing source: {name}")
         existing_source.name = name
         existing_source.url = url
         existing_source.type = SourceType(internal_type)
@@ -199,12 +217,15 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
         existing_source.score_independence = score_indep
         existing_source.score_rigor = score_rigor
         existing_source.score_ux = score_ux
+        existing_source.is_curated = is_curated
+        existing_source.is_active = True # Revive if inactive
     else:
+        print(f"✨ Creating new source: {name} (Curated: {is_curated})")
         new_source = Source(
             name=name, url=url, feed_url=feed_url,
             type=SourceType(internal_type), theme=internal_theme,
             description=rationale, logo_url=logo_url,
-            is_curated=True, is_active=True,
+            is_curated=is_curated, is_active=True,
             bias_stance=BiasStance(bias_val),
             reliability_score=ReliabilityScore(reliability_val),
             bias_origin=BiasOrigin.CURATED,
@@ -215,25 +236,53 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession):
         session.add(new_source)
 
 async def main():
-    if not os.path.exists(CSV_PATH):
-        print(f"❌ CSV not found at {CSV_PATH}")
+    import argparse
+    parser = argparse.ArgumentParser(description="Import sources from CSV")
+    parser.add_argument("--file", type=str, default="sources/sources.csv", help="Path to CSV file relative to project root")
+    args = parser.parse_args()
+
+    # Resolve path relative to project root
+    target_csv = os.path.join(PROJECT_ROOT, args.file)
+    
+    if not os.path.exists(target_csv):
+        print(f"❌ CSV not found at {target_csv}")
         return
 
     from app.database import async_session_maker, init_db
     
-    # We use the app's native init_db to ensure all settings (like statement_cache_size=0)
-    # are correctly applied as they are in production.
     print("🛠️ Initializing database connection using app settings...")
     await init_db()
 
-    async with async_session_maker() as session:
-        with open(CSV_PATH, mode='r', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                await process_source(row, session)
-        await session.commit()
-    print("🎉 Import successful!")
+    print(f"📂 Reading from {target_csv}...")
+    rows = []
+    with open(target_csv, mode='r', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        rows = list(reader)
+    
+    total_rows = len(rows)
+    print(f"👉 Found {total_rows} sources to process.")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for i, row in enumerate(rows, 1):
+            name = row.get("Name")
+            url = row.get("URL")
+            
+            if not name or not url or name == "Name": # Skip empty rows or repeated headers
+                print(f"[{i}/{total_rows}] Skipping invalid/empty row...")
+                continue
+                
+            print(f"[{i}/{total_rows}] Processing {name} ({url})...")
+            try:
+                async with async_session_maker() as session:
+                    await process_source(row, session, client)
+                    await session.commit()
+                # Use a small sleep to avoid saturating resources in tight loop
+                await asyncio.sleep(0.05) 
+            except Exception as e:
+                print(f"❌ Error processing {row.get('Name')}: {e}")
+                continue
+            
+    print("🎉 Import process finished!")
 
 if __name__ == "__main__":
     asyncio.run(main())
-

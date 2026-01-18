@@ -207,9 +207,9 @@ class FeedCard extends StatelessWidget {
                     child: Icon(
                       bookmarkIcon ??
                           (isBookmarked
-                              ? PhosphorIcons.clockClockwise(
+                              ? PhosphorIcons.bookmarkSimple(
                                   PhosphorIconsStyle.fill)
-                              : PhosphorIcons.clockClockwise(
+                              : PhosphorIcons.bookmarkSimple(
                                   PhosphorIconsStyle.regular)),
                       color:
                           isBookmarked ? colors.primary : colors.textSecondary,

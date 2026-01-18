@@ -29,6 +29,14 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
   final Color textTertiary;
   final Color textStamp;
 
+  // Biais (Politique)
+  final Color biasLeft;
+  final Color biasCenterLeft;
+  final Color biasCenter;
+  final Color biasCenterRight;
+  final Color biasRight;
+  final Color biasUnknown;
+
   const FacteurColors({
     required this.backgroundPrimary,
     required this.backgroundSecondary,
@@ -46,6 +54,12 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     required this.textSecondary,
     required this.textTertiary,
     required this.textStamp,
+    required this.biasLeft,
+    required this.biasCenterLeft,
+    required this.biasCenter,
+    required this.biasCenterRight,
+    required this.biasRight,
+    required this.biasUnknown,
   });
 
   @override
@@ -66,6 +80,12 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     Color? textSecondary,
     Color? textTertiary,
     Color? textStamp,
+    Color? biasLeft,
+    Color? biasCenterLeft,
+    Color? biasCenter,
+    Color? biasCenterRight,
+    Color? biasRight,
+    Color? biasUnknown,
   }) {
     return FacteurColors(
       backgroundPrimary: backgroundPrimary ?? this.backgroundPrimary,
@@ -84,6 +104,12 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       textSecondary: textSecondary ?? this.textSecondary,
       textTertiary: textTertiary ?? this.textTertiary,
       textStamp: textStamp ?? this.textStamp,
+      biasLeft: biasLeft ?? this.biasLeft,
+      biasCenterLeft: biasCenterLeft ?? this.biasCenterLeft,
+      biasCenter: biasCenter ?? this.biasCenter,
+      biasCenterRight: biasCenterRight ?? this.biasCenterRight,
+      biasRight: biasRight ?? this.biasRight,
+      biasUnknown: biasUnknown ?? this.biasUnknown,
     );
   }
 
@@ -117,6 +143,12 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       textTertiary: Color.lerp(textTertiary, other.textTertiary, t)!,
       textStamp: Color.lerp(textStamp, other.textStamp, t)!,
+      biasLeft: Color.lerp(biasLeft, other.biasLeft, t)!,
+      biasCenterLeft: Color.lerp(biasCenterLeft, other.biasCenterLeft, t)!,
+      biasCenter: Color.lerp(biasCenter, other.biasCenter, t)!,
+      biasCenterRight: Color.lerp(biasCenterRight, other.biasCenterRight, t)!,
+      biasRight: Color.lerp(biasRight, other.biasRight, t)!,
+      biasUnknown: Color.lerp(biasUnknown, other.biasUnknown, t)!,
     );
   }
 
@@ -146,6 +178,12 @@ class FacteurPalettes {
     textSecondary: const Color(0xFF5D5B5A),
     textTertiary: const Color(0xFF959392),
     textStamp: const Color(0xFFD35400).withOpacity(0.8),
+    biasLeft: const Color(0xFFB71C1C), // Red 900
+    biasCenterLeft: const Color(0xFFEF9A9A), // Red 200
+    biasCenter: const Color(0xFF9E9E9E), // Grey 500
+    biasCenterRight: const Color(0xFF90CAF9), // Blue 200
+    biasRight: const Color(0xFF0D47A1), // Blue 900
+    biasUnknown: const Color(0xFFD7CCC8), // Blue Grey 100
   );
 
   static final FacteurColors dark = FacteurColors(
@@ -165,6 +203,12 @@ class FacteurPalettes {
     textSecondary: const Color(0xFFA6A6A6),
     textTertiary: const Color(0xFF606060),
     textStamp: const Color(0xFFC0392B).withOpacity(0.8),
+    biasLeft: const Color(0xFFE53935), // Red 600
+    biasCenterLeft: const Color(0xFFFFCDD2), // Red 100
+    biasCenter: const Color(0xFF757575), // Grey 600
+    biasCenterRight: const Color(0xFFBBDEFB), // Blue 100
+    biasRight: const Color(0xFF1E88E5), // Blue 600
+    biasUnknown: const Color(0xFF616161), // Grey 700
   );
 }
 

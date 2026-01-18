@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
 
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
@@ -18,6 +20,7 @@ import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -42,19 +45,32 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
+  late AnimationController _buttonPulseController;
+  late Animation<double> _buttonScaleAnimation;
+
   bool _showFab = false;
-  bool _isSaved = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
+
+  Timer? _readingTimer;
+  bool _isConsumed = false;
+  static const int _consumptionThreshold = 30; // seconds
+
+  Content? _content;
 
   @override
   void initState() {
     super.initState();
+    _content = widget.content;
     _startTime = DateTime.now();
-    _isSaved = widget.content?.isSaved ?? false;
+    if (_content != null) {
+      _isConsumed = _content!.status == ContentStatus.consumed;
+    } else {
+      _fetchContent();
+    }
 
     _fabController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -65,6 +81,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       curve: Curves.easeOut,
     );
 
+    // Pulse animation for the Compare button
+    _buttonPulseController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _buttonScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.05)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.05, end: 1.0)
+            .chain(CurveTween(curve: Curves.bounceOut)),
+        weight: 60,
+      ),
+    ]).animate(_buttonPulseController);
+
     // Show FAB after a short delay for smooth appearance
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
@@ -72,25 +106,107 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fabController.forward();
       }
     });
+
+    // Trigger button pulse after a delay to catch user's attention
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) {
+        _buttonPulseController.forward();
+      }
+    });
+
+    // Start timer if content is suitable for in-app reading and not already consumed
+    if (_content?.hasInAppContent == true && !_isConsumed) {
+      _startReadingTimer();
+    }
+  }
+
+  Future<void> _fetchContent() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+      final content = await repository.getContent(widget.contentId);
+
+      if (mounted) {
+        if (content != null) {
+          setState(() {
+            _content = content;
+            _isConsumed = _content!.status == ContentStatus.consumed;
+          });
+          if (_content!.hasInAppContent == true && !_isConsumed) {
+            _startReadingTimer();
+          }
+        } else {
+          // Show error and pop if content not found
+          NotificationService.showError('Contenu introuvable',
+              context: context);
+          context.pop();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching content: $e');
+      if (mounted) {
+        NotificationService.showError('Erreur de chargement', context: context);
+        context.pop();
+      }
+    }
+  }
+
+  void _startReadingTimer() {
+    _readingTimer?.cancel();
+    _readingTimer = Timer(const Duration(seconds: _consumptionThreshold), () {
+      if (mounted && !_isConsumed) {
+        _markAsConsumed();
+      }
+    });
+  }
+
+  Future<void> _markAsConsumed() async {
+    setState(() => _isConsumed = true);
+    final content = _content;
+    if (content == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+      await repository.updateContentStatus(
+        content.id,
+        ContentStatus.consumed,
+      );
+
+      if (mounted) {
+        NotificationService.showSuccess('Marqué comme lu', context: context);
+      }
+    } catch (e) {
+      debugPrint('Error marking as consumed: $e');
+    }
   }
 
   @override
   void dispose() {
-    // Track article read on close (restored from ArticleViewerModal)
-    if (widget.content != null) {
-      final duration = DateTime.now().difference(_startTime).inSeconds;
-      ref.read(analyticsServiceProvider).trackArticleRead(
-            widget.content!.id,
-            widget.content!.source.id,
-            duration,
-          );
-    }
+    _readingTimer?.cancel();
     _fabController.dispose();
+    _buttonPulseController.dispose();
     super.dispose();
+
+    // Track article read duration on close (restored from ArticleViewerModal)
+    try {
+      if (_content != null) {
+        final duration = DateTime.now().difference(_startTime).inSeconds;
+        ref.read(analyticsServiceProvider).trackArticleRead(
+              _content!.id,
+              _content!.source.id,
+              duration,
+            );
+      }
+    } catch (e) {
+      debugPrint('Error tracking analytics on dispose: $e');
+    }
   }
 
   Future<void> _openOriginalUrl() async {
-    final url = widget.content?.url;
+    final url = _content?.url;
     if (url != null) {
       final uri = Uri.tryParse(url);
       if (uri != null && await canLaunchUrl(uri)) {
@@ -100,7 +216,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   String _getFabLabel() {
-    switch (widget.content?.contentType) {
+    switch (_content?.contentType) {
       case ContentType.youtube:
         return 'Ouvrir sur YouTube';
       case ContentType.audio:
@@ -110,37 +226,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _toggleBookmark() async {
-    final content = widget.content;
-    if (content == null) return;
-
-    final previousState = _isSaved;
-    setState(() => _isSaved = !_isSaved);
-
-    try {
-      // Call API to toggle saved state
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
-      await repository.toggleSave(content.id, _isSaved);
-    } catch (e) {
-      // Rollback on error
-      debugPrint('Error toggling bookmark: $e');
-      if (mounted) {
-        setState(() => _isSaved = previousState);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la sauvegarde'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
-
   /// Show perspectives bottom sheet (restored from ArticleViewerModal)
   Future<void> _showPerspectives(BuildContext context) async {
-    final content = widget.content;
+    final content = _content;
     if (content == null) return;
 
     // Show loading indicator
@@ -207,11 +295,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       debugPrint('Error fetching perspectives: $e');
       if (context.mounted) Navigator.pop(context);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Impossible de charger les perspectives'),
-          ),
-        );
+        NotificationService.showError('Impossible de charger les perspectives',
+            context: context);
       }
     }
   }
@@ -219,8 +304,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final content = widget.content;
+
+    final content = _content;
 
     // If no content passed, show loading or error
     if (content == null) {
@@ -243,6 +328,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Determine if we should use in-app reading or fallback to WebView
+
     final useInAppReading = content.hasInAppContent;
 
     return Scaffold(
@@ -250,7 +336,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header (cleaned up)
             _buildHeader(context, content),
 
             // Content area
@@ -262,29 +348,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ],
         ),
       ),
-      // FAB for opening original
+      // FAB for opening original (Standard Round FAB, smaller than Extended)
       floatingActionButton: _showFab
           ? ScaleTransition(
               scale: _fabAnimation,
-              child: FloatingActionButton.extended(
+              child: FloatingActionButton(
+                mini: true, // Make it smaller "plus petit"
                 onPressed: _openOriginalUrl,
                 backgroundColor: colors.surface,
                 foregroundColor: colors.textPrimary,
                 elevation: 4,
-                icon: Icon(
+                heroTag: 'original_fab',
+                tooltip: _getFabLabel(),
+                child: Icon(
                   PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
                   size: 20,
-                ),
-                label: Text(
-                  _getFabLabel(),
-                  style: textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
                 ),
               ),
             )
           : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -294,44 +377,55 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Container(
       padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.backgroundPrimary,
+        border: Border(
+          bottom: BorderSide(
+            color: colors.textSecondary.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top bar with back button, bookmark, and compare
-          Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                  color: colors.textPrimary,
-                ),
-                onPressed: () => context.pop(),
+          // Drag Handle
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
               ),
-              const Spacer(),
-              const Spacer(),
-
-              // Bookmark toggle (functional now)
-              IconButton(
-                icon: Icon(
-                  _isSaved
-                      ? PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.bookmarkSimple(
-                          PhosphorIconsStyle.regular),
-                  color: _isSaved ? colors.primary : colors.textPrimary,
-                ),
-                onPressed: _toggleBookmark,
-              ),
-            ],
+            ),
           ),
 
-          const SizedBox(height: FacteurSpacing.space2),
-
           // Source info with bias badge and reliability indicator
+          // Previous top row (Back/Bookmark) removed.
+          // Title removed.
+
           Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
             child: Row(
               children: [
+                // Discreet Back Button
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                    size: 20,
+                    color: colors.textSecondary,
+                  ),
+                  onPressed: () => context.pop(_isConsumed),
+                ),
+                const SizedBox(width: 8),
+
                 // Source logo
                 if (content.source.logoUrl != null)
                   ClipRRect(
@@ -423,64 +517,65 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // Comparer button (Moved here)
                 if (content.contentType == ContentType.article) ...[
                   const SizedBox(width: 8),
-                  TextButton(
-                    onPressed: () => _showPerspectives(context),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8, // Taller touch target
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      backgroundColor: colors.primary.withOpacity(0.18),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: colors.primary.withOpacity(0.4),
-                          width: 1.2,
-                        ),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          PhosphorIcons.scales(PhosphorIconsStyle.fill),
-                          size: 16,
-                          color: colors.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Comparer',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: colors.primary,
+                  ScaleTransition(
+                    scale: _buttonScaleAnimation,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colors.primary.withOpacity(0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
                           ),
+                        ],
+                      ),
+                      child: TextButton(
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          _showPerspectives(context);
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: colors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          elevation: 0,
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              PhosphorIcons.scales(PhosphorIconsStyle.fill),
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Comparer',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ],
             ),
           ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Title
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
-            child: Text(
-              content.title,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space2),
         ],
       ),
     );

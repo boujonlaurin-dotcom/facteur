@@ -9,14 +9,16 @@ import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
 import '../features/detail/screens/content_detail_screen.dart';
-import '../features/saved/screens/saved_screen.dart';
+
 import '../features/sources/screens/sources_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
-import '../features/progress/screens/progress_screen.dart';
+import '../features/progress/screens/progressions_screen.dart';
+import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../core/auth/auth_state.dart';
+import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/shell_scaffold.dart';
 
 /// Noms des routes
@@ -36,6 +38,7 @@ class RouteNames {
   static const String account = 'account';
   static const String notifications = 'notifications';
   static const String progress = 'progress';
+  static const String quiz = 'quiz';
   static const String paywall = 'paywall';
 }
 
@@ -56,14 +59,15 @@ class RoutePaths {
   static const String account = '/settings/account';
   static const String notifications = '/settings/notifications';
   static const String progress = '/progress';
+  static const String quiz = '/quiz';
   static const String paywall = '/paywall';
 }
 
-/// Provider du router
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
 
   return GoRouter(
+    navigatorKey: NotificationService.navigatorKey,
     initialLocation: RoutePaths.splash,
     debugLogDiagnostics: true,
     redirect: (context, state) {
@@ -161,24 +165,39 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'content/:id',
                 name: RouteNames.contentDetail,
-                builder: (context, state) {
+                parentNavigatorKey: NotificationService.navigatorKey,
+                pageBuilder: (context, state) {
                   final contentId = state.pathParameters['id']!;
                   // Story 5.2: Pass Content via extra for in-app reading
                   final content = state.extra as Content?;
-                  return ContentDetailScreen(
-                    contentId: contentId,
-                    content: content,
+                  return MaterialPage(
+                    fullscreenDialog: true,
+                    child: ContentDetailScreen(
+                      contentId: contentId,
+                      content: content,
+                    ),
                   );
                 },
               ),
             ],
           ),
 
-          // Sauvegardés
+          // Progressions (remplaces Saved)
           GoRoute(
-            path: RoutePaths.saved,
-            name: RouteNames.saved,
-            builder: (context, state) => const SavedScreen(),
+            path: RoutePaths.progress,
+            name: RouteNames.progress,
+            builder: (context, state) => const ProgressionsScreen(),
+            routes: [
+              GoRoute(
+                path: 'quiz',
+                name: RouteNames.quiz,
+                parentNavigatorKey: NotificationService.navigatorKey,
+                builder: (context, state) {
+                  final topic = state.extra as String;
+                  return QuizScreen(topic: topic);
+                },
+              ),
+            ],
           ),
 
           // Settings
@@ -206,27 +225,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
-      ),
-
-      // Progression (modal/push depuis feed)
-      GoRoute(
-        path: RoutePaths.progress,
-        name: RouteNames.progress,
-        pageBuilder: (context, state) => CustomTransitionPage(
-          child: const ProgressScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 1),
-                end: Offset.zero,
-              ).animate(CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOut,
-              )),
-              child: child,
-            );
-          },
-        ),
       ),
 
       // Paywall (modal)

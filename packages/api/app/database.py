@@ -12,7 +12,9 @@ from sqlalchemy.pool import NullPool
 
 # Engine async
 # Diagnostic: Print engine target
-print(f"🛠️  Engine initializing with target: {settings.database_url.split('@')[-1] if settings.database_url else 'NONE'}", flush=True)
+import structlog
+logger = structlog.get_logger()
+logger.info("engine_initializing", target=settings.database_url.split('@')[-1] if settings.database_url else 'NONE')
 
 engine = create_async_engine(
     settings.database_url,
@@ -53,7 +55,7 @@ async def init_db() -> None:
     """Initialise la connexion à la base de données."""
     # Log connection target (safely)
     target_url = engine.url.render_as_string(hide_password=True)
-    print(f"🔍 Database connection check: target={target_url}", flush=True)
+    logger.info("db_connection_check", target=target_url)
     
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
@@ -67,16 +69,14 @@ async def init_db() -> None:
             if db_host:
                 socket.gethostbyname(db_host)
         except socket.gaierror:
-            print(f"❌ DNS Error: Host '{db_host}' could not be resolved.", flush=True)
-            print(f"💡 Hint: Check your DATABASE_URL on Railway. Ensure it's correctly formatted (e.g., aws-0-eu-west-1.pooler.supabase.com).", flush=True)
+            logger.error("dns_error", host=db_host, hint="Check your DATABASE_URL on Railway.")
         
         async with engine.begin() as conn:
             # Test connection
             await conn.execute(text("SELECT 1"))
-        print("✅ Database connection successful", flush=True)
+        logger.info("db_connection_successful")
     except Exception as e:
-        print(f"❌ Database connection failed: {e}", flush=True)
-        print(f"💡 Diagnostic context: target={target_url}", flush=True)
+        logger.error("db_connection_failed", error=str(e), target=target_url)
         raise
 
 

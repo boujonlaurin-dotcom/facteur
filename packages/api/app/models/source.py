@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -66,6 +66,7 @@ class Source(Base):
     score_independence: Mapped[Optional[float]] = mapped_column(nullable=True)
     score_rigor: Mapped[Optional[float]] = mapped_column(nullable=True)
     score_ux: Mapped[Optional[float]] = mapped_column(nullable=True)
+    granular_topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
 
     # Relations
     contents: Mapped[list["Content"]] = relationship(

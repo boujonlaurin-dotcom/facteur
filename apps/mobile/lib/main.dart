@@ -15,6 +15,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialiser timeago
+  timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', fr_messages.FrShortMessages());
 
   // Orientation portrait uniquement

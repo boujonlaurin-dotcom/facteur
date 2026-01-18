@@ -78,7 +78,7 @@ import certifi
 class PerspectiveService:
     """Service for fetching perspectives via Google News RSS."""
 
-    def __init__(self, timeout: float = 5.0, max_results: int = 5):
+    def __init__(self, timeout: float = 5.0, max_results: int = 10):
         self.timeout = timeout
         self.max_results = max_results
 
@@ -97,7 +97,7 @@ class PerspectiveService:
             exclude_title: Optional title to exclude (if similarity is too high)
             
         Returns:
-            List of Perspective objects, max 5
+            List of Perspective objects, max 10
         """
         query = " ".join(keywords)
         # ... existing implementation continues
