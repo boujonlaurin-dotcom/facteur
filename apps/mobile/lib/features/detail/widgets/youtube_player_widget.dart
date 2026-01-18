@@ -17,7 +17,10 @@ class YouTubePlayerWidget extends StatefulWidget {
     required this.videoUrl,
     required this.title,
     this.description,
+    this.footer,
   });
+
+  final Widget? footer;
 
   @override
   State<YouTubePlayerWidget> createState() => _YouTubePlayerWidgetState();
@@ -190,6 +193,11 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
                 ),
               ),
             ),
+          if (widget.footer != null) ...[
+            const SizedBox(height: 32),
+            widget.footer!,
+            const SizedBox(height: 32),
+          ],
         ],
       ),
     );

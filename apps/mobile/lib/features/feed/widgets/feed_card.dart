@@ -9,19 +9,13 @@ import 'package:timeago/timeago.dart' as timeago;
 class FeedCard extends StatelessWidget {
   final Content content;
   final VoidCallback? onTap;
-  final VoidCallback? onBookmark;
   final VoidCallback? onMoreOptions;
-  final bool isBookmarked;
-  final IconData? bookmarkIcon;
 
   const FeedCard({
     super.key,
     required this.content,
     this.onTap,
-    this.onBookmark,
     this.onMoreOptions,
-    this.isBookmarked = false,
-    this.bookmarkIcon,
   });
 
   @override
@@ -32,6 +26,7 @@ class FeedCard extends StatelessWidget {
     return FacteurCard(
       onTap: onTap,
       padding: EdgeInsets.zero,
+      borderRadius: FacteurRadius.small,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -39,7 +34,7 @@ class FeedCard extends StatelessWidget {
           if (content.thumbnailUrl != null && content.thumbnailUrl!.isNotEmpty)
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(FacteurRadius.large)),
+                  top: Radius.circular(FacteurRadius.small)),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: CachedNetworkImage(
@@ -67,7 +62,10 @@ class FeedCard extends StatelessWidget {
 
           // 2. Body (Title + Meta)
           Padding(
-            padding: const EdgeInsets.all(FacteurSpacing.space4),
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space3,
+              vertical: FacteurSpacing.space3,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -75,10 +73,11 @@ class FeedCard extends StatelessWidget {
                 Text(
                   content.title,
                   style: textTheme.displaySmall?.copyWith(
-                    fontSize: 18,
-                    height: 1.3,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
                   ),
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: FacteurSpacing.space2),
@@ -112,8 +111,8 @@ class FeedCard extends StatelessWidget {
               ),
             ),
             padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space2,
+              horizontal: FacteurSpacing.space3,
+              vertical: FacteurSpacing.space1,
             ),
             child: Row(
               children: [
@@ -198,25 +197,6 @@ class FeedCard extends StatelessWidget {
                 ),
 
                 // Actions (Fixed on the right)
-                InkWell(
-                  key: const Key('feed_card_bookmark_button'),
-                  onTap: onBookmark,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Icon(
-                      bookmarkIcon ??
-                          (isBookmarked
-                              ? PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.fill)
-                              : PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.regular)),
-                      color:
-                          isBookmarked ? colors.primary : colors.textSecondary,
-                      size: 20,
-                    ),
-                  ),
-                ),
                 IconButton(
                   icon: Icon(
                     PhosphorIcons.dotsThree(PhosphorIconsStyle.bold),

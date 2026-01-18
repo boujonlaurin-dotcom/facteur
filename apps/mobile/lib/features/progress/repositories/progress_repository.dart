@@ -8,18 +8,19 @@ import '../models/progress_models.dart';
 final progressRepositoryProvider = Provider<ProgressRepository>((ref) {
   final supabase = Supabase.instance.client;
   final apiClient = ApiClient(supabase);
-  return ProgressRepository(apiClient);
+  return ProgressRepository(apiClient, ref);
 });
 
 final myProgressProvider = FutureProvider<List<UserTopicProgress>>((ref) async {
-  final repository = ref.watch(progressRepositoryProvider);
+  final repository = ref.read(progressRepositoryProvider);
   return repository.getMyProgress();
 });
 
 class ProgressRepository {
   final ApiClient _apiClient;
+  final Ref _ref;
 
-  ProgressRepository(this._apiClient);
+  ProgressRepository(this._apiClient, this._ref);
 
   /// Fetches users progress list
   Future<List<UserTopicProgress>> getMyProgress() async {
@@ -38,6 +39,9 @@ class ProgressRepository {
       'progress/follow',
       body: {'topic': topic},
     );
+
+    // Invalidate the provider to force refresh of the list
+    _ref.invalidate(myProgressProvider);
 
     return UserTopicProgress.fromJson(response as Map<String, dynamic>);
   }

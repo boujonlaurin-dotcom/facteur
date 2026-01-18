@@ -8,7 +8,7 @@ class ScoringWeights:
     
     # Poids accordé à un contenu qui matche un intérêt déclaré de l'utilisateur.
     # C'est le moteur principal du feed.
-    THEME_MATCH = 50.0  
+    THEME_MATCH = 70.0  
     
     # Poids pour une source explicitement suivie par l'utilisateur.
     FOLLOWED_SOURCE = 30.0
@@ -25,7 +25,7 @@ class ScoringWeights:
     # Bonus léger pour les sources de haute qualité (FQS > 70).
     # Doit rester inférieur à un intérêt (50.0) pour ne pas polluer le feed.
     # Sert de "tie-breaker" ou de bonus de découverte.
-    FQS_HIGH_BONUS = 5.0
+    FQS_HIGH_BONUS = 15.0
     
     # Pénalité pour les sources de basse qualité/fiabilité.
     # Sert de filtre d'"hygiène".

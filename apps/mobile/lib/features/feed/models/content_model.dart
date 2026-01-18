@@ -139,14 +139,25 @@ class Content {
   bool get hasInAppContent {
     switch (contentType) {
       case ContentType.article:
-        return (htmlContent?.length ?? 0) > 100 ||
-            (description?.length ?? 0) > 100;
+        // Story 8 REPAIR: Only use in-app reader if full HTML is available.
+        // Fallback to WebView (original url) if only description is present.
+        return (htmlContent?.length ?? 0) > 100;
       case ContentType.audio:
         return audioUrl != null && audioUrl!.isNotEmpty;
       case ContentType.youtube:
       case ContentType.video:
         return true; // YouTube can always be embedded
     }
+  }
+
+  /// Story 8.0: Get the topic used for progression (granularity layer)
+  String? get progressionTopic {
+    // V0: Use source theme as the topic
+    // Future: Use specific tags or categories
+    if (source.theme != null && source.theme!.isNotEmpty) {
+      return source.getThemeLabel();
+    }
+    return null;
   }
 }
 

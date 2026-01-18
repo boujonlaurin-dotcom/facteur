@@ -17,6 +17,7 @@
 | 15/01/2026 | 1.3 | Story 4.6 V2 : filtres feed améliorés | Antigravity |
 | 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
 | 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
+| 18/01/2026 | 1.6 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
 
 ---
 

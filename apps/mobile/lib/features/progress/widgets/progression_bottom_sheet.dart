@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-
-import '../../../../config/theme.dart';
-import '../../../../widgets/design/facteur_button.dart';
+import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_button.dart';
 
 class ProgressionBottomSheet extends StatelessWidget {
   final String topicName;
@@ -24,96 +23,88 @@ class ProgressionBottomSheet extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      padding: const EdgeInsets.all(24),
       child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textSecondary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+            // Handle
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 24),
 
-            // Icon + Title
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    PhosphorIcons.chartLineUp(PhosphorIconsStyle.fill),
-                    color: colors.primary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Tu veux progresser ?',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Approfondis le sujet "$topicName"',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            // Icon
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                PhosphorIcons.student(PhosphorIconsStyle.duotone),
+                size: 32,
+                color: colors.primary,
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            // Main Action: Follow
+            // Title
+            Text(
+              'Transformez votre lecture en compétence',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colors.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+
+            // Subtitle
+            RichText(
+              textAlign: TextAlign.center,
+              text: TextSpan(
+                style: textTheme.bodyLarge?.copyWith(
+                  color: colors.textSecondary,
+                ),
+                children: [
+                  const TextSpan(text: 'Vous venez de lire sur '),
+                  TextSpan(
+                    text: topicName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const TextSpan(
+                      text:
+                          '. Souhaitez-vous suivre ce thème et tester vos connaissances ?'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Actions
             FacteurButton(
-              label: 'Suivre ce thème',
-              icon: PhosphorIcons.plus(PhosphorIconsStyle.bold),
+              label: 'Suivre & Lancer Quiz',
+              icon: PhosphorIcons.lightning(PhosphorIconsStyle.bold),
               onPressed: onFollow,
-              type: FacteurButtonType.primary,
             ),
             const SizedBox(height: 12),
-
-            // Secondary Action: Explore
-            FacteurButton(
-              label: 'Explorer le thème',
-              icon: PhosphorIcons.compass(PhosphorIconsStyle.bold),
-              onPressed: onExplore,
-              type: FacteurButtonType.secondary,
-            ),
-            const SizedBox(height: 12),
-
-            // Dismiss
             TextButton(
               onPressed: onDismiss,
+              style: TextButton.styleFrom(
+                foregroundColor: colors.textSecondary,
+              ),
               child: Text(
-                'Non merci',
-                style: textTheme.labelLarge?.copyWith(
-                  color: colors.textTertiary,
-                ),
+                'Non, merci',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],

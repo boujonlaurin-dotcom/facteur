@@ -18,7 +18,10 @@ class AudioPlayerWidget extends StatefulWidget {
     this.description,
     this.thumbnailUrl,
     this.durationSeconds,
+    this.footer,
   });
+
+  final Widget? footer;
 
   @override
   State<AudioPlayerWidget> createState() => _AudioPlayerWidgetState();

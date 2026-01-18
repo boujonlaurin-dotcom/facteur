@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../../../config/theme.dart';
+// import '../../../config/routes.dart'; // Unused
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
@@ -21,6 +22,8 @@ import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../../../core/ui/notification_service.dart';
+// import '../../../widgets/design/facteur_button.dart'; // Unused
+// import '../../progress/repositories/progress_repository.dart'; // Unused
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -68,9 +71,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _startTime = DateTime.now();
     if (_content != null) {
       _isConsumed = _content!.status == ContentStatus.consumed;
-    } else {
-      _fetchContent();
     }
+    // Always fetch fresh content to accept latest metadata/status/theme
+    _fetchContent();
 
     _fabController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -598,12 +601,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
+    // Determine footer based on progression status
+    Widget? footer;
+    final topic = content.progressionTopic;
+
+    if (topic != null) {
+      // Logic for topic tracking can be added here if needed for analytics
+      // but Footer CTA is removed per User Story 8 Refactor.
+    }
+
     switch (content.contentType) {
       case ContentType.article:
         return ArticleReaderWidget(
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
+          // footer: footer, // Removed
         );
 
       case ContentType.audio:
@@ -613,6 +626,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           description: content.description,
           thumbnailUrl: content.thumbnailUrl,
           durationSeconds: content.durationSeconds,
+          // footer: footer, // Removed
         );
 
       case ContentType.youtube:
@@ -621,6 +635,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           videoUrl: content.url,
           title: content.title,
           description: content.description,
+          // footer: footer, // Removed
         );
     }
   }

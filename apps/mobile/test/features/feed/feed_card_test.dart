@@ -63,7 +63,6 @@ void main() {
     await tester.pumpWidget(createWidget(FeedCard(
       content: mockContent,
       onTap: () {},
-      onBookmark: () {},
       onMoreOptions: () {},
     )));
 

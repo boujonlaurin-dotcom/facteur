@@ -16,7 +16,6 @@ import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../../widgets/design/facteur_button.dart';
-import '../../../config/constants.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/filter_bar.dart';
@@ -27,7 +26,7 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
-import '../../progress/widgets/progression_bottom_sheet.dart';
+import '../../progress/widgets/progression_card.dart';
 import '../../progress/repositories/progress_repository.dart';
 import '../../../core/ui/notification_service.dart';
 
@@ -47,11 +46,94 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   double _maxScrollPercent = 0.0;
   int _itemsViewed = 0;
 
+  // Dynamic progressions map: ContentID -> Topic
+  final Map<String, String> _activeProgressions = {};
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
   }
+
+// ...
+  Future<void> _showArticleModal(Content content) async {
+    // Si on est sur Desktop (macOS, Windows, Linux) hors Web, on ouvre direct dans le navigateur
+    if (!kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+      launchUrl(Uri.parse(content.url));
+
+      // Sur desktop on marque tout de suite comme consommé car pas de modal
+      if (mounted) {
+        ref.read(feedProvider.notifier).markContentAsConsumed(content);
+
+        // Update Streak after animation completes
+        Future<void>.delayed(const Duration(milliseconds: 1100), () {
+          if (mounted) {
+            ref.read(streakProvider.notifier).refreshSilent();
+          }
+        });
+      }
+      return;
+    }
+
+    // Story 5.2: Navigate to in-app reader screen with Content passed via extra
+    // We await the result to know if the content was consumed (read for > 30s)
+    final result = await context.push<bool>(
+      '/feed/content/${content.id}',
+      extra: content,
+    );
+
+    // Au retour, si marqué comme consommé
+    if (mounted && result == true) {
+      ref.read(feedProvider.notifier).markContentAsConsumed(content);
+
+      // Update Streak after animation completes
+      Future<void>.delayed(const Duration(milliseconds: 1100), () {
+        if (mounted) {
+          ref.read(streakProvider.notifier).refreshSilent();
+        }
+      });
+
+      // Show Progression CTA if topic is available and valid
+      final topic = content.progressionTopic;
+
+      if (topic != null && topic.isNotEmpty) {
+        // Check if already followed
+        final progressAsync = ref.read(myProgressProvider);
+        bool isFollowed = false;
+
+        if (progressAsync.hasValue) {
+          isFollowed = progressAsync.value!
+              .any((p) => p.topic.toLowerCase() == topic.toLowerCase());
+        }
+
+        // Logic refined:
+        // If NOT followed -> Show Dynamic Card in Feed (via setState)
+        // If Followed -> Show SnackBar (Success validation)
+
+        if (mounted) {
+          if (!isFollowed) {
+            // Activate the card for this content ID
+            setState(() {
+              _activeProgressions[content.id] = topic;
+            });
+            // Scroll slightly to make sure it's visible if it's below?
+            // Usually the user returns to the same scroll position.
+          } else {
+            // Already followed
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                NotificationService.showSuccess(
+                    'Quiz disponible pour le sujet "$topic" !');
+              }
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // _showProgressionCTA REMOVED
 
   @override
   void didChangeDependencies() {
@@ -221,83 +303,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
-  Future<void> _showArticleModal(Content content) async {
-    // Si on est sur Desktop (macOS, Windows, Linux) hors Web, on ouvre direct dans le navigateur
-    if (!kIsWeb &&
-        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-      launchUrl(Uri.parse(content.url));
-
-      // Sur desktop on marque tout de suite comme consommé car pas de modal
-      if (mounted) {
-        ref.read(feedProvider.notifier).markContentAsConsumed(content);
-
-        // Update Streak after animation completes
-        Future<void>.delayed(const Duration(milliseconds: 1100), () {
-          if (mounted) {
-            ref.read(streakProvider.notifier).refreshSilent();
-          }
-        });
-      }
-      return;
-    }
-
-    // Story 5.2: Navigate to in-app reader screen with Content passed via extra
-    // We await the result to know if the content was consumed (read for > 30s)
-    final result = await context.push<bool>(
-      '/feed/content/${content.id}',
-      extra: content,
-    );
-
-    // Au retour, si marqué comme consommé
-    if (mounted && result == true) {
-      ref.read(feedProvider.notifier).markContentAsConsumed(content);
-
-      // Update Streak after animation completes
-      Future<void>.delayed(const Duration(milliseconds: 1100), () {
-        if (mounted) {
-          ref.read(streakProvider.notifier).refreshSilent();
-        }
-      });
-
-      // Show Progression CTA if topic is available and valid
-      final topic = content.source.theme;
-      if (topic != null && topic.isNotEmpty) {
-        // Simple delay to let the UI settle before showing bottom sheet
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) _showProgressionCTA(context, topic);
-        });
-      }
-    }
-  }
-
-  void _showProgressionCTA(BuildContext context, String topicName) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => ProgressionBottomSheet(
-        topicName: topicName,
-        onFollow: () async {
-          Navigator.pop(context);
-          try {
-            await ref.read(progressRepositoryProvider).followTopic(topicName);
-            NotificationService.showSuccess(
-                'Suivi du thème "$topicName" activé !');
-          } catch (e) {
-            if (context.mounted) {
-              NotificationService.showError('Erreur lors du suivi : $e');
-            }
-          }
-        },
-        onExplore: () {
-          Navigator.pop(context);
-          context.goNamed(RouteNames.progress);
-        },
-        onDismiss: () => Navigator.pop(context),
-      ),
-    );
-  }
-
   void _hideContent(Content content, HiddenReason reason) {
     ref.read(feedProvider.notifier).hideContent(content, reason);
 
@@ -463,11 +468,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                                 // Show caught-up card at position 3
                                 if (showCaughtUp && index == caughtUpIndex) {
-                                  // Track completion if shown
-                                  // We use addPostFrameCallback to avoid build-time side effects
-                                  // logging only once per session/screen view would be better but duplicate events are okay for now
-                                  // or we can use a flag
-
                                   return Padding(
                                     key: const ValueKey('caught_up_card'),
                                     padding: const EdgeInsets.only(bottom: 16),
@@ -496,52 +496,57 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     .read(feedProvider.notifier)
                                     .isContentConsumed(content.id);
 
-                                // Update items viewed count approx
-                                if (index > _itemsViewed) {
-                                  _itemsViewed = index;
-                                  // Track completion if we reached the end or caught up
-                                  if (showCaughtUp && index >= caughtUpIndex) {
-                                    // This is dynamic tracking, maybe simpler in onScroll?
-                                    // Let's Stick to scroll depth + explicit "caught up" card check
-                                    if (contentIndex == caughtUpIndex) {
-                                      ref
-                                          .read(analyticsServiceProvider)
-                                          .trackFeedComplete();
-                                    }
-                                  }
-                                }
+                                // Check for dynamic progression card
+                                final progressionTopic =
+                                    _activeProgressions[content.id];
 
                                 return Padding(
-                                  key: ValueKey(content.id),
+                                  // Use composed key to force rebuild if progression appears
+                                  key: ValueKey(
+                                      '${content.id}_${progressionTopic != null}'),
                                   padding: const EdgeInsets.only(bottom: 16),
-                                  child: AnimatedFeedCard(
-                                    isConsumed: isConsumed,
-                                    child: FeedCard(
-                                      content: content,
-                                      onTap: () => _showArticleModal(content),
-                                      onBookmark: () {
-                                        ref
-                                            .read(feedProvider.notifier)
-                                            .toggleSave(content);
-
-                                        NotificationService.showInfo(
-                                          UIConstants.savedConfirmMessage(
-                                            UIConstants.savedSectionName,
-                                          ),
-                                          actionLabel: 'Annuler',
-                                          context: context,
-                                          onAction: () {
-                                            ref
-                                                .read(feedProvider.notifier)
-                                                .toggleSave(content);
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      AnimatedFeedCard(
+                                        isConsumed: isConsumed,
+                                        child: FeedCard(
+                                          content: content,
+                                          onTap: () =>
+                                              _showArticleModal(content),
+                                          onMoreOptions: () {
+                                            _showMoreOptions(context, content);
                                           },
-                                        );
-                                      },
-                                      isBookmarked: content.isSaved,
-                                      onMoreOptions: () {
-                                        _showMoreOptions(context, content);
-                                      },
-                                    ),
+                                        ),
+                                      ),
+                                      if (progressionTopic != null) ...[
+                                        // Animate the appearance of the card
+                                        TweenAnimationBuilder<double>(
+                                          tween: Tween(begin: 0.0, end: 1.0),
+                                          duration:
+                                              const Duration(milliseconds: 500),
+                                          curve: Curves.easeOutBack,
+                                          builder: (context, value, child) {
+                                            return Transform.scale(
+                                              scale: value,
+                                              child: Opacity(
+                                                opacity: value,
+                                                child: child,
+                                              ),
+                                            );
+                                          },
+                                          child: ProgressionCard(
+                                            topic: progressionTopic,
+                                            onDismiss: () {
+                                              setState(() {
+                                                _activeProgressions
+                                                    .remove(content.id);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 );
                               },
@@ -583,7 +588,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   ).textTheme.titleMedium,
                                 ),
                                 Text(
-                                  err.toString(), // A améliorer pour prod
+                                  err.toString(),
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context)
                                       .textTheme

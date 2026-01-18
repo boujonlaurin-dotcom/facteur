@@ -16,6 +16,7 @@
 | 17/01/2026 | 1.2 | Implémentation complète Module Progression | Antigravity |
 | 17/01/2026 | 1.3 | Restauration Backend & Optimisation Import (Port 8080) | Antigravity |
 | 18/01/2026 | 1.4 | Stabilisation Vidéo (Web/Mobile) & Fix Logs | Antigravity |
+| 18/01/2026 | 1.5 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
 
 ---
 

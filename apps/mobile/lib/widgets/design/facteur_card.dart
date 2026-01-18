@@ -9,6 +9,7 @@ class FacteurCard extends StatefulWidget {
       scrollPhysics; // For cases where we might want to pass physics down
   final Color? backgroundColor;
   final EdgeInsetsGeometry? padding;
+  final double? borderRadius;
 
   const FacteurCard({
     super.key,
@@ -17,6 +18,7 @@ class FacteurCard extends StatefulWidget {
     this.scrollPhysics,
     this.backgroundColor,
     this.padding,
+    this.borderRadius,
   });
 
   @override
@@ -73,7 +75,8 @@ class _FacteurCardState extends State<FacteurCard>
     final Widget cardContent = Container(
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(FacteurRadius.medium),
+        borderRadius:
+            BorderRadius.circular(widget.borderRadius ?? FacteurRadius.medium),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),

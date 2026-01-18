@@ -135,26 +135,6 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                       );
                                     }
                                   },
-                                  onBookmark: () {
-                                    ref
-                                        .read(savedFeedProvider.notifier)
-                                        .toggleSave(content);
-
-                                    NotificationService.showInfo(
-                                      'Contenu retiré',
-                                      actionLabel: 'Annuler',
-                                      context: context,
-                                      onAction: () {
-                                        ref
-                                            .read(savedFeedProvider.notifier)
-                                            .undoRemove(content);
-                                      },
-                                    );
-                                  },
-                                  isBookmarked:
-                                      true, // Always true in Saved Screen
-                                  bookmarkIcon: PhosphorIcons.trash(
-                                      PhosphorIconsStyle.regular),
                                   onMoreOptions:
                                       () {}, // Can be implemented if needed
                                 ),
