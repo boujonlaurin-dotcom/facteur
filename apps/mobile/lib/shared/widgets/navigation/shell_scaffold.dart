@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../core/ui/notification_service.dart';
+import 'package:facteur/core/ui/notification_service.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 

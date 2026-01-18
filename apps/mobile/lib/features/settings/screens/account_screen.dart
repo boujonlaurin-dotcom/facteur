@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../providers/user_profile_provider.dart';
-import '../../../core/ui/notification_service.dart';
+import 'package:facteur/core/ui/notification_service.dart';
 
 /// Écran de gestion du compte utilisateur
 class AccountScreen extends ConsumerWidget {
