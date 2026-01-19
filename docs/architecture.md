@@ -29,6 +29,7 @@ Ce document définit l'architecture technique complète de **Facteur**, l'applic
 - `front-end-spec.md` : Spécifications UI/UX détaillées
 - `prd.md` : Exigences fonctionnelles et non-fonctionnelles
 - `front-end-spec.md` : Spécifications UI/UX détaillées
+- `mobile-troubleshooting.md` : Problèmes courants et configuration de l'environnement mobile
 - `sources/sources_master.csv` : Catalogue des sources (Curated & Indexed)
 
 ### 1.1 Starter Template
