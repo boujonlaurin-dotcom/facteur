@@ -80,6 +80,21 @@ class FeedCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if ((content.thumbnailUrl == null ||
+                        content.thumbnailUrl!.isEmpty) &&
+                    content.description != null &&
+                    content.description!.isNotEmpty) ...[
+                  const SizedBox(height: FacteurSpacing.space2),
+                  Text(
+                    content.description!,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary.withOpacity(0.8),
+                      height: 1.3,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 const SizedBox(height: FacteurSpacing.space2),
                 // Métadonnées (Type • Durée)
                 Row(

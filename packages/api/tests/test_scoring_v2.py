@@ -48,6 +48,28 @@ def test_core_layer_theme_match(mock_content, base_context):
     assert score > 80.0
     assert "Theme match: tech" in [r['details'] for r in base_context.reasons[mock_content.id]]
 
+def test_core_layer_theme_match_single_taxonomy(base_context):
+    """Verify that a source with a Slug theme matches a user with a Slug interest."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech") # Slug
+    content = Content(
+        id=uuid4(),
+        title="Test Content",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE
+    )
+    
+    # user_interests has "tech" (from base_context fixture)
+    
+    layer = CoreLayer()
+    score = layer.score(content, base_context)
+    
+    # Needs to be > 70 (Theme Match 70 + Source Standard 10 + Recency ~30)
+    assert score > 100.0 
+    assert "Theme match: tech" in [r['details'] for r in base_context.reasons[content.id]]
+
 def test_core_layer_source_affinity(mock_content, base_context):
     base_context.followed_source_ids.add(mock_content.source_id)
     layer = CoreLayer()

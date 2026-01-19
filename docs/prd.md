@@ -18,6 +18,7 @@
 | 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
 | 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
 | 18/01/2026 | 1.6 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
+| 19/01/2026 | 1.7 | Taxonomie 50 Topics & Système de Classification ML | Antigravity |
 
 ---
 
@@ -216,6 +217,103 @@ facteur/
 - Refresh strategy : Cron job toutes les 30 min
 - Error tracking : Sentry
 - Logging : Structured JSON
+
+### Taxonomie & Système de Classification
+
+Facteur utilise un système de classification hiérarchique à 3 niveaux pour personnaliser les recommandations avec précision.
+
+#### Architecture 3 Niveaux
+
+```mermaid
+graph TD
+    subgraph "Source Level"
+        ST[source.theme<br/>8 thèmes macro<br/>Ex: tech, society]
+        GT[source.granular_topics<br/>Jusqu'à 50 topics<br/>Ex: ai, climate]
+    end
+    
+    subgraph "Article Level"
+        AT[content.topics<br/>0-N parmi 50<br/>Classifié par ML]
+    end
+    
+    subgraph "User Level"
+        UT[user_interests<br/>8 thèmes macro<br/>Onboarding]
+        UST[user_subtopics<br/>0-N parmi 50<br/>Optionnel]
+    end
+    
+    ST -->|Mapping| UT
+    GT -->|Héritage| AT
+    AT -->|Scoring| UST
+```
+
+#### Niveau 1 : Thèmes Macro (8)
+
+Utilisés pour catégoriser les sources et l'onboarding initial.
+**Important :** En base de données (`Source.theme`), SEULS les **slugs** sont stockés. Les labels sont cosmétiques (Frontend).
+
+| Slug (Valeur DB) | Label (Affichage) | Description |
+|------|-------|-------------|
+| `tech` | Tech & Innovation | Technologies, digital, startups tech |
+| `society` | Société & Vie | Société, justice sociale, vie quotidienne |
+| `environment` | Environnement & Climat | Climat, biodiversité, transition écologique |
+| `economy` | Économie & Finance | Économie, finance, business |
+| `politics` | Politique | Politique nationale, institutions |
+| `culture` | Culture & Idées | Arts, philosophie, médias |
+| `science` | Sciences | Recherche fondamentale et appliquée |
+| `international` | Géopolitique | Relations internationales, géopolitique |
+
+#### Niveau 2 : Topics Granulaires (50)
+
+Classification fine par article via modèle ML (CamemBERT). Organisés par thème parent :
+
+| Thème Parent | Topics (50 total) |
+|--------------|-------------------|
+| **tech** (12) | `ai`, `llm`, `crypto`, `web3`, `space`, `biotech`, `quantum`, `cybersecurity`, `robotics`, `gaming`, `cleantech`, `data-privacy` |
+| **society** (10) | `social-justice`, `feminism`, `lgbtq`, `immigration`, `health`, `education`, `urbanism`, `housing`, `work-reform`, `justice-system` |
+| **environment** (8) | `climate`, `biodiversity`, `energy-transition`, `pollution`, `circular-economy`, `agriculture`, `oceans`, `forests` |
+| **economy** (8) | `macro`, `finance`, `startups`, `venture-capital`, `labor-market`, `inflation`, `trade`, `taxation` |
+| **politics** (5) | `elections`, `institutions`, `local-politics`, `activism`, `democracy` |
+| **culture** (4) | `philosophy`, `art`, `cinema`, `media-critics` |
+| **science** (2) | `fundamental-research`, `applied-science` |
+| **international** (1) | `geopolitics` |
+
+*Note : Le topic `geopolitics` peut être étendu par régions (europe, usa, china, etc.) si nécessaire.*
+
+#### Classification Automatique
+
+**Méthode principale : Machine Learning (CamemBERT)**
+- Modèle : DistilBERT français fine-tuné pour classification multi-label
+- Input : Titre + 500 premiers caractères de description
+- Output : 0-5 topics avec scores de confiance
+- Seuil : 0.3 (configurable)
+- Hébergement : Railway (~200MB RAM)
+
+**Fallback : Héritage Source**
+- Si classification ML échoue ou indisponible
+- Articles héritent `granular_topics` de leur source parent
+- Précision estimée : ~75% (sources souvent spécialisées)
+
+**Pipeline de sync :**
+1. Article récupéré via RSS
+2. Classification ML asynchrone (non-bloquante)
+3. Si ML échoue → héritage `source.granular_topics`
+4. Stockage dans `content.topics`
+5. Utilisation pour scoring dans `ArticleTopicLayer`
+
+#### Matching & Scoring
+
+Le système utilise ces 3 niveaux pour calculer le score de recommandation :
+
+| Layer | Matching | Poids |
+|-------|----------|-------|
+| **CoreLayer** | `source.theme` → `user_interests` (via mapping table) | +70.0 |
+| **ArticleTopicLayer** | `content.topics` ∩ `user_subtopics` | +40.0 par match (max 2) |
+| **QualityLayer** | `source.reliability_score` | ±15.0 |
+
+**Exemple :**
+- Article "GPT-5 annoncé" de source "Tech Crunch" (`theme=tech`, `granular_topics=[ai, llm]`)
+- Classification ML → `content.topics = [ai, llm, tech]`
+- User intérêts : `themes=[tech]`, `subtopics=[ai, climate]`
+- Score : +70 (theme match) + 40 (ai match) = **110 points**
 
 ---
 

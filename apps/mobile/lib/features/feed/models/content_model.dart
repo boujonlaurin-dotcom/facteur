@@ -136,18 +136,23 @@ class Content {
   }
 
   /// Story 5.2: Check if content has enough data for in-app reading
+  /// DEPRECATED (Story 4.3b): This logic is deprecated and always returns false.
+  /// We now always use WebView to display the full article to avoid ads/cookie banners.
+  /// This may be re-implemented in the future when ad/cookie bypass becomes a priority.
+  @Deprecated('Always returns false. Use WebView for all content types.')
   bool get hasInAppContent {
-    switch (contentType) {
-      case ContentType.article:
-        // Story 8 REPAIR: Only use in-app reader if full HTML is available.
-        // Fallback to WebView (original url) if only description is present.
-        return (htmlContent?.length ?? 0) > 100;
-      case ContentType.audio:
-        return audioUrl != null && audioUrl!.isNotEmpty;
-      case ContentType.youtube:
-      case ContentType.video:
-        return true; // YouTube can always be embedded
-    }
+    return false; // DEPRECATED: Always use WebView
+
+    // Original logic (kept for reference):
+    // switch (contentType) {
+    //   case ContentType.article:
+    //     return (htmlContent?.length ?? 0) > 100;
+    //   case ContentType.audio:
+    //     return audioUrl != null && audioUrl!.isNotEmpty;
+    //   case ContentType.youtube:
+    //   case ContentType.video:
+    //     return true;
+    // }
   }
 
   /// Story 8.0: Get the topic used for progression (granularity layer)

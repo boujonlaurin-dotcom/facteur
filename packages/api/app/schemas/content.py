@@ -51,6 +51,7 @@ class ContentResponse(BaseModel):
     is_saved: bool = False
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
+    description: Optional[str] = None
     recommendation_reason: Optional[RecommendationReason] = None
 
     class Config:

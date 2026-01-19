@@ -21,11 +21,20 @@ class CoreLayer(BaseScoringLayer):
     def score(self, content: Content, context: ScoringContext) -> float:
         score = 0.0
         
-        # 1. Theme Match
-        if content.source and content.source.theme in context.user_interests:
-            match_score = ScoringWeights.THEME_MATCH
-            score += match_score
-            context.add_reason(content.id, self.name, match_score, f"Theme match: {content.source.theme}")
+        # 1. Theme Match (Single Taxonomy)
+        # Source theme is guaranteed to be a slug in DB (via import_sources.py)
+        if content.source and content.source.theme:
+            # Normalize source slug
+            source_slug = content.source.theme.lower().strip()
+            
+            # Normalize user interests
+            def _norm(s): return s.lower().strip() if s else ""
+            user_interest_slugs = {_norm(s) for s in context.user_interests}
+            
+            if source_slug in user_interest_slugs:
+                match_score = ScoringWeights.THEME_MATCH
+                score += match_score
+                context.add_reason(content.id, self.name, match_score, f"Theme match: {source_slug}")
         
         # 2. Source Affinity
         if content.source_id in context.followed_source_ids:

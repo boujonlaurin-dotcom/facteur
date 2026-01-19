@@ -47,16 +47,26 @@ TYPE_MAPPING = {
     "YouTube": "youtube"
 }
 
-THEME_MAPPING = {
-    "Tech & Futur": "tech",
-    "Géopolitique": "geopolitics",
-    "Économie": "economy",
-    "Société & Climat": "society_climate",
-    "Culture & Idées": "culture_ideas"
+# PRD Taxonomy Slugs
+VALID_THEMES = {
+    "tech", "society", "environment", "economy", "politics", 
+    "culture", "science", "international"
 }
 
-# Specific fallbacks for the 24 curated sources if detection fails
-CURATED_FEED_FALLBACKS = {
+# No more mapping: CSV must contain valid slugs
+# THEME_MAPPING = { ... } deleted
+
+# ...
+
+async def process_source(source_data: Dict[str, str], session: AsyncSession, client: httpx.AsyncClient):
+    # ...
+    
+    csv_theme = source_data.get("Thème", "").lower().strip()
+    
+    internal_theme = csv_theme
+    if internal_theme not in VALID_THEMES:
+        print(f"⚠️ Warning: Unknown theme '{internal_theme}' for {name}. Setting to 'other'.")
+        internal_theme = "other"
     "https://wondery.com/shows/guerres-de-business/": "https://feeds.megaphone.fm/WWS2399238883",
     "https://www.irsem.fr/le-collimateur.html": "https://feeds.audiomeans.fr/feed/7f9a1cb1-0490-4886-9f6e-2195f4c4a6a5",
     "https://www.slate.fr/podcasts/transfert": "https://feeds.audiomeans.fr/feed/295f7004-9442-4b26-8854-d4b8f5f24255",
@@ -164,13 +174,14 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     is_curated = (status == "CURATED")
     
     csv_type = source_data.get("Type")
-    csv_theme = source_data.get("Thème")
+    # csv_theme read above
     rationale = source_data.get("Rationale")
     csv_bias = source_data.get("Bias", "unknown")
     csv_reliability = source_data.get("Reliability", "unknown")
     
     internal_type = TYPE_MAPPING.get(csv_type, "article")
-    internal_theme = THEME_MAPPING.get(csv_theme, "other")
+    # internal_theme ALREADY COMPUTED above
+
     
     # Map bias string to enum value (handling hyphens etc)
     bias_val = csv_bias.lower()

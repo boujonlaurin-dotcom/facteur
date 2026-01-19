@@ -178,10 +178,10 @@ class SyncService:
                         if isinstance(thumbnails, list) and thumbnails:
                             content_data["thumbnail_url"] = thumbnails[0]["url"]
                     if "media_description" in group:
-                         content_data["description"] = group.media_description
+                         content_data["description"] = html.unescape(group.media_description)
                 
                 if not content_data["description"] and "summary" in entry:
-                    content_data["description"] = entry.summary
+                    content_data["description"] = html.unescape(entry.summary)
                 
                 if content_data["thumbnail_url"]:
                     content_data["thumbnail_url"] = self._optimize_thumbnail_url(content_data["thumbnail_url"])
@@ -207,7 +207,8 @@ class SyncService:
                 elif "itunes_image" in entry and "href" in entry.itunes_image:
                      content_data["thumbnail_url"] = entry.itunes_image.href
                      
-                content_data["description"] = entry.get("summary", "")
+                description = entry.get("summary", "")
+                content_data["description"] = html.unescape(description) if description else ""
                 
                 if content_data["thumbnail_url"]:
                     content_data["thumbnail_url"] = self._optimize_thumbnail_url(content_data["thumbnail_url"])
@@ -228,7 +229,8 @@ class SyncService:
                             content_data["thumbnail_url"] = enclosure.get("href")
                             break
                             
-                content_data["description"] = entry.get("summary", "")
+                description = entry.get("summary", "")
+                content_data["description"] = html.unescape(description) if description else ""
 
                 # Fallback: Try to find image in description/content using regex
                 if not content_data["thumbnail_url"]:
