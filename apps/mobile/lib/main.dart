@@ -75,8 +75,8 @@ Future<void> main() async {
   // Pour l'instant on laisse le provider s'en occuper au premier build de FacteurApp
 
   try {
-    final url = SupabaseConstants.url;
-    final key = SupabaseConstants.anonKey;
+    const url = SupabaseConstants.url;
+    const key = SupabaseConstants.anonKey;
 
     // Initialiser Supabase avec timeout de sécurité
     debugPrint('Main: Initializing Supabase...');

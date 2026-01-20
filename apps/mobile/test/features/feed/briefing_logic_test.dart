@@ -4,7 +4,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
-import 'package:facteur/core/api/providers.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
 import 'package:facteur/core/auth/auth_state.dart' as app_auth;

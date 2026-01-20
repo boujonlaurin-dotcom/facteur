@@ -121,7 +121,7 @@ class OnboardingStrings {
 
   // Theme Labels
   static const String themeTech = 'Tech';
-  static const String themeBusiness = 'Business';
+  static const String themeInternational = 'International';
   static const String themeScience = 'Science';
   static const String themeCulture = 'Culture';
   static const String themePolitics = 'Politique';

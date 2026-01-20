@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../data/available_subtopics.dart';
 import '../../onboarding_strings.dart';
+import '../../widgets/theme_with_subtopics.dart';
 
 /// Q9 : "Tes thèmes préférés ?"
-/// Multi-sélection avec chips (minimum 1 requis)
+/// Multi-sélection avec sous-thèmes
 class ThemesQuestion extends ConsumerStatefulWidget {
   const ThemesQuestion({super.key});
 
@@ -17,14 +19,17 @@ class ThemesQuestion extends ConsumerStatefulWidget {
 
 class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
   Set<String> _selectedThemes = {};
+  Set<String> _selectedSubtopics = {};
 
   @override
   void initState() {
     super.initState();
-    // Initialiser avec les thèmes déjà sélectionnés
-    final existingThemes = ref.read(onboardingProvider).answers.themes;
-    if (existingThemes != null) {
-      _selectedThemes = existingThemes.toSet();
+    final answers = ref.read(onboardingProvider).answers;
+    if (answers.themes != null) {
+      _selectedThemes = answers.themes!.toSet();
+    }
+    if (answers.subtopics != null) {
+      _selectedSubtopics = answers.subtopics!.toSet();
     }
   }
 
@@ -33,17 +38,38 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
     setState(() {
       if (_selectedThemes.contains(slug)) {
         _selectedThemes.remove(slug);
+        // Clean up subtopics
+        final subtopicsForTheme = AvailableSubtopics.byTheme[slug];
+        if (subtopicsForTheme != null) {
+          for (var sub in subtopicsForTheme) {
+            _selectedSubtopics.remove(sub.slug);
+          }
+        }
       } else {
         _selectedThemes.add(slug);
       }
     });
   }
 
+  void _toggleSubtopic(String themeSlug, String subtopicSlug) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedSubtopics.contains(subtopicSlug)) {
+        _selectedSubtopics.remove(subtopicSlug);
+      } else {
+        _selectedSubtopics.add(subtopicSlug);
+      }
+
+      if (!_selectedThemes.contains(themeSlug)) {
+        _selectedThemes.add(themeSlug);
+      }
+    });
+  }
+
   void _continue() {
     if (_selectedThemes.isNotEmpty) {
-      ref
-          .read(onboardingProvider.notifier)
-          .selectThemes(_selectedThemes.toList());
+      ref.read(onboardingProvider.notifier).selectThemesAndSubtopics(
+          _selectedThemes.toList(), _selectedSubtopics.toList());
     }
   }
 
@@ -59,7 +85,6 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
         children: [
           const Spacer(flex: 1),
 
-          // Question
           Text(
             OnboardingStrings.q10Title,
             style: Theme.of(context).textTheme.displayLarge,
@@ -78,24 +103,47 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
 
           const SizedBox(height: FacteurSpacing.space6),
 
-          // Chips de thèmes
-          Wrap(
-            spacing: FacteurSpacing.space2,
-            runSpacing: FacteurSpacing.space2,
-            alignment: WrapAlignment.center,
-            children: AvailableThemes.all.map((theme) {
-              final isSelected = _selectedThemes.contains(theme.slug);
-              return _ThemeChip(
-                theme: theme,
-                isSelected: isSelected,
-                onTap: () => _toggleTheme(theme.slug),
-              );
-            }).toList(),
+          // Layout: Cloud de thèmes (Wrap)
+          Expanded(
+            flex: 10,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                      maxWidth: 600), // Max width for larger screens
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space2),
+                    child: Wrap(
+                      spacing: FacteurSpacing.space3,
+                      runSpacing: FacteurSpacing.space3,
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment:
+                          WrapCrossAlignment.center, // Vertically center items
+                      children: AvailableThemes.all.map((theme) {
+                        final isSelected = _selectedThemes.contains(theme.slug);
+                        final subtopics =
+                            AvailableSubtopics.byTheme[theme.slug] ?? [];
+
+                        return ThemeWithSubtopics(
+                          theme: theme,
+                          subtopics: subtopics,
+                          isSelected: isSelected,
+                          selectedSubtopics: _selectedSubtopics.toList(),
+                          onThemeToggled: _toggleTheme,
+                          onSubtopicToggled: _toggleSubtopic,
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
 
-          const Spacer(flex: 2),
+          const SizedBox(height: FacteurSpacing.space4),
 
-          // Bouton continuer
           AnimatedOpacity(
             opacity: canContinue ? 1.0 : 0.5,
             duration: const Duration(milliseconds: 200),
@@ -112,61 +160,6 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
 
           const SizedBox(height: FacteurSpacing.space4),
         ],
-      ),
-    );
-  }
-}
-
-class _ThemeChip extends StatelessWidget {
-  final ThemeOption theme;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ThemeChip({
-    required this.theme,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space4,
-          vertical: FacteurSpacing.space3,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? theme.color.withValues(alpha: 0.15)
-              : context.facteurColors.surface,
-          borderRadius: BorderRadius.circular(FacteurRadius.pill),
-          border: Border.all(
-            color: isSelected ? theme.color : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              theme.emoji,
-              style: const TextStyle(fontSize: 20),
-            ),
-            const SizedBox(width: FacteurSpacing.space2),
-            Text(
-              theme.label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: isSelected
-                        ? theme.color
-                        : context.facteurColors.textPrimary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -36,37 +36,39 @@ class FeedRepository {
         queryParams['mode'] = mode;
       }
 
-      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+      final response = await _apiClient.dio.get<dynamic>(
         'feed/', // Trailing slash to avoid 307 redirect which strips auth header
         queryParameters: queryParams,
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data == null) {
-          return FeedResponse(
-            items: [],
-            briefing: [],
-            pagination: Pagination(
-                page: page, perPage: limit, total: 0, hasNext: false),
-          );
+
+        List<Content> itemsList = [];
+        List<DailyTop3Item> briefingList = [];
+
+        // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
+        if (data is List) {
+          // Legacy format (List returned directly)
+          itemsList = data
+              .map((e) => Content.fromJson(e as Map<String, dynamic>))
+              .toList();
+        } else if (data is Map<String, dynamic>) {
+          // New format (FeedResponse object)
+          itemsList = (data['items'] as List?)
+                  ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
+                  .toList() ??
+              [];
+
+          briefingList = (data['briefing'] as List?)
+                  ?.map(
+                      (e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
+                  .toList() ??
+              [];
+        } else if (data == null) {
+          // Empty response
+          itemsList = [];
         }
-
-        // Le backend (M5) ne renvoie pas de pagination explicite,
-        // on utilise FeedResponse.fromJson qui parse 'items' et 'briefing'.
-        // Mais 'pagination' sera par défaut (hasNext: false).
-        // On doit donc injecter hasNext manuellement ou reconstruire l'objet.
-
-        // Option simple: parser manuellement ici pour garder la logique hasNext
-        final itemsList = (data['items'] as List?)
-                ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [];
-
-        final briefingList = (data['briefing'] as List?)
-                ?.map((e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [];
 
         // On infère la pagination car le backend ne donne pas de métadonnées
         // Si on a reçu 'limit' items, on suppose qu'il y a une page suivante

@@ -19,6 +19,7 @@ class OnboardingAnswers {
 
   // Section 3
   final List<String>? themes;
+  final List<String>? subtopics;
   final List<String>? preferredSources;
   final String? formatPreference; // short, long, audio, video
   final String? personalGoal; // culture, work, conversations, learning
@@ -34,6 +35,7 @@ class OnboardingAnswers {
     this.gamificationEnabled,
     this.weeklyGoal,
     this.themes,
+    this.subtopics,
     this.preferredSources,
     this.formatPreference,
     this.personalGoal,
@@ -50,6 +52,7 @@ class OnboardingAnswers {
     bool? gamificationEnabled,
     int? weeklyGoal,
     List<String>? themes,
+    List<String>? subtopics,
     List<String>? preferredSources,
     String? formatPreference,
     String? personalGoal,
@@ -65,6 +68,7 @@ class OnboardingAnswers {
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
       themes: themes ?? this.themes,
+      subtopics: subtopics ?? this.subtopics,
       preferredSources: preferredSources ?? this.preferredSources,
       formatPreference: formatPreference ?? this.formatPreference,
       personalGoal: personalGoal ?? this.personalGoal,
@@ -82,6 +86,7 @@ class OnboardingAnswers {
         'gamification_enabled': gamificationEnabled,
         'weekly_goal': weeklyGoal,
         'themes': themes,
+        'subtopics': subtopics,
         'preferred_sources': preferredSources,
         'format_preference': formatPreference,
         'personal_goal': personalGoal,
@@ -99,6 +104,7 @@ class OnboardingAnswers {
       gamificationEnabled: json['gamification_enabled'] as bool?,
       weeklyGoal: json['weekly_goal'] as int?,
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
+      subtopics: (json['subtopics'] as List<dynamic>?)?.cast<String>(),
       preferredSources:
           (json['preferred_sources'] as List<dynamic>?)?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
@@ -572,6 +578,26 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
+  /// Sélectionne les thèmes et sous-thèmes (Q10)
+  void selectThemesAndSubtopics(List<String> themes, List<String> subtopics) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(
+        themes: themes,
+        subtopics: subtopics,
+      ),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    // Go directly to finalize
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section3Question.finalize.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
   /// Finalise l'onboarding - appelé depuis l'écran de finalisation
   void finalizeOnboarding() {
     // Cette méthode est appelée avant la transition vers l'animation finale
@@ -592,7 +618,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
         contentRecency: 'recent',
         gamificationEnabled: true,
         weeklyGoal: 10,
-        themes: ['tech', 'business'],
+        themes: ['tech', 'international'],
         formatPreference: 'short',
         personalGoal: 'learning',
       ),
@@ -662,10 +688,10 @@ class AvailableThemes {
       color: Colors.blue,
     ),
     const ThemeOption(
-      slug: 'business',
-      label: OnboardingStrings.themeBusiness,
-      emoji: '💼',
-      color: Colors.blueGrey,
+      slug: 'international',
+      label: OnboardingStrings.themeInternational,
+      emoji: '🌍',
+      color: Colors.cyan,
     ),
     const ThemeOption(
       slug: 'science',
