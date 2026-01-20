@@ -8,15 +8,28 @@ class SourcesRepository {
 
   Future<List<Source>> getAllSources() async {
     try {
-      final response =
-          await _apiClient.dio.get<List<dynamic>>('sources/catalog');
+      final response = await _apiClient.dio.get<dynamic>('sources/catalog');
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data == null) return [];
-        return data
-            .map((json) => Source.fromJson(json as Map<String, dynamic>))
-            .toList();
+
+        if (data is List) {
+          return data
+              .map((json) => Source.fromJson(json as Map<String, dynamic>))
+              .toList();
+        } else if (data is Map<String, dynamic>) {
+          // Possible object wrapper or error
+          if (data.containsKey('curated')) {
+            return (data['curated'] as List)
+                .map((json) => Source.fromJson(json as Map<String, dynamic>))
+                .toList();
+          }
+          // Log unexpected map
+          print(
+              'SourcesRepository: [WARNING] Received Map but expected List or Catalog: $data');
+        }
+        return [];
       }
       return [];
     } catch (e) {
