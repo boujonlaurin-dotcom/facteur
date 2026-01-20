@@ -1,4 +1,5 @@
 import structlog
+import os
 from alembic.config import Config
 from alembic import script
 from alembic.runtime import migration
@@ -6,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.database import engine
 
 logger = structlog.get_logger()
+
+# Compute absolute path to alembic.ini relative to this file's location
+# checks.py is in packages/api/app/, alembic.ini is in packages/api/
+_ALEMBIC_INI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
 
 def _get_current_revision_sync(connection: AsyncConnection):
     """Sync function to get current revision from DB context."""
@@ -21,8 +26,8 @@ async def check_migrations_up_to_date():
     
     # 1. Get HEAD revision from code (alembic.ini)
     try:
-        # Assuming alembic.ini is in the current working directory (packages/api)
-        alembic_cfg = Config("alembic.ini")
+        # Use absolute path to work correctly on Railway
+        alembic_cfg = Config(_ALEMBIC_INI_PATH)
         script_directory = script.ScriptDirectory.from_config(alembic_cfg)
         heads = script_directory.get_heads()
         head_rev = heads[0] if heads else None
