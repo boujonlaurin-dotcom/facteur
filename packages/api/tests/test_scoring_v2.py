@@ -6,7 +6,7 @@ from app.models.content import Content
 from app.models.source import Source
 from app.models.enums import ContentType, ContentStatus
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer
+from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, ArticleTopicLayer
 
 # --- Fixtures ---
 
@@ -130,3 +130,119 @@ def test_scoring_engine_integration(mock_content, base_context):
     
     # Expected: 87 + 15 + 10 = ~112
     assert total_score > 110.0
+
+
+# --- ArticleTopicLayer Tests (Story 4.1d) ---
+
+def test_article_topic_layer_no_match(base_context):
+    """No score when content has no topics or user has no subtopics."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    content = Content(
+        id=uuid4(),
+        title="Test Content",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE,
+        topics=["ai", "crypto"]  # Content has topics
+    )
+    
+    # User has no subtopics (empty set)
+    base_context.user_subtopics = set()
+    
+    layer = ArticleTopicLayer()
+    score = layer.score(content, base_context)
+    assert score == 0.0
+
+
+def test_article_topic_layer_single_match(base_context):
+    """Score +40 when one topic matches."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    content = Content(
+        id=uuid4(),
+        title="AI News",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE,
+        topics=["ai", "space"]
+    )
+    
+    base_context.user_subtopics = {"ai", "climate"}  # Only "ai" matches
+    
+    layer = ArticleTopicLayer()
+    score = layer.score(content, base_context)
+    
+    assert score == 40.0  # 1 match * 40
+    assert "Topic match: ai" in [r['details'] for r in base_context.reasons[content.id]]
+
+
+def test_article_topic_layer_double_match(base_context):
+    """Score +80 (max) when two topics match."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    content = Content(
+        id=uuid4(),
+        title="AI and Crypto News",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE,
+        topics=["ai", "crypto", "fintech"]
+    )
+    
+    base_context.user_subtopics = {"ai", "crypto", "climate"}  # 2 match
+    
+    layer = ArticleTopicLayer()
+    score = layer.score(content, base_context)
+    
+    assert score == 80.0  # 2 matches * 40 (capped at 2)
+
+
+def test_article_topic_layer_max_two_matches(base_context):
+    """Score capped at +80 even with 3+ matches."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    content = Content(
+        id=uuid4(),
+        title="Tech Mega Article",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE,
+        topics=["ai", "crypto", "cybersecurity", "space"]
+    )
+    
+    # All 4 topics match
+    base_context.user_subtopics = {"ai", "crypto", "cybersecurity", "space"}
+    
+    layer = ArticleTopicLayer()
+    score = layer.score(content, base_context)
+    
+    # Capped at 2 matches = 80 points
+    assert score == 80.0
+
+
+def test_article_topic_layer_case_insensitive(base_context):
+    """Topic matching should be case-insensitive."""
+    source = Source(id=uuid4(), name="TechSource", theme="tech")
+    content = Content(
+        id=uuid4(),
+        title="AI News",
+        url="http://example.com",
+        source_id=source.id,
+        source=source,
+        published_at=datetime.utcnow(),
+        content_type=ContentType.ARTICLE,
+        topics=["AI", "CRYPTO"]  # UPPERCASE
+    )
+    
+    base_context.user_subtopics = {"ai", "crypto"}  # lowercase
+    
+    layer = ArticleTopicLayer()
+    score = layer.score(content, base_context)
+    
+    assert score == 80.0  # Should still match
+

@@ -54,8 +54,8 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Action** : Exécute les tests unitaires/intégration.
 - **Rigueur** : Crée un script self-contained (ex: `docs/qa/scripts/verify_story_XXX.sh`) qui gère lui-même son environnement (activation venv, cd absolu).
 - **Propreté** : Ne "pollue" pas la racine du projet. Stocke les scripts de preuve dans `docs/qa/scripts/` ou `packages/*/scripts/`.
-- **Preuve** : Fournis à l'utilisateur LA commande pour exécuter ce script (ex: `bash docs/qa/scripts/verify_story_XXX.sh`).
-- **Walkthrough** : Produit un `walkthrough.md` incluant cette commande et le résultat attendu.
+- **Preuve (CRITIQUE)** : Fournis à l'utilisateur LA commande "One-Liner" universelle pour exécuter ce script depuis n'importe où. Elle DOIT gérer le `cd` et le `venv` (ex: `cd /absolute/path/to/pkg && source .venv/bin/activate && python scripts/verify.py`).
+- **Walkthrough** : Produit un `walkthrough.md` incluant cette commande verbatim et le résultat attendu.
 - **Health-Check** : Pour le backend, le serveur doit tourner (`uvicorn`) et répondre (`curl`).
 - **Mode Échec (Chaos)** : Ne teste pas seulement le "chemin heureux". Vérifie que l'app gère élégamment une API hors-ligne (timeout) ou un utilisateur non autorisé (403/401).
 ## 💡 Trucs & Astuces (Senior Tips)

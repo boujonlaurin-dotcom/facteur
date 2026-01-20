@@ -18,6 +18,8 @@
 | 18/01/2026 | 1.4 | Stabilisation Vidéo (Web/Mobile) & Fix Logs | Antigravity |
 | 18/01/2026 | 1.5 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
 | 20/01/2026 | 1.6 | Fix Auth: Fallback DB pour email confirmation (Stale JWT) | Antigravity |
+| 20/01/2026 | 1.7 | Algo: Implémentation ArticleTopicLayer (+40pts/match) | Antigravity |
+| 20/01/2026 | 1.8 | Story 4.1d: Finalisation Scoring par Topics granulaires | Antigravity |
 
 ---
 
@@ -729,7 +731,7 @@ sequenceDiagram
         DB-->>API: Raw contents
         
         API->>Algo: Appliquer scoring
-        Note over Algo: Score = theme_match * freshness * format_pref * source_weight
+        Note over Algo: Score = theme_match + topic_match + freshness + format_pref + source_weight
         Algo-->>API: Sorted contents
         
         API-->>App: Feed paginé (20 items)

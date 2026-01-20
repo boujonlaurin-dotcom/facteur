@@ -46,3 +46,5 @@ email-validator>=2.0.0
 # Install torch CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu
 transformers==4.38.2
 torch==2.2.0
+protobuf==5.26.1
+curl-cffi==0.7.4

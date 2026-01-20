@@ -3,8 +3,8 @@
 from typing import Any
 
 import feedparser
-import certifi
-import httpx
+import feedparser
+from curl_cffi.requests import AsyncSession
 
 class RSSParser:
     """Parser de flux RSS/Atom."""
@@ -15,17 +15,16 @@ class RSSParser:
     async def parse(self, url: str) -> dict[str, Any]:
         """
         Parse un flux RSS/Atom depuis une URL.
-        
-        Retourne un dictionnaire avec:
-        - title: Titre du flux
-        - description: Description
-        - link: URL du site
-        - image: Image du flux (si disponible)
-        - entries: Liste des entrées
+        Use curl_cffi to impersonate a real browser (Chrome) and bypass TLS fingerprinting/WAFs.
         """
-        async with httpx.AsyncClient(timeout=self.timeout, verify=certifi.where()) as client:
-            response = await client.get(url, follow_redirects=True)
-            response.raise_for_status()
+        async with AsyncSession(timeout=self.timeout, impersonate="chrome") as client:
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+            except Exception as e:
+                # Log context but re-raise transparently
+                # print(f"RSS Fetch Error for {url}: {e}")
+                raise e
 
 
         feed = feedparser.parse(response.text)

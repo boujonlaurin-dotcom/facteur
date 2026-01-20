@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak
+from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak, UserSubtopic
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 
 
@@ -107,6 +107,9 @@ class UserService:
         await self.db.execute(
             delete(UserInterest).where(UserInterest.user_id == UUID(user_id))
         )
+        await self.db.execute(
+            delete(UserSubtopic).where(UserSubtopic.user_id == UUID(user_id))
+        )
 
         # Sauvegarder les préférences
         preferences = {
@@ -145,11 +148,25 @@ class UserService:
                 self.db.add(interest)
                 interest_count += 1
 
+        # Sauvegarder les sous-thèmes
+        subtopic_count = 0
+        if answers.subtopics:
+            for topic_slug in answers.subtopics:
+                subtopic = UserSubtopic(
+                    id=uuid4(),
+                    user_id=UUID(user_id),
+                    topic_slug=topic_slug,
+                    weight=1.0,
+                )
+                self.db.add(subtopic)
+                subtopic_count += 1
+
 
         await self.db.flush()
         return {
             "profile": profile,
             "interests_created": interest_count,
+            "subtopics_created": subtopic_count,
             "preferences_created": pref_count,
         }
 

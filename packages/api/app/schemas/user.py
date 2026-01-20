@@ -78,6 +78,7 @@ class OnboardingAnswers(BaseModel):
     # Section 3 - Source Preferences
     preferred_sources: Optional[list[str]] = Field(default_factory=list, description="Liste des sources sélectionnées")
     themes: Optional[list[str]] = Field(default_factory=list, description="Liste des thèmes sélectionnés")
+    subtopics: Optional[list[str]] = Field(default_factory=list, description="Topics granulaires sélectionnés")
     format_preference: Optional[str] = Field("mixed", description="short, long, mixed")
     personal_goal: Optional[str] = Field(None, description="Objectif personnel")
 
@@ -99,6 +100,7 @@ class OnboardingResponse(BaseModel):
 
     profile: UserProfileResponse
     interests_created: int
+    subtopics_created: int
     preferences_created: int
 
 

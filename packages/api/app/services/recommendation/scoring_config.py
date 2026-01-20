@@ -42,3 +42,10 @@ class ScoringWeights:
     # Boost pour les contenus possédant une image de couverture.
     # Aide à rendre le feed plus engageant visuellement.
     IMAGE_BOOST = 10.0
+    
+    # --- ARTICLE TOPIC LAYER (Topics Granulaires) ---
+    
+    # Bonus par topic granulaire matchant entre content.topics et user_subtopics.
+    # Score = TOPIC_MATCH * min(matches, TOPIC_MAX_MATCHES)
+    TOPIC_MATCH = 40.0
+    TOPIC_MAX_MATCHES = 2  # Max 80pts (2 x 40)

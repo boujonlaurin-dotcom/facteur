@@ -9,13 +9,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
 from app.models.source import Source, UserSource
-from app.models.user import UserInterest, UserProfile
+from app.models.user import UserInterest, UserProfile, UserSubtopic
 from app.models.enums import ContentStatus, FeedFilterMode, ContentType, BiasStance
 
 logger = structlog.get_logger()
 
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer
+from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer
 from app.schemas.content import RecommendationReason
 
 class RecommendationService:
@@ -28,7 +28,8 @@ class RecommendationService:
             StaticPreferenceLayer(),
             BehavioralLayer(),
             QualityLayer(),
-            VisualLayer()
+            VisualLayer(),
+            ArticleTopicLayer()
         ])
 
     async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False) -> List[Content]:
@@ -110,6 +111,12 @@ class RecommendationService:
         scored_candidates = []
         now = datetime.datetime.utcnow()
         
+        # Fetch user subtopics for ArticleTopicLayer (Story 4.1d)
+        subtopics_result = await self.session.scalars(
+            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
+        )
+        user_subtopics = set(subtopics_result.all())
+        
         # Context creation
         context = ScoringContext(
             user_profile=user_profile,
@@ -117,7 +124,8 @@ class RecommendationService:
             user_interest_weights=user_interest_weights,
             followed_source_ids=followed_source_ids,
             user_prefs=user_prefs,
-            now=now
+            now=now,
+            user_subtopics=user_subtopics
         )
         
         for content in candidates:

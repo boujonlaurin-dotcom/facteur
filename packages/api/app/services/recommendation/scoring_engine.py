@@ -19,7 +19,8 @@ class ScoringContext:
         user_interest_weights: Dict[str, float],
         followed_source_ids: Set[UUID],
         user_prefs: Dict[str, Any],
-        now: datetime.datetime
+        now: datetime.datetime,
+        user_subtopics: Set[str] = None
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -27,6 +28,7 @@ class ScoringContext:
         self.followed_source_ids = followed_source_ids
         self.user_prefs = user_prefs
         self.now = now
+        self.user_subtopics = user_subtopics or set()
         
         # Diagnostics pour explicabilité
         self.reasons: Dict[UUID, Dict[str, Any]] = {}
