@@ -42,3 +42,7 @@ email-validator>=2.0.0
 # ruff==0.2.1
 # mypy==1.8.0
 
+# ML Classification (Story 4.1d)
+# Install torch CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu
+transformers==4.38.2
+torch==2.2.0

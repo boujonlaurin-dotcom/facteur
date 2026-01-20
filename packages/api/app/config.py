@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # ML Classification (Story 4.1d)
+    ml_enabled: bool = False  # Set to True to load CamemBERT model
+
     @model_validator(mode="after")
     def validate_production_db(self) -> "Settings":
         """Empêche l'utilisation de localhost en production."""

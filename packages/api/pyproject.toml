@@ -20,6 +20,9 @@ dependencies = [
     "sentry-sdk[fastapi]>=1.40.0",
     "python-multipart>=0.0.6",
     "alembic>=1.13.1",
+    # ML Classification (Story 4.1d)
+    "transformers>=4.38.0",
+    "torch>=2.2.0",
 ]
 
 [project.optional-dependencies]
