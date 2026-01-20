@@ -83,6 +83,40 @@ async def get_current_user_id(
                 detail="Invalid token: missing user_id",
             )
 
+        # Vérifier si l'email est confirmé
+        # Supabase inclut email_confirmed_at dans le payload si l'email est validé
+        email_confirmed_at = payload.get("email_confirmed_at")
+        if not email_confirmed_at:
+            # On vérifie le provider pour ne pas bloquer les logins sociaux qui pourraient 
+            # avoir une structure différente ou être confirmés d'office
+            app_metadata = payload.get("app_metadata", {})
+            provider = app_metadata.get("provider")
+            
+            if provider == "email":
+                # Fallback: Check DB directly (JWT might be stale after manual confirmation)
+                from app.database import async_session_maker
+                from sqlalchemy import text
+                
+                try:
+                    async with async_session_maker() as session:
+                        result = await session.execute(
+                            text("SELECT email_confirmed_at FROM auth.users WHERE id = :uid"),
+                            {"uid": user_id}
+                        )
+                        row = result.fetchone()
+                        if row and row[0]:
+                            print(f"✅ Auth: User {user_id} confirmed in DB (stale JWT)", flush=True)
+                            return user_id
+                except Exception as db_err:
+                    print(f"⚠️ Auth: DB fallback check failed: {db_err}", flush=True)
+                
+                print(f"🚫 Auth: User {user_id} blocked (email not confirmed)", flush=True)
+                print(f"🔍 DEBUG JWT PAYLOAD: {payload}", flush=True)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Email not confirmed",
+                )
+
         return user_id
 
     except JWTError as e:

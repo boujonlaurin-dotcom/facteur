@@ -102,9 +102,9 @@ class ProgressionBottomSheet extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: colors.textSecondary,
               ),
-              child: Text(
+              child: const Text(
                 'Non, merci',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],

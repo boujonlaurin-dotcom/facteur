@@ -36,7 +36,7 @@ class FeedRepository {
         queryParams['mode'] = mode;
       }
 
-      final response = await _apiClient.dio.get<List<dynamic>>(
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
         'feed/', // Trailing slash to avoid 307 redirect which strips auth header
         queryParameters: queryParams,
       );
@@ -46,21 +46,35 @@ class FeedRepository {
         if (data == null) {
           return FeedResponse(
             items: [],
+            briefing: [],
             pagination: Pagination(
                 page: page, perPage: limit, total: 0, hasNext: false),
           );
         }
 
-        final items = data
-            .map((e) => Content.fromJson(e as Map<String, dynamic>))
-            .toList();
+        // Le backend (M5) ne renvoie pas de pagination explicite,
+        // on utilise FeedResponse.fromJson qui parse 'items' et 'briefing'.
+        // Mais 'pagination' sera par défaut (hasNext: false).
+        // On doit donc injecter hasNext manuellement ou reconstruire l'objet.
+
+        // Option simple: parser manuellement ici pour garder la logique hasNext
+        final itemsList = (data['items'] as List?)
+                ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [];
+
+        final briefingList = (data['briefing'] as List?)
+                ?.map((e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            [];
 
         // On infère la pagination car le backend ne donne pas de métadonnées
         // Si on a reçu 'limit' items, on suppose qu'il y a une page suivante
-        final hasNext = items.length >= limit;
+        final hasNext = itemsList.length >= limit;
 
         return FeedResponse(
-          items: items,
+          items: itemsList,
+          briefing: briefingList,
           pagination: Pagination(
             page: page,
             perPage: limit,
@@ -75,6 +89,10 @@ class FeedRepository {
       print('FeedRepository: [ERROR] getFeed: $e');
       rethrow;
     }
+  }
+
+  Future<void> markBriefingAsRead(String contentId) async {
+    await _apiClient.dio.post('/feed/briefing/$contentId/read');
   }
 
   Future<Content?> getContent(String contentId) async {

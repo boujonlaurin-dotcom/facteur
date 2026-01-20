@@ -95,6 +95,18 @@ class AuthErrorMessages {
     }
 
     // ============================================
+    // Erreurs de lien / Validation
+    // ============================================
+
+    if (lowerMessage.contains('email link is invalid or has expired')) {
+      return 'Le lien de confirmation est invalide ou a expiré.';
+    }
+
+    if (lowerMessage.contains('confirmation_token_valid')) {
+      return 'Le code de confirmation est invalide.';
+    }
+
+    // ============================================
     // Session / Token
     // ============================================
 

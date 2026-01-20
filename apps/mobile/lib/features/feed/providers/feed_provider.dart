@@ -14,11 +14,22 @@ final feedRepositoryProvider = Provider<FeedRepository>((ref) {
 });
 
 // Provider des données du feed (Infinite Scroll)
-final feedProvider = AsyncNotifierProvider<FeedNotifier, List<Content>>(() {
+class FeedState {
+  final List<Content> items;
+  final List<DailyTop3Item> briefing;
+
+  FeedState({
+    required this.items,
+    this.briefing = const [],
+  });
+}
+
+// Provider des données du feed (Infinite Scroll + Briefing)
+final feedProvider = AsyncNotifierProvider<FeedNotifier, FeedState>(() {
   return FeedNotifier();
 });
 
-class FeedNotifier extends AsyncNotifier<List<Content>> {
+class FeedNotifier extends AsyncNotifier<FeedState> {
   // Internal state for pagination
   int _page = 1;
   static const int _limit = 20;
@@ -33,12 +44,12 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
   String? get selectedFilter => _selectedFilter;
 
   @override
-  FutureOr<List<Content>> build() async {
+  FutureOr<FeedState> build() async {
     // Watch auth state to handle logout/user change
     final authState = ref.watch(authStateProvider);
 
     if (!authState.isAuthenticated || authState.user == null) {
-      return [];
+      return FeedState(items: []);
     }
 
     _page = 1;
@@ -46,7 +57,12 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
     _isLoadingMore = false;
     _selectedFilter = null; // Reset filter on build/rebuild
 
-    return _fetchPage(page: 1);
+    // Fetch initial page
+    final response = await _fetchPage(page: 1);
+
+    // Check if we need to load more immediately? No.
+
+    return FeedState(items: response.items, briefing: response.briefing);
   }
 
   Future<void> setFilter(String? filter) async {
@@ -55,7 +71,7 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
     await refresh();
   }
 
-  Future<List<Content>> _fetchPage({required int page}) async {
+  Future<FeedResponse> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getFeed(
         page: page, limit: _limit, mode: _selectedFilter);
@@ -63,31 +79,30 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
     // Update pagination state
     _hasNext = response.pagination.hasNext;
 
-    return response.items;
+    return response;
   }
 
   Future<void> loadMore() async {
     // Prevent multiple calls or if no more data
     if (_isLoadingMore || !_hasNext || state.isLoading) return;
 
-    // Use a local flag to avoid rebuilding the main state with loading
-    // We want the UI to show the list + a loading indicator at the bottom
     _isLoadingMore = true;
-    // Notify listeners that we are loading more (UI can check notifier.isLoadingMore)
-    // Actually, AsyncNotifier doesn't notify on property change unless we change state.
-    // So we might need to handle the "loading more" UI purely in the UI widget based on scroll,
-    // or use a separate provider for loading status.
-    // For simplicity, let's just proceed. The UI will call this method.
 
     try {
       final nextPage = _page + 1;
-      final newItems = await _fetchPage(page: nextPage);
+      final response = await _fetchPage(page: nextPage);
+      final newItems = response.items;
 
       if (newItems.isNotEmpty) {
         _page = nextPage;
-        // Append new items to the existing list
-        final currentItems = state.value ?? [];
-        state = AsyncData([...currentItems, ...newItems]);
+        // Append new items to the existing list, keep briefing unchanged
+        final currentItems = state.value?.items ?? [];
+        final currentBriefing = state.value?.briefing ?? [];
+
+        state = AsyncData(FeedState(
+          items: [...currentItems, ...newItems],
+          briefing: currentBriefing,
+        ));
       }
     } catch (e, stack) {
       state = AsyncError(e, stack);
@@ -102,17 +117,12 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
     _hasNext = true;
     _isLoadingMore = false;
 
-    // Set loading state while keeping previous data if possible
-    // (AsyncLoading().copyWithPrevious(state) is implicit if we don't completely reset)
-    // Actually, setting state = AsyncLoading() might clear data if not careful.
-    // Ideally we want the UI to show the RefreshIndicator spinner, which is handled by the Future completion.
-    // We can just re-fetch and update state.
-
     state = const AsyncLoading(); // Emitting loading state
 
     try {
-      final newItems = await _fetchPage(page: 1);
-      state = AsyncData(newItems);
+      final response = await _fetchPage(page: 1);
+      state = AsyncData(
+          FeedState(items: response.items, briefing: response.briefing));
     } catch (e, stack) {
       state = AsyncError(e, stack);
       rethrow;
@@ -120,12 +130,13 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
   }
 
   Future<void> toggleSave(Content content) async {
-    final currentItems = state.value;
-    if (currentItems == null) return;
+    final currentState = state.value;
+    if (currentState == null) return;
 
+    final currentItems = currentState.items;
     final index = currentItems.indexWhere((c) => c.id == content.id);
 
-    // Si l'index est -1, l'item a été archivé (optimistic remove)
+    // Si l'index est -1, l'item a été archivé (ou absent)
     final bool currentlyInList = index != -1;
     final bool oldIsSaved =
         currentlyInList ? currentItems[index].isSaved : true;
@@ -141,12 +152,11 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
       if (currentlyInList) {
         updatedItems[index] = content.copyWith(isSaved: false);
       }
-      // Note: If undoing save but item wasn't in list (e.g. from saved screen),
-      // we don't necessarily want to add it back to feed here as it might break feed order/ relevance.
     }
 
     // Mise à jour optimiste immédiate
-    state = AsyncData(updatedItems);
+    state = AsyncData(
+        FeedState(items: updatedItems, briefing: currentState.briefing));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -154,28 +164,26 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
       // Invalidate SavedFeed so it refreshes when the user navigates there
       ref.invalidate(savedFeedProvider);
     } catch (e) {
-      // En cas d'échec total, on recharge la liste depuis le serveur pour être sûr
-      // (Alternativement on pourrait revert vers 'currentItems' mais le refresh est plus robuste)
       await refresh();
       rethrow;
     }
   }
 
   Future<void> hideContent(Content content, HiddenReason reason) async {
-    final currentItems = state.value;
-    if (currentItems == null) return;
+    final currentState = state.value;
+    if (currentState == null) return;
 
-    final updatedItems = List<Content>.from(currentItems);
+    final updatedItems = List<Content>.from(currentState.items);
     updatedItems.removeWhere((c) => c.id == content.id);
 
     // Optimistic remove
-    state = AsyncData(updatedItems);
+    state = AsyncData(
+        FeedState(items: updatedItems, briefing: currentState.briefing));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.hideContent(content.id, reason);
     } catch (e) {
-      // Revert/Refresh in case of error
       await refresh();
       rethrow;
     }
@@ -187,37 +195,74 @@ class FeedNotifier extends AsyncNotifier<List<Content>> {
   }
 
   Future<void> markContentAsConsumed(Content content) async {
-    final currentItems = state.value;
-    if (currentItems == null) return;
+    final currentState = state.value;
+    if (currentState == null) return;
 
-    // Mark as consumed to trigger animation
-    _consumedContentIds.add(content.id);
+    // 1. Briefing Logic
+    final briefingIndex =
+        currentState.briefing.indexWhere((b) => b.content.id == content.id);
+    final bool isBriefingItem = briefingIndex != -1;
+    List<DailyTop3Item> updatedBriefing = currentState.briefing;
 
-    // Notify listeners to start animation
-    state = AsyncData(List<Content>.from(currentItems));
+    if (isBriefingItem) {
+      updatedBriefing = List.from(currentState.briefing);
+      final item = updatedBriefing[briefingIndex];
+      updatedBriefing[briefingIndex] = DailyTop3Item(
+          rank: item.rank,
+          reason: item.reason,
+          isConsumed: true,
+          content: item.content);
 
-    // Call API immediately (don't wait for animation)
-    try {
-      final repository = ref.read(feedRepositoryProvider);
-      await repository.updateContentStatus(content.id, ContentStatus.consumed);
-    } catch (e) {
-      // Silent failure for tracking
+      // Update state immediately for UI feedback (strikethrough)
+      state = AsyncData(FeedState(
+          items: currentState.items, // Items not yet modified
+          briefing: updatedBriefing));
+
+      try {
+        final repository = ref.read(feedRepositoryProvider);
+        // Fire and forget both?
+        await repository.markBriefingAsRead(content.id);
+      } catch (e) {
+        // Silent
+      }
     }
 
-    // Wait for "Lu" overlay animation then remove
-    // Show overlay for ~1 second before removing
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    // 2. Feed Items Logic (Animation + Removal)
+    // Check if it's in the feed items (could be in both?)
+    final isInFeed = currentState.items.any((c) => c.id == content.id);
 
-    // Get fresh state in case it changed during the delay
-    final freshItems = state.value;
-    if (freshItems == null) return;
+    if (isInFeed) {
+      // Mark as consumed to trigger animation
+      _consumedContentIds.add(content.id);
 
-    // Remove from list after animation
-    final updatedItems = List<Content>.from(freshItems);
-    updatedItems.removeWhere((c) => c.id == content.id);
-    _consumedContentIds.remove(content.id);
+      // Notify listeners to start animation
+      // Note: we might have already updated state for briefing. Use value from state.
+      state = AsyncData(FeedState(
+          items: List.from(state.value!.items),
+          briefing: state.value!.briefing));
 
-    // Force state update
-    state = AsyncData(updatedItems);
+      // Call Generic API immediately
+      try {
+        final repository = ref.read(feedRepositoryProvider);
+        await repository.updateContentStatus(
+            content.id, ContentStatus.consumed);
+      } catch (e) {
+        // Silent failure
+      }
+
+      // Wait for "Lu" overlay animation
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+
+      final freshState = state.value;
+      if (freshState == null) return;
+
+      // Remove from list after animation
+      final updatedItems = List<Content>.from(freshState.items);
+      updatedItems.removeWhere((c) => c.id == content.id);
+      _consumedContentIds.remove(content.id);
+
+      state = AsyncData(
+          FeedState(items: updatedItems, briefing: freshState.briefing));
+    }
   }
 }

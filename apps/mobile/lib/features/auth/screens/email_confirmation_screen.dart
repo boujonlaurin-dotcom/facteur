@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../shared/widgets/buttons/secondary_button.dart';
 import 'package:facteur/core/ui/notification_service.dart';
+import '../../../core/auth/auth_state.dart';
 
 /// Écran de confirmation après création de compte
 /// Affiché lorsque l'utilisateur doit valider son email
@@ -35,10 +35,11 @@ class _EmailConfirmationScreenState
     });
 
     try {
-      await Supabase.instance.client.auth.resend(
-        type: OtpType.signup,
-        email: widget.email,
-      );
+      debugPrint(
+          'EmailConfirmationScreen: Requesting resend for ${widget.email}');
+      await ref
+          .read(authStateProvider.notifier)
+          .resendConfirmationEmail(widget.email);
 
       if (mounted) {
         setState(() {
@@ -66,14 +67,20 @@ class _EmailConfirmationScreenState
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-              // Bouton retour
+              // Bouton déconnexion
               Align(
                 alignment: Alignment.centerLeft,
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                child: TextButton.icon(
+                  onPressed: () =>
+                      ref.read(authStateProvider.notifier).signOut(),
                   icon: Icon(
-                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                    PhosphorIcons.signOut(PhosphorIconsStyle.regular),
                     color: colors.textSecondary,
+                    size: 20,
+                  ),
+                  label: Text(
+                    'Se déconnecter',
+                    style: TextStyle(color: colors.textSecondary),
                   ),
                 ),
               ),
@@ -204,7 +211,8 @@ class _EmailConfirmationScreenState
               PrimaryButton(
                 label: 'J\'ai confirmé mon email',
                 icon: PhosphorIcons.check(PhosphorIconsStyle.bold),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () =>
+                    ref.read(authStateProvider.notifier).refreshUser(),
               ),
 
               const SizedBox(height: 16),

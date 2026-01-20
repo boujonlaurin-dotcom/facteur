@@ -19,6 +19,7 @@
 | 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
 | 18/01/2026 | 1.6 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
 | 19/01/2026 | 1.7 | Taxonomie 50 Topics & Système de Classification ML | Antigravity |
+| 19/01/2026 | 1.8 | Authentification : Validation email obligatoire & Redirection | Antigravity |
 
 ---
 
@@ -48,7 +49,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 
 | ID | Exigence |
 |----|----------|
-| **FR1** | L'utilisateur peut créer un compte via email ou connexion sociale (Apple, Google) |
+| **FR1** | L'utilisateur peut créer un compte via email ou connexion sociale (Apple, Google). **La validation de l'email est obligatoire** pour accéder au contenu pour les comptes créés via email. |
 | **FR1bis** | L'utilisateur peut réinitialiser son mot de passe en cas d'oubli |
 | **FR1ter** | L'utilisateur peut choisir de rester connecté entre les sessions |
 | **FR2** | L'utilisateur complète un questionnaire d'onboarding de 10-12 questions réparties en 3 sections pour définir son profil et ses préférences |

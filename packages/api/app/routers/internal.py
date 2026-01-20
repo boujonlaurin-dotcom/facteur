@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -13,3 +13,16 @@ async def trigger_sync(
     """Déclenche manuellement la synchronisation RSS de toutes les sources."""
     results = await sync_all_sources()
     return {"message": "Sync completed", "results": results}
+
+
+@router.post("/briefing", status_code=status.HTTP_200_OK)
+async def trigger_daily_briefing(background_tasks: BackgroundTasks):
+    """Déclenche manuellement la génération du Top 3 Quotidien."""
+    # On lance en tâche de fond pour ne pas bloquer, mais pour le test d'intégration
+    # il faudra poller ou checker les logs.
+    # Pour le dev, on peut aussi l'await si on veut le retour direct
+    # Ici on choisit d'await pour voir le résultat dans la réponse du test
+    from app.workers.top3_job import generate_daily_top3_job
+    
+    await generate_daily_top3_job(trigger_manual=True)
+    return {"message": "Daily Top 3 generation completed"}

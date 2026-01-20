@@ -7,10 +7,11 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 import asyncio
 import csv
+import json
 import os
 import re
 import sys
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import httpx
 from sqlalchemy import select, update
@@ -53,20 +54,21 @@ VALID_THEMES = {
     "culture", "science", "international"
 }
 
-# No more mapping: CSV must contain valid slugs
-# THEME_MAPPING = { ... } deleted
-
-# ...
-
-async def process_source(source_data: Dict[str, str], session: AsyncSession, client: httpx.AsyncClient):
-    # ...
-    
-    csv_theme = source_data.get("Thème", "").lower().strip()
-    
-    internal_theme = csv_theme
-    if internal_theme not in VALID_THEMES:
-        print(f"⚠️ Warning: Unknown theme '{internal_theme}' for {name}. Setting to 'other'.")
-        internal_theme = "other"
+# Curated feed fallbacks for sources where automatic detection fails
+CURATED_FEED_FALLBACKS = {
+    # --- New CURATED sources (Story 4.1c Part 2/3) ---
+    "https://www.francetvinfo.fr/": "https://www.francetvinfo.fr/titres.rss",
+    "https://www.radiofrance.fr/franceinter": "https://www.radiofrance.fr/franceinter/rss",
+    "https://www.rtl.fr/": "https://www.rtl.fr/actu/rss.xml",
+    "https://www.europe1.fr/": "https://www.europe1.fr/rss.xml",
+    "https://www.brut.media/fr": "https://www.brut.media/fr/rss",  # May not exist, fallback
+    "https://www.blast-info.fr/": "https://www.blast-info.fr/rss",  # May not exist, fallback
+    "https://bonpote.com/": "https://bonpote.com/feed/",
+    # --- Indexed Tech sources fallbacks ---
+    "https://www.frandroid.com/": "https://www.frandroid.com/feed",
+    "https://www.numerama.com/": "https://www.numerama.com/feed/",
+    "https://www.futura-sciences.com/": "https://www.futura-sciences.com/rss/actualites.xml",
+    # --- Existing podcast fallbacks ---
     "https://wondery.com/shows/guerres-de-business/": "https://feeds.megaphone.fm/WWS2399238883",
     "https://www.irsem.fr/le-collimateur.html": "https://feeds.audiomeans.fr/feed/7f9a1cb1-0490-4886-9f6e-2195f4c4a6a5",
     "https://www.slate.fr/podcasts/transfert": "https://feeds.audiomeans.fr/feed/295f7004-9442-4b26-8854-d4b8f5f24255",
@@ -75,6 +77,8 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     "https://www.youtube.com/user/dirtybiology": "https://www.youtube.com/feeds/videos.xml?channel_id=UCtqICqGbPSbTN09K1_7VZ3Q",
     "https://www.youtube.com/user/monsieurbidouille": "https://www.youtube.com/feeds/videos.xml?user=monsieurbidouille",
     "https://www.youtube.com/channel/UCLXDAkJ3rTe0khbCV1Q7hSA": "https://www.youtube.com/feeds/videos.xml?channel_id=UCLXDNUOO3EQ80VmD9nQBHPg",
+    # Heu?reka YouTube channel
+    "https://www.youtube.com/channel/UC7sXGI8p8PvKosLWagkK9wQ": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7sXGI8p8PvKosLWagkK9wQ",
     "https://www.epsiloon.com/": None,  # No RSS feed available
     "https://www.philomag.com/": "https://www.philomag.com/feed",
     "https://nouveaudepart.co/": "https://nouveaudepart.substack.com/feed",
@@ -157,6 +161,24 @@ async def detect_site_feed(url: str, client: httpx.AsyncClient) -> Optional[str]
         print(f"  ❌ Site feed detection error for {url}: {e}")
     return None
 
+
+def parse_granular_topics(topics_str: str, source_name: str) -> List[str]:
+    """Parse granular_topics JSON from CSV. Returns empty list on failure."""
+    if not topics_str or not topics_str.strip():
+        return []
+    
+    try:
+        topics = json.loads(topics_str)
+        if isinstance(topics, list):
+            return [str(t).strip() for t in topics if t]
+        else:
+            print(f"⚠️ Warning: granular_topics for {source_name} is not a list: {topics_str}")
+            return []
+    except json.JSONDecodeError as e:
+        print(f"⚠️ Warning: Bad JSON for granular_topics in source {source_name}: {e}")
+        return []
+
+
 async def process_source(source_data: Dict[str, str], session: AsyncSession, client: httpx.AsyncClient):
     name = source_data.get("Name")
     url = source_data.get("URL")
@@ -164,7 +186,7 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     if not name or not url or name == "Name": # Skip empty rows or repeated headers
         return
 
-    # --- NEW STATUS LOGIC ---
+    # --- STATUS LOGIC ---
     status = source_data.get("Status", "INDEXED").upper() # Default to INDEXED if missing
     
     if status == "ARCHIVED":
@@ -174,22 +196,27 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     is_curated = (status == "CURATED")
     
     csv_type = source_data.get("Type")
-    # csv_theme read above
+    csv_theme = source_data.get("Thème", "").lower().strip()
     rationale = source_data.get("Rationale")
     csv_bias = source_data.get("Bias", "unknown")
     csv_reliability = source_data.get("Reliability", "unknown")
     
     internal_type = TYPE_MAPPING.get(csv_type, "article")
-    # internal_theme ALREADY COMPUTED above
-
+    
+    # Theme validation
+    internal_theme = csv_theme
+    if internal_theme not in VALID_THEMES:
+        print(f"⚠️ Warning: Unknown theme '{internal_theme}' for {name}. Setting to 'other'.")
+        internal_theme = "other"
     
     # Map bias string to enum value (handling hyphens etc)
     bias_val = csv_bias.lower()
     reliability_val = csv_reliability.lower()
     
-    # Scores: Read from CSV, fallback to heuristics ONLY if missing and strictly needed?
-    # Actually, for Master CSV, we expect scores to be present (empty string if None)
-    # We convert empty strings to None
+    # Parse granular_topics (Story 4.1c Part 2/3)
+    granular_topics = parse_granular_topics(source_data.get("granular_topics", ""), name)
+    
+    # Scores: Read from CSV, fallback to heuristics ONLY if missing
     def parse_score(val):
         try:
             return float(val) if val and val.strip() else None
@@ -201,7 +228,6 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     score_ux = parse_score(source_data.get("Score_UX"))
     
     # Fallback Heuristic if scores are missing (Legacy / Indexing phase)
-    # But only if they are absolutely None
     if score_indep is None:
         if reliability_val == "high":
             score_indep, score_rigor, score_ux = 0.9, 0.9, 0.8
@@ -247,6 +273,8 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
         existing_source.score_ux = score_ux
         existing_source.is_curated = is_curated
         existing_source.is_active = True # Revive if inactive
+        # Story 4.1c Part 2/3: Update granular_topics
+        existing_source.granular_topics = granular_topics if granular_topics else None
     else:
         print(f"✨ Creating new source: {name} ([{status}] Curated: {is_curated})")
         new_source = Source(
@@ -259,7 +287,9 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
             bias_origin=BiasOrigin.CURATED,
             score_independence=score_indep,
             score_rigor=score_rigor,
-            score_ux=score_ux
+            score_ux=score_ux,
+            # Story 4.1c Part 2/3: Set granular_topics
+            granular_topics=granular_topics if granular_topics else None
         )
         session.add(new_source)
 

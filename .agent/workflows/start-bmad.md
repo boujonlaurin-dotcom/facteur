@@ -15,7 +15,9 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 *Objectif : Preuve de compréhension avant action.*
 - **Action** : Utilise `task document-project` si tu découvres une nouvelle zone de code.
 - **Mesure** : Crée des scripts de diagnostic ou analyse les logs réels pour isoler la cause racine.
+- **Santé Environnement** : Vérifie systématiquement les ports (8080?), la santé API (`/health`) et la validité des tokens réels avant d'analyser le code.
 - **Rigueur** : Ne conclus jamais sur une intuition sans une donnée technique mesurable.
+- **Mapping Flow** : Pour les bugs d'init/auth, trace le cycle de vie complet (ex: Splash -> Providers -> Router -> API) avant de proposer un correctif.
 
 > [!IMPORTANT]
 > **Gating (PRE-VÉROU) - Vérification User Story / PRD :**
@@ -48,13 +50,18 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Lien Story** : Si tu travailles sur une Story, exécute `develop-story` (cf `dev.mdc`) et mets à jour les fichiers dans `docs/stories/`.
 - **Règle d'or** : Aucun "quick fix". Si la structure doit changer, la documentation doit suivre.
 ### 4. Verify (Phase: VERIFICATION)
-*Objectif : Preuve de succès (Proof of Work).*
-- **Action** : Exécute les tests unitaires/intégration. 
-- **Walkthrough** : Produit un `walkthrough.md` en français, simplifié, incluant les preuves techniques (logs, captures de scripts de test).
+*Objectif : Preuve de succès (Proof of Work) actionnable.*
+- **Action** : Exécute les tests unitaires/intégration.
+- **Rigueur** : Crée un script self-contained (ex: `docs/qa/scripts/verify_story_XXX.sh`) qui gère lui-même son environnement (activation venv, cd absolu).
+- **Propreté** : Ne "pollue" pas la racine du projet. Stocke les scripts de preuve dans `docs/qa/scripts/` ou `packages/*/scripts/`.
+- **Preuve** : Fournis à l'utilisateur LA commande pour exécuter ce script (ex: `bash docs/qa/scripts/verify_story_XXX.sh`).
+- **Walkthrough** : Produit un `walkthrough.md` incluant cette commande et le résultat attendu.
 - **Health-Check** : Pour le backend, le serveur doit tourner (`uvicorn`) et répondre (`curl`).
-## 🛠 Commandes Utiles (BMad Core)
-- `*help` : Liste tous les outils disponibles.
-- `*task create-next-story` : Pour préparer la suite.
-- `*execute-checklist story-dod-checklist` : Avant de finaliser.
+- **Mode Échec (Chaos)** : Ne teste pas seulement le "chemin heureux". Vérifie que l'app gère élégamment une API hors-ligne (timeout) ou un utilisateur non autorisé (403/401).
+## 💡 Trucs & Astuces (Senior Tips)
+- **FastAPI / Pydantic** : Utilise `list[]` (Python 3.9+) au lieu de `List` (typing) pour éviter les `PydanticUserError` en Python 3.14.
+- **Supabase Auth** : Ne fais jamais confiance à `email_confirmed_at` dans le JWT seul pour les comptes `email` (stale token). Vérifie `auth.users` en fallback dans le backend.
+- **Connection Issues** : Si l'app mobile timeout sur `users/streak` ou le feed, vérifie d'abord si le backend (8080) est responsive via `/api/health`.
+
 ---
 **Focus** : Moins de blabla, plus de mesure. Une Story n'est "Done" que si elle est validée techniquement et documentée.

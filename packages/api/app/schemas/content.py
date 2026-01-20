@@ -88,3 +88,20 @@ class ContentStatusUpdate(BaseModel):
     status: Optional[ContentStatus] = None
     time_spent_seconds: Optional[int] = None
 
+class DailyTop3Response(BaseModel):
+    """Item du Daily Briefing (Top 3)."""
+    
+    rank: int
+    reason: str  # "À la Une", "Sujet tendance", "Source suivie"
+    consumed: bool
+    content: ContentResponse
+    
+    class Config:
+        from_attributes = True
+
+
+class FeedResponse(BaseModel):
+    """Réponse globale du feed."""
+    
+    briefing: list[DailyTop3Response] = []  # Le Top 3 du jour (vide si on n'est pas "today" ou déjà vu?)
+    items: list[ContentResponse]            # Le flux infini

@@ -53,7 +53,7 @@ class ArticleReaderWidget extends StatelessWidget {
             style: {
               'body': Style(
                 fontSize: FontSize(17),
-                lineHeight: LineHeight(1.7),
+                lineHeight: const LineHeight(1.7),
                 color: colors.textPrimary,
                 fontFamily: 'DMSans',
                 margin: Margins.zero,

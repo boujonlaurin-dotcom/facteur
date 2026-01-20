@@ -10,9 +10,13 @@ Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 
 - **Git** : Pour la gestion de version.
 - **Python 3.12** : (⚠️ Ne pas utiliser 3.13+ pour le moment). [pyenv](https://github.com/pyenv/pyenv) est recommandé pour gérer les versions.
+- **Environnement Python (venv)** : L'utilisation de l'environnement virtuel est **indispensable** pour exécuter les scripts du projet et éviter les erreurs de modules manquants ou de commande `python` introuvable.
 - **Flutter (dernière version stable)** : Pour l'application mobile.
 - **Railway CLI** (optionnel) : Pour la gestion du déploiement.
 - **Un compte Supabase** : Pour la base de données et l'authentification.
+
+> [!TIP]
+> Si la commande `python` n'est pas trouvée, essayez `python3` ou assurez-vous que votre environnement virtuel est bien activé.
 
 ---
 
@@ -49,10 +53,12 @@ Le backend se trouve dans `packages/api`.
 1. **Environnement virtuel** :
    ```bash
    cd packages/api
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate  # Mac/Linux
    # .\venv\Scripts\activate # Windows
    ```
+   > [!IMPORTANT]
+   > Une fois activé, votre terminal affichera `(venv)`. Vous pouvez alors utiliser simplement la commande `python`.
 
 2. **Installation** :
    ```bash

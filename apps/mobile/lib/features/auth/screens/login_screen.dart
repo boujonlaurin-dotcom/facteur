@@ -7,7 +7,6 @@ import '../../../core/auth/auth_state.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 
 import '../../../widgets/design/facteur_logo.dart';
-import 'email_confirmation_screen.dart';
 import '../../../core/ui/notification_service.dart';
 
 /// Écran de connexion / inscription
@@ -116,26 +115,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  Future<void> _resendEmail() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      if (mounted) {
+        NotificationService.showError('Saisis ton email pour confirmer');
+      }
+      return;
+    }
+
+    try {
+      await ref.read(authStateProvider.notifier).resendConfirmationEmail(email);
+      if (mounted) {
+        NotificationService.showSuccess('Email de confirmation renvoyé !');
+      }
+    } catch (e) {
+      if (mounted) {
+        // L'erreur est déjà dans le state affiché
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
     final colors = context.facteurColors;
-
-    // Naviguer vers l'écran de confirmation email après signup
-    ref.listen<AuthState>(authStateProvider, (previous, next) {
-      if (next.pendingEmailConfirmation != null &&
-          previous?.pendingEmailConfirmation == null) {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => EmailConfirmationScreen(
-              email: next.pendingEmailConfirmation!,
-            ),
-          ),
-        );
-        // Effacer l'état pour éviter une 2ème navigation
-        ref.read(authStateProvider.notifier).clearPendingEmailConfirmation();
-      }
-    });
 
     return Scaffold(
       body: SafeArea(
@@ -269,6 +273,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ],
                     ),
                   ),
+
+                  // Bouton Renvoyer Email si erreur de confirmation
+                  if (authState.error!.contains('confirmer votre email')) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _resendEmail,
+                        icon: const Icon(Icons.send_outlined, size: 16),
+                        label: const Text('Renvoyer l\'email de confirmation'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: colors.primary,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
 
                 const SizedBox(height: 24),

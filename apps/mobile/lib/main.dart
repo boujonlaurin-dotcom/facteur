@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,7 +78,7 @@ Future<void> main() async {
     final url = SupabaseConstants.url;
     final key = SupabaseConstants.anonKey;
 
-    // Initialiser Supabase
+    // Initialiser Supabase avec timeout de sécurité
     debugPrint('Main: Initializing Supabase...');
     debugPrint('Main: Supabase URL: ${SupabaseConstants.url}');
     await Supabase.initialize(
@@ -88,6 +89,13 @@ Future<void> main() async {
       ),
       headers: {
         'X-Client-Info': 'supabase-flutter/2.5.0',
+      },
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        debugPrint(
+            'Main: Supabase.initialize TIMEOUT - throwing to catch block');
+        throw TimeoutException('Supabase.initialize timeout after 15 seconds');
       },
     );
     debugPrint('Main: Supabase initialized correctly.');

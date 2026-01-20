@@ -66,10 +66,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     try:
         # await init_db()
         logger.info("lifespan_db_initialization_skipped_for_debug")
+        
+        # 🛡️ STARTUP CHECK: DATABASE MIGRATIONS
+        # Must crash if DB is not up to date to avoid silent failures
+        from app.checks import check_migrations_up_to_date
+        await check_migrations_up_to_date()
+        
     except Exception as e:
-        logger.error("lifespan_db_initialization_failed", error=str(e))
-        # On continue quand même pour ne pas empêcher le démarrage de l'app 
-        # (ce qui permet d'avoir accès au healthcheck et docs même si DB down)
+        logger.error("lifespan_startup_failed", error=str(e))
+        # Pour les migrations, on veut CRASH explicitement
+        if "Pending migrations detected" in str(e) or "Could not load Alembic" in str(e):
+             logger.critical("lifespan_aborting_startup_due_to_db_state")
+             sys.exit(1)
+        
+        # Pour le reste (connexion DB temporaire), on peut tolérer (optionnel)
+        # Mais ici on laisse couler pour l'instant comme avant
         
     logger.info("lifespan_starting_scheduler")
     start_scheduler()

@@ -22,9 +22,37 @@ class AuthState {
     this.needsOnboarding = false,
     this.error,
     this.pendingEmailConfirmation,
+    this.forceUnconfirmed = false,
   });
 
+  /// Backend a explicitement rejeté l'accès (403) car email non confirmé
+  final bool forceUnconfirmed;
+
   bool get isAuthenticated => user != null;
+
+  /// Vérifie si l'email de l'utilisateur est confirmé.
+  /// Les connexions via providers sociaux sont considérées comme confirmées d'office.
+  bool get isEmailConfirmed {
+    if (user == null) return false;
+    if (forceUnconfirmed) return false;
+
+    // DEBUG TRACE
+    // debugPrint('AuthState: Checking isEmailConfirmed. UserID: ${user?.id}');
+    // debugPrint('AuthState: emailConfirmedAt: ${user?.emailConfirmedAt}');
+    // debugPrint('AuthState: appMetadata: ${user?.appMetadata}');
+
+    // Si on a des identités et qu'une d'entre elles n'est pas 'email', on considère comme confirmé
+    final identities = user?.appMetadata['providers'] as List<dynamic>?;
+    if (identities != null && identities.any((p) => p != 'email')) {
+      debugPrint('AuthState: ✅ Confirmed via non-email provider: $identities');
+      return true;
+    }
+
+    final confirmed = user?.emailConfirmedAt != null;
+    debugPrint(
+        'AuthState: Check emailConfirmedAt: $confirmed (${user?.emailConfirmedAt})');
+    return confirmed;
+  }
 
   AuthState copyWith({
     User? user,
@@ -33,6 +61,7 @@ class AuthState {
     String? error,
     String? pendingEmailConfirmation,
     bool clearPendingEmail = false,
+    bool? forceUnconfirmed,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -42,6 +71,7 @@ class AuthState {
       pendingEmailConfirmation: clearPendingEmail
           ? null
           : (pendingEmailConfirmation ?? this.pendingEmailConfirmation),
+      forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
     );
   }
 }
@@ -58,6 +88,15 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     try {
       debugPrint('AuthStateNotifier: Starting initialization...');
 
+      // Timeout de sécurité: si l'init prend plus de 10s, on force isLoading: false
+      // pour éviter un splash infini (fix: bug infinite loader)
+      Future<void>.delayed(const Duration(seconds: 10), () {
+        if (state.isLoading) {
+          debugPrint('AuthStateNotifier: TIMEOUT! Forcing isLoading: false');
+          state = state.copyWith(isLoading: false);
+        }
+      });
+
       // 1. Charger la préférence de persistence
       final box = await Hive.openBox<dynamic>('auth_prefs');
       final rememberMe = box.get('remember_me', defaultValue: true) as bool;
@@ -69,12 +108,37 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       // 3. Appliquer la règle remember_me si une session est restaurée
       if (!rememberMe && session != null) {
         debugPrint('AuthStateNotifier: rememberMe is false, signing out...');
-        await _supabase.auth.signOut();
+        // Timeout pour éviter blocage sur signOut
+        await _supabase.auth.signOut().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('AuthStateNotifier: signOut timed out, continuing...');
+          },
+        );
         await box.delete('remember_me');
         session = null;
       }
 
-      // 4. Mettre à jour l'état initial
+      // 4. Verification stricte de l'email confirmé (Fix mismatch 403)
+      // Si l'utilisateur a une session mais que l'email n'est pas confirmé dans le token/user object,
+      // on doit le déconnecter pour forcer une nouvelle connexion et éviter les erreurs 403 sur le feed.
+      if (session != null) {
+        final user = session.user;
+        final isConfirmed = user.emailConfirmedAt != null ||
+            (user.appMetadata['providers'] as List<dynamic>?)
+                    ?.any((p) => p != 'email') ==
+                true;
+
+        if (!isConfirmed) {
+          debugPrint(
+              'AuthStateNotifier: ⚠️ User email NOT confirmed. Router should redirect to Confirmation Screen.');
+          // On ne force plus le logout ici (race condition). On laisse le Router rediriger.
+        } else {
+          debugPrint('AuthStateNotifier: ✅ User email confirmed.');
+        }
+      }
+
+      // 5. Mettre à jour l'état initial
       state = state.copyWith(
         user: session?.user,
         isLoading: false,
@@ -252,6 +316,34 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> resendConfirmationEmail(String email) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      debugPrint(
+          'AuthStateNotifier: Resending confirmation email to $email...');
+      final response =
+          await _supabase.auth.resend(type: OtpType.signup, email: email);
+      debugPrint(
+          'AuthStateNotifier: Resend API call completed. Response ID: ${response.messageId}');
+      state = state.copyWith(isLoading: false);
+    } on AuthException catch (e) {
+      debugPrint(
+          'AuthStateNotifier: Resend AuthException: ${e.message} (Code: ${e.statusCode})');
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
+      rethrow;
+    } catch (e) {
+      debugPrint('AuthStateNotifier: Resend Unknown Error: $e');
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Une erreur est survenue lors de l\'envoi de l\'email',
+      );
+      rethrow;
+    }
+  }
+
   Future<void> signInWithApple() async {
     state = state.copyWith(isLoading: true, error: null);
 
@@ -308,6 +400,45 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   /// Efface l'état de pending email confirmation (après navigation vers l'écran de confirmation)
   void clearPendingEmailConfirmation() {
     state = state.copyWith(clearPendingEmail: true);
+  }
+
+  /// Rafraîchit les informations de l'utilisateur depuis Supabase
+  /// Utile pour vérifier si l'email a été confirmé
+  Future<void> refreshUser() async {
+    try {
+      debugPrint('AuthStateNotifier: Refreshing user session...');
+      final response = await _supabase.auth.refreshSession();
+      final user = response.user;
+
+      if (user != null) {
+        // Check if email is now confirmed (either via emailConfirmedAt or social provider)
+        final isNowConfirmed = user.emailConfirmedAt != null ||
+            (user.appMetadata['providers'] as List<dynamic>?)
+                    ?.any((p) => p != 'email') ==
+                true;
+
+        debugPrint(
+          'AuthStateNotifier: User refreshed. Confirmed: $isNowConfirmed',
+        );
+        state = state.copyWith(
+          user: user,
+          // Reset forceUnconfirmed if email is now confirmed (fixes stale JWT 403)
+          forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
+        );
+        await _checkOnboardingStatus();
+      }
+    } catch (e) {
+      debugPrint('AuthStateNotifier ERROR: Failed to refresh user: $e');
+    }
+  }
+
+  /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend)
+  void setForceUnconfirmed() {
+    if (!state.forceUnconfirmed) {
+      debugPrint(
+          'AuthStateNotifier: ⛔️ Backend returned 403. Forcing UNCONFIRMED state.');
+      state = state.copyWith(forceUnconfirmed: true);
+    }
   }
 }
 

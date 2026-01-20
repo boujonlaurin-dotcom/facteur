@@ -189,12 +189,37 @@ class Pagination {
   }
 }
 
+class DailyTop3Item {
+  final int rank;
+  final String reason;
+  final bool isConsumed;
+  final Content content;
+
+  DailyTop3Item({
+    required this.rank,
+    required this.reason,
+    required this.isConsumed,
+    required this.content,
+  });
+
+  factory DailyTop3Item.fromJson(Map<String, dynamic> json) {
+    return DailyTop3Item(
+      rank: json['rank'] as int,
+      reason: json['reason'] as String,
+      isConsumed: json['consumed'] as bool,
+      content: Content.fromJson(json['content'] as Map<String, dynamic>),
+    );
+  }
+}
+
 class FeedResponse {
   final List<Content> items;
+  final List<DailyTop3Item> briefing;
   final Pagination pagination;
 
   FeedResponse({
     required this.items,
+    this.briefing = const [],
     required this.pagination,
   });
 
@@ -202,6 +227,10 @@ class FeedResponse {
     return FeedResponse(
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      briefing: (json['briefing'] as List<dynamic>?)
+              ?.map((e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       pagination: json['pagination'] != null

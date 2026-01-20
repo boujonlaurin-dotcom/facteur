@@ -8,6 +8,7 @@ import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/screens/feed_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
 import '../features/sources/screens/sources_screen.dart';
@@ -40,6 +41,7 @@ class RouteNames {
   static const String progress = 'progress';
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
+  static const String emailConfirmation = 'email-confirmation';
 }
 
 /// Chemins des routes
@@ -61,6 +63,7 @@ class RoutePaths {
   static const String progress = '/progress';
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
+  static const String emailConfirmation = '/email-confirmation';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -77,46 +80,46 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final isLoggedIn = authState.isAuthenticated;
-      final isOnSplash = state.matchedLocation == RoutePaths.splash;
-      final isOnLoginPage = state.matchedLocation == RoutePaths.login;
-      final isOnOnboarding = state.matchedLocation == RoutePaths.onboarding;
-      final isOnOnboardingConclusion =
-          state.matchedLocation == RoutePaths.onboardingConclusion;
+      final isEmailConfirmed = authState.isEmailConfirmed;
 
-      // Si on est sur splash et que le chargement est fini, rediriger vers feed ou login
-      if (isOnSplash) {
-        if (isLoggedIn) {
-          return authState.needsOnboarding
-              ? RoutePaths.onboarding
-              : RoutePaths.feed;
-        }
+      final matchedLocation = state.matchedLocation;
+
+      final isOnSplash = matchedLocation == RoutePaths.splash;
+      final isOnLoginPage = matchedLocation == RoutePaths.login;
+      final isOnEmailConfirmation =
+          matchedLocation == RoutePaths.emailConfirmation;
+      final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
+          matchedLocation == RoutePaths.onboardingConclusion;
+
+      // 1. Les utilisateurs non connectés ne peuvent voir que Splash ou Login
+      if (!isLoggedIn) {
+        // Fix: Si on est sur Splash et que le chargement est fini, on DOIT aller sur Login
+        if (isOnLoginPage) return null;
         return RoutePaths.login;
       }
 
-      // Si non connecté et pas sur login → rediriger vers login
-      if (!isLoggedIn && !isOnLoginPage) {
-        return RoutePaths.login;
+      // À partir d'ici, l'utilisateur est connecté
+
+      // 2. Les utilisateurs non confirmés doivent aller sur l'écran de confirmation
+      if (!isEmailConfirmed) {
+        if (isOnEmailConfirmation) return null;
+        return RoutePaths.emailConfirmation;
       }
 
-      // Si connecté et sur login → rediriger vers feed ou onboarding
-      if (isLoggedIn && isOnLoginPage) {
-        if (authState.needsOnboarding) {
-          return RoutePaths.onboarding;
-        }
-        return RoutePaths.feed;
+      // 3. Les utilisateurs confirmés ne doivent pas être sur login, confirmation ou splash
+      if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
+        return authState.needsOnboarding
+            ? RoutePaths.onboarding
+            : RoutePaths.feed;
       }
 
-      // Si connecté mais onboarding pas fait -> rediriger vers onboarding
-      // On vérifie qu'on n'est pas déjà sur une page d'onboarding pour éviter les boucles
-      if (isLoggedIn &&
-          !isOnOnboarding &&
-          !isOnOnboardingConclusion &&
-          authState.needsOnboarding) {
+      // 4. Onboarding : forcer si nécessaire
+      if (authState.needsOnboarding && !isOnOnboarding) {
         return RoutePaths.onboarding;
       }
 
-      // Si connecté, onboarding complété, mais sur onboarding → feed
-      if (isLoggedIn && isOnOnboarding && !authState.needsOnboarding) {
+      // 5. Onboarding : empêcher d'y retourner si fini
+      if (!authState.needsOnboarding && isOnOnboarding) {
         return RoutePaths.feed;
       }
 
@@ -135,6 +138,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.login,
         name: RouteNames.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+
+      // Email Confirmation
+      GoRoute(
+        path: RoutePaths.emailConfirmation,
+        name: RouteNames.emailConfirmation,
+        builder: (context, state) {
+          final authState = ref.read(authStateProvider);
+          return EmailConfirmationScreen(
+            email: authState.user?.email ?? '',
+          );
+        },
       ),
 
       // Onboarding

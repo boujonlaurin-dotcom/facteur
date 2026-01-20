@@ -8,8 +8,13 @@ import 'retry_interceptor.dart';
 class ApiClient {
   late final Dio _dio;
   final SupabaseClient _supabase;
+  final void Function(int code)? onAuthError;
 
-  ApiClient(this._supabase, {String? baseUrl}) {
+  ApiClient(
+    this._supabase, {
+    String? baseUrl,
+    this.onAuthError,
+  }) {
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? ApiConstants.baseUrl,
@@ -53,6 +58,18 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (error, handler) async {
+          // Gérer le cas spécifique "Email non confirmé" (403) ou "Token invalide" (401)
+          if (error.response?.statusCode == 403 ||
+              error.response?.statusCode == 401) {
+            // Si c'est un problème d'email non confirmé ou d'auth, on déclenche le callback
+            if (onAuthError != null) {
+              // ignore: avoid_print
+              print(
+                  '⛔️ ApiClient: Auth Error (${error.response?.statusCode}). Triggering onAuthError...');
+              onAuthError!(error.response?.statusCode ?? 401);
+            }
+          }
+
           // Logger les erreurs (sans les tokens)
           _logError(error);
           return handler.next(error);

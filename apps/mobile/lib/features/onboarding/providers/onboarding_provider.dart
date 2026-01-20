@@ -655,49 +655,49 @@ final isOnboardingCompleteProvider = Provider<bool>((ref) {
 /// Liste des thèmes disponibles
 class AvailableThemes {
   static final List<ThemeOption> all = [
-    ThemeOption(
+    const ThemeOption(
       slug: 'tech',
       label: OnboardingStrings.themeTech,
       emoji: '💻',
       color: Colors.blue,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'business',
       label: OnboardingStrings.themeBusiness,
       emoji: '💼',
       color: Colors.blueGrey,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'science',
       label: OnboardingStrings.themeScience,
       emoji: '🔬',
       color: Colors.purple,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'culture',
       label: OnboardingStrings.themeCulture,
       emoji: '🎨',
       color: Colors.pink,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'politics',
       label: OnboardingStrings.themePolitics,
       emoji: '🏛️',
       color: Colors.brown,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'society',
       label: OnboardingStrings.themeSociety,
       emoji: '👥',
       color: Colors.teal,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'environment',
       label: OnboardingStrings.themeEnvironment,
       emoji: '🌿',
       color: Colors.green,
     ),
-    ThemeOption(
+    const ThemeOption(
       slug: 'economy',
       label: OnboardingStrings.themeEconomy,
       emoji: '📈',
@@ -710,7 +710,8 @@ class ThemeOption {
   final String slug;
   final String label;
   final String emoji;
-  final Color color;  const ThemeOption({
+  final Color color;
+  const ThemeOption({
     required this.slug,
     required this.label,
     required this.emoji,

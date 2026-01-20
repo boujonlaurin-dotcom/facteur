@@ -17,6 +17,7 @@
 | 17/01/2026 | 1.3 | Restauration Backend & Optimisation Import (Port 8080) | Antigravity |
 | 18/01/2026 | 1.4 | Stabilisation Vidéo (Web/Mobile) & Fix Logs | Antigravity |
 | 18/01/2026 | 1.5 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
+| 20/01/2026 | 1.6 | Fix Auth: Fallback DB pour email confirmation (Stale JWT) | Antigravity |
 
 ---
 
@@ -145,6 +146,11 @@ graph TB
 | **Database** | PostgreSQL | 15.x | Base de données relationnelle | Via Supabase, JSONB, full-text search |
 | **PGBouncer Mode**| Transaction | - | Pooling Supabase | Nécessite `NullPool` et désactivation des prepared statements |
 
+> [!IMPORTANT]
+> **Règles Critiques d'Implémentation (Python 3.14 & Auth) :**
+> - **Python 3.14 Compatibility** : Toujours utiliser `list[]` (minuscule) au lieu de `List[]` (Typing) dans les schémas Pydantic pour éviter les erreurs `PydanticUserError` (PEP 585).
+> - **Stale JWT (Auth 403)** : Supabase ne met pas à jour les claims JWT sur refresh. Le backend doit impérativement avoir un **fallback DB** sur `auth.users` si le token indique un email non confirmé mais que l'utilisateur prétend l'être.
+
 | **Video Player (Web)** | youtube_player_iframe | 5.1.x | Support Vidéo Web | Compatible Web (vs mobile plugin) |
 > [!IMPORTANT]
 > **Compatibilité psycopg v3 & PgBouncer (Railway/Supabase) :**
@@ -177,6 +183,7 @@ graph TB
 ```mermaid
 erDiagram
     USERS ||--o{ USER_TOPIC_PROGRESS : has
+    USERS ||--o{ USER_SUBTOPICS : has_preferred
     USER_TOPIC_PROGRESS }|--o{ TOPIC_QUIZZES : validates_level
     
     SOURCES ||--o{ CONTENTS : publishes
@@ -314,6 +321,14 @@ erDiagram
         date week_start
         timestamp updated_at
     }
+
+    USER_SUBTOPICS {
+        uuid id PK
+        uuid user_id FK
+        string topic_slug
+        float weight
+        timestamp created_at
+    }
 ```
 
 ### 4.2 Model Details
@@ -364,6 +379,17 @@ erDiagram
 | `society_climate` | Société & Climat |
 | `culture_ideas` | Culture & Idées |
 
+#### User Subtopics (Story 4.1c)
+**Purpose:** Préférences granulaires pour les 50 topics (Duolingo de l'info)
+
+| Attribut | Type | Description |
+|----------|------|-------------|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK vers users |
+| `topic_slug` | string | Slug du topic (ex: "ai", "climate") |
+| `weight` | float | Poids (défaut 1.0) |
+| `created_at` | timestamp | Date de création |
+
 #### Sources
 **Purpose:** Sources de contenu (curées ou custom)
 
@@ -394,6 +420,7 @@ erDiagram
 | `duration_seconds` | int | Duration (reading or listening) |
 | `html_content` | text | Parsed HTML for in-app reading |
 | `audio_url` | string | Direct link to audio enclosure |
+| `topics` | string[] | Topics granulaires (Story 4.1c) |
 | `guid` | string | Unique RSS ID for deduplication |
 
 #### User Content Status

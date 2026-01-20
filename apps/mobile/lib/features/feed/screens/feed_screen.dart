@@ -29,6 +29,7 @@ import '../providers/user_bias_provider.dart';
 import '../../progress/widgets/progression_card.dart';
 import '../../progress/repositories/progress_repository.dart';
 import '../../../core/ui/notification_service.dart';
+import '../widgets/briefing_section.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -44,7 +45,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   static const int _caughtUpThreshold = 8;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
-  int _itemsViewed = 0;
+  final int _itemsViewed = 0;
 
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
@@ -431,7 +432,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                     // Feed Content
                     feedAsync.when(
-                      data: (contents) {
+                      data: (state) {
+                        final contents = state.items;
+                        final briefing = state.briefing;
+
                         // Check streak for caught-up card (computed outside builder for childCount access)
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
@@ -445,49 +449,56 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
+                                // Index 0: Briefing
+                                if (index == 0) {
+                                  if (briefing.isNotEmpty) {
+                                    return BriefingSection(
+                                        briefing: briefing,
+                                        onItemTap: (item) =>
+                                            _showArticleModal(item.content));
+                                  } else {
+                                    return const SizedBox.shrink();
+                                  }
+                                }
+
+                                final listIndex = index - 1;
                                 final adjustedLength =
                                     contents.length + (showCaughtUp ? 1 : 0);
 
                                 // Add loading indicator at the bottom
-                                if (index == adjustedLength) {
-                                  final notifier = ref.read(
-                                    feedProvider.notifier,
-                                  );
+                                if (listIndex == adjustedLength) {
+                                  final notifier =
+                                      ref.read(feedProvider.notifier);
                                   if (notifier.hasNext) {
                                     return const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(16.0),
-                                        child: CircularProgressIndicator
-                                            .adaptive(),
-                                      ),
-                                    );
+                                        child: Padding(
+                                            padding: EdgeInsets.all(16.0),
+                                            child: CircularProgressIndicator
+                                                .adaptive()));
                                   } else {
                                     return const SizedBox(height: 64);
                                   }
                                 }
 
-                                // Show caught-up card at position 3
-                                if (showCaughtUp && index == caughtUpIndex) {
+                                // Show caught-up card at position 3 (relative to feed list)
+                                if (showCaughtUp &&
+                                    listIndex == caughtUpIndex) {
                                   return Padding(
-                                    key: const ValueKey('caught_up_card'),
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: CaughtUpCard(
-                                      onDismiss: () {
-                                        setState(
-                                          () => _caughtUpDismissed = true,
-                                        );
-                                      },
-                                    ),
-                                  );
+                                      key: const ValueKey('caught_up_card'),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 16),
+                                      child: CaughtUpCard(
+                                          onDismiss: () => setState(() =>
+                                              _caughtUpDismissed = true)));
                                 }
 
-                                // Adjust content index for caught-up card
                                 final contentIndex =
-                                    showCaughtUp && index > caughtUpIndex
-                                        ? index - 1
-                                        : index;
+                                    showCaughtUp && listIndex > caughtUpIndex
+                                        ? listIndex - 1
+                                        : listIndex;
 
-                                if (contentIndex >= contents.length) {
+                                if (contentIndex >= contents.length ||
+                                    contentIndex < 0) {
                                   return const SizedBox.shrink();
                                 }
 
@@ -495,13 +506,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final isConsumed = ref
                                     .read(feedProvider.notifier)
                                     .isContentConsumed(content.id);
-
-                                // Check for dynamic progression card
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
                                 return Padding(
-                                  // Use composed key to force rebuild if progression appears
+                                  // Use composed key
                                   key: ValueKey(
                                       '${content.id}_${progressionTopic != null}'),
                                   padding: const EdgeInsets.only(bottom: 16),
@@ -520,7 +529,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         ),
                                       ),
                                       if (progressionTopic != null) ...[
-                                        // Animate the appearance of the card
                                         TweenAnimationBuilder<double>(
                                           tween: Tween(begin: 0.0, end: 1.0),
                                           duration:
@@ -530,9 +538,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             return Transform.scale(
                                               scale: value,
                                               child: Opacity(
-                                                opacity: value,
-                                                child: child,
-                                              ),
+                                                  opacity: value, child: child),
                                             );
                                           },
                                           child: ProgressionCard(
@@ -550,9 +556,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   ),
                                 );
                               },
-                              // Add +1 for the loader/spacer, +1 if showing caught-up card
-                              childCount:
-                                  contents.length + 1 + (showCaughtUp ? 1 : 0),
+                              // Count: Briefing(1) + Contents + Loader(1) + CaughtUp(1?)
+                              childCount: 1 +
+                                  contents.length +
+                                  1 +
+                                  (showCaughtUp ? 1 : 0),
                             ),
                           ),
                         );
@@ -574,35 +582,27 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             child: Column(
                               children: [
                                 Icon(
-                                  PhosphorIcons.warning(
-                                    PhosphorIconsStyle.duotone,
-                                  ),
-                                  size: 48,
-                                  color: colors.error,
-                                ),
+                                    PhosphorIcons.warning(
+                                        PhosphorIconsStyle.duotone),
+                                    size: 48,
+                                    color: colors.error),
                                 const SizedBox(height: 16),
-                                Text(
-                                  'Erreur de chargement',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                Text(
-                                  err.toString(),
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: colors.error),
-                                ),
+                                Text('Erreur de chargement',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium),
+                                Text(err.toString(),
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(color: colors.error)),
                                 const SizedBox(height: 16),
                                 FacteurButton(
-                                  label: 'Réessayer',
-                                  icon: PhosphorIcons.arrowClockwise(
-                                    PhosphorIconsStyle.bold,
-                                  ),
-                                  onPressed: () => ref.refresh(feedProvider),
-                                ),
+                                    label: 'Réessayer',
+                                    icon: PhosphorIcons.arrowClockwise(
+                                        PhosphorIconsStyle.bold),
+                                    onPressed: () => ref.refresh(feedProvider)),
                               ],
                             ),
                           ),
