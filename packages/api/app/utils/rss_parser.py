@@ -1,10 +1,14 @@
 """Parser RSS/Atom."""
 
 from typing import Any
+import httpx
+import feedparser
+import asyncio
+import sys
+import os
+import structlog
 
-import feedparser
-import feedparser
-from curl_cffi.requests import AsyncSession
+logger = structlog.get_logger()
 
 class RSSParser:
     """Parser de flux RSS/Atom."""
@@ -15,22 +19,82 @@ class RSSParser:
     async def parse(self, url: str) -> dict[str, Any]:
         """
         Parse un flux RSS/Atom depuis une URL.
-        Use curl_cffi to impersonate a real browser (Chrome) and bypass TLS fingerprinting/WAFs.
+        Essaie avec httpx (standard), et fallback sur un subprocess curl_cffi si bloqué (403/401).
         """
-        async with AsyncSession(timeout=self.timeout, impersonate="chrome") as client:
-            try:
-                response = await client.get(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Facteur/1.0; +http://facteur.app)"
+        }
+        
+        text_content = ""
+        
+        try:
+            # 1. Tentative standard (rapide, sans overhead)
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
                 response.raise_for_status()
-            except Exception as e:
-                # Log context but re-raise transparently
-                # print(f"RSS Fetch Error for {url}: {e}")
+                text_content = response.text
+                
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (403, 401, 429):
+                logger.warning("rss_fetch_blocked_fallback", url=url, status=e.response.status_code)
+                # 2. Fallback: Subprocess (Safe Sandbox)
+                text_content = await self._fetch_via_subprocess(url)
+            else:
                 raise e
+        except Exception as e:
+            # Pour les autres erreurs (timeout, connection), on peut aussi tenter le fallback ?
+            # Pour l'instant on re-raise, sauf si on est sûr que curl ferait mieux
+            raise e
 
+        # 3. Parsing du contenu XML/Atom récupéré
+        return self._parse_feed_xml(text_content)
 
-        feed = feedparser.parse(response.text)
+    async def _fetch_via_subprocess(self, url: str) -> str:
+        """Exécute le script fetch_rss.py dans un processus séparé pour contourner le WAF sans bloquer la loop."""
+        
+        # Chemin absolu vers le script
+        current_dir = os.path.dirname(os.path.abspath(__file__)) # packages/api/app/utils
+        script_path = os.path.join(current_dir, "../../scripts/fetch_rss.py")
+        script_path = os.path.abspath(script_path)
+        
+        if not os.path.exists(script_path):
+             raise FileNotFoundError(f"RSS Script not found at {script_path}")
+        
+        # Lancement du subprocess
+        cmd = [sys.executable, script_path, url]
+        
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Wait with timeout slightly larger than the script's internal timeout
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout + 5)
+            
+            if proc.returncode != 0:
+                error_msg = stderr.decode().strip()
+                logger.error("rss_subprocess_failed", url=url, error=error_msg)
+                raise RuntimeError(f"RSS Subprocess fetch failed: {error_msg}")
+                
+            return stdout.decode()
+            
+        except asyncio.TimeoutError:
+            if 'proc' in locals():
+                try:
+                    proc.kill()
+                except:
+                    pass
+            raise TimeoutError(f"RSS Subprocess timed out for {url}")
+
+    def _parse_feed_xml(self, text_content: str) -> dict[str, Any]:
+        """Parse le contenu brut RSS/Atom."""
+        feed = feedparser.parse(text_content)
 
         if feed.bozo and not feed.entries:
-            raise ValueError(f"Invalid RSS feed: {feed.bozo_exception}")
+            # feedparser est très permissif, mais si bozo=1 et 0 entries, c'est souvent un échec
+            raise ValueError(f"Invalid RSS feed data: {feed.bozo_exception}")
 
         return {
             "title": feed.feed.get("title", ""),
@@ -74,12 +138,10 @@ class RSSParser:
         # Extraire le contenu HTML (content:encoded ou content)
         html_content = None
         if hasattr(entry, "content") and entry.content:
-            # content:encoded est souvent dans entry.content[0].value
             for content_item in entry.content:
                 if content_item.get("type") in ("text/html", "html"):
                     html_content = content_item.get("value")
                     break
-            # Fallback: premier content disponible
             if not html_content and entry.content:
                 html_content = entry.content[0].get("value")
 
@@ -118,4 +180,3 @@ class RSSParser:
                 return int(duration_str)
         except (ValueError, AttributeError):
             return 0
-
