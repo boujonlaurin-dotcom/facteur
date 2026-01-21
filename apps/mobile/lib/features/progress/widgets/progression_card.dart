@@ -31,22 +31,21 @@ class _ProgressionCardState extends ConsumerState<ProgressionCard> {
   bool _isLoading = false;
 
   Future<void> _handleFollowTopic() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       await ref.read(progressRepositoryProvider).followTopic(widget.topic);
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isFollowed = true;
-        });
-        NotificationService.showSuccess(
-            'Thème "${widget.topic}" suivi ! Quiz bientôt disponibles.');
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isFollowed = true;
+      });
+      NotificationService.showSuccess(
+          'Thème "${widget.topic}" suivi ! Quiz bientôt disponibles.');
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        NotificationService.showError('Erreur : $e');
-      }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      NotificationService.showError('Erreur : $e');
     }
   }
 

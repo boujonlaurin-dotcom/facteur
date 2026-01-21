@@ -27,7 +27,7 @@ import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
 import '../../progress/widgets/progression_card.dart';
-import '../../progress/repositories/progress_repository.dart';
+// import '../../progress/repositories/progress_repository.dart'; // Disabled with progression feature
 import '../../../core/ui/notification_service.dart';
 import '../widgets/briefing_section.dart';
 
@@ -86,42 +86,31 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
 
     // 3. Post-consumption Logic (Progression / Topics)
-    // Executed upon return, regardless of result, since we force-consumed it.
-    if (mounted) {
-      final topic = content.progressionTopic;
-
-      if (topic != null && topic.isNotEmpty) {
-        // Check if already followed
-        final progressAsync = ref.read(myProgressProvider);
-        bool isFollowed = false;
-
-        if (progressAsync.hasValue) {
-          isFollowed = progressAsync.value!
-              .any((p) => p.topic.toLowerCase() == topic.toLowerCase());
-        }
-
-        // Logic refined:
-        // If NOT followed -> Show Dynamic Card in Feed (via setState)
-        // If Followed -> Show SnackBar (Success validation)
-
-        if (!isFollowed) {
-          // Activate the card for this content ID
-          setState(() {
-            _activeProgressions[content.id] = topic;
-          });
-          // Scroll slightly to make sure it's visible if it's below?
-          // Usually the user returns to the same scroll position.
-        } else {
-          // Already followed
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              NotificationService.showSuccess(
-                  'Quiz disponible pour le sujet "$topic" !');
-            }
-          });
-        }
-      }
-    }
+    // DISABLED: The automatic display of ProgressionCard was causing UX issues.
+    // TODO: Re-enable with proper user intent detection (e.g., only after N articles on same topic).
+    // if (mounted) {
+    //   final topic = content.progressionTopic;
+    //   if (topic != null && topic.isNotEmpty) {
+    //     final progressAsync = ref.read(myProgressProvider);
+    //     bool isFollowed = false;
+    //     if (progressAsync.hasValue) {
+    //       isFollowed = progressAsync.value!
+    //           .any((p) => p.topic.toLowerCase() == topic.toLowerCase());
+    //     }
+    //     if (!isFollowed) {
+    //       setState(() {
+    //         _activeProgressions[content.id] = topic;
+    //       });
+    //     } else {
+    //       Future.delayed(const Duration(milliseconds: 500), () {
+    //         if (mounted) {
+    //           NotificationService.showSuccess(
+    //               'Quiz disponible pour le sujet "$topic" !');
+    //         }
+    //       });
+    //     }
+    //   }
+    // }
   }
 
   // _showProgressionCTA REMOVED
