@@ -168,7 +168,32 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
                 # Fetch user interests & prefs (should be cached ideally)
                 context = await _create_scoring_context(session, profile)
                 
-                for content in candidates:
+                # PERTINENCE FIX: Pré-filtrer les candidats par thèmes d'intérêt
+                # Garder les contenus dont le thème correspond aux intérêts utilisateur
+                # OU qui proviennent de sources suivies (pour garantir le slot #3)
+                user_themes = context.user_interests
+                followed_sources = context.followed_source_ids
+                
+                filtered_candidates = [
+                    c for c in candidates
+                    if (c.source and c.source.theme in user_themes) or 
+                       (c.source_id in followed_sources)
+                ]
+                
+                logger.debug(
+                    "Filtered candidates by interest themes",
+                    user_id=str(user_id),
+                    before=len(candidates),
+                    after=len(filtered_candidates),
+                    user_themes=list(user_themes)
+                )
+                
+                # Fallback: si trop peu de candidats après filtrage, utiliser les originaux
+                if len(filtered_candidates) < 10:
+                    filtered_candidates = candidates
+                    logger.debug("Fallback to all candidates (insufficient after filter)")
+                
+                for content in filtered_candidates:
                     try:
                         score = rec_service.scoring_engine.compute_score(content, context)
                         scored_contents.append((content, score))

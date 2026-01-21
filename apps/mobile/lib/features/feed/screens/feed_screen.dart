@@ -405,7 +405,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
-                          'Voici votre tournée du jour.',
+                          'Voici vos news personnalisées du jour.',
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
