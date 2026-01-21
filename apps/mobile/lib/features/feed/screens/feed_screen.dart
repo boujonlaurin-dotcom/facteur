@@ -58,44 +58,36 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
 // ...
   Future<void> _showArticleModal(Content content) async {
-    // Si on est sur Desktop (macOS, Windows, Linux) hors Web, on ouvre direct dans le navigateur
-    if (!kIsWeb &&
-        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
-      launchUrl(Uri.parse(content.url));
-
-      // Sur desktop on marque tout de suite comme consommé car pas de modal
-      if (mounted) {
-        ref.read(feedProvider.notifier).markContentAsConsumed(content);
-
-        // Update Streak after animation completes
-        Future<void>.delayed(const Duration(milliseconds: 1100), () {
-          if (mounted) {
-            ref.read(streakProvider.notifier).refreshSilent();
-          }
-        });
-      }
-      return;
-    }
-
-    // Story 5.2: Navigate to in-app reader screen with Content passed via extra
-    // We await the result to know if the content was consumed (read for > 30s)
-    final result = await context.push<bool>(
-      '/feed/content/${content.id}',
-      extra: content,
-    );
-
-    // Au retour, si marqué comme consommé
-    if (mounted && result == true) {
+    // 1. Mark as consumed immediately (Facteur philosophy: Click = Read)
+    // Applies to both Briefing and Feed items.
+    if (mounted) {
       ref.read(feedProvider.notifier).markContentAsConsumed(content);
 
-      // Update Streak after animation completes
+      // Update Streak after animation/transition completes
       Future<void>.delayed(const Duration(milliseconds: 1100), () {
         if (mounted) {
           ref.read(streakProvider.notifier).refreshSilent();
         }
       });
+    }
 
-      // Show Progression CTA if topic is available and valid
+    // 2. Navigation / Opening
+    // Desktop: Open in browser
+    if (!kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+      launchUrl(Uri.parse(content.url));
+      return;
+    }
+
+    // Mobile: In-app reader
+    await context.push<bool>(
+      '/feed/content/${content.id}',
+      extra: content,
+    );
+
+    // 3. Post-consumption Logic (Progression / Topics)
+    // Executed upon return, regardless of result, since we force-consumed it.
+    if (mounted) {
       final topic = content.progressionTopic;
 
       if (topic != null && topic.isNotEmpty) {
@@ -112,23 +104,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         // If NOT followed -> Show Dynamic Card in Feed (via setState)
         // If Followed -> Show SnackBar (Success validation)
 
-        if (mounted) {
-          if (!isFollowed) {
-            // Activate the card for this content ID
-            setState(() {
-              _activeProgressions[content.id] = topic;
-            });
-            // Scroll slightly to make sure it's visible if it's below?
-            // Usually the user returns to the same scroll position.
-          } else {
-            // Already followed
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted) {
-                NotificationService.showSuccess(
-                    'Quiz disponible pour le sujet "$topic" !');
-              }
-            });
-          }
+        if (!isFollowed) {
+          // Activate the card for this content ID
+          setState(() {
+            _activeProgressions[content.id] = topic;
+          });
+          // Scroll slightly to make sure it's visible if it's below?
+          // Usually the user returns to the same scroll position.
+        } else {
+          // Already followed
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              NotificationService.showSuccess(
+                  'Quiz disponible pour le sujet "$topic" !');
+            }
+          });
         }
       }
     }

@@ -4,10 +4,7 @@ import '../../../config/theme.dart';
 import '../models/content_model.dart';
 import 'feed_card.dart';
 
-/// Section Briefing Quotidien avec design premium.
-///
-/// Affiche les 3 articles les plus importants du jour dans un container
-/// visuellement distinct avec gradient et cartes full-size.
+/// Section Briefing Quotidien avec design premium affiné.
 class BriefingSection extends StatelessWidget {
   final List<DailyTop3Item> briefing;
   final void Function(DailyTop3Item) onItemTap;
@@ -25,139 +22,194 @@ class BriefingSection extends StatelessWidget {
     final colors = context.facteurColors;
     final allConsumed = briefing.every((item) => item.isConsumed);
 
-    // Si tout est lu, afficher une version réduite
     if (allConsumed) {
       return _buildCollapsedSection(context, colors);
     }
 
+    // Calcul du temps de lecture estimé (moyenne 2 min par article si nul)
+    final totalSeconds = briefing.fold<int>(0, (sum, item) {
+      return sum + (item.content.durationSeconds ?? 120);
+    });
+    final totalMinutes = (totalSeconds / 60).ceil();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Couleurs adaptatives pour le container
+    final containerBgColors = isDark
+        ? [const Color(0xFF1A1918), const Color(0xFF2C2A29)] // Obsidian
+        : [
+            colors.backgroundSecondary,
+            colors.backgroundPrimary
+          ]; // Papier Premium
+
+    final headerTextColor = isDark ? Colors.white : colors.textPrimary;
+    final subheaderTextColor =
+        isDark ? Colors.white.withOpacity(0.6) : colors.textSecondary;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      margin: const EdgeInsets.only(top: 8, bottom: 24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: containerBgColors,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: isDark
+              ? colors.primary.withOpacity(0.3)
+              : colors.primary.withOpacity(0.15),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header premium
-          _buildHeader(context, colors),
+          // Header unifié
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "L'Essentiel du Jour",
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: headerTextColor,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                          size: 14,
+                          color: subheaderTextColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          "$totalMinutes min de lecture",
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: subheaderTextColor,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              _buildProgressBadge(colors),
+            ],
+          ),
           const SizedBox(height: 16),
 
-          // Container premium avec gradient border
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colors.primary.withOpacity(0.08),
-                  colors.primary.withOpacity(0.02),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: colors.primary.withOpacity(0.15),
-                width: 1.5,
-              ),
-            ),
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                for (int i = 0; i < briefing.length; i++) ...[
-                  _buildBriefingItem(context, briefing[i], i),
-                  if (i < briefing.length - 1) const SizedBox(height: 12),
-                ],
-              ],
-            ),
+          // Liste des articles
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: briefing.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 20),
+            itemBuilder: (context, index) {
+              final item = briefing[index];
+              return _buildRankedCard(context, item, index + 1, isDark);
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, FacteurColors colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  colors.primary,
-                  colors.primary.withOpacity(0.8),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              PhosphorIcons.target(PhosphorIconsStyle.fill),
-              size: 18,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "L'Essentiel du Jour",
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                Text(
-                  "Sélectionné pour vous",
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          // Progress indicator
-          _buildProgressIndicator(colors),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressIndicator(FacteurColors colors) {
+  Widget _buildProgressBadge(FacteurColors colors) {
     final readCount = briefing.where((item) => item.isConsumed).length;
+    final isDone = readCount == briefing.length;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: colors.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
+        color: isDone ? colors.success : colors.primary,
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$readCount/${briefing.length}',
-            style: TextStyle(
-              color: colors.primary,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Icon(
-            PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-            size: 14,
-            color: colors.primary,
-          ),
-        ],
+      child: Text(
+        "$readCount/${briefing.length}",
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
       ),
     );
   }
 
-  Widget _buildBriefingItem(
-      BuildContext context, DailyTop3Item item, int index) {
+  Widget _buildRankedCard(
+      BuildContext context, DailyTop3Item item, int rank, bool isDark) {
     final colors = context.facteurColors;
+    final labelColor =
+        isDark ? Colors.white.withOpacity(0.5) : colors.textSecondary;
+    final dotColor = isDark
+        ? Colors.white.withOpacity(0.2)
+        : colors.textTertiary.withOpacity(0.4);
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // FeedCard standard (full-size)
+        // Label de rang au-dessus de la carte pour ne pas chevaucher le contenu
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            children: [
+              Text(
+                "N°$rank",
+                style: TextStyle(
+                  color: colors.primary.withOpacity(isDark ? 0.9 : 1.0),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  letterSpacing: 1.0,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                item.reason.toUpperCase(),
+                style: TextStyle(
+                  color: labelColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Spacer(),
+              if (item.isConsumed)
+                Icon(
+                  PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                  size: 16,
+                  color: colors.success,
+                ),
+            ],
+          ),
+        ),
+        // La carte classique
         Opacity(
           opacity: item.isConsumed ? 0.6 : 1.0,
           child: FeedCard(
@@ -165,133 +217,58 @@ class BriefingSection extends StatelessWidget {
             onTap: () => onItemTap(item),
           ),
         ),
-
-        // Badge TOP X en overlay
-        Positioned(
-          top: 8,
-          left: 8,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  colors.primary,
-                  colors.primary.withOpacity(0.85),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: colors.primary.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '#${index + 1}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _getReasonEmoji(item.reason),
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Check mark if consumed
-        if (item.isConsumed)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colors.success,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: colors.success.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.check,
-                size: 14,
-                color: Colors.white,
-              ),
-            ),
-          ),
       ],
     );
   }
 
-  String _getReasonEmoji(String reason) {
-    switch (reason.toLowerCase()) {
-      case 'à la une':
-        return '📰';
-      case 'sujet tendance':
-        return '🔥';
-      case 'source suivie':
-        return '⭐';
-      default:
-        return '✨';
-    }
-  }
-
   Widget _buildCollapsedSection(BuildContext context, FacteurColors colors) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor =
+        isDark ? const Color(0xFF1A1918) : colors.backgroundSecondary;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(top: 8, bottom: 24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colors.success.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            bgColor,
+            colors.success.withOpacity(isDark ? 0.1 : 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: colors.success.withOpacity(0.2),
+          color: colors.success.withOpacity(0.3),
+          width: 1,
         ),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: colors.success,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check,
-              size: 16,
-              color: Colors.white,
-            ),
+          Icon(
+            PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+            color: colors.success,
+            size: 28,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Briefing terminé ! ✅",
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colors.success,
+                  "Briefing terminé !",
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : colors.textPrimary,
                       ),
                 ),
                 Text(
-                  "Rendez-vous demain à 8h pour votre prochain briefing",
+                  "Revenez demain à 8h pour votre prochaine sélection.",
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
+                        color: isDark
+                            ? Colors.white.withOpacity(0.6)
+                            : colors.textSecondary,
                       ),
                 ),
               ],

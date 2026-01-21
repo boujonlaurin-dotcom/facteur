@@ -223,46 +223,32 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         // Fire and forget both?
         await repository.markBriefingAsRead(content.id);
       } catch (e) {
-        // Silent
+        // Log error but don't block
+        print('🔴 FeedNotifier: Failed to mark briefing as read: $e');
       }
     }
 
-    // 2. Feed Items Logic (Animation + Removal)
-    // Check if it's in the feed items (could be in both?)
-    final isInFeed = currentState.items.any((c) => c.id == content.id);
+    // 2. Feed Items Logic - PERSISTENCE (Story: Keep read items until refresh)
+    // Check if it's in the feed items
+    final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
 
-    if (isInFeed) {
-      // Mark as consumed to trigger animation
-      _consumedContentIds.add(content.id);
+    if (feedIndex != -1) {
+      // Update the item status in the list directly
+      final updatedItems = List<Content>.from(currentState.items);
+      updatedItems[feedIndex] =
+          updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
 
-      // Notify listeners to start animation
-      // Note: we might have already updated state for briefing. Use value from state.
-      state = AsyncData(FeedState(
-          items: List.from(state.value!.items),
-          briefing: state.value!.briefing));
+      state = AsyncData(
+          FeedState(items: updatedItems, briefing: currentState.briefing));
 
-      // Call Generic API immediately
+      // Call Generic API immediately (Fire and forget)
       try {
         final repository = ref.read(feedRepositoryProvider);
         await repository.updateContentStatus(
             content.id, ContentStatus.consumed);
       } catch (e) {
-        // Silent failure
+        // Silent failure, state is already updated optimistically
       }
-
-      // Wait for "Lu" overlay animation
-      await Future<void>.delayed(const Duration(milliseconds: 1000));
-
-      final freshState = state.value;
-      if (freshState == null) return;
-
-      // Remove from list after animation
-      final updatedItems = List<Content>.from(freshState.items);
-      updatedItems.removeWhere((c) => c.id == content.id);
-      _consumedContentIds.remove(content.id);
-
-      state = AsyncData(
-          FeedState(items: updatedItems, briefing: freshState.briefing));
     }
   }
 }

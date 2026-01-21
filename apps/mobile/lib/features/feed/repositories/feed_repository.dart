@@ -94,7 +94,7 @@ class FeedRepository {
   }
 
   Future<void> markBriefingAsRead(String contentId) async {
-    await _apiClient.dio.post('/feed/briefing/$contentId/read');
+    await _apiClient.dio.post('feed/briefing/$contentId/read');
   }
 
   Future<Content?> getContent(String contentId) async {

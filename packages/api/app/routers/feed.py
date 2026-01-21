@@ -36,25 +36,21 @@ async def get_personalized_feed(
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
     
-    # 1. Get Feed Items
-    feed_items = await service.get_feed(
-        user_id=user_uuid, 
-        limit=limit, 
-        offset=offset,
-        content_type=content_type,
-        mode=mode,
-        saved_only=saved_only
-    )
-    
-    # 2. Get Today's Briefing (Only if offset=0 and basic feed mode)
-    # On ne renvoie le briefing que sur la première page du feed général
+    # 1. Get Today's Briefing (Only if offset=0 and basic feed mode)
+    # On le fait avant le feed car c'est une requête légère qui peut être parallélisée
+    # mentalement (ou via asyncio.gather si on avait des sessions distinctes).
     briefing_items = []
+    briefing_content_ids = set()
+    
     if offset == 0 and not saved_only and mode is None and content_type is None:
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         stmt = (
             select(DailyTop3)
-            .options(selectinload(DailyTop3.content).selectinload(Content.source))
+            .options(
+                selectinload(DailyTop3.content)
+                .selectinload(Content.source)
+            )
             .where(
                 DailyTop3.user_id == user_uuid,
                 DailyTop3.generated_at >= today_start
@@ -64,17 +60,31 @@ async def get_personalized_feed(
         briefing_result = await db.execute(stmt)
         briefing_rows = briefing_result.scalars().all()
         
-        # Mapping ORM -> Schema
-        # Note: DailyTop3Response expects 'content' field populated
         briefing_items = [
             DailyTop3Response(
                 rank=row.rank,
                 reason=row.top3_reason,
                 consumed=row.consumed,
-                content=row.content # Pydantic from_attributes will handle conversion to ContentResponse
+                content=row.content
             )
             for row in briefing_rows
         ]
+        briefing_content_ids = {row.content_id for row in briefing_rows}
+    
+    # 2. Get Feed Items
+    feed_items = await service.get_feed(
+        user_id=user_uuid, 
+        limit=limit, 
+        offset=offset,
+        content_type=content_type,
+        mode=mode,
+        saved_only=saved_only
+    )
+    
+    # PERFORMANCE OPTIMIZATION: Exclure les items du briefing du feed sil ne l'ont pas déjà été
+    # (Le service de recommandation pourrait les inclure par défaut)
+    if briefing_content_ids:
+        feed_items = [item for item in feed_items if item.id not in briefing_content_ids]
 
     return FeedResponse(
         briefing=briefing_items,
@@ -89,15 +99,16 @@ async def mark_briefing_item_read(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Marque un item du briefing comme lu/consommé."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     from sqlalchemy import select, update
     from app.models.daily_top3 import DailyTop3
-    from app.services.contents_service import ContentsService # Hypothétique
     
     user_uuid = UUID(current_user_id)
     c_uuid = UUID(content_id)
     
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # FIX: Broaden window to last 48h to avoid timezone edge cases
+    # (e.g. Generated at 23:00 UTC previous day)
+    lookback_window = datetime.utcnow() - timedelta(hours=48)
     
     # 1. Mark in DailyTop3
     stmt = (
@@ -105,20 +116,16 @@ async def mark_briefing_item_read(
         .where(
             DailyTop3.user_id == user_uuid,
             DailyTop3.content_id == c_uuid,
-            DailyTop3.generated_at >= today_start
+            DailyTop3.generated_at >= lookback_window
         )
         .values(consumed=True)
     )
-    await db.execute(stmt)
-    
-    # 2. Mark generic Content Status as SEEN (or CONSUMED?)
-    # Briefing "read" might mostly mean "expanded/viewed".
-    # Let's say it counts as CONSUMED if they opened it via this endpoint?
-    # Or just SEEN?
-    # Usually clicking the card -> open details -> API call to update status.
-    # This endpoint specifically tracks "Briefing progress".
-    # I'll let the client call the standard status endpoint separately if they want "Consumed" on content.
-    # But for "Briefing" logic (progress bar 1/3, 2/3), this is specific.
-    
+    result = await db.execute(stmt)
     await db.commit()
-    return {"message": "Briefing item marked as read"}
+    
+    if result.rowcount == 0:
+        print(f"⚠️ [WARNING] No DailyTop3 item found to mark as read for user {user_uuid} and content {c_uuid}")
+    else:
+        print(f"✅ [SUCCESS] Marked {result.rowcount} DailyTop3 items as read for user {user_uuid}")
+
+    return {"message": "Briefing item marked as read", "updated": result.rowcount}

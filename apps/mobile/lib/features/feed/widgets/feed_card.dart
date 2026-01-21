@@ -23,209 +23,259 @@ class FeedCard extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    return FacteurCard(
-      onTap: onTap,
-      padding: EdgeInsets.zero,
-      borderRadius: FacteurRadius.small,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Image (Header)
-          if (content.thumbnailUrl != null && content.thumbnailUrl!.isNotEmpty)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(FacteurRadius.small)),
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: CachedNetworkImage(
-                  imageUrl: content.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(
-                    color: colors.backgroundSecondary,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colors.primary.withOpacity(0.5),
-                      ),
-                    ),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    color: colors.backgroundSecondary,
-                    child: Icon(
-                      PhosphorIcons.imageBroken(PhosphorIconsStyle.duotone),
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    final isConsumed = content.status == ContentStatus.consumed;
 
-          // 2. Body (Title + Meta)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space3,
-              vertical: FacteurSpacing.space3,
-            ),
+    return Opacity(
+      opacity: isConsumed ? 0.6 : 1.0,
+      child: Stack(
+        children: [
+          FacteurCard(
+            onTap: onTap,
+            padding: EdgeInsets.zero,
+            borderRadius: FacteurRadius.small,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Titre
-                Text(
-                  content.title,
-                  style: textTheme.displaySmall?.copyWith(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if ((content.thumbnailUrl == null ||
-                        content.thumbnailUrl!.isEmpty) &&
-                    content.description != null &&
-                    content.description!.isNotEmpty) ...[
-                  const SizedBox(height: FacteurSpacing.space2),
-                  Text(
-                    content.description!,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colors.textSecondary.withOpacity(0.8),
-                      height: 1.3,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: FacteurSpacing.space2),
-                // Métadonnées (Type • Durée)
-                Row(
-                  children: [
-                    _buildTypeIcon(context, content.contentType),
-                    const SizedBox(width: FacteurSpacing.space2),
-                    if (content.durationSeconds != null)
-                      Text(
-                        _formatDuration(content.durationSeconds!),
-                        style: textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary,
-                            fontWeight: FontWeight.w500),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // 3. Footer (Source + Actions)
-          Container(
-            decoration: BoxDecoration(
-              color: colors.backgroundSecondary.withOpacity(0.5),
-              border: Border(
-                top: BorderSide(
-                  color: colors.textSecondary.withOpacity(0.1),
-                  width: 1,
-                ),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space3,
-              vertical: FacteurSpacing.space1,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      // Source Logo
-                      if (content.source.logoUrl != null &&
-                          content.source.logoUrl!.isNotEmpty) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
-                            imageUrl: content.source.logoUrl!,
-                            width: 16,
-                            height: 16,
-                            fit: BoxFit.cover,
-                            errorWidget: (context, url, error) =>
-                                _buildSourcePlaceholder(colors),
+                // 1. Image (Header)
+                if (content.thumbnailUrl != null &&
+                    content.thumbnailUrl!.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(FacteurRadius.small)),
+                    child: AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: CachedNetworkImage(
+                        imageUrl: content.thumbnailUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: colors.backgroundSecondary,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.primary.withOpacity(0.5),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: FacteurSpacing.space2),
-                      ] else ...[
-                        _buildSourcePlaceholder(colors),
-                        const SizedBox(width: FacteurSpacing.space2),
-                      ],
-
-                      // Source Name
-                      Flexible(
-                        flex: 2,
-                        fit: FlexFit.loose,
-                        child: Text(
-                          content.source.name,
-                          style: textTheme.labelMedium?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w600,
+                        errorWidget: (context, url, error) => Container(
+                          color: colors.backgroundSecondary,
+                          child: Icon(
+                            PhosphorIcons.imageBroken(
+                                PhosphorIconsStyle.duotone),
+                            color: colors.textSecondary,
                           ),
-                          maxLines: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // 2. Body (Title + Meta)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space3,
+                    vertical: FacteurSpacing.space3,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Titre
+                      Text(
+                        content.title,
+                        style: textTheme.displaySmall?.copyWith(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if ((content.thumbnailUrl == null ||
+                              content.thumbnailUrl!.isEmpty) &&
+                          content.description != null &&
+                          content.description!.isNotEmpty) ...[
+                        const SizedBox(height: FacteurSpacing.space2),
+                        Text(
+                          content.description!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary.withOpacity(0.8),
+                            height: 1.3,
+                          ),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-
-                      // Récence
-                      const SizedBox(width: FacteurSpacing.space2),
-                      Text(
-                        timeago
-                            .format(content.publishedAt, locale: 'fr_short')
-                            .replaceAll('il y a ', ''),
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
-                          fontSize: 11,
-                        ),
-                      ),
-
-                      // Recommendation Badge (Optional)
-                      if (content.recommendationReason != null) ...[
-                        const SizedBox(width: FacteurSpacing.space2),
-                        Text(
-                          '•',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary.withOpacity(0.5),
-                            fontSize: 10,
-                          ),
-                        ),
-                        const SizedBox(width: FacteurSpacing.space2),
-                        Flexible(
-                          flex: 3,
-                          fit: FlexFit.loose,
-                          child: Text(
-                            content.recommendationReason!.label,
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
                       ],
+                      const SizedBox(height: FacteurSpacing.space2),
+                      // Métadonnées (Type • Durée)
+                      Row(
+                        children: [
+                          _buildTypeIcon(context, content.contentType),
+                          const SizedBox(width: FacteurSpacing.space2),
+                          if (content.durationSeconds != null)
+                            Text(
+                              _formatDuration(content.durationSeconds!),
+                              style: textTheme.labelSmall?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
 
-                // Actions (Fixed on the right)
-                IconButton(
-                  icon: Icon(
-                    PhosphorIcons.dotsThree(PhosphorIconsStyle.bold),
-                    color: colors.textSecondary,
-                    size: 20,
+                // 3. Footer (Source + Actions)
+                Container(
+                  decoration: BoxDecoration(
+                    color: colors.backgroundSecondary.withOpacity(0.5),
+                    border: Border(
+                      top: BorderSide(
+                        color: colors.textSecondary.withOpacity(0.1),
+                        width: 1,
+                      ),
+                    ),
                   ),
-                  onPressed: onMoreOptions,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(),
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space3,
+                    vertical: FacteurSpacing.space1,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            // Source Logo
+                            if (content.source.logoUrl != null &&
+                                content.source.logoUrl!.isNotEmpty) ...[
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: CachedNetworkImage(
+                                  imageUrl: content.source.logoUrl!,
+                                  width: 16,
+                                  height: 16,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (context, url, error) =>
+                                      _buildSourcePlaceholder(colors),
+                                ),
+                              ),
+                              const SizedBox(width: FacteurSpacing.space2),
+                            ] else ...[
+                              _buildSourcePlaceholder(colors),
+                              const SizedBox(width: FacteurSpacing.space2),
+                            ],
+
+                            // Source Name
+                            Flexible(
+                              flex: 2,
+                              fit: FlexFit.loose,
+                              child: Text(
+                                content.source.name,
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+
+                            // Récence
+                            const SizedBox(width: FacteurSpacing.space2),
+                            Text(
+                              timeago
+                                  .format(content.publishedAt,
+                                      locale: 'fr_short')
+                                  .replaceAll('il y a ', ''),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+
+                            // Recommendation Badge (Optional)
+                            if (content.recommendationReason != null) ...[
+                              const SizedBox(width: FacteurSpacing.space2),
+                              Text(
+                                '•',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colors.textSecondary.withOpacity(0.5),
+                                  fontSize: 10,
+                                ),
+                              ),
+                              const SizedBox(width: FacteurSpacing.space2),
+                              Flexible(
+                                flex: 3,
+                                fit: FlexFit.loose,
+                                child: Text(
+                                  content.recommendationReason!.label,
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.textSecondary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Actions (Fixed on the right)
+                      IconButton(
+                        icon: Icon(
+                          PhosphorIcons.dotsThree(PhosphorIconsStyle.bold),
+                          color: colors.textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: onMoreOptions,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(8),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
+          if (isConsumed)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colors.success,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      "Lu",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
