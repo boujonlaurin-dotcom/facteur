@@ -25,8 +25,8 @@ class QualityLayer(BaseScoringLayer):
         
         # Bonus/Malus configuré centralement
         if reliability == ReliabilityScore.HIGH:
-            score += ScoringWeights.FQS_HIGH_BONUS
-            context.add_reason(content.id, self.name, ScoringWeights.FQS_HIGH_BONUS, "High reliability source")
+            score += ScoringWeights.CURATED_SOURCE
+            context.add_reason(content.id, self.name, ScoringWeights.CURATED_SOURCE, "Source qualitative")
             
         elif reliability == ReliabilityScore.MEDIUM:
             pass

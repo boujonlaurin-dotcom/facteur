@@ -10,8 +10,8 @@ class ScoringWeights:
     # C'est le moteur principal du feed.
     THEME_MATCH = 70.0  
     
-    # Poids pour une source explicitement suivie par l'utilisateur.
-    FOLLOWED_SOURCE = 30.0
+    # Poids pour une source de confiance (explicitement suivie par l'utilisateur).
+    TRUSTED_SOURCE = 40.0
     
     # Bonus pour une source non suivie mais "Standard" (vs suivie).
     STANDARD_SOURCE = 10.0
@@ -22,10 +22,9 @@ class ScoringWeights:
     
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
     
-    # Bonus léger pour les sources de haute qualité (FQS > 70).
-    # Doit rester inférieur à un intérêt (50.0) pour ne pas polluer le feed.
-    # Sert de "tie-breaker" ou de bonus de découverte.
-    FQS_HIGH_BONUS = 15.0
+    # Bonus léger pour les sources qualitatives (curées par Facteur).
+    # Doit rester inférieur aux sources de confiance (user-followed).
+    CURATED_SOURCE = 10.0
     
     # Pénalité pour les sources de basse qualité/fiabilité.
     # Sert de filtre d'"hygiène".
@@ -47,5 +46,9 @@ class ScoringWeights:
     
     # Bonus par topic granulaire matchant entre content.topics et user_subtopics.
     # Score = TOPIC_MATCH * min(matches, TOPIC_MAX_MATCHES)
-    TOPIC_MATCH = 40.0
-    TOPIC_MAX_MATCHES = 2  # Max 80pts (2 x 40)
+    TOPIC_MATCH = 60.0
+    TOPIC_MAX_MATCHES = 2  # Max 120pts (2 x 60)
+    
+    # Bonus de précision : si article a match thème ET sous-thème
+    # Récompense la granularité (ex: Tech + IA > Tech seul)
+    SUBTOPIC_PRECISION_BONUS = 20.0

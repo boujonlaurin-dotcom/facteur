@@ -13,19 +13,48 @@ enum ContentStatus {
   consumed,
 }
 
+/// Contribution d'un facteur au score de recommandation.
+class ScoreContribution {
+  final String label;
+  final double points;
+  final bool isPositive;
+
+  ScoreContribution({
+    required this.label,
+    required this.points,
+    this.isPositive = true,
+  });
+
+  factory ScoreContribution.fromJson(Map<String, dynamic> json) {
+    return ScoreContribution(
+      label: json['label'] as String,
+      points: (json['points'] as num).toDouble(),
+      isPositive: json['is_positive'] as bool? ?? true,
+    );
+  }
+}
+
+/// Raison de la recommandation avec breakdown détaillé.
 class RecommendationReason {
   final String label;
-  final double confidence;
+  final double scoreTotal;
+  final List<ScoreContribution> breakdown;
 
   RecommendationReason({
     required this.label,
-    required this.confidence,
+    this.scoreTotal = 0.0,
+    this.breakdown = const [],
   });
 
   factory RecommendationReason.fromJson(Map<String, dynamic> json) {
     return RecommendationReason(
       label: json['label'] as String,
-      confidence: (json['confidence'] as num).toDouble(),
+      scoreTotal: (json['score_total'] as num?)?.toDouble() ?? 0.0,
+      breakdown: (json['breakdown'] as List<dynamic>?)
+              ?.map(
+                  (e) => ScoreContribution.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }

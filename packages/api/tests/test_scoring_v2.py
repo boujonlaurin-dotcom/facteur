@@ -74,8 +74,8 @@ def test_core_layer_source_affinity(mock_content, base_context):
     base_context.followed_source_ids.add(mock_content.source_id)
     layer = CoreLayer()
     score = layer.score(mock_content, base_context)
-    # +20 compared to standard (30 vs 10)
-    assert score > 100.0 # 50 + 30 + ~27 = 107
+    # +30 compared to standard (40 vs 10)
+    assert score > 100.0 # 70 + 40 + ~27 = 137
 
 # --- StaticPreferenceLayer Tests ---
 
@@ -157,7 +157,7 @@ def test_article_topic_layer_no_match(base_context):
 
 
 def test_article_topic_layer_single_match(base_context):
-    """Score +40 when one topic matches."""
+    """Score +40 when one topic matches, +10 precision bonus if theme also matches."""
     source = Source(id=uuid4(), name="TechSource", theme="tech")
     content = Content(
         id=uuid4(),
@@ -175,8 +175,9 @@ def test_article_topic_layer_single_match(base_context):
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
     
-    assert score == 40.0  # 1 match * 40
-    assert "Topic match: ai" in [r['details'] for r in base_context.reasons[content.id]]
+    # 1 match * 60 + 20 precision bonus (theme "tech" is in user_interests)
+    assert score == 80.0
+    assert "Topic match: ai (précis)" in [r['details'] for r in base_context.reasons[content.id]]
 
 
 def test_article_topic_layer_double_match(base_context):
@@ -198,7 +199,8 @@ def test_article_topic_layer_double_match(base_context):
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
     
-    assert score == 80.0  # 2 matches * 40 (capped at 2)
+    # 2 matches * 60 + 20 precision bonus (theme "tech" is in user_interests)
+    assert score == 140.0
 
 
 def test_article_topic_layer_max_two_matches(base_context):
@@ -221,8 +223,8 @@ def test_article_topic_layer_max_two_matches(base_context):
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
     
-    # Capped at 2 matches = 80 points
-    assert score == 80.0
+    # Capped at 2 matches = 120 points + 20 precision bonus
+    assert score == 140.0
 
 
 def test_article_topic_layer_case_insensitive(base_context):
@@ -244,5 +246,6 @@ def test_article_topic_layer_case_insensitive(base_context):
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
     
-    assert score == 80.0  # Should still match
+    # 2 matches * 60 + 20 precision bonus
+    assert score == 140.0
 

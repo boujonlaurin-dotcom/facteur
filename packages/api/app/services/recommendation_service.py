@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
 from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer
-from app.schemas.content import RecommendationReason
+from app.schemas.content import RecommendationReason, ScoreContribution
 
 class RecommendationService:
     def __init__(self, session: AsyncSession):
@@ -170,41 +170,164 @@ class RecommendationService:
         for content in result:
             reasons_list = context.reasons.get(content.id, [])
             if reasons_list:
-                # Simple Synthesis Strategy: Take the highest impactful factor
-                # Sort by score contribution desc
-                reasons_list.sort(key=lambda x: x['score_contribution'], reverse=True)
-                top = reasons_list[0]
-                
-                label = "Recommandé pour vous" # Fallback
-                
-                # Mapping des thèmes Anglais -> Français
+                # Mapping des 8 thèmes macro -> Français
                 THEME_TRANSLATIONS = {
-                    "tech": "Tech",
-                    "geopolitics": "Géopolitique",
+                    "tech": "Tech & Innovation",
+                    "society": "Société",
+                    "environment": "Environnement",
                     "economy": "Économie",
-                    "society_climate": "Société & Climat",
-                    "culture_ideas": "Culture & Idées"
+                    "politics": "Politique",
+                    "culture": "Culture & Idées",
+                    "science": "Sciences",
+                    "international": "Géopolitique",
+                    # Legacy/synonymes pour rétrocompatibilité
+                    "geopolitics": "Géopolitique",
+                    "society_climate": "Société",
+                    "culture_ideas": "Culture & Idées",
+                }
+                
+                # Mapping des 50 sous-thèmes -> Français
+                SUBTOPIC_TRANSLATIONS = {
+                    # Tech (12)
+                    "ai": "IA", "llm": "LLM", "crypto": "Crypto", "web3": "Web3",
+                    "space": "Spatial", "biotech": "Biotech", "quantum": "Quantique",
+                    "cybersecurity": "Cybersécurité", "robotics": "Robotique",
+                    "gaming": "Gaming", "cleantech": "Cleantech", "data-privacy": "Données",
+                    # Society (10)
+                    "social-justice": "Justice sociale", "feminism": "Féminisme",
+                    "lgbtq": "LGBTQ+", "immigration": "Immigration", "health": "Santé",
+                    "education": "Éducation", "urbanism": "Urbanisme", "housing": "Logement",
+                    "work-reform": "Travail", "justice-system": "Justice",
+                    # Environment (8)
+                    "climate": "Climat", "biodiversity": "Biodiversité",
+                    "energy-transition": "Transition énergétique", "pollution": "Pollution",
+                    "circular-economy": "Économie circulaire", "agriculture": "Agriculture",
+                    "oceans": "Océans", "forests": "Forêts",
+                    # Economy (8)
+                    "macro": "Macro-économie", "finance": "Finance", "startups": "Startups",
+                    "venture-capital": "VC", "labor-market": "Emploi", "inflation": "Inflation",
+                    "trade": "Commerce", "taxation": "Fiscalité",
+                    # Politics (5)
+                    "elections": "Élections", "institutions": "Institutions",
+                    "local-politics": "Politique locale", "activism": "Activisme",
+                    "democracy": "Démocratie",
+                    # Culture (4)
+                    "philosophy": "Philosophie", "art": "Art", "cinema": "Cinéma",
+                    "media-critics": "Critique des médias",
+                    # Science (2)
+                    "fundamental-research": "Recherche", "applied-science": "Sciences appliquées",
+                    # International (1)
+                    "geopolitics": "Géopolitique",
                 }
                 
                 def _get_theme_label(raw_theme: str) -> str:
-                    # Clean and translate
                     raw_theme = raw_theme.lower().strip()
                     return THEME_TRANSLATIONS.get(raw_theme, raw_theme.capitalize())
-
+                
+                def _get_subtopic_label(slug: str) -> str:
+                    slug = slug.lower().strip()
+                    return SUBTOPIC_TRANSLATIONS.get(slug, slug.capitalize())
+                
+                def _reason_to_label(reason: dict) -> str:
+                    """Convert a reason dict to a human-readable French label."""
+                    layer = reason['layer']
+                    details = reason['details']
+                    
+                    if layer == 'core_v1':
+                        if "Theme match" in details:
+                            try:
+                                theme_slug = details.split(': ')[1]
+                                return f"Thème : {_get_theme_label(theme_slug)}"
+                            except Exception:
+                                return "Thème matché"
+                        elif "confiance" in details.lower():
+                            return "Source de confiance"
+                        elif "Recency" in details:
+                            return "Récence"
+                        else:
+                            return details
+                    elif layer == 'article_topic':
+                        try:
+                            # "Topic match: ai, crypto (précis)" -> "Sous-thèmes : IA, Crypto"
+                            raw = details.split(': ')[1]
+                            # Remove "(précis)" suffix if present
+                            raw = raw.replace(" (précis)", "")
+                            slugs = [t.strip() for t in raw.split(',')]
+                            labels = [_get_subtopic_label(s) for s in slugs[:2]]
+                            return f"Sous-thèmes : {', '.join(labels)}"
+                        except Exception:
+                            return "Sous-thèmes matchés"
+                    elif layer == 'static_prefs':
+                        if "Recent" in details:
+                            return "Très récent"
+                        elif "format" in details.lower():
+                            return "Format préféré"
+                        else:
+                            return "Préférence"
+                    elif layer == 'behavioral':
+                        if "High interest" in details:
+                            try:
+                                theme_slug = details.split(': ')[1].split(' ')[0]
+                                return f"Engagement élevé : {_get_theme_label(theme_slug)}"
+                            except Exception:
+                                return "Engagement élevé"
+                        else:
+                            return "Engagement"
+                    elif layer == 'quality':
+                        if "qualitative" in details.lower():
+                            return "Source qualitative"
+                        elif "Low" in details:
+                            return "Fiabilité basse"
+                        else:
+                            return "Qualité source"
+                    elif layer == 'visual':
+                        return "Aperçu disponible"
+                    else:
+                        return details
+                
+                # Build breakdown list
+                breakdown = []
+                score_total = 0.0
+                
+                for reason in reasons_list:
+                    pts = reason['score_contribution']
+                    score_total += pts
+                    breakdown.append(ScoreContribution(
+                        label=_reason_to_label(reason),
+                        points=pts,
+                        is_positive=(pts >= 0)
+                    ))
+                
+                # Sort by absolute contribution (highest first)
+                breakdown.sort(key=lambda x: abs(x.points), reverse=True)
+                
+                # Determine top label (for the tag)
+                # Prioritize granular topics over broad themes
+                reasons_list.sort(key=lambda x: (x['layer'] == 'article_topic', x['score_contribution']), reverse=True)
+                top = reasons_list[0]
+                
+                label = "Recommandé pour vous"  # Fallback
+                
                 if top['layer'] == 'core_v1':
                     if "Theme match" in top['details']:
-                        # Extract theme name if possible or just use generic
                         try:
-                            # Usually format "Theme match: theme_slug"
                             theme_slug = top['details'].split(': ')[1]
                             theme_fr = _get_theme_label(theme_slug)
                             label = f"Vos intérêts : {theme_fr}"
                         except Exception:
                             label = "Vos intérêts"
-                    elif "Followed source" in top['details']:
+                    elif "confiance" in top['details'].lower():
                         label = "Source suivie"
                     elif "Recency" in top['details']:
                         label = "À la une"
+                elif top['layer'] == 'article_topic':
+                    try:
+                        raw_topics = top['details'].split(': ')[1].replace(" (précis)", "")
+                        topic_slugs = [t.strip() for t in raw_topics.split(',')]
+                        topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
+                        label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                    except Exception:
+                        label = "Vos centres d'intérêt"
                 elif top['layer'] == 'static_prefs':
                     if "Recent" in top['details']:
                         label = "Très récent"
@@ -212,7 +335,6 @@ class RecommendationService:
                         label = "Format préféré"
                 elif top['layer'] == 'behavioral':
                     if "High interest" in top['details']:
-                         # "High interest: theme (x1.2)"
                         try:
                             theme_slug = top['details'].split(': ')[1].split(' ')[0]
                             theme_fr = _get_theme_label(theme_slug)
@@ -220,16 +342,17 @@ class RecommendationService:
                         except Exception:
                             label = "Sujet passionnant"
                 elif top['layer'] == 'quality':
-                    if "High reliability" in top['details']:
+                    if "qualitative" in top['details'].lower():
                         label = "Source de Confiance"
-                    elif "Low reliability" in top['details']:
+                    elif "Low" in top['details']:
                         label = "Source Controversée"
                 elif top['layer'] == 'visual':
                     label = "Aperçu disponible"
 
                 content.recommendation_reason = RecommendationReason(
                     label=label,
-                    confidence=0.8 # Placeholder for now
+                    score_total=score_total,
+                    breakdown=breakdown
                 )
         
         # 6. Hydrate with User Status (is_saved, etc)

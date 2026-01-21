@@ -204,15 +204,36 @@ class FeedCard extends StatelessWidget {
                               Flexible(
                                 flex: 3,
                                 fit: FlexFit.loose,
-                                child: Text(
-                                  content.recommendationReason!.label,
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.textSecondary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w400,
+                                child: GestureDetector(
+                                  onTap: () => _showScoreBreakdown(context),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          content.recommendationReason!.label,
+                                          style: textTheme.labelSmall?.copyWith(
+                                            color: colors.textSecondary,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (content.recommendationReason!
+                                          .breakdown.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          PhosphorIcons.info(
+                                              PhosphorIconsStyle.regular),
+                                          size: 12,
+                                          color: colors.textSecondary
+                                              .withOpacity(0.7),
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -277,6 +298,106 @@ class FeedCard extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  void _showScoreBreakdown(BuildContext context) {
+    final reason = content.recommendationReason;
+    if (reason == null || reason.breakdown.isEmpty) return;
+
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.backgroundPrimary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                  color: colors.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Pourquoi cet article vous est recommandé ?',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Score de recommandation : ${reason.scoreTotal.toInt()} pts',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Breakdown List
+            ...reason.breakdown.map((contribution) {
+              final sign = contribution.isPositive ? '+' : '';
+              final color =
+                  contribution.isPositive ? colors.success : colors.error;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$sign${contribution.points.toInt()}',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        contribution.label,
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+
+            const SizedBox(height: 16),
+            // Footer
+            Text(
+              'Notre algorithme est paramétrable et privilégie par défaut vos intérêts, la qualité des sources, et la récence des articles.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

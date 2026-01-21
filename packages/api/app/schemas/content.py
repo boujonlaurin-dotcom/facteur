@@ -31,10 +31,18 @@ class SourceMini(BaseModel):
         from_attributes = True
 
 
+class ScoreContribution(BaseModel):
+    """Contribution d'un facteur au score de recommandation."""
+    label: str       # ex: "Thème : Tech"
+    points: float    # ex: 70
+    is_positive: bool = True
+
+
 class RecommendationReason(BaseModel):
-    """Raison de la recommandation."""
-    label: str  # ex: "Pour toi", "Incontournable", "Analyse de fond"
-    confidence: float # 0.0 à 1.0
+    """Raison de la recommandation avec breakdown détaillé."""
+    label: str                              # ex: "Pour toi" (top reason)
+    score_total: float = 0.0                # Total des points
+    breakdown: list[ScoreContribution] = [] # Détail par facteur
 
 class ContentResponse(BaseModel):
     """Réponse contenu (card dans le feed)."""

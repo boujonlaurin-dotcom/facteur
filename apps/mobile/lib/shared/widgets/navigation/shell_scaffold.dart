@@ -31,8 +31,9 @@ class _BottomNavBar extends StatelessWidget {
     final location = GoRouterState.of(context).matchedLocation;
 
     if (location.startsWith(RoutePaths.feed)) return 0;
-    if (location.startsWith(RoutePaths.progress)) return 1;
-    if (location.startsWith(RoutePaths.settings)) return 2;
+    // MVP: Progressions tab removed - redirect to feed if accessed
+    if (location.startsWith(RoutePaths.progress)) return 0;
+    if (location.startsWith(RoutePaths.settings)) return 1;
 
     return 0;
   }
@@ -42,9 +43,8 @@ class _BottomNavBar extends StatelessWidget {
     switch (index) {
       case 0:
         context.goNamed(RouteNames.feed);
+      // MVP: Progressions tab removed (was case 1)
       case 1:
-        context.goNamed(RouteNames.progress);
-      case 2:
         context.goNamed(RouteNames.settings);
     }
   }
@@ -77,19 +77,20 @@ class _BottomNavBar extends StatelessWidget {
                 isSelected: selectedIndex == 0,
                 onTap: () => _onItemTapped(context, 0),
               ),
-              _NavItem(
-                icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
-                activeIcon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.fill),
-                label: 'Progressions',
-                isSelected: selectedIndex == 1,
-                onTap: () => _onItemTapped(context, 1),
-              ),
+              // MVP: Progressions tab temporarily removed
+              // _NavItem(
+              //   icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
+              //   activeIcon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.fill),
+              //   label: 'Progressions',
+              //   isSelected: selectedIndex == 1,
+              //   onTap: () => _onItemTapped(context, 1),
+              // ),
               _NavItem(
                 icon: PhosphorIcons.gear(PhosphorIconsStyle.regular),
                 activeIcon: PhosphorIcons.gear(PhosphorIconsStyle.fill),
                 label: 'Profil',
-                isSelected: selectedIndex == 2,
-                onTap: () => _onItemTapped(context, 2),
+                isSelected: selectedIndex == 1,
+                onTap: () => _onItemTapped(context, 1),
               ),
             ],
           ),

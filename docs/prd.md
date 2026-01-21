@@ -18,8 +18,9 @@
 | 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
 | 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
 | 18/01/2026 | 1.6 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
-| 19/01/2026 | 1.7 | Taxonomie 50 Topics & Système de Classification ML | Antigravity |
 | 19/01/2026 | 1.8 | Authentification : Validation email obligatoire & Redirection | Antigravity |
+| 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
+| 21/01/2026 | 2.0 | Feature: Score Transparency Breakdown (Détail du calcul) | Antigravity |
 
 ---
 
@@ -58,7 +59,7 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **FR5** | Le système détecte automatiquement le type de source (RSS article, RSS podcast, RSS YouTube) |
 | **FR6** | Le système agrège et synchronise les contenus de toutes les sources toutes les 30 minutes |
 | **FR7** | L'algorithme trie et priorise les contenus selon le profil utilisateur (moteur modulaire V2 : thèmes, feedback comportemental, préférences statiques) |
-| **FR8** | L'utilisateur voit un feed personnalisé avec preview de chaque contenu (thumbnail, titre, source, raison de recommandation, durée) |
+| **FR8** | L'utilisateur voit un feed personnalisé avec preview de chaque contenu (thumbnail, titre, source, raison de recommandation, durée). **Le détail du calcul du score est accessible via un bouton info.** |
 | **FR9** | L'utilisateur peut cliquer sur un contenu pour voir un écran détail enrichi avant redirect |
 | **FR10** | Le système marque automatiquement un contenu comme "consommé" après un temps suffisant (~30s article, ~60s vidéo/podcast) |
 | **FR10bis** | Le système affiche un streak quotidien pour encourager l'habitude (si gamification activée) |
@@ -304,17 +305,19 @@ Classification fine par article via modèle ML (CamemBERT). Organisés par thèm
 
 Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 
-| Layer | Matching | Poids |
-|-------|----------|-------|
-| **CoreLayer** | `source.theme` → `user_interests` (via mapping table) | +70.0 |
-| **ArticleTopicLayer** | `content.topics` ∩ `user_subtopics` | +40.0 par match (max 2) |
-| **QualityLayer** | `source.reliability_score` | ±15.0 |
+| Layer | Matching | Poids | Label UI |
+|-------|----------|-------|----------|
+| **CoreLayer** | `source.theme` → `user_interests` | +70.0 | Theme match |
+| **CoreLayer** | `source_id` ∈ `followed_source_ids` | +40.0 | Source de confiance |
+| **ArticleTopicLayer** | `content.topics` ∩ `user_subtopics` | +40.0 / match | Topic match |
+| **ArticleTopicLayer** | Theme Match + Topic Match | +10.0 | (précis) |
+| **QualityLayer** | `source.reliability_score == HIGH` | +10.0 | Source qualitative |
+| **QualityLayer** | `source.reliability_score == LOW` | -30.0 | Malus fiabilité |
 
 **Exemple :**
-- Article "GPT-5 annoncé" de source "Tech Crunch" (`theme=tech`, `granular_topics=[ai, llm]`)
-- Classification ML → `content.topics = [ai, llm, tech]`
-- User intérêts : `themes=[tech]`, `subtopics=[ai, climate]`
-- Score : +70 (theme match) + 40 (ai match) = **110 points**
+- Article "GPT-5 annoncé" de source suivie "Tech Crunch" (`theme=tech`, `granular_topics=[ai]`)
+- user intérêts : `themes=[tech]`, `subtopics=[ai]`
+- Score : +70 (theme) + 40 (confiance) + 40 (topic) + 10 (précis) = **160 points**
 
 ---
 
@@ -329,7 +332,7 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 | 5 | Consommation & Gamification | Détail, tracking auto, streak, progression | 7 |
 | 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement, paramètres Compte/Notif | 8 |
 | 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
-| 8 | Approfondissement & Progression | Le "Duolingo de l'info" — badges, quiz, écran Progressions | 7 |
+| 8 | Approfondissement & Progression | ⏸️ **MVP: Teaser only** — Le "Duolingo de l'info" (quiz, badges) | 7 |
 
 **Total : 45 stories**
 

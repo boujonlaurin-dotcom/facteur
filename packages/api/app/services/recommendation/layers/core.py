@@ -38,8 +38,8 @@ class CoreLayer(BaseScoringLayer):
         
         # 2. Source Affinity
         if content.source_id in context.followed_source_ids:
-            score += ScoringWeights.FOLLOWED_SOURCE
-            context.add_reason(content.id, self.name, ScoringWeights.FOLLOWED_SOURCE, "Followed source")
+            score += ScoringWeights.TRUSTED_SOURCE
+            context.add_reason(content.id, self.name, ScoringWeights.TRUSTED_SOURCE, "Source de confiance")
         else:
             score += ScoringWeights.STANDARD_SOURCE
             

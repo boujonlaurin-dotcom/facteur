@@ -197,16 +197,25 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
 
-          // Progressions (remplaces Saved)
+          // MVP: Progressions routes temporarily disabled
+          // The tab is removed but we keep route definitions for potential deep links
+          // Users will be redirected to feed by shell_scaffold index calculation
           GoRoute(
             path: RoutePaths.progress,
             name: RouteNames.progress,
+            // MVP: Redirect to feed with info message
+            redirect: (context, state) {
+              return RoutePaths.feed;
+            },
             builder: (context, state) => const ProgressionsScreen(),
             routes: [
               GoRoute(
                 path: 'quiz',
                 name: RouteNames.quiz,
                 parentNavigatorKey: NotificationService.navigatorKey,
+                redirect: (context, state) {
+                  return RoutePaths.feed;
+                },
                 builder: (context, state) {
                   final topic = state.extra as String;
                   return QuizScreen(topic: topic);

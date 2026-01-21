@@ -15,6 +15,7 @@ class ArticleTopicLayer(BaseScoringLayer):
     
     Score: +40 points par topic commun entre content.topics et user_subtopics.
     Maximum: 2 matches = 80 points.
+    Bonus: +10 si le thème source est AUSSI matché (précision).
     
     This layer enables fine-grained personalization beyond broad themes,
     allowing users who prefer "AI" to see more AI content from tech sources.
@@ -42,13 +43,27 @@ class ArticleTopicLayer(BaseScoringLayer):
         
         score = match_count * ScoringWeights.TOPIC_MATCH
         
+        # Bonus de précision : si le thème source est AUSSI dans les intérêts utilisateur
+        # Cela récompense une correspondance "thème + sous-thème" vs "sous-thème seul"
+        has_theme_match = False
+        if content.source and content.source.theme:
+            source_theme = content.source.theme.lower().strip()
+            user_interests = {s.lower().strip() for s in context.user_interests}
+            if source_theme in user_interests:
+                score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
+                has_theme_match = True
+        
         # Add reason for transparency/explainability
         matched_list = sorted(list(matches))[:match_count]
+        detail = f"Topic match: {', '.join(matched_list)}"
+        if has_theme_match:
+            detail += " (précis)"
+        
         context.add_reason(
             content.id, 
             self.name, 
             score, 
-            f"Topic match: {', '.join(matched_list)}"
+            detail
         )
         
         return score

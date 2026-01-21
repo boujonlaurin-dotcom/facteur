@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+import structlog
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
@@ -19,6 +20,11 @@ from app.schemas.progress import (
 )
 
 router = APIRouter()
+log = structlog.get_logger()
+
+# MVP Note: Quiz functionality is deprioritized. 
+# Topic following is still active for user interest tracking.
+# Quiz endpoints will log deprecation warnings.
 
 
 @router.get("/", response_model=List[TopicProgressResponse])
@@ -83,7 +89,12 @@ async def get_quiz(
     """
     Récupère un quiz aléatoire pour un thème donné.
     Si aucun quiz n'existe, en génère un mock pour la démo (WIP).
+    
+    MVP NOTE: Quiz feature is deprioritized. This endpoint remains functional
+    but is not actively used by the mobile app.
     """
+    log.warning("quiz_endpoint_called", endpoint="get_quiz", topic=topic, 
+                note="Quiz feature deprioritized for MVP")
     user_uuid = UUID(current_user_id)
     
     # 1. Chercher un quiz en base
@@ -119,7 +130,12 @@ async def submit_quiz(
 ):
     """
     Valide une réponse de quiz et met à jour la progression.
+    
+    MVP NOTE: Quiz feature is deprioritized. This endpoint remains functional
+    but is not actively used by the mobile app.
     """
+    log.warning("quiz_endpoint_called", endpoint="submit_quiz", 
+                note="Quiz feature deprioritized for MVP")
     user_uuid = UUID(current_user_id)
     
     # Récupérer le quiz (ou mocker)

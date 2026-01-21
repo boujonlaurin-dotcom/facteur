@@ -20,6 +20,8 @@
 | 20/01/2026 | 1.6 | Fix Auth: Fallback DB pour email confirmation (Stale JWT) | Antigravity |
 | 20/01/2026 | 1.7 | Algo: Implémentation ArticleTopicLayer (+40pts/match) | Antigravity |
 | 20/01/2026 | 1.8 | Story 4.1d: Finalisation Scoring par Topics granulaires | Antigravity |
+| 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
+| 21/01/2026 | 2.0 | Implémentation du Score Breakdown (Transparence totale) | Antigravity |
 
 ---
 

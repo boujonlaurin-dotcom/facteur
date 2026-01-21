@@ -348,6 +348,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ? _buildInAppContent(context, content)
                   : _buildWebViewFallback(content),
             ),
+
+            // Drag Handle (Moved to bottom for better UX)
+            Align(
+              alignment: Alignment.center,
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.textSecondary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -379,33 +393,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
 
     return Container(
-      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space2, // Reduced padding for more space
+        vertical: FacteurSpacing.space4,
+      ),
       decoration: BoxDecoration(
-        color: colors.backgroundPrimary,
-        border: Border(
-          bottom: BorderSide(
-            color: colors.textSecondary.withOpacity(0.1),
-            width: 1,
-          ),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            colors.backgroundPrimary,
+            colors.backgroundPrimary.withOpacity(0.0),
+          ],
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Drag Handle
-          Align(
-            alignment: Alignment.center,
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colors.textSecondary.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
           // Source info with bias badge and reliability indicator
           // Previous top row (Back/Bookmark) removed.
           // Title removed.
@@ -480,26 +484,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               child: Text(
                                 content.source.getBiasLabel(),
                                 style: TextStyle(
-                                  fontSize: 9,
+                                  fontSize: 11, // Slightly larger
                                   fontWeight: FontWeight.w600,
                                   color: colors.textSecondary,
                                 ),
                               ),
-                            ),
-                          ],
-                          // Reliability indicator
-                          if (content.source.reliabilityScore != 'unknown') ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              content.source.reliabilityScore == 'high'
-                                  ? PhosphorIcons.sealCheck(
-                                      PhosphorIconsStyle.fill)
-                                  : PhosphorIcons.warningCircle(
-                                      PhosphorIconsStyle.fill),
-                              size: 13,
-                              color: content.source.reliabilityScore == 'high'
-                                  ? Colors.blue.shade300
-                                  : Colors.amber.shade600,
                             ),
                           ],
                         ],
