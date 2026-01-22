@@ -20,17 +20,23 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Mapping Flow** : Pour les bugs d'init/auth, trace le cycle de vie complet (ex: Splash -> Providers -> Router -> API) avant de proposer un correctif.
 
 > [!IMPORTANT]
-> **Gating (PRE-VÉROU) - Vérification User Story / PRD :**
-> Avant TOUTE création de `implementation_plan.md`, vérifie :
-> 1. **S'agit-il d'un BUGFIX ou d'une FEATURE ?**
->    - **BUGFIX** : Correction d'un comportement cassé → Documente dans `docs/bugs/`, PAS de User Story
->    - **FEATURE** : Nouvelle fonctionnalité ou amélioration → User Story obligatoire dans `docs/stories/`
-> 2. Pour une **FEATURE** : Existe-t-il une **User Story** dans `docs/stories/` ?
-> 3. Pour une **FEATURE** : Est-elle documentée dans le **PRD** (`docs/prd.md`) ?
+> **Gating (PRE-VÉROU) - Classification de l'intervention :**
+> Avant TOUTE création de `implementation_plan.md`, détermine la nature de la tâche :
 >
-> **Si FEATURE sans Story/PRD** : ARRÊTE-TOI. Crée la User Story et/ou mets à jour le PRD **AVANT** de proposer un plan technique. Ne jamais sauter le « Quoi » (Analyst/PO) pour aller directement au « Comment » (Architect).
+> | Type | Description | Dossier | User Story ? |
+> |------|-------------|---------|--------------|
+> | **FEATURE (New)** | Nouvelle capacité produit | `docs/stories/` | ✅ Obligatoire |
+> | **EVOLUTION** | Modifie/étend une feature existante | `docs/stories/` + lien Parent | ✅ Obligatoire (avec `Parent Story:` header) |
+> | **BUGFIX** | Comportement cassé à corriger | `docs/bugs/` | ❌ Non |
+> | **MAINTENANCE** | Nettoyage, optimisation technique, ajustements de données | `docs/maintenance/` | ❌ Non |
 >
-> **Si BUGFIX** : Pas de User Story nécessaire, mais documente le bug et la solution dans `docs/bugs/bug-<nom>.md` et mets à jour la documentation impactée (stories existantes, architecture.md).
+> **Règles de classification :**
+> 1. **FEATURE** : Vérifie qu'une User Story existe dans `docs/stories/` ET qu'elle est documentée dans le PRD (`docs/prd.md`). Sinon, ARRÊTE-TOI et crée-les.
+> 2. **EVOLUTION** : Le fichier DOIT contenir un header `Parent Story: [[X.Y.nom-story.md]]` pour lier à la story de base.
+> 3. **BUGFIX** : Documente dans `docs/bugs/bug-<nom>.md`. Mets à jour les stories/architecture impactées.
+> 4. **MAINTENANCE** : Documente dans `docs/maintenance/maintenance-<nom>.md`. Format libre, pas de format US.
+>
+> **Règle d'or** : Une tâche de "nettoyage", "refactoring" ou "data cleaning" ne doit JAMAIS faire l'objet d'une User Story. Les US sont réservées à la valeur produit.
 ### 2. Decide (Phase: PLANNING)
 *Objectif : Contrat d'implémentation validé.*
 - **Action** : Produit ou met à jour `implementation_plan.md`.

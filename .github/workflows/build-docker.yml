@@ -1,0 +1,55 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'packages/api/**'
+      - '.github/workflows/build-docker.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'packages/api/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f packages/api/Dockerfile \
+            -t facteur-api:test \
+            packages/api
+
+      - name: Verify image structure
+        run: |
+          # Check that critical files exist in the image
+          docker run --rm facteur-api:test ls -la /app/alembic.ini
+          docker run --rm facteur-api:test ls -la /app/alembic/
+          docker run --rm facteur-api:test ls -la /app/scripts/
+          echo "✅ All critical files present in Docker image"
+
+      - name: Test image starts
+        run: |
+          # Start container with fake PORT
+          docker run -d --name test-api -e PORT=8000 facteur-api:test
+          
+          # Wait for startup
+          sleep 5
+          
+          # Check if container is still running (didn't crash)
+          if docker ps | grep -q test-api; then
+            echo "✅ Container started successfully"
+          else
+            echo "❌ Container crashed on startup"
+            docker logs test-api
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop test-api
+          docker rm test-api

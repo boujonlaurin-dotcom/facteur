@@ -50,21 +50,43 @@ class FeedRepository {
         // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
         if (data is List) {
           // Legacy format (List returned directly)
-          itemsList = data
-              .map((e) => Content.fromJson(e as Map<String, dynamic>))
-              .toList();
+          for (final e in data) {
+            try {
+              if (e is Map<String, dynamic>) {
+                itemsList.add(Content.fromJson(e));
+              }
+            } catch (err) {
+              print('FeedRepository: Skipping corrupt item in List: $err');
+            }
+          }
         } else if (data is Map<String, dynamic>) {
           // New format (FeedResponse object)
-          itemsList = (data['items'] as List?)
-                  ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+          final itemsRaw = data['items'];
+          if (itemsRaw is List) {
+            for (final e in itemsRaw) {
+              try {
+                if (e is Map<String, dynamic>) {
+                  itemsList.add(Content.fromJson(e));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt item in items: $err');
+              }
+            }
+          }
 
-          briefingList = (data['briefing'] as List?)
-                  ?.map(
-                      (e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
-                  .toList() ??
-              [];
+          final briefingRaw = data['briefing'];
+          if (briefingRaw is List) {
+            for (final e in briefingRaw) {
+              try {
+                if (e is Map<String, dynamic>) {
+                  briefingList.add(DailyTop3Item.fromJson(e));
+                }
+              } catch (err) {
+                print(
+                    'FeedRepository: Skipping corrupt item in briefing: $err');
+              }
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];

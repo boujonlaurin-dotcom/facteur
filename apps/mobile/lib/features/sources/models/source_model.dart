@@ -83,27 +83,44 @@ class Source {
   }
 
   factory Source.fromJson(Map<String, dynamic> json) {
+    try {
+      return Source(
+        id: (json['id'] as String?) ?? '',
+        name: (json['name'] as String?) ?? 'Unknown Source',
+        url: json['url'] as String?,
+        type: SourceType.values.firstWhere(
+          (e) => e.name == (json['type'] as String?)?.toLowerCase(),
+          orElse: () => SourceType.article,
+        ),
+        theme: json['theme'] as String?,
+        description: json['description'] as String?,
+        logoUrl: json['logo_url'] as String?,
+        isCurated: (json['is_curated'] as bool?) ?? false,
+        isCustom: (json['is_custom'] as bool?) ?? false,
+        isTrusted: (json['is_trusted'] as bool?) ?? false,
+        biasStance:
+            (json['bias_stance'] as String?)?.toLowerCase() ?? 'unknown',
+        reliabilityScore:
+            (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
+        biasOrigin:
+            (json['bias_origin'] as String?)?.toLowerCase() ?? 'unknown',
+        scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
+        scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
+        scoreUx: (json['score_ux'] as num?)?.toDouble(),
+      );
+    } catch (e) {
+      debugPrint('Source.fromJson: [ERROR] Failed to parse: $e');
+      return Source.fallback();
+    }
+  }
+
+  /// Factory for a safe fallback source to prevent UI crashes
+  factory Source.fallback() {
     return Source(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      url: json['url'] as String?,
-      type: SourceType.values.firstWhere(
-        (e) => e.name == (json['type'] as String).toLowerCase(),
-        orElse: () => SourceType.article,
-      ),
-      theme: json['theme'] as String?,
-      description: json['description'] as String?,
-      logoUrl: json['logo_url'] as String?,
-      isCurated: json['is_curated'] as bool? ?? false,
-      isCustom: json['is_custom'] as bool? ?? false,
-      isTrusted: json['is_trusted'] as bool? ?? false,
-      biasStance: (json['bias_stance'] as String?)?.toLowerCase() ?? 'unknown',
-      reliabilityScore:
-          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
-      biasOrigin: (json['bias_origin'] as String?)?.toLowerCase() ?? 'unknown',
-      scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
-      scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
-      scoreUx: (json['score_ux'] as num?)?.toDouble(),
+      id: 'fallback',
+      name: 'Source Inconnue',
+      type: SourceType.article,
+      theme: 'Autre',
     );
   }
 

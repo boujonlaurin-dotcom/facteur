@@ -27,9 +27,9 @@ class ScoreContribution {
 
   factory ScoreContribution.fromJson(Map<String, dynamic> json) {
     return ScoreContribution(
-      label: json['label'] as String,
-      points: (json['points'] as num).toDouble(),
-      isPositive: json['is_positive'] as bool? ?? true,
+      label: (json['label'] as String?) ?? 'Facteur',
+      points: (json['points'] as num?)?.toDouble() ?? 0.0,
+      isPositive: (json['is_positive'] as bool?) ?? true,
     );
   }
 }
@@ -47,14 +47,16 @@ class RecommendationReason {
   });
 
   factory RecommendationReason.fromJson(Map<String, dynamic> json) {
+    final breakdownJson = json['breakdown'];
     return RecommendationReason(
-      label: json['label'] as String,
+      label: (json['label'] as String?) ?? 'Recommandé',
       scoreTotal: (json['score_total'] as num?)?.toDouble() ?? 0.0,
-      breakdown: (json['breakdown'] as List<dynamic>?)
-              ?.map(
-                  (e) => ScoreContribution.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
+      breakdown: (breakdownJson is List)
+          ? breakdownJson
+              .whereType<Map<String, dynamic>>()
+              .map((e) => ScoreContribution.fromJson(e))
+              .toList()
+          : const [],
     );
   }
 }
@@ -100,32 +102,51 @@ class Content {
   });
 
   factory Content.fromJson(Map<String, dynamic> json) {
-    return Content(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      url: json['url'] as String,
-      thumbnailUrl: json['thumbnail_url'] as String?,
-      description: json['description'] as String?,
-      htmlContent: json['html_content'] as String?,
-      audioUrl: json['audio_url'] as String?,
-      contentType: ContentType.values.firstWhere(
-        (e) => e.name == (json['content_type'] as String).toLowerCase(),
-        orElse: () => ContentType.article,
-      ),
-      durationSeconds: json['duration_seconds'] as int?,
-      publishedAt: DateTime.parse(json['published_at'] as String),
-      source: Source.fromJson(json['source'] as Map<String, dynamic>),
-      status: ContentStatus.values.firstWhere(
-        (e) => e.name == (json['status'] as String).toLowerCase(),
-        orElse: () => ContentStatus.unseen,
-      ),
-      isSaved: json['is_saved'] as bool? ?? false,
-      isHidden: json['is_hidden'] as bool? ?? false,
-      recommendationReason: json['recommendation_reason'] != null
-          ? RecommendationReason.fromJson(
-              json['recommendation_reason'] as Map<String, dynamic>)
-          : null,
-    );
+    try {
+      final sourceJson = json['source'];
+      final recJson = json['recommendation_reason'];
+
+      return Content(
+        id: (json['id'] as String?) ?? '',
+        title: (json['title'] as String?) ?? 'Sans titre',
+        url: (json['url'] as String?) ?? '',
+        thumbnailUrl: json['thumbnail_url'] as String?,
+        description: json['description'] as String?,
+        htmlContent: json['html_content'] as String?,
+        audioUrl: json['audio_url'] as String?,
+        contentType: ContentType.values.firstWhere(
+          (e) => e.name == (json['content_type'] as String?)?.toLowerCase(),
+          orElse: () => ContentType.article,
+        ),
+        durationSeconds: json['duration_seconds'] as int?,
+        publishedAt: DateTime.tryParse(json['published_at'] as String? ?? '') ??
+            DateTime.now(),
+        source: (sourceJson is Map<String, dynamic>)
+            ? Source.fromJson(sourceJson)
+            : Source.fallback(),
+        status: ContentStatus.values.firstWhere(
+          (e) => e.name == (json['status'] as String?)?.toLowerCase(),
+          orElse: () => ContentStatus.unseen,
+        ),
+        isSaved: (json['is_saved'] as bool?) ?? false,
+        isHidden: (json['is_hidden'] as bool?) ?? false,
+        recommendationReason: (recJson is Map<String, dynamic>)
+            ? RecommendationReason.fromJson(recJson)
+            : null,
+      );
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print('Content.fromJson: [CRITICAL ERROR] Failed to parse: $e\n$stack');
+      // On renvoie un objet minimal plutôt que de crash
+      return Content(
+        id: (json['id'] as String?) ?? 'error',
+        title: 'Erreur de chargement',
+        url: '',
+        contentType: ContentType.article,
+        publishedAt: DateTime.now(),
+        source: Source.fallback(),
+      );
+    }
   }
 
   Content copyWith({

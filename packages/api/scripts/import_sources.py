@@ -72,7 +72,7 @@ CURATED_FEED_FALLBACKS = {
     "https://wondery.com/shows/guerres-de-business/": "https://feeds.megaphone.fm/WWS2399238883",
     "https://www.irsem.fr/le-collimateur.html": "https://feeds.audiomeans.fr/feed/7f9a1cb1-0490-4886-9f6e-2195f4c4a6a5",
     "https://www.slate.fr/podcasts/transfert": "https://feeds.audiomeans.fr/feed/295f7004-9442-4b26-8854-d4b8f5f24255",
-    "https://www.arte.tv/fr/videos/RC-014036/le-dessous-des-cartes/": "https://www.youtube.com/feeds/videos.xml?channel_id=UC7sXGI8p8PvKosLWagkK9wQ", 
+    "https://www.arte.tv/fr/videos/RC-014036/le-dessous-des-cartes/": "https://www.youtube.com/feeds/videos.xml?channel_id=UCHGMBrXUzClgjEzBMei-Jdw", 
     "https://www.youtube.com/user/ScienceEtonnante": "https://www.youtube.com/feeds/videos.xml?channel_id=UC0NCBJ8G4BPaK9K-E86_m8A",
     "https://www.youtube.com/user/dirtybiology": "https://www.youtube.com/feeds/videos.xml?channel_id=UCtqICqGbPSbTN09K1_7VZ3Q",
     "https://www.youtube.com/user/monsieurbidouille": "https://www.youtube.com/feeds/videos.xml?user=monsieurbidouille",

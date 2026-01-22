@@ -730,9 +730,7 @@ class AvailableThemes {
       color: Colors.indigo,
     ),
   ];
-}
-
-class ThemeOption {
+}class ThemeOption {
   final String slug;
   final String label;
   final String emoji;
