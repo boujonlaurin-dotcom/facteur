@@ -91,9 +91,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
 
-      // 1. Les utilisateurs non connectés ne peuvent voir que Splash ou Login
+      // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
-        // Fix: Si on est sur Splash et que le chargement est fini, on DOIT aller sur Login
+        // Exception : si on vient de s'inscrire, on a un pending email
+        if (authState.pendingEmailConfirmation != null) {
+          if (isOnEmailConfirmation) return null;
+          return RoutePaths.emailConfirmation;
+        }
+
         if (isOnLoginPage) return null;
         return RoutePaths.login;
       }

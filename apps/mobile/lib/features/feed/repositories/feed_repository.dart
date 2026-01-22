@@ -45,7 +45,7 @@ class FeedRepository {
         final data = response.data;
 
         List<Content> itemsList = [];
-        List<DailyTop3Item> briefingList = [];
+        final List<DailyTop3Item> briefingList = [];
 
         // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
         if (data is List) {

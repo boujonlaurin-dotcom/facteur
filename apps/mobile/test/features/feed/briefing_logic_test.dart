@@ -31,7 +31,15 @@ class MockAuthStateNotifier extends StateNotifier<app_auth.AuthState>
   Future<void> signOut() async {}
 
   @override
-  Future<void> signUpWithEmail(String email, String password) async {}
+  Future<void> signUpWithEmail({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+  }) async {}
+
+  @override
+  Future<void> resendConfirmationEmail(String email) async {}
 
   @override
   Future<void> sendPasswordResetEmail(String email) async {}

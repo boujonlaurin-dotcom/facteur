@@ -64,6 +64,18 @@ Ce fichier est l'unique directive opérationnelle pour l'exécution des tâches.
 - **Walkthrough** : Produit un `walkthrough.md` incluant cette commande verbatim et le résultat attendu.
 - **Health-Check** : Pour le backend, le serveur doit tourner (`uvicorn`) et répondre (`curl`).
 - **Mode Échec (Chaos)** : Ne teste pas seulement le "chemin heureux". Vérifie que l'app gère élégamment une API hors-ligne (timeout) ou un utilisateur non autorisé (403/401).
+
+## 🛡️ Zones Critiques (Garde-fous)
+Certains fichiers sont le "système nerveux" de l'app. **Toute modification ici exige une double vérification.**
+
+| Zone Critique | Fichiers Clés | Risque | Protocole Spécial |
+|---|---|---|---|
+| **Infrastructure** | `Dockerfile`, `railway.json`, `alembic.ini` | Crash au déploiement | Test CI obligatoire + Preuve locale |
+| **Sécurité/Auth** | `main.py` (CORS), `auth.py`, `dependencies.py` | Full Access ou 403 généralisé | Test `curl` sur route protégée AVANT/APRÈS |
+| **Core Mobile** | `api_client.dart`, `router.dart` | App inutilisable (wsod/offline) | Test sur device réel requis (pas juste émulateur) |
+
+**Règle d'Or des Zones Critiques :**
+> "Si tu touches à une fichier critique, ton Plan doit inclure une commande de 'Rollback' immédiate (ex: `git restore <file>`)."
 ## 💡 Trucs & Astuces (Senior Tips)
 - **FastAPI / Pydantic** : Utilise `list[]` (Python 3.9+) au lieu de `List` (typing) pour éviter les `PydanticUserError` en Python 3.14.
 - **Supabase Auth** : Ne fais jamais confiance à `email_confirmed_at` dans le JWT seul pour les comptes `email` (stale token). Vérifie `auth.users` en fallback dans le backend.

@@ -20,6 +20,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   bool _isSignUp = false;
   bool _obscurePassword = true;
 
@@ -29,6 +31,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     super.dispose();
   }
 
@@ -49,7 +53,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authNotifier = ref.read(authStateProvider.notifier);
 
     if (_isSignUp) {
-      await authNotifier.signUpWithEmail(email, password);
+      final firstName = _firstNameController.text.trim();
+      final lastName = _lastNameController.text.trim();
+
+      if (firstName.isEmpty || lastName.isEmpty) {
+        NotificationService.showError('Saisis ton nom et prénom');
+        return;
+      }
+
+      await authNotifier.signUpWithEmail(
+        email: email,
+        password: password,
+        firstName: firstName,
+        lastName: lastName,
+      );
     } else {
       await authNotifier.signInWithEmail(email, password,
           rememberMe: _rememberMe);
@@ -154,7 +171,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 // Logo / Titre
                 const Center(child: FacteurLogo(size: 48)),
 
-                const SizedBox(height: 48),
+                const SizedBox(height: 32),
+
+                if (_isSignUp) ...[
+                  Text(
+                    'Créer un compte',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Rejoins la communauté Facteur',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ] else ...[
+                  Text(
+                    'Content de te revoir !',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Connecte-toi pour accéder à ton feed',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+
+                const SizedBox(height: 40),
+
+                if (_isSignUp) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _firstNameController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            hintText: 'Prénom',
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _lastNameController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            hintText: 'Nom',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // Formulaire
                 TextField(

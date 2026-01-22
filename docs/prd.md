@@ -21,6 +21,7 @@
 | 19/01/2026 | 1.8 | Authentification : Validation email obligatoire & Redirection | Antigravity |
 | 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
 | 21/01/2026 | 2.0 | Feature: Score Transparency Breakdown (Détail du calcul) | Antigravity |
+| 22/01/2026 | 2.1 | Refonte Onboarding : Champs Nom/Prénom & Fix Redirection | Antigravity |
 
 ---
 
@@ -50,7 +51,9 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 
 | ID | Exigence |
 |----|----------|
-| **FR1** | L'utilisateur peut créer un compte via email ou connexion sociale (Apple, Google). **La validation de l'email est obligatoire** pour accéder au contenu pour les comptes créés via email. |
+| **FR1** | L'utilisateur peut créer un compte via email (en saisissant son **Nom et Prénom**) ou connexion sociale (Apple, Google). **La validation de l'email est obligatoire** pour accéder au contenu pour les comptes créés via email. |
+| **FR1.1** | Après la création du compte, l'utilisateur est immédiatement informé de l'envoi de l'email de confirmation via un écran dédié clear. |
+| **FR1.2** | Le lien de confirmation d'email redirige automatiquement l'utilisateur dans l'application mobile (via Deep Linking) et le connecte directement. |
 | **FR1bis** | L'utilisateur peut réinitialiser son mot de passe en cas d'oubli |
 | **FR1ter** | L'utilisateur peut choisir de rester connecté entre les sessions |
 | **FR2** | L'utilisateur complète un questionnaire d'onboarding de 10-12 questions réparties en 3 sections pour définir son profil et ses préférences |
@@ -722,6 +725,21 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 4. Reset possible (re-tap = désélection)
 5. Référence détaillée : voir [Story 4.6b](stories/4.6b.filtres-v2.story.md)
 
+---
+
+### Story 4.7 : Personnalisation du Feed
+
+**As a** utilisateur,  
+**I want** indiquer les sources et thèmes que je préfère voir moins,  
+**so that** mon feed soit personnalisé selon mes préférences explicites.
+
+**Acceptance Criteria :**
+1. Bouton "❓" unifié remplaçant le menu "..." sur les cards
+2. Bottom sheet affichant les facteurs de scoring avec actions `[Voir moins]`
+3. Table `user_personalization` pour stocker mutes persistants
+4. `PersonalizationLayer` appliquant les malus au scoring
+5. Nudge inline après 3 skips consécutifs : "Tu consultes rarement [Source]"
+6. Référence détaillée : voir [Story 4.7](stories/core/4.7.feed-personalization.story.md)
 
 ---
 

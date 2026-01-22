@@ -336,41 +336,53 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header (cleaned up)
-            _buildHeader(context, content),
+      body: Stack(
+        children: [
+          // 1. Content Layer (Full screen, scrolled)
+          Positioned.fill(
+            child: useInAppReading
+                // In-App Content
+                // Add padding to top so first lines are not hidden behind header initially
+                ? Padding(
+                    padding: const EdgeInsets.only(
+                        top: 80), // Estimate header height
+                    child: _buildInAppContent(context, content),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.only(top: 80),
+                    child: _buildWebViewFallback(content),
+                  ),
+          ),
 
-            // Content area
-            Expanded(
-              child: useInAppReading
-                  ? _buildInAppContent(context, content)
-                  : _buildWebViewFallback(content),
-            ),
+          // 2. Header Layer (Overlay)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildHeader(context, content),
+          ),
 
-            // Drag Handle (Moved to bottom for better UX)
-            Align(
-              alignment: Alignment.center,
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textSecondary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+          // 3. Drag Handle (Bottom aligned)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-      // FAB for opening original (Standard Round FAB, smaller than Extended)
+      // FAB for opening original
       floatingActionButton: _showFab
           ? ScaleTransition(
               scale: _fabAnimation,
               child: FloatingActionButton(
-                mini: true, // Make it smaller "plus petit"
+                mini: true,
                 onPressed: _openOriginalUrl,
                 backgroundColor: colors.surface,
                 foregroundColor: colors.textPrimary,
@@ -392,183 +404,184 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space2, // Reduced padding for more space
-        vertical: FacteurSpacing.space4,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colors.backgroundPrimary,
-            colors.backgroundPrimary.withOpacity(0.0),
-          ],
+    // Wrap in SafeArea to respect Notch/StatusBar because we are in a Stack now
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space2,
+          vertical: FacteurSpacing.space4,
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Source info with bias badge and reliability indicator
-          // Previous top row (Back/Bookmark) removed.
-          // Title removed.
-
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
-            child: Row(
-              children: [
-                // Discreet Back Button
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(),
-                  icon: Icon(
-                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                    size: 20,
-                    color: colors.textSecondary,
-                  ),
-                  onPressed: () => context.pop(_isConsumed),
-                ),
-                const SizedBox(width: 8),
-
-                // Source logo
-                if (content.source.logoUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: CachedNetworkImage(
-                      imageUrl: content.source.logoUrl!,
-                      width: 32, // Slightly larger for better alignment
-                      height: 32,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          _buildSourcePlaceholder(colors),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              colors.backgroundPrimary,
+              colors.backgroundPrimary
+                  .withOpacity(0.0), // Fully transparent at bottom
+            ],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+              child: Row(
+                children: [
+                  // Discreet Back Button
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                      size: 20,
+                      color: colors.textSecondary,
                     ),
-                  )
-                else
-                  _buildSourcePlaceholder(colors),
-                const SizedBox(width: 10),
+                    onPressed: () => context.pop(_isConsumed),
+                  ),
+                  const SizedBox(width: 8),
 
-                // Source Name + Time + Badges
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Ligne 1 : Nom + Badges
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              content.source.name,
-                              style: textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colors.textPrimary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // Bias badge
-                          if (content.source.biasStance != 'unknown') ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colors.textSecondary.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
+                  // Source logo
+                  if (content.source.logoUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: CachedNetworkImage(
+                        imageUrl: content.source.logoUrl!,
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) =>
+                            _buildSourcePlaceholder(colors),
+                      ),
+                    )
+                  else
+                    _buildSourcePlaceholder(colors),
+                  const SizedBox(width: 10),
+
+                  // Source Name + Time + Badges
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ligne 1 : Nom + Badges
+                        Row(
+                          children: [
+                            Flexible(
                               child: Text(
-                                content.source.getBiasLabel(),
-                                style: TextStyle(
-                                  fontSize: 11, // Slightly larger
-                                  fontWeight: FontWeight.w600,
-                                  color: colors.textSecondary,
+                                content.source.name,
+                                style: textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colors.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Bias badge
+                            if (content.source.biasStance != 'unknown') ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.textSecondary.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  content.source.getBiasLabel(),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: colors.textSecondary,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      // Ligne 2 : Temps relatif
-                      Text(
-                        timeago.format(content.publishedAt, locale: 'fr'),
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.textTertiary,
-                          fontSize: 11,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        // Ligne 2 : Temps relatif
+                        Text(
+                          timeago.format(content.publishedAt, locale: 'fr'),
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.textTertiary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
 
-                // Comparer button (Moved here)
-                if (content.contentType == ContentType.article) ...[
-                  const SizedBox(width: 8),
-                  ScaleTransition(
-                    scale: _buttonScaleAnimation,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colors.primary.withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: TextButton(
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _showPerspectives(context);
-                        },
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: colors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              PhosphorIcons.scales(PhosphorIconsStyle.fill),
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Comparer',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
+                  // Comparer button
+                  if (content.contentType == ContentType.article) ...[
+                    const SizedBox(width: 8),
+                    ScaleTransition(
+                      scale: _buttonScaleAnimation,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colors.primary.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
                             ),
                           ],
+                        ),
+                        child: TextButton(
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            _showPerspectives(context);
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            backgroundColor: colors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                PhosphorIcons.scales(PhosphorIconsStyle.fill),
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Comparer',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../providers/personalized_filters_provider.dart';
 
-/// Map des descriptions courtes pour chaque filtre (1 ligne max)
-const Map<String, String> filterDescriptions = {
+/// Map des descriptions courtes pour chaque filtre (Fallback)
+const Map<String, String> defaultFilterDescriptions = {
   'breaking': 'Les actus chaudes des dernières 12h',
   'inspiration': 'Sans thèmes anxiogènes (Politique, Géopolitique...)',
   'deep_dive': 'Des formats longs pour comprendre',
@@ -27,12 +28,14 @@ class FilterBar extends StatefulWidget {
   final String? selectedFilter;
   final ValueChanged<String?> onFilterChanged;
   final String? userBias; // Pour la description dynamique de "perspectives"
+  final List<FilterConfig>? availableFilters;
 
   const FilterBar({
     super.key,
     required this.selectedFilter,
     required this.onFilterChanged,
     this.userBias,
+    this.availableFilters,
   });
 
   @override
@@ -72,10 +75,18 @@ class _FilterBarState extends State<FilterBar> {
     setState(() {
       if (widget.selectedFilter == null) {
         _currentDescription = null;
-      } else if (widget.selectedFilter == 'perspectives') {
         _currentDescription = getPerspectivesDescription(widget.userBias);
       } else {
-        _currentDescription = filterDescriptions[widget.selectedFilter];
+        // Try to find description in availableFilters
+        final config = widget.availableFilters
+            ?.where((f) => f.key == widget.selectedFilter)
+            .firstOrNull;
+        if (config != null) {
+          _currentDescription = config.description;
+        } else {
+          _currentDescription =
+              defaultFilterDescriptions[widget.selectedFilter];
+        }
       }
     });
     // Attendre le prochain frame pour avoir les positions à jour
@@ -150,16 +161,24 @@ class _FilterBarState extends State<FilterBar> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
-            children: [
-              _buildFilterChip(context, 'Dernières news', 'breaking'),
-              const SizedBox(width: 8),
-              _buildFilterChip(context, 'Rester serein', 'inspiration'),
-              const SizedBox(width: 8),
-              _buildFilterChip(
-                  context, 'Changer de perspective', 'perspectives'),
-              const SizedBox(width: 8),
-              _buildFilterChip(context, 'Longs formats', 'deep_dive'),
-            ],
+            children: (widget.availableFilters ?? []).isNotEmpty
+                ? widget.availableFilters!
+                    .where((f) => f.isVisible)
+                    .map((f) => Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: _buildFilterChip(context, f.label, f.key),
+                        ))
+                    .toList()
+                : [
+                    _buildFilterChip(context, 'Dernières news', 'breaking'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(context, 'Rester serein', 'inspiration'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(
+                        context, 'Changer de perspective', 'perspectives'),
+                    const SizedBox(width: 8),
+                    _buildFilterChip(context, 'Longs formats', 'deep_dive'),
+                  ],
           ),
         ),
         // Description avec alignement dynamique qui suit le chip (anchor)

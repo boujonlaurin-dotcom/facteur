@@ -26,6 +26,7 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../providers/personalized_filters_provider.dart';
 import '../../progress/widgets/progression_card.dart';
 // import '../../progress/repositories/progress_repository.dart'; // Disabled with progression feature
 import '../../../core/ui/notification_service.dart';
@@ -384,7 +385,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
-                          'Voici vos news personnalisées du jour.',
+                          'Vos news personnalisées du jour.',
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
@@ -400,6 +401,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           selectedFilter:
                               ref.read(feedProvider.notifier).selectedFilter,
                           userBias: ref.watch(userBiasProvider).valueOrNull,
+                          availableFilters:
+                              ref.watch(personalizedFiltersProvider),
                           onFilterChanged: (String? filter) {
                             ref.read(feedProvider.notifier).setFilter(filter);
                           },

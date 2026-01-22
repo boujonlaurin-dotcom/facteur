@@ -22,6 +22,7 @@
 | 20/01/2026 | 1.8 | Story 4.1d: Finalisation Scoring par Topics granulaires | Antigravity |
 | 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
 | 21/01/2026 | 2.0 | Implémentation du Score Breakdown (Transparence totale) | Antigravity |
+| 22/01/2026 | 2.1 | **INCIDENT FIX**: Sync RSS asynchrone (Non-blocking Executor) | Antigravity |
 
 ---
 
@@ -149,6 +150,12 @@ graph TB
 | **DB Driver** | psycopg (v3) | 3.1.x | Driver PostgreSQL | Meilleure stabilité avec les pools et PgBouncer |
 | **Database** | PostgreSQL | 15.x | Base de données relationnelle | Via Supabase, JSONB, full-text search |
 | **PGBouncer Mode**| Transaction | - | Pooling Supabase | Nécessite `NullPool` et désactivation des prepared statements |
+
+> [!CAUTION]
+> **INCIDENT 22/01/2026 - Blocage Synchrone (Event Loop Starvation) :**
+> - **Cause :** L'utilisation de bibliothèques CPU-bound synchrones (ex: `feedparser.parse`) directement dans une route ou un worker async **BLOQUE** toute l'event loop FastAPI.
+> - **Symptôme :** Timeouts aléatoires sur tous les endpoints (Health, Feed) lors des jobs planifiés, même sans charge apparente.
+> - **Règle :** TOUT code bloquant/CPU-bound doit être exécuté dans un thread pool via `await loop.run_in_executor(None, func, *args)`.
 
 > [!IMPORTANT]
 > **Règles Critiques d'Implémentation (Python 3.14 & Auth) :**

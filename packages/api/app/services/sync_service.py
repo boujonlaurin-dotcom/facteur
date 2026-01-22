@@ -100,8 +100,12 @@ class SyncService:
             response.raise_for_status()
             content = response.text
             
-            # 2. Parse feed
-            feed = feedparser.parse(content)
+            # 2. Parse feed (Offload to thread pool to avoid blocking event loop)
+            # feedparser.parse is CPU-bound and synchronous. On large feeds/many feeds,
+            # this blocks the loop and causes timeouts on other endpoints.
+            import asyncio
+            loop = asyncio.get_event_loop()
+            feed = await loop.run_in_executor(None, feedparser.parse, content)
             
             if feed.bozo:
                 logger.warning("Feed parsing warning", source=source.name, error=feed.bozo_exception)

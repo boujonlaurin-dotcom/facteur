@@ -41,7 +41,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
         // Clean up subtopics
         final subtopicsForTheme = AvailableSubtopics.byTheme[slug];
         if (subtopicsForTheme != null) {
-          for (var sub in subtopicsForTheme) {
+          for (final sub in subtopicsForTheme) {
             _selectedSubtopics.remove(sub.slug);
           }
         }

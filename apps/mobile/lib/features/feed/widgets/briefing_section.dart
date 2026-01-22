@@ -100,7 +100,7 @@ class BriefingSection extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          "$totalMinutes min de lecture",
+                          '$totalMinutes min de lecture',
                           style:
                               Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: subheaderTextColor,
@@ -144,7 +144,7 @@ class BriefingSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        "$readCount/${briefing.length}",
+        '$readCount/${briefing.length}',
         style: const TextStyle(
           color: Colors.white,
           fontWeight: FontWeight.bold,
@@ -172,7 +172,7 @@ class BriefingSection extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                "N°$rank",
+                'N°$rank',
                 style: TextStyle(
                   color: colors.primary.withOpacity(isDark ? 0.9 : 1.0),
                   fontWeight: FontWeight.w900,
@@ -257,14 +257,14 @@ class BriefingSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  "Briefing terminé !",
+                  'Briefing terminé !',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: isDark ? Colors.white : colors.textPrimary,
                       ),
                 ),
                 Text(
-                  "Revenez demain à 8h pour votre prochaine sélection.",
+                  'Revenez demain à 8h pour votre prochaine sélection.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: isDark
                             ? Colors.white.withOpacity(0.6)

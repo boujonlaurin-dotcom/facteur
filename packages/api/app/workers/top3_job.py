@@ -10,7 +10,8 @@ from uuid import UUID
 
 import feedparser
 import structlog
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session_maker
@@ -208,25 +209,28 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
                     trending_content_ids=trending_ids
                 )
                 
-                # D. Persist
+                # D. Persist with idempotency (ON CONFLICT DO NOTHING)
+                # This prevents duplicates if the job runs multiple times
                 for i, item in enumerate(top3_items):
-                    daily_top3 = DailyTop3(
+                    stmt = insert(DailyTop3).values(
                         user_id=user_id,
                         content_id=item.content.id,
                         rank=i + 1,
                         top3_reason=item.top3_reason,
                         generated_at=start_time
-                    )
-                    session.add(daily_top3)
+                    ).on_conflict_do_nothing()
+                    await session.execute(stmt)
                 
+                # Commit per user to ensure atomicity
+                await session.commit()
                 generated_count += 1
                 
             except Exception as e:
                 logger.error("Error generating briefing for user", user_id=str(profile.user_id), error=str(e))
-                # Continue loop to not block other users
+                # Rollback this user's transaction and continue
+                await session.rollback()
                 continue
 
-        await session.commit()
         
     duration = (datetime.datetime.utcnow() - start_time).total_seconds()
     logger.info(

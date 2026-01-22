@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+
 import 'package:facteur/config/theme.dart';
 
 class FacteurLogo extends StatelessWidget {
@@ -24,13 +24,21 @@ class FacteurLogo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (showIcon) ...[
-          // Using a stamp/envelope metaphor icon
-          Icon(
-            PhosphorIcons.envelopeOpen(PhosphorIconsStyle.fill),
-            size: size * 1.2,
-            color: context.facteurColors.primary,
+          // Using new image asset logo
+          Transform.translate(
+            offset: Offset(
+                0, size * 0.1), // Nudge down for better optical alignment
+            child: Image.asset(
+              'assets/icons/facteur_logo.png',
+              width: size * 1.9, // Even larger relative to text
+              height: size * 1.9,
+              fit: BoxFit.contain,
+              color: effectiveColor == context.facteurColors.textPrimary
+                  ? null // Keep original colors if used on standard background
+                  : effectiveColor, // Apply color override if provided
+            ),
           ),
-          SizedBox(width: size * 0.4),
+          SizedBox(width: size * 0.15), // Reduced spacing per request
         ],
         Text(
           'Facteur',

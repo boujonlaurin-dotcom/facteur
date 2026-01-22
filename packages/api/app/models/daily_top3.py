@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, CheckConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,8 @@ class DailyTop3(Base):
         # Une seule entrée par (user, rank, date)
         Index("ix_daily_top3_user_date", "user_id", "generated_at"),
         CheckConstraint("rank >= 1 AND rank <= 3", name="ck_daily_top3_rank_range"),
+        # Unique constraint on (user_id, rank, DATE(generated_at AT TIME ZONE 'UTC'))
+        Index("uq_daily_top3_user_rank_day", "user_id", "rank", text("date(generated_at AT TIME ZONE 'UTC')"), unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(

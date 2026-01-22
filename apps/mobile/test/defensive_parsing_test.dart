@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
-import 'package:facteur/features/sources/models/source_model.dart';
 
 void main() {
   group('Defensive JSON Parsing (G5)', () {
@@ -53,7 +52,7 @@ void main() {
           'name': 'Source Name',
           'type': 'article',
         },
-        'recommendation_reason': "Not a map at all", // Mismatch!
+        'recommendation_reason': 'Not a map at all', // Mismatch!
       };
 
       final content = Content.fromJson(malformedJson);

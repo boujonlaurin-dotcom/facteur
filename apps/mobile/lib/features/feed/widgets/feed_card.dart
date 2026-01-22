@@ -276,17 +276,17 @@ class FeedCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.check,
                       size: 12,
                       color: Colors.white,
                     ),
-                    const SizedBox(width: 4),
-                    const Text(
-                      "Lu",
+                    SizedBox(width: 4),
+                    Text(
+                      'Lu',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -385,7 +385,7 @@ class FeedCard extends StatelessWidget {
                   ],
                 ),
               );
-            }).toList(),
+            }),
 
             const SizedBox(height: 16),
             // Footer
