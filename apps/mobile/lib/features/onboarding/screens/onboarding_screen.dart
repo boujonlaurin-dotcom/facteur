@@ -79,16 +79,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   return FadeTransition(
                     opacity: animation,
                     child: SlideTransition(
-                      position:
-                          Tween<Offset>(
-                            begin: const Offset(0.05, 0),
-                            end: Offset.zero,
-                          ).animate(
-                            CurvedAnimation(
-                              parent: animation,
-                              curve: Curves.easeOut,
-                            ),
-                          ),
+                      position: Tween<Offset>(
+                        begin: const Offset(0.05, 0),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOut,
+                        ),
+                      ),
                       child: child,
                     ),
                   );
@@ -119,7 +118,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     switch (question) {
       case Section1Question.intro1:
-        return const IntroScreen1(key: ValueKey('intro1'));
+        return const WelcomeScreen(key: ValueKey('intro1'));
 
       case Section1Question.intro2:
         return const IntroScreen2(key: ValueKey('intro2'));
@@ -129,8 +128,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section1Question.objectiveReaction:
         final objective = state.answers.objective ?? 'learn';
-        final reaction =
-            ObjectiveReactionMessages.messages[objective] ??
+        final reaction = ObjectiveReactionMessages.messages[objective] ??
             ObjectiveReactionMessages.messages['noise']!;
         return ReactionScreen(
           key: const ValueKey('objective_reaction'),
@@ -186,16 +184,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  /// Section 3 : Source Preferences (Themes + Finalize)
+  /// Section 3 : Source Preferences (Themes → Sources → Finalize)
+  /// Ordre: Thèmes d'abord (Q9), puis Sources avec pré-sélection (Q10), puis Finalize
   Widget _buildSection3Content(OnboardingState state) {
     final question = state.currentSection3Question;
 
     switch (question) {
-      case Section3Question.sources:
-        return const SourcesQuestion(key: ValueKey('sources'));
-
       case Section3Question.themes:
         return const ThemesQuestion(key: ValueKey('themes'));
+
+      case Section3Question.sources:
+        return const SourcesQuestion(key: ValueKey('sources'));
 
       case Section3Question.finalize:
         return const FinalizeQuestion(key: ValueKey('finalize'));

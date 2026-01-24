@@ -5,12 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
+import '../../data/theme_to_sources_mapping.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../onboarding_strings.dart';
 
-/// Q9 : "Vos sources préférées ?"
+/// Q10 : "Vos sources préférées ?" (après thèmes)
 /// Sélection de sources fiables depuis la base de données.
 /// Les sources sélectionnées seront marquées comme "de confiance".
+///
+/// Nouvelle fonctionnalité: Pré-sélection automatique basée sur les thèmes choisis.
 class SourcesQuestion extends ConsumerStatefulWidget {
   const SourcesQuestion({super.key});
 
@@ -22,15 +25,18 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   Set<String> _selectedSourceIds = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _hasAppliedPreselection = false;
 
   @override
   void initState() {
     super.initState();
-    // Charger les sources préférées existantes
+    // Charger les sources préférées existantes (reprise d'onboarding ou back navigation)
     final existingAnswers = ref.read(onboardingProvider).answers;
     final existingSources = existingAnswers.preferredSources;
-    if (existingSources != null) {
+    if (existingSources != null && existingSources.isNotEmpty) {
+      // L'utilisateur a déjà fait des sélections → les restaurer
       _selectedSourceIds = existingSources.toSet();
+      _hasAppliedPreselection = true; // Ne pas écraser avec la pré-sélection
     }
 
     _searchController.addListener(() {
@@ -38,6 +44,56 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         _searchQuery = _searchController.text;
       });
     });
+  }
+
+  /// Applique la pré-sélection automatique basée sur les thèmes choisis
+  void _applyPreselection(List<Source> allSources) {
+    if (_hasAppliedPreselection) return;
+    _hasAppliedPreselection = true;
+
+    final existingAnswers = ref.read(onboardingProvider).answers;
+    final selectedThemes = existingAnswers.themes ?? [];
+    final selectedSubtopics = existingAnswers.subtopics ?? [];
+
+    if (selectedThemes.isEmpty) return;
+
+    // Calculer les noms de sources recommandées
+    final recommendedNames = ThemeToSourcesMapping.computeRecommendedSources(
+      selectedThemes: selectedThemes,
+      selectedSubtopics: selectedSubtopics,
+    );
+
+    // Convertir les noms en IDs
+    final recommendedIds = _convertSourceNamesToIds(
+      recommendedNames.toList(),
+      allSources,
+    );
+
+    if (recommendedIds.isNotEmpty) {
+      setState(() {
+        _selectedSourceIds = recommendedIds;
+      });
+    }
+  }
+
+  /// Convertit les noms de sources en IDs UUID
+  Set<String> _convertSourceNamesToIds(
+    List<String> sourceNames,
+    List<Source> allSources,
+  ) {
+    final Set<String> ids = {};
+
+    for (final name in sourceNames) {
+      final source = allSources.cast<Source?>().firstWhere(
+            (s) => s?.name.toLowerCase() == name.toLowerCase(),
+            orElse: () => null,
+          );
+      if (source != null) {
+        ids.add(source.id);
+      }
+    }
+
+    return ids;
   }
 
   @override
@@ -62,6 +118,13 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     ref
         .read(onboardingProvider.notifier)
         .selectSources(_selectedSourceIds.toList());
+  }
+
+  /// Vérifie si des thèmes ont été sélectionnés (pour afficher le message)
+  bool get _hasSelectedThemes {
+    final existingAnswers = ref.read(onboardingProvider).answers;
+    final selectedThemes = existingAnswers.themes ?? [];
+    return selectedThemes.isNotEmpty;
   }
 
   @override
@@ -93,7 +156,46 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space4),
+
+          // Message de pré-sélection (si des thèmes ont été sélectionnés)
+          if (_hasSelectedThemes && _selectedSourceIds.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space4,
+                vertical: FacteurSpacing.space3,
+              ),
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    OnboardingStrings.q9PreselectionTitle,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    OnboardingStrings.q9PreselectionSubtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: FacteurSpacing.space4),
 
           // Barre de recherche
           TextField(
@@ -130,6 +232,11 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                 ),
               ),
               data: (sources) {
+                // Appliquer la pré-sélection automatique (une seule fois)
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _applyPreselection(sources);
+                });
+
                 // Filtrer pour n'afficher que les sources curées
                 var filteredSources =
                     sources.where((s) => s.isCurated).toList();

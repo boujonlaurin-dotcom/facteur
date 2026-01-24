@@ -22,6 +22,7 @@
 | 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
 | 21/01/2026 | 2.0 | Feature: Score Transparency Breakdown (Détail du calcul) | Antigravity |
 | 22/01/2026 | 2.1 | Refonte Onboarding : Champs Nom/Prénom & Fix Redirection | Antigravity |
+| 24/01/2026 | 2.2 | Onboarding Section 3 : Inversion Thèmes → Sources avec pré-sélection (Story 2.7) | Antigravity |
 
 ---
 
@@ -479,13 +480,15 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 **so that** Facteur me propose les bons contenus.
 
 **Acceptance Criteria :**
-1. 3-4 écrans couvrant :
-   - Thèmes principaux (multi-sélection)
-   - Préférence formats courts vs longs
-   - 2-3 questions de préférence rapide entre sources
-2. Si gamification activée → Question sur l'objectif personnel
+1. 3 écrans couvrant (dans cet ordre) :
+   - **Q9 : Thèmes principaux** (multi-sélection avec sous-thèmes optionnels)
+   - **Q10 : Sources de confiance** (pré-sélection automatique basée sur les thèmes choisis + modification possible)
+   - **Écran Finalize** : Résumé et bouton "Créer mon flux"
+2. Message informatif sur l'écran Sources : "💡 Pré-sélection basée sur vos thèmes"
 3. Indicateur de progression (section 3/3)
 4. Bouton "Finaliser" déclenche l'animation de conclusion
+
+**Note :** L'ordre Thèmes → Sources (avec pré-sélection) réduit la friction et permet à l'utilisateur de découvrir des sources pertinentes. Voir Story 2.7 pour les détails d'implémentation.
 
 ---
 

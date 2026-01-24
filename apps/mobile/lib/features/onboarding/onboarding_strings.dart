@@ -12,11 +12,13 @@ class OnboardingStrings {
   static String sectionCount(int current, int total) =>
       'Section $current/$total';
 
-  // Intro Screen 1
-  static const String intro1Title =
-      "L'info est devenue un vrai champ de bataille.";
-  static const String intro1Subtitle =
-      "Certains milliardaires détiennent les médias. \n\nD'autres détiennent les réseaux sociaux.\n\nMais tous se battent pour une seule chose : influencer nos opinions.";
+  // Welcome Screen (ex-Intro 1)
+  static const String welcomeTitle = 'Bienvenue sur Facteur !';
+  static const String welcomeSubtitle =
+      "L'info est aujourd'hui un champ de bataille.\n\nReprenons le contrôle ensemble.";
+  static const String welcomeManifestoButton =
+      'Présentation Facteur (Manifeste)';
+  static const String welcomeStartButton = 'Commencer';
 
   // Intro Screen 2
   static const String intro2Title =
@@ -104,7 +106,7 @@ class OnboardingStrings {
   static const String q8bGoal15Label = '15 contenus';
   static const String q8bGoal15Subtitle = '~1h / semaine • Expert';
 
-  // Q9: Sources
+  // Q9: Sources (maintenant Q10 après inversion)
   static const String q9Title = 'Construisons votre front de sources fiables.';
   static const String q9Subtitle =
       'Sélectionnez les sources qui seront privilégiées pour votre flux.';
@@ -113,6 +115,11 @@ class OnboardingStrings {
   static const String q9EmptyList = 'Aucune source disponible';
   static const String q9NoMatch =
       'Aucune source ne correspond à votre recherche';
+
+  // Message de pré-sélection automatique
+  static const String q9PreselectionTitle =
+      '💡 Pré-sélection basée sur vos thèmes';
+  static const String q9PreselectionSubtitle = '';
 
   // Q10: Themes
   static const String q10Title = 'Quels sont vos centres d\'intérêt ?';

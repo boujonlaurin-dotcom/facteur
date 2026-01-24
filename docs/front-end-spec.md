@@ -49,6 +49,7 @@ Ce document définit les objectifs d'expérience utilisateur, l'architecture de 
 | Date | Version | Description | Auteur |
 |------|---------|-------------|--------|
 | 07/01/2026 | 1.0 | Création initiale | Sally (UX Expert) |
+| 24/01/2026 | 1.1 | Onboarding Section 3 : Flow Thèmes → Sources avec pré-sélection (Story 2.7) | Antigravity |
 
 ---
 
@@ -207,13 +208,12 @@ flowchart TD
     S3_INTRO[Section 3: Sources<br/>Transition animée]
     
     subgraph "Section 3 — Source Preferences"
-        S3_INTRO --> Q9[Q9: Tes thèmes ?<br/>Multi-sélection chips]
-        Q9 --> Q10[Q10: Format préféré ?<br/>📄 Court / 📖 Long / 🎧 Audio / 🎬 Vidéo]
-        Q10 --> Q11[Q11: Tu préfères lire...<br/>Source A vs Source B]
-        Q11 --> Q12[Q12: Et entre...<br/>Source C vs Source D]
+        S3_INTRO --> Q9[Q9: Tes thèmes ?<br/>Multi-sélection avec sous-thèmes]
+        Q9 --> Q10[Q10: Tes sources de confiance ?<br/>Pré-sélection automatique + message 💡]
+        Q10 --> FINALIZE[Écran Finalize<br/>Résumé + Créer mon flux]
     end
     
-    Q12 --> FINAL[Animation finale<br/>Préparation du feed...]
+    FINALIZE --> FINAL[Animation finale<br/>Préparation du feed...]
     FINAL --> FEED([Feed personnalisé 🎉])
     
     style START fill:#1E1E1E,stroke:#E07A5F
@@ -224,8 +224,11 @@ flowchart TD
 **Edge Cases & Error Handling :**
 - ⚠️ Fermeture app pendant onboarding → Reprendre là où on en était
 - ⚠️ Aucun thème sélectionné (Q9) → Empêcher de continuer, message d'erreur doux
+- ⚠️ Pré-sélection sources (Q10) → Si aucune source recommandée, afficher liste vide avec message "Sélectionnez les sources qui vous intéressent"
 - ⚠️ Connexion perdue → Sauvegarder localement, sync au retour
 - ⚠️ Session non-persistante → Forcer login au démarrage si "Rester connecté" décoché
+
+**Note UX (Section 3) :** L'ordre Thèmes → Sources permet de pré-sélectionner automatiquement des sources basées sur les intérêts de l'utilisateur. Un message informatif "💡 Pré-sélection basée sur vos thèmes" est affiché pour expliquer cette pré-sélection.
 
 ---
 

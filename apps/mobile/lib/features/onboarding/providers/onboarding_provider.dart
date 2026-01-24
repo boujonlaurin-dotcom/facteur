@@ -146,9 +146,10 @@ enum Section2Question {
 }
 
 /// Questions de la Section 3 (Source Preferences)
+/// Ordre : Thèmes d'abord, puis Sources (avec pré-sélection), puis Finalize
 enum Section3Question {
-  sources, // Q9: Vos sources préférées
-  themes, // Q10: Vos thèmes préférés
+  themes, // Q9: Vos thèmes préférés (premier)
+  sources, // Q10: Vos sources préférées (avec pré-sélection basée sur thèmes)
   finalize, // Écran de finalisation
 }
 
@@ -545,23 +546,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // SECTION 3 : Source Preferences
   // ============================================================
 
-  /// Sélectionne les sources (Q9) - multi-sélection
-  void selectSources(List<String> sources) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(preferredSources: sources),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section3Question.themes.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Sélectionne les thèmes (Q10) - multi-sélection
+  /// Sélectionne les thèmes (Q9) - multi-sélection
+  /// Nouvel ordre: Thèmes → Sources → Finalize
   void selectThemes(List<String> themes) {
     state = state.copyWith(
       answers: state.answers.copyWith(themes: themes),
@@ -569,16 +555,17 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Go directly to finalize
+    // Aller vers Sources (Q10) avec pré-sélection
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section3Question.finalize.index,
+        currentQuestionIndex: Section3Question.sources.index,
         isTransitioning: false,
       );
     });
   }
 
-  /// Sélectionne les thèmes et sous-thèmes (Q10)
+  /// Sélectionne les thèmes et sous-thèmes (Q9)
+  /// Nouvel ordre: Thèmes → Sources → Finalize
   void selectThemesAndSubtopics(List<String> themes, List<String> subtopics) {
     state = state.copyWith(
       answers: state.answers.copyWith(
@@ -589,7 +576,25 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Go directly to finalize
+    // Aller vers Sources (Q10) avec pré-sélection
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section3Question.sources.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
+  /// Sélectionne les sources (Q10) - multi-sélection
+  /// Nouvel ordre: Thèmes → Sources → Finalize
+  void selectSources(List<String> sources) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(preferredSources: sources),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    // Aller vers Finalize
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
         currentQuestionIndex: Section3Question.finalize.index,

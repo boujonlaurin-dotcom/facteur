@@ -23,6 +23,7 @@
 | 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
 | 21/01/2026 | 2.0 | Implémentation du Score Breakdown (Transparence totale) | Antigravity |
 | 22/01/2026 | 2.1 | **INCIDENT FIX**: Sync RSS asynchrone (Non-blocking Executor) | Antigravity |
+| 24/01/2026 | 2.2 | Onboarding Section 3 : Mapping Thèmes → Sources pour pré-sélection (Story 2.7) | Antigravity |
 
 ---
 
@@ -1938,6 +1939,39 @@ Pour faciliter les itérations éditoriales et le futur support multi-langues, l
 - Le fichier doit se situer dans le dossier `widgets` ou `providers` de la feature concernée.
 
 Exemple : `lib/features/onboarding/onboarding_strings.dart`
+
+### 18.2 Onboarding : Mapping Thèmes → Sources
+
+Pour la pré-sélection automatique des sources dans l'onboarding (Story 2.7), un mapping statique lie les thèmes macro aux sources CURATED recommandées.
+
+**Fichier :** `lib/features/onboarding/data/theme_to_sources_mapping.dart`
+
+**Structure :**
+
+```dart
+class ThemeToSourcesMapping {
+  /// Mapping Thème → Sources CURATED (max 5 par thème)
+  static const Map<String, List<String>> byTheme = {
+    'tech': ['ScienceEtonnante', 'Epsiloon', 'Monsieur Bidouille', 'TechTrash', 'Socialter'],
+    'international': ['Le Dessous des Cartes', 'Le Collimateur', 'Le Grand Continent', 'Politico Europe', 'Le Monde Diplomatique'],
+    'science': ['ScienceEtonnante', 'La Science CQFD', 'Epsiloon', 'The Conversation'],
+    'culture': ['Le 1 Hebdo', 'Philosophie Magazine', 'The Conversation', 'Revue Commentaire'],
+    'politics': ['Le Monde', 'Mediapart', 'Le Figaro', 'Politico Europe', 'Le Canard Enchaîné'],
+    'society': ['Les Pieds sur Terre', 'Transfert', 'France Info', 'France Inter', 'Blast'],
+    'environment': ['Bon Pote', 'Reporterre', 'Sismique'],
+    'economy': ['Heu?reka', 'Alternatives Économiques', 'Nouveau Départ', 'Guerres de Business', 'Les Échos'],
+  };
+  
+  /// Mapping optionnel Subtopic → Sources spécialisées
+  static const Map<String, List<String>> bySubtopic = { ... };
+}
+```
+
+**Règles :**
+- Max 5 sources par thème
+- Max 15 sources total recommandées
+- Les noms sont convertis en IDs via le provider `userSourcesProvider`
+- Basé sur l'analyse de `sources_master.csv` (sources CURATED avec `reliability_score >= medium`)
 
 ---
 
