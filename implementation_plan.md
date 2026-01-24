@@ -14,6 +14,7 @@ Les deploiements Railway du service `facteur` echouent sur le healthcheck (`/api
 - Logs Railway: revision Alembic `a8da35e3c12b` absente du code.
 - Repository local: migrations `a8da35e3c12b`, `f7e8a9b0c1d2`, `b7d6e5f4c3a2`, `1a2b3c4d5e6f` non versionnees (git status).
 - Healthcheck actuel: `curl -i https://facteur-production.up.railway.app/api/health` retourne 200 (mais `environment=development`).
+- Nouveau echec de build: `pip install` timeout sur `torch` (download tres volumineux).
 
 ## Decision (Decide)
 
@@ -30,6 +31,7 @@ Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alem
 3. Sur Railway, verifier que `alembic upgrade head` passe au startup.
 4. Verifier le healthcheck en prod.
 5. Ajouter un script de verification `docs/qa/scripts/verify_railway_healthcheck_migrations.sh`.
+6. Stabiliser le build Docker avec un timeout/retries plus permissifs pour `pip install`.
 
 ## Risques / Rollback
 
