@@ -11,7 +11,7 @@
 - L'app s'arrete au startup, le healthcheck ne demarre pas.
  - Build echoue intermittente: `pip install` timeout sur le download de `torch` (gros package).
 - Nouveau crash: container lance sans `DATABASE_URL` et `alembic upgrade head` plante avec `NoSuchModuleError`.
-- Nouveau crash: migrations Alembic echouent par timeout de pool DB au demarrage.
+- Nouveau crash: migrations Alembic echouent par timeout de pool DB au demarrage (pooler Supabase).
 
 ## Cause probable
 
@@ -24,7 +24,8 @@
 - Redeployer le service et verifier que `alembic upgrade head` passe.
  - Stabiliser le build Docker avec un timeout/retries plus permissifs sur `pip install`.
 - Skipper les migrations si `DATABASE_URL` n'est pas defini (startup de build Railway/CI).
-- Ajouter des retries plus longs sur `alembic upgrade head` pour gerer les timeouts transitoires.
+- Preferer le host DB direct Supabase pour les migrations afin d'eviter le pooler.
+- Garder des retries plus longs sur `alembic upgrade head` pour gerer les timeouts transitoires.
 
 ## Verification
 
