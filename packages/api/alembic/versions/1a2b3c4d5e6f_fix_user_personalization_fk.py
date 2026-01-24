@@ -17,6 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute("SET LOCAL statement_timeout = '5min'")
     # 1. Drop existing FK
     # We need the constraint name. Usually it's user_personalization_user_id_fkey
     op.drop_constraint('user_personalization_user_id_fkey', 'user_personalization', type_='foreignkey')
@@ -33,6 +34,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("SET LOCAL statement_timeout = '5min'")
     op.drop_constraint('user_personalization_user_id_fkey', 'user_personalization', type_='foreignkey')
     op.create_foreign_key(
         'user_personalization_user_id_fkey',

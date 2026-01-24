@@ -27,6 +27,7 @@
 - Garder le pooler Supabase pour les migrations (le host direct est inaccessible depuis Railway).
 - Garder des retries plus longs sur `alembic upgrade head` pour gerer les timeouts transitoires.
 - Garder un mode bloquant: l'API ne demarre pas si migrations en echec.
+- Augmenter le `statement_timeout` pour le drop de contrainte bloquant.
 
 ## Verification
 

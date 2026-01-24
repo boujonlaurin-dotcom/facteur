@@ -38,6 +38,7 @@ Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alem
 8. Ajouter un retry plus long sur les migrations pour absorber les timeouts DB transitoires.
 9. Garder le pooler Supabase pour les migrations (host direct inaccessible).
 10. Garder un mode bloquant: l'API ne demarre pas si migrations en echec.
+11. Augmenter le statement_timeout pour la migration qui drop la contrainte.
 
 ## Risques / Rollback
 
