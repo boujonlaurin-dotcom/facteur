@@ -717,7 +717,7 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 **Acceptance Criteria :**
 1. Barre de filtres horizontale ("Chips") avec description courte sous les chips
 2. Filtres "Intent" avec logique backend affinée :
-   - "Dernières news" (< 12h, thèmes: society, international, economy, politics) → *Les actus de moins de 12h*
+   - "Dernières news" (< 12h, thèmes Hard News) → *Feed Twitter-like : l'actu en temps réel*
    - "Rester serein" (exclut society, international, economy, politics) → *Loin des sujets chauds*
    - "Longs formats" (> 10 min, inclut articles) → *Contenus de plus de 10 min*
    - "Mes angles morts" (biais opposé, description dynamique) → *Selon biais utilisateur*
@@ -1184,6 +1184,32 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 
 ---
 
+## Epic 9 : Open Sources (Custom Feeds)
+
+**Objectif :** Permettre l'ajout de n'importe quel flux RSS/YouTube public pour briser la bulle de filtre.
+
+### Story 9.1 : Smart Detect & Ajout
+**As a** utilisateur,
+**I want** ajouter un site via son URL simple,
+**so that** je n'aie pas besoin de chercher le lien RSS technique.
+
+**Acceptance Criteria :**
+1. Champ input acceptant URL standard (ex: lemonde.fr)
+2. Backend tente de découvrir le RSS via tags HTML `<link>`
+3. Fallback : détection directe si URL finit par .xml/.rss
+4. Gestion erreurs 403 (Privé) et 404 avec messages pédago
+
+### Story 9.2 : Gestion des Sources Personnelles
+**As a** utilisateur,
+**I want** distinguer mes sources ajoutées du catalogue officiel,
+**so that** je gère mon diet informationnel.
+
+**Acceptance Criteria :**
+1. Section "Sources Personnelles" dans l'écran Sources
+2. Possibilité de supprimer une source ajoutée
+3. Les sources personnelles sont synchronisées avec le même moteur que les sources officielles
+
+---
 
 ## Next Steps
 

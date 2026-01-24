@@ -1175,9 +1175,11 @@ Avant le scoring, les contenus sont filtrés selon le contexte (User + Mode) :
    - Inclure uniquement les sources suivies par l'utilisateur OU les sources curées.
 
 2. **Filtres de Mode (Intent-based) :**
-   - **Mode "Dernières news" (BREAKING)** :
+   - **Mode "Dernières news" (BREAKING)** — *Feed Twitter-like* :
+     - Philosophie : Immédiateté et réactivité, comme un fil d'actu en temps réel.
      - Récence < 12h.
-     - Thèmes restreints aux "Hard News" (`society`, `international`, `economy`, `politics`).
+     - Thèmes Hard News uniquement (`society`, `international`, `economy`).
+     - Tri chronologique inversé (les plus récents en premier).
    - **Mode "Sérénité" (INSPIRATION)** :
      - Exclusion des thèmes "Hard News" (`society`, `international`, `economy`, `politics`).
    - **Mode "Grand Format" (DEEP_DIVE)** :

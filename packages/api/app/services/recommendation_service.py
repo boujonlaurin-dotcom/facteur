@@ -486,9 +486,18 @@ class RecommendationService:
                 )
 
             elif mode == FeedFilterMode.BREAKING:
-                 # Mode "Dernières news" : Fresh news (< 24h) from curated sources
-                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
-                 query = query.where(Content.published_at >= limit_date)
+                 # Mode "Dernières news" : Feed Twitter-like avec les actualités chaudes
+                 # Philosophie : Immédiateté et réactivité, comme un fil d'actu en temps réel
+                 # - Fenêtre courte (12h) pour garantir la fraîcheur
+                 # - Thèmes Hard News : society, international, economy (actualités chaudes)
+                 # - Tri par date de publication (les plus récents en premier)
+                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
+                 query = query.where(
+                    and_(
+                        Content.published_at >= limit_date,
+                        Source.theme.in_(['society', 'international', 'economy'])
+                    )
+                 )
 
             elif mode == FeedFilterMode.PERSPECTIVES:
                 # Mode "Angle Mort" : Perspective swap
