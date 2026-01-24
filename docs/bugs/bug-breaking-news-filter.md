@@ -28,11 +28,17 @@ Note : `geopolitics` est un **sous-thème granulaire** (`granular_topics`), pas 
 
 ## Correction
 
-Alignement des thèmes Hard News avec les données réelles :
+Alignement des thèmes Hard News avec les données réelles **en base** :
 
 ```python
-Source.theme.in_(['society', 'international', 'economy'])
+# Thèmes DB (via THEME_MAPPING de import_sources.py) :
+# - "Société & Climat" -> society_climate
+# - "Géopolitique" -> geopolitics
+# - "Économie" -> economy
+Source.theme.in_(['society_climate', 'geopolitics', 'economy'])
 ```
+
+**Note importante** : Les thèmes en base correspondent au `THEME_MAPPING` de `scripts/import_sources.py`, pas aux thèmes du CSV `sources_master.csv`.
 
 ## Philosophie "Feed Twitter-like"
 
