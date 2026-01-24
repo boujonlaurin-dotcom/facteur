@@ -13,6 +13,9 @@ from app.schemas.content import ContentResponse, FeedResponse
 
 router = APIRouter()
 
+import structlog
+_feed_logger = structlog.get_logger()
+
 @router.get("/", response_model=FeedResponse)
 async def get_personalized_feed(
     limit: int = Query(20, ge=1, le=50),
@@ -26,6 +29,8 @@ async def get_personalized_feed(
     """
     Récupère le feed personnalisé + le Top 3 (Briefing).
     """
+    _feed_logger.info("feed_request", mode=mode.value if mode else None, limit=limit, offset=offset, user=current_user_id[:8])
+    
     from datetime import datetime
     from sqlalchemy import select, and_
     from sqlalchemy.orm import selectinload
@@ -85,6 +90,11 @@ async def get_personalized_feed(
     # (Le service de recommandation pourrait les inclure par défaut)
     if briefing_content_ids:
         feed_items = [item for item in feed_items if item.id not in briefing_content_ids]
+
+    _feed_logger.info("feed_response", 
+                     mode=mode.value if mode else None,
+                     items_count=len(feed_items),
+                     briefing_count=len(briefing_items))
 
     return FeedResponse(
         briefing=briefing_items,
