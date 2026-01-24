@@ -16,6 +16,7 @@ Les deploiements Railway du service `facteur` echouent sur le healthcheck (`/api
 - Healthcheck actuel: `curl -i https://facteur-production.up.railway.app/api/health` retourne 200 (mais `environment=development`).
 - Nouveau echec de build: `pip install` timeout sur `torch` (download tres volumineux).
 - Nouveau echec de demarrage CI/railway: `DATABASE_URL` absent -> `alembic upgrade head` plante.
+- Nouveau echec de demarrage prod: timeout de pool DB pendant `alembic upgrade head`.
 
 ## Decision (Decide)
 
@@ -34,6 +35,7 @@ Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alem
 5. Ajouter un script de verification `docs/qa/scripts/verify_railway_healthcheck_migrations.sh`.
 6. Stabiliser le build Docker avec un timeout/retries plus permissifs pour `pip install`.
 7. Skipper les migrations si `DATABASE_URL` est absent (build container).
+8. Ajouter un retry sur les migrations pour absorber les timeouts DB transitoires.
 
 ## Risques / Rollback
 
