@@ -9,7 +9,6 @@ from alembic import context
 
 # Load environment variables from .env
 import os
-import socket
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 load_dotenv()
@@ -29,28 +28,6 @@ if database_url:
         database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
     elif database_url.startswith("postgresql://") and "+psycopg" not in database_url:
         database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-
-    # Supabase pooler can timeout during migrations; prefer direct DB host when possible.
-    try:
-        parsed_url = urlparse(database_url)
-        if parsed_url.hostname and "pooler.supabase.com" in parsed_url.hostname:
-            supabase_url = os.getenv("SUPABASE_URL", "")
-            if supabase_url:
-                project_ref = urlparse(supabase_url).hostname.split(".")[0]
-                direct_host = f"db.{project_ref}.supabase.co"
-                userinfo = ""
-                if parsed_url.username:
-                    userinfo = parsed_url.username
-                    if parsed_url.password is not None:
-                        userinfo += f":{parsed_url.password}"
-                    userinfo += "@"
-                try:
-                    ipv4 = socket.getaddrinfo(direct_host, 5432, family=socket.AF_INET)[0][4][0]
-                    database_url = parsed_url._replace(netloc=f"{userinfo}{ipv4}:5432").geturl()
-                except Exception:
-                    database_url = parsed_url._replace(netloc=f"{userinfo}{direct_host}:5432").geturl()
-    except Exception:
-        pass
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

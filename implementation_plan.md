@@ -36,8 +36,8 @@ Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alem
 6. Stabiliser le build Docker avec un timeout/retries plus permissifs pour `pip install`.
 7. Skipper les migrations si `DATABASE_URL` est absent (build container).
 8. Ajouter un retry plus long sur les migrations pour absorber les timeouts DB transitoires.
-9. Utiliser le host DB direct Supabase pour les migrations quand `SUPABASE_URL` est present (preferer IPv4 si possible).
-10. En dernier recours, lancer les migrations en arriere-plan pour ne pas bloquer le deploiement.
+9. Garder le pooler Supabase pour les migrations (host direct inaccessible).
+10. Garder un mode bloquant: l'API ne demarre pas si migrations en echec.
 
 ## Risques / Rollback
 
