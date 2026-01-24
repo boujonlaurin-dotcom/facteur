@@ -306,7 +306,7 @@ class _FilterBarState extends State<FilterBar> {
           child: Row(
             children: visibleFilters.isNotEmpty
                 ? visibleFilters
-                    .map<Widget>((f) => Padding(
+                    .map<Widget>((FilterConfig f) => Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: _buildFilterChip(context, f.label, f.key),
                         ))
