@@ -42,3 +42,27 @@ Rétablir l'affichage du briefing quotidien dans le feed, même si un filtre est
 ## Test rapide
 
 - Appeler `/api/feed?limit=1&offset=0` avec et sans `mode`, et vérifier que `briefing` est non vide.
+
+---
+
+# Plan d'implémentation - Personalization nudge manquant (CI)
+
+## Objectif
+
+Rendre le build APK CI stable en ajoutant les fichiers Dart utilises mais non versionnes.
+
+## Hypotheses
+
+- Les widgets `personalization_nudge.dart` et `personalization_sheet.dart` ainsi que `skip_provider.dart` sont presents localement mais absents du repo.
+- La CI compile sur Linux (case-sensitive), donc toute divergence de nom de fichier devient bloquante.
+
+## Etapes
+
+1. **Inventaire**: Lister les imports du feed qui pointent vers des fichiers non versionnes.
+2. **Correctif**: Ajouter les fichiers manquants au repo sans refactor.
+3. **Verification**: Lancer un `flutter analyze` cible sur les fichiers concernes.
+4. **Documentation**: Ajouter un bug doc et un script de verification.
+
+## Test rapide
+
+- Executer `docs/qa/scripts/verify_feed_personalization_nudge.sh`.
