@@ -1,0 +1,67 @@
+"""Layer de personnalisation - applique les malus pour sources/thèmes/topics mutés."""
+
+from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
+from app.models.content import Content
+
+
+class PersonalizationLayer(BaseScoringLayer):
+    """
+    Applique les malus de personnalisation explicite définis par l'utilisateur.
+    
+    Poids :
+    - Source mutée : -80 pts (fort impact, l'utilisateur veut clairement moins voir)
+    - Thème muté : -40 pts (impact modéré, peut encore apparaître si autres facteurs forts)
+    - Topic muté : -30 pts (impact ciblé par sous-thème)
+    """
+    
+    MUTED_SOURCE_MALUS = -80.0
+    MUTED_THEME_MALUS = -40.0
+    MUTED_TOPIC_MALUS = -30.0
+    
+    @property
+    def name(self) -> str:
+        return "personalization"
+    
+    def score(self, content: Content, context: ScoringContext) -> float:
+        score = 0.0
+        
+        # 1. Source mutée → gros malus
+        if hasattr(context, 'muted_sources') and context.muted_sources:
+            if content.source_id in context.muted_sources:
+                score += self.MUTED_SOURCE_MALUS
+                context.add_reason(
+                    content.id, 
+                    self.name, 
+                    self.MUTED_SOURCE_MALUS, 
+                    "Tu vois moins de cette source"
+                )
+        
+        # 2. Thème muté → malus modéré
+        if hasattr(context, 'muted_themes') and context.muted_themes:
+            if content.source and content.source.theme:
+                theme_slug = content.source.theme.lower().strip()
+                if theme_slug in context.muted_themes:
+                    score += self.MUTED_THEME_MALUS
+                    context.add_reason(
+                        content.id, 
+                        self.name, 
+                        self.MUTED_THEME_MALUS, 
+                        f"Tu vois moins de {theme_slug}"
+                    )
+        
+        # 3. Topics mutés → malus ciblé (cumulatif si plusieurs matches)
+        if hasattr(context, 'muted_topics') and context.muted_topics:
+            if content.topics:
+                content_topics = {t.lower().strip() for t in content.topics if t}
+                muted_matches = content_topics & set(context.muted_topics)
+                
+                for topic in muted_matches:
+                    score += self.MUTED_TOPIC_MALUS
+                    context.add_reason(
+                        content.id, 
+                        self.name, 
+                        self.MUTED_TOPIC_MALUS, 
+                        f"Tu vois moins de {topic}"
+                    )
+        
+        return score

@@ -12,6 +12,7 @@ from app.routers import (
     webhooks,
     internal,
     progress,
+    personalization,
 )
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "webhooks",
     "internal",
     "progress",
+    "personalization",
 ]
 
