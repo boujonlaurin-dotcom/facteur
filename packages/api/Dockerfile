@@ -20,7 +20,7 @@ USER appuser
 # Expose port (documentation only)
 EXPOSE 8000
 
-# Run migrations before starting the API.
+# Run migrations before starting the API when DATABASE_URL is available.
 # Use explicit shell to ensure $PORT expansion.
 # Added --proxy-headers to trust Railway's proxy (fixes https -> http redirects).
-CMD ["/bin/sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["/bin/sh", "-c", "if [ -n \"${DATABASE_URL:-}\" ]; then alembic upgrade head; else echo \"Skipping migrations: DATABASE_URL not set\"; fi && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
