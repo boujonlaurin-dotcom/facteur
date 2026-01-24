@@ -341,15 +341,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // 1. Content Layer (Full screen, scrolled)
           Positioned.fill(
             child: useInAppReading
-                // In-App Content
-                // Add padding to top so first lines are not hidden behind header initially
+                // In-App Content (keeps slight top offset, still under header)
                 ? Padding(
-                    padding: const EdgeInsets.only(
-                        top: 80), // Estimate header height
+                    padding:
+                        const EdgeInsets.only(top: FacteurSpacing.space2),
                     child: _buildInAppContent(context, content),
                   )
                 : Padding(
-                    padding: const EdgeInsets.only(top: 80),
+                    padding:
+                        const EdgeInsets.only(top: FacteurSpacing.space2),
                     child: _buildWebViewFallback(content),
                   ),
           ),
@@ -416,10 +416,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
+            stops: const [0.0, 0.35, 0.7, 1.0],
             colors: [
               colors.backgroundPrimary,
-              colors.backgroundPrimary
-                  .withValues(alpha: 0.0), // Fully transparent at bottom
+              colors.backgroundPrimary.withValues(alpha: 0.9),
+              colors.backgroundPrimary.withValues(alpha: 0.5),
+              colors.backgroundPrimary.withValues(alpha: 0.05),
             ],
           ),
         ),

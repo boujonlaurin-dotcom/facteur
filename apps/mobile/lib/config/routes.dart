@@ -15,6 +15,7 @@ import '../features/sources/screens/sources_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
+import '../features/settings/screens/about_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
@@ -38,6 +39,7 @@ class RouteNames {
   static const String settings = 'settings';
   static const String account = 'account';
   static const String notifications = 'notifications';
+  static const String about = 'about';
   static const String progress = 'progress';
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
@@ -60,6 +62,7 @@ class RoutePaths {
   static const String settings = '/settings';
   static const String account = '/settings/account';
   static const String notifications = '/settings/notifications';
+  static const String about = '/settings/about';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
@@ -250,6 +253,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'notifications', // /settings/notifications
                 name: RouteNames.notifications,
                 builder: (context, state) => const NotificationsScreen(),
+              ),
+              GoRoute(
+                path: 'about', // /settings/about
+                name: RouteNames.about,
+                builder: (context, state) => const AboutScreen(),
               ),
             ],
           ),

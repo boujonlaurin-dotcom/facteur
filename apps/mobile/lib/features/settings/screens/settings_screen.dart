@@ -115,9 +115,11 @@ class SettingsScreen extends ConsumerWidget {
                       _buildTile(
                         context,
                         icon: Icons.info_outline,
-                        title: 'À propos',
-                        subtitle: 'Version 1.0.0',
-                        onTap: () {},
+                        title: 'Présentation Facteur',
+                        subtitle: 'Version Alpha #105',
+                        onTap: () {
+                          context.pushNamed(RouteNames.about);
+                        },
                       ),
                     ],
                   ),
