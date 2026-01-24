@@ -1,61 +1,47 @@
-# Plan d'implémentation : Fix Perspectives Feature ✅ DONE
+# Plan d'implémentation : Fix healthcheck Railway (migrations Alembic)
+
+## Status: En cours d'execution
 
 ## Problème identifié
 
-La fonctionnalité de comparaison (perspectives) ne fonctionne plus :
-- Temps de chargement très long
-- Aucun résultat trouvé
+Les deploiements Railway du service `facteur` echouent sur le healthcheck (`/api/health`) car `alembic upgrade head` plante au startup:
+- Logs: `Can't locate revision identified by 'a8da35e3c12b'`.
+- Le conteneur s'arrete avant le demarrage de l'API.
 
-## Status: RÉSOLU
+## Analyse (Measure & Analyze)
 
-## Analyse
+- Deploiement `1b7a7100-c4e2-4bcb-b67d-9ae7b344fe20` (commit `6e68ee2`) en FAILED.
+- Logs Railway: revision Alembic `a8da35e3c12b` absente du code.
+- Repository local: migrations `a8da35e3c12b`, `f7e8a9b0c1d2`, `b7d6e5f4c3a2`, `1a2b3c4d5e6f` non versionnees (git status).
+- Healthcheck actuel: `curl -i https://facteur-production.up.railway.app/api/health` retourne 200 (mais `environment=development`).
 
-### Ce qui fonctionnait
-- Le test local `test_perspectives.py` fonctionnait parfaitement (10 résultats en ~500ms)
-- L'endpoint `/api/health` répondait correctement en production
+## Decision (Decide)
 
-### Problèmes identifiés
+Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alembic upgrade head` puisse s'executer et que l'API demarre.
 
-1. **Anti-pattern: exceptions silencieuses** ✅ FIXED
-   - `except Exception: return []` dans `search_perspectives()` et `_parse_rss()`
-   - Impossible de diagnostiquer les erreurs
+## Plan d'action (Act)
 
-2. **Timeout potentiellement insuffisant** ✅ FIXED
-   - 5 secondes peut être trop court en production (latence réseau)
-   - Augmenté à 10 secondes
+1. Ajouter les migrations manquantes dans Git:
+   - `packages/api/alembic/versions/a8da35e3c12b_merge_heads.py`
+   - `packages/api/alembic/versions/f7e8a9b0c1d2_add_user_personalization_table.py`
+   - `packages/api/alembic/versions/b7d6e5f4c3a2_add_daily_top3_unique_constraint.py`
+   - `packages/api/alembic/versions/1a2b3c4d5e6f_fix_user_personalization_fk.py`
+2. Push sur `main` pour declencher le redeploy.
+3. Sur Railway, verifier que `alembic upgrade head` passe au startup.
+4. Verifier le healthcheck en prod.
+5. Ajouter un script de verification `docs/qa/scripts/verify_railway_healthcheck_migrations.sh`.
 
-3. **Absence de User-Agent** ✅ FIXED
-   - Google News peut bloquer les requêtes sans User-Agent approprié
-   - Ajout d'un User-Agent Chrome réaliste
+## Risques / Rollback
 
-4. **Pas de logging** ✅ FIXED
-   - Ajout de logging structlog dans le service et l'endpoint
+- Risque faible: ajout de fichiers de migration existants (pas de changement de schema en dehors de `upgrade head` deja attendu).
+- Rollback: revert du commit si un comportement inattendu apparait en prod.
 
-## Solution appliquée
-
-### Fichiers modifiés
-
-1. `packages/api/app/services/perspective_service.py`
-   - Ajout de logging structuré (structlog)
-   - Ajout d'un User-Agent approprié
-   - Augmentation du timeout à 10 secondes
-   - Gestion explicite des erreurs (TimeoutException, RequestError, ParseError)
-   - Activation de follow_redirects
-
-2. `packages/api/app/routers/contents.py`
-   - Ajout de logging pour tracer les requêtes
-
-## Vérification
-
-Script de test : `docs/qa/scripts/verify_perspectives.sh`
+## Verification (One-liner)
 
 ```bash
-./docs/qa/scripts/verify_perspectives.sh
+./docs/qa/scripts/verify_railway_healthcheck_migrations.sh
 ```
 
-Résultat:
-- ✅ Syntaxe Python valide
-- ✅ Logging structlog présent
-- ✅ User-Agent défini
-- ✅ Erreurs HTTP loggées
-- ✅ Service fonctionnel (10 perspectives en ~500ms)
+## Validation requise
+
+GO recu, passage en phase ACT.
