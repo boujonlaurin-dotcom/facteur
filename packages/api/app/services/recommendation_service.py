@@ -492,6 +492,9 @@ class RecommendationService:
                  # - Thèmes Hard News : society, international, economy (actualités chaudes)
                  # - Tri par date de publication (les plus récents en premier)
                  limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
+                 logger.info("breaking_filter_debug", 
+                            limit_date=limit_date.isoformat(),
+                            target_themes=['society', 'international', 'economy'])
                  query = query.where(
                     and_(
                         Content.published_at >= limit_date,
@@ -514,6 +517,13 @@ class RecommendationService:
         
         candidates = await self.session.scalars(query)
         candidates_list = list(candidates.all())
+        
+        # Debug logging for mode filters
+        if mode:
+            logger.info("candidates_after_mode_filter", 
+                       mode=mode.value, 
+                       count=len(candidates_list),
+                       sample_sources=[c.source.name if c.source else "N/A" for c in candidates_list[:5]])
 
         return candidates_list
 
