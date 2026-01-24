@@ -284,15 +284,18 @@ class _FilterBarState extends State<FilterBar> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final selectedConfig = widget.availableFilters
-        ?.where((f) => f.key == widget.selectedFilter)
-        .firstOrNull;
-
-    final List<FilterConfig> visibleFilters =
+    final List<FilterConfig> availableFilters =
         (widget.availableFilters ?? const <FilterConfig>[])
             .whereType<FilterConfig>()
-            .where((f) => f.isVisible)
             .toList();
+
+    final selectedConfig = availableFilters
+        .where((f) => f.key == widget.selectedFilter)
+        .firstOrNull;
+
+    final List<FilterConfig> visibleFilters = availableFilters
+        .where((f) => f.isVisible)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
