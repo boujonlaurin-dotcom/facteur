@@ -9,6 +9,7 @@ from alembic import context
 
 # Load environment variables from .env
 import os
+import socket
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 load_dotenv()
@@ -43,7 +44,11 @@ if database_url:
                     if parsed_url.password is not None:
                         userinfo += f":{parsed_url.password}"
                     userinfo += "@"
-                database_url = parsed_url._replace(netloc=f"{userinfo}{direct_host}:5432").geturl()
+                try:
+                    ipv4 = socket.getaddrinfo(direct_host, 5432, family=socket.AF_INET)[0][4][0]
+                    database_url = parsed_url._replace(netloc=f"{userinfo}{ipv4}:5432").geturl()
+                except Exception:
+                    database_url = parsed_url._replace(netloc=f"{userinfo}{direct_host}:5432").geturl()
     except Exception:
         pass
 

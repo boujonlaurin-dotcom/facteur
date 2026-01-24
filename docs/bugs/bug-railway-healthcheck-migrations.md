@@ -24,7 +24,7 @@
 - Redeployer le service et verifier que `alembic upgrade head` passe.
  - Stabiliser le build Docker avec un timeout/retries plus permissifs sur `pip install`.
 - Skipper les migrations si `DATABASE_URL` n'est pas defini (startup de build Railway/CI).
-- Preferer le host DB direct Supabase pour les migrations afin d'eviter le pooler.
+- Preferer le host DB direct Supabase pour les migrations afin d'eviter le pooler, avec resolution IPv4 si possible.
 - Garder des retries plus longs sur `alembic upgrade head` pour gerer les timeouts transitoires.
 
 ## Verification
