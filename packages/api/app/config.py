@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_db(self) -> "Settings":
         """Empêche l'utilisation de localhost en production."""
+        if self.is_production and not os.environ.get("DATABASE_URL"):
+            raise ValueError(
+                "❌ CRITICAL ERROR: DATABASE_URL is missing in production. "
+                "Set DATABASE_URL in Railway (or your hosting env)."
+            )
         if self.is_production and "localhost" in self.database_url:
             raise ValueError(
                 f"❌ CRITICAL ERROR: DATABASE_URL points to localhost in production ({self.database_url}). "

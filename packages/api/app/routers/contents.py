@@ -128,22 +128,46 @@ async def get_perspectives(
     Récupère des perspectives alternatives sur un contenu via Google News.
     MVP: Recherche live basée sur les mots-clés du titre.
     """
+    import structlog
     from app.models.content import Content
     from app.services.perspective_service import PerspectiveService
     from sqlalchemy import select
+    
+    logger = structlog.get_logger(__name__)
+    
+    logger.info(
+        "perspectives_endpoint_start",
+        content_id=str(content_id),
+        user_id=current_user_id,
+    )
     
     # Get the content title
     result = await db.execute(select(Content).where(Content.id == content_id))
     content = result.scalars().first()
     
     if not content:
+        logger.warning(
+            "perspectives_content_not_found",
+            content_id=str(content_id),
+        )
         raise HTTPException(status_code=404, detail="Content not found")
+    
+    logger.info(
+        "perspectives_content_found",
+        content_id=str(content_id),
+        title=content.title[:50] if content.title else "N/A",
+    )
     
     # Search perspectives with exclusions
     service = PerspectiveService()
     keywords = service.extract_keywords(content.title)
     
     if not keywords:
+        logger.warning(
+            "perspectives_no_keywords",
+            content_id=str(content_id),
+            title=content.title,
+        )
         return {"content_id": str(content_id), "perspectives": [], "keywords": []}
     
     perspectives = await service.search_perspectives(
@@ -156,6 +180,13 @@ async def get_perspectives(
     bias_distribution = {"left": 0, "center-left": 0, "center": 0, "center-right": 0, "right": 0, "unknown": 0}
     for p in perspectives:
         bias_distribution[p.bias_stance] = bias_distribution.get(p.bias_stance, 0) + 1
+    
+    logger.info(
+        "perspectives_endpoint_success",
+        content_id=str(content_id),
+        perspectives_count=len(perspectives),
+        keywords=keywords,
+    )
     
     return {
         "content_id": str(content_id),

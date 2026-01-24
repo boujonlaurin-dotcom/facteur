@@ -71,7 +71,7 @@ class BriefingSection extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -124,7 +124,7 @@ class BriefingSection extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: briefing.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 20),
+            separatorBuilder: (context, index) => const SizedBox(height: 14),
             itemBuilder: (context, index) {
               final item = briefing[index];
               return _buildRankedCard(context, item, index + 1, isDark);
@@ -170,7 +170,7 @@ class BriefingSection extends StatelessWidget {
       children: [
         // Label de rang au-dessus de la carte pour ne pas chevaucher le contenu
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
           child: Row(
             children: [
               Text(
@@ -232,7 +232,7 @@ class BriefingSection extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 24),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,

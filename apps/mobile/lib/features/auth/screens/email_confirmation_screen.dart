@@ -194,7 +194,7 @@ class _EmailConfirmationScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Clique sur le lien dans l\'email pour activer ton compte et commencer à utiliser Facteur.',
+                        'Clique sur le lien dans l\'email pour activer ton compte et commencer à utiliser Facteur. L\'envoi peut prendre quelques minutes.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: colors.textSecondary,
                               height: 1.4,

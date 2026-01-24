@@ -155,7 +155,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final authState = ref.read(authStateProvider);
           return EmailConfirmationScreen(
-            email: authState.user?.email ?? '',
+            email: authState.user?.email ??
+                authState.pendingEmailConfirmation ??
+                '',
           );
         },
       ),

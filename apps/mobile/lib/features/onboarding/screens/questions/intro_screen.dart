@@ -5,10 +5,18 @@ import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../onboarding_strings.dart';
 
-/// Intro screen 1: "L'info est aujourd'hui un champ de bataille."
-/// First part of the mission statement.
-class IntroScreen1 extends ConsumerWidget {
-  const IntroScreen1({super.key});
+import 'package:go_router/go_router.dart';
+import '../../../../config/routes.dart';
+import '../../../../widgets/design/facteur_logo.dart';
+
+/// Welcome Screen: "Bienvenue sur Facteur !"
+/// Replaces the old IntroScreen1.
+class WelcomeScreen extends ConsumerWidget {
+  const WelcomeScreen({super.key});
+
+  void _openManifesto(BuildContext context) {
+    context.pushNamed(RouteNames.about);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,9 +29,14 @@ class IntroScreen1 extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
+          // Logo
+          const Center(child: FacteurLogo(size: 42)),
+
+          const SizedBox(height: FacteurSpacing.space6),
+
           // Headline
           Text(
-            OnboardingStrings.intro1Title,
+            OnboardingStrings.welcomeTitle,
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
@@ -32,15 +45,40 @@ class IntroScreen1 extends ConsumerWidget {
 
           // Subtext
           Text(
-            OnboardingStrings.intro1Subtitle,
+            OnboardingStrings.welcomeSubtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: colors.textSecondary,
-              height: 1.6,
-            ),
+                  color: colors.textSecondary,
+                  height: 1.6,
+                ),
             textAlign: TextAlign.center,
           ),
 
           const Spacer(flex: 3),
+
+          // Manifesto Button
+          TextButton(
+            onPressed: () => _openManifesto(context),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              foregroundColor: colors.textSecondary,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  OnboardingStrings.welcomeManifestoButton,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.arrow_outward_rounded, size: 16),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           // CTA Button
           ElevatedButton(
@@ -52,7 +90,7 @@ class IntroScreen1 extends ConsumerWidget {
               backgroundColor: colors.primary,
             ),
             child: const Text(
-              OnboardingStrings.continueButton,
+              OnboardingStrings.welcomeStartButton,
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
             ),
           ),
@@ -93,9 +131,9 @@ class IntroScreen2 extends ConsumerWidget {
           Text(
             OnboardingStrings.intro2Subtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: colors.textSecondary,
-              height: 1.6,
-            ),
+                  color: colors.textSecondary,
+                  height: 1.6,
+                ),
             textAlign: TextAlign.center,
           ),
 

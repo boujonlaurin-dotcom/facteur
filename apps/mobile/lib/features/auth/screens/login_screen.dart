@@ -192,7 +192,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ] else ...[
                   Text(
-                    'Content de vous revoir.',
+                    'Content de vous (re)voir.',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.bold,

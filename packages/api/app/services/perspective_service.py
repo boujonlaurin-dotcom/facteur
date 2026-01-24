@@ -7,7 +7,12 @@ from urllib.parse import quote
 import xml.etree.ElementTree as ET
 
 import httpx
+import structlog
 
+logger = structlog.get_logger(__name__)
+
+# User-Agent to avoid being blocked by Google News
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Bias mapping for major French news sources
 DOMAIN_BIAS_MAP = {
@@ -78,7 +83,7 @@ import certifi
 class PerspectiveService:
     """Service for fetching perspectives via Google News RSS."""
 
-    def __init__(self, timeout: float = 5.0, max_results: int = 10):
+    def __init__(self, timeout: float = 10.0, max_results: int = 10):
         self.timeout = timeout
         self.max_results = max_results
 
@@ -100,21 +105,64 @@ class PerspectiveService:
             List of Perspective objects, max 10
         """
         query = " ".join(keywords)
-        # ... existing implementation continues
         encoded_query = quote(query)
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=fr&gl=FR&ceid=FR:fr"
         
+        logger.info(
+            "perspectives_search_start",
+            keywords=keywords,
+            query=query,
+        )
+        
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, verify=certifi.where()) as client:
+            headers = {"User-Agent": USER_AGENT}
+            async with httpx.AsyncClient(
+                timeout=self.timeout, 
+                verify=certifi.where(),
+                headers=headers,
+                follow_redirects=True,
+            ) as client:
                 response = await client.get(url)
                 
                 if response.status_code != 200:
+                    logger.warning(
+                        "perspectives_search_http_error",
+                        status_code=response.status_code,
+                        keywords=keywords,
+                    )
                     return []
                 
-                return self._parse_rss(response.content, exclude_url, exclude_title)
+                perspectives = self._parse_rss(response.content, exclude_url, exclude_title)
+                logger.info(
+                    "perspectives_search_success",
+                    keywords=keywords,
+                    count=len(perspectives),
+                )
+                return perspectives
 
-                
-        except Exception:
+        except httpx.TimeoutException as e:
+            logger.error(
+                "perspectives_search_timeout",
+                keywords=keywords,
+                timeout=self.timeout,
+                error=str(e),
+            )
+            return []
+        except httpx.RequestError as e:
+            logger.error(
+                "perspectives_search_request_error",
+                keywords=keywords,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return []
+        except Exception as e:
+            logger.error(
+                "perspectives_search_unexpected_error",
+                keywords=keywords,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return []
 
     def _parse_rss(
@@ -127,6 +175,11 @@ class PerspectiveService:
         try:
             root = ET.fromstring(content)
             items = root.findall(".//item")
+            
+            logger.debug(
+                "perspectives_parse_rss",
+                total_items=len(items),
+            )
             
             perspectives = []
             seen_domains = set()
@@ -183,7 +236,19 @@ class PerspectiveService:
             
             return perspectives
             
-        except Exception:
+        except ET.ParseError as e:
+            logger.error(
+                "perspectives_parse_xml_error",
+                error=str(e),
+                content_preview=content[:200].decode('utf-8', errors='ignore'),
+            )
+            return []
+        except Exception as e:
+            logger.error(
+                "perspectives_parse_unexpected_error",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return []
 
     def _extract_domain(self, url: str) -> str:

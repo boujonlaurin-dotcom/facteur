@@ -341,15 +341,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // 1. Content Layer (Full screen, scrolled)
           Positioned.fill(
             child: useInAppReading
-                // In-App Content (keeps slight top offset, still under header)
+                // In-App Content (kept below header, no overlap)
                 ? Padding(
-                    padding:
-                        const EdgeInsets.only(top: FacteurSpacing.space2),
+                    padding: const EdgeInsets.only(
+                        top: 80), // Header height estimate
                     child: _buildInAppContent(context, content),
                   )
                 : Padding(
-                    padding:
-                        const EdgeInsets.only(top: FacteurSpacing.space2),
+                    padding: const EdgeInsets.only(top: 80),
                     child: _buildWebViewFallback(content),
                   ),
           ),
@@ -413,17 +412,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           vertical: FacteurSpacing.space4,
         ),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: const [0.0, 0.35, 0.7, 1.0],
-            colors: [
-              colors.backgroundPrimary,
-              colors.backgroundPrimary.withValues(alpha: 0.9),
-              colors.backgroundPrimary.withValues(alpha: 0.5),
-              colors.backgroundPrimary.withValues(alpha: 0.05),
-            ],
-          ),
+          color: colors.backgroundPrimary,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

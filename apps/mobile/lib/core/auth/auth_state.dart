@@ -255,15 +255,14 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(
         isLoading: false,
         // DEBUG: Afficher l'erreur brute pour identifier le problème
-        error:
-            '${AuthErrorMessages.translate(e.message)} [DEBUG: ${e.message}]',
+        error: AuthErrorMessages.translate(e.message),
       );
     } catch (e) {
       debugPrint('AUTH_DEBUG signIn Unknown Error: $e');
       state = state.copyWith(
         isLoading: false,
         // DEBUG: Afficher l'erreur brute
-        error: 'Une erreur est survenue [DEBUG: $e]',
+        error: 'Une erreur est survenue',
       );
     }
   }
@@ -280,6 +279,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       await _supabase.auth.signUp(
         email: email,
         password: password,
+        emailRedirectTo: 'io.supabase.facteur://login-callback',
         data: {
           'first_name': firstName,
           'last_name': lastName,
@@ -296,15 +296,14 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(
         isLoading: false,
         // DEBUG: Afficher l'erreur brute pour identifier le problème
-        error:
-            '${AuthErrorMessages.translate(e.message)} [DEBUG: ${e.message}]',
+        error: AuthErrorMessages.translate(e.message),
       );
     } catch (e) {
       debugPrint('AUTH_DEBUG signUp Unknown Error: $e');
       state = state.copyWith(
         isLoading: false,
         // DEBUG: Afficher l'erreur brute
-        error: 'Une erreur est survenue [DEBUG: $e]',
+        error: 'Une erreur est survenue',
       );
     }
   }

@@ -78,9 +78,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icons/facteur_logo.png"
+  image_path: "assets/icons/logo_facteur_app_icon.png"
   adaptive_icon_background: "#E07A5F"
-  adaptive_icon_foreground: "assets/icons/facteur_logo.png"
+  adaptive_icon_foreground: "assets/icons/logo_facteur_app_icon.png"
 
 flutter:
   uses-material-design: true
