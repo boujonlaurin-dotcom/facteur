@@ -35,7 +35,7 @@ Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alem
 5. Ajouter un script de verification `docs/qa/scripts/verify_railway_healthcheck_migrations.sh`.
 6. Stabiliser le build Docker avec un timeout/retries plus permissifs pour `pip install`.
 7. Skipper les migrations si `DATABASE_URL` est absent (build container).
-8. Ajouter un retry sur les migrations pour absorber les timeouts DB transitoires.
+8. Ajouter un retry plus long sur les migrations pour absorber les timeouts DB transitoires.
 
 ## Risques / Rollback
 
