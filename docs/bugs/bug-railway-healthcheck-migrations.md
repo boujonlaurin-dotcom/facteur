@@ -26,6 +26,7 @@
 - Skipper les migrations si `DATABASE_URL` n'est pas defini (startup de build Railway/CI).
 - Preferer le host DB direct Supabase pour les migrations afin d'eviter le pooler, avec resolution IPv4 si possible.
 - Garder des retries plus longs sur `alembic upgrade head` pour gerer les timeouts transitoires.
+- En dernier recours, demarrer l'API meme si les migrations echouent (pour debloquer le healthcheck).
 
 ## Verification
 
