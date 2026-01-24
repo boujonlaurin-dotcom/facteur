@@ -288,8 +288,9 @@ class _FilterBarState extends State<FilterBar> {
         ?.where((f) => f.key == widget.selectedFilter)
         .firstOrNull;
 
-    final visibleFilters =
+    final List<FilterConfig> visibleFilters =
         (widget.availableFilters ?? const <FilterConfig>[])
+            .whereType<FilterConfig>()
             .where((f) => f.isVisible)
             .toList();
 
