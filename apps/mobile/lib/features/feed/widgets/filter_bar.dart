@@ -288,6 +288,11 @@ class _FilterBarState extends State<FilterBar> {
         ?.where((f) => f.key == widget.selectedFilter)
         .firstOrNull;
 
+    final visibleFilters =
+        (widget.availableFilters ?? const <FilterConfig>[])
+            .where((f) => f.isVisible)
+            .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -298,9 +303,8 @@ class _FilterBarState extends State<FilterBar> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
-            children: (widget.availableFilters ?? []).isNotEmpty
-                ? widget.availableFilters!
-                    .where((f) => f.isVisible)
+            children: visibleFilters.isNotEmpty
+                ? visibleFilters
                     .map<Widget>((f) => Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: _buildFilterChip(context, f.label, f.key),
