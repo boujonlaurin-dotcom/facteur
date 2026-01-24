@@ -370,7 +370,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textSecondary.withOpacity(0.2),
+                color: colors.textSecondary.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -419,7 +419,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             colors: [
               colors.backgroundPrimary,
               colors.backgroundPrimary
-                  .withOpacity(0.0), // Fully transparent at bottom
+                  .withValues(alpha: 0.0), // Fully transparent at bottom
             ],
           ),
         ),
@@ -490,7 +490,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colors.textSecondary.withOpacity(0.08),
+                                  color: colors.textSecondary
+                                      .withValues(alpha: 0.08),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -528,7 +529,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: colors.primary.withOpacity(0.2),
+                              color: colors.primary.withValues(alpha: 0.2),
                               blurRadius: 8,
                               offset: const Offset(0, 4),
                             ),
@@ -603,8 +604,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
-    // Determine footer based on progression status
-    Widget? footer;
     final topic = content.progressionTopic;
 
     if (topic != null) {

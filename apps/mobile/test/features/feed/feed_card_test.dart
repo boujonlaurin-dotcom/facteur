@@ -63,7 +63,7 @@ void main() {
     await tester.pumpWidget(createWidget(FeedCard(
       content: mockContent,
       onTap: () {},
-      onMoreOptions: () {},
+      onPersonalize: () {},
     )));
 
     expect(find.text('Flutter 4.0 Released'), findsOneWidget);

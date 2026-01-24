@@ -6,7 +6,9 @@ import '../../../config/theme.dart';
 /// "Tu es à jour" nudge card displayed inline in the feed
 /// when the user has consumed enough articles for the day.
 ///
-/// Provides positive closure without blocking or frustrating the user.
+/// Renforce le principe de "Finitude" (Slow Media) en bloquant le scroll
+/// au-delà de cette carte tant que l'utilisateur n'a pas tapé pour continuer.
+/// Cela crée un sentiment de "j'ai terminé ma tournée du jour".
 class CaughtUpCard extends StatefulWidget {
   final VoidCallback? onDismiss;
 

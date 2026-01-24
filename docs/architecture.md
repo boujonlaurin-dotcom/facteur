@@ -157,6 +157,11 @@ graph TB
 > - **Symptôme :** Timeouts aléatoires sur tous les endpoints (Health, Feed) lors des jobs planifiés, même sans charge apparente.
 > - **Règle :** TOUT code bloquant/CPU-bound doit être exécuté dans un thread pool via `await loop.run_in_executor(None, func, *args)`.
 
+> [!WARNING]
+> **INCIDENT 22/01/2026 - Web CORS & Trailing Slashes :**
+> - **Cause :** `redirect_slashes=True` (par défaut dans FastAPI) génère des redirections 307 qui échouent le Preflight CORS sur les navigateurs (Chrome/Web).
+> - **Règle :** Le backend est désormais strict (`redirect_slashes=False`). Les clients DOIVENT respecter scrupuleusement les slashes finaux (ex: `/api/feed/` vs `/api/health`).
+
 > [!IMPORTANT]
 > **Règles Critiques d'Implémentation (Python 3.14 & Auth) :**
 > - **Python 3.14 Compatibility** : Toujours utiliser `list[]` (minuscule) au lieu de `List[]` (Typing) dans les schémas Pydantic pour éviter les erreurs `PydanticUserError` (PEP 585).
@@ -1162,19 +1167,23 @@ def calculate_random_factor():
 
 ### 9.4 Filtering Rules
 
-Avant le scoring, les contenus sont filtrés :
+Avant le scoring, les contenus sont filtrés selon le contexte (User + Mode) :
 
-```python
-def filter_contents(contents, user_id):
-    return contents.filter(
-        # Exclure les contenus déjà consommés ou masqués
-        ~ContentStatus.status.in_(['consumed', 'hidden']),
-        # Exclure les contenus trop vieux (>30 jours)
-        Content.published_at > (now - timedelta(days=30)),
-        # Inclure uniquement les sources de l'utilisateur
-        Content.source_id.in_(user_source_ids)
-    )
-```
+1. **Filtres de base :**
+   - Exclure les contenus consommés ou masqués.
+   - Exclure les contenus trop vieux (>30 jours).
+   - Inclure uniquement les sources suivies par l'utilisateur OU les sources curées.
+
+2. **Filtres de Mode (Intent-based) :**
+   - **Mode "Dernières news" (BREAKING)** :
+     - Récence < 12h.
+     - Thèmes restreints aux "Hard News" (`society`, `international`, `economy`, `politics`).
+   - **Mode "Sérénité" (INSPIRATION)** :
+     - Exclusion des thèmes "Hard News" (`society`, `international`, `economy`, `politics`).
+   - **Mode "Grand Format" (DEEP_DIVE)** :
+     - Durée > 10 min (vidéos/podcasts) ou description longue (articles).
+   - **Mode "Angle Mort" (PERSPECTIVES)** :
+     - Sources avec un biais opposé au biais calculé de l'utilisateur.
 
 ### 9.5 Diversification
 

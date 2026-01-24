@@ -59,6 +59,7 @@ class AuthState {
     bool? isLoading,
     bool? needsOnboarding,
     String? error,
+    bool clearError = false,
     String? pendingEmailConfirmation,
     bool clearPendingEmail = false,
     bool? forceUnconfirmed,
@@ -67,7 +68,7 @@ class AuthState {
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       needsOnboarding: needsOnboarding ?? this.needsOnboarding,
-      error: error,
+      error: clearError ? null : (error ?? this.error),
       pendingEmailConfirmation: clearPendingEmail
           ? null
           : (pendingEmailConfirmation ?? this.pendingEmailConfirmation),
@@ -239,7 +240,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     String password, {
     bool rememberMe = true,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       // Sauvegarder la préférence de persistence
@@ -273,7 +274,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     required String firstName,
     required String lastName,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       await _supabase.auth.signUp(
@@ -309,7 +310,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       await _supabase.auth.resetPasswordForEmail(email);
       state = state.copyWith(isLoading: false);
@@ -329,7 +330,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> resendConfirmationEmail(String email) async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
     try {
       debugPrint(
           'AuthStateNotifier: Resending confirmation email to $email...');
@@ -357,7 +358,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> signInWithApple() async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.apple);
@@ -375,7 +376,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> signInWithGoogle() async {
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       await _supabase.auth.signInWithOAuth(OAuthProvider.google);
@@ -406,7 +407,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
   }
 
   void clearError() {
-    state = state.copyWith(error: null);
+    state = state.copyWith(clearError: true);
   }
 
   /// Efface l'état de pending email confirmation (après navigation vers l'écran de confirmation)

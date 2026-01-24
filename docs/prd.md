@@ -717,8 +717,8 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 **Acceptance Criteria :**
 1. Barre de filtres horizontale ("Chips") avec description courte sous les chips
 2. Filtres "Intent" avec logique backend affinée :
-   - "Dernières news" (< 12h, thèmes hard news) → *Les actus de moins de 12h*
-   - "Rester serein" (exclut hard news) → *Loin des sujets chauds*
+   - "Dernières news" (< 12h, thèmes: society, international, economy, politics) → *Les actus de moins de 12h*
+   - "Rester serein" (exclut society, international, economy, politics) → *Loin des sujets chauds*
    - "Longs formats" (> 10 min, inclut articles) → *Contenus de plus de 10 min*
    - "Mes angles morts" (biais opposé, description dynamique) → *Selon biais utilisateur*
 3. Mise à jour instantanée du feed

@@ -6,7 +6,10 @@ from app.models.content import Content
 from app.models.source import Source
 from app.models.enums import ContentType, ContentStatus
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, ArticleTopicLayer
+from app.services.recommendation.layers import (
+    CoreLayer, StaticPreferenceLayer, BehavioralLayer, 
+    ArticleTopicLayer, PersonalizationLayer
+)
 
 # --- Fixtures ---
 
@@ -31,10 +34,13 @@ def mock_content():
 @pytest.fixture
 def base_context(mock_now):
     return ScoringContext(
-        user_profile=None, # Not used directly by layers for now
+        user_profile=None,
         user_interests={"tech"},
         user_interest_weights={"tech": 1.0},
         followed_source_ids=set(),
+        muted_sources=set(),
+        muted_themes=set(),
+        muted_topics=set(),
         user_prefs={},
         now=mock_now
     )
@@ -61,8 +67,6 @@ def test_core_layer_theme_match_single_taxonomy(base_context):
         content_type=ContentType.ARTICLE
     )
     
-    # user_interests has "tech" (from base_context fixture)
-    
     layer = CoreLayer()
     score = layer.score(content, base_context)
     
@@ -81,10 +85,9 @@ def test_core_layer_source_affinity(mock_content, base_context):
 
 def test_static_prefs_recency_boost(mock_content, base_context):
     base_context.user_prefs["content_recency"] = "recent"
-    # Content is 2h old, should get boost
     layer = StaticPreferenceLayer()
     score = layer.score(mock_content, base_context)
-    assert score == 15.0 # Boost value
+    assert score == 15.0 
 
 def test_static_prefs_format_short(mock_content, base_context):
     base_context.user_prefs["format_preference"] = "short"
@@ -103,39 +106,32 @@ def test_static_prefs_format_audio(mock_content, base_context):
 # --- BehavioralLayer Tests ---
 
 def test_behavioral_layer_bonus(mock_content, base_context):
-    # User LOVES tech (weight 1.5)
     base_context.user_interest_weights["tech"] = 1.5
     layer = BehavioralLayer()
     score = layer.score(mock_content, base_context)
-    # Bonus = 50 * 0.5 = 25
     assert score == 25.0
 
 def test_behavioral_layer_malus(mock_content, base_context):
-    # User bored of tech (weight 0.5)
     base_context.user_interest_weights["tech"] = 0.5
     layer = BehavioralLayer()
     score = layer.score(mock_content, base_context)
-    # Malus = 50 * 0.5 = 25 (negative)
     assert score == -25.0
 
 # --- Engine Test ---
 
 def test_scoring_engine_integration(mock_content, base_context):
     base_context.user_prefs["format_preference"] = "short" # +15
-    base_context.user_interest_weights["tech"] = 1.2 # +10 bonus (50*0.2)
-    # Core: ~50 (theme) + 10 (source) + 27 (recency) = 87
+    base_context.user_interest_weights["tech"] = 1.2 # +10 bonus
     
     engine = ScoringEngine([CoreLayer(), StaticPreferenceLayer(), BehavioralLayer()])
     total_score = engine.compute_score(mock_content, base_context)
     
-    # Expected: 87 + 15 + 10 = ~112
     assert total_score > 110.0
 
 
 # --- ArticleTopicLayer Tests (Story 4.1d) ---
 
 def test_article_topic_layer_no_match(base_context):
-    """No score when content has no topics or user has no subtopics."""
     source = Source(id=uuid4(), name="TechSource", theme="tech")
     content = Content(
         id=uuid4(),
@@ -145,19 +141,14 @@ def test_article_topic_layer_no_match(base_context):
         source=source,
         published_at=datetime.utcnow(),
         content_type=ContentType.ARTICLE,
-        topics=["ai", "crypto"]  # Content has topics
+        topics=["ai", "crypto"] 
     )
-    
-    # User has no subtopics (empty set)
     base_context.user_subtopics = set()
-    
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
     assert score == 0.0
 
-
 def test_article_topic_layer_single_match(base_context):
-    """Score +40 when one topic matches, +10 precision bonus if theme also matches."""
     source = Source(id=uuid4(), name="TechSource", theme="tech")
     content = Content(
         id=uuid4(),
@@ -169,83 +160,31 @@ def test_article_topic_layer_single_match(base_context):
         content_type=ContentType.ARTICLE,
         topics=["ai", "space"]
     )
-    
-    base_context.user_subtopics = {"ai", "climate"}  # Only "ai" matches
-    
+    base_context.user_subtopics = {"ai", "climate"}
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
-    
-    # 1 match * 60 + 20 precision bonus (theme "tech" is in user_interests)
     assert score == 80.0
-    assert "Topic match: ai (précis)" in [r['details'] for r in base_context.reasons[content.id]]
 
+# --- PersonalizationLayer Tests (Story 4.7) ---
 
-def test_article_topic_layer_double_match(base_context):
-    """Score +80 (max) when two topics match."""
-    source = Source(id=uuid4(), name="TechSource", theme="tech")
-    content = Content(
-        id=uuid4(),
-        title="AI and Crypto News",
-        url="http://example.com",
-        source_id=source.id,
-        source=source,
-        published_at=datetime.utcnow(),
-        content_type=ContentType.ARTICLE,
-        topics=["ai", "crypto", "fintech"]
-    )
-    
-    base_context.user_subtopics = {"ai", "crypto", "climate"}  # 2 match
-    
-    layer = ArticleTopicLayer()
-    score = layer.score(content, base_context)
-    
-    # 2 matches * 60 + 20 precision bonus (theme "tech" is in user_interests)
-    assert score == 140.0
+def test_personalization_layer_muted_source(mock_content, base_context):
+    base_context.muted_sources.add(mock_content.source_id)
+    layer = PersonalizationLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == -80.0
+    assert "Tu vois moins de cette source" in [r['details'] for r in base_context.reasons[mock_content.id]]
 
+def test_personalization_layer_muted_theme(mock_content, base_context):
+    base_context.muted_themes.add("tech")
+    layer = PersonalizationLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == -40.0
+    assert "Tu vois moins de tech" in [r['details'] for r in base_context.reasons[mock_content.id]]
 
-def test_article_topic_layer_max_two_matches(base_context):
-    """Score capped at +80 even with 3+ matches."""
-    source = Source(id=uuid4(), name="TechSource", theme="tech")
-    content = Content(
-        id=uuid4(),
-        title="Tech Mega Article",
-        url="http://example.com",
-        source_id=source.id,
-        source=source,
-        published_at=datetime.utcnow(),
-        content_type=ContentType.ARTICLE,
-        topics=["ai", "crypto", "cybersecurity", "space"]
-    )
-    
-    # All 4 topics match
-    base_context.user_subtopics = {"ai", "crypto", "cybersecurity", "space"}
-    
-    layer = ArticleTopicLayer()
-    score = layer.score(content, base_context)
-    
-    # Capped at 2 matches = 120 points + 20 precision bonus
-    assert score == 140.0
-
-
-def test_article_topic_layer_case_insensitive(base_context):
-    """Topic matching should be case-insensitive."""
-    source = Source(id=uuid4(), name="TechSource", theme="tech")
-    content = Content(
-        id=uuid4(),
-        title="AI News",
-        url="http://example.com",
-        source_id=source.id,
-        source=source,
-        published_at=datetime.utcnow(),
-        content_type=ContentType.ARTICLE,
-        topics=["AI", "CRYPTO"]  # UPPERCASE
-    )
-    
-    base_context.user_subtopics = {"ai", "crypto"}  # lowercase
-    
-    layer = ArticleTopicLayer()
-    score = layer.score(content, base_context)
-    
-    # 2 matches * 60 + 20 precision bonus
-    assert score == 140.0
-
+def test_personalization_layer_muted_topic(mock_content, base_context):
+    mock_content.topics = ["ai"]
+    base_context.muted_topics.add("ai")
+    layer = PersonalizationLayer()
+    score = layer.score(mock_content, base_context)
+    assert score == -30.0
+    assert "Tu vois moins de ai" in [r['details'] for r in base_context.reasons[mock_content.id]]

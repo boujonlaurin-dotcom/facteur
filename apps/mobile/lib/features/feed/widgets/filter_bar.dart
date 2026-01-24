@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../providers/personalized_filters_provider.dart';
 
 /// Map des descriptions courtes pour chaque filtre (Fallback)
@@ -75,7 +76,6 @@ class _FilterBarState extends State<FilterBar> {
     setState(() {
       if (widget.selectedFilter == null) {
         _currentDescription = null;
-        _currentDescription = getPerspectivesDescription(widget.userBias);
       } else {
         // Try to find description in availableFilters
         final config = widget.availableFilters
@@ -101,15 +101,36 @@ class _FilterBarState extends State<FilterBar> {
     final parentBox = context.findRenderObject() as RenderBox?;
 
     if (box != null && parentBox != null) {
-      final chipCenter =
-          box.localToGlobal(Offset(box.size.width / 2, 0), ancestor: parentBox);
       final parentWidth = parentBox.size.width;
+      // Padding du Container parent (16px de chaque côté)
+      const containerPadding = 16.0;
+      final containerWidth = parentWidth - (2 * containerPadding);
+      
+      // Pour "breaking" (Dernières news), aligner à gauche
+      // Pour les autres, utiliser le centre du chip
+      Offset anchorPoint;
+      if (widget.selectedFilter == 'breaking') {
+        // Utiliser le bord gauche du chip
+        anchorPoint = box.localToGlobal(Offset.zero, ancestor: parentBox);
+      } else {
+        // Utiliser le centre du chip
+        anchorPoint = box.localToGlobal(Offset(box.size.width / 2, 0), ancestor: parentBox);
+      }
 
       setState(() {
-        // Map 0..parentWidth to -1..1
-        _descriptionAlignX = (chipCenter.dx / parentWidth) * 2 - 1;
+        // Ajuster pour tenir compte du padding du conteneur
+        // Le chip est à anchorPoint.dx du bord gauche de l'écran
+        // Le texte doit être à la même position relative au conteneur avec padding
+        final relativeX = anchorPoint.dx - containerPadding;
+        // Map 0..containerWidth to -1..1 pour l'alignement dans le Container avec padding
+        _descriptionAlignX = (relativeX / containerWidth) * 2 - 1;
         // Clamp pour éviter que le texte ne dépasse trop des bords
-        _descriptionAlignX = _descriptionAlignX.clamp(-0.85, 0.85);
+        // Pour "breaking", on veut être proche de -1 (gauche), donc on clamp moins strictement
+        if (widget.selectedFilter == 'breaking') {
+          _descriptionAlignX = _descriptionAlignX.clamp(-1.0, 0.85);
+        } else {
+          _descriptionAlignX = _descriptionAlignX.clamp(-0.85, 0.85);
+        }
       });
     }
   }
@@ -139,6 +160,118 @@ class _FilterBarState extends State<FilterBar> {
     );
   }
 
+  void _showFilteredKeywords(List<String> keywords) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle de drag
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            // Contenu scrollable
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          PhosphorIcons.shieldCheck(PhosphorIconsStyle.bold),
+                          color: Theme.of(context).colorScheme.primary,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Mots-clés filtrés',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'En mode "Rester serein", Facteur filtre automatiquement les contenus contenant ces mots-clés pour vous offrir une expérience plus apaisée.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.7),
+                          ),
+                    ),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: keywords
+                          .map((word) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Text(
+                                  word,
+                                  style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _scrollController.removeListener(_updateAlignment);
@@ -150,6 +283,10 @@ class _FilterBarState extends State<FilterBar> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    final selectedConfig = widget.availableFilters
+        ?.where((f) => f.key == widget.selectedFilter)
+        .firstOrNull;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -195,13 +332,37 @@ class _FilterBarState extends State<FilterBar> {
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
                 child: _currentDescription != null
-                    ? Text(
-                        _currentDescription!,
-                        key: ValueKey(_currentDescription),
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.5),
-                          fontStyle: FontStyle.italic,
+                    ? GestureDetector(
+                        onTap: selectedConfig?.filteredKeywords != null
+                            ? () => _showFilteredKeywords(
+                                selectedConfig!.filteredKeywords!)
+                            : null,
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _currentDescription!,
+                              key: ValueKey(_currentDescription),
+                              textAlign: widget.selectedFilter == 'breaking' 
+                                  ? TextAlign.left 
+                                  : TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color:
+                                    colorScheme.onSurface.withValues(alpha: 0.5),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                            if (selectedConfig?.filteredKeywords != null) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                PhosphorIcons.info(PhosphorIconsStyle.regular),
+                                size: 14,
+                                color: colorScheme.onSurface
+                                    .withValues(alpha: 0.4),
+                              ),
+                            ],
+                          ],
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -221,7 +382,7 @@ class _FilterBarState extends State<FilterBar> {
     final selectedBg = colorScheme.primary;
     const unselectedBg = Colors.transparent;
     final selectedText = colorScheme.onPrimary;
-    final unselectedText = colorScheme.onSurface.withOpacity(0.5);
+    final unselectedText = colorScheme.onSurface.withValues(alpha: 0.5);
 
     return Padding(
       key: _keys[value],

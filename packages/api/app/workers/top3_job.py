@@ -135,16 +135,7 @@ async def generate_daily_top3_job(trigger_manual: bool = False):
             try:
                 user_id = profile.user_id
                 
-                # Check si déjà généré aujourd'hui pour cet utilisateur
-                # (Protection contre double exécution)
-                today_start = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
-                exists_stmt = select(DailyTop3).where(
-                    DailyTop3.user_id == user_id,
-                    DailyTop3.generated_at >= today_start
-                )
-                if (await session.execute(exists_stmt)).first():
-                    logger.debug("Briefing already generated for user", user_id=str(user_id))
-                    continue
+                # (Protection contre double exécution via ON CONFLICT DO NOTHING plus bas)
 
                 # A. Fetch Candidates (using RecService internal logic)
                 # On utilise _get_candidates qui applique déjà le filtrage de base

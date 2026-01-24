@@ -49,6 +49,7 @@ from app.routers import (
     analytics,
     internal,
     progress,
+    personalization,
 )
 import time
 
@@ -97,7 +98,7 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
     debug=settings.debug,
-    redirect_slashes=True,
+    redirect_slashes=False,
 )
 
 
@@ -125,6 +126,7 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
+app.include_router(personalization.router, prefix="/api/users/personalization", tags=["Personalization"])
 
 
 

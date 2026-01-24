@@ -135,7 +135,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                       );
                                     }
                                   },
-                                  onMoreOptions:
+                                  onPersonalize:
                                       () {}, // Can be implemented if needed
                                 ),
                               );

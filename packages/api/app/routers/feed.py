@@ -36,13 +36,13 @@ async def get_personalized_feed(
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
     
-    # 1. Get Today's Briefing (Only if offset=0 and basic feed mode)
+    # 1. Get Today's Briefing (Only if offset=0, non-saved)
     # On le fait avant le feed car c'est une requête légère qui peut être parallélisée
     # mentalement (ou via asyncio.gather si on avait des sessions distinctes).
     briefing_items = []
     briefing_content_ids = set()
     
-    if offset == 0 and not saved_only and mode is None and content_type is None:
+    if offset == 0 and not saved_only and content_type is None:
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
         stmt = (

@@ -100,13 +100,13 @@ class _ProgressionCardState extends ConsumerState<ProgressionCard> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _isFollowed
-              ? colors.primary.withOpacity(0.3)
+              ? colors.primary.withValues(alpha: 0.3)
               : colors.surfaceElevated,
           width: _isFollowed ? 2 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -121,7 +121,7 @@ class _ProgressionCardState extends ConsumerState<ProgressionCard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: colors.primary.withOpacity(0.15),
+                  color: colors.primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(

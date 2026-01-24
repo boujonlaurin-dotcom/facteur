@@ -30,7 +30,7 @@ class PrimaryButton extends StatelessWidget {
           backgroundColor: context.facteurColors.primary,
           foregroundColor: context.facteurColors.textPrimary,
           disabledBackgroundColor:
-              context.facteurColors.primary.withOpacity(0.5),
+              context.facteurColors.primary.withValues(alpha: 0.5),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(FacteurRadius.small),

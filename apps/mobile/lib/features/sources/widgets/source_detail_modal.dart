@@ -81,17 +81,6 @@ class SourceDetailModal extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // Description
-          if (source.description != null) ...[
-            Text(
-              source.description!,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
           // FQS Score Card
           Container(
             padding: const EdgeInsets.all(16),
@@ -110,7 +99,7 @@ class SourceDetailModal extends StatelessWidget {
                         color: source.getReliabilityColor()),
                     const SizedBox(width: 8),
                     Text(
-                      'Qualité Facteur (FQS)',
+                      'Évaluation de qualité',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.bold,
@@ -150,7 +139,8 @@ class SourceDetailModal extends StatelessWidget {
                   Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
             ),
             child: Text(
-              "Facteur analyse l'ensemble des médias pour vous proposer une information plurielle et fiable. En ajoutant cette source à vos favoris, vous nous indiquez vouloir la privilégier dans votre veille quotidienne.",
+              source.description ??
+                  "Facteur analyse l'ensemble des médias pour vous proposer une information plurielle et fiable. En ajoutant cette source à vos favoris, vous nous indiquez vouloir la privilégier dans votre veille quotidienne.",
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.textSecondary,
                     height: 1.5,

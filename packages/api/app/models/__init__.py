@@ -8,6 +8,7 @@ from app.models.progress import UserTopicProgress, TopicQuiz
 from app.models.analytics import AnalyticsEvent
 from app.models.subscription import UserSubscription
 from app.models.daily_top3 import DailyTop3
+from app.models.user_personalization import UserPersonalization
 
 __all__ = [
     # Enums
@@ -34,4 +35,7 @@ __all__ = [
     "TopicQuiz",
     # Daily Briefing (Story 4.4)
     "DailyTop3",
+    # Personalization (Story 4.7)
+    "UserPersonalization",
 ]
+

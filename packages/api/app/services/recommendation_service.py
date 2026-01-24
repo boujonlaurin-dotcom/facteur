@@ -1,6 +1,7 @@
 import datetime
 from typing import List, Optional, Set
 from uuid import UUID
+import asyncio
 
 import structlog
 from sqlalchemy import select, desc, func
@@ -15,8 +16,16 @@ from app.models.enums import ContentStatus, FeedFilterMode, ContentType, BiasSta
 logger = structlog.get_logger()
 
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer
+from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer, PersonalizationLayer
 from app.schemas.content import RecommendationReason, ScoreContribution
+
+# Mots-clés filtrés par défaut pour le mode "Rester serein"
+SERENE_FILTER_KEYWORDS = [
+    'politique', 'guerre', 'conflit', 'élections', 'inflation', 'grève', 'drame',
+    'fait divers', 'faits divers', 'crise', 'scandale', 'terrorisme', 'corruption',
+    'procès', 'violence', 'catastrophe', 'manifestation', 'géopolitique',
+    'trump', 'musk', 'poutine', 'macron', 'netanyahou', 'zelensky', 'ukraine', 'gaza'
+]
 
 class RecommendationService:
     def __init__(self, session: AsyncSession):
@@ -29,7 +38,8 @@ class RecommendationService:
             BehavioralLayer(),
             QualityLayer(),
             VisualLayer(),
-            ArticleTopicLayer()
+            ArticleTopicLayer(),
+            PersonalizationLayer()  # Story 4.7
         ])
 
     async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False) -> List[Content]:
@@ -42,20 +52,41 @@ class RecommendationService:
         3. Appliquer la pénalité de fatigue de source (Diversité).
         4. Trier et paginer.
         """
-        # 1. Fetch user profile with interests, followed sources AND preferences
-        user_profile = await self.session.scalar(
+        # 1. Fetch user profile with interests and preferences
+        from sqlalchemy.orm import joinedload
+        from app.models.user_personalization import UserPersonalization
+        
+        # Batch independent DB calls
+        # We need followed_source_ids, subtopics and personalization
+        user_profile_fut = self.session.scalar(
             select(UserProfile)
             .options(
-                selectinload(UserProfile.interests),
-                selectinload(UserProfile.preferences)
+                joinedload(UserProfile.interests),
+                joinedload(UserProfile.preferences)
             )
             .where(UserProfile.user_id == user_id)
         )
         
-        followed_sources_result = await self.session.scalars(
+        followed_sources_fut = self.session.scalars(
             select(UserSource.source_id).where(UserSource.user_id == user_id)
         )
-        followed_source_ids = set(followed_sources_result.all())
+        
+        subtopics_fut = self.session.scalars(
+            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
+        )
+        
+        personalization_fut = self.session.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == user_id)
+        )
+        
+        # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
+        user_profile = await user_profile_fut
+        followed_sources_res = await followed_sources_fut
+        subtopics_res = await subtopics_fut
+        personalization = await personalization_fut
+        
+        followed_source_ids = set(followed_sources_res.all())
+        user_subtopics = set(subtopics_res.all())
         
         user_interests = set()
         user_interest_weights = {}
@@ -111,11 +142,9 @@ class RecommendationService:
         scored_candidates = []
         now = datetime.datetime.utcnow()
         
-        # Fetch user subtopics for ArticleTopicLayer (Story 4.1d)
-        subtopics_result = await self.session.scalars(
-            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
-        )
-        user_subtopics = set(subtopics_result.all())
+        muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
+        muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
+        muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
         
         # Context creation
         context = ScoringContext(
@@ -125,7 +154,11 @@ class RecommendationService:
             followed_source_ids=followed_source_ids,
             user_prefs=user_prefs,
             now=now,
-            user_subtopics=user_subtopics
+            user_subtopics=user_subtopics,
+            # Story 4.7
+            muted_sources=muted_sources,
+            muted_themes=muted_themes,
+            muted_topics=muted_topics
         )
         
         for content in candidates:
@@ -387,7 +420,12 @@ class RecommendationService:
         # OR
         # 3. status IN (SEEN, CONSUMED)
         
-        exclude_query = select(UserContentStatus.content_id).where(
+        # Optimization: Use NOT EXISTS instead of NOT IN for exclusion
+        # This is generally faster in Postgres for large status tables
+        from sqlalchemy import exists
+        
+        exists_stmt = exists().where(
+            UserContentStatus.content_id == Content.id,
             UserContentStatus.user_id == user_id,
             or_(
                 UserContentStatus.is_hidden == True,
@@ -400,7 +438,7 @@ class RecommendationService:
             select(Content)
             .join(Content.source) # Join needed for all mode filters
             .options(selectinload(Content.source)) 
-            .where(Content.id.notin_(exclude_query))
+            .where(~exists_stmt)
         )
 
         # Base filter: Priority to Curated sources OR explicitly Followed sources
@@ -419,7 +457,14 @@ class RecommendationService:
         if mode:
             if mode == FeedFilterMode.INSPIRATION:
                 # Mode "Sérénité" : Positive/Zen. Exclude Hard News themes.
-                query = query.where(Source.theme.notin_(['politics', 'geopolitics', 'economy']))
+                # Hard News = society, international, economy, politics
+                query = query.where(Source.theme.notin_(['society', 'international', 'economy', 'politics']))
+                
+                # Exclude content containing stressful keywords in title or description
+                # (Case-insensitive regex match in Postgres)
+                keywords_pattern = '|'.join(SERENE_FILTER_KEYWORDS)
+                query = query.where(~Content.title.op('~*')(keywords_pattern))
+                query = query.where(~Content.description.op('~*')(keywords_pattern))
             
             elif mode == FeedFilterMode.DEEP_DIVE:
                 # Mode "Grand Format" : Contenus > 10min (videos, podcasts, OU articles longs)
@@ -441,14 +486,12 @@ class RecommendationService:
                 )
 
             elif mode == FeedFilterMode.BREAKING:
-                 # Mode "Dernières news" : Fresh news (< 12h) from Hard News themes.
-                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
-                 query = query.where(
-                    and_(
-                        Content.published_at >= limit_date,
-                        Source.theme.in_(['politics', 'geopolitics', 'economy'])
-                    )
-                 )
+                 # Mode "Dernières news" : Fresh news (< 24h) from ALL curated sources
+                 # Élargissement temporaire pour diagnostic : pas de filtre par thème
+                 # car le filtre de base (is_curated) suffit pour les news chaudes
+                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+                 query = query.where(Content.published_at >= limit_date)
+                 logger.info("breaking_filter_applied", limit_date=limit_date.isoformat())
 
             elif mode == FeedFilterMode.PERSPECTIVES:
                 # Mode "Angle Mort" : Perspective swap
@@ -465,29 +508,22 @@ class RecommendationService:
         
         candidates = await self.session.scalars(query)
         candidates_list = list(candidates.all())
+        
+        # Debug logging for BREAKING mode
+        if mode == FeedFilterMode.BREAKING:
+            # Log candidate count by source
+            source_counts = {}
+            for c in candidates_list:
+                src_name = c.source.name if c.source else "Unknown"
+                source_counts[src_name] = source_counts.get(src_name, 0) + 1
+            logger.info("breaking_candidates_by_source", 
+                       total=len(candidates_list), 
+                       by_source=dict(sorted(source_counts.items(), key=lambda x: -x[1])[:10]))
 
         # Post-Processing Heuristics for L'Actualité (Refining News vs Dossier)
-        if mode == FeedFilterMode.BREAKING:
-            refined_list = []
-            # Keywords that boost "Hot News" intent
-            NEWS_BOOST = ["direct", "live", "flash", "réaction", "alerte", "gouvernement", "démission", "attentat", "crise"]
-            # Keywords that suggest "Long-form / Retrospective" (to penalize if 24h old but not 'news')
-            ANALYSIS_PENALTY = ["dossier", "histoire", "pourquoi", "comment", "guide", "top", "portrait", "récit"]
-            
-            for content in candidates_list:
-                title_lower = content.title.lower()
-                
-                # Simple score: boost if news keywords present, penalty if analysis keywords present
-                news_score = 0
-                if any(k in title_lower for k in NEWS_BOOST): news_score += 2
-                if any(k in title_lower for k in ANALYSIS_PENALTY): news_score -= 2
-                
-                # If it's a "Dossier" published very recently, it might still show up if news_score >= 0
-                # but we prefer titles that don't look like long-form analysis for "L'Actualité"
-                if news_score >= -1:
-                    refined_list.append(content)
-            
-            return refined_list
+        # DISABLED for now - causing issues with diversity
+        # if mode == FeedFilterMode.BREAKING:
+        #     ... heuristics disabled ...
 
         return candidates_list
 

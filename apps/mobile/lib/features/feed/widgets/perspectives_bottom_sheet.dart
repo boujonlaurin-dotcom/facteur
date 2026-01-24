@@ -103,7 +103,7 @@ class PerspectivesBottomSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: colors.textSecondary.withOpacity(0.2),
+              color: colors.textSecondary.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -220,14 +220,14 @@ class PerspectivesBottomSheet extends StatelessWidget {
                     // Approche Expert : Saturation progressive + Gaps nets
                     // Évite l'effet "cheap" des bordures tout en préservant l'identité colorimétrique
                     color: count > 0
-                        ? baseColor.withOpacity(
-                            count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
-                        : baseColor.withOpacity(0.12),
+                        ? baseColor.withValues(
+                            alpha: count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
+                        : baseColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
                     // Bordure sombre subtile pour faire ressortir les blocs actifs
                     border: count > 0
                         ? Border.all(
-                            color: Colors.black.withOpacity(0.25),
+                            color: Colors.black.withValues(alpha: 0.25),
                             width: 0.8,
                           )
                         : null,
@@ -285,7 +285,7 @@ class PerspectivesBottomSheet extends StatelessWidget {
           Icon(
             PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.duotone),
             size: 48,
-            color: colors.textSecondary.withOpacity(0.5),
+            color: colors.textSecondary.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           Text(
@@ -294,7 +294,7 @@ class PerspectivesBottomSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Nous n\'avons pas trouvé d\'articles similaires sur ce sujet.',
+            'Sujet probablement pas d\'actualité / un peu trop "niche"',
             style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             textAlign: TextAlign.center,
           ),
@@ -368,7 +368,7 @@ class _PerspectiveCard extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: perspective
                                   .getBiasColor(colors)
-                                  .withOpacity(0.15),
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(

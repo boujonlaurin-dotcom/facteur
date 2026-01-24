@@ -192,7 +192,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ] else ...[
                   Text(
-                    'Content de te revoir !',
+                    'Content de vous revoir.',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           color: colors.textPrimary,
                           fontWeight: FontWeight.bold,
@@ -201,7 +201,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Connecte-toi pour accéder à ton feed',
+                    'L\'information de qualité, triée pour vous.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -318,7 +318,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: colors.error.withOpacity(0.1),
+                      color: colors.error.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -393,10 +393,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: colors.primary.withOpacity(0.3),
+                        color: colors.primary.withValues(alpha: 0.3),
                       ),
                       borderRadius: BorderRadius.circular(12),
-                      color: colors.primary.withOpacity(0.05),
+                      color: colors.primary.withValues(alpha: 0.05),
                     ),
                     child: Column(
                       children: [

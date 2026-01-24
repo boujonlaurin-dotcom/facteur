@@ -20,11 +20,11 @@ class ApiConstants {
     // return 'http://10.0.2.2:8080/api/';
     //
     // iOS Simulator / Web / Mac :
-    return 'http://localhost:8080/api/';
+    // return 'http://localhost:8080/api/';
 
     // 2. PRODUCTION (Par défaut pour les Releases)
     // -----------------------------------------------------
-    // return 'https://facteur-production.up.railway.app/api/';
+    return 'https://facteur-production.up.railway.app/api/';
   }
 
   /// Timeout des requêtes HTTP
@@ -155,4 +155,39 @@ class UIConstants {
   /// Message de confirmation après sauvegarde
   static String savedConfirmMessage(String section) =>
       'Ajouté à la section "$section"';
+}
+
+/// Constantes pour le Feed
+class FeedConstants {
+  FeedConstants._();
+
+  /// Mots-clés filtrés par défaut pour le mode "Rester serein"
+  static const List<String> defaultFilteredKeywords = [
+    'Politique',
+    'Guerre',
+    'Conflit',
+    'Élections',
+    'Inflation',
+    'Grève',
+    'Drame',
+    'Fait divers',
+    'Crise',
+    'Scandale',
+    'Terrorisme',
+    'Corruption',
+    'Procès',
+    'Violence',
+    'Catastrophe',
+    'Manifestation',
+    'Géopolitique',
+    'Faits divers',
+    'Trump',
+    'Musk',
+    'Poutine',
+    'Macron',
+    'Netanyahou',
+    'Zelensky',
+    'Ukraine',
+    'Gaza',
+  ];
 }

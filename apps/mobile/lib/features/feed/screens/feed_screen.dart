@@ -18,6 +18,9 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
+import '../widgets/personalization_sheet.dart';
+import '../widgets/personalization_nudge.dart';
+import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
@@ -28,8 +31,7 @@ import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../../progress/widgets/progression_card.dart';
-// import '../../progress/repositories/progress_repository.dart'; // Disabled with progression feature
-import '../../../core/ui/notification_service.dart';
+
 import '../widgets/briefing_section.dart';
 
 /// Écran principal du feed
@@ -57,14 +59,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     _scrollController.addListener(_onScroll);
   }
 
-// ...
+  // Story 4.7: Track skips per source
+  final Set<String> _viewedIds = {};
+
+  void _recordSkipIfNecessary(int index, List<Content> contents) {
+    if (index < 0 || index >= contents.length) return;
+    final item = contents[index];
+    if (!_viewedIds.contains(item.id)) {
+      _viewedIds.add(item.id);
+      ref.read(skipProvider.notifier).recordSkip(item.source.id);
+    }
+  }
+
   Future<void> _showArticleModal(Content content) async {
-    // 1. Mark as consumed immediately (Facteur philosophy: Click = Read)
-    // Applies to both Briefing and Feed items.
+    // Interaction resets skips
+    ref.read(skipProvider.notifier).recordInteraction(content.source.id);
+
+    // 1. Mark as consumed immediately
     if (mounted) {
       ref.read(feedProvider.notifier).markContentAsConsumed(content);
 
-      // Update Streak after animation/transition completes
       Future<void>.delayed(const Duration(milliseconds: 1100), () {
         if (mounted) {
           ref.read(streakProvider.notifier).refreshSilent();
@@ -72,55 +86,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       });
     }
 
-    // 2. Navigation / Opening
-    // Desktop: Open in browser
+    // 2. Navigation
     if (!kIsWeb &&
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       launchUrl(Uri.parse(content.url));
       return;
     }
 
-    // Mobile: In-app reader
     await context.push<bool>(
       '/feed/content/${content.id}',
       extra: content,
     );
-
-    // 3. Post-consumption Logic (Progression / Topics)
-    // DISABLED: The automatic display of ProgressionCard was causing UX issues.
-    // TODO: Re-enable with proper user intent detection (e.g., only after N articles on same topic).
-    // if (mounted) {
-    //   final topic = content.progressionTopic;
-    //   if (topic != null && topic.isNotEmpty) {
-    //     final progressAsync = ref.read(myProgressProvider);
-    //     bool isFollowed = false;
-    //     if (progressAsync.hasValue) {
-    //       isFollowed = progressAsync.value!
-    //           .any((p) => p.topic.toLowerCase() == topic.toLowerCase());
-    //     }
-    //     if (!isFollowed) {
-    //       setState(() {
-    //         _activeProgressions[content.id] = topic;
-    //       });
-    //     } else {
-    //       Future.delayed(const Duration(milliseconds: 500), () {
-    //         if (mounted) {
-    //           NotificationService.showSuccess(
-    //               'Quiz disponible pour le sujet "$topic" !');
-    //         }
-    //       });
-    //     }
-    //   }
-    // }
   }
-
-  // _showProgressionCTA REMOVED
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
-    // Lire le paramètre welcome de l'URL
     final uri = GoRouterState.of(context).uri;
     if (uri.queryParameters['welcome'] == 'true' && !_showWelcome) {
       setState(() {
@@ -131,34 +112,44 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   void dispose() {
-    // Capture des ressources avant la destruction
     try {
       final analytics = ref.read(analyticsServiceProvider);
       analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
     } catch (e) {
       debugPrint('FeedScreen: Could not track analytics on dispose: $e');
     }
-
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    // Update max scroll percent
-    if (_scrollController.hasClients) {
-      final maxScroll = _scrollController.position.maxScrollExtent;
-      final currentScroll = _scrollController.position.pixels;
-      if (maxScroll > 0) {
-        final percent = (currentScroll / maxScroll).clamp(0.0, 1.0);
-        if (percent > _maxScrollPercent) {
-          _maxScrollPercent = percent;
+    if (!_scrollController.hasClients) return;
+
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+
+    // Analytics
+    if (maxScroll > 0) {
+      final percent = (currentScroll / maxScroll).clamp(0.0, 1.0);
+      if (percent > _maxScrollPercent) {
+        _maxScrollPercent = percent;
+      }
+    }
+
+    // Story 4.7: Detect skips
+    // Estimate: Briefing ~400px, Card ~350px
+    final firstVisibleIndex = ((currentScroll - 400) / 350).floor();
+    if (firstVisibleIndex > 0) {
+      final state = ref.read(feedProvider).value;
+      if (state != null) {
+        for (int i = 0; i < firstVisibleIndex && i < state.items.length; i++) {
+          _recordSkipIfNecessary(i, state.items);
         }
       }
     }
 
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      // Load more when reading bottom
+    // Load more
+    if (currentScroll >= maxScroll - 200) {
       ref.read(feedProvider.notifier).loadMore();
     }
   }
@@ -167,128 +158,20 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     setState(() {
       _showWelcome = false;
     });
-
-    // Nettoyer l'URL (enlever le paramètre welcome)
     context.go(RoutePaths.feed);
   }
 
   Future<void> _refresh() async {
-    // Explicit refresh call
     return ref.read(feedProvider.notifier).refresh();
   }
 
-  void _showMoreOptions(BuildContext context, Content content) {
+  void _showPersonalizationSheet(BuildContext context, Content content) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: context.facteurColors.backgroundSecondary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        final colors = context.facteurColors;
-        // ignore: unused_local_variable
-        final textTheme = Theme.of(context).textTheme;
-
-        final sourceName = content.source.name;
-        final topicName = content.source.theme;
-
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textSecondary.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: Icon(
-                  PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
-                  color: colors.textPrimary,
-                ),
-                title: Text(
-                  'Copier le lien',
-                  style: textTheme.bodyLarge?.copyWith(
-                    color: colors.textPrimary,
-                  ),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await Clipboard.setData(ClipboardData(text: content.url));
-                  NotificationService.showInfo(
-                      'Lien copié dans le presse-papier');
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: Icon(
-                  PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-                  color: colors.textPrimary,
-                ),
-                title: RichText(
-                  text: TextSpan(
-                    text: 'Voir moins de ',
-                    style: textTheme.bodyLarge?.copyWith(
-                      color: colors.textPrimary,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: sourceName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _hideContent(content, HiddenReason.source);
-                },
-              ),
-              if (topicName != null && topicName.isNotEmpty) ...[
-                const Divider(),
-                ListTile(
-                  leading: Icon(
-                    PhosphorIcons.hash(PhosphorIconsStyle.regular),
-                    color: colors.textPrimary,
-                  ),
-                  title: RichText(
-                    text: TextSpan(
-                      text: 'Voir moins sur le sujet ',
-                      style: textTheme.bodyLarge?.copyWith(
-                        color: colors.textPrimary,
-                      ),
-                      children: [
-                        TextSpan(
-                          text: topicName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _hideContent(content, HiddenReason.topic);
-                  },
-                ),
-              ],
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => PersonalizationSheet(content: content),
     );
-  }
-
-  void _hideContent(Content content, HiddenReason reason) {
-    ref.read(feedProvider.notifier).hideContent(content, reason);
-
-    // Feedback
-    NotificationService.showInfo('Contenu masqué');
   }
 
   @override
@@ -310,7 +193,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    // Header
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.symmetric(
@@ -320,8 +202,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         child: Center(child: FacteurLogo(size: 32)),
                       ),
                     ),
-
-                    // Salutation
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
@@ -336,24 +216,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       ref.watch(authStateProvider).user;
 
                                   String displayName = 'Vous';
-
                                   if (profile.firstName != null &&
                                       profile.firstName!.isNotEmpty) {
                                     displayName = profile.firstName!;
                                   } else if (authUser?.email != null) {
-                                    // Extraction du prénom de l'email (format boujon.laurin@... ou laurin.boujon@...)
                                     final part = authUser!.email!.split('@')[0];
                                     final subParts = part.contains('.')
                                         ? part.split('.')
                                         : part.split('-');
-
-                                    // On prend le segment qui n'est probablement pas le nom
-                                    // ou par défaut le premier segment capitalisé
                                     if (subParts.length > 1) {
-                                      // Heuristique simple : on capitalise le segment qui semble être le prénom
-                                      // Souvent [nom].[prenom] ou [prenom].[nom]
-                                      // On va prendre le dernier segment si il y en a un (souvent le cas pour les emails pro/scolaires)
-                                      // ou rester sur le premier si c'est ambigu.
                                       final candidate = subParts.last.length > 2
                                           ? subParts.last
                                           : subParts.first;
@@ -364,7 +235,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           part.substring(1).toLowerCase();
                                     }
                                   }
-
                                   return Text(
                                     'Bonjour $displayName,',
                                     style: Theme.of(context)
@@ -393,7 +263,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         ),
                       ),
                     ),
-
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -409,78 +278,132 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         ),
                       ),
                     ),
-
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-                    // Feed Content
                     feedAsync.when(
                       data: (state) {
                         final contents = state.items;
                         final briefing = state.briefing;
 
-                        // Check streak for caught-up card (computed outside builder for childCount access)
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
                         final showCaughtUp = dailyCount >= _caughtUpThreshold &&
                             !_caughtUpDismissed;
-                        final caughtUpIndex = showCaughtUp ? 3 : -1;
+                        // Position de la carte "Tu es à jour" après 8 articles
+                        const caughtUpPos = 8;
+
+                        final skips = ref.watch(skipProvider);
+                        final nudgeSourceId = skips.keys.firstWhere(
+                          (id) => skips[id]! >= 3,
+                          orElse: () => '',
+                        );
+                        // Ne pas afficher le nudge si la carte CaughtUp bloque le scroll
+                        final showingNudge = !showCaughtUp &&
+                            nudgeSourceId.isNotEmpty &&
+                            contents.length > 5;
+                        const nudgePos = 5;
+
+                        // Calculer le childCount - TOUJOURS utiliser la formule normale
+                        // Le blocage est géré dans le builder, pas par le childCount
+                        final int effectiveChildCount = 1 +
+                            contents.length +
+                            1 +
+                            (showCaughtUp ? 1 : 0) +
+                            (showingNudge ? 1 : 0);
 
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           sliver: SliverList(
+                            // Key pour forcer rebuild complet quand showCaughtUp change
+                            key: ValueKey('feed_list_caught_up_$showCaughtUp'),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
-                                // Index 0: Briefing
+                                // 0: Briefing
                                 if (index == 0) {
                                   if (briefing.isNotEmpty) {
                                     return BriefingSection(
-                                        briefing: briefing,
-                                        onItemTap: (item) =>
-                                            _showArticleModal(item.content));
+                                      briefing: briefing,
+                                      onItemTap: (item) =>
+                                          _showArticleModal(item.content),
+                                      onPersonalize: (item) =>
+                                          _showPersonalizationSheet(
+                                              context, item.content),
+                                    );
                                   } else {
                                     return const SizedBox.shrink();
                                   }
                                 }
 
                                 final listIndex = index - 1;
-                                final adjustedLength =
-                                    contents.length + (showCaughtUp ? 1 : 0);
 
-                                // Add loading indicator at the bottom
-                                if (listIndex == adjustedLength) {
-                                  final notifier =
-                                      ref.read(feedProvider.notifier);
-                                  if (notifier.hasNext) {
+                                // Interleaving logic - calculer l'offset pour les éléments intercalés
+                                int contentOffset = 0;
+
+                                // Caught up card - s'affiche après caughtUpPos articles
+                                if (showCaughtUp) {
+                                  if (listIndex == caughtUpPos) {
+                                    return Padding(
+                                        key: const ValueKey('caught_up_card'),
+                                        padding:
+                                            const EdgeInsets.only(bottom: 16),
+                                        child: CaughtUpCard(onDismiss: () {
+                                          setState(
+                                              () => _caughtUpDismissed = true);
+                                          // Forcer le chargement de plus d'articles
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .loadMore();
+                                        }));
+                                  }
+                                  if (listIndex > caughtUpPos) {
+                                    // Après la carte : afficher un espace puis rien (bloque visuellement)
+                                    // Mais on garde le childCount normal pour éviter les bugs
+                                    return const SizedBox.shrink();
+                                  }
+                                  // Avant la carte : continuer normalement
+                                }
+
+                                // Compter la CaughtUpCard si elle est passée (pour le décalage)
+                                if (showCaughtUp && listIndex > caughtUpPos) {
+                                  contentOffset++;
+                                }
+
+                                // Personalization Nudge (seulement si CaughtUp n'est pas affiché)
+                                if (showingNudge) {
+                                  final nudgeEffectivePos =
+                                      nudgePos + contentOffset;
+                                  if (listIndex == nudgeEffectivePos) {
+                                    final sourceName = contents
+                                        .firstWhere(
+                                            (c) => c.source.id == nudgeSourceId,
+                                            orElse: () => contents.first)
+                                        .source
+                                        .name;
+                                    return PersonalizationNudge(
+                                      key: ValueKey('nudge_$nudgeSourceId'),
+                                      sourceId: nudgeSourceId,
+                                      sourceName: sourceName,
+                                    );
+                                  }
+                                  if (listIndex > nudgeEffectivePos) {
+                                    contentOffset++;
+                                  }
+                                }
+
+                                final contentIndex = listIndex - contentOffset;
+
+                                if (contentIndex >= contents.length) {
+                                  if (ref.read(feedProvider.notifier).hasNext) {
                                     return const Center(
                                         child: Padding(
                                             padding: EdgeInsets.all(16.0),
                                             child: CircularProgressIndicator
                                                 .adaptive()));
-                                  } else {
-                                    return const SizedBox(height: 64);
                                   }
+                                  return const SizedBox(height: 64);
                                 }
 
-                                // Show caught-up card at position 3 (relative to feed list)
-                                if (showCaughtUp &&
-                                    listIndex == caughtUpIndex) {
-                                  return Padding(
-                                      key: const ValueKey('caught_up_card'),
-                                      padding:
-                                          const EdgeInsets.only(bottom: 16),
-                                      child: CaughtUpCard(
-                                          onDismiss: () => setState(() =>
-                                              _caughtUpDismissed = true)));
-                                }
-
-                                final contentIndex =
-                                    showCaughtUp && listIndex > caughtUpIndex
-                                        ? listIndex - 1
-                                        : listIndex;
-
-                                if (contentIndex >= contents.length ||
-                                    contentIndex < 0) {
+                                if (contentIndex < 0) {
                                   return const SizedBox.shrink();
                                 }
 
@@ -492,7 +415,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     _activeProgressions[content.id];
 
                                 return Padding(
-                                  // Use composed key
                                   key: ValueKey(
                                       '${content.id}_${progressionTopic != null}'),
                                   padding: const EdgeInsets.only(bottom: 16),
@@ -505,8 +427,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           content: content,
                                           onTap: () =>
                                               _showArticleModal(content),
-                                          onMoreOptions: () {
-                                            _showMoreOptions(context, content);
+                                          onPersonalize: () {
+                                            _showPersonalizationSheet(
+                                                context, content);
                                           },
                                         ),
                                       ),
@@ -538,11 +461,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   ),
                                 );
                               },
-                              // Count: Briefing(1) + Contents + Loader(1) + CaughtUp(1?)
-                              childCount: 1 +
-                                  contents.length +
-                                  1 +
-                                  (showCaughtUp ? 1 : 0),
+                              childCount: effectiveChildCount,
                             ),
                           ),
                         );

@@ -668,9 +668,7 @@ final isSection3CompleteProvider = Provider<bool>((ref) {
   return answers.themes != null &&
       answers.themes!.isNotEmpty &&
       answers.formatPreference != null;
-});
-
-/// Provider pour vérifier si l'onboarding est complet
+});/// Provider pour vérifier si l'onboarding est complet
 final isOnboardingCompleteProvider = Provider<bool>((ref) {
   final section1 = ref.watch(isSection1CompleteProvider);
   final section2 = ref.watch(isSection2CompleteProvider);

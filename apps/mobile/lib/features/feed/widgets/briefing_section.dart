@@ -8,11 +8,13 @@ import 'feed_card.dart';
 class BriefingSection extends StatelessWidget {
   final List<DailyTop3Item> briefing;
   final void Function(DailyTop3Item) onItemTap;
+  final void Function(DailyTop3Item)? onPersonalize;
 
   const BriefingSection({
     super.key,
     required this.briefing,
     required this.onItemTap,
+    this.onPersonalize,
   });
 
   @override
@@ -44,7 +46,7 @@ class BriefingSection extends StatelessWidget {
 
     final headerTextColor = isDark ? Colors.white : colors.textPrimary;
     final subheaderTextColor =
-        isDark ? Colors.white.withOpacity(0.6) : colors.textSecondary;
+        isDark ? Colors.white.withValues(alpha: 0.6) : colors.textSecondary;
 
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 24),
@@ -57,13 +59,13 @@ class BriefingSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDark
-              ? colors.primary.withOpacity(0.3)
-              : colors.primary.withOpacity(0.15),
+              ? colors.primary.withValues(alpha: 0.3)
+              : colors.primary.withValues(alpha: 0.15),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),
@@ -158,10 +160,10 @@ class BriefingSection extends StatelessWidget {
       BuildContext context, DailyTop3Item item, int rank, bool isDark) {
     final colors = context.facteurColors;
     final labelColor =
-        isDark ? Colors.white.withOpacity(0.5) : colors.textSecondary;
+        isDark ? Colors.white.withValues(alpha: 0.5) : colors.textSecondary;
     final dotColor = isDark
-        ? Colors.white.withOpacity(0.2)
-        : colors.textTertiary.withOpacity(0.4);
+        ? Colors.white.withValues(alpha: 0.2)
+        : colors.textTertiary.withValues(alpha: 0.4);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,7 +176,7 @@ class BriefingSection extends StatelessWidget {
               Text(
                 'N°$rank',
                 style: TextStyle(
-                  color: colors.primary.withOpacity(isDark ? 0.9 : 1.0),
+                  color: colors.primary.withValues(alpha: isDark ? 0.9 : 1.0),
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                   letterSpacing: 1.0,
@@ -215,6 +217,8 @@ class BriefingSection extends StatelessWidget {
           child: FeedCard(
             content: item.content,
             onTap: () => onItemTap(item),
+            onPersonalize:
+                onPersonalize != null ? () => onPersonalize!(item) : null,
           ),
         ),
       ],
@@ -235,12 +239,12 @@ class BriefingSection extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             bgColor,
-            colors.success.withOpacity(isDark ? 0.1 : 0.05),
+            colors.success.withValues(alpha: isDark ? 0.1 : 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: colors.success.withOpacity(0.3),
+          color: colors.success.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -267,7 +271,7 @@ class BriefingSection extends StatelessWidget {
                   'Revenez demain à 8h pour votre prochaine sélection.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: isDark
-                            ? Colors.white.withOpacity(0.6)
+                            ? Colors.white.withValues(alpha: 0.6)
                             : colors.textSecondary,
                       ),
                 ),

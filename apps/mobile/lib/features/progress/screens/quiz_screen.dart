@@ -170,7 +170,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: colors.primary.withOpacity(0.1),
+              color: colors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
@@ -206,7 +206,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? colors.primary.withOpacity(0.1)
+                        ? colors.primary.withValues(alpha: 0.1)
                         : colors.surface,
                     border: Border.all(
                       color:
@@ -272,8 +272,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isCorrect
-                      ? colors.success.withOpacity(0.1)
-                      : colors.error.withOpacity(0.1),
+                      ? colors.success.withValues(alpha: 0.1)
+                      : colors.error.withValues(alpha: 0.1),
                 ),
                 child: Icon(
                   isCorrect

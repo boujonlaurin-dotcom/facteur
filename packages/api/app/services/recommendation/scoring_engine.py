@@ -20,7 +20,11 @@ class ScoringContext:
         followed_source_ids: Set[UUID],
         user_prefs: Dict[str, Any],
         now: datetime.datetime,
-        user_subtopics: Set[str] = None
+        user_subtopics: Set[str] = None,
+        # Story 4.7: Personalization
+        muted_sources: Set[UUID] = None,
+        muted_themes: Set[str] = None,
+        muted_topics: Set[str] = None
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -29,6 +33,11 @@ class ScoringContext:
         self.user_prefs = user_prefs
         self.now = now
         self.user_subtopics = user_subtopics or set()
+        
+        # Story 4.7: Personalization malus
+        self.muted_sources = muted_sources or set()
+        self.muted_themes = muted_themes or set()
+        self.muted_topics = muted_topics or set()
         
         # Diagnostics pour explicabilité
         self.reasons: Dict[UUID, Dict[str, Any]] = {}

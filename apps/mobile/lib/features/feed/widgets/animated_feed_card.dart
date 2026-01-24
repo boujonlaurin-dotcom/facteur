@@ -117,7 +117,7 @@ class _AnimatedFeedCardState extends State<AnimatedFeedCard>
                 opacity: _currentOpacity,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Center(
@@ -133,7 +133,7 @@ class _AnimatedFeedCardState extends State<AnimatedFeedCard>
                           borderRadius: BorderRadius.circular(30),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 8,
                               spreadRadius: 1,
                             ),

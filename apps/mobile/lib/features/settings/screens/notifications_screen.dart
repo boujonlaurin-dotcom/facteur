@@ -131,7 +131,7 @@ class NotificationsScreen extends ConsumerWidget {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.primary.withOpacity(0.1),
+                          color: colors.primary.withValues(alpha: 0.1),
                           borderRadius:
                               BorderRadius.circular(FacteurRadius.small),
                         ),

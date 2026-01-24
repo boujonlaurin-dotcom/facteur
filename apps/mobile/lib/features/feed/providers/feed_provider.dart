@@ -5,6 +5,7 @@ import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
+import '../repositories/personalization_repository.dart';
 import '../../saved/providers/saved_feed_provider.dart';
 
 // Provider du repository
@@ -185,6 +186,61 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       await repository.hideContent(content.id, reason);
     } catch (e) {
       await refresh();
+      rethrow;
+    }
+  }
+
+  Future<void> muteSource(Content content) async {
+    await muteSourceById(content.source.id);
+  }
+
+  Future<void> muteSourceById(String sourceId) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove of all content from this source
+    final updatedItems =
+        currentState.items.where((c) => c.source.id != sourceId).toList();
+    state = AsyncData(
+        FeedState(items: updatedItems, briefing: currentState.briefing));
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteSource(sourceId);
+    } catch (e) {
+      print('FeedNotifier: muteSourceById failed for $sourceId: $e');
+      // Error is caught by the consumer if necessary, but we refresh for consistency
+      await refresh();
+      rethrow;
+    }
+  }
+
+  Future<void> muteTheme(String theme) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove of all content from this theme
+    final updatedItems =
+        currentState.items.where((c) => c.source.theme != theme).toList();
+    state = AsyncData(
+        FeedState(items: updatedItems, briefing: currentState.briefing));
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteTheme(theme);
+    } catch (e) {
+      await refresh();
+      rethrow;
+    }
+  }
+
+  Future<void> muteTopic(String topic) async {
+    // For topic, we don't optimistically remove indiscriminately as we can't easily check matches client-side without complex logic.
+    // So we just call API and let next refresh handle it.
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteTopic(topic);
+    } catch (e) {
       rethrow;
     }
   }

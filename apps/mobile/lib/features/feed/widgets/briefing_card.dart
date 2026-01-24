@@ -8,11 +8,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 class BriefingCard extends StatelessWidget {
   final DailyTop3Item item;
   final VoidCallback onTap;
+  final VoidCallback? onPersonalize;
 
   const BriefingCard({
     super.key,
     required this.item,
     required this.onTap,
+    this.onPersonalize,
   });
 
   @override
@@ -32,10 +34,10 @@ class BriefingCard extends StatelessWidget {
               Container(
                 width: 48,
                 decoration: BoxDecoration(
-                  color: colors.primary.withOpacity(0.1),
+                  color: colors.primary.withValues(alpha: 0.1),
                   border: Border(
                     right: BorderSide(
-                      color: colors.textSecondary.withOpacity(0.2),
+                      color: colors.textSecondary.withValues(alpha: 0.2),
                       width: 1,
                     ),
                   ),
@@ -75,7 +77,8 @@ class BriefingCard extends StatelessWidget {
                           color: colors.surface,
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                              color: colors.textSecondary.withOpacity(0.2)),
+                              color:
+                                  colors.textSecondary.withValues(alpha: 0.2)),
                         ),
                         child: Text(
                           item.reason.toUpperCase(),
@@ -128,6 +131,36 @@ class BriefingCard extends StatelessWidget {
                               color: colors.textTertiary,
                             ),
                           ),
+                          if (onPersonalize != null) ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: onPersonalize,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.question(
+                                          PhosphorIconsStyle.regular),
+                                      size: 14,
+                                      color: colors.textSecondary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Personnalisation',
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colors.textSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],

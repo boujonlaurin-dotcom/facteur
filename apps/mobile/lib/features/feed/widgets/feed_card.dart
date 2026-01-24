@@ -9,13 +9,13 @@ import 'package:timeago/timeago.dart' as timeago;
 class FeedCard extends StatelessWidget {
   final Content content;
   final VoidCallback? onTap;
-  final VoidCallback? onMoreOptions;
+  final VoidCallback? onPersonalize;
 
   const FeedCard({
     super.key,
     required this.content,
     this.onTap,
-    this.onMoreOptions,
+    this.onPersonalize,
   });
 
   @override
@@ -52,7 +52,7 @@ class FeedCard extends StatelessWidget {
                           child: Center(
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: colors.primary.withOpacity(0.5),
+                              color: colors.primary.withValues(alpha: 0.5),
                             ),
                           ),
                         ),
@@ -96,7 +96,7 @@ class FeedCard extends StatelessWidget {
                         Text(
                           content.description!,
                           style: textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary.withOpacity(0.8),
+                            color: colors.textSecondary.withValues(alpha: 0.8),
                             height: 1.3,
                           ),
                           maxLines: 2,
@@ -125,10 +125,10 @@ class FeedCard extends StatelessWidget {
                 // 3. Footer (Source + Actions)
                 Container(
                   decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withOpacity(0.5),
+                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
                     border: Border(
                       top: BorderSide(
-                        color: colors.textSecondary.withOpacity(0.1),
+                        color: colors.textSecondary.withValues(alpha: 0.1),
                         width: 1,
                       ),
                     ),
@@ -189,70 +189,41 @@ class FeedCard extends StatelessWidget {
                                 fontSize: 11,
                               ),
                             ),
-
-                            // Recommendation Badge (Optional)
-                            if (content.recommendationReason != null) ...[
-                              const SizedBox(width: FacteurSpacing.space2),
-                              Text(
-                                '•',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary.withOpacity(0.5),
-                                  fontSize: 10,
-                                ),
-                              ),
-                              const SizedBox(width: FacteurSpacing.space2),
-                              Flexible(
-                                flex: 3,
-                                fit: FlexFit.loose,
-                                child: GestureDetector(
-                                  onTap: () => _showScoreBreakdown(context),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          content.recommendationReason!.label,
-                                          style: textTheme.labelSmall?.copyWith(
-                                            color: colors.textSecondary,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w400,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (content.recommendationReason!
-                                          .breakdown.isNotEmpty) ...[
-                                        const SizedBox(width: 4),
-                                        Icon(
-                                          PhosphorIcons.info(
-                                              PhosphorIconsStyle.regular),
-                                          size: 12,
-                                          color: colors.textSecondary
-                                              .withOpacity(0.7),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
 
-                      // Actions (Fixed on the right)
-                      IconButton(
-                        icon: Icon(
-                          PhosphorIcons.dotsThree(PhosphorIconsStyle.bold),
-                          color: colors.textSecondary,
-                          size: 20,
+                      // Actions (Unified Personalization Button - Discrete)
+                      if (onPersonalize != null)
+                        InkWell(
+                          onTap: onPersonalize,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.question(
+                                      PhosphorIconsStyle.regular),
+                                  size: 14,
+                                  // More discrete color
+                                  color: colors.textTertiary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Personnalisation',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    // More discrete color
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        onPressed: onMoreOptions,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(),
-                        padding: const EdgeInsets.all(8),
-                      ),
                     ],
                   ),
                 ),
@@ -270,7 +241,7 @@ class FeedCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -298,106 +269,6 @@ class FeedCard extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  void _showScoreBreakdown(BuildContext context) {
-    final reason = content.recommendationReason;
-    if (reason == null || reason.breakdown.isEmpty) return;
-
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: colors.backgroundPrimary,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(
-                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  color: colors.primary,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Pourquoi cet article vous est recommandé ?',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Score de recommandation : ${reason.scoreTotal.toInt()} pts',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Breakdown List
-            ...reason.breakdown.map((contribution) {
-              final sign = contribution.isPositive ? '+' : '';
-              final color =
-                  contribution.isPositive ? colors.success : colors.error;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '$sign${contribution.points.toInt()}',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: color,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        contribution.label,
-                        style: textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: 16),
-            // Footer
-            Text(
-              'Notre algorithme est paramétrable et privilégie par défaut vos intérêts, la qualité des sources, et la récence des articles.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

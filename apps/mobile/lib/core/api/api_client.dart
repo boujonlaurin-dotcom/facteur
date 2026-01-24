@@ -141,6 +141,22 @@ class ApiClient {
     return response.data;
   }
 
+  /// Helper DELETE
+  Future<dynamic> delete(
+    String path, {
+    dynamic body,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    final response = await _dio.delete<dynamic>(
+      path,
+      data: body,
+      queryParameters: queryParameters,
+      options: options,
+    );
+    return response.data;
+  }
+
   /// Fermer le client
   void dispose() {
     _dio.close();

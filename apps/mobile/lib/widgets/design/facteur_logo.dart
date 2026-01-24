@@ -18,27 +18,48 @@ class FacteurLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveColor = color ?? context.facteurColors.textPrimary;
+    // Detect current theme brightness to choose the right logo
+    final brightness = Theme.of(context).brightness;
+    final isDark = brightness == Brightness.dark;
+    final logoPath = isDark
+        ? 'assets/icons/logo facteur fond_sombre.png'
+        : 'assets/icons/logo facteur fond_clair.png';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (showIcon) ...[
-          // Using new image asset logo
+          // Using theme-appropriate logo (dark/light)
           Transform.translate(
             offset: Offset(
-                0, size * 0.1), // Nudge down for better optical alignment
-            child: Image.asset(
-              'assets/icons/facteur_logo.png',
-              width: size * 1.9, // Even larger relative to text
-              height: size * 1.9,
-              fit: BoxFit.contain,
-              color: effectiveColor == context.facteurColors.textPrimary
-                  ? null // Keep original colors if used on standard background
-                  : effectiveColor, // Apply color override if provided
-            ),
+                0, size * 0.06), // Reduced vertical offset
+            child: effectiveColor == context.facteurColors.textPrimary
+                ? Image.asset(
+                    logoPath,
+                    width: size * 1.7, // Reduced logo size
+                    height: size * 1.7,
+                    fit: BoxFit.contain,
+                    isAntiAlias: true,
+                    filterQuality: FilterQuality.high,
+                    // No color parameter = preserves original colors
+                  )
+                : ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      effectiveColor,
+                      BlendMode.srcIn, // Preserves transparency while applying color
+                    ),
+                    child: Image.asset(
+                      logoPath,
+                      width: size * 1.45,
+                      height: size * 1.45,
+                      fit: BoxFit.contain,
+                      isAntiAlias: true,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
           ),
-          SizedBox(width: size * 0.15), // Reduced spacing per request
+          SizedBox(width: size * 0.06), // Tight spacing between logo and text
         ],
         Text(
           'Facteur',
