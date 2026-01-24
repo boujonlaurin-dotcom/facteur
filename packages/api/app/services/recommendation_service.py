@@ -486,12 +486,9 @@ class RecommendationService:
                 )
 
             elif mode == FeedFilterMode.BREAKING:
-                 # Mode "Dernières news" : Fresh news (< 24h) from ALL curated sources
-                 # Élargissement temporaire pour diagnostic : pas de filtre par thème
-                 # car le filtre de base (is_curated) suffit pour les news chaudes
+                 # Mode "Dernières news" : Fresh news (< 24h) from curated sources
                  limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
                  query = query.where(Content.published_at >= limit_date)
-                 logger.info("breaking_filter_applied", limit_date=limit_date.isoformat())
 
             elif mode == FeedFilterMode.PERSPECTIVES:
                 # Mode "Angle Mort" : Perspective swap
@@ -508,22 +505,6 @@ class RecommendationService:
         
         candidates = await self.session.scalars(query)
         candidates_list = list(candidates.all())
-        
-        # Debug logging for BREAKING mode
-        if mode == FeedFilterMode.BREAKING:
-            # Log candidate count by source
-            source_counts = {}
-            for c in candidates_list:
-                src_name = c.source.name if c.source else "Unknown"
-                source_counts[src_name] = source_counts.get(src_name, 0) + 1
-            logger.info("breaking_candidates_by_source", 
-                       total=len(candidates_list), 
-                       by_source=dict(sorted(source_counts.items(), key=lambda x: -x[1])[:10]))
-
-        # Post-Processing Heuristics for L'Actualité (Refining News vs Dossier)
-        # DISABLED for now - causing issues with diversity
-        # if mode == FeedFilterMode.BREAKING:
-        #     ... heuristics disabled ...
 
         return candidates_list
 
