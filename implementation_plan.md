@@ -1,6 +1,6 @@
 # Plan d'implémentation : Fix healthcheck Railway (migrations Alembic)
 
-## Status: IMPLÉMENTÉ - En attente de déploiement
+## Status: EN COURS - Bypass migrations actif en prod
 
 ## Diagnostic Systémique (25 janvier 2026)
 
@@ -50,6 +50,13 @@ Variable d'environnement `FACTEUR_MIGRATION_IN_PROGRESS=1` :
 - `/api/health` → Liveness (Railway) : retourne 200 si l'app tourne
 - `/api/health/ready` → Readiness : vérifie la DB, retourne 503 si pas prête
 
+## État actuel en production
+
+- API up avec bypass migrations : `FACTEUR_MIGRATION_IN_PROGRESS=1`
+- `/api/health` → 200 (liveness OK)
+- `/api/health/ready` → 200 (DB connectée)
+- Migrations toujours bloquées sur `DROP CONSTRAINT` (lock concurrent)
+
 ## Procédure de Déploiement
 
 ### Option A : Déploiement normal (recommandé)
@@ -68,6 +75,7 @@ railway variables set FACTEUR_MIGRATION_IN_PROGRESS=1
 railway up
 
 # 3. Appliquer les migrations manuellement
+# (railway run n'ouvre pas de shell distant, il injecte les vars locales)
 railway run -- alembic upgrade head
 
 # 4. Désactiver le bypass
@@ -76,6 +84,14 @@ railway variables unset FACTEUR_MIGRATION_IN_PROGRESS
 # 5. Redéployer pour restaurer les checks
 railway up
 ```
+
+### Stratégie recommandée pour finaliser
+
+1. Mettre en maintenance (scale à 0 ou fenêtre sans trafic).
+2. Exécuter la migration avec `lock_timeout=0` (attendre le lock).
+3. Vérifier que le head Alembic est correct.
+4. Retirer le bypass `FACTEUR_MIGRATION_IN_PROGRESS`.
+5. Redéployer et vérifier que le startup passe.
 
 ## Vérification
 
