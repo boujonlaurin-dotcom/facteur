@@ -14,6 +14,7 @@ This fixes timeout issues with Supabase PgBouncer pooler.
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import OperationalError
 
 # revision identifiers, used by Alembic.
 revision = '1a2b3c4d5e6f'
@@ -22,7 +23,27 @@ branch_labels = None
 depends_on = None
 
 
+def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5) -> None:
+    """Retry DDL when blocked by lock/statement timeouts."""
+    for attempt in range(1, retries + 1):
+        try:
+            op.execute(sql)
+            return
+        except OperationalError as exc:
+            message = str(exc).lower()
+            if "timeout" in message or "canceling statement" in message:
+                if attempt >= retries:
+                    raise
+                op.execute(f"SELECT pg_sleep({sleep_seconds})")
+            else:
+                raise
+
+
 def upgrade() -> None:
+    # Reduce lock contention during migration
+    op.execute("SET LOCAL lock_timeout = '5s'")
+    op.execute("SET LOCAL statement_timeout = '0'")  # Disable statement timeout for DDL
+    
     # SAFE FK MIGRATION PATTERN (non-blocking)
     # Step 1: Add new FK with NOT VALID (instant, no table scan)
     # This allows concurrent reads/writes during migration
@@ -34,8 +55,8 @@ def upgrade() -> None:
         NOT VALID
     """)
     
-    # Step 2: Drop the old FK (fast, new constraint already protects writes)
-    op.execute("""
+    # Step 2: Drop the old FK (may require lock; retry until window is free)
+    _execute_with_retry("""
         ALTER TABLE user_personalization 
         DROP CONSTRAINT IF EXISTS user_personalization_user_id_fkey
     """)
@@ -56,6 +77,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Reduce lock contention during migration
+    op.execute("SET LOCAL lock_timeout = '5s'")
+    op.execute("SET LOCAL statement_timeout = '0'")
+    
     # Reverse: point FK back to user_profiles.id
     op.execute("""
         ALTER TABLE user_personalization 
@@ -65,7 +90,7 @@ def downgrade() -> None:
         NOT VALID
     """)
     
-    op.execute("""
+    _execute_with_retry("""
         ALTER TABLE user_personalization 
         DROP CONSTRAINT IF EXISTS user_personalization_user_id_fkey
     """)
