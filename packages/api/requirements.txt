@@ -43,8 +43,7 @@ email-validator>=2.0.0
 # mypy==1.8.0
 
 # ML Classification (Story 4.1d)
-# Install torch CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu
-transformers==4.38.2
-torch==2.2.0
+# Optional ML deps moved to requirements-ml.txt to keep production builds light.
+# Install with: pip install -r requirements-ml.txt
 protobuf==5.26.1
 curl-cffi==0.7.4

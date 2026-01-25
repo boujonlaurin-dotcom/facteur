@@ -5,7 +5,11 @@ WORKDIR /app
 
 # Install dependencies
 COPY requirements.txt .
+COPY requirements-ml.txt .
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
+# Optional ML dependencies (disable by default to keep build light)
+ARG INSTALL_ML_DEPS=0
+RUN if [ "$INSTALL_ML_DEPS" = "1" ]; then pip install --no-cache-dir --timeout 300 --retries 5 -r requirements-ml.txt; fi
 
 # Copy application AND required configs/scripts
 COPY app/ app/

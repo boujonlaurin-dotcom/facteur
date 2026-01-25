@@ -1,0 +1,1 @@
+# Optional ML dependencies (enable only if ML_ENABLED=true)\ntransformers==4.38.2\ntorch==2.2.0\n
