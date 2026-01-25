@@ -487,14 +487,22 @@ class RecommendationService:
 
             elif mode == FeedFilterMode.BREAKING:
                  # Mode "Dernières news" : Feed Twitter-like avec les actualités chaudes
-                 # DIAGNOSTIC: Temporairement sans filtre de thème pour isoler le problème
-                 # - Fenêtre de 24h pour avoir plus de candidats
-                 # - Tous les thèmes (pour diagnostiquer si le problème est les thèmes)
-                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
-                 logger.info("breaking_filter_DIAGNOSTIC", 
+                 # Philosophie : Immédiateté et réactivité, comme un fil d'actu en temps réel
+                 # - Fenêtre courte (12h) pour garantir la fraîcheur
+                 # - Thèmes Hard News : actualités chaudes (society_climate, geopolitics, economy)
+                 #   Note: themes en DB correspondent au THEME_MAPPING de import_sources.py
+                 # - Tri par date de publication (les plus récents en premier)
+                 limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
+                 hard_news_themes = ['society_climate', 'geopolitics', 'economy']
+                 logger.info("breaking_filter_debug", 
                             limit_date=limit_date.isoformat(),
-                            note="NO THEME FILTER - testing recency only")
-                 query = query.where(Content.published_at >= limit_date)
+                            target_themes=hard_news_themes)
+                 query = query.where(
+                    and_(
+                        Content.published_at >= limit_date,
+                        Source.theme.in_(hard_news_themes)
+                    )
+                 )
 
             elif mode == FeedFilterMode.PERSPECTIVES:
                 # Mode "Angle Mort" : Perspective swap
