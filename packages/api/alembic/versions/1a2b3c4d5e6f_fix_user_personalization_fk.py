@@ -11,11 +11,11 @@ SAFE MIGRATION PATTERN:
 
 This fixes timeout issues with Supabase PgBouncer pooler.
 """
-from alembic import op
+from alembic import op, context
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+import time
 
 # revision identifiers, used by Alembic.
 revision = '1a2b3c4d5e6f'
@@ -27,21 +27,21 @@ depends_on = None
 def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5) -> None:
     """Retry DDL when blocked by lock/statement timeouts.
     
-    Uses AUTOCOMMIT so failed DDL does not abort the transaction.
+    Uses Alembic autocommit blocks so failed DDL does not abort the transaction.
     """
-    conn = op.get_bind().execution_options(isolation_level="AUTOCOMMIT")
     for attempt in range(1, retries + 1):
         try:
-            conn.execute(text("SET lock_timeout = '5s'"))
-            conn.execute(text("SET statement_timeout = '0'"))
-            conn.execute(text(sql))
+            with context.get_context().autocommit_block():
+                op.execute("SET lock_timeout = '5s'")
+                op.execute("SET statement_timeout = '0'")
+                op.execute(sql)
             return
         except OperationalError as exc:
             message = str(exc).lower()
             if "timeout" in message or "canceling statement" in message:
                 if attempt >= retries:
                     raise
-                conn.execute(text(f"SELECT pg_sleep({sleep_seconds})"))
+                time.sleep(sleep_seconds)
             else:
                 raise
 
