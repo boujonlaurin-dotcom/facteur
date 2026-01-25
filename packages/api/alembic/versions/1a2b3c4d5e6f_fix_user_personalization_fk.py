@@ -54,12 +54,21 @@ def upgrade() -> None:
     # SAFE FK MIGRATION PATTERN (non-blocking)
     # Step 1: Add new FK with NOT VALID (instant, no table scan)
     # This allows concurrent reads/writes during migration
+    # Idempotent: only add if missing
     op.execute("""
-        ALTER TABLE user_personalization 
-        ADD CONSTRAINT user_personalization_user_id_fkey_new 
-        FOREIGN KEY (user_id) REFERENCES user_profiles(user_id) 
-        ON DELETE CASCADE 
-        NOT VALID
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey_new'
+            ) THEN
+                ALTER TABLE user_personalization
+                ADD CONSTRAINT user_personalization_user_id_fkey_new
+                FOREIGN KEY (user_id) REFERENCES user_profiles(user_id)
+                ON DELETE CASCADE
+                NOT VALID;
+            END IF;
+        END $$;
     """)
     
     # Step 2: Drop the old FK (may require lock; retry until window is free)
@@ -68,18 +77,37 @@ def upgrade() -> None:
         DROP CONSTRAINT IF EXISTS user_personalization_user_id_fkey
     """)
     
-    # Step 3: Rename new constraint to canonical name
+    # Step 3: Rename new constraint to canonical name (if needed)
     op.execute("""
-        ALTER TABLE user_personalization 
-        RENAME CONSTRAINT user_personalization_user_id_fkey_new 
-        TO user_personalization_user_id_fkey
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey_new'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey'
+            ) THEN
+                ALTER TABLE user_personalization
+                RENAME CONSTRAINT user_personalization_user_id_fkey_new
+                TO user_personalization_user_id_fkey;
+            END IF;
+        END $$;
     """)
     
     # Step 4: Validate constraint (SHARE UPDATE EXCLUSIVE lock, allows concurrent DML)
     # This scans existing rows but doesn't block normal operations
     op.execute("""
-        ALTER TABLE user_personalization 
-        VALIDATE CONSTRAINT user_personalization_user_id_fkey
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey'
+            ) THEN
+                ALTER TABLE user_personalization
+                VALIDATE CONSTRAINT user_personalization_user_id_fkey;
+            END IF;
+        END $$;
     """)
 
 
@@ -88,13 +116,21 @@ def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '5s'")
     op.execute("SET LOCAL statement_timeout = '0'")
     
-    # Reverse: point FK back to user_profiles.id
+    # Reverse: point FK back to user_profiles.id (idempotent)
     op.execute("""
-        ALTER TABLE user_personalization 
-        ADD CONSTRAINT user_personalization_user_id_fkey_old 
-        FOREIGN KEY (user_id) REFERENCES user_profiles(id) 
-        ON DELETE CASCADE 
-        NOT VALID
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey_old'
+            ) THEN
+                ALTER TABLE user_personalization
+                ADD CONSTRAINT user_personalization_user_id_fkey_old
+                FOREIGN KEY (user_id) REFERENCES user_profiles(id)
+                ON DELETE CASCADE
+                NOT VALID;
+            END IF;
+        END $$;
     """)
     
     _execute_with_retry("""
@@ -103,12 +139,31 @@ def downgrade() -> None:
     """)
     
     op.execute("""
-        ALTER TABLE user_personalization 
-        RENAME CONSTRAINT user_personalization_user_id_fkey_old 
-        TO user_personalization_user_id_fkey
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey_old'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey'
+            ) THEN
+                ALTER TABLE user_personalization
+                RENAME CONSTRAINT user_personalization_user_id_fkey_old
+                TO user_personalization_user_id_fkey;
+            END IF;
+        END $$;
     """)
     
     op.execute("""
-        ALTER TABLE user_personalization 
-        VALIDATE CONSTRAINT user_personalization_user_id_fkey
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'user_personalization_user_id_fkey'
+            ) THEN
+                ALTER TABLE user_personalization
+                VALIDATE CONSTRAINT user_personalization_user_id_fkey;
+            END IF;
+        END $$;
     """)
