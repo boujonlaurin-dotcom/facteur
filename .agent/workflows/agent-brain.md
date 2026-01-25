@@ -69,6 +69,7 @@ Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir valid�
 - **Assets critiques** : si un asset est référencé par le code, il doit exister et être versionné.
 - **Commits propres** : un sujet = un commit. Pas de mélange mobile/API/docs.
 - **QA minimal** : chaque fix critique a un script `docs/qa/scripts/verify_<tache>.sh`.
+- **Release** : exécute `docs/qa/scripts/verify_release.sh` avant déploiement.
 - **État clair** : si un bypass est activé, documente le statut dans `docs/maintenance/`.
 
 ---
