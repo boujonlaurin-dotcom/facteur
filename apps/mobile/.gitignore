@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local analysis outputs / locks
+analysis_v*.txt
+analysis_output.txt
+onboarding.lock
+
 # Symbolication related
 app.*.symbols
 
