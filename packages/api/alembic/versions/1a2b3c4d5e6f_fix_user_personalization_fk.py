@@ -14,6 +14,7 @@ This fixes timeout issues with Supabase PgBouncer pooler.
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 # revision identifiers, used by Alembic.
@@ -24,17 +25,23 @@ depends_on = None
 
 
 def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5) -> None:
-    """Retry DDL when blocked by lock/statement timeouts."""
+    """Retry DDL when blocked by lock/statement timeouts.
+    
+    Uses AUTOCOMMIT so failed DDL does not abort the transaction.
+    """
+    conn = op.get_bind().execution_options(isolation_level="AUTOCOMMIT")
     for attempt in range(1, retries + 1):
         try:
-            op.execute(sql)
+            conn.execute(text("SET lock_timeout = '5s'"))
+            conn.execute(text("SET statement_timeout = '0'"))
+            conn.execute(text(sql))
             return
         except OperationalError as exc:
             message = str(exc).lower()
             if "timeout" in message or "canceling statement" in message:
                 if attempt >= retries:
                     raise
-                op.execute(f"SELECT pg_sleep({sleep_seconds})")
+                conn.execute(text(f"SELECT pg_sleep({sleep_seconds})"))
             else:
                 raise
 
