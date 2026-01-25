@@ -12,6 +12,11 @@ logger = structlog.get_logger()
 # checks.py is in packages/api/app/, alembic.ini is in packages/api/
 _ALEMBIC_INI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
 
+# Environment variable to bypass migration check during migration rollout
+# Set FACTEUR_MIGRATION_IN_PROGRESS=1 to allow app to start while migrations are being applied
+# WARNING: Only use this temporarily during migration deployments
+MIGRATION_BYPASS_ENV = "FACTEUR_MIGRATION_IN_PROGRESS"
+
 def _get_current_revision_sync(connection: AsyncConnection):
     """Sync function to get current revision from DB context."""
     context = migration.MigrationContext.configure(connection)
@@ -25,8 +30,18 @@ async def check_migrations_up_to_date():
     - Config errors (alembic.ini not found): WARNING, continue startup
     - DB connection errors: WARNING, continue startup
     - Migration mismatch (pending migrations): CRITICAL, crash (data integrity risk)
+    - FACTEUR_MIGRATION_IN_PROGRESS=1: WARNING, continue (for migration rollout)
     """
     logger.info("startup_check_migrations_start")
+    
+    # Check for bypass flag (used during migration rollout)
+    if os.getenv(MIGRATION_BYPASS_ENV) == "1":
+        logger.warning(
+            "startup_migration_check_bypassed",
+            reason=f"{MIGRATION_BYPASS_ENV}=1",
+            action="App will start without migration validation. Remove flag after migrations complete."
+        )
+        return  # Continue boot without migration check
     
     # 1. Get HEAD revision from code (alembic.ini)
     try:

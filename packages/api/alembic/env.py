@@ -29,6 +29,16 @@ if database_url:
     elif database_url.startswith("postgresql://") and "+psycopg" not in database_url:
         database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
+# Connection args for migrations - critical for Supabase PgBouncer compatibility
+# These options are passed to PostgreSQL at connection time, bypassing PgBouncer's
+# session-level timeout limitations
+MIGRATION_CONNECT_ARGS = {
+    "prepare_threshold": None,  # Disable prepared statements (required for PgBouncer transaction mode)
+    # Pass timeout options directly to PostgreSQL server via connection options
+    # 10 min statement timeout, 2 min lock timeout
+    "options": "-c statement_timeout=600000 -c lock_timeout=120000",
+}
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
@@ -67,11 +77,15 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """In this scenario we need to create an Engine
     and associate a connection with the context.
+    
+    Uses MIGRATION_CONNECT_ARGS to ensure proper timeout settings
+    that work with Supabase PgBouncer transaction pooling.
     """
     if database_url:
         connectable = create_async_engine(
             database_url,
             poolclass=pool.NullPool,
+            connect_args=MIGRATION_CONNECT_ARGS,
         )
     else:
         connectable = async_engine_from_config(

@@ -1,56 +1,111 @@
 # Plan d'implémentation : Fix healthcheck Railway (migrations Alembic)
 
-## Status: En cours d'execution
+## Status: IMPLÉMENTÉ - En attente de déploiement
 
-## Problème identifié
+## Diagnostic Systémique (25 janvier 2026)
 
-Les deploiements Railway du service `facteur` echouent sur le healthcheck (`/api/health`) car `alembic upgrade head` plante au startup:
-- Logs: `Can't locate revision identified by 'a8da35e3c12b'`.
-- Le conteneur s'arrete avant le demarrage de l'API.
+### Problèmes racines identifiés
 
-## Analyse (Measure & Analyze)
+1. **`SET LOCAL statement_timeout` + PgBouncer = incompatible**
+   - Le pooler Supabase (PgBouncer transaction mode) ne préserve pas les `SET LOCAL`
+   - Le timeout Supabase (~60s) s'applique malgré les 5min configurées
 
-- Deploiement `1b7a7100-c4e2-4bcb-b67d-9ae7b344fe20` (commit `6e68ee2`) en FAILED.
-- Logs Railway: revision Alembic `a8da35e3c12b` absente du code.
-- Repository local: migrations `a8da35e3c12b`, `f7e8a9b0c1d2`, `b7d6e5f4c3a2`, `1a2b3c4d5e6f` non versionnees (git status).
-- Healthcheck actuel: `curl -i https://facteur-production.up.railway.app/api/health` retourne 200 (mais `environment=development`).
-- Nouveau echec de build: `pip install` timeout sur `torch` (download tres volumineux).
-- Nouveau echec de demarrage CI/railway: `DATABASE_URL` absent -> `alembic upgrade head` plante.
-- Nouveau echec de demarrage prod: timeout de pool DB pendant `alembic upgrade head` (pooler Supabase).
+2. **`DROP CONSTRAINT` prend un ACCESS EXCLUSIVE lock**
+   - Bloque toutes les opérations sur la table
+   - Avec du trafic concurrent, peut rester bloqué indéfiniment
 
-## Decision (Decide)
+3. **Boucle de mort startup/migrations**
+   - check_migrations → crash → restart → migrations timeout → crash
 
-Fix minimal et sure: versionner les migrations Alembic manquantes pour que `alembic upgrade head` puisse s'executer et que l'API demarre.
+## Solution Implémentée (4 axes)
 
-## Plan d'action (Act)
+### AXE 1 : Migration SAFE (non-bloquante) ✅
+**Fichier**: `packages/api/alembic/versions/1a2b3c4d5e6f_fix_user_personalization_fk.py`
 
-1. Ajouter les migrations manquantes dans Git:
-   - `packages/api/alembic/versions/a8da35e3c12b_merge_heads.py`
-   - `packages/api/alembic/versions/f7e8a9b0c1d2_add_user_personalization_table.py`
-   - `packages/api/alembic/versions/b7d6e5f4c3a2_add_daily_top3_unique_constraint.py`
-   - `packages/api/alembic/versions/1a2b3c4d5e6f_fix_user_personalization_fk.py`
-2. Push sur `main` pour declencher le redeploy.
-3. Sur Railway, verifier que `alembic upgrade head` passe au startup.
-4. Verifier le healthcheck en prod.
-5. Ajouter un script de verification `docs/qa/scripts/verify_railway_healthcheck_migrations.sh`.
-6. Stabiliser le build Docker avec un timeout/retries plus permissifs pour `pip install`.
-7. Skipper les migrations si `DATABASE_URL` est absent (build container).
-8. Ajouter un retry plus long sur les migrations pour absorber les timeouts DB transitoires.
-9. Garder le pooler Supabase pour les migrations (host direct inaccessible).
-10. Garder un mode bloquant: l'API ne demarre pas si migrations en echec.
-11. Augmenter le statement_timeout pour la migration qui drop la contrainte.
+Pattern PostgreSQL sécurisé :
+1. `ADD CONSTRAINT ... NOT VALID` (instantané, pas de scan)
+2. `DROP CONSTRAINT` (rapide car nouvelle FK protège déjà)
+3. `RENAME CONSTRAINT` (instantané)
+4. `VALIDATE CONSTRAINT` (SHARE UPDATE EXCLUSIVE lock, non-bloquant)
 
-## Risques / Rollback
+### AXE 2 : Timeout via options de connexion ✅
+**Fichier**: `packages/api/alembic/env.py`
 
-- Risque faible: ajout de fichiers de migration existants (pas de changement de schema en dehors de `upgrade head` deja attendu).
-- Rollback: revert du commit si un comportement inattendu apparait en prod.
+Passage des timeouts via `-c options` au lieu de `SET LOCAL` :
+```python
+"options": "-c statement_timeout=600000 -c lock_timeout=120000"
+```
+Ces options sont passées au serveur PostgreSQL à la connexion, contournant PgBouncer.
 
-## Verification (One-liner)
+### AXE 3 : Flag de bypass migrations ✅
+**Fichier**: `packages/api/app/checks.py`
 
+Variable d'environnement `FACTEUR_MIGRATION_IN_PROGRESS=1` :
+- Permet à l'app de démarrer pendant que les migrations sont appliquées
+- Usage temporaire uniquement
+
+### AXE 4 : Healthcheck liveness/readiness séparés ✅
+**Fichier**: `packages/api/app/main.py`
+
+- `/api/health` → Liveness (Railway) : retourne 200 si l'app tourne
+- `/api/health/ready` → Readiness : vérifie la DB, retourne 503 si pas prête
+
+## Procédure de Déploiement
+
+### Option A : Déploiement normal (recommandé)
 ```bash
-./docs/qa/scripts/verify_railway_healthcheck_migrations.sh
+git add -A && git commit -m "fix(migrations): safe FK migration + PgBouncer timeout bypass"
+git push origin main
+# Railway redéploie automatiquement
 ```
 
-## Validation requise
+### Option B : Si migrations bloquent encore
+```bash
+# 1. Activer le bypass
+railway variables set FACTEUR_MIGRATION_IN_PROGRESS=1
 
-GO recu, passage en phase ACT.
+# 2. Redéployer (l'app démarre sans check migrations)
+railway up
+
+# 3. Appliquer les migrations manuellement
+railway run -- alembic upgrade head
+
+# 4. Désactiver le bypass
+railway variables unset FACTEUR_MIGRATION_IN_PROGRESS
+
+# 5. Redéployer pour restaurer les checks
+railway up
+```
+
+## Vérification
+
+```bash
+./docs/qa/scripts/verify_railway_deployment.sh
+```
+
+Ou manuellement :
+```bash
+# Liveness (doit retourner 200)
+curl -i https://facteur-production.up.railway.app/api/health
+
+# Readiness (200 si DB OK, 503 sinon)
+curl -i https://facteur-production.up.railway.app/api/health/ready
+```
+
+## Fichiers modifiés
+
+| Fichier | Modification |
+|---------|--------------|
+| `packages/api/alembic/versions/1a2b3c4d5e6f_fix_user_personalization_fk.py` | Migration SAFE avec NOT VALID |
+| `packages/api/alembic/env.py` | Timeout via options de connexion |
+| `packages/api/app/checks.py` | Flag FACTEUR_MIGRATION_IN_PROGRESS |
+| `packages/api/app/main.py` | Séparation liveness/readiness |
+| `docs/qa/scripts/verify_railway_deployment.sh` | Script de vérification |
+
+## Rollback
+
+Si problème :
+```bash
+git revert HEAD
+git push origin main
+```

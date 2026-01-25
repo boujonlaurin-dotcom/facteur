@@ -132,19 +132,54 @@ app.include_router(personalization.router, prefix="/api/users/personalization", 
 
 @app.get("/api/health", tags=["Health"])
 async def health_check() -> dict[str, Any]:
-    """Endpoint de health check (SANS DB pour diagnostic deadlock)."""
-    # try:
-    #     await db.execute(text("SELECT 1"))
-    #     db_status = "connected"
-    # except Exception as e:
-    #     db_status = f"error: {str(e)}"
-    db_status = "skipped_for_debug"
-        
+    """
+    Liveness probe - Railway uses this endpoint.
+    
+    Returns 200 OK as long as the app process is alive.
+    Does NOT check database connectivity (to avoid startup deadlocks).
+    
+    For full readiness check including DB, use /api/health/ready.
+    """
     return {
         "status": "ok", 
         "version": settings.app_version,
+        "environment": settings.environment,
+        "probe": "liveness"
+    }
+
+
+@app.get("/api/health/ready", tags=["Health"])
+async def readiness_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """
+    Readiness probe - checks if app is ready to serve traffic.
+    
+    Verifies database connectivity. Use this for manual verification
+    or for load balancers that need to know if the instance is ready.
+    """
+    try:
+        await db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+        # Return 503 if DB is not ready
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "version": settings.app_version,
+                "database": db_status,
+                "environment": settings.environment,
+                "probe": "readiness"
+            }
+        )
+        
+    return {
+        "status": "ready", 
+        "version": settings.app_version,
         "database": db_status,
-        "environment": settings.environment
+        "environment": settings.environment,
+        "probe": "readiness"
     }
 
 
