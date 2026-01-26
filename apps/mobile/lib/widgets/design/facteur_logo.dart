@@ -23,12 +23,9 @@ class FacteurLogo extends StatelessWidget {
     // Detect current theme brightness to choose the right logo
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
-    const androidSafeLogoPath = 'assets/icons/logo_facteur_app_icon.png';
-    final logoPath = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-        ? androidSafeLogoPath
-        : (isDark
-            ? 'assets/icons/logo facteur fond_sombre.png'
-            : 'assets/icons/logo facteur fond_clair.png');
+    final logoPath = isDark
+        ? 'assets/icons/logo facteur fond_sombre.png'
+        : 'assets/icons/logo facteur fond_clair.png';
     const fallbackLogoPath = 'assets/icons/facteur_logo.png';
     final logoSize = size * 1.7;
 
@@ -58,14 +55,14 @@ class FacteurLogo extends StatelessWidget {
         if (showIcon) ...[
           // Using theme-appropriate logo (dark/light)
           Transform.translate(
-            offset: Offset(
-                0, size * 0.06), // Reduced vertical offset
+            offset: Offset(0, size * 0.06), // Reduced vertical offset
             child: effectiveColor == colors.textPrimary
                 ? buildLogoImage(logoPath)
                 : ColorFiltered(
                     colorFilter: ColorFilter.mode(
                       effectiveColor,
-                      BlendMode.srcIn, // Preserves transparency while applying color
+                      BlendMode
+                          .srcIn, // Preserves transparency while applying color
                     ),
                     child: buildLogoImage(logoPath),
                   ),

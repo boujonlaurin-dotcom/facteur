@@ -75,8 +75,7 @@ void main() {
       // Note: Navigation to finalize happens after Future.delayed(300ms)
     });
 
-    test(
-        'Section 3 starts at themes (index 0) after transition from Section 2',
+    test('Section 3 starts at themes (index 0) after transition from Section 2',
         () async {
       final container = ProviderContainer();
 
@@ -94,7 +93,7 @@ void main() {
 
   group('OnboardingAnswers', () {
     test('toJson and fromJson roundtrip preserves themes and subtopics', () {
-      final answers = OnboardingAnswers(
+      const answers = OnboardingAnswers(
         themes: ['tech', 'science'],
         subtopics: ['ai', 'climate'],
         preferredSources: ['source-1', 'source-2'],

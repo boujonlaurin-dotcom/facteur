@@ -58,4 +58,34 @@ class SourcesRepository {
       rethrow;
     }
   }
+
+  Future<Map<String, dynamic>> detectSource(String url) async {
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        'sources/detect',
+        data: {'url': url},
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data!;
+      }
+      throw Exception('Failed to detect source');
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] detectSource: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> addCustomSource(String url, {String? name}) async {
+    try {
+      await _apiClient.dio.post<dynamic>(
+        'sources',
+        data: {'url': url, if (name != null) 'name': name},
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] addCustomSource: $e');
+      rethrow;
+    }
+  }
 }
