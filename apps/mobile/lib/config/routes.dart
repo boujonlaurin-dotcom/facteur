@@ -12,6 +12,7 @@ import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
 import '../features/sources/screens/sources_screen.dart';
+import '../features/sources/screens/add_source_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
@@ -242,9 +243,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'sources', // /settings/sources
-                name: RouteNames
-                    .sources, // Reusing existing name for trusted sources
+                name: RouteNames.sources,
                 builder: (context, state) => const SourcesScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'add', // /settings/sources/add
+                    name: RouteNames.addSource,
+                    builder: (context, state) => const AddSourceScreen(),
+                  ),
+                ],
               ),
               GoRoute(
                 path: 'account', // /settings/account

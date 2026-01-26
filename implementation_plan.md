@@ -1,3 +1,38 @@
+# Plan d'implémentation : Fix echec API personnalisation (mute)
+
+## Status: EN ATTENTE DE GO (Mesure/Decision)
+
+## Contexte
+
+- Le client Flutter echoue systematiquement sur `POST /api/users/personalization/*`.
+- Le backend attend un `UUID` et persiste dans `user_personalization`.
+
+## Hypotheses prioritaires (a valider)
+
+1. **FK non migree en prod** : la contrainte pointe encore vers `user_profiles.id`.
+2. **Profil manquant** : pas de ligne dans `user_profiles` pour certains users.
+3. **Erreur auth ou body** : token manquant/422 UUID invalide (moins probable si auth OK).
+
+## Plan d'action (Decision)
+
+### 1) Mesurer et confirmer le code d'erreur
+- Ajouter un log client (DioException) pour afficher `statusCode`, `path`, `response.data`.
+- Executer un appel de test avec un token valide (curl/Postman).
+
+### 2) Verifier l'etat de la FK en prod
+- Verifier la contrainte `user_personalization_user_id_fkey` dans Postgres.
+- Si la FK reference `user_profiles.id`, appliquer la migration `1a2b3c4d5e6f`.
+
+### 3) Rendre l'endpoint tolerant
+- Creer le `user_profile` automatiquement si absent (avant l'insert).
+- Option B (si besoin): supprimer la FK ou la pointer sur `auth.users`.
+
+### 4) QA / Verification
+- Creer un script `docs/qa/scripts/verify_personalization_mute.sh` (curl authentifie).
+- Verifier que l'UI ne montre plus "Impossible de masquer...".
+
+---
+
 # Plan d'implémentation : Fix healthcheck Railway (migrations Alembic)
 
 ## Status: EN COURS - Bypass migrations actif en prod

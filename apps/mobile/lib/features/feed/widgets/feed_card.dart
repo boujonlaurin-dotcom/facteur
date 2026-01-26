@@ -81,7 +81,7 @@ class FeedCard extends StatelessWidget {
                       Text(
                         content.title,
                         style: textTheme.displaySmall?.copyWith(
-                          fontSize: 22,
+                          fontSize: 20,
                           fontWeight: FontWeight.w700,
                           height: 1.2,
                         ),
