@@ -1,35 +1,51 @@
 # Plan d'implémentation : Fix echec API personnalisation (mute)
 
-## Status: EN ATTENTE DE GO (Mesure/Decision)
+## Status: ACT - Implémentation terminée, en attente de test
 
 ## Contexte
 
 - Le client Flutter echoue systematiquement sur `POST /api/users/personalization/*`.
 - Le backend attend un `UUID` et persiste dans `user_personalization`.
 
-## Hypotheses prioritaires (a valider)
+## Hypotheses prioritaires (validees)
 
-1. **FK non migree en prod** : la contrainte pointe encore vers `user_profiles.id`.
-2. **Profil manquant** : pas de ligne dans `user_profiles` pour certains users.
-3. **Erreur auth ou body** : token manquant/422 UUID invalide (moins probable si auth OK).
+1. ✅ **Profil manquant** : pas de ligne dans `user_profiles` pour certains users (CORRIGE).
+2. ⚠️ **FK non migree en prod** : a verifier en prod (migration `1a2b3c4d5e6f`).
+3. ✅ **Erreur auth ou body** : logs ajoutes pour diagnostiquer.
 
-## Plan d'action (Decision)
+## Actions realisees (ACT)
 
-### 1) Mesurer et confirmer le code d'erreur
-- Ajouter un log client (DioException) pour afficher `statusCode`, `path`, `response.data`.
-- Executer un appel de test avec un token valide (curl/Postman).
+### 1) ✅ Mesurer et confirmer le code d'erreur
+- ✅ Ajout de logs detailles dans `PersonalizationRepository` (DioException).
+  - Status code HTTP, path, body envoye, response, type d'erreur.
+- ⏳ Appel de test avec token valide (a faire apres deploy).
 
-### 2) Verifier l'etat de la FK en prod
-- Verifier la contrainte `user_personalization_user_id_fkey` dans Postgres.
-- Si la FK reference `user_profiles.id`, appliquer la migration `1a2b3c4d5e6f`.
+### 2) ⏳ Verifier l'etat de la FK en prod
+- ⏳ Verifier la contrainte `user_personalization_user_id_fkey` dans Postgres.
+- ⏳ Si la FK reference `user_profiles.id`, appliquer la migration `1a2b3c4d5e6f`.
 
-### 3) Rendre l'endpoint tolerant
-- Creer le `user_profile` automatiquement si absent (avant l'insert).
-- Option B (si besoin): supprimer la FK ou la pointer sur `auth.users`.
+### 3) ✅ Rendre l'endpoint tolerant
+- ✅ Ajout de `get_or_create_profile()` avant chaque insertion.
+  - Applique dans `mute_source`, `mute_theme`, `mute_topic`.
+- ✅ Correction de `updated_at` : `func.now()` au lieu de `'now()'`.
 
-### 4) QA / Verification
-- Creer un script `docs/qa/scripts/verify_personalization_mute.sh` (curl authentifie).
-- Verifier que l'UI ne montre plus "Impossible de masquer...".
+### 4) ✅ QA / Verification
+- ✅ Creation du script `docs/qa/scripts/verify_personalization_mute.sh`.
+- ⏳ Verification UI (a faire apres deploy).
+
+## Fichiers modifies
+
+- `apps/mobile/lib/features/feed/repositories/personalization_repository.dart`
+- `packages/api/app/routers/personalization.py`
+- `docs/qa/scripts/verify_personalization_mute.sh` (nouveau)
+- `docs/bugs/bug-personalization-api-failure.md` (mis a jour)
+
+## Prochaines etapes
+
+1. Deployer les changements en staging/prod.
+2. Tester avec `./docs/qa/scripts/verify_personalization_mute.sh <TOKEN>`.
+3. Verifier les logs client pour confirmer le code d'erreur exact.
+4. Si FK incorrecte en prod, appliquer la migration `1a2b3c4d5e6f`.
 
 ---
 

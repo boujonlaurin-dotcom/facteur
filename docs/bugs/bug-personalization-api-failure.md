@@ -24,15 +24,38 @@
 - Migration de fix `1a2b3c4d5e6f` corrige la FK vers `user_profiles.user_id`.
 - Le backend utilise `current_user_id` (Supabase `sub`) comme valeur pour `user_personalization.user_id`.
 
-## Correctif cible
+## Correctif applique (26/01/2026)
 
-- Appliquer la migration FK en prod (ou verifier son etat).
-- En complement, garantir l'existence du `user_profile` avant insertion (ex: `get_or_create_profile`).
-- Ajouter un log cote client pour afficher le status code et le `response.data` lors du catch.
+### Cote client (Flutter)
+- ✅ Ajout de logs detailles dans `PersonalizationRepository` pour capturer:
+  - Status code HTTP
+  - Path de la requete
+  - Body envoye
+  - Response du serveur
+  - Type d'erreur Dio
+
+### Cote backend (FastAPI)
+- ✅ Ajout de `get_or_create_profile()` avant chaque insertion dans `user_personalization`
+  - Garantit l'existence du profil utilisateur (requis pour la FK)
+  - Applique dans `mute_source`, `mute_theme`, `mute_topic`
+- ✅ Correction de `updated_at` : utilisation de `func.now()` au lieu de la chaine `'now()'`
+
+### Script de verification
+- ✅ Creation de `docs/qa/scripts/verify_personalization_mute.sh`
+  - Teste GET /api/users/personalization
+  - Teste POST mute-source, mute-theme
+  - Verifie les reponses HTTP
 
 ## Verification
 
-- Requete authentifiee `POST /api/users/personalization/mute-source` retourne 200.
-- Plus d'erreur UI lors du clic "Moins de ...".
-- (Optionnel) Verifier la contrainte :
+- [ ] Requete authentifiee `POST /api/users/personalization/mute-source` retourne 200.
+- [ ] Plus d'erreur UI lors du clic "Moins de ...".
+- [ ] (Optionnel) Verifier la contrainte FK en prod :
   `SELECT conname, confrelid::regclass FROM pg_constraint WHERE conrelid='user_personalization'::regclass;`
+- [ ] Executer `./docs/qa/scripts/verify_personalization_mute.sh <TOKEN>`
+
+## Fichiers modifies
+
+- `apps/mobile/lib/features/feed/repositories/personalization_repository.dart`
+- `packages/api/app/routers/personalization.py`
+- `docs/qa/scripts/verify_personalization_mute.sh` (nouveau)

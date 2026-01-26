@@ -5,13 +5,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.user_personalization import UserPersonalization
+from app.services.user_service import UserService
 
 router = APIRouter()
 
@@ -69,6 +70,11 @@ async def mute_source(
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
     
+    # Garantir l'existence du profil utilisateur (requis pour la FK)
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.flush()  # S'assurer que le profil est persisté avant l'insert
+    
     # Upsert: Insert if not exists, update if exists
     stmt = pg_insert(UserPersonalization).values(
         user_id=user_uuid,
@@ -77,7 +83,7 @@ async def mute_source(
         index_elements=['user_id'],
         set_={
             'muted_sources': UserPersonalization.muted_sources.op('||')([request.source_id]),
-            'updated_at': 'now()'
+            'updated_at': func.now()
         }
     )
     
@@ -97,6 +103,11 @@ async def mute_theme(
     user_uuid = UUID(current_user_id)
     theme_slug = request.theme.lower().strip()
     
+    # Garantir l'existence du profil utilisateur (requis pour la FK)
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.flush()
+    
     stmt = pg_insert(UserPersonalization).values(
         user_id=user_uuid,
         muted_themes=[theme_slug]
@@ -104,7 +115,7 @@ async def mute_theme(
         index_elements=['user_id'],
         set_={
             'muted_themes': UserPersonalization.muted_themes.op('||')([theme_slug]),
-            'updated_at': 'now()'
+            'updated_at': func.now()
         }
     )
     
@@ -124,6 +135,11 @@ async def mute_topic(
     user_uuid = UUID(current_user_id)
     topic_slug = request.topic.lower().strip()
     
+    # Garantir l'existence du profil utilisateur (requis pour la FK)
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.flush()
+    
     stmt = pg_insert(UserPersonalization).values(
         user_id=user_uuid,
         muted_topics=[topic_slug]
@@ -131,7 +147,7 @@ async def mute_topic(
         index_elements=['user_id'],
         set_={
             'muted_topics': UserPersonalization.muted_topics.op('||')([topic_slug]),
-            'updated_at': 'now()'
+            'updated_at': func.now()
         }
     )
     
