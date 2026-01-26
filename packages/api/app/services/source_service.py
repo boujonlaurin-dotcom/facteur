@@ -248,26 +248,35 @@ class SourceService:
         channel_id = extract_youtube_channel_id(url)
         if channel_id:
             feed_url = get_youtube_rss_url(channel_id)
-            # Use new parser's detect/parse for youtube if appropriate or just feedparser
-            # Since youtube rss is standard, detect() should handle it via parse() if it's a direct XML.
-            # But get_youtube_rss_url gives a URL.
-            # Let's try efficient approach:
-            entries = []
-            if hasattr(feed_data, 'entries'):
-                for e in feed_data.entries[:3]:
-                     entries.append({"title": e.get("title")})
-                     
-            return SourceDetectResponse(
-                detected_type="youtube",
-                feed_url=feed_url,
-                name=feed_data.feed.get("title", "YouTube Channel"),
-                description=feed_data.feed.get("description"),
-                logo_url=None,
-                preview={
-                    "item_count": len(feed_data.get("entries", [])),
-                    "latest_titles": [e.get("title") for e in entries],
-                },
-            )
+            # Parser le feed YouTube pour obtenir les métadonnées
+            try:
+                feed_data = await self.rss_parser.parse(feed_url)
+                entries = []
+                if feed_data.entries:
+                    for e in feed_data.entries[:3]:
+                        entries.append({"title": e.get("title", "")})
+                         
+                return SourceDetectResponse(
+                    detected_type="youtube",
+                    feed_url=feed_url,
+                    name=feed_data.feed.get("title", "YouTube Channel"),
+                    description=feed_data.feed.get("description", ""),
+                    logo_url=None,
+                    preview={
+                        "item_count": len(feed_data.entries) if feed_data.entries else 0,
+                        "latest_titles": [e.get("title", "") for e in entries],
+                    },
+                )
+            except Exception as e:
+                # Si le parsing échoue, retourner quand même une réponse basique
+                return SourceDetectResponse(
+                    detected_type="youtube",
+                    feed_url=feed_url,
+                    name="YouTube Channel",
+                    description="",
+                    logo_url=None,
+                    preview={"item_count": 0, "latest_titles": []},
+                )
 
         # Use new Smart Detect
         try:
