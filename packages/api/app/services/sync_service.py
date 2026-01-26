@@ -35,11 +35,17 @@ class SyncService:
         await self.client.aclose()
 
     async def sync_all_sources(self):
-        """Synchronise toutes les sources actives par lots (chunks)."""
+        """Synchronise toutes les sources actives avec une limite de concomitance."""
         logger.info("Starting sync of all sources")
         
-        batch_size = 20
-        offset = 0
+        # Récupérer les sources actives
+        result = await self.session.execute(
+            select(Source).where(Source.is_active == True)
+        )
+        sources = result.scalars().all()
+        
+        logger.info(f"Found {len(sources)} active sources to sync")
+        
         results = {"success": 0, "failed": 0, "total_new": 0}
         
         # Concurrency control
@@ -68,32 +74,19 @@ class SyncService:
                     # Fallback séquentiel sécurisé si pas de session_maker
                     return await self.process_source(source)
 
-        while True:
-            # Récupérer un chunk de sources
-            stmt = select(Source).where(Source.is_active == True).limit(batch_size).offset(offset)
-            result = await self.session.execute(stmt)
-            sources = result.scalars().all()
-            
-            if not sources:
-                break
+        tasks = [sync_with_semaphore(s) for s in sources]
+        
+        # Exécution et collecte des résultats
+        sync_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for res in sync_results:
+            if isinstance(res, Exception):
+                logger.error("Source sync task failed", error=str(res))
+                results["failed"] += 1
+            elif isinstance(res, int):
+                results["success"] += 1
+                results["total_new"] += res
                 
-            logger.info(f"Processing chunk offset={offset} size={len(sources)}")
-            
-            tasks = [sync_with_semaphore(s) for s in sources]
-            
-            # Exécution et collecte des résultats du chunk
-            chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for res in chunk_results:
-                if isinstance(res, Exception):
-                    logger.error("Source sync task failed", error=str(res))
-                    results["failed"] += 1
-                elif isinstance(res, int):
-                    results["success"] += 1
-                    results["total_new"] += res
-            
-            offset += batch_size
-            
         logger.info("Sync completed", results=results)
         return results
 

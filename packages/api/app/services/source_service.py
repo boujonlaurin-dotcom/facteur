@@ -13,7 +13,7 @@ from app.schemas.source import (
     SourceDetectResponse,
     SourceResponse,
 )
-from app.services.rss_parser import RSSParser
+from app.utils.rss_parser import RSSParser
 from app.utils.youtube_utils import extract_youtube_channel_id, get_youtube_rss_url
 
 
@@ -136,24 +136,13 @@ class SourceService:
             self.db.add(source)
 
         # Lier à l'utilisateur
-        # Vérifier si lien existe déjà
-        user_uuid = UUID(user_id)
-        existing_link_query = select(UserSource).where(
-            UserSource.user_id == user_uuid,
-            UserSource.source_id == source.id
+        user_source = UserSource(
+            id=uuid4(),
+            user_id=UUID(user_id),
+            source_id=source.id,
+            is_custom=True,
         )
-        existing_link_result = await self.db.execute(existing_link_query)
-        if existing_link_result.scalar_one_or_none():
-             # Already linked
-             pass
-        else:
-            user_source = UserSource(
-                id=uuid4(),
-                user_id=user_uuid,
-                source_id=source.id,
-                is_custom=True,
-            )
-            self.db.add(user_source)
+        self.db.add(user_source)
 
         await self.db.flush()
 
@@ -165,7 +154,7 @@ class SourceService:
             theme=source.theme,
             description=source.description,
             logo_url=source.logo_url,
-            is_curated=source.is_curated,
+            is_curated=False,
             is_custom=True,
             content_count=0,
             bias_stance=source.bias_stance.value,
@@ -248,56 +237,43 @@ class SourceService:
         channel_id = extract_youtube_channel_id(url)
         if channel_id:
             feed_url = get_youtube_rss_url(channel_id)
-            # Parser le feed YouTube pour obtenir les métadonnées
-            try:
-                feed_data = await self.rss_parser.parse(feed_url)
-                entries = []
-                if feed_data.entries:
-                    for e in feed_data.entries[:3]:
-                        entries.append({"title": e.get("title", "")})
-                         
-                return SourceDetectResponse(
-                    detected_type="youtube",
-                    feed_url=feed_url,
-                    name=feed_data.feed.get("title", "YouTube Channel"),
-                    description=feed_data.feed.get("description", ""),
-                    logo_url=None,
-                    preview={
-                        "item_count": len(feed_data.entries) if feed_data.entries else 0,
-                        "latest_titles": [e.get("title", "") for e in entries],
-                    },
-                )
-            except Exception as e:
-                # Si le parsing échoue, retourner quand même une réponse basique
-                return SourceDetectResponse(
-                    detected_type="youtube",
-                    feed_url=feed_url,
-                    name="YouTube Channel",
-                    description="",
-                    logo_url=None,
-                    preview={"item_count": 0, "latest_titles": []},
-                )
+            feed_data = await self.rss_parser.parse(feed_url)
 
-        # Use new Smart Detect
-        try:
-            detected = await self.rss_parser.detect(url)
-            
-            latest_titles = []
-            if detected.entries:
-                latest_titles = [e["title"] for e in detected.entries[:3]]
-                
             return SourceDetectResponse(
-                detected_type=detected.feed_type,
-                feed_url=detected.feed_url,
-                name=detected.title,
-                description=detected.description,
-                logo_url=detected.logo_url,
+                detected_type="youtube",
+                feed_url=feed_url,
+                name=feed_data.get("title", "YouTube Channel"),
+                description=feed_data.get("description"),
+                logo_url=None,
                 preview={
-                    "item_count": len(detected.entries) if detected.entries else 0,
-                    "latest_titles": latest_titles,
+                    "item_count": len(feed_data.get("entries", [])),
+                    "latest_title": feed_data.get("entries", [{}])[0].get("title"),
                 },
             )
-        except ValueError as e:
+
+        # Tenter de parser comme RSS
+        try:
+            feed_data = await self.rss_parser.parse(url)
+
+            # Détecter si c'est un podcast (enclosures audio)
+            entries = feed_data.get("entries", [])
+            is_podcast = any(
+                "enclosure" in entry or "audio" in str(entry.get("links", []))
+                for entry in entries[:5]
+            )
+
+            return SourceDetectResponse(
+                detected_type="podcast" if is_podcast else "article",
+                feed_url=url,
+                name=feed_data.get("title", "RSS Feed"),
+                description=feed_data.get("description"),
+                logo_url=feed_data.get("image", {}).get("href"),
+                preview={
+                    "item_count": len(entries),
+                    "latest_title": entries[0].get("title") if entries else None,
+                },
+            )
+        except Exception as e:
             raise ValueError(f"Unable to parse URL as RSS feed: {str(e)}")
 
     async def _get_source_by_feed_url(self, feed_url: str) -> Optional[Source]:
