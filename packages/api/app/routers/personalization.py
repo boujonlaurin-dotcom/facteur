@@ -13,6 +13,8 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.user_personalization import UserPersonalization
 
+from app.services.user_service import UserService
+
 router = APIRouter()
 
 
@@ -67,6 +69,10 @@ async def mute_source(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute une source à la liste des sources mutées."""
+    user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
+    await user_service.get_or_create_profile(current_user_id)
+    
     user_uuid = UUID(current_user_id)
     
     # Upsert: Insert if not exists, update if exists
@@ -94,6 +100,10 @@ async def mute_theme(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute un thème à la liste des thèmes mutés."""
+    user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
+    await user_service.get_or_create_profile(current_user_id)
+
     user_uuid = UUID(current_user_id)
     theme_slug = request.theme.lower().strip()
     
@@ -121,6 +131,10 @@ async def mute_topic(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute un topic à la liste des topics mutés."""
+    user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
+    await user_service.get_or_create_profile(current_user_id)
+
     user_uuid = UUID(current_user_id)
     topic_slug = request.topic.lower().strip()
     
