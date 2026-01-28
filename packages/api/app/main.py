@@ -70,8 +70,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         
         # 🛡️ STARTUP CHECK: DATABASE MIGRATIONS
         # Must crash if DB is not up to date to avoid silent failures
-        from app.checks import check_migrations_up_to_date
-        await check_migrations_up_to_date()
+        if not settings.skip_startup_checks:
+            from app.checks import check_migrations_up_to_date
+            await check_migrations_up_to_date()
+        else:
+            logger.warning("lifespan_startup_checks_skipped", reason="skip_startup_checks=True")
         
     except Exception as e:
         logger.error("lifespan_startup_failed", error=str(e))

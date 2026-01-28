@@ -1,0 +1,54 @@
+name: Build Flutter Web
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'URL de production de l API'
+        required: true
+        default: 'https://facteur-production.up.railway.app/api'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build Web
+        run: |
+          cd apps/mobile
+          flutter build web --release \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
+            --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --web-renderer canvaskit
+
+      - name: Upload Web Build as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: facteur-web-build
+          path: apps/mobile/build/web
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: apps/mobile/build/web

@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # ML Classification (Story 4.1d)
     ml_enabled: bool = False  # Set to True to load CamemBERT model
 
+    # Startup Checks
+    skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
+
     @model_validator(mode="after")
     def validate_production_db(self) -> "Settings":
         """Empêche l'utilisation de localhost en production."""

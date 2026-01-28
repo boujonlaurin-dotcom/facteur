@@ -23,7 +23,7 @@ class RSSParser:
             timeout=10.0,
             follow_redirects=True,
             headers={
-                "User-Agent": "FacteurBot/1.0 (+https://facteur.app)"
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
         )
 
@@ -97,9 +97,41 @@ class RSSParser:
         
         # SPECIAL: YouTube Handle Resolution
         if "youtube.com" in url or "youtu.be" in url:
+            channel_id = None
+            
+            # 1. Try meta tag (channelId or identifier)
             channel_id_meta = soup.find("meta", itemprop="channelId")
             if channel_id_meta and channel_id_meta.get("content"):
                 channel_id = channel_id_meta["content"]
+            
+            if not channel_id:
+                identifier_meta = soup.find("meta", itemprop="identifier")
+                if identifier_meta and identifier_meta.get("content"):
+                    channel_id = identifier_meta["content"]
+            
+            # 2. Schema.org fallback
+            if not channel_id:
+                 # <meta property="og:url" content="https://www.youtube.com/channel/UC...">
+                 og_url = soup.find("meta", property="og:url")
+                 if og_url and "channel/" in (og_url.get("content") or ""):
+                     channel_id = og_url["content"].split("channel/")[-1]
+
+            # 3. Regex fallback (Robust for "Consent" pages or JS renders)
+            if not channel_id:
+                import re
+                # Look for "channelId":"UC..." in JSON blobs
+                match = re.search(r'"channelId":"(UC[\w-]+)"', content)
+                if match:
+                    channel_id = match.group(1)
+            
+            # 4. Regex fallback for identifier meta (if soup failed)
+            if not channel_id:
+                import re
+                match = re.search(r'itemprop="identifier" content="([\w-]+)"', content)
+                if match:
+                    channel_id = match.group(1)
+            
+            if channel_id:
                 logger.info("Resolved YouTube Channel ID", handle=url, channel_id=channel_id)
                 rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
                 
@@ -152,6 +184,25 @@ class RSSParser:
                 except Exception as e:
                     logger.warning("Failed to parse discovered feed", rss_url=found_url, error=str(e))
         
+        # 3. Common Suffix Fallback (WordPress, Ghost, etc.)
+        # Only if strict URL was passed (not a search query)
+        if not found_url:
+            from urllib.parse import urljoin
+            common_suffixes = ["/feed", "/rss", "/rss.xml", "/feed.xml"]
+            for suffix in common_suffixes:
+                 try_url = url.rstrip("/") + suffix
+                 logger.info("Trying common RSS suffix", try_url=try_url)
+                 try:
+                     resp = await self.client.get(try_url)
+                     if resp.status_code == 200:
+                         # Check if it parses
+                         suffix_feed = await loop.run_in_executor(None, feedparser.parse, resp.text)
+                         if not suffix_feed.bozo and len(suffix_feed.entries) > 0:
+                              logger.info("Found valid feed via suffix", url=try_url)
+                              return self._format_response(try_url, suffix_feed)
+                 except Exception:
+                     continue
+
         # If we reach here, nothing found
         raise ValueError("No RSS feed found on this page.")
 
