@@ -14,7 +14,6 @@ from app.schemas.source import (
     SourceResponse,
 )
 from app.services.rss_parser import RSSParser
-from app.services.rss_parser import RSSParser
 
 
 class SourceService:
