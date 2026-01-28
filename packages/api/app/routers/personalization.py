@@ -69,8 +69,7 @@ async def mute_source(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute une source à la liste des sources mutées."""
-    user_uuid = UUID(current_user_id)
-    print(f"\n\n🚀 [TRACER] MUTE_SOURCE CALLED AT 2026-01-28 23:38:40 for user {user_uuid} 🚀\n\n", flush=True)
+    # Garantir l'existence du profil utilisateur (requis pour la FK)
     print(f">>> MUTE_SOURCE CALLED V3 (FIX_COMMIT applied) for user {user_uuid} <<<")
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
