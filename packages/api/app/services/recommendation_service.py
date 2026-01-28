@@ -469,6 +469,7 @@ class RecommendationService:
         if muted_themes:
              # SQL IN operator is case-sensitive, but we stored lowercase slugs. 
              # Ensure Source.theme is compared correctly (assuming themes are lowercase in DB or we use lower())
+             query = query.where(~Source.theme.in_(list(muted_themes)))
              query = query.where(Source.theme.in_(list(muted_themes)) == False) 
 
         if muted_topics:
