@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.user_personalization import UserPersonalization
+
 from app.services.user_service import UserService
 
 router = APIRouter()
@@ -74,6 +75,7 @@ async def mute_source(
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
     
@@ -117,6 +119,7 @@ async def mute_theme(
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()
     
@@ -159,6 +162,7 @@ async def mute_topic(
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
+    # Ensure profile exists to satisfy FK constraint
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()
     

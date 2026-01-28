@@ -136,24 +136,13 @@ class SourceService:
             self.db.add(source)
 
         # Lier à l'utilisateur
-        # Vérifier si lien existe déjà
-        user_uuid = UUID(user_id)
-        existing_link_query = select(UserSource).where(
-            UserSource.user_id == user_uuid,
-            UserSource.source_id == source.id
+        user_source = UserSource(
+            id=uuid4(),
+            user_id=UUID(user_id),
+            source_id=source.id,
+            is_custom=True,
         )
-        existing_link_result = await self.db.execute(existing_link_query)
-        if existing_link_result.scalar_one_or_none():
-             # Already linked
-             pass
-        else:
-            user_source = UserSource(
-                id=uuid4(),
-                user_id=user_uuid,
-                source_id=source.id,
-                is_custom=True,
-            )
-            self.db.add(user_source)
+        self.db.add(user_source)
 
         await self.db.flush()
 
@@ -165,7 +154,7 @@ class SourceService:
             theme=source.theme,
             description=source.description,
             logo_url=source.logo_url,
-            is_curated=source.is_curated,
+            is_curated=False,
             is_custom=True,
             content_count=0,
             bias_stance=source.bias_stance.value,
@@ -264,8 +253,8 @@ class SourceService:
                 description=detected.description,
                 logo_url=detected.logo_url,
                 preview={
-                    "item_count": len(detected.entries) if detected.entries else 0,
-                    "latest_titles": latest_titles,
+                    "item_count": len(entries),
+                    "latest_title": entries[0].get("title") if entries else None,
                 },
             )
         except ValueError as e:
