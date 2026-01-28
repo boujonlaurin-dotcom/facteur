@@ -43,7 +43,7 @@ async def get_catalog(
     return sources
 
 
-@router.post("", response_model=SourceResponse)
+@router.post("/custom", response_model=SourceResponse)
 async def add_source(
     data: SourceCreate,
     user_id: str = Depends(get_current_user_id),

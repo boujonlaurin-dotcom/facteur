@@ -21,9 +21,16 @@ class SourcesRepository {
         } else if (data is Map<String, dynamic>) {
           // Possible object wrapper or error
           if (data.containsKey('curated')) {
-            return (data['curated'] as List)
-                .map((json) => Source.fromJson(json as Map<String, dynamic>))
-                .toList();
+            final result = <Source>[];
+            if (data['curated'] != null) {
+              result.addAll((data['curated'] as List).map(
+                  (json) => Source.fromJson(json as Map<String, dynamic>)));
+            }
+            if (data['custom'] != null) {
+              result.addAll((data['custom'] as List).map(
+                  (json) => Source.fromJson(json as Map<String, dynamic>)));
+            }
+            return result;
           }
           // Log unexpected map
           print(
@@ -79,7 +86,7 @@ class SourcesRepository {
   Future<void> addCustomSource(String url, {String? name}) async {
     try {
       await _apiClient.dio.post<dynamic>(
-        'sources',
+        'sources/custom',
         data: {'url': url, if (name != null) 'name': name},
       );
     } catch (e) {

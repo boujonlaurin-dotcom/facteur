@@ -14,7 +14,7 @@ from app.schemas.source import (
     SourceResponse,
 )
 from app.services.rss_parser import RSSParser
-from app.utils.youtube_utils import extract_youtube_channel_id, get_youtube_rss_url
+from app.services.rss_parser import RSSParser
 
 
 class SourceService:
@@ -244,40 +244,6 @@ class SourceService:
 
     async def detect_source(self, url: str) -> SourceDetectResponse:
         """Détecte le type d'une URL source."""
-        # Vérifier si c'est YouTube
-        channel_id = extract_youtube_channel_id(url)
-        if channel_id:
-            feed_url = get_youtube_rss_url(channel_id)
-            # Parser le feed YouTube pour obtenir les métadonnées
-            try:
-                feed_data = await self.rss_parser.parse(feed_url)
-                entries = []
-                if feed_data.entries:
-                    for e in feed_data.entries[:3]:
-                        entries.append({"title": e.get("title", "")})
-                         
-                return SourceDetectResponse(
-                    detected_type="youtube",
-                    feed_url=feed_url,
-                    name=feed_data.feed.get("title", "YouTube Channel"),
-                    description=feed_data.feed.get("description", ""),
-                    logo_url=None,
-                    preview={
-                        "item_count": len(feed_data.entries) if feed_data.entries else 0,
-                        "latest_titles": [e.get("title", "") for e in entries],
-                    },
-                )
-            except Exception as e:
-                # Si le parsing échoue, retourner quand même une réponse basique
-                return SourceDetectResponse(
-                    detected_type="youtube",
-                    feed_url=feed_url,
-                    name="YouTube Channel",
-                    description="",
-                    logo_url=None,
-                    preview={"item_count": 0, "latest_titles": []},
-                )
-
         # Use new Smart Detect
         try:
             detected = await self.rss_parser.detect(url)
@@ -286,8 +252,13 @@ class SourceService:
             if detected.entries:
                 latest_titles = [e["title"] for e in detected.entries[:3]]
                 
+            # Map feed_type to valid SourceType
+            source_type = detected.feed_type
+            if source_type in ("rss", "atom"):
+                source_type = "article"
+                
             return SourceDetectResponse(
-                detected_type=detected.feed_type,
+                detected_type=source_type,
                 feed_url=detected.feed_url,
                 name=detected.title,
                 description=detected.description,
@@ -298,6 +269,8 @@ class SourceService:
                 },
             )
         except ValueError as e:
+            # Fallback for youtube if smart detect fails but structure looks like youtube?
+            # Actually RSSParser handles youtube better now.
             raise ValueError(f"Unable to parse URL as RSS feed: {str(e)}")
 
     async def _get_source_by_feed_url(self, feed_url: str) -> Optional[Source]:

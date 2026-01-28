@@ -409,9 +409,22 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
+
+        # Sanitize inputs to prevent SQL Tri-state logic issues with "NOT IN (NULL, ...)"
+        # If a set contains None, "NOT IN" evaluates to NULL (unknown) for ALL rows, causing empty results.
+        if muted_sources:
+             muted_sources = {s for s in muted_sources if s is not None}
+        
+        if muted_themes:
+             # Filter out None and empty strings
+             muted_themes = {t for t in muted_themes if t}
+        
+        if muted_topics:
+             # Filter out None and empty strings
+             muted_topics = {t for t in muted_topics if t}
 
         # Candidates to EXCLUDE:
         # 1. is_hidden == True
@@ -448,6 +461,26 @@ class RecommendationService:
                 Source.id.in_(list(followed_source_ids)) if followed_source_ids else False
             )
         )
+        
+        # Apply Personalization Filters (Mutes)
+        if muted_sources:
+             query = query.where(Source.id.notin_(list(muted_sources)))
+        
+        if muted_themes:
+             # SQL IN operator is case-sensitive, but we stored lowercase slugs. 
+             # Ensure Source.theme is compared correctly (assuming themes are lowercase in DB or we use lower())
+             query = query.where(Source.theme.in_(list(muted_themes)) == False) 
+
+        if muted_topics:
+             # Filter based on Content.topics (Array overlap)
+             # Postgres operator && (overlap). Negated with ~
+             # Fix 500: Handle NULL Content.topics explicitly
+             query = query.where(
+                 or_(
+                     Content.topics.is_(None),
+                     ~Content.topics.overlap(list(muted_topics))
+                 )
+             )
         
         # Apply content_type filter if provided
         if content_type:

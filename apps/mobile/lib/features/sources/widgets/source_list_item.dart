@@ -141,6 +141,14 @@ class SourceListItem extends StatelessWidget {
                 isNew: true,
                 color: colors.primary,
               ),
+            if (source.isCustom) ...[
+              if (isTrusted) const SizedBox(width: 8),
+              FacteurStamp(
+                text: 'PERSO',
+                isNew: true,
+                color: colors.secondary,
+              ),
+            ]
           ],
         ),
       ),

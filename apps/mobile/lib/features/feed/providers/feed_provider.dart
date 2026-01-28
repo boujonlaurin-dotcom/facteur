@@ -209,9 +209,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       await repo.muteSource(sourceId);
     } catch (e) {
       print('FeedNotifier: muteSourceById failed for $sourceId: $e');
-      // Error is caught by the consumer if necessary, but we refresh for consistency
-      await refresh();
-      rethrow;
+      // Story: On ignore l'erreur backend pour ne pas bloquer l'utilisateur
+      // On ne rafraîchit pas pour éviter de faire réapparaître l'item brutalement
     }
   }
 
@@ -229,19 +228,31 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTheme(theme);
     } catch (e) {
-      await refresh();
-      rethrow;
+      print('FeedNotifier: muteTheme failed for $theme: $e');
+      // On ignore l'erreur backend
     }
   }
 
   Future<void> muteTopic(String topic) async {
-    // For topic, we don't optimistically remove indiscriminately as we can't easily check matches client-side without complex logic.
-    // So we just call API and let next refresh handle it.
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove of all content matching this topic
+    // Since topics are often derived from themes in the current version:
+    final updatedItems = currentState.items.where((c) {
+      final itemTopic = c.progressionTopic;
+      return itemTopic != topic;
+    }).toList();
+
+    state = AsyncData(
+        FeedState(items: updatedItems, briefing: currentState.briefing));
+
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(topic);
     } catch (e) {
-      rethrow;
+      print('FeedNotifier: muteTopic failed for $topic: $e');
+      // On ignore l'erreur backend
     }
   }
 

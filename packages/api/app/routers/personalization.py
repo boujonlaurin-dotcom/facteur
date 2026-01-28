@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -69,28 +69,39 @@ async def mute_source(
 ):
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
+    print(f"\n\n🚀 [TRACER] MUTE_SOURCE CALLED AT 2026-01-28 23:38:40 for user {user_uuid} 🚀\n\n", flush=True)
+    print(f">>> MUTE_SOURCE CALLED V3 (FIX_COMMIT applied) for user {user_uuid} <<<")
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
     await user_service.get_or_create_profile(current_user_id)
-    await db.flush()  # S'assurer que le profil est persisté avant l'insert
+    await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
     
-    # Upsert: Insert if not exists, update if exists
-    stmt = pg_insert(UserPersonalization).values(
-        user_id=user_uuid,
-        muted_sources=[request.source_id]
-    ).on_conflict_do_update(
-        index_elements=['user_id'],
-        set_={
-            'muted_sources': UserPersonalization.muted_sources.op('||')([request.source_id]),
-            'updated_at': func.now()
-        }
-    )
-    
-    await db.execute(stmt)
-    await db.commit()
-    
-    return {"message": "Source mutée avec succès", "source_id": str(request.source_id)}
+    import structlog
+    logger = structlog.get_logger()
+
+    try:
+        # Upsert: Insert if not exists, update if exists
+        # Use COALESCE to handle case where muted_sources is NULL
+        stmt = pg_insert(UserPersonalization).values(
+            user_id=user_uuid,
+            muted_sources=[request.source_id]
+        ).on_conflict_do_update(
+            index_elements=['user_id'],
+            set_={
+                'muted_sources': func.coalesce(UserPersonalization.muted_sources, text("'{}'::uuid[]")).op('||')([request.source_id]),
+                'updated_at': func.now()
+            }
+        )
+        
+        await db.execute(stmt)
+        await db.commit()
+        return {"message": "Source mutée avec succès", "source_id": str(request.source_id)}
+        
+    except Exception as e:
+        logger.error("mute_source_error", error=str(e), user_id=str(user_uuid), source_id=str(request.source_id))
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du masquage de la source: {str(e)}")
 
 
 @router.post("/mute-theme")
@@ -102,27 +113,37 @@ async def mute_theme(
     """Ajoute un thème à la liste des thèmes mutés."""
     user_uuid = UUID(current_user_id)
     theme_slug = request.theme.lower().strip()
+    print(f"\n\n🚀 [TRACER] MUTE_THEME CALLED: {theme_slug} for user {user_uuid} 🚀\n\n", flush=True)
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
     await user_service.get_or_create_profile(current_user_id)
-    await db.flush()
-    
-    stmt = pg_insert(UserPersonalization).values(
-        user_id=user_uuid,
-        muted_themes=[theme_slug]
-    ).on_conflict_do_update(
-        index_elements=['user_id'],
-        set_={
-            'muted_themes': UserPersonalization.muted_themes.op('||')([theme_slug]),
-            'updated_at': func.now()
-        }
-    )
-    
-    await db.execute(stmt)
     await db.commit()
     
-    return {"message": f"Thème '{theme_slug}' muté avec succès"}
+    import structlog
+    logger = structlog.get_logger()
+
+    try:
+        stmt = pg_insert(UserPersonalization).values(
+            user_id=user_uuid,
+            muted_themes=[theme_slug]
+        ).on_conflict_do_update(
+            index_elements=['user_id'],
+            set_={
+                'muted_themes': func.coalesce(UserPersonalization.muted_themes, text("'{}'::text[]")).op('||')([theme_slug]),
+                'updated_at': func.now()
+            }
+        )
+        
+        await db.execute(stmt)
+        await db.commit()
+        
+        return {"message": f"Thème '{theme_slug}' muté avec succès"}
+
+    except Exception as e:
+        logger.error("mute_theme_error", error=str(e), user_id=str(user_uuid), theme=theme_slug)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du masquage du thème: {str(e)}")
 
 
 @router.post("/mute-topic")
@@ -134,27 +155,37 @@ async def mute_topic(
     """Ajoute un topic à la liste des topics mutés."""
     user_uuid = UUID(current_user_id)
     topic_slug = request.topic.lower().strip()
+    print(f"\n\n🚀 [TRACER] MUTE_TOPIC CALLED: {topic_slug} for user {user_uuid} 🚀\n\n", flush=True)
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
     await user_service.get_or_create_profile(current_user_id)
-    await db.flush()
-    
-    stmt = pg_insert(UserPersonalization).values(
-        user_id=user_uuid,
-        muted_topics=[topic_slug]
-    ).on_conflict_do_update(
-        index_elements=['user_id'],
-        set_={
-            'muted_topics': UserPersonalization.muted_topics.op('||')([topic_slug]),
-            'updated_at': func.now()
-        }
-    )
-    
-    await db.execute(stmt)
     await db.commit()
     
-    return {"message": f"Topic '{topic_slug}' muté avec succès"}
+    import structlog
+    logger = structlog.get_logger()
+
+    try:
+        stmt = pg_insert(UserPersonalization).values(
+            user_id=user_uuid,
+            muted_topics=[topic_slug]
+        ).on_conflict_do_update(
+            index_elements=['user_id'],
+            set_={
+                'muted_topics': func.coalesce(UserPersonalization.muted_topics, text("'{}'::text[]")).op('||')([topic_slug]),
+                'updated_at': func.now()
+            }
+        )
+        
+        await db.execute(stmt)
+        await db.commit()
+        
+        return {"message": f"Topic '{topic_slug}' muté avec succès"}
+
+    except Exception as e:
+        logger.error("mute_topic_error", error=str(e), user_id=str(user_uuid), topic=topic_slug)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du masquage du topic: {str(e)}")
 
 
 @router.delete("/unmute-source/{source_id}")
