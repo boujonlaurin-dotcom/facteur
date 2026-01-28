@@ -2,7 +2,7 @@ name: Build Flutter Web
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/mute-logic-debug ]
   workflow_dispatch:
     inputs:
       api_base_url:
