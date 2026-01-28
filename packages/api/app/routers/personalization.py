@@ -69,6 +69,7 @@ async def mute_source(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute une source à la liste des sources mutées."""
+    user_uuid = UUID(current_user_id)
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     print(f">>> MUTE_SOURCE CALLED V3 (FIX_COMMIT applied) for user {user_uuid} <<<")
     
@@ -112,6 +113,7 @@ async def mute_theme(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Ajoute un thème à la liste des thèmes mutés."""
+    user_uuid = UUID(current_user_id)
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     theme_slug = request.theme.lower().strip()
     print(f"\n\n🚀 [TRACER] MUTE_THEME CALLED: {theme_slug} for user {user_uuid} 🚀\n\n", flush=True)

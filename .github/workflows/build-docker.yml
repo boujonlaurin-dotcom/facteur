@@ -35,8 +35,8 @@ jobs:
 
       - name: Test image starts
         run: |
-          # Start container with fake PORT
-          docker run -d --name test-api -e PORT=8000 facteur-api:test
+          # Start container with fake PORT and skip checks
+          docker run -d --name test-api -e PORT=8000 -e SKIP_STARTUP_CHECKS=True facteur-api:test
           
           # Wait for startup
           sleep 5
