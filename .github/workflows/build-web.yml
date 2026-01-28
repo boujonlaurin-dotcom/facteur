@@ -37,8 +37,7 @@ jobs:
             --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
-            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
-            --web-renderer canvaskit
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}"
 
       - name: Upload Web Build as Artifact
         uses: actions/upload-artifact@v4
