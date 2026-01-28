@@ -154,7 +154,7 @@ async def mute_topic(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Ajoute un topic à la liste des topics mutés."""
+    # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_uuid = UUID(current_user_id)
     topic_slug = request.topic.lower().strip()
     print(f"\n\n🚀 [TRACER] MUTE_TOPIC CALLED: {topic_slug} for user {user_uuid} 🚀\n\n", flush=True)
