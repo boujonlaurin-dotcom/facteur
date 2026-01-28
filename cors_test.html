@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Diagnostic Test</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+
+        h1 {
+            color: #e94560;
+        }
+
+        .test {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #16213e;
+        }
+
+        .test h3 {
+            margin-top: 0;
+            color: #0f3460;
+        }
+
+        .success {
+            border-left: 4px solid #4caf50;
+        }
+
+        .error {
+            border-left: 4px solid #e94560;
+        }
+
+        .pending {
+            border-left: 4px solid #ffc107;
+        }
+
+        pre {
+            background: #0f0f23;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #c73352;
+        }
+
+        .result {
+            margin-top: 10px;
+        }
+
+        h3 {
+            color: #eee;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔬 CORS Diagnostic Test</h1>
+    <p>This page tests CORS connectivity outside of Flutter to isolate the problem.</p>
+    <p><strong>API Base URL:</strong> <code id="apiUrl">https://facteur-production.up.railway.app</code></p>
+
+    <div>
+        <button onclick="runAllTests()">▶️ Run All Tests</button>
+        <button onclick="clearResults()">🗑️ Clear Results</button>
+    </div>
+
+    <div id="test1" class="test pending">
+        <h3>Test 1: Health Check (GET without Auth)</h3>
+        <p>Simple GET to <code>/api/health</code> - should return 200 OK</p>
+        <div class="result" id="result1"></div>
+    </div>
+
+    <div id="test2" class="test pending">
+        <h3>Test 2: OPTIONS Preflight</h3>
+        <p>Manual OPTIONS request to <code>/api/health</code> - checks preflight handling</p>
+        <div class="result" id="result2"></div>
+    </div>
+
+    <div id="test3" class="test pending">
+        <h3>Test 3: Feed Endpoint (GET with Custom Headers)</h3>
+        <p>GET to <code>/api/feed/</code> with Accept/Content-Type headers - triggers CORS preflight</p>
+        <div class="result" id="result3"></div>
+    </div>
+
+    <div id="test4" class="test pending">
+        <h3>Test 4: Feed with Authorization Header</h3>
+        <p>GET to <code>/api/feed/</code> with fake Authorization header - simulates Dio behavior</p>
+        <div class="result" id="result4"></div>
+    </div>
+
+    <div id="test5" class="test pending">
+        <h3>Test 5: XHR vs Fetch Comparison</h3>
+        <p>Same request using XMLHttpRequest instead of Fetch</p>
+        <div class="result" id="result5"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://facteur-production.up.railway.app';
+
+        function formatResponse(response, data, startTime) {
+            const duration = Date.now() - startTime;
+            return `
+✅ Status: ${response.status} ${response.statusText}
+⏱️ Duration: ${duration}ms
+📋 Headers: 
+${[...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+📦 Body: ${JSON.stringify(data, null, 2)}
+            `.trim();
+        }
+
+        function formatError(error, startTime) {
+            const duration = Date.now() - startTime;
+            return `
+❌ Error: ${error.message || error}
+⏱️ Duration: ${duration}ms
+🔍 Type: ${error.name || 'Unknown'}
+📍 This usually indicates a CORS block or network issue
+            `.trim();
+        }
+
+        async function test1() {
+            const el = document.getElementById('test1');
+            const result = document.getElementById('result1');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                const response = await fetch(`${API_URL}/api/health`);
+                const data = await response.json();
+                result.innerHTML = `<pre>${formatResponse(response, data, start)}</pre>`;
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = `<pre>${formatError(error, start)}</pre>`;
+                el.className = 'test error';
+            }
+        }
+
+        async function test2() {
+            const el = document.getElementById('test2');
+            const result = document.getElementById('result2');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                const response = await fetch(`${API_URL}/api/health`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Access-Control-Request-Method': 'GET',
+                        'Access-Control-Request-Headers': 'authorization,content-type',
+                        'Origin': window.location.origin
+                    }
+                });
+                const text = await response.text();
+                result.innerHTML = `<pre>${formatResponse(response, text || '(empty body)', start)}</pre>`;
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = `<pre>${formatError(error, start)}</pre>`;
+                el.className = 'test error';
+            }
+        }
+
+        async function test3() {
+            const el = document.getElementById('test3');
+            const result = document.getElementById('result3');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                const response = await fetch(`${API_URL}/api/feed/`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                // Truncate feed data for display
+                const truncated = Array.isArray(data) ? `Array(${data.length} items)` : data;
+                result.innerHTML = `<pre>${formatResponse(response, truncated, start)}</pre>`;
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = `<pre>${formatError(error, start)}</pre>`;
+                el.className = 'test error';
+            }
+        }
+
+        async function test4() {
+            const el = document.getElementById('test4');
+            const result = document.getElementById('result4');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                const response = await fetch(`${API_URL}/api/feed/`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer fake-token-for-testing-cors'
+                    }
+                });
+                const data = await response.json();
+                const truncated = Array.isArray(data) ? `Array(${data.length} items)` : data;
+                result.innerHTML = `<pre>${formatResponse(response, truncated, start)}</pre>`;
+                // 401 is expected here (invalid token) but CORS should pass
+                el.className = (response.ok || response.status === 401 || response.status === 403) ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = `<pre>${formatError(error, start)}</pre>`;
+                el.className = 'test error';
+            }
+        }
+
+        function test5() {
+            const el = document.getElementById('test5');
+            const result = document.getElementById('result5');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', `${API_URL}/api/health`, true);
+
+            xhr.onload = function () {
+                const duration = Date.now() - start;
+                const headers = xhr.getAllResponseHeaders();
+                result.innerHTML = `<pre>
+✅ Status: ${xhr.status} ${xhr.statusText}
+⏱️ Duration: ${duration}ms
+📋 Headers: 
+${headers}
+📦 Body: ${xhr.responseText}
+                </pre>`;
+                el.className = xhr.status >= 200 && xhr.status < 300 ? 'test success' : 'test error';
+            };
+
+            xhr.onerror = function () {
+                const duration = Date.now() - start;
+                result.innerHTML = `<pre>
+❌ XHR Network Error
+⏱️ Duration: ${duration}ms
+📍 This indicates a CORS block at the network level
+                </pre>`;
+                el.className = 'test error';
+            };
+
+            xhr.send();
+        }
+
+        async function runAllTests() {
+            await test1();
+            await test2();
+            await test3();
+            await test4();
+            test5();
+        }
+
+        function clearResults() {
+            for (let i = 1; i <= 5; i++) {
+                document.getElementById(`test${i}`).className = 'test pending';
+                document.getElementById(`result${i}`).innerHTML = '';
+            }
+        }
+    </script>
+</body>
+
+</html>

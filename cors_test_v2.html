@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Deep Diagnostic</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+
+        h1 {
+            color: #e94560;
+        }
+
+        .test {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #16213e;
+        }
+
+        .success {
+            border-left: 4px solid #4caf50;
+        }
+
+        .error {
+            border-left: 4px solid #e94560;
+        }
+
+        .pending {
+            border-left: 4px solid #ffc107;
+        }
+
+        pre {
+            background: #0f0f23;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 11px;
+            white-space: pre-wrap;
+        }
+
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #c73352;
+        }
+
+        h3 {
+            color: #eee;
+            margin-top: 0;
+        }
+
+        .info {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        code {
+            background: #0f0f23;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔬 CORS Deep Diagnostic v2</h1>
+
+    <div class="info">
+        <strong>Current Origin:</strong> <code id="currentOrigin"></code><br>
+        <strong>API Target:</strong> <code>https://facteur-production.up.railway.app</code><br>
+        <strong>Protocol:</strong> <code id="protocol"></code>
+        <p id="warning" style="color: #ffc107; display: none;">⚠️ Running from file:// - CORS may not work correctly.
+            Use serve_test.py instead!</p>
+    </div>
+
+    <div>
+        <button onclick="runAllTests()">▶️ Run All Tests</button>
+        <button onclick="clearResults()">🗑️ Clear</button>
+    </div>
+
+    <div id="test1" class="test pending">
+        <h3>Test 1: Fetch - Simple GET (no custom headers)</h3>
+        <div class="result" id="result1"></div>
+    </div>
+
+    <div id="test2" class="test pending">
+        <h3>Test 2: Fetch - GET with mode:'cors' explicit</h3>
+        <div class="result" id="result2"></div>
+    </div>
+
+    <div id="test3" class="test pending">
+        <h3>Test 3: Fetch - GET with mode:'no-cors'</h3>
+        <div class="result" id="result3"></div>
+    </div>
+
+    <div id="test4" class="test pending">
+        <h3>Test 4: XHR - GET (baseline)</h3>
+        <div class="result" id="result4"></div>
+    </div>
+
+    <div id="test5" class="test pending">
+        <h3>Test 5: Fetch - with Authorization header (triggers preflight)</h3>
+        <div class="result" id="result5"></div>
+    </div>
+
+    <div id="test6" class="test pending">
+        <h3>Test 6: curl simulation via fetch with all headers</h3>
+        <div class="result" id="result6"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://facteur-production.up.railway.app';
+
+        // Show current origin info
+        document.getElementById('currentOrigin').textContent = window.location.origin;
+        document.getElementById('protocol').textContent = window.location.protocol;
+        if (window.location.protocol === 'file:') {
+            document.getElementById('warning').style.display = 'block';
+        }
+
+        function formatResult(type, status, headers, body, duration, error = null) {
+            if (error) {
+                return `<pre>❌ ERROR: ${error}
+⏱️ Duration: ${duration}ms
+📍 This usually indicates CORS blocking or network error</pre>`;
+            }
+            return `<pre>✅ Status: ${status}
+⏱️ Duration: ${duration}ms
+📋 Response Headers:
+${headers}
+📦 Body: ${typeof body === 'object' ? JSON.stringify(body, null, 2) : body}</pre>`;
+        }
+
+        async function test1() {
+            const el = document.getElementById('test1');
+            const result = document.getElementById('result1');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                // Simplest possible fetch - no options
+                const response = await fetch(`${API_URL}/api/health`);
+                const headers = [...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n');
+                const data = await response.json();
+                result.innerHTML = formatResult('fetch', `${response.status} ${response.statusText}`, headers, data, Date.now() - start);
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = formatResult('fetch', null, null, null, Date.now() - start, error.message);
+                el.className = 'test error';
+            }
+        }
+
+        async function test2() {
+            const el = document.getElementById('test2');
+            const result = document.getElementById('result2');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                // Explicit cors mode
+                const response = await fetch(`${API_URL}/api/health`, {
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                const headers = [...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n');
+                const data = await response.json();
+                result.innerHTML = formatResult('fetch', `${response.status} ${response.statusText}`, headers, data, Date.now() - start);
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = formatResult('fetch', null, null, null, Date.now() - start, error.message);
+                el.className = 'test error';
+            }
+        }
+
+        async function test3() {
+            const el = document.getElementById('test3');
+            const result = document.getElementById('result3');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                // no-cors mode - will return opaque response
+                const response = await fetch(`${API_URL}/api/health`, {
+                    mode: 'no-cors'
+                });
+                result.innerHTML = `<pre>Response type: ${response.type}
+Status: ${response.status} (always 0 for opaque)
+⏱️ Duration: ${Date.now() - start}ms
+📍 no-cors returns opaque response - can't read body but request succeeded if no error</pre>`;
+                el.className = 'test success';
+            } catch (error) {
+                result.innerHTML = formatResult('fetch', null, null, null, Date.now() - start, error.message);
+                el.className = 'test error';
+            }
+        }
+
+        function test4() {
+            const el = document.getElementById('test4');
+            const result = document.getElementById('result4');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', `${API_URL}/api/health`, true);
+
+            xhr.onload = function () {
+                const headers = xhr.getAllResponseHeaders();
+                result.innerHTML = formatResult('xhr', `${xhr.status} ${xhr.statusText}`, headers, xhr.responseText, Date.now() - start);
+                el.className = xhr.status >= 200 && xhr.status < 300 ? 'test success' : 'test error';
+            };
+
+            xhr.onerror = function () {
+                result.innerHTML = formatResult('xhr', null, null, null, Date.now() - start, 'Network Error');
+                el.className = 'test error';
+            };
+
+            xhr.send();
+        }
+
+        async function test5() {
+            const el = document.getElementById('test5');
+            const result = document.getElementById('result5');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                // This WILL trigger a preflight due to Authorization header
+                const response = await fetch(`${API_URL}/api/feed/`, {
+                    headers: {
+                        'Authorization': 'Bearer test-token',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const headers = [...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n');
+                const data = await response.json();
+                result.innerHTML = formatResult('fetch+auth', `${response.status} ${response.statusText}`, headers, data, Date.now() - start);
+                // 401 or 403 is expected (bad token) but CORS should pass
+                el.className = (response.status === 401 || response.status === 403) ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = formatResult('fetch+auth', null, null, null, Date.now() - start, error.message);
+                el.className = 'test error';
+            }
+        }
+
+        async function test6() {
+            const el = document.getElementById('test6');
+            const result = document.getElementById('result6');
+            el.className = 'test pending';
+            const start = Date.now();
+
+            try {
+                // Mimic what Dio might send
+                const response = await fetch(`${API_URL}/api/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                const headers = [...response.headers.entries()].map(([k, v]) => `  ${k}: ${v}`).join('\n');
+                const data = await response.json();
+                result.innerHTML = formatResult('fetch+headers', `${response.status} ${response.statusText}`, headers, data, Date.now() - start);
+                el.className = response.ok ? 'test success' : 'test error';
+            } catch (error) {
+                result.innerHTML = formatResult('fetch+headers', null, null, null, Date.now() - start, error.message);
+                el.className = 'test error';
+            }
+        }
+
+        async function runAllTests() {
+            await test1();
+            await test2();
+            await test3();
+            test4(); // XHR is callback-based
+            await new Promise(r => setTimeout(r, 500)); // Wait for XHR
+            await test5();
+            await test6();
+        }
+
+        function clearResults() {
+            for (let i = 1; i <= 6; i++) {
+                document.getElementById(`test${i}`).className = 'test pending';
+                document.getElementById(`result${i}`).innerHTML = '';
+            }
+        }
+    </script>
+</body>
+
+</html>
