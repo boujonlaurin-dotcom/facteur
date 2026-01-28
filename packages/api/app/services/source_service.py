@@ -252,8 +252,8 @@ class SourceService:
                 description=detected.description,
                 logo_url=detected.logo_url,
                 preview={
-                    "item_count": len(entries),
-                    "latest_title": entries[0].get("title") if entries else None,
+                    "item_count": len(detected.entries),
+                    "latest_title": detected.entries[0].get("title") if detected.entries else None,
                 },
             )
         except ValueError as e:

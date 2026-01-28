@@ -34,14 +34,21 @@ async def check_migrations_up_to_date():
     """
     logger.info("startup_check_migrations_start")
     
-    # Check for bypass flag (used during migration rollout)
-    if os.getenv(MIGRATION_BYPASS_ENV) == "1":
+    # Check for bypass flag (used during migration rollout or CI)
+    if os.getenv(MIGRATION_BYPASS_ENV) == "1" or os.getenv("SKIP_STARTUP_CHECKS") == "True":
         logger.warning(
             "startup_migration_check_bypassed",
-            reason=f"{MIGRATION_BYPASS_ENV}=1",
-            action="App will start without migration validation. Remove flag after migrations complete."
+            reason="Bypass flag detected",
+            action="App will start without migration validation."
         )
         return  # Continue boot without migration check
+
+    # Auto-skip if no DATABASE_URL is set (avoids crash during basic Docker boot tests)
+    from app.config import get_settings
+    settings = get_settings()
+    if not os.environ.get("DATABASE_URL") and not settings.is_production:
+        logger.warning("startup_migration_check_skipped_no_db", reason="DATABASE_URL not set in non-production")
+        return
     
     # 1. Get HEAD revision from code (alembic.ini)
     try:

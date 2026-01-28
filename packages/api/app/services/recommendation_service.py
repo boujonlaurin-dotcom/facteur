@@ -128,14 +128,16 @@ class RecommendationService:
              return results
         
         # 2. Get Candidates (Top 500 recent unseen contents)
-        # 500 is heuristic to ensure we have enough diversity after scoring, 
-        # but small enough to sort in memory quickly.
         candidates = await self._get_candidates(
             user_id, 
             limit_candidates=500,
             content_type=content_type,
             mode=mode,
-            followed_source_ids=followed_source_ids
+            followed_source_ids=followed_source_ids,
+            # Story 4.7 : Filter out muted items at DB level
+            muted_sources=muted_sources,
+            muted_themes=muted_themes,
+            muted_topics=muted_topics
         )
         
         # 3. Score Candidates using ScoringEngine
