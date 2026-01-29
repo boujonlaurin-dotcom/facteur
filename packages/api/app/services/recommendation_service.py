@@ -128,6 +128,11 @@ class RecommendationService:
              return results
         
         # 2. Get Candidates (Top 500 recent unseen contents)
+        # Story 4.7: Personalization filters
+        muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
+        muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
+        muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
+
         candidates = await self._get_candidates(
             user_id, 
             limit_candidates=500,
@@ -143,10 +148,6 @@ class RecommendationService:
         # 3. Score Candidates using ScoringEngine
         scored_candidates = []
         now = datetime.datetime.utcnow()
-        
-        muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
-        muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
-        muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
         
         # Context creation
         context = ScoringContext(
@@ -472,7 +473,6 @@ class RecommendationService:
              # SQL IN operator is case-sensitive, but we stored lowercase slugs. 
              # Ensure Source.theme is compared correctly (assuming themes are lowercase in DB or we use lower())
              query = query.where(~Source.theme.in_(list(muted_themes)))
-             query = query.where(Source.theme.in_(list(muted_themes)) == False) 
 
         if muted_topics:
              # Filter based on Content.topics (Array overlap)
