@@ -92,9 +92,10 @@ class TestCoreLayerThemeMatching:
         # Act
         score = layer.score(content, context)
 
-        # Assert
-        # Pas de bonus THEME_MATCH, seulement STANDARD_SOURCE (10) + recency
-        assert score < ScoringWeights.THEME_MATCH
+        # Assert that THEME_MATCH bonus was not added
+        # Score should be STANDARD_SOURCE (10) + recency (varies)
+        assert score >= ScoringWeights.STANDARD_SOURCE
+        assert score < ScoringWeights.STANDARD_SOURCE + 40  # Reasonable recency bound
         # Vérifie qu'aucune raison de thème n'est ajoutée
         reasons = context.reasons.get(content.id, [])
         theme_reasons = [r for r in reasons if "Thème" in r.get("details", "")]
