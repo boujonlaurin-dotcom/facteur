@@ -38,7 +38,7 @@ def upgrade() -> None:
     
     # Update existing sources with French labels
     for old_label, new_slug in TAXONOMY_MAP.items():
-        op.execute(f"UPDATE sources SET theme = '{new_slug}' WHERE theme = '{old_label}'")
+        op.execute(sa.text("UPDATE sources SET theme = :new WHERE theme = :old").bindparams(new=new_slug, old=old_label))
     
     # Log the migration
     op.execute("SELECT COUNT(*) FROM sources WHERE theme IN ('tech', 'society', 'environment', 'economy', 'politics', 'culture', 'science', 'international')")
