@@ -23,8 +23,10 @@ class RSSParser:
             timeout=10.0,
             follow_redirects=True,
             headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            cookies={"CONSENT": "YES+cb.20210328-17-p0.en+FX+430"}
         )
 
     async def close(self):
@@ -73,6 +75,7 @@ class RSSParser:
         # 1. Try fetching and parsing
         try:
             response = await self.client.get(url)
+            logger.info("Fetched URL", url=url, status_code=response.status_code)
             response.raise_for_status()
             content = response.text
         except Exception as e:
@@ -84,19 +87,20 @@ class RSSParser:
         
         # Check if direct parse worked
         if not feed_data.bozo and len(feed_data.entries) > 0:
-            return self._format_response(url, feed_data)
+            return await self._format_response(url, feed_data)
         
         # If bozo (malformed) but has entries, we might accept it?
         # But often HTML pages return non-empty 'entries' because feedparser is too lenient.
         # Strict check: Feed title must exist.
         if len(feed_data.entries) > 0 and 'title' in feed_data.feed:
-             return self._format_response(url, feed_data)
+             return await self._format_response(url, feed_data)
 
         # 2. HTML Auto-Discovery
         soup = BeautifulSoup(content, 'html.parser')
         
         # SPECIAL: YouTube Handle Resolution
         if "youtube.com" in url or "youtu.be" in url:
+            logger.info("YouTube URL detected, looking for channel ID", url=url)
             channel_id = None
             
             # 1. Try meta tag (channelId or identifier)
@@ -124,12 +128,90 @@ class RSSParser:
                 if match:
                     channel_id = match.group(1)
             
-            # 4. Regex fallback for identifier meta (if soup failed)
+            # 4. Canonical link check (Wait, often points to /channel/UC...)
+            if not channel_id:
+                canonical = soup.find("link", rel="canonical")
+                if canonical and "channel/" in (canonical.get("href") or ""):
+                    channel_id = canonical["href"].split("channel/")[-1]
+                elif canonical and "@" in (canonical.get("href") or ""):
+                    # Still a handle, we might need to retry with a better cookie
+                    logger.info("Canonical is still a handle, trying with alternative CONSENT cookie", url=url)
+
+            # 5. Redirection URL extraction (Look for 'continue' param)
+            if not channel_id:
+                # Often present in consent pages: <a href="...continue=https%3A%2F%2Fwww.youtube.com%2Fchannel%2FUC...">
+                all_links = soup.find_all("a", href=True)
+                for link in all_links:
+                    href = link["href"]
+                    if "continue=" in href and "channel%2FUC" in href:
+                        import urllib.parse
+                        parsed_href = urllib.parse.urlparse(href)
+                        query_params = urllib.parse.parse_qs(parsed_href.query)
+                        cont_url = query_params.get("continue", [None])[0]
+                        if cont_url and "channel/" in cont_url:
+                           channel_id = cont_url.split("channel/")[-1].split("?")[0]
+                           logger.info("Extracted channel ID from continue param", channel_id=channel_id)
+                           break
+
+            # 6. Retry with /about suffix if still nothing
+            if not channel_id and "/@" in url:
+                about_url = url.rstrip("/") + "/about"
+                logger.info("Retrying YouTube detection with /about suffix", about_url=about_url)
+                try:
+                    about_resp = await self.client.get(about_url)
+                    if about_resp.status_code == 200:
+                        about_content = about_resp.text
+                        match = re.search(r'"channelId":"(UC[\w-]+)"', about_content)
+                        if match:
+                            channel_id = match.group(1)
+                            logger.info("Resolved YouTube Channel ID from /about page", channel_id=channel_id)
+                except Exception as e:
+                    logger.warning("Retry with /about failed", error=str(e))
+
+            # 7. Regex fallback for identifier meta (if soup failed)
             if not channel_id:
                 import re
                 match = re.search(r'itemprop="identifier" content="([\w-]+)"', content)
                 if match:
                     channel_id = match.group(1)
+                    
+            # 8. Retry with a known robust CONSENT cookie if still nothing
+            if not channel_id and ("consent.youtube.com" in content or "canonical" in str(soup.find("link", rel="canonical"))):
+                 logger.info("Detected consent wall or missing ID, retrying with robust cookie", url=url)
+                 try:
+                     retry_resp = await self.client.get(url, cookies={"CONSENT": "YES+cb.20230531-17-p0.en+FX+908"})
+                     if retry_resp.status_code == 200:
+                         retry_content = retry_resp.text
+                         match = re.search(r'"channelId":"(UC[\w-]+)"', retry_content)
+                         if match:
+                             channel_id = match.group(1)
+                             logger.info("Resolved YouTube Channel ID after retry with cookie", channel_id=channel_id)
+                 except Exception as e:
+                     logger.warning("Retry with robust cookie failed", error=str(e))
+
+            # 9. Ultimate Fallback: YouTube Search discovery (Bypasses most consent walls)
+            if not channel_id and "/@" in url:
+                handle = url.split("@")[-1].split("/")[0].split("?")[0]
+                search_url = f"https://www.youtube.com/results?search_query=@{handle}&sp=EgIQAg%253D%253D"
+                logger.info("Trying YouTube Search discovery for ID", search_url=search_url)
+                try:
+                    search_resp = await self.client.get(search_url)
+                    if search_resp.status_code == 200:
+                        search_content = search_resp.text
+                        # Look for channelId in the search results JS
+                        match = re.search(r'"channelId":"(UC[\w-]+)"', search_content)
+                        if match:
+                            channel_id = match.group(1)
+                            logger.info("Resolved YouTube Channel ID via search discovery", channel_id=channel_id)
+                except Exception as e:
+                    logger.warning("Search discovery failed", error=str(e))
+             
+            if not channel_id:
+                logger.warning("Failed to resolve YouTube Channel ID", url=url)
+                # print(f"DEBUG YOUTUBE CONTENT: {content[:2000]}") 
+                with open("debug_youtube.html", "w") as f:
+                    f.write(content)
+                logger.info("Dumped YouTube HTML to debug_youtube.html")
             
             if channel_id:
                 logger.info("Resolved YouTube Channel ID", handle=url, channel_id=channel_id)
@@ -142,7 +224,7 @@ class RSSParser:
                     # Feedparser inside executor
                     yt_feed = await loop.run_in_executor(None, feedparser.parse, feed_resp.text)
                     if len(yt_feed.entries) > 0:
-                        return self._format_response(rss_url, yt_feed)
+                        return await self._format_response(rss_url, yt_feed)
                 except Exception as e:
                     logger.warning("Failed to parse resolved YouTube feed", rss_url=rss_url, error=str(e))
 
@@ -180,7 +262,7 @@ class RSSParser:
                     feed_resp.raise_for_status()
                     found_feed_data = await loop.run_in_executor(None, feedparser.parse, feed_resp.text)
                     if len(found_feed_data.entries) > 0:
-                         return self._format_response(found_url, found_feed_data)
+                         return await self._format_response(found_url, found_feed_data)
                 except Exception as e:
                     logger.warning("Failed to parse discovered feed", rss_url=found_url, error=str(e))
         
@@ -199,20 +281,24 @@ class RSSParser:
                          suffix_feed = await loop.run_in_executor(None, feedparser.parse, resp.text)
                          if not suffix_feed.bozo and len(suffix_feed.entries) > 0:
                               logger.info("Found valid feed via suffix", url=try_url)
-                              return self._format_response(try_url, suffix_feed)
+                              return await self._format_response(try_url, suffix_feed)
                  except Exception:
                      continue
 
         # If we reach here, nothing found
         raise ValueError("No RSS feed found on this page.")
 
-    def _format_response(self, url: str, feed_data) -> DetectedFeed:
+    async def _format_response(self, url: str, feed_data) -> DetectedFeed:
         feed = feed_data.feed
         
         # Detect type
         feed_type = "rss"
         if "atom" in feed_data.version:
             feed_type = "atom"
+            
+        # SPECIAL: Check if it's a YouTube feed
+        if "youtube.com/feeds/videos.xml" in url:
+            feed_type = "youtube"
             
         # Image
         logo = None

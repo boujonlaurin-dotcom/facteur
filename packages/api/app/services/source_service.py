@@ -53,6 +53,7 @@ class SourceService:
                 logo_url=s.logo_url,
                 is_curated=False,
                 is_custom=True,
+                is_trusted=True,
                 content_count=0,  # TODO
                 bias_stance=s.bias_stance.value,
                 reliability_score=s.reliability_score.value,
@@ -118,6 +119,8 @@ class SourceService:
 
         if existing:
             source = existing
+            if source.theme == "custom":
+                 source.theme = self._guess_theme(source.name, source.description or "")
         else:
             # Créer la nouvelle source
             source = Source(
@@ -126,7 +129,7 @@ class SourceService:
                 url=url,
                 feed_url=detection.feed_url,
                 type=detection.detected_type,
-                theme="custom",  # Les sources custom n'ont pas de thème défini
+                theme=self._guess_theme(name or detection.name, detection.description or ""),
                 description=detection.description,
                 logo_url=detection.logo_url,
                 is_curated=False,
@@ -145,6 +148,12 @@ class SourceService:
 
         await self.db.flush()
 
+        # Trigger immediate sync in background
+        from app.workers.rss_sync import sync_source
+        import asyncio
+        asyncio.create_task(sync_source(str(source.id)))
+        logger.info("Triggered background sync for new source", source_id=source.id)
+
         return SourceResponse(
             id=source.id,
             name=source.name,
@@ -155,6 +164,7 @@ class SourceService:
             logo_url=source.logo_url,
             is_curated=False,
             is_custom=True,
+            is_trusted=True,
             content_count=0,
             bias_stance=source.bias_stance.value,
             reliability_score=source.reliability_score.value,
@@ -232,6 +242,11 @@ class SourceService:
 
     async def detect_source(self, url: str) -> SourceDetectResponse:
         """Détecte le type d'une URL source."""
+        
+        # Decommission YouTube for now
+        if "youtube.com" in url or "youtu.be" in url:
+            raise ValueError("YouTube handles are currently disabled. Please use RSS feeds for newsletters or journals.")
+
         # Use new Smart Detect
         try:
             detected = await self.rss_parser.detect(url)
@@ -251,6 +266,7 @@ class SourceService:
                 name=detected.title,
                 description=detected.description,
                 logo_url=detected.logo_url,
+                theme=self._guess_theme(detected.title, detected.description or ""),
                 preview={
                     "item_count": len(detected.entries),
                     "latest_title": detected.entries[0].get("title") if detected.entries else None,
@@ -265,5 +281,31 @@ class SourceService:
         """Récupère une source par son feed_url."""
         query = select(Source).where(Source.feed_url == feed_url)
         result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
+
+    def _guess_theme(self, name: str, description: str) -> str:
+        """Devine le thème d'une source à partir de son nom et description."""
+        text = f"{name} {description}".lower()
+        
+        keywords = {
+            "tech": ["ai", "ia", "tech", "crypto", "web3", "digital", "logiciel", "startup", "innov", "code", "dev"],
+            "society_climate": ["société", "santé", "justice", "éduc", "travail", "fémin", "urban", "logement", "climat", "écolo", "environ", "vert", "durable", "énergi", "transit", "biodiv"],
+            "economy": ["économ", "financ", "marché", "inflat", "business", "argent", "bourse"],
+            "politics": ["politi", "élection", "démocra", "gouvern", "activis", "loi"],
+            "culture_ideas": ["cultur", "philoso", "art", "cinéma", "livre", "média", "idée", "littérat", "musique"],
+            "science": ["scien", "recherch", "physiq", "biolo", "espace", "laborat"],
+            "geopolitics": ["géopolit", "internation", "monde", "diploma", "guerre", "conflit"],
+        }
+        
+        scores = {t: 0 for t in keywords}
+        for theme, kws in keywords.items():
+            for kw in kws:
+                if kw in text:
+                    scores[theme] += 1
+        
+        best_theme = max(scores, key=scores.get)
+        if scores[best_theme] > 0:
+            return best_theme
+            
+        return "society_climate" # Default common theme for better recs vs 'custom'
 

@@ -55,6 +55,7 @@ class SourceDetectResponse(BaseModel):
     name: str
     description: Optional[str] = None
     logo_url: Optional[str] = None
+    theme: str
     preview: Optional[dict] = None  # item_count, latest_title
 
 
