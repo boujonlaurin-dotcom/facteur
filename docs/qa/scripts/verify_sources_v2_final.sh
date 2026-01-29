@@ -18,12 +18,18 @@ echo "---------------------------------------------------"
 # 1. ENVIRONMENT CHECK
 echo -e "🔍 [Step 1] Checking Environment..."
 cd packages/api
-if [ ! -d "venv" ]; then
-    echo "Creating venv..."
-    python3 -m venv venv
+
+if [ -z "$GITHUB_ACTIONS" ]; then
+    if [ ! -d "venv" ]; then
+        echo "Creating venv..."
+        python3 -m venv venv
+    fi
+    source venv/bin/activate
+    # pip install -r requirements.txt > /dev/null
+else
+    echo "Running in GitHub Actions - using pre-installed environment."
 fi
-source venv/bin/activate
-# pip install -r requirements.txt > /dev/null
+
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 echo -e "${GREEN}✅ Environment Ready.${NC}"
 
