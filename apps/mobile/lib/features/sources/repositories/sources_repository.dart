@@ -8,7 +8,7 @@ class SourcesRepository {
 
   Future<List<Source>> getAllSources() async {
     try {
-      final response = await _apiClient.dio.get<dynamic>('sources/catalog');
+      final response = await _apiClient.dio.get<dynamic>('sources');
 
       if (response.statusCode == 200) {
         final data = response.data;

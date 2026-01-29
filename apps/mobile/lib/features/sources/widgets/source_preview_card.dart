@@ -87,11 +87,32 @@ class SourcePreviewCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      detectedType.toUpperCase(),
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
+                    Row(
+                      children: [
+                        Text(
+                          detectedType.toUpperCase(),
+                          style:
+                              Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: colors.textTertiary,
+                                  ),
+                        ),
+                        if (data['theme'] != null) ...[
+                          Text(
+                            " • ",
+                            style: TextStyle(color: colors.textTertiary),
                           ),
+                          Text(
+                            _getThemeLabel(data['theme'] as String),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: colors.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -165,5 +186,29 @@ class SourcePreviewCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _getThemeLabel(String slug) {
+    switch (slug.toLowerCase()) {
+      case 'tech':
+        return 'Tech & Futur';
+      case 'society_climate':
+        return 'Société & Climat';
+      case 'economy':
+        return 'Économie';
+      case 'environment':
+        return 'Environnement';
+      case 'politics':
+        return 'Politique';
+      case 'culture_ideas':
+        return 'Culture & Idées';
+      case 'science':
+        return 'Science';
+      case 'geopolitics':
+        return 'Géopolitique';
+      default:
+        if (slug == 'custom' || slug.isEmpty) return 'Général';
+        return slug[0].toUpperCase() + slug.substring(1);
+    }
   }
 }

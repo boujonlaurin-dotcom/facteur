@@ -79,6 +79,11 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             );
           }
 
+          final curatedSources =
+              filteredSources.where((s) => s.isCurated).toList();
+          final customSources =
+              filteredSources.where((s) => s.isCustom).toList();
+
           return Column(
             children: [
               // Barre de recherche
@@ -107,36 +112,68 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
               ),
 
               Expanded(
-                child: ListView.builder(
+                child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filteredSources.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      if (_searchQuery.isNotEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
+                  children: [
+                    if (_searchQuery.isEmpty)
+                      Padding(
                         padding: const EdgeInsets.only(bottom: 24.0),
                         child: Text(
-                          'Indiquez-nous vos sources de confiance.\n(La liste ci-dessous est une pré-sélection qui sera prochainement élargie).',
+                          'Indiquez-nous vos sources de confiance !',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     color: colors.textSecondary,
                                     height: 1.5,
                                   ),
                         ),
-                      );
-                    }
-                    final source = filteredSources[index - 1];
-                    return SourceListItem(
-                      source: source,
-                      onTap: () {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .toggleTrust(source.id, source.isTrusted);
-                      },
-                    );
-                  },
+                      ),
+                    if (customSources.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12.0),
+                        child: Text(
+                          'Mes sources personnalisées',
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: colors.textSecondary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                      ),
+                      ...customSources.map((source) => SourceListItem(
+                            source: source,
+                            onTap: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleTrust(source.id, source.isTrusted);
+                            },
+                          )),
+                      const SizedBox(height: 16),
+                    ],
+                    if (curatedSources.isNotEmpty) ...[
+                      if (customSources.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12.0),
+                          child: Text(
+                            'Sources suggérées',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                        ),
+                      ...curatedSources.map((source) => SourceListItem(
+                            source: source,
+                            onTap: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleTrust(source.id, source.isTrusted);
+                            },
+                          )),
+                    ],
+                  ],
                 ),
               ),
             ],

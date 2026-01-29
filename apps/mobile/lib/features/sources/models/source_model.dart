@@ -200,23 +200,25 @@ class Source {
     switch (theme?.toLowerCase()) {
       case 'tech':
         return 'Tech & Futur';
-      case 'geopolitics':
-      case 'géopolitique':
-        return 'Géopolitique';
-      case 'economy':
-      case 'économie':
-        return 'Économie';
       case 'society_climate':
-      case 'société_climat':
         return 'Société & Climat';
+      case 'economy':
+        return 'Économie';
+      case 'environment':
+        return 'Environnement';
+      case 'politics':
+        return 'Politique';
       case 'culture_ideas':
-      case 'culture_idées':
         return 'Culture & Idées';
-      case 'other':
-        return 'Autre';
+      case 'science':
+        return 'Science';
+      case 'geopolitics':
+        return 'Géopolitique';
       default:
         // Capitalize first letter if not in mapping
-        if (theme == null || theme!.isEmpty) return 'Général';
+        if (theme == null || theme!.isEmpty || theme == 'custom') {
+          return 'Général';
+        }
         return theme![0].toUpperCase() + theme!.substring(1);
     }
   }

@@ -65,7 +65,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       await repository.addCustomSource(url, name: name);
 
       if (mounted) {
-        NotificationService.showSuccess('Source ajoutée avec succès !');
+        NotificationService.showSuccess(
+            'Source ajoutée ! Ses articles apparaîtront dans ton feed d\'ici 1 à 2 minutes.');
         // Refresh sources list
         ref.invalidate(userSourcesProvider);
         context.pop();
@@ -115,7 +116,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               )
             else ...[
               Text(
-                'Colle l\'URL d\'un flux RSS, d\'une chaîne YouTube ou d\'un podcast.',
+                'Colle l\'URL d\'un flux RSS ou d\'un journal en ligne (Substack, Le Monde, etc.).',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textSecondary,
                     ),
@@ -156,14 +157,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               const SizedBox(height: 12),
               _ExampleUrl(
                 icon: PhosphorIcons.rss(PhosphorIconsStyle.regular),
-                label: 'Flux RSS',
-                example: 'https://example.com/feed.xml',
-              ),
-              const SizedBox(height: 8),
-              _ExampleUrl(
-                icon: PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
-                label: 'Chaîne YouTube',
-                example: 'https://youtube.com/@channel',
+                label: 'Flux RSS / Newsletter',
+                example: 'https://monjournal.substack.com/feed',
               ),
               const SizedBox(height: 8),
               _ExampleUrl(
