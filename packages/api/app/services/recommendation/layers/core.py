@@ -40,6 +40,11 @@ class CoreLayer(BaseScoringLayer):
         if content.source_id in context.followed_source_ids:
             score += ScoringWeights.TRUSTED_SOURCE
             context.add_reason(content.id, self.name, ScoringWeights.TRUSTED_SOURCE, "Source de confiance")
+            
+            # Bonus +10 pour les sources ajoutées manuellement
+            if content.source_id in context.custom_source_ids:
+                score += ScoringWeights.CUSTOM_SOURCE_BONUS
+                context.add_reason(content.id, self.name, ScoringWeights.CUSTOM_SOURCE_BONUS, "Ta source personnalisée")
         else:
             score += ScoringWeights.STANDARD_SOURCE
             

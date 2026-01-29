@@ -67,8 +67,8 @@ class RecommendationService:
             .where(UserProfile.user_id == user_id)
         )
         
-        followed_sources_fut = self.session.scalars(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+        followed_sources_fut = self.session.execute(
+            select(UserSource.source_id, UserSource.is_custom).where(UserSource.user_id == user_id)
         )
         
         subtopics_fut = self.session.scalars(
@@ -82,10 +82,16 @@ class RecommendationService:
         # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
         user_profile = await user_profile_fut
         followed_sources_res = await followed_sources_fut
+        
+        followed_source_ids = set()
+        custom_source_ids = set()
+        for row in followed_sources_res:
+             followed_source_ids.add(row.source_id)
+             if row.is_custom:
+                 custom_source_ids.add(row.source_id)
+        
         subtopics_res = await subtopics_fut
         personalization = await personalization_fut
-        
-        followed_source_ids = set(followed_sources_res.all())
         user_subtopics = set(subtopics_res.all())
         
         user_interests = set()
@@ -161,7 +167,8 @@ class RecommendationService:
             # Story 4.7
             muted_sources=muted_sources,
             muted_themes=muted_themes,
-            muted_topics=muted_topics
+            muted_topics=muted_topics,
+            custom_source_ids=custom_source_ids
         )
         
         for content in candidates:
@@ -278,6 +285,8 @@ class RecommendationService:
                                 return "Thème matché"
                         elif "confiance" in details.lower():
                             return "Source de confiance"
+                        elif "personnalisée" in details.lower():
+                            return "Ta source personnalisée"
                         elif "Recency" in details:
                             return "Récence"
                         else:

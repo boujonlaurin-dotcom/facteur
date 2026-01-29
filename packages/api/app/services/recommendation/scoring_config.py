@@ -16,6 +16,10 @@ class ScoringWeights:
     # Bonus pour une source non suivie mais "Standard" (vs suivie).
     STANDARD_SOURCE = 10.0
     
+    # Bonus pour une source ajoutée manuellement (Custom Source).
+    # S'ajoute au bonus TRUSTED_SOURCE.
+    CUSTOM_SOURCE_BONUS = 10.0
+    
     # Base du score de fraîcheur (Recency).
     recency_base = 30.0
     
