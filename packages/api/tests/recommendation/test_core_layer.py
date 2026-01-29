@@ -127,8 +127,8 @@ class TestCoreLayerThemeMatching:
         # Act
         score = layer.score(content, context)
 
-        # Assert
-        assert score < ScoringWeights.THEME_MATCH
+        assert score >= ScoringWeights.STANDARD_SOURCE
+        assert score < ScoringWeights.STANDARD_SOURCE + 40
 
     def test_all_valid_themes_matching(self):
         """Test exhaustif de tous les thèmes valides."""
