@@ -1,0 +1,1230 @@
+# Facteur — Product Requirements Document (PRD)
+
+**Version:** 1.0  
+**Date:** 7 janvier 2026  
+**Auteur:** BMad Method  
+**Statut:** Validé
+
+---
+
+## Change Log
+
+| Date | Version | Description | Auteur |
+|------|---------|-------------|--------|
+| 07/01/2026 | 1.0 | Création initiale | BMad Method |
+| 12/01/2026 | 1.1 | Mise à jour Algorithme V2 & Transparence | Antigravity |
+| 14/01/2026 | 1.2 | Ajout des nudges "Slow Media" (Finitude) | Antigravity |
+| 15/01/2026 | 1.3 | Story 4.6 V2 : filtres feed améliorés | Antigravity |
+| 15/01/2026 | 1.4 | Epic 8 : Approfondissement & Progression (Duolingo de l'info) | Antigravity |
+| 18/01/2026 | 1.5 | NFR Update : Scalabilité Feed (Indexation) | Antigravity |
+| 18/01/2026 | 1.6 | Algo: Revalorisation "Confiance" (+200%) & "Thèmes" (+40%) | Antigravity |
+| 19/01/2026 | 1.8 | Authentification : Validation email obligatoire & Redirection | Antigravity |
+| 21/01/2026 | 1.9 | Unification "Source de confiance", "Source qualité" & Precision Bonus | Antigravity |
+| 21/01/2026 | 2.0 | Feature: Score Transparency Breakdown (Détail du calcul) | Antigravity |
+| 22/01/2026 | 2.1 | Refonte Onboarding : Champs Nom/Prénom & Fix Redirection | Antigravity |
+| 24/01/2026 | 2.2 | Onboarding Section 3 : Inversion Thèmes → Sources avec pré-sélection (Story 2.7) | Antigravity |
+
+---
+
+## Goals
+
+- Permettre aux utilisateurs de connecter des sources variées (RSS, podcasts, YouTube)
+- Filtrer et prioriser automatiquement les contenus selon le profil utilisateur
+- Créer une expérience d'onboarding ludique qui personnalise dès le premier usage
+- Proposer une sélection curée de sources de qualité (catalogue de 24 sources)
+- Monétiser via un modèle premium simple dès le lancement (trial 7 jours puis paywall)
+- Valider l'hypothèse : "Les gens paieront pour une UX fluide de consommation d'info"
+- Lutter contre les bulles informationnelles via une fonctionnalité de "mise en perspective" (Ground News style)
+- Garantir la qualité via le FQS (Facteur Quality Score) : Scoring objectif des sources sur l'indépendance, la rigueur et l'expérience utilisateur (paywalls).
+- Maintenir une pluralité d'opinions : Équilibrer le catalogue avec des sources de bords politiques variés (Gauche, Libéral, Conservateur) de haute tenue.
+
+---
+
+## Background Context
+
+**Facteur** répond à un problème croissant : la surcharge informationnelle. Les utilisateurs sont submergés par des dizaines de sources (newsletters, podcasts, chaînes YouTube, articles), sans savoir distinguer l'important du bruit. Les algorithmes des réseaux sociaux optimisent l'engagement plutôt que la valeur, créant un "flou mental" post-scrolling et enfermant les utilisateurs dans des bulles informationnelles.
+
+Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par manque de personnalisation, soit par opacité algorithmique. Facteur se positionne comme un **middleware de consommation intentionnelle** — un filtre intelligent entre les sources de confiance de l'utilisateur et sa consommation quotidienne, avec une philosophie "Slow Media" : apprendre par morceaux sur le long terme, pas suivre l'actu éphémère.
+
+---
+
+## Functional Requirements
+
+| ID | Exigence |
+|----|----------|
+| **FR1** | L'utilisateur peut créer un compte via email (en saisissant son **Nom et Prénom**) ou connexion sociale (Apple, Google). **La validation de l'email est obligatoire** pour accéder au contenu pour les comptes créés via email. |
+| **FR1.1** | Après la création du compte, l'utilisateur est immédiatement informé de l'envoi de l'email de confirmation via un écran dédié clear. |
+| **FR1.2** | Le lien de confirmation d'email redirige automatiquement l'utilisateur dans l'application mobile (via Deep Linking) et le connecte directement. |
+| **FR1bis** | L'utilisateur peut réinitialiser son mot de passe en cas d'oubli |
+| **FR1ter** | L'utilisateur peut choisir de rester connecté entre les sessions |
+| **FR2** | L'utilisateur complète un questionnaire d'onboarding de 10-12 questions réparties en 3 sections pour définir son profil et ses préférences |
+| **FR3** | Le système propose automatiquement des contenus personnalisés depuis un catalogue de sources curées |
+| **FR4** | L'utilisateur peut ajouter des sources personnalisées via URL (flux RSS, podcast, chaîne YouTube) |
+| **FR5** | Le système détecte automatiquement le type de source (RSS article, RSS podcast, RSS YouTube) |
+| **FR6** | Le système agrège et synchronise les contenus de toutes les sources toutes les 30 minutes |
+| **FR7** | L'algorithme trie et priorise les contenus selon le profil utilisateur (moteur modulaire V2 : thèmes, feedback comportemental, préférences statiques) |
+| **FR8** | L'utilisateur voit un feed personnalisé avec preview de chaque contenu (thumbnail, titre, source, raison de recommandation, durée). **Le détail du calcul du score est accessible via un bouton info.** |
+| **FR9** | L'utilisateur peut cliquer sur un contenu pour voir un écran détail enrichi avant redirect |
+| **FR10** | Le système marque automatiquement un contenu comme "consommé" après un temps suffisant (~30s article, ~60s vidéo/podcast) |
+| **FR10bis** | Le système affiche un streak quotidien pour encourager l'habitude (si gamification activée) |
+| **FR10ter** | Le système affiche une barre de progression hebdomadaire (si gamification activée) |
+| **FR10quater**| Le système affiche des nudges "Slow Media" (compteur de lecture quotidien et card "Tu es à jour") pour renforcer la finitude |
+| **FR11** | L'utilisateur peut ajouter un contenu à sa liste "À consulter plus tard", ce qui l'archive automatiquement du feed principal (triage) |
+| **FR12** | L'utilisateur peut indiquer "pas intéressé" pour masquer un contenu et affiner l'algo |
+| **FR13** | L'utilisateur peut gérer ses sources personnalisées (ajouter, supprimer, voir la liste) |
+| **FR14** | L'utilisateur peut souscrire à un abonnement premium via l'App Store (iOS) |
+| **FR15** | L'utilisateur peut gérer son abonnement (voir statut, gérer via iOS) |
+| **FR16** | L'utilisateur peut modifier son profil et ses préférences |
+| **FR17** | Après 7 jours de trial, l'accès est bloqué sans abonnement (paywall obligatoire) |
+| **FR18** | L'utilisateur peut accéder à d'autres points de vue sur une même actualité depuis l'écran détail |
+| **FR19** | Le système regroupe automatiquement les articles similaires par "Story" (clustering) |
+| **FR20** | Le système affiche le positionnement éditorial (biais) des sources via une échelle visuelle |
+
+---
+
+## Non-Functional Requirements
+
+| ID | Exigence |
+|----|----------|
+| **NFR1** | Le feed doit charger en moins de 500ms (P95) indépendamment du volume |
+| **NFR2** | Le scroll du feed doit être fluide à 60fps |
+| **NFR3** | L'app doit fonctionner sur iOS 15+ |
+| **NFR4** | L'app doit respecter le RGPD (consentement, droit à l'oubli, export données) |
+| **NFR5** | Les données utilisateur doivent être chiffrées en transit (HTTPS) et au repos |
+| **NFR6** | L'authentification doit utiliser des standards sécurisés (OAuth 2.0, JWT) |
+| **NFR7** | Le système doit supporter au moins 1000 utilisateurs simultanés pour le MVP |
+| **NFR8** | Les sources doivent être synchronisées au moins toutes les 30 minutes |
+| **NFR9** | Le code doit être maintenable : centralisation des wordings pour faciliter les itérations éditoriales |
+| **NFR10** | L'app doit fonctionner en mode hors-ligne avec les contenus déjà chargés |
+| **NFR11** | Le code doit être cross-platform (Flutter) pour faciliter le portage Android |
+
+---
+
+## User Interface Design Goals
+
+### Overall UX Vision
+
+> **Facteur doit offrir une expérience de "clarté apaisante"** — l'opposé du chaos des réseaux sociaux. L'utilisateur doit ressentir qu'il progresse et apprend, pas qu'il "scrolle dans le vide".
+
+**Principes directeurs :**
+- **Minimalisme intentionnel** : Peu d'éléments, chacun a un but clair
+- **Progression visible** : L'utilisateur voit qu'il avance (streak, barre)
+- **Finitude** : Sentiment de "j'ai fini pour aujourd'hui" possible (≠ scroll infini)
+- **Fluidité** : Transitions douces, pas de friction
+
+**Inspirations UX :** Deepstash (fluidité), Superhuman (clarté), Duolingo (gamification)
+
+### Key Interaction Paradigms
+
+| Interaction | Comportement |
+|-------------|--------------|
+| **Scroll vertical** | Navigation dans le feed principal |
+| **Tap sur card** | Ouvre l'écran détail |
+| **Tap sur bookmark** | Ajouter à la liste "À consulter plus tard" et retirer du feed principal (triage) |
+| **Menu "..."** | Actions secondaires (pas intéressé, voir source) |
+| **Pull to refresh** | Actualiser le feed |
+
+### Core Screens
+
+| # | Écran | Description |
+|---|-------|-------------|
+| 1 | **Onboarding** | Questionnaire 10-12 questions en 3 sections + animation finale |
+| 2 | **Feed principal** | Liste de contenus personnalisés avec preview cards |
+| 3 | **Détail contenu** | Preview enrichi avant redirect |
+| 4 | **À consulter plus tard** | Liste des contenus mis de côté |
+| 5 | **Progression** | Streak + barre hebdo + stats |
+| 6 | **Mes sources** | Gestion des sources custom |
+| 7 | **Profil / Settings** | Paramètres compte, préférences, abonnement |
+| 8 | **Paywall** | Écran de conversion premium |
+
+### Branding
+
+| Aspect | Direction |
+|--------|-----------|
+| **Crédibilité** | Inspiration Le Monde — sérieux, typographie éditoriale |
+| **Accessibilité** | Inspiration Notion — simplicité, clarté |
+| **Chaleur** | Touche humaine du facteur — couleurs chaudes en accent |
+| **Thème** | **Sombre par défaut** |
+
+**Palette (dark mode) :**
+- Fond : #121212 / #1A1A1A
+- Cards : #1E1E1E / #252525
+- Texte : #F5F5F5
+- Accent chaud : Terracotta #E07A5F
+- Accent secondaire : Bleu #6B9AC4
+
+### Accessibility
+
+Niveau cible : **WCAG AA**
+
+### Target Platforms
+
+- **MVP** : iOS (iPhone) uniquement
+- **V1** : Android
+
+---
+
+## Technical Assumptions
+
+### Stack Technique
+
+| Composant | Technologie |
+|-----------|-------------|
+| **Mobile App** | Flutter |
+| **Backend API** | Python + FastAPI |
+| **Database** | PostgreSQL (via Supabase) |
+| **Auth** | Supabase Auth |
+| **Paiements** | RevenueCat |
+| **Hosting** | Railway / Render |
+
+### Repository Structure
+
+**Monorepo**
+
+```
+facteur/
+├── apps/
+│   └── mobile/          # App Flutter
+├── packages/
+│   └── api/             # Backend FastAPI
+├── docs/                # Documentation
+└── shared/              # Types partagés
+```
+
+### Service Architecture
+
+**Monolithe simple**
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Mobile App │────▶│  REST API   │────▶│ PostgreSQL  │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │
+                    ┌──────┴──────┐
+                    ▼             ▼
+              ┌──────────┐  ┌──────────┐
+              │ RSS      │  │ RevenueCat│
+              │ Fetcher  │  │ (Paiements)│
+              └──────────┘  └──────────┘
+```
+
+### Testing Requirements
+
+| Type | Scope | Couverture cible |
+|------|-------|------------------|
+| Unit tests | Logique métier, algo | >60% |
+| Integration tests | API endpoints | Flows critiques |
+| E2E | ❌ Hors scope MVP | V1 |
+
+### Additional Technical Assumptions
+
+- RSS Parsing : librairie robuste (feedparser Python)
+- YouTube RSS : `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`
+- Refresh strategy : Cron job toutes les 30 min
+- Error tracking : Sentry
+- Logging : Structured JSON
+
+### Taxonomie & Système de Classification
+
+Facteur utilise un système de classification hiérarchique à 3 niveaux pour personnaliser les recommandations avec précision.
+
+#### Architecture 3 Niveaux
+
+```mermaid
+graph TD
+    subgraph "Source Level"
+        ST[source.theme<br/>8 thèmes macro<br/>Ex: tech, society]
+        GT[source.granular_topics<br/>Jusqu'à 50 topics<br/>Ex: ai, climate]
+    end
+    
+    subgraph "Article Level"
+        AT[content.topics<br/>0-N parmi 50<br/>Classifié par ML]
+    end
+    
+    subgraph "User Level"
+        UT[user_interests<br/>8 thèmes macro<br/>Onboarding]
+        UST[user_subtopics<br/>0-N parmi 50<br/>Optionnel]
+    end
+    
+    ST -->|Mapping| UT
+    GT -->|Héritage| AT
+    AT -->|Scoring| UST
+```
+
+#### Niveau 1 : Thèmes Macro (8)
+
+Utilisés pour catégoriser les sources et l'onboarding initial.
+**Important :** En base de données (`Source.theme`), SEULS les **slugs** sont stockés. Les labels sont cosmétiques (Frontend).
+
+| Slug (Valeur DB) | Label (Affichage) | Description |
+|------|-------|-------------|
+| `tech` | Tech & Innovation | Technologies, digital, startups tech |
+| `society` | Société & Vie | Société, justice sociale, vie quotidienne |
+| `environment` | Environnement & Climat | Climat, biodiversité, transition écologique |
+| `economy` | Économie & Finance | Économie, finance, business |
+| `politics` | Politique | Politique nationale, institutions |
+| `culture` | Culture & Idées | Arts, philosophie, médias |
+| `science` | Sciences | Recherche fondamentale et appliquée |
+| `international` | Géopolitique | Relations internationales, géopolitique |
+
+#### Niveau 2 : Topics Granulaires (50)
+
+Classification fine par article via modèle ML (CamemBERT). Organisés par thème parent :
+
+| Thème Parent | Topics (50 total) |
+|--------------|-------------------|
+| **tech** (12) | `ai`, `llm`, `crypto`, `web3`, `space`, `biotech`, `quantum`, `cybersecurity`, `robotics`, `gaming`, `cleantech`, `data-privacy` |
+| **society** (10) | `social-justice`, `feminism`, `lgbtq`, `immigration`, `health`, `education`, `urbanism`, `housing`, `work-reform`, `justice-system` |
+| **environment** (8) | `climate`, `biodiversity`, `energy-transition`, `pollution`, `circular-economy`, `agriculture`, `oceans`, `forests` |
+| **economy** (8) | `macro`, `finance`, `startups`, `venture-capital`, `labor-market`, `inflation`, `trade`, `taxation` |
+| **politics** (5) | `elections`, `institutions`, `local-politics`, `activism`, `democracy` |
+| **culture** (4) | `philosophy`, `art`, `cinema`, `media-critics` |
+| **science** (2) | `fundamental-research`, `applied-science` |
+| **international** (1) | `geopolitics` |
+
+*Note : Le topic `geopolitics` peut être étendu par régions (europe, usa, china, etc.) si nécessaire.*
+
+#### Classification Automatique
+
+**Méthode principale : Machine Learning (CamemBERT)**
+- Modèle : DistilBERT français fine-tuné pour classification multi-label
+- Input : Titre + 500 premiers caractères de description
+- Output : 0-5 topics avec scores de confiance
+- Seuil : 0.3 (configurable)
+- Hébergement : Railway (~200MB RAM)
+
+**Fallback : Héritage Source**
+- Si classification ML échoue ou indisponible
+- Articles héritent `granular_topics` de leur source parent
+- Précision estimée : ~75% (sources souvent spécialisées)
+
+**Pipeline de sync :**
+1. Article récupéré via RSS
+2. Classification ML asynchrone (non-bloquante)
+3. Si ML échoue → héritage `source.granular_topics`
+4. Stockage dans `content.topics`
+5. Utilisation pour scoring dans `ArticleTopicLayer`
+
+#### Matching & Scoring
+
+Le système utilise ces 3 niveaux pour calculer le score de recommandation :
+
+| Layer | Matching | Poids | Label UI |
+|-------|----------|-------|----------|
+| **CoreLayer** | `source.theme` → `user_interests` | +70.0 | Theme match |
+| **CoreLayer** | `source_id` ∈ `followed_source_ids` | +40.0 | Source de confiance |
+| **ArticleTopicLayer** | `content.topics` ∩ `user_subtopics` | +40.0 / match | Topic match |
+| **ArticleTopicLayer** | Theme Match + Topic Match | +10.0 | (précis) |
+| **QualityLayer** | `source.reliability_score == HIGH` | +10.0 | Source qualitative |
+| **QualityLayer** | `source.reliability_score == LOW` | -30.0 | Malus fiabilité |
+
+**Exemple :**
+- Article "GPT-5 annoncé" de source suivie "Tech Crunch" (`theme=tech`, `granular_topics=[ai]`)
+- user intérêts : `themes=[tech]`, `subtopics=[ai]`
+- Score : +70 (theme) + 40 (confiance) + 40 (topic) + 10 (précis) = **160 points**
+
+---
+
+## Epic List
+
+| # | Epic | Objectif | Stories |
+|---|------|----------|---------|
+| 1 | Fondations & Infrastructure | Setup Flutter + FastAPI + Supabase, auth, navigation | 5 |
+| 2 | Onboarding & Profil | Questionnaire ludique 3 sections, profil utilisateur | 8 |
+| 3 | Gestion des Sources | Catalogue curé, sync RSS, sources custom | 5 |
+| 4 | Feed & Algorithme | Algo de tri, feed personnalisé, actions | 6 |
+| 5 | Consommation & Gamification | Détail, tracking auto, streak, progression | 7 |
+| 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement, paramètres Compte/Notif | 8 |
+| 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
+| 8 | Approfondissement & Progression | ⏸️ **MVP: Teaser only** — Le "Duolingo de l'info" (quiz, badges) | 7 |
+
+**Total : 45 stories**
+
+---
+
+## Epic 1 : Fondations & Infrastructure
+
+**Objectif :** Setup projet Flutter + FastAPI + Supabase, authentification, écran de base.
+
+### Story 1.1 : Setup projet Flutter
+
+**As a** développeur,  
+**I want** un projet Flutter initialisé avec la structure de base,  
+**so that** je puisse commencer le développement mobile.
+
+**Acceptance Criteria :**
+1. Projet Flutter créé avec la dernière version stable
+2. Structure de dossiers organisée (lib/screens, lib/widgets, lib/services, lib/models)
+3. Thème sombre configuré avec la palette définie (fond #121212, accent terracotta)
+4. Linter configuré (flutter_lints)
+5. Le projet compile et s'exécute sur simulateur iOS
+
+---
+
+### Story 1.2 : Setup backend FastAPI + Supabase
+
+**As a** développeur,  
+**I want** un backend FastAPI connecté à Supabase,  
+**so that** l'app puisse stocker et récupérer des données.
+
+**Acceptance Criteria :**
+1. Projet FastAPI initialisé avec structure de base (routers, models, services)
+2. Connexion à Supabase PostgreSQL fonctionnelle
+3. Route health-check `/api/health` retourne `{"status": "ok"}`
+4. Variables d'environnement configurées (.env)
+5. Documentation API auto-générée (Swagger UI)
+
+---
+
+### Story 1.3 : Authentification Supabase
+
+**As a** utilisateur,  
+**I want** créer un compte et me connecter via email ou Apple/Google,  
+**so that** mes données soient sauvegardées et sécurisées.
+
+**Acceptance Criteria :**
+1. Supabase Auth configuré avec providers Email, Apple, Google
+2. Écran de connexion Flutter avec options Email + Social
+3. Flow de création de compte email (email + password)
+4. Flow de connexion sociale (Apple Sign-In, Google Sign-In)
+5. Token JWT stocké de manière sécurisée sur le device
+6. Déconnexion fonctionnelle
+7. L'utilisateur authentifié est créé dans la table `users` Supabase
+
+---
+
+### Story 1.4 : Navigation de base et écran Home placeholder
+
+**As a** utilisateur,  
+**I want** voir un écran d'accueil après connexion,  
+**so that** je sache que l'app fonctionne.
+
+**Acceptance Criteria :**
+1. Navigation configurée (go_router ou auto_route)
+2. Écran Home placeholder affichant "Bienvenue [email]"
+3. Bouton de déconnexion fonctionnel
+4. Redirection automatique vers Login si non authentifié
+5. Redirection automatique vers Home si déjà authentifié
+
+---
+
+### Story 1.5 : Fonctionnalités de confort d'authentification
+
+**As a** utilisateur,  
+**I want** rester connecté et pouvoir réinitialiser mon mot de passe en cas d'oubli,  
+**so that** je gagne du temps et ne perde pas l'accès à mon compte.
+
+**Acceptance Criteria :**
+1. Checkbox "Rester connecté" sur l'écran de login
+2. Lien "Mot de passe oublié ?" menant à un flow de récupération par email
+3. Intégration avec Supabase Auth pour le reset
+4. Persistance de session gérée selon le choix utilisateur
+
+
+## Epic 2 : Onboarding & Profil Utilisateur
+
+**Objectif :** Créer une expérience d'onboarding ludique (10-12 questions, 3 sections) qui collecte les préférences et personnalise l'expérience.
+
+### Story 2.1 : Modèle de données Profil Utilisateur
+
+**As a** développeur,  
+**I want** un modèle de données pour stocker le profil et les préférences utilisateur,  
+**so that** l'algorithme puisse personnaliser le contenu.
+
+**Acceptance Criteria :**
+1. Table `user_profiles` créée : user_id, display_name, age_range, gender, created_at, onboarding_completed
+2. Table `user_preferences` créée : user_id, preference_key, preference_value
+3. Table `user_interests` créée : user_id, interest_slug, weight
+4. API endpoints CRUD pour le profil utilisateur
+5. Row Level Security (RLS) configuré
+
+---
+
+### Story 2.2 : Onboarding Section 1 "Overview"
+
+**As a** nouvel utilisateur,  
+**I want** répondre à des questions sur mes grands objectifs,  
+**so that** Facteur comprenne pourquoi je suis là.
+
+**Acceptance Criteria :**
+1. 3-4 écrans couvrant : objectifs avec Facteur, âge, genre, préférence d'approche
+2. Réactions engageantes après chaque réponse clé expliquant la philosophie Facteur
+3. UI ludique avec illustrations/animations légères
+4. Indicateur de progression visible (section 1/3)
+5. Réponses stockées localement pendant le flow
+
+---
+
+### Story 2.2b : Onboarding Section 2 "App Preferences"
+
+**As a** nouvel utilisateur,  
+**I want** définir mes préférences d'usage de façon indirecte,  
+**so that** l'app s'adapte à ma façon de consommer l'info.
+
+**Acceptance Criteria :**
+1. 4-5 écrans avec questions indirectes :
+   - Big-picture vs Detail-oriented
+   - Préférence réponses tranchées vs nuancées
+   - Actu récente vs Analyses long-terme
+   - Activation ou non de la gamification
+2. Questions formulées de façon engageante (choix visuels, mini-scénarios)
+3. Réactions contextuelles après certaines réponses
+4. Indicateur de progression (section 2/3)
+
+---
+
+### Story 2.2c : Onboarding Section 3 "Source Preferences"
+
+**As a** nouvel utilisateur,  
+**I want** indiquer mes préférences de sources et formats,  
+**so that** Facteur me propose les bons contenus.
+
+**Acceptance Criteria :**
+1. 3 écrans couvrant (dans cet ordre) :
+   - **Q9 : Thèmes principaux** (multi-sélection avec sous-thèmes optionnels)
+   - **Q10 : Sources de confiance** (pré-sélection automatique basée sur les thèmes choisis + modification possible)
+   - **Écran Finalize** : Résumé et bouton "Créer mon flux"
+2. Message informatif sur l'écran Sources : "💡 Pré-sélection basée sur vos thèmes"
+3. Indicateur de progression (section 3/3)
+4. Bouton "Finaliser" déclenche l'animation de conclusion
+
+**Note :** L'ordre Thèmes → Sources (avec pré-sélection) réduit la friction et permet à l'utilisateur de découvrir des sources pertinentes. Voir Story 2.7 pour les détails d'implémentation.
+
+---
+
+### Story 2.2d : Animation de conclusion onboarding
+
+**As a** nouvel utilisateur,  
+**I want** voir une animation de "configuration" à la fin du questionnaire,  
+**so that** je comprenne que Facteur prépare mon expérience personnalisée.
+
+**Acceptance Criteria :**
+1. Écran avec animation de chargement élégante
+2. Messages progressifs : "Chargement de tes sources...", "Configuration de tes préférences...", "Préparation de ton feed..."
+3. Durée ~3-5 secondes
+4. Transition fluide vers le Feed
+
+---
+
+### Story 2.3 : Sauvegarde du profil après onboarding
+
+**As a** nouvel utilisateur,  
+**I want** que mes réponses soient sauvegardées,  
+**so that** je n'aie pas à refaire le questionnaire.
+
+**Acceptance Criteria :**
+1. À la fin du questionnaire, réponses envoyées à l'API
+2. Profil créé/mis à jour dans `user_profiles`
+3. Intérêts stockés dans `user_interests` avec pondération
+4. Préférences stockées dans `user_preferences`
+5. Flag `onboarding_completed = true`
+
+---
+
+### Story 2.4 : Redirection vers Feed après onboarding
+
+**As a** nouvel utilisateur,  
+**I want** accéder directement à mon feed personnalisé après l'onboarding,  
+**so that** je puisse commencer à consommer du contenu immédiatement.
+
+**Acceptance Criteria :**
+1. Après animation, redirection automatique vers le Feed
+2. Feed affiche immédiatement des contenus personnalisés
+3. Message de bienvenue optionnel
+4. Pas d'écran intermédiaire de sélection de sources
+
+---
+
+### Story 2.5 : Bypass onboarding pour utilisateurs existants
+
+**As a** utilisateur existant,  
+**I want** accéder directement au feed si j'ai déjà fait l'onboarding,  
+**so that** je ne perde pas de temps.
+
+**Acceptance Criteria :**
+1. Au login, vérification du flag `onboarding_completed`
+2. Si `true` → redirection vers Feed
+3. Si `false` → redirection vers Onboarding
+4. Option de refaire l'onboarding depuis Settings
+
+---
+
+## Epic 3 : Gestion des Sources
+
+**Objectif :** Catalogue de sources curées, synchronisation RSS, sources personnalisées.
+
+### Story 3.1 : Modèle de données Sources & Contenus
+
+**As a** développeur,
+**I want** un modèle de données pour les sources et leurs contenus,
+**so that** l'app puisse stocker et servir les articles/podcasts/vidéos.
+
+**Acceptance Criteria :**
+1. Table `sources` : id, name, url, type, theme, description, logo_url, **status**, **feed_url**
+2. **Champ `status` (Lifecycle)** :
+   - `ARCHIVED` : Source connue mais inactive/non-traitée. Invisible partout.
+   - `INDEXED` : Source techniquement valide (RSS OK). Invisible catalogue, utilisée pour Comparaison. Scores basiques (Bias/Reliability) requis.
+   - `CURATED` : Source "Trusted". Visible catalogue & onboarding. Tous scores (FQS + UX) et Rationale requis.
+3. Table `contents` : id, source_id, title, url, thumbnail_url, description, published_at, duration_seconds, content_type
+4. Table `user_sources` : user_id, source_id, is_custom, added_at
+5. Table `user_content_status` : user_id, content_id, status, seen_at, time_spent_seconds
+6. Index et RLS configurés
+
+---
+
+### Story 3.2 : Import du catalogue de sources curées
+
+**As a** développeur,  
+**I want** importer le catalogue de sources curées dans la base,  
+**so that** tous les utilisateurs aient accès à du contenu de qualité.
+
+**Acceptance Criteria :**
+1. Script d'import depuis `sources.csv`
+2. 24 sources initiales importées
+3. Types correctement détectés
+4. Thèmes assignés
+5. Flag `is_curated = true`
+6. Script réexécutable (upsert)
+
+---
+
+### Story 3.3 : Service de synchronisation RSS
+
+**As a** système,  
+**I want** synchroniser automatiquement les contenus depuis les flux RSS,  
+**so that** le feed soit toujours à jour.
+
+**Acceptance Criteria :**
+1. Service Python parsant RSS (articles, podcasts, YouTube)
+2. Gestion des 3 types de flux
+3. Extraction métadonnées complètes
+4. Déduplication par URL
+5. Job planifié toutes les 30 minutes
+6. Logging des erreurs
+
+---
+
+### Story 3.4 : Ajout de source personnalisée par l'utilisateur
+
+**As a** utilisateur,  
+**I want** ajouter mes propres sources via URL,  
+**so that** je puisse suivre des contenus hors catalogue.
+
+**Acceptance Criteria :**
+1. Écran "Mes sources" avec bouton "Ajouter"
+2. Détection automatique du type de source
+3. Validation URL et flux
+4. Extraction channel_id pour YouTube
+5. Source ajoutée avec `is_custom = true`
+6. Sync immédiate des contenus
+
+---
+
+### Story 3.5 : Écran "Mes Sources"
+
+**As a** utilisateur,  
+**I want** voir et gérer mes sources,  
+**so that** je sache d'où vient mon contenu.
+
+**Acceptance Criteria :**
+1. Liste des sources avec logo, nom, type, thème
+2. Section "Sources du catalogue" (lecture seule)
+3. Section "Mes sources ajoutées" (supprimables)
+4. Bouton "Ajouter une source"
+
+---
+
+## Epic 4 : Feed & Algorithme
+
+**Objectif :** Feed personnalisé avec algorithme de tri basé sur les préférences.
+
+### Story 4.1 : Algorithme de tri et personnalisation
+
+**As a** utilisateur,  
+**I want** voir un feed personnalisé selon mes préférences,  
+**so that** les contenus les plus pertinents apparaissent en premier.
+
+**Acceptance Criteria :**
+1. ✅ Endpoint API `/api/feed` avec contenus triés
+2. ✅ Algorithme modulaire V2 (Core, Static, Behavioral)
+3. ✅ Transparence : affichage de la raison de recommandation (badge discret)
+4. ✅ Exclusion des contenus vus et masqués
+5. ✅ Pagination (20/page, infinite scroll)
+
+---
+
+### Story 4.2 : Écran Feed principal
+
+**As a** utilisateur,  
+**I want** voir mon feed de contenus personnalisés,  
+**so that** je puisse découvrir ce qui m'intéresse.
+
+**Acceptance Criteria :**
+1. Liste scrollable de cards
+2. Pull-to-refresh
+3. Infinite scroll
+4. États vide et chargement
+5. Bottom navigation bar
+
+---
+
+### Story 4.3 : Card de contenu (preview)
+
+**As a** utilisateur,  
+**I want** voir un aperçu attractif de chaque contenu,  
+**so that** je puisse décider si je veux le consulter.
+
+**Acceptance Criteria :**
+1. Card : thumbnail (header), titre (body)
+2. Footer distinct : source, actions, type
+3. Indicateur type (📄 🎧 🎬)
+4. Durée estimée
+5. Date relative
+6. Icône bookmark 🔖 + Menu "..."
+
+---
+
+### Story 4.4 : Action "À consulter plus tard"
+
+**As a** utilisateur,  
+**I want** ajouter un contenu à ma liste "À consulter plus tard",  
+**so that** je puisse y revenir quand j'ai le temps.
+
+**Acceptance Criteria :**
+1. Tap 🔖 → ajout à la liste
+2. Feedback visuel immédiat
+3. Toggle (re-tap = retirer)
+
+---
+
+### Story 4.5 : Action "Pas intéressé"
+
+**As a** utilisateur,  
+**I want** indiquer qu'un contenu ne m'intéresse pas,  
+**so that** l'algorithme apprenne mes préférences.
+
+**Acceptance Criteria :**
+1. Via menu "..." → "Pas intéressé"
+2. Contenu masqué (animation)
+3. Statut `hidden` enregistré
+4. Toast feedback
+
+---
+
+### Story 4.6 : Filtres rapides (V2)
+
+**As a** utilisateur,  
+**I want** filtrer mon feed selon mon intention du moment,  
+**so that** je puisse adapter ma lecture à mon état d'esprit.
+
+**Acceptance Criteria :**
+1. Barre de filtres horizontale ("Chips") avec description courte sous les chips
+2. Filtres "Intent" avec logique backend affinée :
+   - "Dernières news" (< 12h, thèmes Hard News) → *Feed Twitter-like : l'actu en temps réel*
+   - "Rester serein" (exclut society, international, economy, politics) → *Loin des sujets chauds*
+   - "Longs formats" (> 10 min, inclut articles) → *Contenus de plus de 10 min*
+   - "Mes angles morts" (biais opposé, description dynamique) → *Selon biais utilisateur*
+3. Mise à jour instantanée du feed
+4. Reset possible (re-tap = désélection)
+5. Référence détaillée : voir [Story 4.6b](stories/4.6b.filtres-v2.story.md)
+
+---
+
+### Story 4.7 : Personnalisation du Feed
+
+**As a** utilisateur,  
+**I want** indiquer les sources et thèmes que je préfère voir moins,  
+**so that** mon feed soit personnalisé selon mes préférences explicites.
+
+**Acceptance Criteria :**
+1. Bouton "❓" unifié remplaçant le menu "..." sur les cards
+2. Bottom sheet affichant les facteurs de scoring avec actions `[Voir moins]`
+3. Table `user_personalization` pour stocker mutes persistants
+4. `PersonalizationLayer` appliquant les malus au scoring
+5. Nudge inline après 3 skips consécutifs : "Tu consultes rarement [Source]"
+6. Référence détaillée : voir [Story 4.7](stories/core/4.7.feed-personalization.story.md)
+
+---
+
+## Epic 5 : Consommation & Gamification
+
+**Objectif :** Consultation des contenus avec tracking automatique, streak et progression.
+
+### Story 5.1 : Écran Détail Contenu
+
+**As a** utilisateur,  
+**I want** voir un aperçu enrichi avant d'ouvrir un contenu,  
+**so that** je puisse décider si je veux vraiment le consulter.
+
+**Acceptance Criteria :**
+1. Tap card → écran détail (pas redirect direct)
+2. Affichage complet : thumbnail, titre, source, date, durée, description
+3. Bouton "Lire/Écouter/Voir"
+4. Boutons secondaires : Sauvegarder, Pas pour moi
+
+---
+
+### Story 5.2 : Mode Lecture In-App
+
+**As a** utilisateur,
+**I want** consulter les contenus directement dans l'app sans ouvrir le navigateur,
+**so that** j'ai une expérience de lecture fluide, sans pubs, paywalls ou latence.
+
+**Acceptance Criteria :**
+1. Articles affichés en mode lecture natif avec HTML formaté + images inline
+2. Player audio fonctionnel pour les podcasts (play/pause, seek, durée)
+3. Player vidéo embarqué pour YouTube avec contrôles natifs
+4. FAB "Voir l'original" présent sur tous les formats
+5. Fallback WebView (ou UI de redirection sur Web) si contenu insuffisant
+6. Respect du dark/light mode sur toutes les vues
+
+---
+
+### Story 5.3 : Tracking automatique "Contenu consommé"
+
+**As a** utilisateur,  
+**I want** que mes contenus soient automatiquement marqués comme lus,  
+**so that** je voie ma progression sans effort.
+
+**Acceptance Criteria :**
+1. Timer à l'ouverture WebView
+2. Seuils : 30s article, 60s vidéo/podcast
+3. Marquage automatique si seuil atteint
+4. Feedback au retour "✓ Contenu ajouté à ta progression !"
+
+---
+
+### Story 5.4 : Système de Streak quotidien
+
+**As a** utilisateur,  
+**I want** voir mon streak de jours consécutifs,  
+**so that** je sois motivé à revenir chaque jour.
+
+**Acceptance Criteria :**
+1. Table `user_streaks`
+2. Jour validé si ≥1 contenu consommé
+3. Streak incrémenté/reset
+4. Affichage "🔥 X jours"
+5. Animation célébration record
+6. Notification optionnelle si risque de perte
+
+---
+
+### Story 5.5 : Barre de progression hebdomadaire
+
+**As a** utilisateur,  
+**I want** voir ma progression vers un objectif hebdomadaire,  
+**so that** je me sente accomplir quelque chose.
+
+**Acceptance Criteria :**
+1. Objectif configurable (défaut : 10/semaine)
+2. Barre visuelle "X/Y (Z%)"
+3. Reset lundi 00h
+4. Messages d'encouragement contextuels
+5. Célébration à 100%
+
+---
+
+### Story 5.6 : Écran Progression
+
+**As a** utilisateur,  
+**I want** voir un récapitulatif de ma progression,  
+**so that** je puisse mesurer mon apprentissage.
+
+**Acceptance Criteria :**
+1. Streak central avec flamme
+2. Barre progression hebdo
+3. Stats : cette semaine, ce mois, total
+4. Répartition par type et thème
+5. Si gamification désactivée : stats uniquement
+
+---
+
+### Story 5.7 : Écran "À consulter plus tard"
+
+**As a** utilisateur,  
+**I want** accéder à mes contenus sauvegardés,  
+**so that** je puisse les consulter plus tard (liste "À consulter").
+
+**Acceptance Criteria :**
+1. Liste des contenus mis à consulter (`saved`)
+2. Même format cards
+3. Tri par date de sauvegarde
+4. Action "Retirer"
+5. État vide
+
+---
+
+### Story 5.8 : Nudges "Slow Media"
+
+**As a** utilisateur,  
+**I want** recevoir des feedbacks sur ma consommation quotidienne et savoir quand je suis à jour,  
+**so that** je puisse consommer l'information de manière plus intentionnelle.
+
+**Acceptance Criteria :**
+1. Affichage d'un compteur minimaliste "X lu(s)" dans le header
+2. Affichage d'une card "Tu es à jour !" inline dans le feed après ≥8 articles lus ce jour
+3. Card dismissable d'un tap et persistante durant la session
+4. Animations fluides d'apparition et de disparition
+5. Tracking analytics associé (complet du feed, scroll depth)
+
+
+---
+
+## Epic 6 : Premium & Paiement
+
+**Objectif :** Abonnement premium avec RevenueCat, trial 7 jours, paywall bloquant.
+
+### Story 6.1 : Intégration RevenueCat
+
+**As a** développeur,  
+**I want** intégrer RevenueCat pour gérer les abonnements,  
+**so that** la gestion des paiements soit simplifiée.
+
+**Acceptance Criteria :**
+1. Compte RevenueCat configuré
+2. Produits App Store Connect créés
+3. SDK intégré dans Flutter
+4. Webhook → Backend
+5. Table `user_subscriptions`
+
+---
+
+### Story 6.2 : Logique Trial / Premium
+
+**As a** produit,  
+**I want** définir la logique d'accès trial vs premium,  
+**so that** les utilisateurs puissent tester avant de payer.
+
+**Acceptance Criteria :**
+1. Nouvel utilisateur → Trial 7 jours
+2. Trial : accès complet
+3. Après trial sans abo : accès bloqué (paywall)
+4. Avec abo : accès illimité
+5. Endpoint `/api/user/subscription`
+
+---
+
+### Story 6.3 : Écran Paywall
+
+**As a** utilisateur en fin de trial,  
+**I want** voir une proposition d'abonnement claire,  
+**so that** je puisse décider de continuer.
+
+**Acceptance Criteria :**
+1. Design attractif, valeur mise en avant
+2. Prix affichés clairement
+3. Bouton CTA "S'abonner"
+4. Liens CGV et politique confidentialité
+5. Texte légal App Store
+
+---
+
+### Story 6.4 : Flow d'achat App Store
+
+**As a** utilisateur,  
+**I want** m'abonner via l'App Store,  
+**so that** le paiement soit sécurisé.
+
+**Acceptance Criteria :**
+1. Flow achat natif iOS
+2. Gestion états : en cours, succès, échec
+3. Mise à jour statut immédiate
+4. Feedback "🎉 Bienvenue dans Facteur Premium !"
+5. Restauration achats existants
+
+---
+
+### Story 6.5 : Gestion de l'abonnement
+
+**As a** utilisateur premium,  
+**I want** voir et gérer mon abonnement,  
+**so that** je sache quand il expire.
+
+**Acceptance Criteria :**
+1. Section "Abonnement" dans Settings
+2. Affichage statut, date renouvellement
+3. Bouton "Gérer" → paramètres iOS
+4. Info sur comment annuler
+
+---
+
+### Story 6.6 : Comportement app selon statut
+
+**As a** utilisateur,  
+**I want** que l'app s'adapte à mon statut,  
+**so that** l'expérience soit cohérente.
+
+**Acceptance Criteria :**
+1. Trial actif : badge "Essai - X jours"
+2. Trial J-2 : notification + banner
+3. Trial expiré : paywall bloquant
+4. Premium : aucune restriction
+5. Premium expiré : paywall bloquant
+
+---
+
+### Story 6.7 : Écran Paramètres Compte
+
+**As a** utilisateur,  
+**I want** accéder à un écran dédié pour gérer mon compte,  
+**so that** je puisse voir mes informations et me déconnecter ou supprimer mon compte.
+
+**Acceptance Criteria :**
+1. Tile "Compte" dans Settings → nouvel écran
+2. Affiche l'email utilisateur
+3. Bouton "Se déconnecter" (déplacé de Settings principal)
+4. Bouton "Supprimer mon compte" avec confirmation modale
+5. Suppression appelle Supabase Auth et redirige vers Login
+
+---
+
+### Story 6.8 : Écran Paramètres Notifications
+
+**As a** utilisateur,  
+**I want** gérer mes préférences de notifications,  
+**so that** je contrôle les alertes que je reçois.
+
+**Acceptance Criteria :**
+1. Tile "Notifications" dans Settings → nouvel écran
+2. Toggles : Push Notifications (ON par défaut), Emails périodiques (OFF)
+3. Persistance locale via Hive
+4. Changements instantanés (pas de bouton Sauvegarder)
+
+---
+
+---
+
+## Epic 7 : Mise en perspective (Ground News Style)
+
+**Objectif :** Lutter contre les bulles informationnelles en permettant de comparer les angles éditoriaux sur un même sujet.
+
+**Status : ✅ MVP Done (12/01/2026)**
+
+> **Pivot MVP**: L'approche initiale de clustering interne a été abandonnée au profit d'une recherche live via Google News RSS, offrant un meilleur taux de couverture (~100% vs ~20%) sans infrastructure additionnelle.
+
+---
+
+### Story 7.1 : Profiling éditorial des sources ✅
+
+**As a** développeur,  
+**I want** enrichir le modèle des sources avec des données de positionnement éditorial,  
+**so that** le système puisse qualifier la perspective de chaque contenu.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Table `sources` enrichie : `bias_stance`, `reliability_score`, `bias_origin`
+2. ✅ Script d'import mis à jour pour intégrer ces données depuis CSV
+3. ✅ Gestion des sources sans données (cas par défaut: `UNKNOWN`)
+4. ✅ 22/27 sources curées avec données de biais
+
+---
+
+### Story 7.2 : MVP Perspectives - Backend ✅
+
+**As a** utilisateur,  
+**I want** voir des points de vue alternatifs sur un article,  
+**so that** je puisse me forger une opinion plus nuancée.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Endpoint `GET /contents/{id}/perspectives` fonctionnel
+2. ✅ Extraction de mots-clés significatifs (noms propres prioritaires)
+3. ✅ Recherche Google News RSS (~400ms latence)
+4. ✅ Mapping de biais pour ~50 sources françaises
+5. [MOD] Augmentation à 10 sources par défaut (Story 7.6+)
+
+---
+
+### Story 7.3 : MVP Perspectives - Frontend ✅
+
+**As a** utilisateur,  
+**I want** accéder aux perspectives alternatives depuis l'écran article,  
+**so that** je puisse facilement consulter d'autres points de vue.
+
+**Status: Done**
+
+**Acceptance Criteria :**
+1. ✅ Bouton ⚖️ dans le header (articles uniquement)
+2. ✅ Bottom sheet avec Bias Bar et liste de perspectives
+3. ✅ Tap ouvre l'article externe
+4. ✅ Loading state pendant la recherche
+5. [MOD] Bias Bar : Saturation dynamique (niveaux), bordures noires subtiles (0.8px) et espaces de 2px.
+
+---
+
+
+## Epic 8 : Approfondissement & Progression
+
+**Objectif :** Permettre aux utilisateurs de progresser sur des thèmes granulaires via un système gamifié — le **"Duolingo de l'information"**.
+
+**Status : 🟡 En cours de développement**
+
+> **Vision :** L'utilisateur ne se contente plus de consommer du contenu passivement. Il monte en compétence sur des sous-thèmes spécifiques (IA, Climat, Géopolitique Europe...) avec une progression visible, des quiz de validation, et un sentiment d'accomplissement.
+
+> [!IMPORTANT]
+> Cette Epic **remplace l'onglet "À consulter plus tard"** par un nouvel onglet **"Progressions"**. Les articles bookmarkés sont intégrés à l'écran Progressions comme contenus "À lire" par thème.
+
+---
+
+### Story 8.1 : Enrichissement du catalogue avec sous-thèmes granulaires
+
+**As a** développeur,  
+**I want** enrichir le modèle des sources avec des sous-thèmes granulaires,  
+**so that** le système puisse identifier précisément le domaine de chaque contenu.
+
+**Acceptance Criteria :**
+1. Table `sources` enrichie : nouvelle colonne `granular_topics TEXT[]`
+2. Taxonomie de 20-30 sous-thèmes définie (ex: `ai`, `crypto`, `climate`, `europe`, `startups`...)
+3. Les 24 sources curées sont enrichies manuellement avec leurs sous-thèmes
+4. Script d'import mis à jour pour intégrer `granular_topics` depuis CSV
+5. Seuil : un sous-thème n'est proposé à l'utilisateur que si ≥3 articles sont disponibles
+
+---
+
+### Story 8.2 : Modèle de données Progression utilisateur
+
+**As a** développeur,  
+**I want** un modèle de données pour stocker la progression par thème,  
+**so that** l'utilisateur puisse voir son niveau sur chaque sous-thème suivi.
+
+**Acceptance Criteria :**
+1. Table `user_topic_progress` créée : `user_id`, `topic_slug`, `articles_read`, `quizzes_passed`, `level`, `is_active`, `last_activity`
+2. Niveau calculé automatiquement : `level = articles_read / 5 + quizzes_passed * 2`
+3. Champ `is_active` pour différencier les thèmes explicitement suivis vs détectés
+4. API endpoint `GET /api/user/progress` retourne la liste des progressions
+5. API endpoint `POST /api/user/progress/{topic}/activate` pour suivre un thème
+6. Row Level Security (RLS) configuré
+
+---
+
+### Story 8.3 : Badge "Lu" discret sur les cards
+
+**As a** utilisateur,  
+**I want** voir un badge discret sur les articles que j'ai lus,  
+**so that** je puisse identifier rapidement ce que j'ai déjà consommé.
+
+**Acceptance Criteria :**
+1. Badge "✓ Lu" affiché en top-right de la card après consommation confirmée (temps >30s)
+2. Badge discret (petite taille, couleur terracotta/accent)
+3. Remplace le bouton "Marquer comme lu" actuel (moins intrusif)
+4. Le badge persiste lors du scroll et du refresh
+5. Design cohérent avec le thème sombre
+
+---
+
+### Story 8.4 : CTA "Approfondir" post-lecture
+
+**As a** utilisateur,  
+**I want** être invité à approfondir un thème après avoir lu un article,  
+**so that** je puisse construire une expertise sur les sujets qui m'intéressent.
+
+**Acceptance Criteria :**
+1. Bottom sheet affiché au retour sur le feed si temps de lecture >30s
+2. Message : "Tu veux progresser en [sous-thème] ?"
+3. Bouton "Oui, suivre" → ajoute le thème à `user_topic_progress` avec `is_active = true`
+4. Bouton "Explorer le thème" → ouvre le feed avec filtre pré-appliqué sur ce sous-thème
+5. Bouton "Non merci" → ferme le bottom sheet sans action
+6. Le CTA n'apparaît que pour les sous-thèmes avec ≥3 articles disponibles
+7. Fréquence limitée : 1 CTA max par session ou par nouveau thème rencontré
+
+---
+
+### Story 8.5 : Écran "Progressions" (remplace "À consulter plus tard")
+
+**As a** utilisateur,  
+**I want** voir ma progression sur les thèmes que je suis,  
+**so that** je ressente un sentiment d'accomplissement et sache où progresser.
+
+**Acceptance Criteria :**
+1. Nouvel onglet "Progressions" (icône 📈) remplace "À consulter" dans la bottom nav
+2. Liste des sous-thèmes suivis avec :
+   - Nom du thème + icône
+   - Jauge de progression (ex: 8/10 articles)
+   - Niveau actuel (Débutant, Niveau 1, Niveau 2...)
+3. Par thème, section "À lire pour progresser" avec 2-3 articles suggérés (non lus, du même sous-thème)
+4. Les articles bookmarkés (ancienne fonctionnalité) apparaissent dans cette section, classés par thème
+5. Tap sur "Explorer" → ouvre le feed filtré sur ce sous-thème
+6. État vide : message encourageant + explication du concept
+7. Indicateur si un quiz est disponible pour valider le niveau
+
+---
+
+### Story 8.6 : Quiz de validation (V0 - Memory Check)
+
+**As a** utilisateur,  
+**I want** valider ma progression via un quiz simple,  
+**so that** je prouve que j'ai retenu ce que j'ai lu.
+
+**Acceptance Criteria :**
+1. Quiz accessible depuis l'écran Progressions quand ≥5 articles lus sur un thème
+2. Format V0 : "Memory Check" — reconnaissance d'articles lus
+   - Affiche 3-5 titres d'articles
+   - L'utilisateur coche ceux qu'il a vraiment lus
+   - Validation si ≥60% correct
+3. Succès → `quizzes_passed` incrémenté, niveau augmenté
+4. Échec → message encourageant + liste des articles à relire
+5. Animation de célébration au passage de niveau
+6. Préparation pour V1/V2 : génération de quiz par LLM depuis descriptions RSS
+
+---
+
+### Story 8.7 : Migration de la fonctionnalité Bookmark
+
+**As a** utilisateur,  
+**I want** que mes articles sauvegardés soient intégrés à ma progression,  
+**so that** je puisse utiliser le bookmark pour contribuer à mon apprentissage.
+
+**Acceptance Criteria :**
+1. L'icône bookmark 🔖 reste présente sur les cards du feed
+2. Les articles bookmarkés apparaissent dans l'écran Progressions, section "À lire" par thème
+3. Si l'article n'a pas de thème identifié → section "Non classés" en bas de l'écran
+4. Suppression de la route `/saved` et de l'ancien écran "À consulter plus tard"
+5. Migration des données existantes : `user_content_status.status = 'saved'` → visible dans Progressions
+6. Toast de confirmation au bookmark : "Ajouté à Progressions"
+
+---
+
+## Epic 9 : Open Sources (Custom Feeds)
+
+**Objectif :** Permettre l'ajout de n'importe quel flux RSS/YouTube public pour briser la bulle de filtre.
+
+### Story 9.1 : Smart Detect & Ajout
+**As a** utilisateur,
+**I want** ajouter un site via son URL simple,
+**so that** je n'aie pas besoin de chercher le lien RSS technique.
+
+**Acceptance Criteria :**
+1. Champ input acceptant URL standard (ex: lemonde.fr)
+2. Backend tente de découvrir le RSS via tags HTML `<link>`
+3. Fallback : détection directe si URL finit par .xml/.rss
+4. Gestion erreurs 403 (Privé) et 404 avec messages pédago
+
+### Story 9.2 : Gestion des Sources Personnelles
+**As a** utilisateur,
+**I want** distinguer mes sources ajoutées du catalogue officiel,
+**so that** je gère mon diet informationnel.
+
+**Acceptance Criteria :**
+1. Section "Sources Personnelles" dans l'écran Sources
+2. Possibilité de supprimer une source ajoutée
+3. Les sources personnelles sont synchronisées avec le même moteur que les sources officielles
+
+---
+
+## Next Steps
+
+### UX Expert Prompt
+
+> Crée les spécifications front-end détaillées pour Facteur en te basant sur ce PRD. Focus sur l'onboarding (10-12 écrans, 3 sections), le feed principal, l'écran détail, et le système de gamification (streak, progression). Thème sombre, palette terracotta/bleu, inspirations Notion + Le Monde + Deepstash.
+
+### Architect Prompt
+
+> Crée l'architecture technique détaillée pour Facteur en te basant sur ce PRD. Stack : Flutter + FastAPI + Supabase + RevenueCat. Focus sur le modèle de données, l'API REST, le service de sync RSS, et l'algorithme de recommandation. Monorepo, déploiement Railway/Render.
+
+---
+
+*Document généré via BMad Method*
+

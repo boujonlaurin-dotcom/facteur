@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facteur Beta - Télécharger l'app</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --card-bg: #16161f;
+            --accent: #6366f1;
+            --accent-light: #818cf8;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #2d2d3a;
+            --success: #22c55e;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(129, 140, 248, 0.1) 0%, transparent 50%);
+        }
+        
+        .container {
+            max-width: 480px;
+            width: 100%;
+        }
+        
+        .logo {
+            font-size: 64px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--text) 0%, var(--accent-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .tagline {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        
+        .beta-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-light);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+        
+        .download-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 16px 24px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+        }
+        
+        .download-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        .instructions {
+            margin-top: 24px;
+        }
+        
+        .instructions h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+        
+        .step {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .step-number {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        
+        .step-text {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            padding-top: 3px;
+        }
+        
+        .warning {
+            display: flex;
+            gap: 12px;
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+        
+        .warning-icon {
+            font-size: 1.5rem;
+        }
+        
+        .warning-text {
+            color: #fbbf24;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .footer {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+        
+        .footer a {
+            color: var(--accent-light);
+            text-decoration: none;
+        }
+        
+        #loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        #version-info {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        .android-only {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 12px;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📰</div>
+        <h1>Facteur</h1>
+        <p class="tagline">Ta dose d'info, sans l'overdose</p>
+        
+        <div class="card">
+            <div class="beta-badge">
+                <span>🧪</span>
+                <span>Version Beta</span>
+            </div>
+            
+            <div id="loading">
+                <div class="spinner"></div>
+                <p>Recherche de la dernière version...</p>
+            </div>
+            
+            <a id="download-link" href="#" class="download-btn" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Télécharger l'APK
+            </a>
+            
+            <p id="version-info"></p>
+            
+            <div class="android-only">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 00-.83.22l-1.88 3.24a11.463 11.463 0 00-8.94 0L5.65 5.67a.643.643 0 00-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 002 18h20a10.78 10.78 0 00-4.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/>
+                </svg>
+                Android uniquement
+            </div>
+            
+            <div class="instructions">
+                <h3>📲 Comment installer</h3>
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <p class="step-text">Clique sur le bouton ci-dessus pour télécharger</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <p class="step-text">Ouvre le fichier téléchargé (.apk)</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <p class="step-text">Si Android te demande l'autorisation, clique sur "Paramètres" puis active "Autoriser cette source"</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <p class="step-text">Reviens en arrière et installe l'app</p>
+                </div>
+            </div>
+            
+            <div class="warning">
+                <span class="warning-icon">⚠️</span>
+                <p class="warning-text">
+                    C'est une version beta. Tu pourrais rencontrer des bugs. 
+                    N'hésite pas à les signaler !
+                </p>
+            </div>
+        </div>
+        
+        <p class="footer">
+            Développé avec ❤️ par l'équipe Facteur<br>
+            <a href="https://github.com/boujonlaurin-dotcom/facteur/releases" target="_blank">Voir toutes les versions</a>
+        </p>
+    </div>
+    
+    <script>
+        const REPO = 'boujonlaurin-dotcom/facteur';
+        
+        async function fetchLatestRelease() {
+            const loading = document.getElementById('loading');
+            const downloadLink = document.getElementById('download-link');
+            const versionInfo = document.getElementById('version-info');
+            
+            loading.style.display = 'block';
+            
+            try {
+                const response = await fetch(`https://api.github.com/repos/${REPO}/releases`);
+                const releases = await response.json();
+                
+                // Trouver la première release avec un APK
+                const release = releases.find(r => 
+                    r.assets && r.assets.some(a => a.name.endsWith('.apk'))
+                );
+                
+                if (release) {
+                    const apk = release.assets.find(a => a.name.endsWith('.apk'));
+                    
+                    downloadLink.href = apk.browser_download_url;
+                    downloadLink.style.display = 'flex';
+                    
+                    const date = new Date(release.published_at);
+                    versionInfo.textContent = `Version: ${release.tag_name} • ${date.toLocaleDateString('fr-FR')}`;
+                } else {
+                    versionInfo.innerHTML = 'Aucune version disponible. <a href="https://github.com/' + REPO + '/releases" target="_blank">Voir sur GitHub</a>';
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                versionInfo.innerHTML = 'Erreur de chargement. <a href="https://github.com/' + REPO + '/releases" target="_blank">Télécharger sur GitHub</a>';
+            }
+            
+            loading.style.display = 'none';
+        }
+        
+        fetchLatestRelease();
+    </script>
+</body>
+</html>
