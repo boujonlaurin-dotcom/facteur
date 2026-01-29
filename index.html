@@ -33,6 +33,16 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; background-color: #0a0a0f; color: white;">
+    <div style="text-align: center;">
+      <div style="width: 40px; height: 40px; border: 3px solid #16161f; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+      <p>Chargement de Facteur...</p>
+      <p style="font-size: 0.8rem; color: #94a3b8;">(Le premier démarrage peut prendre quelques secondes)</p>
+    </div>
+  </div>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
