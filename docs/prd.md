@@ -23,6 +23,7 @@
 | 21/01/2026 | 2.0 | Feature: Score Transparency Breakdown (Détail du calcul) | Antigravity |
 | 22/01/2026 | 2.1 | Refonte Onboarding : Champs Nom/Prénom & Fix Redirection | Antigravity |
 | 24/01/2026 | 2.2 | Onboarding Section 3 : Inversion Thèmes → Sources avec pré-sélection (Story 2.7) | Antigravity |
+| 29/01/2026 | 3.0 | **Recommendation Engine V3** - ML Classification + NER + Entity Scoring | BMad Facilitator |
 
 ---
 
@@ -322,6 +323,92 @@ Le système utilise ces 3 niveaux pour calculer le score de recommandation :
 - Article "GPT-5 annoncé" de source suivie "Tech Crunch" (`theme=tech`, `granular_topics=[ai]`)
 - user intérêts : `themes=[tech]`, `subtopics=[ai]`
 - Score : +70 (theme) + 40 (confiance) + 40 (topic) + 10 (précis) = **160 points**
+
+---
+
+### Système de Recommandation V3 (Nouveau)
+
+> **Note :** Cette section remplace et étend l'architecture V2. Voir [Story 4.2](../stories/core/4.2.reco-engine-v3.story.md) pour les détails d'implémentation.
+
+L'algorithme V3 introduit une **architecture 3 niveaux** avec extraction d'entités (NER) pour des recommandations ultra-personnalisées de niveau GAFAM.
+
+#### Architecture V3 (3 Niveaux)
+
+```mermaid
+graph TD
+    subgraph "Level 1: Taxonomie Macro"
+        L1[47 labels mDeBERTa<br/>tech, science, startups...]
+    end
+    
+    subgraph "Level 2: Entités Nommées"
+        L2[NER illimité<br/>Tesla, Elon Musk, COP29...]
+    end
+    
+    subgraph "Level 3: Profilage Utilisateur"
+        L3[user_entities<br/>Scores + Time Decay]
+    end
+    
+    L1 -->|Classification| Article
+    L2 -->|Extraction| Article
+    Article -->|Matching| L3
+```
+
+#### Composants Clés
+
+| Composant | Technologie | Rôle | Performance |
+|-----------|-------------|------|-------------|
+| **Classification** | mDeBERTa-v3 (zero-shot) | 47 labels généralistes | ~200ms/article |
+| **NER** | spaCy fr_core_news_md | Entités illimitées | ~30ms/article |
+| **Queue** | PostgreSQL table | Traitement asynchrone | Scalable 1000+/jour |
+| **Entity Scoring** | UserEntity table | +60pts par entité matchée | <10ms lookup |
+
+#### Matrice de Scoring V3
+
+| Layer | Type de Match | Points | Exemple |
+|-------|--------------|--------|---------|
+| CoreLayer | Theme match | +50 | "Thème: tech" |
+| CoreLayer | Source suivie | +40 | "Source de confiance" |
+| ArticleTopicLayer | Topic match | +40 | "Sujet: ai" |
+| **EntityLayer** | **Entité match** | **+60** | **"Centre d'intérêt: Tesla"** |
+| QualityLayer | Source qualité | +10 | "Source fiable" |
+| QualityLayer | Source faible | -30 | "Source peu fiable" |
+
+#### Pipeline de Traitement
+
+1. **RSS Sync** : Articles sauvegardés sans classification (< 2s)
+2. **Queue** : Ajout à `classification_queue` (status: pending)
+3. **Worker** : Traitement asynchrone parallèle
+   - mDeBERTa : Classification 47 labels
+   - spaCy NER : Extraction entités (PERSON, ORG, PRODUCT...)
+4. **Stockage** : `content.topics[]` et `content.entities[]` (JSONB)
+5. **Scoring** : Matching avec `user_entities` pour +60pts par entité
+
+#### Suivi des Intérêts Utilisateur
+
+```sql
+-- Table: user_entities
+user_id | entity_text | entity_label | score | last_seen_at
+--------|-------------|--------------|-------|-------------
+uuid    | "Tesla"     | ORG          | 15    | 2026-01-29
+uuid    | "Elon Musk" | PERSON       | 10    | 2026-01-28
+```
+
+- **Score** : +5 par lecture d'article mentionnant l'entité
+- **Decay** : -10% tous les 30 jours sans exposition
+- **Seuil** : Score minimum 10 pour matcher dans les recommandations
+
+#### Points Forts vs GAFAM
+
+| Aspect | GAFAM | Facteur V3 |
+|--------|-------|------------|
+| **Transparence** | Boîte noire | Score détaillé par article |
+| **Contrôle** | Aucun | Mute par topic/entité |
+| **Privacy** | Tracking externe | Tout local (ML on-premise) |
+| **Précision** | Très élevée | Niveau comparable + transparent |
+
+**Documentation technique complète :**
+- [Architecture V3](architecture-reco-v3.md)
+- [Story 4.2 - Implémentation](../stories/core/4.2.reco-engine-v3.story.md)
 
 ---
 
