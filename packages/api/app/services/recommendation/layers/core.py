@@ -22,19 +22,18 @@ class CoreLayer(BaseScoringLayer):
         score = 0.0
         
         # 1. Theme Match (Single Taxonomy)
-        # Source theme is guaranteed to be a slug in DB (via import_sources.py)
+        # Both source.theme and user_interests are guaranteed to be normalized slugs
+        # Data alignment: sources_master.csv uses slugs (tech, society, etc.)
         if content.source and content.source.theme:
-            # Normalize source slug
-            source_slug = content.source.theme.lower().strip()
-            
-            # Normalize user interests
-            def _norm(s): return s.lower().strip() if s else ""
-            user_interest_slugs = {_norm(s) for s in context.user_interests}
-            
-            if source_slug in user_interest_slugs:
-                match_score = ScoringWeights.THEME_MATCH
-                score += match_score
-                context.add_reason(content.id, self.name, match_score, f"Theme match: {source_slug}")
+            # Direct comparison - no normalization needed (data is pre-aligned)
+            if content.source.theme in context.user_interests:
+                score += ScoringWeights.THEME_MATCH
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    ScoringWeights.THEME_MATCH,
+                    f"Thème: {content.source.theme}"
+                )
         
         # 2. Source Affinity
         if content.source_id in context.followed_source_ids:
