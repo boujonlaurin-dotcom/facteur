@@ -22,8 +22,8 @@ class MockContent:
     """Mock Content pour les tests."""
     def __init__(self, source_theme: str = None, source_id=None, published_at=None):
         self.id = uuid4()
-        self.source = MockSource(theme=source_theme, id=source_id) if source_theme else None
-        self.source_id = source_id or (self.source.id if self.source else uuid4())
+        self.source = MockSource(theme=source_theme, id=source_id) if source_theme is not None else None
+        self.source_id = source_id if source_id else (self.source.id if self.source else None)
         self.published_at = published_at or datetime.now()
 
 
