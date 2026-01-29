@@ -60,4 +60,4 @@ def downgrade() -> None:
     
     # Revert to French labels
     for slug, label in REVERSE_MAP.items():
-        op.execute(f"UPDATE sources SET theme = '{label}' WHERE theme = '{slug}'")
+        op.execute(sa.text("UPDATE sources SET theme = :label WHERE theme = :slug").bindparams(label=label, slug=slug))
