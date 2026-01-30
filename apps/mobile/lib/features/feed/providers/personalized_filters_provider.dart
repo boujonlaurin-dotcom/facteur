@@ -39,11 +39,6 @@ final personalizedFiltersProvider = Provider<List<FilterConfig>>((ref) {
 
   final filters = [
     const FilterConfig(
-      key: 'breaking',
-      label: 'Dernières news',
-      description: 'Les actus chaudes des dernières 12h',
-    ),
-    const FilterConfig(
       key: 'inspiration',
       label: 'Rester serein',
       description: 'Sans thèmes anxiogènes',
@@ -68,11 +63,6 @@ final personalizedFiltersProvider = Provider<List<FilterConfig>>((ref) {
   // (Note: OnboardingAnswers.objective -> 'learn', 'culture', 'work'...)
   if (answers.objective == 'learn' || answers.approach == 'detailed') {
     _moveFilterToFront(filters, 'deep_dive');
-  }
-
-  // 2. "Dernières news" en premier si Style = Decisive
-  if (answers.responseStyle == 'decisive') {
-    _moveFilterToFront(filters, 'breaking');
   }
 
   // 3. "Rester serein" en premier si Style = Nuanced ou PersonalGoal = 'mental_health' (si existe)

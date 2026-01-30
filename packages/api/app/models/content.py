@@ -13,6 +13,7 @@ from app.database import Base
 from app.models.enums import ContentStatus, ContentType
 
 if TYPE_CHECKING:
+    from app.models.classification_queue import ClassificationQueue
     from app.models.source import Source
 
 
@@ -61,6 +62,9 @@ class Content(Base):
     source: Mapped["Source"] = relationship(back_populates="contents")
     user_statuses: Mapped[list["UserContentStatus"]] = relationship(
         back_populates="content", cascade="all, delete-orphan"
+    )
+    classification_queue: Mapped[Optional["ClassificationQueue"]] = relationship(
+        back_populates="content", uselist=False, cascade="all, delete-orphan"
     )
 
 

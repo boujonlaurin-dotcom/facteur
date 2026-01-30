@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.services.classification_queue_service import ClassificationQueueService
 from app.workers.rss_sync import sync_all_sources
 
 router = APIRouter()
@@ -26,3 +27,20 @@ async def trigger_daily_briefing(background_tasks: BackgroundTasks):
     
     await generate_daily_top3_job(trigger_manual=True)
     return {"message": "Daily Top 3 generation completed"}
+
+
+@router.get("/admin/queue-stats", status_code=status.HTTP_200_OK)
+async def get_queue_stats(
+    session: AsyncSession = Depends(get_db),
+):
+    """Récupère les statistiques de la file de classification ML.
+    
+    Returns:
+        Statistiques de la queue: pending, processing, completed, failed, etc.
+    """
+    service = ClassificationQueueService(session)
+    stats = await service.get_queue_stats()
+    return {
+        "message": "Queue statistics",
+        "stats": stats
+    }

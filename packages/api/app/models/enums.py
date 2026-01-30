@@ -77,4 +77,4 @@ class FeedFilterMode(str, Enum):
     INSPIRATION = "inspiration"
     PERSPECTIVES = "perspectives"
     DEEP_DIVE = "deep_dive"
-    BREAKING = "breaking"
+
