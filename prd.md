@@ -807,7 +807,7 @@ uuid    | "Elon Musk" | PERSON       | 10    | 2026-01-28
 **Acceptance Criteria :**
 1. Barre de filtres horizontale ("Chips") avec description courte sous les chips
 2. Filtres "Intent" avec logique backend affinée :
-   - "Dernières news" (< 12h, thèmes Hard News) → *Feed Twitter-like : l'actu en temps réel*
+
    - "Rester serein" (exclut society, international, economy, politics) → *Loin des sujets chauds*
    - "Longs formats" (> 10 min, inclut articles) → *Contenus de plus de 10 min*
    - "Mes angles morts" (biais opposé, description dynamique) → *Selon biais utilisateur*
