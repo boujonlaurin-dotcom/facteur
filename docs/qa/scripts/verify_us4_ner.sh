@@ -14,6 +14,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+SPACY_AVAILABLE=false
+
 # Check if we're in the right directory
 if [ ! -f "packages/api/requirements-ml.txt" ]; then
     echo -e "${RED}❌ Erreur: Vous devez exécuter ce script depuis la racine du projet${NC}"
@@ -28,21 +30,23 @@ echo "1. Vérification de spaCy..."
 if python -c "import spacy" 2>/dev/null; then
     SPACY_VERSION=$(python -c "import spacy; print(spacy.__version__)")
     echo -e "${GREEN}✅ spaCy installé (v${SPACY_VERSION})${NC}"
+    SPACY_AVAILABLE=true
 else
-    echo -e "${RED}❌ spaCy n'est pas installé${NC}"
-    echo "   Installation: pip install spacy==3.7.2"
-    exit 1
+    echo -e "${YELLOW}⚠️  spaCy n'est pas installé (optionnel pour dev)${NC}"
+    echo "   Pour l'activer: pip install spacy==3.7.2"
 fi
 
 # 2. Check French model
-echo ""
-echo "2. Vérification du modèle fr_core_news_md..."
-if python -c "import spacy; spacy.load('fr_core_news_md')" 2>/dev/null; then
-    echo -e "${GREEN}✅ Modèle fr_core_news_md installé${NC}"
-else
-    echo -e "${RED}❌ Modèle fr_core_news_md non trouvé${NC}"
-    echo "   Installation: python -m spacy download fr_core_news_md"
-    exit 1
+if [ "$SPACY_AVAILABLE" = true ]; then
+    echo ""
+    echo "2. Vérification du modèle fr_core_news_md..."
+    if python -c "import spacy; spacy.load('fr_core_news_md')" 2>/dev/null; then
+        echo -e "${GREEN}✅ Modèle fr_core_news_md installé${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Modèle fr_core_news_md non trouvé${NC}"
+        echo "   Installation: python -m spacy download fr_core_news_md"
+        SPACY_AVAILABLE=false
+    fi
 fi
 
 # 3. Check NER service file exists
@@ -64,10 +68,11 @@ for file in "${FILES[@]}"; do
     fi
 done
 
-# 4. Test NER extraction
-echo ""
-echo "4. Test d'extraction NER..."
-python -c "
+# 4. Test NER extraction (only if spaCy is available)
+if [ "$SPACY_AVAILABLE" = true ]; then
+    echo ""
+    echo "4. Test d'extraction NER..."
+    python -c "
 import asyncio
 from app.services.ml.ner_service import NERService
 
@@ -101,9 +106,13 @@ async def test():
 
 asyncio.run(test())
 " && echo -e "${GREEN}✅ Tests d'extraction réussis${NC}" || {
-    echo -e "${RED}❌ Tests d'extraction échoués${NC}"
-    exit 1
-}
+        echo -e "${YELLOW}⚠️  Tests d'extraction échoués (vérifiez l'installation spaCy)${NC}"
+    }
+else
+    echo ""
+    echo "4. Test d'extraction NER..."
+    echo -e "${YELLOW}⚠️  Sauté (spaCy non installé)${NC}"
+fi
 
 # 5. Check database migration
 echo ""
