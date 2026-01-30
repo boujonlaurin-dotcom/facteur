@@ -28,9 +28,12 @@ Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir valid�
 ## 2️⃣ PHASE : DECIDE (PLANNING)
 *Objectif : Le contrat d'implémentation.*
 
-- **Action Obligatoire** : Produit un `implementation_plan.md` (utilises ton tool `write_to_file`).
-- **VÉROU DE COMMUNICATION** : Appelle `notify_user` pour faire valider ton plan. 
-- **STOP** : Attends l'approbation explicite. **AUCUNE** ligne de code ne doit changer avant ce "GO".
+- **Action Obligatoire** : Produit un `implementation_plan.md`.
+- **Anti-Pattern** : "Je coderai d'abord, le test viendra après". **INTERDIT.**
+- **Contrainte** : Définis la commande de vérification One-Liner **AVANT** de coder.
+    - Format : `./docs/qa/scripts/verify_<tache>.sh`
+    - Doit être exécutable par l'utilisateur final pour valider l'US
+- **VÉROU** : Attends le GO explicite. **AUCUNE** ligne de code avant approbation.
 
 ---
 
@@ -43,12 +46,11 @@ Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir valid�
 ---
 
 ## 4️⃣ PHASE : VERIFY (VERIFICATION)
-*Objectif : Propreté et Proof of Work (P.O.W).*
+*Objectif : Propreté et Proof of Work.*
 
-- **VÉROU DE QUALITÉ** : Une tâche n'est "DONE" que si elle est vérifiable par une commande **One-Liner**.
-- **Script de Preuve** : Crée systématiquement un script `docs/qa/scripts/verify_<tache>.sh`.
-- **Format du Script** : Le script **DOIT** gérer lui-même son environnement (activation venv, paths absolus).
-- **Communication Finale** : Ton `walkthrough.md` **DOIT** contenir cette commande verbatim pour l'utilisateur.
+- **Anti-Pattern** : "Mon code est prêt, je vais créer le script de test maintenant". **INTERDIT.**
+- **Contrainte** : Exécute TOI-MÊME le script `verify_<tache>.sh` **AVANT** de demander validation à l'utilisateur.
+- **One-Liner** : `cd /path && ./docs/qa/scripts/verify_<tache>.sh` doit être la dernière ligne de chaque walkthrough.
 
 ---
 
