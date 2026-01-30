@@ -183,7 +183,7 @@ class RecommendationService:
         # to ensure a diverse top-of-feed.
         final_list = []
         source_counts = {}
-        decay_factor = 0.85 # Each subsequent item from same source loses 15% score
+        decay_factor = 0.70 # Each subsequent item from same source loses 30% score (Story diversity fix)
         
         for content, base_score in scored_candidates:
              source_id = content.source_id
@@ -534,11 +534,11 @@ class RecommendationService:
                  # Mode "Dernières news" : Feed Twitter-like avec les actualités chaudes
                  # Philosophie : Immédiateté et réactivité, comme un fil d'actu en temps réel
                  # - Fenêtre courte (12h) pour garantir la fraîcheur
-                 # - Thèmes Hard News : actualités chaudes (society_climate, geopolitics, economy)
+                 # - Thèmes Hard News : actualités chaudes (society, international, economy, politics)
                  #   Note: themes en DB correspondent au THEME_MAPPING de import_sources.py
                  # - Tri par date de publication (les plus récents en premier)
                  limit_date = datetime.datetime.utcnow() - datetime.timedelta(hours=12)
-                 hard_news_themes = ['society_climate', 'geopolitics', 'economy']
+                 hard_news_themes = ['society', 'international', 'economy', 'politics']
                  logger.info("breaking_filter_debug", 
                             limit_date=limit_date.isoformat(),
                             target_themes=hard_news_themes)
