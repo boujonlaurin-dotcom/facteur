@@ -1,16 +1,13 @@
 """
-ClassificationService: Zero-shot classification using mDeBERTa.
+ClassificationService: Zero-shot classification using CamemBERT.
 
-Part of Story 4.2-US-3 - ML classification in worker.
+Part of Story 4.1d - ML-based topic classification for RSS articles.
 """
 
 from __future__ import annotations
 
-import asyncio
-import time
-from typing import TYPE_CHECKING
-
 import structlog
+from typing import TYPE_CHECKING
 
 from app.config import get_settings
 
@@ -180,72 +177,15 @@ class ClassificationService:
             log.error("classification_service.load_error", error=str(e))
             raise
     
-    async def classify_async(
-        self,
-        title: str,
-        description: str = "",
-        top_k: int = 3,
-        threshold: float = 0.3,
-    ) -> list[str]:
-        """
-        Async wrapper for classification.
-        Runs the blocking classifier in thread pool to not block event loop.
-        
-        Args:
-            title: Titre de l'article
-            description: Description/résumé optionnel
-            top_k: Nombre maximum de topics à retourner (défaut: 3)
-            threshold: Score minimum pour inclure un topic (défaut: 0.3)
-            
-        Returns:
-            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
-        """
-        if not self.classifier:
-            log.warning("classification_service.classifier_not_loaded")
-            return []
-        
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self._classify_sync,
-            title,
-            description,
-            top_k,
-            threshold,
-        )
-
     def classify(
         self,
         title: str,
         description: str = "",
         top_k: int = 3,
-        threshold: float = 0.3,
+        threshold: float = 0.1,
     ) -> list[str]:
         """
-        Classifie un article basé sur son titre et sa description (synchrone).
-        
-        Note: Pour usage dans async contexts, préférer classify_async().
-        
-        Args:
-            title: Titre de l'article
-            description: Description/résumé optionnel
-            top_k: Nombre maximum de topics à retourner (défaut: 3)
-            threshold: Score minimum pour inclure un topic (défaut: 0.3)
-            
-        Returns:
-            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
-        """
-        return self._classify_sync(title, description, top_k, threshold)
-    
-    def _classify_sync(
-        self,
-        title: str,
-        description: str,
-        top_k: int,
-        threshold: float,
-    ) -> list[str]:
-        """
-        Synchronous classification (runs in thread pool).
+        Classifie un article basé sur son titre et sa description.
         
         Args:
             title: Titre de l'article
@@ -254,7 +194,7 @@ class ClassificationService:
             threshold: Score minimum pour inclure un topic
             
         Returns:
-            Liste des slugs de topics
+            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
         """
         if not self.classifier:
             log.warning("classification_service.classifier_not_loaded")
@@ -267,15 +207,11 @@ class ClassificationService:
             return []
         
         try:
-            start_time = time.time()
-            
             result = self.classifier(
                 text,
                 candidate_labels=self.CANDIDATE_LABELS_FR,
                 multi_label=True,
             )
-            
-            elapsed_ms = (time.time() - start_time) * 1000
             
             # Extrait les labels avec score > threshold
             topics: list[str] = []
@@ -289,7 +225,6 @@ class ClassificationService:
                 "classification_service.classified",
                 text=text[:100],
                 topics=topics,
-                elapsed_ms=round(elapsed_ms, 2),
             )
             
             return topics
@@ -301,21 +236,6 @@ class ClassificationService:
     def is_ready(self) -> bool:
         """Retourne True si le modèle est chargé et prêt."""
         return self._model_loaded and self.classifier is not None
-    
-    def get_stats(self) -> dict:
-        """
-        Get service statistics for monitoring.
-        
-        Returns:
-            Dict avec les stats du service de classification
-        """
-        return {
-            "model_loaded": self._model_loaded,
-            "classifier_ready": self.classifier is not None,
-            "model_name": "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7",
-            "candidate_labels_count": len(self.CANDIDATE_LABELS_FR),
-            "device": "CPU",
-        }
 
 
 # Singleton instance (lazy-loaded)

@@ -78,9 +78,8 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
-    # ML Classification (Story 4.2-US-3)
-    ml_enabled: bool = False  # Set to True to load mDeBERTa model
-    transformers_cache: str = "/tmp/transformers_cache"  # Cache dir for transformers models
+    # ML Classification (Story 4.1d)
+    ml_enabled: bool = False  # Set to True to load CamemBERT model
 
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
