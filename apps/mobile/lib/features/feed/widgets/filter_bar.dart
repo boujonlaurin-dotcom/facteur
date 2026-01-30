@@ -4,7 +4,6 @@ import '../providers/personalized_filters_provider.dart';
 
 /// Map des descriptions courtes pour chaque filtre (Fallback)
 const Map<String, String> defaultFilterDescriptions = {
-  'breaking': 'Les actus chaudes des dernières 12h',
   'inspiration': 'Sans thèmes anxiogènes (Politique, Géopolitique...)',
   'deep_dive': 'Des formats longs pour comprendre',
 };
@@ -46,7 +45,6 @@ class FilterBar extends StatefulWidget {
 class _FilterBarState extends State<FilterBar> {
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _keys = {
-    'breaking': GlobalKey(),
     'inspiration': GlobalKey(),
     'perspectives': GlobalKey(),
     'deep_dive': GlobalKey(),
@@ -105,17 +103,11 @@ class _FilterBarState extends State<FilterBar> {
       // Padding du Container parent (16px de chaque côté)
       const containerPadding = 16.0;
       final containerWidth = parentWidth - (2 * containerPadding);
-      
+
       // Pour "breaking" (Dernières news), aligner à gauche
       // Pour les autres, utiliser le centre du chip
-      Offset anchorPoint;
-      if (widget.selectedFilter == 'breaking') {
-        // Utiliser le bord gauche du chip
-        anchorPoint = box.localToGlobal(Offset.zero, ancestor: parentBox);
-      } else {
-        // Utiliser le centre du chip
-        anchorPoint = box.localToGlobal(Offset(box.size.width / 2, 0), ancestor: parentBox);
-      }
+      final anchorPoint =
+          box.localToGlobal(Offset(box.size.width / 2, 0), ancestor: parentBox);
 
       setState(() {
         // Ajuster pour tenir compte du padding du conteneur
@@ -125,12 +117,7 @@ class _FilterBarState extends State<FilterBar> {
         // Map 0..containerWidth to -1..1 pour l'alignement dans le Container avec padding
         _descriptionAlignX = (relativeX / containerWidth) * 2 - 1;
         // Clamp pour éviter que le texte ne dépasse trop des bords
-        // Pour "breaking", on veut être proche de -1 (gauche), donc on clamp moins strictement
-        if (widget.selectedFilter == 'breaking') {
-          _descriptionAlignX = _descriptionAlignX.clamp(-1.0, 0.85);
-        } else {
-          _descriptionAlignX = _descriptionAlignX.clamp(-0.85, 0.85);
-        }
+        _descriptionAlignX = _descriptionAlignX.clamp(-0.85, 0.85);
       });
     }
   }
@@ -146,9 +133,7 @@ class _FilterBarState extends State<FilterBar> {
     // - 1.0 pour le dernier item (bord droit)
     // - 0.5 pour les items du milieu (centré)
     double alignment = 0.5;
-    if (widget.selectedFilter == 'breaking') {
-      alignment = 0.0;
-    } else if (widget.selectedFilter == 'deep_dive') {
+    if (widget.selectedFilter == 'deep_dive') {
       alignment = 1.0;
     }
 
@@ -292,9 +277,8 @@ class _FilterBarState extends State<FilterBar> {
         .where((FilterConfig f) => f.key == widget.selectedFilter)
         .firstOrNull;
 
-    final List<FilterConfig> visibleFilters = availableFilters
-        .where((FilterConfig f) => f.isVisible)
-        .toList();
+    final List<FilterConfig> visibleFilters =
+        availableFilters.where((FilterConfig f) => f.isVisible).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -306,23 +290,12 @@ class _FilterBarState extends State<FilterBar> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
-            children: visibleFilters.isNotEmpty
-                ? visibleFilters
-                    .map<Widget>((FilterConfig f) => Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: _buildFilterChip(context, f.label, f.key),
-                        ))
-                    .toList()
-                : [
-                    _buildFilterChip(context, 'Dernières news', 'breaking'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip(context, 'Rester serein', 'inspiration'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip(
-                        context, 'Changer de perspective', 'perspectives'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip(context, 'Longs formats', 'deep_dive'),
-                  ],
+            children: visibleFilters
+                .map<Widget>((FilterConfig f) => Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _buildFilterChip(context, f.label, f.key),
+                    ))
+                .toList(),
           ),
         ),
         // Description avec alignement dynamique qui suit le chip (anchor)
@@ -351,12 +324,10 @@ class _FilterBarState extends State<FilterBar> {
                             Text(
                               _currentDescription!,
                               key: ValueKey(_currentDescription),
-                              textAlign: widget.selectedFilter == 'breaking' 
-                                  ? TextAlign.left 
-                                  : TextAlign.center,
+                              textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color:
-                                    colorScheme.onSurface.withValues(alpha: 0.5),
+                                color: colorScheme.onSurface
+                                    .withValues(alpha: 0.5),
                                 fontStyle: FontStyle.italic,
                               ),
                             ),

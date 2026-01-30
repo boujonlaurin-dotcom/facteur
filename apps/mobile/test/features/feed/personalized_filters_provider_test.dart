@@ -14,11 +14,10 @@ void main() {
 
       final filters = container.read(personalizedFiltersProvider);
 
-      expect(filters.length, 4);
-      expect(filters[0].key, 'breaking');
-      expect(filters[1].key, 'inspiration');
-      expect(filters[2].key, 'perspectives');
-      expect(filters[3].key, 'deep_dive');
+      expect(filters.length, 3);
+      expect(filters[0].key, 'inspiration');
+      expect(filters[1].key, 'perspectives');
+      expect(filters[2].key, 'deep_dive');
     });
 
     test('Prioritizes "deep_dive" when objective is "learn"', () {
@@ -37,23 +36,6 @@ void main() {
 
       // Logic: objective='learn' -> deep_dive moved to front.
       expect(filters[0].key, 'deep_dive');
-    });
-
-    test('Prioritizes "breaking" when response style is "decisive"', () {
-      final container = ProviderContainer(
-        overrides: [
-          onboardingProvider.overrideWith((ref) {
-            final notifier = OnboardingNotifier();
-            notifier.selectResponseStyle('decisive');
-            return notifier;
-          }),
-        ],
-      );
-
-      final filters = container.read(personalizedFiltersProvider);
-
-      // Logic: decisive -> breaking moved to front.
-      expect(filters[0].key, 'breaking');
     });
 
     test('Prioritizes "inspiration" when perspective is "big_picture"', () {

@@ -391,4 +391,29 @@ class SyncService:
         # we should flush.
         await self.session.flush()
         
+        # US-2: Add to classification queue for ML processing
+        await self._enqueue_for_classification(new_content, data)
+        
         return True
+    
+    async def _enqueue_for_classification(self, content: Content, data: dict) -> None:
+        """Add content to classification queue with priority based on age."""
+        from app.services.classification_queue_service import ClassificationQueueService
+        
+        queue_service = ClassificationQueueService(self.session)
+        
+        # Calculate priority based on article age
+        priority = 0
+        if data.get('published_at'):
+            try:
+                hours_old = (datetime.datetime.utcnow() - data['published_at']).total_seconds() / 3600
+                if hours_old < 24:
+                    priority = 10  # Recent articles - high priority
+                elif hours_old < 72:
+                    priority = 5   # 1-3 days old - medium priority
+                # Older articles stay at priority 0
+            except (TypeError, AttributeError):
+                # If date comparison fails, use default priority
+                pass
+        
+        await queue_service.enqueue(content.id, priority=priority)
