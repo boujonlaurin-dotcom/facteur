@@ -72,16 +72,21 @@ class NERService:
             
             log.info("ner.model_loaded", model=self._model_name)
             
+        except ImportError:
+            log.warning("ner.spacy_not_installed",
+                       message="spaCy not installed. NER service will be unavailable.",
+                       install_command="pip install spacy==3.7.2 && python -m spacy download fr_core_news_md")
+            self._nlp = None
         except OSError as e:
             log.error("ner.model_not_found", 
                      model=self._model_name,
                      error=str(e))
             log.error("ner.run_install", 
                      command="python -m spacy download fr_core_news_md")
-            raise
+            self._nlp = None
         except Exception as e:
             log.error("ner.load_error", error=str(e))
-            raise
+            self._nlp = None
     
     async def extract_entities(
         self,
