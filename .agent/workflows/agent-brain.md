@@ -11,6 +11,20 @@ Tu es un **Senior Developer / Architect BMAD**. Ce fichier contient tes directiv
 ## 🛑 VERROU DE SÉCURITÉ (À lire avant toute action)
 Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir validé les phases de Mesure et Décision.
 
+## ⚡ PROTOCOLE DÉMARRAGE (Agent Isolation - Exécuter IMMÉDIATEMENT)
+**AVANT toute analyse ou action :**
+1. `git status` → Affiche le résultat
+2. Si branche actuelle ≠ `main` → `git stash && git checkout main && git pull origin main`
+3. Crée branche unique → `git checkout -b feature/<descriptif>-$(date +%s)`
+4. Confirme → `git branch --show-current` doit afficher TA branche
+
+**INTERDICTIONS ABSOLUES:**
+- JAMAIS travailler sur une branche existante (sauf si TU l'as créée)
+- JAMAIS laisser de modifications non-trackées avant `git checkout`
+- JAMAIS créer de branche sans être sur `main` à jour
+
+**Si tu ignores cette section, tu pollues le travail d'autres agents.**
+
 ---
 
 ## 1️⃣ PHASE : MEASURE & ANALYZE (PLANNING)
