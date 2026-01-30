@@ -1,7 +1,7 @@
 """Worker asynchrone pour la classification ML des contenus."""
 
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -12,6 +12,8 @@ from app.database import Base
 from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.services.classification_queue_service import ClassificationQueueService
+from app.services.ml.classification_service import get_classification_service
+from app.services.ml.ner_service import get_ner_service
 
 settings = get_settings()
 
@@ -53,6 +55,22 @@ class ClassificationWorker:
             autocommit=False,
             autoflush=False,
         )
+        
+        # Initialize ML services (lazy loading)
+        self._classifier = None
+        self._ner = None
+    
+    def _get_classifier(self):
+        """Lazy load classification service."""
+        if self._classifier is None:
+            self._classifier = get_classification_service()
+        return self._classifier
+    
+    def _get_ner(self):
+        """Lazy load NER service."""
+        if self._ner is None:
+            self._ner = get_ner_service()
+        return self._ner
     
     async def start(self):
         """Start the worker in the background."""
@@ -108,54 +126,67 @@ class ClassificationWorker:
                     await service.mark_failed(item.id, str(e)[:500])
     
     async def _classify_item(self, session: AsyncSession, item: ClassificationQueue):
-        """Classify a single content item using ML.
+        """Classify a single content item using ML (topics + NER).
         
-        This is a placeholder - in production, this would call the ML service.
-        For now, we'll just mark items as completed with mock topics.
+        Extracts both topics (mDeBERTa) and entities (spaCy NER) from the content.
         """
-        # TODO: Replace with actual ML classification
-        # For now, simulate classification with mock topics
-        mock_topics = self._extract_topics_from_content(item.content)
-        
-        service = ClassificationQueueService(session)
-        await service.mark_completed(item.id, mock_topics)
-    
-    def _extract_topics_from_content(self, content: Optional[Content]) -> List[str]:
-        """Extract topics from content (mock implementation).
-        
-        In production, this would use the ML classification service.
-        """
+        content = item.content
         if not content:
-            return []
+            service = ClassificationQueueService(session)
+            await service.mark_completed_with_entities(item.id, [], [])
+            return
         
-        # Simple keyword-based extraction for demo
-        title_lower = (content.title or "").lower()
-        desc_lower = (content.description or "").lower()
-        text = title_lower + " " + desc_lower
+        # Get topics and entities
+        topics, entities = await self._extract_topics_and_entities(content)
         
+        # Mark as completed with both topics and entities
+        service = ClassificationQueueService(session)
+        await service.mark_completed_with_entities(item.id, topics, entities)
+    
+    async def _extract_topics_and_entities(self, content: Content) -> Tuple[List[str], List[dict]]:
+        """Extract both topics and entities from content.
+        
+        Returns:
+            Tuple of (topics, entities) where:
+            - topics: List of topic strings
+            - entities: List of entity dicts [{"text": "...", "label": "..."}]
+        """
         topics = []
+        entities = []
         
-        # Simple keyword matching
-        topic_keywords = {
-            "tech": ["technology", "tech", "software", "ai", "artificial intelligence", "digital"],
-            "science": ["science", "research", "study", "discovery", "physics", "biology"],
-            "politics": ["politics", "election", "government", "president", "minister"],
-            "economy": ["economy", "economic", "finance", "market", "stock", "business"],
-            "climate": ["climate", "environment", "green", "carbon", "warming"],
-            "health": ["health", "medical", "medicine", "hospital", "disease"],
-            "culture": ["culture", "art", "music", "film", "book", "literature"],
-            "sports": ["sport", "football", "basketball", "tennis", "olympic"],
-        }
+        # 1. Topic classification (mDeBERTa)
+        classifier = self._get_classifier()
+        if classifier and classifier.is_ready():
+            try:
+                topics = await classifier.classify_async(
+                    title=content.title or "",
+                    description=content.description or "",
+                )
+            except Exception as e:
+                import structlog
+                logger = structlog.get_logger()
+                logger.warning("classification_failed", error=str(e), content_id=str(content.id))
         
-        for topic, keywords in topic_keywords.items():
-            if any(keyword in text for keyword in keywords):
-                topics.append(topic)
+        # Fallback to source topics if classification fails
+        if not topics and content.source:
+            topics = content.source.granular_topics or []
         
-        # If no topics found, add a default one
-        if not topics:
-            topics = ["general"]
+        # 2. Entity extraction (spaCy NER)
+        ner = self._get_ner()
+        if ner and ner.is_ready():
+            try:
+                ner_entities = await ner.extract_entities(
+                    title=content.title or "",
+                    description=content.description or "",
+                    max_entities=10,
+                )
+                entities = [e.to_dict() for e in ner_entities]
+            except Exception as e:
+                import structlog
+                logger = structlog.get_logger()
+                logger.warning("ner_extraction_failed", error=str(e), content_id=str(content.id))
         
-        return topics[:3]  # Max 3 topics
+        return topics, entities
 
 
 # Global worker instance (singleton)

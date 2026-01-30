@@ -233,6 +233,40 @@ class ClassificationService:
             log.error("classification_service.classify_error", error=str(e))
             return []
     
+    async def classify_async(
+        self,
+        title: str,
+        description: str = "",
+        top_k: int = 3,
+        threshold: float = 0.1,
+    ) -> list[str]:
+        """
+        Version asynchrone de classify.
+        
+        Exécute la classification dans un thread pool pour ne pas bloquer
+        l'event loop asyncio.
+        
+        Args:
+            title: Titre de l'article
+            description: Description/résumé optionnel
+            top_k: Nombre maximum de topics à retourner
+            threshold: Score minimum pour inclure un topic
+            
+        Returns:
+            Liste des slugs de topics
+        """
+        import asyncio
+        
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self.classify,
+            title,
+            description,
+            top_k,
+            threshold,
+        )
+    
     def is_ready(self) -> bool:
         """Retourne True si le modèle est chargé et prêt."""
         return self._model_loaded and self.classifier is not None

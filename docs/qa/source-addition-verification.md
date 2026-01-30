@@ -1,5 +1,30 @@
 # Vérification : fix ajout de sources (prod + visibilité par user)
 
+## 0. Ordre de validation recommandé
+
+1. **Backend** : lancer les tests pytest (sans config Flutter) → valide que le code ne 500 plus.
+2. **Via l’App** : l’API en local + l’app pointant dessus → refaire le flux E2E (étapes 2 et 3) → valide en conditions réelles avant de merger/déployer.
+3. **Après déploiement** : l’app en prod (ou pointant sur prod) → même flux pour confirmer en prod.
+
+---
+
+## 0b. Validation via l’App (minimal — avant de valider le fix)
+
+Pour valider le fix **dans l’App** sans déployer en prod :
+
+| Étape | Action |
+|-------|--------|
+| 1 | Branche `fix/source-addition-prod-and-per-user` à jour. |
+| 2 | **Terminal 1** — lancer l’API en local : `cd packages/api && source venv/bin/activate && uvicorn app.main:app --reload --port 8080` (avec `DATABASE_URL` dispo, ex. `.env`). |
+| 3 | **Pointer l’app vers l’API locale** : dans `apps/mobile/lib/config/constants.dart`, dans `baseUrl`, décommenter **une** ligne selon le device : `return 'http://10.0.2.2:8080/api/';` (Android Emulator) ou `return 'http://localhost:8080/api/';` (iOS / Web / Mac). Commenter ou laisser le `return` prod en dessous. Sauvegarder. |
+| 4 | Lancer l’app (même device/émulateur que l’URL choisie). Se connecter. |
+| 5 | **Paramètres → Mes sources → Ajouter une source** : saisir `https://vert.eco/feed` (ou Le Plongeoir), **Détecter**, puis **Ajouter**. |
+| 6 | **Succès** = message de succès, pas de DioException 500 → fix validé via l’App. Tu peux commit/push et déployer. |
+
+Ensuite, remettre `baseUrl` sur la prod (ou garder le dart-define en prod) selon ton flux habituel.
+
+---
+
 ## 1. Plan de test E2E (front)
 
 **Objectif** : valider le flux d’ajout de source personnalisée et l’isolation par utilisateur côté app.
@@ -54,3 +79,16 @@ Pour obtenir un JWT : se connecter dans l’app, puis récupérer le token (ex. 
 ---
 
 **API en local** : remplacer l’URL par `http://localhost:8080/api` (ou l’URL de ton backend local).
+
+---
+
+## 3. Backend : tests pytest (sans config Flutter)
+
+Pour valider le correctif **sans lancer l’App** (une seule commande) :
+
+```bash
+cd packages/api && python -m pytest tests/test_source_addition_fix.py -v
+```
+
+- **Attendu** : tous les tests passent (logger présent, add_custom_source sans 500, idempotence).
+- Si la DB n’est pas dispo : `cd packages/api && python -m pytest tests/test_source_addition_fix.py -v -k "has_logger"` pour vérifier uniquement que le fix logger est présent.

@@ -86,6 +86,36 @@ class ClassificationQueueService:
                 content.topics = topics
             
             await self.session.commit()
+    
+    async def mark_completed_with_entities(
+        self, 
+        queue_id: UUID, 
+        topics: List[str],
+        entities: List[dict],
+    ) -> None:
+        """Marque un élément comme complété avec topics ET entités extraites.
+        
+        Args:
+            queue_id: ID de l'élément dans la file
+            topics: Liste des topics classifiés
+            entities: Liste des entités extraites (format: [{"text": "...", "label": "..."}])
+        """
+        item = await self.session.get(ClassificationQueue, queue_id)
+        if item:
+            item.status = 'completed'
+            item.processed_at = datetime.utcnow()
+            item.updated_at = datetime.utcnow()
+            
+            # Mettre à jour le contenu avec topics et entités
+            content = await self.session.get(Content, item.content_id)
+            if content:
+                content.topics = topics
+                # Store entities as JSON strings in the array
+                if entities:
+                    import json
+                    content.entities = [json.dumps(entity) for entity in entities]
+            
+            await self.session.commit()
 
     async def mark_failed(self, queue_id: UUID, error: str) -> bool:
         """Marque un élément comme échoué avec logique de retry.
