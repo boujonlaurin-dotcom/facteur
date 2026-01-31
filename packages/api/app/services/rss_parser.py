@@ -57,9 +57,9 @@ class RSSParser:
         feed = await loop.run_in_executor(None, feedparser.parse, content)
         
         if feed.bozo:
-             # feedparser.bozo means malformed XML, but often it still parses something usable.
-             # We log it but proceed if entries exist.
-             logger.warning("Feedparser reported bozo", url=url, error=feed.bozo_exception)
+            # feedparser.bozo means malformed XML, but often it still parses something usable.
+            # We log it but proceed if entries exist.
+            logger.warning("Feedparser reported bozo", url=url, error=feed.bozo_exception)
              
         return feed
 
@@ -79,7 +79,7 @@ class RSSParser:
             response.raise_for_status()
             content = response.text
         except Exception as e:
-             raise ValueError(f"Could not access URL: {str(e)}")
+            raise ValueError(f"Could not access URL: {str(e)}")
 
         import asyncio
         loop = asyncio.get_event_loop()
@@ -93,7 +93,7 @@ class RSSParser:
         # But often HTML pages return non-empty 'entries' because feedparser is too lenient.
         # Strict check: Feed title must exist.
         if len(feed_data.entries) > 0 and 'title' in feed_data.feed:
-             return await self._format_response(url, feed_data)
+            return await self._format_response(url, feed_data)
 
         # 2. HTML Auto-Discovery
         soup = BeautifulSoup(content, 'html.parser')
@@ -115,10 +115,10 @@ class RSSParser:
             
             # 2. Schema.org fallback
             if not channel_id:
-                 # <meta property="og:url" content="https://www.youtube.com/channel/UC...">
-                 og_url = soup.find("meta", property="og:url")
-                 if og_url and "channel/" in (og_url.get("content") or ""):
-                     channel_id = og_url["content"].split("channel/")[-1]
+                # <meta property="og:url" content="https://www.youtube.com/channel/UC...">
+                og_url = soup.find("meta", property="og:url")
+                if og_url and "channel/" in (og_url.get("content") or ""):
+                    channel_id = og_url["content"].split("channel/")[-1]
 
             # 3. Regex fallback (Robust for "Consent" pages or JS renders)
             if not channel_id:
@@ -149,9 +149,9 @@ class RSSParser:
                         query_params = urllib.parse.parse_qs(parsed_href.query)
                         cont_url = query_params.get("continue", [None])[0]
                         if cont_url and "channel/" in cont_url:
-                           channel_id = cont_url.split("channel/")[-1].split("?")[0]
-                           logger.info("Extracted channel ID from continue param", channel_id=channel_id)
-                           break
+                            channel_id = cont_url.split("channel/")[-1].split("?")[0]
+                            logger.info("Extracted channel ID from continue param", channel_id=channel_id)
+                            break
 
             # 6. Retry with /about suffix if still nothing
             if not channel_id and "/@" in url:
@@ -177,17 +177,17 @@ class RSSParser:
                     
             # 8. Retry with a known robust CONSENT cookie if still nothing
             if not channel_id and ("consent.youtube.com" in content or "canonical" in str(soup.find("link", rel="canonical"))):
-                 logger.info("Detected consent wall or missing ID, retrying with robust cookie", url=url)
-                 try:
-                     retry_resp = await self.client.get(url, cookies={"CONSENT": "YES+cb.20230531-17-p0.en+FX+908"})
-                     if retry_resp.status_code == 200:
-                         retry_content = retry_resp.text
-                         match = re.search(r'"channelId":"(UC[\w-]+)"', retry_content)
-                         if match:
-                             channel_id = match.group(1)
-                             logger.info("Resolved YouTube Channel ID after retry with cookie", channel_id=channel_id)
-                 except Exception as e:
-                     logger.warning("Retry with robust cookie failed", error=str(e))
+                logger.info("Detected consent wall or missing ID, retrying with robust cookie", url=url)
+                try:
+                    retry_resp = await self.client.get(url, cookies={"CONSENT": "YES+cb.20230531-17-p0.en+FX+908"})
+                    if retry_resp.status_code == 200:
+                        retry_content = retry_resp.text
+                        match = re.search(r'"channelId":"(UC[\w-]+)"', retry_content)
+                        if match:
+                            channel_id = match.group(1)
+                            logger.info("Resolved YouTube Channel ID after retry with cookie", channel_id=channel_id)
+                except Exception as e:
+                    logger.warning("Retry with robust cookie failed", error=str(e))
 
             # 9. Ultimate Fallback: YouTube Search discovery (Bypasses most consent walls)
             if not channel_id and "/@" in url:
@@ -262,7 +262,7 @@ class RSSParser:
                     feed_resp.raise_for_status()
                     found_feed_data = await loop.run_in_executor(None, feedparser.parse, feed_resp.text)
                     if len(found_feed_data.entries) > 0:
-                         return await self._format_response(found_url, found_feed_data)
+                        return await self._format_response(found_url, found_feed_data)
                 except Exception as e:
                     logger.warning("Failed to parse discovered feed", rss_url=found_url, error=str(e))
         
@@ -272,18 +272,18 @@ class RSSParser:
             from urllib.parse import urljoin
             common_suffixes = ["/feed", "/rss", "/rss.xml", "/feed.xml"]
             for suffix in common_suffixes:
-                 try_url = url.rstrip("/") + suffix
-                 logger.info("Trying common RSS suffix", try_url=try_url)
-                 try:
-                     resp = await self.client.get(try_url)
-                     if resp.status_code == 200:
-                         # Check if it parses
-                         suffix_feed = await loop.run_in_executor(None, feedparser.parse, resp.text)
-                         if not suffix_feed.bozo and len(suffix_feed.entries) > 0:
-                              logger.info("Found valid feed via suffix", url=try_url)
-                              return await self._format_response(try_url, suffix_feed)
-                 except Exception:
-                     continue
+                try_url = url.rstrip("/") + suffix
+                logger.info("Trying common RSS suffix", try_url=try_url)
+                try:
+                    resp = await self.client.get(try_url)
+                    if resp.status_code == 200:
+                        # Check if it parses
+                        suffix_feed = await loop.run_in_executor(None, feedparser.parse, resp.text)
+                        if not suffix_feed.bozo and len(suffix_feed.entries) > 0:
+                            logger.info("Found valid feed via suffix", url=try_url)
+                            return await self._format_response(try_url, suffix_feed)
+                except Exception:
+                    continue
 
         # If we reach here, nothing found
         raise ValueError("No RSS feed found on this page.")
