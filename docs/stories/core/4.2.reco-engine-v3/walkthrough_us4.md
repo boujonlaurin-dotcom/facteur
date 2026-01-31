@@ -46,7 +46,7 @@ bash docs/qa/scripts/verify_us4_ner.sh
 ```bash
 # Install spaCy and French model
 cd packages/api
-pip install spacy==3.7.2
+pip install spacy==3.8.11
 python -m spacy download fr_core_news_md
 
 # Test NER extraction

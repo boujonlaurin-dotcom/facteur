@@ -18,7 +18,7 @@ fi
 echo "📦 Vérification de spaCy..."
 pip show spacy > /dev/null 2>&1 || {
     echo "📥 Installation de spaCy..."
-    pip install spacy==3.7.2
+    pip install spacy==3.8.11
 }
 
 # Download French model

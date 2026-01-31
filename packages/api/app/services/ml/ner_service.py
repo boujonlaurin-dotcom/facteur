@@ -75,7 +75,7 @@ class NERService:
         except ImportError:
             log.warning("ner.spacy_not_installed",
                        message="spaCy not installed. NER service will be unavailable.",
-                       install_command="pip install spacy==3.7.2 && python -m spacy download fr_core_news_md")
+                       install_command="pip install spacy==3.8.11 && python -m spacy download fr_core_news_md")
             self._nlp = None
         except OSError as e:
             log.error("ner.model_not_found", 

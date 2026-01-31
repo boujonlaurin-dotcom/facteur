@@ -33,7 +33,7 @@ if python -c "import spacy" 2>/dev/null; then
     SPACY_AVAILABLE=true
 else
     echo -e "${YELLOW}⚠️  spaCy n'est pas installé (optionnel pour dev)${NC}"
-    echo "   Pour l'activer: pip install spacy==3.7.2"
+    echo "   Pour l'activer: pip install spacy==3.8.11"
 fi
 
 # 2. Check French model

@@ -55,7 +55,7 @@ class Content(Base):
     # Story 4.1c: Granular topic tagging
     topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Story 4.2-US-4: Named Entity Recognition
-    entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -76,6 +76,8 @@ class UserContentStatus(Base):
     __tablename__ = "user_content_status"
     __table_args__ = (
         UniqueConstraint("user_id", "content_id", name="uq_user_content_status_user_content"),
+        Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
+        Index("ix_user_content_status_user_status", "user_id", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(
