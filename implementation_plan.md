@@ -1,3 +1,26 @@
+# Plan d'implémentation : Fix ajout de sources (prod + visibilité par user)
+
+## Status: ACT - Implémentation effectuée, en attente de déploiement et vérification
+
+## Branche
+
+`fix/source-addition-prod-and-per-user` (créée depuis `main` uniquement)
+
+## Contexte
+
+- **Bug 1** : L’ajout de source personnalisée ne fonctionne plus en production (même vert.eco, Substack).
+- **Bug 2** : Les sources ajoutées par un utilisateur semblent apparaître pour tous les utilisateurs.
+
+Voir : `docs/bugs/bug-source-addition-prod-and-visibility.md`.
+
+## Actions réalisées (ACT)
+
+- ✅ **Bug 1** : `import structlog` + `logger = structlog.get_logger()` dans `source_service.py`.
+- ✅ **Bug 2** : Idempotence à l’ajout ; `.distinct()` sur la requête custom ; migration `n3o4p5q6r7s8` (suppression doublons + `UNIQUE(user_id, source_id)` sur `user_sources`) ; modèle `UserSource` avec `UniqueConstraint`.
+- ✅ Script QA : `docs/qa/scripts/verify_source_addition_prod.sh`.
+
+---
+
 # Plan d'implémentation : Fix echec API personnalisation (mute)
 
 ## Status: ACT - Implémentation terminée, en attente de test

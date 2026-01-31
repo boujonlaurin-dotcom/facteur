@@ -1,31 +1,28 @@
-"""Worker asynchrone pour la classification ML des contenus.
-
-Story 4.2-US-3: mDeBERTa Worker Integration
-"""
+"""Worker asynchrone pour la classification ML des contenus."""
 
 import asyncio
-import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from uuid import UUID
 
-import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
+from app.database import Base
 from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.services.classification_queue_service import ClassificationQueueService
+from app.services.ml.classification_service import get_classification_service
+from app.services.ml.ner_service import get_ner_service
 
 settings = get_settings()
-log = structlog.get_logger()
 
 
 class ClassificationWorker:
-    """Worker qui traite la file d'attente de classification ML avec mDeBERTa.
+    """Worker qui traite la file d'attente de classification ML.
     
-    Story 4.2-US-3: Intègre le service de classification ML mDeBERTa pour
-    classifier automatiquement les articles avec fallback sur source.granular_topics.
+    Ce worker fonctionne de manière asynchrone et peut être démarré
+    comme tâche de fond dans l'application FastAPI.
     """
     
     def __init__(self, batch_size: int = 10, interval: int = 60):
@@ -39,14 +36,6 @@ class ClassificationWorker:
         self.interval = interval
         self.running = False
         self._task: Optional[asyncio.Task] = None
-        
-        # Metrics tracking
-        self.metrics = {
-            "processed": 0,
-            "failed": 0,
-            "fallback": 0,
-            "avg_time_ms": 0.0,
-        }
         
         # Create engine for worker (separate from main app)
         self.engine = create_async_engine(
@@ -66,6 +55,22 @@ class ClassificationWorker:
             autocommit=False,
             autoflush=False,
         )
+        
+        # Initialize ML services (lazy loading)
+        self._classifier = None
+        self._ner = None
+    
+    def _get_classifier(self):
+        """Lazy load classification service."""
+        if self._classifier is None:
+            self._classifier = get_classification_service()
+        return self._classifier
+    
+    def _get_ner(self):
+        """Lazy load NER service."""
+        if self._ner is None:
+            self._ner = get_ner_service()
+        return self._ner
     
     async def start(self):
         """Start the worker in the background."""
@@ -102,7 +107,7 @@ class ClassificationWorker:
             await asyncio.sleep(self.interval)
     
     async def _process_batch(self):
-        """Process one batch of pending items with ML classification."""
+        """Process one batch of pending items."""
         async with self.session_maker() as session:
             service = ClassificationQueueService(session)
             
@@ -112,135 +117,76 @@ class ClassificationWorker:
             if not items:
                 return
             
-            log.info("worker.processing_batch", count=len(items))
-            
             # Process each item
             for item in items:
                 try:
                     await self._classify_item(session, item)
-                    self.metrics["processed"] += 1
                 except Exception as e:
                     # Mark as failed - will be retried
-                    log.error(
-                        "worker.item_failed",
-                        content_id=str(item.content_id),
-                        error=str(e),
-                    )
                     await service.mark_failed(item.id, str(e)[:500])
-                    self.metrics["failed"] += 1
     
     async def _classify_item(self, session: AsyncSession, item: ClassificationQueue):
-        """Classify a single content item using mDeBERTa with fallback.
+        """Classify a single content item using ML (topics + NER).
         
-        Story 4.2-US-3: Uses ML classification with fallback to source.granular_topics.
-        
-        Args:
-            session: SQLAlchemy async session
-            item: ClassificationQueue item to process
+        Extracts both topics (mDeBERTa) and entities (spaCy NER) from the content.
         """
-        from app.services.ml import get_classification_service
-        
-        start_time = time.time()
-        
-        # Get content and source
         content = item.content
         if not content:
-            raise ValueError(f"Content not found for queue item {item.id}")
+            service = ClassificationQueueService(session)
+            await service.mark_completed_with_entities(item.id, [], [])
+            return
         
-        # Force load source relationship if not loaded
-        if not content.source:
-            from sqlalchemy.orm import selectinload
-            from sqlalchemy import select
-            
-            stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content.id)
-            result = await session.execute(stmt)
-            content = result.scalar_one()
+        # Get topics and entities
+        topics, entities = await self._extract_topics_and_entities(content)
         
-        # Get classifier service
-        classifier = get_classification_service()
-        topics: List[str] = []
-        used_fallback = False
+        # Mark as completed with both topics and entities
+        service = ClassificationQueueService(session)
+        await service.mark_completed_with_entities(item.id, topics, entities)
+    
+    async def _extract_topics_and_entities(self, content: Content) -> Tuple[List[str], List[dict]]:
+        """Extract both topics and entities from content.
         
-        # Try ML classification if available
-        if classifier.is_ready():
+        Returns:
+            Tuple of (topics, entities) where:
+            - topics: List of topic strings
+            - entities: List of entity dicts [{"text": "...", "label": "..."}]
+        """
+        topics = []
+        entities = []
+        
+        # 1. Topic classification (mDeBERTa)
+        classifier = self._get_classifier()
+        if classifier and classifier.is_ready():
             try:
                 topics = await classifier.classify_async(
                     title=content.title or "",
                     description=content.description or "",
-                    top_k=3,
-                    threshold=0.3,
-                )
-                log.debug(
-                    "worker.ml_classified",
-                    content_id=str(content.id),
-                    topics=topics,
                 )
             except Exception as e:
-                log.warning(
-                    "worker.ml_classification_failed",
-                    content_id=str(content.id),
-                    error=str(e),
+                import structlog
+                logger = structlog.get_logger()
+                logger.warning("classification_failed", error=str(e), content_id=str(content.id))
+        
+        # Fallback to source topics if classification fails
+        if not topics and content.source:
+            topics = content.source.granular_topics or []
+        
+        # 2. Entity extraction (spaCy NER)
+        ner = self._get_ner()
+        if ner and ner.is_ready():
+            try:
+                ner_entities = await ner.extract_entities(
+                    title=content.title or "",
+                    description=content.description or "",
+                    max_entities=10,
                 )
+                entities = [e.to_dict() for e in ner_entities]
+            except Exception as e:
+                import structlog
+                logger = structlog.get_logger()
+                logger.warning("ner_extraction_failed", error=str(e), content_id=str(content.id))
         
-        # Fallback to source.granular_topics if ML fails or returns empty
-        if not topics and content.source and content.source.granular_topics:
-            topics = content.source.granular_topics[:3]
-            used_fallback = True
-            self.metrics["fallback"] += 1
-            log.debug(
-                "worker.using_fallback",
-                content_id=str(content.id),
-                source_name=content.source.name,
-                topics=topics,
-            )
-        
-        # Save topics to content
-        content.topics = topics if topics else None
-        await session.commit()
-        
-        # Calculate processing time
-        elapsed_ms = (time.time() - start_time) * 1000
-        self._update_metrics(elapsed_ms)
-        
-        log.info(
-            "worker.item_processed",
-            content_id=str(content.id),
-            topics=topics,
-            used_fallback=used_fallback,
-            elapsed_ms=round(elapsed_ms, 2),
-        )
-        
-        # Mark queue item as completed
-        service = ClassificationQueueService(session)
-        await service.mark_completed(item.id, topics)
-    
-    def _update_metrics(self, elapsed_ms: float):
-        """Update running average processing time."""
-        n = self.metrics["processed"]
-        if n > 0:
-            self.metrics["avg_time_ms"] = (
-                (self.metrics["avg_time_ms"] * (n - 1)) + elapsed_ms
-            ) / n
-        else:
-            self.metrics["avg_time_ms"] = elapsed_ms
-    
-    def get_metrics(self) -> dict:
-        """Get worker metrics for monitoring."""
-        total = self.metrics["processed"] + self.metrics["failed"]
-        fallback_rate = (
-            self.metrics["fallback"] / self.metrics["processed"] * 100
-            if self.metrics["processed"] > 0
-            else 0
-        )
-        
-        return {
-            "processed": self.metrics["processed"],
-            "failed": self.metrics["failed"],
-            "fallback": self.metrics["fallback"],
-            "fallback_rate_percent": round(fallback_rate, 2),
-            "avg_processing_time_ms": round(self.metrics["avg_time_ms"], 2),
-            "total_attempted": total,
-        }
+        return topics, entities
 
 
 # Global worker instance (singleton)

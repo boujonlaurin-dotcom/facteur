@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # Ignore extra env vars like TRANSFORMERS_CACHE
     )
 
     # Application
@@ -78,9 +79,8 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
-    # ML Classification (Story 4.2-US-3)
-    ml_enabled: bool = False  # Set to True to load mDeBERTa model
-    transformers_cache: str = "/tmp/transformers_cache"  # Cache dir for transformers models
+    # ML Classification (Story 4.1d)
+    ml_enabled: bool = False  # Set to True to load CamemBERT model
 
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
@@ -109,7 +109,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Retourne les settings (cached)."""
-    # Diagnostic: Log all environment variable keys (NOT values)
-    print(f"🛠️ Diagnostic: Available environment variables: {sorted(list(os.environ.keys()))}", flush=True)
     return Settings()
 

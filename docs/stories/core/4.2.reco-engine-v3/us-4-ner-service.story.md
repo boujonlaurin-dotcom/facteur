@@ -1,7 +1,7 @@
 # User Story 4.2-US-4 : NER Service (spaCy)
 
 **Parent Story:** [4.2.reco-engine-v3.story.md](./4.2.reco-engine-v3.story.md)  
-**Status:** Draft  
+**Status:** In Progress → Ready for Review  
 **Priority:** P0 - Critical  
 **Estimated Effort:** 2 days  
 **Dependencies:** US-2 (Async Queue Architecture)

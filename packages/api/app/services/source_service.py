@@ -3,6 +3,7 @@
 from typing import Optional
 from uuid import UUID, uuid4
 
+import structlog
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +15,8 @@ from app.schemas.source import (
     SourceResponse,
 )
 from app.services.rss_parser import RSSParser
+
+logger = structlog.get_logger()
 
 
 class SourceService:
@@ -30,7 +33,7 @@ class SourceService:
         # Sources curées
         curated = await self.get_curated_sources(user_id)
 
-        # Sources custom de l'utilisateur
+        # Sources custom de l'utilisateur (distinct au cas où doublons user_sources)
         query = (
             select(Source)
             .join(UserSource)
@@ -38,6 +41,7 @@ class SourceService:
                 UserSource.user_id == user_uuid,
                 UserSource.is_custom == True,
             )
+            .distinct()
         )
         result = await self.db.execute(query)
         custom_sources = result.scalars().all()
@@ -137,14 +141,22 @@ class SourceService:
             )
             self.db.add(source)
 
-        # Lier à l'utilisateur
-        user_source = UserSource(
-            id=uuid4(),
-            user_id=UUID(user_id),
-            source_id=source.id,
-            is_custom=True,
+        # Idempotence : ne pas créer de doublon (user_id, source_id) si déjà lié
+        user_uuid = UUID(user_id)
+        existing_link = await self.db.execute(
+            select(UserSource).where(
+                UserSource.user_id == user_uuid,
+                UserSource.source_id == source.id,
+            )
         )
-        self.db.add(user_source)
+        if existing_link.scalar_one_or_none() is None:
+            user_source = UserSource(
+                id=uuid4(),
+                user_id=user_uuid,
+                source_id=source.id,
+                is_custom=True,
+            )
+            self.db.add(user_source)
 
         await self.db.flush()
 

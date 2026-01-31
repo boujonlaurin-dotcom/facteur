@@ -1,1 +1,7 @@
-# Optional ML dependencies (enable only if ML_ENABLED=true)\ntransformers==4.38.2\ntorch==2.2.0\n
+# Optional ML dependencies (enable only if ML_ENABLED=true)
+transformers==4.38.2
+torch==2.2.0
+spacy==3.8.11
+
+# spaCy French model (install separately):
+# python -m spacy download fr_core_news_md
