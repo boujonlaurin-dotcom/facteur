@@ -116,7 +116,7 @@ class ClassificationQueueService:
                 # Store entities as JSON strings in the array
                 if entities:
                     import json
-from sqlalchemy.exc import ProgrammingError
+                    from sqlalchemy.exc import ProgrammingError
                     try:
                         content.entities = [json.dumps(entity) for entity in entities]
                     except ProgrammingError as e:
