@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -46,6 +46,7 @@ async def get_catalog(
 @router.post("/custom", response_model=SourceResponse)
 async def add_source(
     data: SourceCreate,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourceResponse:
@@ -54,6 +55,11 @@ async def add_source(
 
     try:
         source = await service.add_custom_source(user_id, str(data.url), data.name)
+        
+        # Trigger immediate sync in background after request returns (and DB commits)
+        from app.workers.rss_sync import sync_source
+        background_tasks.add_task(sync_source, str(source.id))
+        
         return source
     except ValueError as e:
         raise HTTPException(

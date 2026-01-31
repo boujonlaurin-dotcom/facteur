@@ -76,6 +76,8 @@ class UserContentStatus(Base):
     __tablename__ = "user_content_status"
     __table_args__ = (
         UniqueConstraint("user_id", "content_id", name="uq_user_content_status_user_content"),
+        Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
+        Index("ix_user_content_status_user_status", "user_id", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(

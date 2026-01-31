@@ -160,11 +160,7 @@ class SourceService:
 
         await self.db.flush()
 
-        # Trigger immediate sync in background
-        from app.workers.rss_sync import sync_source
-        import asyncio
-        asyncio.create_task(sync_source(str(source.id)))
-        logger.info("Triggered background sync for new source", source_id=source.id)
+        await self.db.flush()
 
         return SourceResponse(
             id=source.id,
@@ -301,12 +297,13 @@ class SourceService:
         
         keywords = {
             "tech": ["ai", "ia", "tech", "crypto", "web3", "digital", "logiciel", "startup", "innov", "code", "dev"],
-            "society_climate": ["société", "santé", "justice", "éduc", "travail", "fémin", "urban", "logement", "climat", "écolo", "environ", "vert", "durable", "énergi", "transit", "biodiv"],
+            "society": ["société", "santé", "justice", "éduc", "travail", "fémin", "urban", "logement"],
+            "environment": ["climat", "écolo", "environ", "vert", "durable", "énergi", "transit", "biodiv"],
             "economy": ["économ", "financ", "marché", "inflat", "business", "argent", "bourse"],
             "politics": ["politi", "élection", "démocra", "gouvern", "activis", "loi"],
-            "culture_ideas": ["cultur", "philoso", "art", "cinéma", "livre", "média", "idée", "littérat", "musique"],
+            "culture": ["cultur", "philoso", "art", "cinéma", "livre", "média", "idée", "littérat", "musique"],
             "science": ["scien", "recherch", "physiq", "biolo", "espace", "laborat"],
-            "geopolitics": ["géopolit", "internation", "monde", "diploma", "guerre", "conflit"],
+            "international": ["géopolit", "internation", "monde", "diploma", "guerre", "conflit"],
         }
         
         scores = {t: 0 for t in keywords}
@@ -319,5 +316,5 @@ class SourceService:
         if scores[best_theme] > 0:
             return best_theme
             
-        return "society_climate" # Default common theme for better recs vs 'custom'
+        return "society" # Default common theme for better recs vs 'custom'
 

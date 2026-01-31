@@ -20,7 +20,7 @@ class RSSParser:
     
     def __init__(self):
         self.client = httpx.AsyncClient(
-            timeout=10.0,
+            timeout=7.0,
             follow_redirects=True,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
