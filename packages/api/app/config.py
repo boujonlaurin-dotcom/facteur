@@ -109,7 +109,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Retourne les settings (cached)."""
-    # Diagnostic: Log all environment variable keys (NOT values)
-    print(f"🛠️ Diagnostic: Available environment variables: {sorted(list(os.environ.keys()))}", flush=True)
     return Settings()
 
