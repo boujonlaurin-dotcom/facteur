@@ -55,7 +55,7 @@ class Content(Base):
     # Story 4.1c: Granular topic tagging
     topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Story 4.2-US-4: Named Entity Recognition
-    entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

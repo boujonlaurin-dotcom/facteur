@@ -115,7 +115,7 @@ transformers==4.38.2
 torch==2.2.0
 
 # Add spaCy
-spacy==3.7.2
+spacy==3.8.11
 
 # French model (downloaded separately)
 # python -m spacy download fr_core_news_md

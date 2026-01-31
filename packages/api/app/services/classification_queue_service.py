@@ -116,10 +116,11 @@ class ClassificationQueueService:
                 # Store entities as JSON strings in the array
                 if entities:
                     import json
+                    from sqlalchemy.exc import ProgrammingError
                     try:
                         content.entities = [json.dumps(entity) for entity in entities]
-                    except Exception as e:
-                        # Column might not exist yet - log but don't fail
+                    except ProgrammingError as e:
+                        # Column might not exist yet (migration not applied) - log but don't fail
                         logger.warning("entities_column_missing", error=str(e), content_id=str(content.id))
             
             await self.session.commit()
