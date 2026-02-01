@@ -21,6 +21,7 @@ import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
+import '../features/digest/screens/closure_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/shell_scaffold.dart';
@@ -34,6 +35,7 @@ class RouteNames {
   static const String onboarding = 'onboarding';
   static const String onboardingConclusion = 'onboarding-conclusion';
   static const String digest = 'digest';
+  static const String digestClosure = 'digest-closure';
   static const String feed = 'feed';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
@@ -58,6 +60,7 @@ class RoutePaths {
   static const String onboarding = '/onboarding';
   static const String onboardingConclusion = '/onboarding/conclusion';
   static const String digest = '/digest';
+  static const String digestClosure = '/digest/closure';
   static const String feed = '/feed';
   static const String contentDetail = '/content/:id';
   static const String saved = '/saved';
@@ -288,6 +291,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+
+      // Digest Closure (outside ShellRoute to hide bottom nav)
+      GoRoute(
+        path: RoutePaths.digestClosure,
+        name: RouteNames.digestClosure,
+        builder: (context, state) {
+          final digestId = state.extra as String?;
+          return ClosureScreen(digestId: digestId ?? '');
+        },
       ),
 
       // Paywall (modal)
