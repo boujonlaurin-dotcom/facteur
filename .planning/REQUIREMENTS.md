@@ -46,6 +46,63 @@
 
 - [ ] **NOTIF-01**: Morning push notification "Votre digest est prêt" (8h, opt-in)
 
+## Implementation Constraints
+
+### Frontend Reuse Constraint (MANDATORY)
+
+To minimize shipping, debugging, and validation of new code, the digest UI **MUST** reuse existing components and design patterns:
+
+**Reuse as-is (no visual changes):**
+- ContentCard component structure (thumbnail, title, source styling)
+- Color palette (Terracotta #E07A5F, dark theme backgrounds, text colors)
+- Typography system (Fraunces for headings, DM Sans for body)
+- Card container styling (borders, shadows, padding)
+- Button components (Primary, Secondary, Ghost variants)
+- Bottom navigation bar (no changes)
+
+**Allowed adaptations only:**
+- Progress bar component (new, but use existing color tokens)
+- Action bar: extend from 2 to 3 actions (Read/Save/Not Interested) using existing button styles
+- "Essentiel" container: reuse existing card container patterns
+- Closure screen: new screen but reuse existing animation patterns and color scheme
+
+**Anti-patterns to avoid:**
+- ❌ Creating new card designs from scratch
+- ❌ Introducing new colors or typography
+- ❌ Changing layout patterns significantly
+- ✅ The digest should feel like a "reorganization of existing UI", not a new design system
+
+### Algorithmic Selection Guarantee (MANDATORY)
+
+The top 5 articles **MUST** be selected based on the existing algorithmic ranking system:
+
+**Selection Process:**
+```
+1. Pool: Articles from user's declared sources only (36h window)
+2. Scoring: Apply EXISTING algorithm layers (no modifications):
+   - CoreLayer: Theme matching (+70pts), Source following (+40pts)
+   - ArticleTopicLayer: Topic matching (+40pts), Precision bonus (+10pts)
+   - QualityLayer: Source reliability (+10pts/-30pts)
+   - PersonalizationLayer: Apply existing user mutes/blocks
+3. Ranking: Sort by total score descending
+4. Constraints: Apply diversity rules (max 2 per source, max 2 per theme)
+5. Selection: Take top 5 from ranked list
+6. Fallback: If < 5, complete with curated sources (also scored)
+```
+
+**Backend Integration Requirements:**
+- Use existing `ScoringEngine` class without modifications
+- Query existing `user_interests` and `user_subtopics` tables
+- Use existing `content.topics` classifications
+- Integrate with existing `PersonalizationLayer` for "Not Interested" actions
+- **No new scoring algorithms** — only a selection wrapper (`DigestSelector`)
+
+**Verification Criteria:**
+- [ ] Digest articles have `score` field visible in API response
+- [ ] Scoring uses same weights as existing feed algorithm
+- [ ] Personalization mutes are respected in digest selection
+- [ ] Articles in digest are demonstrably top-ranked from user's sources
+
 ## v2 Requirements (Post-MVP)
 
 ### Multiple Essentials
