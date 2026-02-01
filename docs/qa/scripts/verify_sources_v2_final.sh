@@ -76,7 +76,7 @@ def check():
         ("Journal du Geek", "Actualité high-tech et innovation", "tech"),
         ("Vert Le Média", "Le média de l'écologie et du climat", "environment"),
         ("Les Echos", "Actualité économique et financière", "economy"),
-        ("Random Blog", "Interesting stuff", "society_climate"), # Default
+        ("Random Blog", "Interesting stuff", "society"), # Default
     ]
     
     for name, desc, expected in cases:
