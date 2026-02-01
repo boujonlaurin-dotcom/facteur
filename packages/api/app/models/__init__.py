@@ -10,6 +10,7 @@ from app.models.analytics import AnalyticsEvent
 from app.models.subscription import UserSubscription
 from app.models.daily_top3 import DailyTop3
 from app.models.daily_digest import DailyDigest
+from app.models.digest_completion import DigestCompletion
 from app.models.user_personalization import UserPersonalization
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "DailyTop3",
     # Digest Central (Epic 10)
     "DailyDigest",
+    "DigestCompletion",
     # Personalization (Story 4.7)
     "UserPersonalization",
 ]
