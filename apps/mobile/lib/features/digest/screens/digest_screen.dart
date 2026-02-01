@@ -12,13 +12,51 @@ import '../models/digest_models.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_card.dart';
 import '../widgets/not_interested_sheet.dart';
+import '../widgets/digest_welcome_modal.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 5 articles
-class DigestScreen extends ConsumerWidget {
+class DigestScreen extends ConsumerStatefulWidget {
   const DigestScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DigestScreen> createState() => _DigestScreenState();
+}
+
+class _DigestScreenState extends ConsumerState<DigestScreen> {
+  bool _showWelcome = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFirstTimeWelcome();
+  }
+
+  Future<void> _checkFirstTimeWelcome() async {
+    // Check for 'first' query param (from onboarding)
+    final uri = GoRouterState.of(context).uri;
+    final isFirstTime = uri.queryParameters['first'] == 'true';
+
+    if (isFirstTime) {
+      // Also check shared preferences to ensure we only show once
+      final shouldShow = await DigestWelcomeModal.shouldShowWelcome();
+      if (shouldShow && mounted) {
+        setState(() {
+          _showWelcome = true;
+        });
+      }
+    }
+  }
+
+  void _dismissWelcome() {
+    setState(() {
+      _showWelcome = false;
+    });
+    // Clear the query param from URL
+    context.go(RoutePaths.digest);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
 
@@ -36,68 +74,79 @@ class DigestScreen extends ConsumerWidget {
       }
     });
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      appBar: AppBar(
-        backgroundColor: colors.backgroundPrimary,
-        elevation: 0,
-        centerTitle: false,
-        title: Text(
-          'Votre Essentiel',
-          style: TextStyle(
-            fontFamily: 'Fraunces', // Use Fraunces font family
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: colors.textPrimary,
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: colors.backgroundPrimary,
+          appBar: AppBar(
+            backgroundColor: colors.backgroundPrimary,
+            elevation: 0,
+            centerTitle: false,
+            title: Text(
+              'Votre Essentiel',
+              style: TextStyle(
+                fontFamily: 'Fraunces', // Use Fraunces font family
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+              ),
+            ),
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 16),
+              child: StreakIndicator(),
+            ),
+            leadingWidth: 56,
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(4),
+              child: _buildProgressBar(digestAsync, colors),
+            ),
           ),
-        ),
-        leading: const Padding(
-          padding: EdgeInsets.only(left: 16),
-          child: StreakIndicator(),
-        ),
-        leadingWidth: 56,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(4),
-          child: _buildProgressBar(digestAsync, colors),
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await ref.read(digestProvider.notifier).refreshDigest();
-        },
-        color: colors.primary,
-        child: digestAsync.when(
-          data: (digest) {
-            if (digest == null) {
-              return _buildEmptyState(colors);
-            }
+          body: RefreshIndicator(
+            onRefresh: () async {
+              await ref.read(digestProvider.notifier).refreshDigest();
+            },
+            color: colors.primary,
+            child: digestAsync.when(
+              data: (digest) {
+                if (digest == null) {
+                  return _buildEmptyState(colors);
+                }
 
-            final items = digest.items;
-            if (items.isEmpty) {
-              return _buildEmptyState(colors);
-            }
+                final items = digest.items;
+                if (items.isEmpty) {
+                  return _buildEmptyState(colors);
+                }
 
-            return ListView.separated(
-              padding: const EdgeInsets.all(FacteurSpacing.space3),
-              itemCount: items.length,
-              separatorBuilder: (context, index) =>
-                  const SizedBox(height: FacteurSpacing.space3),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return DigestCard(
-                  item: item,
-                  onTap: () => _openDetail(context, item),
-                  onAction: (action) =>
-                      _handleAction(context, ref, item, action),
+                return ListView.separated(
+                  padding: const EdgeInsets.all(FacteurSpacing.space3),
+                  itemCount: items.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: FacteurSpacing.space3),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return DigestCard(
+                      item: item,
+                      onTap: () => _openDetail(context, item),
+                      onAction: (action) =>
+                          _handleAction(context, ref, item, action),
+                    );
+                  },
                 );
               },
-            );
-          },
-          loading: () => _buildLoadingState(colors),
-          error: (error, stack) =>
-              _buildErrorState(context, ref, colors, error),
+              loading: () => _buildLoadingState(colors),
+              error: (error, stack) =>
+                  _buildErrorState(context, ref, colors, error),
+            ),
+          ),
         ),
-      ),
+        // Welcome modal overlay for first-time users
+        if (_showWelcome)
+          Positioned.fill(
+            child: DigestWelcomeModal(
+              onDismiss: _dismissWelcome,
+            ),
+          ),
+      ],
     );
   }
 
