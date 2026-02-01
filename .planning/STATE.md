@@ -8,14 +8,16 @@
 
 ## Current Position
 
-**Phase:** 01-foundation ✅ COMPLETE  
-**Plan:** 01-03 API Endpoints Complete  
-**Next:** Phase 02-frontend  
+**Phase:** 02-frontend 🔵 IN PROGRESS  
+**Plan:** 02-02 Article Actions Complete  
+**Next:** Phase 02-03 Closure Screen  
 
-**Progress:** Phase 1: 3/3 plans complete  
+**Progress:** Phase 1: 3/3 plans complete | Phase 2: 1/4 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (3/3)
+Phase 2 Frontend:   [█░░░] 25%  (1/4)
+Overall:            [████░░░░░░] 40% (4/10)
 ```
 
 ---
@@ -35,12 +37,27 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **3/3** |
-| 2 — Frontend | 🔵 Ready | 0% | 0 |
+| 2 — Frontend | 🔵 In Progress | 25% | **1/4** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
 
 ## Completed Work
+
+### Frontend Phase — Plan 02-02 Complete (2026-02-01)
+
+**Article Actions with API Integration**
+
+- ✅ Digest repository with applyAction and completeDigest methods
+- ✅ Digest provider with optimistic updates and action handling
+- ✅ Article action bar widget with 3 buttons (Read, Save, Not Interested)
+- ✅ Not Interested confirmation sheet with source muting explanation
+- ✅ Digest card with integrated action bar and visual state feedback
+- ✅ Digest screen with action handling and progress bar
+- ✅ Haptic feedback for actions (light/medium/heavy by action type)
+- ✅ Notifications confirming action success
+
+See: `.planning/phases/02-frontend/02-02-SUMMARY.md`
 
 ### Foundation Phase — Plan 01-03 Complete (2026-02-01)
 
@@ -144,6 +161,11 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-01 | Optimistic updates for actions | Instant UI feedback, rollback on error |
+| 2026-02-01 | Confirmation sheet for "not_interested" | Prevents accidental source mutes |
+| 2026-02-01 | Haptic feedback by action type | Medium for read, light for save/dismiss, heavy for completion |
+| 2026-02-01 | Auto-complete when all processed | No explicit "done" button needed |
+| 2026-02-01 | Card opacity 0.6 when processed | Clear visual feedback without removing card |
 | 2026-02-01 | JSONB for digest items | Fixed 5-item array, simpler than junction table |
 | 2026-02-01 | Separate closure streak | Distinct gamification path from activity streak |
 | 2026-02-01 | Idempotent migrations | Safe re-runs, Supabase-compatible |
@@ -170,33 +192,32 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ## Next Action
 
-**Begin Phase 2: Frontend Implementation**
+**Continue Phase 2: Frontend Implementation**
 
-1. Create Flutter digest screen:
-   - Display 5 articles with selection reasons
-   - Card-based UI matching existing design system
-   - Pull-to-refresh for regeneration
+Next: **02-03 Closure Screen** - Celebration animation with streak display
 
-2. Implement action buttons:
-   - Read/Unread toggle
-   - Save button with bookmark icon
-   - Dismiss/hide with "not interested" option
+1. Create ClosureScreen widget:
+   - Celebration animation when digest completes
+   - Streak counter with milestone messages (7 days, 30 days)
+   - Articles summary (read/saved/dismissed counts)
+   - "Explorer plus" button to navigate to relegated feed
+   - Share completion option
 
-3. Build closure screen:
-   - Celebration animation on complete
-   - Streak counter display
-   - Share/continue options
+2. Integrate with digest completion:
+   - Navigate to closure screen when all 5 articles processed
+   - Pass completion data from DigestNotifier
+   - Listen for completion event in DigestScreen
 
-See: `.planning/phases/01-foundation/01-03-SUMMARY.md` for Phase 2 suggestions
+See: `.planning/phases/02-frontend/02-03-PLAN.md` for detailed tasks
 
 ---
 
 ## Session Continuity
 
-**Last session:** 2026-02-01T20:20:00Z  
-**Stopped at:** Completed 01-03 Digest API Endpoints - Phase 1 Foundation 100% Complete  
-**Resume file:** `.planning/phases/01-foundation/01-03-SUMMARY.md`
+**Last session:** 2026-02-01T21:30:00Z  
+**Stopped at:** Completed 02-02 Article Actions - Phase 2 Frontend 25% Complete  
+**Resume file:** `.planning/phases/02-frontend/02-02-SUMMARY.md`
 
 ---
 
-*State updated after 01-03 completion - Phase 1 Foundation 100% Complete*
+*State updated after 02-02 completion - Phase 2 Frontend in progress*
