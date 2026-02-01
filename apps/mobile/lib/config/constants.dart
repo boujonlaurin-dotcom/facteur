@@ -39,25 +39,16 @@ class SupabaseConstants {
   SupabaseConstants._();
 
   /// URL Supabase (à configurer via env)
-  // DEBUG: Hardcoded pour diagnostiquer le problème 405
-  static const String url = 'https://ykuadtelnzavrqzbfdve.supabase.co';
-/*
   static final String url = _cleanEnvVar(const String.fromEnvironment(
     'SUPABASE_URL',
     defaultValue: '',
   ));
-*/
 
   /// Clé anonyme Supabase (à configurer via env)
-  // DEBUG: Hardcoded pour diagnostiquer le problème 405
-  static const String anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrdWFkdGVsbnphdnJxemJmZHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4MTQ5MDcsImV4cCI6MjA4MzM5MDkwN30.CJL6DNSECZkNd0KUf0Hayjtt6m6HLFQFhyo2bO3MxHU';
-/*
   static final String anonKey = _cleanEnvVar(const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
     defaultValue: '',
   ));
-*/
 
   static String _cleanEnvVar(String value) {
     if (value.isEmpty) return value;

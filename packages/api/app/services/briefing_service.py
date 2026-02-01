@@ -70,6 +70,14 @@ class BriefingService:
         
         if rows:
             # Déjà existant
+            # Defensive check: Filter out any briefing items where content is missing
+            valid_rows = [row for row in rows if row.content is not None]
+            if len(valid_rows) < len(rows):
+                logger.warning("briefing_missing_content_detected", 
+                               user_id=str(user_id), 
+                               total=len(rows), 
+                               valid=len(valid_rows))
+            
             return [
                 {
                     "rank": row.rank,
@@ -78,7 +86,7 @@ class BriefingService:
                     "content": row.content,
                     "content_id": row.content_id
                 }
-                for row in rows
+                for row in valid_rows
             ]
         
         # 2. Si absent -> Génération On-Demand

@@ -50,7 +50,7 @@ async def get_personalized_feed(
         briefing_items = [DailyTop3Response(**item) for item in briefing_dicts]
 
     # Récupérer les IDs des contenus du briefing pour exclusion
-    briefing_content_ids = [item.content_id for item in briefing_items]
+    briefing_content_ids = [item.content.id for item in briefing_items]
     
     # 2. Get Feed Items
     feed_items = await service.get_feed(
