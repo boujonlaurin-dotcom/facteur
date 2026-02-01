@@ -7,6 +7,7 @@ Defines request/response models for the digest-first mobile app endpoints:
 """
 
 from datetime import date, datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 
@@ -130,4 +131,4 @@ class DigestGenerationResponse(BaseModel):
 
 
 # Need to import here to avoid circular dependency
-from enum import Enum
+# Moved to top to fix NameError: name 'Enum' is not defined
