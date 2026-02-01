@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
 from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, UniqueConstraint
