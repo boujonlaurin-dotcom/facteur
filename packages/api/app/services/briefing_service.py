@@ -172,6 +172,7 @@ class BriefingService:
                 score = self.rec_service.scoring_engine.compute_score(content, context)
                 scored_contents.append((content, score))
             except Exception as e:
+                logger.warning("scoring_failed", content_id=str(content.id), error=str(e))
                 pass
 
         # E. Selection Top 3
@@ -209,6 +210,8 @@ class BriefingService:
                 "content_id": item.content.id
             })
             
+        # NOTE: Nous commitons ici explicitement pour assurer que la génération On-Demand 
+        # soit immédiatement persistée, évitant des doubles générations sur des requêtes concurrentes.
         await self.session.commit()
         
         return result_dicts
@@ -252,7 +255,8 @@ class BriefingService:
                     entry.id if hasattr(entry, 'id') else entry.link 
                     for entry in feed.entries[:5]
                 ]
-            except Exception:
+            except Exception as e:
+                logger.warning("une_feed_parse_failed", url=url, error=str(e))
                 return []
 
         tasks = [parse_feed(source.une_feed_url) for source in sources]

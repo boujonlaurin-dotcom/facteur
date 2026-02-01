@@ -44,13 +44,13 @@ async def get_personalized_feed(
         from app.services.briefing_service import BriefingService
         briefing_service = BriefingService(db)
         # Lazy Generation : Récupère ou génère si absent
-        briefing_dicts = await briefing_service.get_or_create_briefing(current_user_id)
+        briefing_dicts = await briefing_service.get_or_create_briefing(user_uuid)
         
-        # Le service retourne des dicts, on les utilise pour le FeedResponse
-        briefing_items = briefing_dicts
+        # Le service retourne des dicts, on les mappe vers DailyTop3Response pour la validation Pydantic
+        briefing_items = [DailyTop3Response(**item) for item in briefing_dicts]
 
     # Récupérer les IDs des contenus du briefing pour exclusion
-    briefing_content_ids = [item['content_id'] for item in briefing_items]
+    briefing_content_ids = [item.content_id for item in briefing_items]
     
     # 2. Get Feed Items
     feed_items = await service.get_feed(
