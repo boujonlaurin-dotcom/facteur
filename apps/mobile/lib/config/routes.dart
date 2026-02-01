@@ -20,6 +20,7 @@ import '../features/settings/screens/about_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
+import '../features/digest/screens/digest_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/shell_scaffold.dart';
@@ -32,6 +33,7 @@ class RouteNames {
   static const String login = 'login';
   static const String onboarding = 'onboarding';
   static const String onboardingConclusion = 'onboarding-conclusion';
+  static const String digest = 'digest';
   static const String feed = 'feed';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
@@ -55,6 +57,7 @@ class RoutePaths {
   static const String login = '/login';
   static const String onboarding = '/onboarding';
   static const String onboardingConclusion = '/onboarding/conclusion';
+  static const String digest = '/digest';
   static const String feed = '/feed';
   static const String contentDetail = '/content/:id';
   static const String saved = '/saved';
@@ -94,6 +97,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           matchedLocation == RoutePaths.emailConfirmation;
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
+      final isOnDigest = matchedLocation == RoutePaths.digest;
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -119,7 +123,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths.feed;
+            : RoutePaths
+                .digest; // Digest is now the default authenticated route
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -129,7 +134,12 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 5. Onboarding : empêcher d'y retourner si fini
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.feed;
+        return RoutePaths.digest; // Go to digest after onboarding completion
+      }
+
+      // Allow staying on digest (default authenticated route)
+      if (isOnDigest) {
+        return null;
       }
 
       return null;
@@ -181,6 +191,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => ShellScaffold(child: child),
         routes: [
+          // Digest (Essentiel) - Default authenticated route
+          GoRoute(
+            path: RoutePaths.digest,
+            name: RouteNames.digest,
+            builder: (context, state) => const DigestScreen(),
+          ),
+
           // Feed
           GoRoute(
             path: RoutePaths.feed,
