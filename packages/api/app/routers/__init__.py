@@ -3,12 +3,12 @@
 from app.routers import (
     auth,
     contents,
+    digest,
     feed,
     sources,
     streaks,
     subscription,
     users,
-    webhooks,
     webhooks,
     internal,
     progress,
@@ -18,6 +18,7 @@ from app.routers import (
 __all__ = [
     "auth",
     "contents",
+    "digest",
     "feed",
     "sources",
     "streaks",

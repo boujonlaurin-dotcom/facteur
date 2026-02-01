@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import (
     auth,
     contents,
+    digest,
     feed,
     sources,
     streaks,
@@ -121,6 +122,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(feed.router, prefix="/api/feed", tags=["Feed"])
+app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(subscription.router, prefix="/api/subscription", tags=["Subscription"])
