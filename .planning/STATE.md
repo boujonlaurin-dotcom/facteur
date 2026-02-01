@@ -20,7 +20,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 | Phase | Status | Progress | Plans Ready |
 |-------|--------|----------|-------------|
-| 1 — Foundation | 🟡 Ready | 0% | Pending creation |
+| 1 — Foundation | 🟢 Planned | 0% | **3 plans ready** |
 | 2 — Frontend | ⚪ Not Started | 0% | No |
 | 3 — Polish | ⚪ Not Started | 0% | No |
 
@@ -50,19 +50,17 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ### Immediate Next Steps
 
-1. **Create Phase 1 Plans** (Foundation)
-   - Plan 01-01: Database migrations
-   - Plan 01-02: DigestSelector service  
-   - Plan 01-03: API endpoints
+1. **Execute Phase 1** (Foundation)
+   - Run `/gsd-execute-phase 1` to execute all 3 plans
+   - ~20h estimated (Wave 1: 01-01 + 01-02 parallel, Wave 2: 01-03)
 
-2. **Execute Phase 1**
-   - Backend core implementation
-   - ~20h estimated
-
-3. **Validate Phase 1**
+2. **Validate Phase 1**
    - API tests pass
    - Digest generation works
    - No regressions in existing feed
+
+3. **Plan Phase 2** (Frontend)
+   - Create UI/UX plans after backend complete
 
 ### Phase 2 Preparation
 
@@ -103,7 +101,9 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ## Next Action
 
-**Run `/gsd-plan-phase 1`** to create detailed executable plans for Foundation phase.
+**Run `/gsd-execute-phase 1`** to start executing Foundation phase plans.
+
+<sub>/clear first → fresh context window</sub>
 
 ---
 

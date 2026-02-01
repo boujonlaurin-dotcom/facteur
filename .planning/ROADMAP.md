@@ -73,14 +73,15 @@ New Components:
 └── digest endpoints (new)
 ```
 
-### Plans (will be detailed in plan-phase)
+### Plans
 
-- **01-01**: Database migrations (daily_digest, digest_completions, user_streaks extension)
-- **01-02**: DigestSelector service with diversity constraints
-- **01-03**: API endpoints (GET /digest, POST /action, completion tracking)
+- [ ] **01-01**: Database migrations (daily_digest, digest_completions, user_streaks extension)
+- [ ] **01-02**: DigestSelector service with diversity constraints
+- [ ] **01-03**: API endpoints (GET /digest, POST /action, completion tracking)
 
+**Plans Ready:** 3 plans in 2 waves  
 **Dependencies:** None — builds on existing infrastructure  
-**Parallelizable:** 01-01 and 01-02 can be parallel; 01-03 depends on both
+**Parallelizable:** 01-01 and 01-02 can be parallel (Wave 1); 01-03 depends on both (Wave 2)
 
 ---
 
