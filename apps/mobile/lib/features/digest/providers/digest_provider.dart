@@ -1,0 +1,271 @@
+import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/api/providers.dart';
+import '../../../core/auth/auth_state.dart';
+import '../../../core/ui/notification_service.dart';
+import '../repositories/digest_repository.dart';
+
+// Repository provider
+final digestRepositoryProvider = Provider<DigestRepository>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return DigestRepository(apiClient);
+});
+
+// Digest state provider
+final digestProvider =
+    AsyncNotifierProvider<DigestNotifier, DigestResponse?>(() {
+  return DigestNotifier();
+});
+
+class DigestNotifier extends AsyncNotifier<DigestResponse?> {
+  bool _isCompleting = false;
+
+  @override
+  FutureOr<DigestResponse?> build() async {
+    // Watch auth state to handle logout/user change
+    final authState = ref.watch(authStateProvider);
+
+    if (!authState.isAuthenticated || authState.user == null) {
+      return null;
+    }
+
+    // Load digest on initialization
+    return await _loadDigest();
+  }
+
+  Future<DigestResponse> _loadDigest({DateTime? date}) async {
+    final repository = ref.read(digestRepositoryProvider);
+    return await repository.getDigest(targetDate: date);
+  }
+
+  Future<void> loadDigest({DateTime? date}) async {
+    state = const AsyncLoading();
+    try {
+      final digest = await _loadDigest(date: date);
+      state = AsyncData(digest);
+    } catch (e, stack) {
+      state = AsyncError(e, stack);
+      rethrow;
+    }
+  }
+
+  Future<void> refreshDigest() async {
+    if (state.isLoading) return;
+
+    final currentDigest = state.value;
+    if (currentDigest == null) {
+      await loadDigest();
+      return;
+    }
+
+    state = const AsyncLoading();
+    try {
+      final digest = await _loadDigest(date: currentDigest.targetDate);
+      state = AsyncData(digest);
+    } catch (e, stack) {
+      state = AsyncError(e, stack);
+      rethrow;
+    }
+  }
+
+  /// Apply an action to a digest item (read, save, not_interested, undo)
+  Future<void> applyAction(String contentId, String action) async {
+    final currentDigest = state.value;
+    if (currentDigest == null) return;
+
+    // Optimistic update
+    final updatedItems = currentDigest.items.map((item) {
+      if (item.contentId == contentId) {
+        switch (action) {
+          case 'read':
+            return item.copyWith(isRead: true, isDismissed: false);
+          case 'save':
+            return item.copyWith(isSaved: true);
+          case 'not_interested':
+            return item.copyWith(isDismissed: true, isRead: false);
+          case 'undo':
+            return item.copyWith(
+                isRead: false, isSaved: false, isDismissed: false);
+          default:
+            return item;
+        }
+      }
+      return item;
+    }).toList();
+
+    state = AsyncData(currentDigest.copyWith(items: updatedItems));
+
+    // Call API
+    try {
+      final repository = ref.read(digestRepositoryProvider);
+      final response = await repository.applyAction(
+        digestId: currentDigest.digestId,
+        contentId: contentId,
+        action: action,
+      );
+
+      // Trigger haptic feedback on success
+      if (response.success) {
+        _triggerHaptic(action);
+        _showActionNotification(action);
+      }
+
+      // Check for completion
+      _checkAndHandleCompletion();
+    } catch (e) {
+      // Rollback on error
+      state = AsyncData(currentDigest);
+      NotificationService.showError('Erreur lors de l\'action');
+      rethrow;
+    }
+  }
+
+  /// Undo an action on a digest item
+  Future<void> undoAction(String contentId) async {
+    await applyAction(contentId, 'undo');
+  }
+
+  /// Complete the digest
+  Future<void> completeDigest() async {
+    final currentDigest = state.value;
+    if (currentDigest == null || currentDigest.isCompleted || _isCompleting)
+      return;
+
+    _isCompleting = true;
+
+    try {
+      final repository = ref.read(digestRepositoryProvider);
+      final response = await repository.completeDigest(currentDigest.digestId);
+
+      if (response.success) {
+        // Trigger celebratory haptic
+        HapticFeedback.heavyImpact();
+
+        // Update local state
+        state = AsyncData(currentDigest.copyWith(
+          isCompleted: true,
+          completedAt: response.completedAt,
+        ));
+
+        // Show completion notification with streak info
+        if (response.streakMessage != null) {
+          NotificationService.showSuccess(response.streakMessage!);
+        }
+      }
+    } catch (e) {
+      print('DigestNotifier: completeDigest failed: $e');
+      // Don't rethrow - completion failure shouldn't block UI
+    } finally {
+      _isCompleting = false;
+    }
+  }
+
+  /// Get the count of processed items (read or dismissed)
+  int get processedCount {
+    final digest = state.value;
+    if (digest == null) return 0;
+    return digest.items.where((item) => item.isRead || item.isDismissed).length;
+  }
+
+  /// Get progress as a fraction (0.0 to 1.0)
+  double get progress {
+    final digest = state.value;
+    if (digest == null || digest.items.isEmpty) return 0.0;
+    return processedCount / digest.items.length;
+  }
+
+  /// Check if all items are processed and trigger completion
+  void _checkAndHandleCompletion() {
+    final digest = state.value;
+    if (digest == null || digest.isCompleted) return;
+
+    final allProcessed =
+        digest.items.every((item) => item.isRead || item.isDismissed);
+    if (allProcessed) {
+      completeDigest();
+    }
+  }
+
+  /// Trigger haptic feedback based on action type
+  void _triggerHaptic(String action) {
+    switch (action) {
+      case 'read':
+        HapticFeedback.mediumImpact();
+      case 'save':
+        HapticFeedback.lightImpact();
+      case 'not_interested':
+        HapticFeedback.lightImpact();
+      case 'undo':
+        HapticFeedback.lightImpact();
+      default:
+        HapticFeedback.lightImpact();
+    }
+  }
+
+  /// Show notification for successful action
+  void _showActionNotification(String action) {
+    switch (action) {
+      case 'read':
+        NotificationService.showInfo(
+          'Article marqué comme lu',
+          duration: const Duration(seconds: 2),
+        );
+      case 'save':
+        NotificationService.showInfo(
+          'Article sauvegardé',
+          duration: const Duration(seconds: 2),
+        );
+      case 'not_interested':
+        NotificationService.showInfo(
+          'Source masquée',
+          duration: const Duration(seconds: 2),
+        );
+      case 'undo':
+        NotificationService.showInfo(
+          'Action annulée',
+          duration: const Duration(seconds: 2),
+        );
+    }
+  }
+
+  /// Update a specific item's state locally (for optimistic updates)
+  void updateItemState(String contentId,
+      {bool? isRead, bool? isSaved, bool? isDismissed}) {
+    final currentDigest = state.value;
+    if (currentDigest == null) return;
+
+    final updatedItems = currentDigest.items.map((item) {
+      if (item.contentId == contentId) {
+        return item.copyWith(
+          isRead: isRead ?? item.isRead,
+          isSaved: isSaved ?? item.isSaved,
+          isDismissed: isDismissed ?? item.isDismissed,
+        );
+      }
+      return item;
+    }).toList();
+
+    state = AsyncData(currentDigest.copyWith(items: updatedItems));
+  }
+}
+
+/// Extension methods for DigestResponse
+extension DigestResponseExtension on DigestResponse {
+  DigestResponse copyWith({
+    List<DigestItem>? items,
+    bool? isCompleted,
+    DateTime? completedAt,
+  }) {
+    return DigestResponse(
+      digestId: digestId,
+      userId: userId,
+      targetDate: targetDate,
+      generatedAt: generatedAt,
+      items: items ?? this.items,
+      isCompleted: isCompleted ?? this.isCompleted,
+      completedAt: completedAt ?? this.completedAt,
+    );
+  }
+}
