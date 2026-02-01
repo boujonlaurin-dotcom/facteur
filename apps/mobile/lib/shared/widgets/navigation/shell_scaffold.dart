@@ -30,11 +30,18 @@ class _BottomNavBar extends StatelessWidget {
   int _calculateSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
 
-    if (location.startsWith(RoutePaths.feed)) return 0;
-    // MVP: Progressions tab removed - redirect to feed if accessed
-    if (location.startsWith(RoutePaths.progress)) return 0;
-    if (location.startsWith(RoutePaths.settings)) return 1;
+    // Tab 0: Essentiel (Digest)
+    if (location.startsWith(RoutePaths.digest)) return 0;
 
+    // Tab 1: Explorer (Feed)
+    if (location.startsWith(RoutePaths.feed)) return 1;
+    // MVP: Progressions tab removed - redirect to feed if accessed
+    if (location.startsWith(RoutePaths.progress)) return 1;
+
+    // Tab 2: Paramètres (Settings)
+    if (location.startsWith(RoutePaths.settings)) return 2;
+
+    // Default to digest (Essentiel) tab
     return 0;
   }
 
@@ -42,9 +49,10 @@ class _BottomNavBar extends StatelessWidget {
     NotificationService.hide();
     switch (index) {
       case 0:
-        context.goNamed(RouteNames.feed);
-      // MVP: Progressions tab removed (was case 1)
+        context.goNamed(RouteNames.digest);
       case 1:
+        context.goNamed(RouteNames.feed);
+      case 2:
         context.goNamed(RouteNames.settings);
     }
   }
@@ -70,27 +78,29 @@ class _BottomNavBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // Tab 0: Essentiel (Digest)
               _NavItem(
-                icon: PhosphorIcons.house(PhosphorIconsStyle.regular),
-                activeIcon: PhosphorIcons.house(PhosphorIconsStyle.fill),
-                label: 'Feed',
+                icon: PhosphorIcons.article(PhosphorIconsStyle.regular),
+                activeIcon: PhosphorIcons.article(PhosphorIconsStyle.fill),
+                label: 'Essentiel',
                 isSelected: selectedIndex == 0,
                 onTap: () => _onItemTapped(context, 0),
               ),
-              // MVP: Progressions tab temporarily removed
-              // _NavItem(
-              //   icon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.regular),
-              //   activeIcon: PhosphorIcons.chartLineUp(PhosphorIconsStyle.fill),
-              //   label: 'Progressions',
-              //   isSelected: selectedIndex == 1,
-              //   onTap: () => _onItemTapped(context, 1),
-              // ),
+              // Tab 1: Explorer (Feed)
+              _NavItem(
+                icon: PhosphorIcons.compass(PhosphorIconsStyle.regular),
+                activeIcon: PhosphorIcons.compass(PhosphorIconsStyle.fill),
+                label: 'Explorer',
+                isSelected: selectedIndex == 1,
+                onTap: () => _onItemTapped(context, 1),
+              ),
+              // Tab 2: Paramètres (Settings)
               _NavItem(
                 icon: PhosphorIcons.gear(PhosphorIconsStyle.regular),
                 activeIcon: PhosphorIcons.gear(PhosphorIconsStyle.fill),
-                label: 'Profil',
-                isSelected: selectedIndex == 1,
-                onTap: () => _onItemTapped(context, 1),
+                label: 'Paramètres',
+                isSelected: selectedIndex == 2,
+                onTap: () => _onItemTapped(context, 2),
               ),
             ],
           ),
