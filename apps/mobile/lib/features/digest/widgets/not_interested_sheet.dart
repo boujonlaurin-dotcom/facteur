@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../models/digest_models.dart';
-import '../repositories/digest_repository.dart';
 
 /// Bottom sheet for confirming not_interested action
 /// Explains that the source will be muted
