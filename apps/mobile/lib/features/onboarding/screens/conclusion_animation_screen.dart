@@ -64,9 +64,9 @@ class _ConclusionAnimationScreenState
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
 
-    // Naviguer vers le feed avec paramètre welcome
+    // Naviguer vers le digest avec paramètre first pour welcome experience
     // context.go() remplace toute la stack (pas de back vers onboarding)
-    context.go('${RoutePaths.feed}?welcome=true');
+    context.go('${RoutePaths.digest}?first=true');
   }
 }
 
