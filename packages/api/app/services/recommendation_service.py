@@ -56,9 +56,8 @@ class RecommendationService:
         from sqlalchemy.orm import joinedload
         from app.models.user_personalization import UserPersonalization
         
-        # Batch independent DB calls
-        # We need followed_source_ids, subtopics and personalization
-        user_profile_fut = self.session.scalar(
+        # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
+        user_profile = await self.session.scalar(
             select(UserProfile)
             .options(
                 joinedload(UserProfile.interests),
@@ -67,22 +66,11 @@ class RecommendationService:
             .where(UserProfile.user_id == user_id)
         )
         
-        followed_sources_fut = self.session.execute(
+        followed_sources_res = await self.session.execute(
             select(UserSource.source_id, UserSource.is_custom).where(UserSource.user_id == user_id)
         )
         
-        subtopics_fut = self.session.scalars(
-            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
-        )
-        
-        personalization_fut = self.session.scalar(
-            select(UserPersonalization).where(UserPersonalization.user_id == user_id)
-        )
-        
-        # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
-        user_profile = await user_profile_fut
-        followed_sources_res = await followed_sources_fut
-        
+        # We need followed_source_ids, subtopics and personalization
         followed_source_ids = set()
         custom_source_ids = set()
         for row in followed_sources_res:
@@ -90,9 +78,15 @@ class RecommendationService:
              if row.is_custom:
                  custom_source_ids.add(row.source_id)
         
-        subtopics_res = await subtopics_fut
-        personalization = await personalization_fut
+        user_subtopics = set()
+        subtopics_res = await self.session.scalars(
+            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
+        )
         user_subtopics = set(subtopics_res.all())
+        
+        personalization = await self.session.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == user_id)
+        )
         
         user_interests = set()
         user_interest_weights = {}
@@ -335,64 +329,76 @@ class RecommendationService:
                 score_total = 0.0
                 
                 for reason in reasons_list:
-                    pts = reason['score_contribution']
-                    score_total += pts
-                    breakdown.append(ScoreContribution(
-                        label=_reason_to_label(reason),
-                        points=pts,
-                        is_positive=(pts >= 0)
-                    ))
+                    try:
+                        pts = reason.get('score_contribution', 0.0)
+                        score_total += pts
+                        breakdown.append(ScoreContribution(
+                            label=_reason_to_label(reason),
+                            points=pts,
+                            is_positive=(pts >= 0)
+                        ))
+                    except Exception as e:
+                        logger.warning("reason_breakdown_failed", error=str(e), content_id=str(content.id))
+                        continue
                 
                 # Sort by absolute contribution (highest first)
                 breakdown.sort(key=lambda x: abs(x.points), reverse=True)
                 
                 # Determine top label (for the tag)
                 # Prioritize granular topics over broad themes
-                reasons_list.sort(key=lambda x: (x['layer'] == 'article_topic', x['score_contribution']), reverse=True)
-                top = reasons_list[0]
+                reasons_list.sort(key=lambda x: (x.get('layer') == 'article_topic', x.get('score_contribution', 0.0)), reverse=True)
                 
                 label = "Recommandé pour vous"  # Fallback
                 
-                if top['layer'] == 'core_v1':
-                    if "Theme match" in top['details']:
-                        try:
-                            theme_slug = top['details'].split(': ')[1]
-                            theme_fr = _get_theme_label(theme_slug)
-                            label = f"Vos intérêts : {theme_fr}"
-                        except Exception:
-                            label = "Vos intérêts"
-                    elif "confiance" in top['details'].lower():
-                        label = "Source suivie"
-                    elif "Recency" in top['details']:
-                        label = "À la une"
-                elif top['layer'] == 'article_topic':
+                if reasons_list:
+                    top = reasons_list[0]
+                    
                     try:
-                        raw_topics = top['details'].split(': ')[1].replace(" (précis)", "")
-                        topic_slugs = [t.strip() for t in raw_topics.split(',')]
-                        topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
-                        label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
-                    except Exception:
-                        label = "Vos centres d'intérêt"
-                elif top['layer'] == 'static_prefs':
-                    if "Recent" in top['details']:
-                        label = "Très récent"
-                    elif "format" in top['details'] or "Pref" in top['details']:
-                        label = "Format préféré"
-                elif top['layer'] == 'behavioral':
-                    if "High interest" in top['details']:
-                        try:
-                            theme_slug = top['details'].split(': ')[1].split(' ')[0]
-                            theme_fr = _get_theme_label(theme_slug)
-                            label = f"Sujet passionnant : {theme_fr}"
-                        except Exception:
-                            label = "Sujet passionnant"
-                elif top['layer'] == 'quality':
-                    if "qualitative" in top['details'].lower():
-                        label = "Source de Confiance"
-                    elif "Low" in top['details']:
-                        label = "Source Controversée"
-                elif top['layer'] == 'visual':
-                    label = "Aperçu disponible"
+                        layer = top.get('layer')
+                        details = top.get('details', '')
+                        
+                        if layer == 'core_v1':
+                            if "Theme match" in details:
+                                try:
+                                    theme_slug = details.split(': ')[1]
+                                    theme_fr = _get_theme_label(theme_slug)
+                                    label = f"Vos intérêts : {theme_fr}"
+                                except Exception:
+                                    label = "Vos intérêts"
+                            elif "confiance" in details.lower():
+                                label = "Source suivie"
+                            elif "Recency" in details:
+                                label = "À la une"
+                        elif layer == 'article_topic':
+                            try:
+                                raw_topics = details.split(': ')[1].replace(" (précis)", "")
+                                topic_slugs = [t.strip() for t in raw_topics.split(',')]
+                                topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
+                                label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                            except Exception:
+                                label = "Vos centres d'intérêt"
+                        elif layer == 'static_prefs':
+                            if "Recent" in details:
+                                label = "Très récent"
+                            elif "format" in details or "Pref" in details:
+                                label = "Format préféré"
+                        elif layer == 'behavioral':
+                            if "High interest" in details:
+                                try:
+                                    theme_slug = details.split(': ')[1].split(' ')[0]
+                                    theme_fr = _get_theme_label(theme_slug)
+                                    label = f"Sujet passionnant : {theme_fr}"
+                                except Exception:
+                                    label = "Sujet passionnant"
+                        elif layer == 'quality':
+                            if "qualitative" in details.lower():
+                                label = "Source de Confiance"
+                            elif "Low" in details:
+                                label = "Source Controversée"
+                        elif layer == 'visual':
+                            label = "Aperçu disponible"
+                    except Exception as e:
+                        logger.warning("top_reason_label_failed", error=str(e), content_id=str(content.id))
 
                 content.recommendation_reason = RecommendationReason(
                     label=label,

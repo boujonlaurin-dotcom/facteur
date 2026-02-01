@@ -130,6 +130,20 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
 app.include_router(personalization.router, prefix="/api/users/personalization", tags=["Personalization"])
+    
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Log all uncaught exceptions."""
+    logger.error("uncaught_exception", 
+                 path=request.url.path, 
+                 method=request.method, 
+                 error=str(exc),
+                 exc_info=True)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error_type": type(exc).__name__}
+    )
 
 
 

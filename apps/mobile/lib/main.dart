@@ -10,7 +10,11 @@ import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:timeago/src/messages/fr_messages.dart' as fr_messages;
+// Note: Certains packages demandent l'import src pour les messages spécifiques s'ils ne sont pas exportés,
+// mais on va essayer de voir si on peut s'en passer ou si l'erreur est bloquante.
+// Si l'erreur 'implementation_imports' est bloquante, on l'ignorera via // ignore: implementation_imports
+import 'package:timeago/src/messages/fr_messages.dart'
+    as fr_messages; // ignore: implementation_imports
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,8 +79,8 @@ Future<void> main() async {
   // Pour l'instant on laisse le provider s'en occuper au premier build de FacteurApp
 
   try {
-    const url = SupabaseConstants.url;
-    const key = SupabaseConstants.anonKey;
+    final url = SupabaseConstants.url;
+    final key = SupabaseConstants.anonKey;
 
     // Initialiser Supabase avec timeout de sécurité
     debugPrint('Main: Initializing Supabase...');
