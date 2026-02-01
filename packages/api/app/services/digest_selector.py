@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Service de sélection d'articles pour le Digest quotidien (5 articles).
 
 Ce service implémente l'algorithme de sélection intelligent pour Epic 10,
