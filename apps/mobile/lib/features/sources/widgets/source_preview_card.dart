@@ -98,7 +98,7 @@ class SourcePreviewCard extends StatelessWidget {
                         ),
                         if (data['theme'] != null) ...[
                           Text(
-                            " • ",
+                            ' • ',
                             style: TextStyle(color: colors.textTertiary),
                           ),
                           Text(
@@ -131,7 +131,7 @@ class SourcePreviewCard extends StatelessWidget {
           const SizedBox(height: 20),
           if (titles.isNotEmpty) ...[
             Text(
-              "Derniers articles :",
+              'Derniers articles :',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -167,7 +167,7 @@ class SourcePreviewCard extends StatelessWidget {
                     side: BorderSide(color: colors.border),
                   ),
                   child: Text(
-                    "Annuler",
+                    'Annuler',
                     // ignore: deprecated_member_use
                     style: TextStyle(color: colors.textSecondary),
                   ),
@@ -176,7 +176,7 @@ class SourcePreviewCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: PrimaryButton(
-                  label: "Ajouter cette source",
+                  label: 'Ajouter cette source',
                   onPressed: isLoading ? null : onConfirm,
                   isLoading: isLoading,
                 ),

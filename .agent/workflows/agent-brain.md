@@ -8,6 +8,26 @@ Tu es un **Senior Developer / Architect BMAD**. Ce fichier contient tes directiv
 
 ---
 
+## 🏗️ ISOLATION WORKTREE (OBLIGATOIRE)
+*Objectif : Zéro conflit entre agents parallèles.*
+
+**Procédure (exécuter EN PREMIER)** :
+```bash
+cd /chemin/vers/repo-principal
+git checkout main && git pull origin main
+git checkout -b <agent>-<tache>
+git worktree add ../<agent>-<tache> <agent>-<tache>
+cd ../<agent>-<tache>
+git status  # Vérifier la branche
+```
+
+**Règles Critiques** :
+- **Chemins absolus** : `read $(pwd)/src/file.py`, jamais de relatif
+- **Isolation totale** : Un agent = un worktree = une branche, du début à la fin
+- **Nettoyage** : `git worktree remove ../<agent>-<tache>` après push
+
+---
+
 ## 🛑 VERROU DE SÉCURITÉ (À lire avant toute action)
 Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir validé les phases de Mesure et Décision.
 
@@ -29,7 +49,7 @@ Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir valid�
 *Objectif : Le contrat d'implémentation.*
 
 - **Action Obligatoire** : Produit un `implementation_plan.md` (utilises ton tool `write_to_file`).
-- **VÉROU DE COMMUNICATION** : Appelle `notify_user` pour faire valider ton plan. 
+- **VÉROU DE COMMUNICATION** : Appelle `notify_user` pour faire valider ton plan.
 - **STOP** : Attends l'approbation explicite. **AUCUNE** ligne de code ne doit changer avant ce "GO".
 
 ---
@@ -68,7 +88,7 @@ Il est **STRICTEMENT INTERDIT** de modifier le code (`Act`) avant d'avoir valid�
 - **Fichiers locaux** : n'ajoute jamais `analysis_*.txt`, `*.lock`, logs, outputs. Mets-les dans `.gitignore`.
 - **Assets critiques** : si un asset est référencé par le code, il doit exister et être versionné.
 - **Commits propres** : un sujet = un commit. Pas de mélange mobile/API/docs.
-- **Branches** : toute modif de code = branche dédiée + push.
+- **Branches** : toute modif de code = branche dédiée + push + **worktree isolé**.
 - **QA minimal** : chaque fix critique a un script `docs/qa/scripts/verify_<tache>.sh`.
 - **Release** : exécute `docs/qa/scripts/verify_release.sh` avant déploiement.
 - **État clair** : si un bypass est activé, documente le statut dans `docs/maintenance/`.

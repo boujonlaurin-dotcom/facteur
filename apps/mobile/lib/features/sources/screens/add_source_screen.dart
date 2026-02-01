@@ -72,8 +72,9 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         context.pop();
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         NotificationService.showError('Erreur lors de l\'ajout : $e');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

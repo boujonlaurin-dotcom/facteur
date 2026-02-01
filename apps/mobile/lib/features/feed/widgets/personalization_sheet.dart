@@ -229,9 +229,9 @@ class PersonalizationSheet extends ConsumerWidget {
   }
 
   String _normalize(String input) {
-    final withDiacritics =
+    const withDiacritics =
         'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐÌÍÎÏìíîïÙÚÛÜùúûüÑñŠšŸÿýŽž';
-    final withoutDiacritics =
+    const withoutDiacritics =
         'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeeCcDIIIIiiiiUUUUuuuuNnSsYyyZz';
 
     var result = input;
