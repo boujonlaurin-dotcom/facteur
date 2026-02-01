@@ -1,8 +1,22 @@
 # Project State: Facteur — Epic 10 Digest Central
 
-**Current Phase:** 0 — Planning Complete, Ready for Phase 1  
+**Current Phase:** 1 — Foundation In Progress  
 **Last Updated:** 2026-02-01  
-**Status:** 🟡 Ready to Execute
+**Status:** 🟢 Plan 01-01 Complete
+
+---
+
+## Current Position
+
+**Phase:** 01-foundation  
+**Plan:** 01-01 Database Schema Complete  
+**Next:** 01-02 Digest Generation Service  
+
+**Progress:** Phase 1: 1/3 plans complete  
+
+```
+Phase 1 Foundation: [█░░░] 33% (1/3)
+```
 
 ---
 
@@ -20,13 +34,26 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 | Phase | Status | Progress | Plans Ready |
 |-------|--------|----------|-------------|
-| 1 — Foundation | 🟢 Planned | 0% | **3 plans ready** |
+| 1 — Foundation | 🟡 In Progress | 33% | **1/3 complete** |
 | 2 — Frontend | ⚪ Not Started | 0% | No |
 | 3 — Polish | ⚪ Not Started | 0% | No |
 
 ---
 
 ## Completed Work
+
+### Foundation Phase — Plan 01-01 Complete (2026-02-01)
+
+**Database Schema for Digest System**
+
+- ✅ Migration 009: daily_digest table with JSONB items array
+- ✅ Migration 010: digest_completions table for tracking
+- ✅ Migration 011: Extended user_streaks with closure tracking
+- ✅ DailyDigest SQLAlchemy model
+- ✅ DigestCompletion SQLAlchemy model
+- ✅ Updated UserStreak model with closure fields
+
+See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ### Documentation (2026-02-01)
 
@@ -50,9 +77,11 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ### Immediate Next Steps
 
-1. **Execute Phase 1** (Foundation)
-   - Run `/gsd-execute-phase 1` to execute all 3 plans
-   - ~20h estimated (Wave 1: 01-01 + 01-02 parallel, Wave 2: 01-03)
+1. **Continue Phase 1** (Foundation)
+   - ✅ 01-01 Database Schema Complete
+   - ⏳ 01-02 Digest Generation Service (next)
+   - ⏳ 01-03 Closure Tracking API (ready to start)
+   - ~20h estimated remaining
 
 2. **Validate Phase 1**
    - API tests pass
@@ -80,6 +109,9 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-01 | JSONB for digest items | Fixed 5-item array, simpler than junction table |
+| 2026-02-01 | Separate closure streak | Distinct gamification path from activity streak |
+| 2026-02-01 | Idempotent migrations | Safe re-runs, Supabase-compatible |
 | 2026-02-01 | Scope: Single digest only | Validate core concept before complexity |
 | 2026-02-01 | Include "Not Interested" | Reuse existing Personalization, reduce frustration |
 | 2026-02-01 | Defer Zen Essential | Sentiment analysis too costly for MVP |
@@ -101,10 +133,22 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ## Next Action
 
-**Run `/gsd-execute-phase 1`** to start executing Foundation phase plans.
+**Continue with 01-02** or **01-03** (parallel execution ready)
 
-<sub>/clear first → fresh context window</sub>
+Both plans can execute independently now that schema is ready:
+- 01-02: Digest Generation Service
+- 01-03: Closure Tracking API
+
+<sub>Wave 1 plans are independent — can run in parallel</sub>
 
 ---
 
-*State auto-generated after project initialization*
+## Session Continuity
+
+**Last session:** 2026-02-01T19:41:35Z  
+**Stopped at:** Completed 01-01 Database Schema  
+**Resume file:** `.planning/phases/01-foundation/01-01-SUMMARY.md`
+
+---
+
+*State updated after 01-01 completion*
