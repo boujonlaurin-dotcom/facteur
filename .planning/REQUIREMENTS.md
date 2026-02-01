@@ -7,22 +7,22 @@
 
 ### Database & Models
 
-- [ ] **DB-01**: Migration from `daily_top3` to `daily_digest` table with JSONB items array (5 articles)
-- [ ] **DB-02**: `digest_completions` table for tracking daily completions
-- [ ] **DB-03**: Extend `user_streaks` with `closure_streak`, `longest_closure_streak`, `last_closure_date`
+- [x] **DB-01**: Migration from `daily_top3` to `daily_digest` table with JSONB items array (5 articles)
+- [x] **DB-02**: `digest_completions` table for tracking daily completions
+- [x] **DB-03**: Extend `user_streaks` with `closure_streak`, `longest_closure_streak`, `last_closure_date`
 
 ### Backend Services
 
-- [ ] **SVC-01**: `DigestSelector` service — select 5 articles from user's declared sources
-- [ ] **SVC-02**: Diversity constraints in selector (max 2 per source, max 2 per theme)
-- [ ] **SVC-03**: Fallback to curated sources when user pool < 5 articles
-- [ ] **SVC-04**: Daily digest generation job (8am Paris time)
+- [x] **SVC-01**: `DigestSelector` service — select 5 articles from user's declared sources
+- [x] **SVC-02**: Diversity constraints in selector (max 2 per source, max 2 per theme)
+- [x] **SVC-03**: Fallback to curated sources when user pool < 5 articles
+- [x] **SVC-04**: Daily digest generation job (8am Paris time)
 
 ### API Endpoints
 
-- [ ] **API-01**: `GET /api/digest` — retrieve today's digest (auto-generate if missing)
-- [ ] **API-02**: `POST /api/digest/{id}/action` — mark article as read/saved/not_interested
-- [ ] **API-03**: Completion tracking endpoint for closure logic
+- [x] **API-01**: `GET /api/digest` — retrieve today's digest (auto-generate if missing)
+- [x] **API-02**: `POST /api/digest/{id}/action` — mark article as read/saved/not_interested
+- [x] **API-03**: Completion tracking endpoint for closure logic
 
 ### Frontend — Digest Screen
 
@@ -131,16 +131,16 @@ The top 5 articles **MUST** be selected based on the existing algorithmic rankin
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DB-01 | Phase 1: Foundation | Pending |
-| DB-02 | Phase 1: Foundation | Pending |
-| DB-03 | Phase 1: Foundation | Pending |
-| SVC-01 | Phase 1: Foundation | Pending |
-| SVC-02 | Phase 1: Foundation | Pending |
-| SVC-03 | Phase 1: Foundation | Pending |
-| SVC-04 | Phase 1: Foundation | Pending |
-| API-01 | Phase 1: Foundation | Pending |
-| API-02 | Phase 1: Foundation | Pending |
-| API-03 | Phase 1: Foundation | Pending |
+| DB-01 | Phase 1: Foundation | **Complete** |
+| DB-02 | Phase 1: Foundation | **Complete** |
+| DB-03 | Phase 1: Foundation | **Complete** |
+| SVC-01 | Phase 1: Foundation | **Complete** |
+| SVC-02 | Phase 1: Foundation | **Complete** |
+| SVC-03 | Phase 1: Foundation | **Complete** |
+| SVC-04 | Phase 1: Foundation | **Complete** |
+| API-01 | Phase 1: Foundation | **Complete** |
+| API-02 | Phase 1: Foundation | **Complete** |
+| API-03 | Phase 1: Foundation | **Complete** |
 | UI-01 | Phase 2: Frontend | Pending |
 | UI-02 | Phase 2: Frontend | Pending |
 | UI-03 | Phase 2: Frontend | Pending |

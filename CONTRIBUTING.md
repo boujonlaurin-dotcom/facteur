@@ -14,6 +14,10 @@ Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 - **Flutter (dernière version stable)** : Pour l'application mobile.
 - **Railway CLI** (optionnel) : Pour la gestion du déploiement.
 - **Un compte Supabase** : Pour la base de données et l'authentification.
+- **GitGuardian (ggshield)** : Outil de sécurité pour prévenir la fuite de secrets.
+  1. Installation : `brew install ggshield`
+  2. Authentification : `ggshield auth login`
+  3. Scan initial : `ggshield secret scan repo .`
 
 > [!TIP]
 > Si la commande `python` n'est pas trouvée, essayez `python3` ou assurez-vous que votre environnement virtuel est bien activé.
