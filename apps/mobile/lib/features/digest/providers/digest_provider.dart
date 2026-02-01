@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/ui/notification_service.dart';
+import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
 
 // Repository provider
@@ -100,17 +101,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     // Call API
     try {
       final repository = ref.read(digestRepositoryProvider);
-      final response = await repository.applyAction(
+      await repository.applyAction(
         digestId: currentDigest.digestId,
         contentId: contentId,
         action: action,
       );
 
       // Trigger haptic feedback on success
-      if (response.success) {
-        _triggerHaptic(action);
-        _showActionNotification(action);
-      }
+      _triggerHaptic(action);
+      _showActionNotification(action);
 
       // Check for completion
       _checkAndHandleCompletion();
@@ -137,23 +136,19 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
     try {
       final repository = ref.read(digestRepositoryProvider);
-      final response = await repository.completeDigest(currentDigest.digestId);
+      await repository.completeDigest(currentDigest.digestId);
 
-      if (response.success) {
-        // Trigger celebratory haptic
-        HapticFeedback.heavyImpact();
+      // Trigger celebratory haptic
+      HapticFeedback.heavyImpact();
 
-        // Update local state
-        state = AsyncData(currentDigest.copyWith(
-          isCompleted: true,
-          completedAt: response.completedAt,
-        ));
+      // Update local state
+      state = AsyncData(currentDigest.copyWith(
+        isCompleted: true,
+        completedAt: DateTime.now(),
+      ));
 
-        // Show completion notification with streak info
-        if (response.streakMessage != null) {
-          NotificationService.showSuccess(response.streakMessage!);
-        }
-      }
+      // Show completion notification
+      NotificationService.showSuccess('Essentiel terminé !');
     } catch (e) {
       print('DigestNotifier: completeDigest failed: $e');
       // Don't rethrow - completion failure shouldn't block UI
@@ -248,24 +243,5 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }).toList();
 
     state = AsyncData(currentDigest.copyWith(items: updatedItems));
-  }
-}
-
-/// Extension methods for DigestResponse
-extension DigestResponseExtension on DigestResponse {
-  DigestResponse copyWith({
-    List<DigestItem>? items,
-    bool? isCompleted,
-    DateTime? completedAt,
-  }) {
-    return DigestResponse(
-      digestId: digestId,
-      userId: userId,
-      targetDate: targetDate,
-      generatedAt: generatedAt,
-      items: items ?? this.items,
-      isCompleted: isCompleted ?? this.isCompleted,
-      completedAt: completedAt ?? this.completedAt,
-    );
   }
 }
