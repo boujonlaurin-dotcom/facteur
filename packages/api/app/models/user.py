@@ -79,7 +79,12 @@ class UserInterest(Base):
 
 
 class UserStreak(Base):
-    """Streak et progression gamification."""
+    """Streak et progression gamification.
+    
+    Epic 10: Extended with closure tracking for digest-first experience.
+    Closure streak tracks consecutive days the user completed their digest,
+    creating a sense of accomplishment and "mission accomplished".
+    """
 
     __tablename__ = "user_streaks"
 
@@ -92,6 +97,10 @@ class UserStreak(Base):
     last_activity_date: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
     weekly_count: Mapped[int] = mapped_column(Integer, default=0)
     week_start: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
+    # Epic 10: Closure tracking for digest-first experience
+    closure_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    longest_closure_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_closure_date: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
