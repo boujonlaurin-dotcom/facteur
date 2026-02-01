@@ -1,0 +1,19 @@
+{
+  "mode": "yolo",
+  "depth": "standard",
+  "parallelization": true,
+  "commit_docs": true,
+  "model_profile": "balanced",
+  "workflow": {
+    "research": false,
+    "plan_check": true,
+    "verifier": true
+  },
+  "project_context": {
+    "name": "Facteur",
+    "type": "mobile_app",
+    "current_phase": "epic_10_digest_central",
+    "tech_stack": ["flutter", "fastapi", "postgresql", "supabase"],
+    "focus": "safe_reuse_of_existing_logic"
+  }
+}
