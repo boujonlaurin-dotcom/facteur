@@ -15,7 +15,7 @@ Réutilise l'infrastructure de scoring existante sans modification.
 
 import datetime
 from dataclasses import dataclass
-from typing import List, Set, Tuple, Optional, Dict
+from typing import Any, List, Set, Tuple, Optional, Dict
 from uuid import UUID
 from collections import defaultdict
 
