@@ -24,6 +24,7 @@
 | 22/01/2026 | 2.1 | Refonte Onboarding : Champs Nom/Prénom & Fix Redirection | Antigravity |
 | 24/01/2026 | 2.2 | Onboarding Section 3 : Inversion Thèmes → Sources avec pré-sélection (Story 2.7) | Antigravity |
 | 29/01/2026 | 3.0 | **Recommendation Engine V3** - ML Classification + NER + Entity Scoring | BMad Facilitator |
+| 01/02/2026 | 4.0 | **Epic 10: Digest Central** - Pivot stratégique vers expérience "Digest-First" (5 articles/jour avec closure) | BMad Master |
 
 ---
 
@@ -80,6 +81,12 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **FR18** | L'utilisateur peut accéder à d'autres points de vue sur une même actualité depuis l'écran détail |
 | **FR19** | Le système regroupe automatiquement les articles similaires par "Story" (clustering) |
 | **FR20** | Le système affiche le positionnement éditorial (biais) des sources via une échelle visuelle |
+| **FR21** | **(Epic 10)** L'utilisateur reçoit chaque matin à 8h un **Digest** de 5 articles sélectionnés UNIQUEMENT parmi ses sources déclarées, avec fallback sur sources curées si nécessaire |
+| **FR21.1** | **(Epic 10)** Le Digest affiche une **barre de progression X/5** et permet de marquer chaque article comme "Lu" ou "Sauvegardé" |
+| **FR21.2** | **(Epic 10)** Quand les 5 articles sont traités, le système affiche un **écran de closure** avec animation, message "Tu es informé !", et mise à jour du streak de closure |
+| **FR21.3** | **(Epic 10)** Le système maintient un **streak de closure** distinct du streak de lecture, basé sur la complétion quotidienne du digest |
+| **FR21.4** | **(Epic 10)** Le Feed infini reste accessible mais est relégué à un écran secondaire "Explorer plus", accessible depuis l'écran de closure |
+| **FR21.5** | **(Epic 10)** Le système envoie une notification push le matin à 8h pour annoncer que le Digest est prêt (opt-in) |
 
 ---
 
@@ -133,6 +140,8 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | 2 | **Feed principal** | Liste de contenus personnalisés avec preview cards |
 | 3 | **Détail contenu** | Preview enrichi avant redirect |
 | 4 | **À consulter plus tard** | Liste des contenus mis de côté |
+| 4b | **Digest** | Écran principal avec 5 articles, progression, et actions Lu/Sauvegardé (Epic 10) |
+| 4c | **Closure** | Écran de célébration avec animation, stats, et streak de closure (Epic 10) |
 | 5 | **Progression** | Streak + barre hebdo + stats |
 | 6 | **Mes sources** | Gestion des sources custom |
 | 7 | **Profil / Settings** | Paramètres compte, préférences, abonnement |
