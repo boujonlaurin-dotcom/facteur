@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
-import '../repositories/digest_repository.dart';
+import '../models/digest_models.dart';
 
 /// Action bar with 3 buttons for digest card interactions
 /// Read, Save, and Not Interested
