@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
@@ -31,8 +32,7 @@ class DigestScreen extends ConsumerWidget {
           !prevDigest.isCompleted &&
           nextDigest.isCompleted) {
         // Navigate to closure screen when digest completes
-        // TODO: Navigate to closure screen (02-03)
-        // context.go(RoutePaths.closure, extra: nextDigest);
+        context.go(RoutePaths.digestClosure, extra: nextDigest.digestId);
       }
     });
 
