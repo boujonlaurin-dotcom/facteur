@@ -36,40 +36,21 @@ async def get_personalized_feed(
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
     
-    # 1. Get Today's Briefing (Only if offset=0, non-saved)
-    # On le fait avant le feed car c'est une requête légère qui peut être parallélisée
-    # mentalement (ou via asyncio.gather si on avait des sessions distinctes).
+    # --- 1. Top 3 (Briefing) ---
     briefing_items = []
-    briefing_content_ids = set()
     
-    if offset == 0 and not saved_only and content_type is None:
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # On ne récupère le briefing que sur la première page par défaut
+    if offset == 0:
+        from app.services.briefing_service import BriefingService
+        briefing_service = BriefingService(db)
+        # Lazy Generation : Récupère ou génère si absent
+        briefing_dicts = await briefing_service.get_or_create_briefing(user_uuid)
         
-        stmt = (
-            select(DailyTop3)
-            .options(
-                selectinload(DailyTop3.content)
-                .selectinload(Content.source)
-            )
-            .where(
-                DailyTop3.user_id == user_uuid,
-                DailyTop3.generated_at >= today_start
-            )
-            .order_by(DailyTop3.rank)
-        )
-        briefing_result = await db.execute(stmt)
-        briefing_rows = briefing_result.scalars().all()
-        
-        briefing_items = [
-            DailyTop3Response(
-                rank=row.rank,
-                reason=row.top3_reason,
-                consumed=row.consumed,
-                content=row.content
-            )
-            for row in briefing_rows
-        ]
-        briefing_content_ids = {row.content_id for row in briefing_rows}
+        # Le service retourne des dicts, on les mappe vers DailyTop3Response pour la validation Pydantic
+        briefing_items = [DailyTop3Response(**item) for item in briefing_dicts]
+
+    # Récupérer les IDs des contenus du briefing pour exclusion
+    briefing_content_ids = [item.content_id for item in briefing_items]
     
     # 2. Get Feed Items
     feed_items = await service.get_feed(
