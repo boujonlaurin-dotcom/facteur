@@ -1,21 +1,21 @@
 # Project State: Facteur — Epic 10 Digest Central
 
-**Current Phase:** 1 — Foundation In Progress  
+**Current Phase:** 1 — Foundation Complete  
 **Last Updated:** 2026-02-01  
-**Status:** 🟢 Plans 01-01 and 01-02 Complete
+**Status:** ✅ Phase 1 Complete - Ready for Phase 2 (Frontend)
 
 ---
 
 ## Current Position
 
-**Phase:** 01-foundation  
-**Plan:** 01-02 DigestSelector Service Complete  
-**Next:** 01-03 API Endpoints + Batch Job  
+**Phase:** 01-foundation ✅ COMPLETE  
+**Plan:** 01-03 API Endpoints Complete  
+**Next:** Phase 02-frontend  
 
-**Progress:** Phase 1: 2/3 plans complete  
+**Progress:** Phase 1: 3/3 plans complete  
 
 ```
-Phase 1 Foundation: [██░░] 66% (2/3)
+Phase 1 Foundation: [████] 100% (3/3)
 ```
 
 ---
@@ -34,13 +34,31 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
-| 1 — Foundation | 🟢 In Progress | 66% | **2/3** |
-| 2 — Frontend | ⚪ Not Started | 0% | 0 |
+| 1 — Foundation | ✅ Complete | 100% | **3/3** |
+| 2 — Frontend | 🔵 Ready | 0% | 0 |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
 
 ## Completed Work
+
+### Foundation Phase — Plan 01-03 Complete (2026-02-01)
+
+**Digest API Endpoints for Mobile App**
+
+- ✅ Pydantic schemas for digest API (DigestItem, DigestResponse, DigestAction)
+- ✅ DigestService with get_or_create_digest(), apply_action(), complete_digest()
+- ✅ REST API endpoints:
+  - GET /api/digest - Retrieve or generate today's digest
+  - POST /api/digest/{id}/action - Mark read/save/not_interested
+  - POST /api/digest/{id}/complete - Track completion, update closure streak
+  - POST /api/digest/generate - On-demand generation
+- ✅ Integration with DigestSelector (from 01-02)
+- ✅ Integration with Personalization system (not_interested → source mute)
+- ✅ Integration with StreakService (consumption streak on read)
+- ✅ Closure streak tracking with milestone messages (7 days, 30 days)
+
+See: `.planning/phases/01-foundation/01-03-SUMMARY.md`
 
 ### Foundation Phase — Plan 01-02 Complete (2026-02-01)
 
@@ -94,19 +112,19 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ### Immediate Next Steps
 
-1. **Continue Phase 1** (Foundation)
-   - ✅ 01-01 Database Schema Complete
-   - ✅ 01-02 Digest Generation Service Complete
-   - ⏳ 01-03 Closure Tracking API (next)
-   - ~8h estimated remaining
+1. **Start Phase 2** (Frontend) ✅ Foundation Ready
+   - 02-01 Digest Screen UI - Flutter digest list with 5 cards
+   - 02-02 Action UI - Swipe/mark buttons for read/save/dismiss  
+   - 02-03 Closure Screen - Completion celebration with streak display
+   - 02-04 Feed Relegation - Update navigation to make feed secondary
 
-2. **Validate Phase 1**
-   - API tests pass
-   - Digest generation works
+2. **Validate Integration**
+   - End-to-end test: digest generation → API → completion
+   - Mobile app integration test
    - No regressions in existing feed
 
 3. **Plan Phase 2** (Frontend)
-   - Create UI/UX plans after backend complete
+   - Create detailed UI/UX plans for digest-first experience
 
 ### Phase 2 Preparation
 
@@ -152,25 +170,33 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ## Next Action
 
-**Execute Plan 01-03** (API Endpoints + Batch Job)
+**Begin Phase 2: Frontend Implementation**
 
-1. Create digest API endpoints:
-   - GET /digest - Get today's digest for current user
-   - POST /digest/generate - On-demand generation
-   - POST /digest/{id}/read - Mark as read
-   - POST /digest/{id}/save - Save article
-   - POST /digest/{id}/not-interested - Hide article
+1. Create Flutter digest screen:
+   - Display 5 articles with selection reasons
+   - Card-based UI matching existing design system
+   - Pull-to-refresh for regeneration
 
-2. Configure scheduler for daily batch job at 8h Paris
+2. Implement action buttons:
+   - Read/Unread toggle
+   - Save button with bookmark icon
+   - Dismiss/hide with "not interested" option
+
+3. Build closure screen:
+   - Celebration animation on complete
+   - Streak counter display
+   - Share/continue options
+
+See: `.planning/phases/01-foundation/01-03-SUMMARY.md` for Phase 2 suggestions
 
 ---
 
 ## Session Continuity
 
-**Last session:** 2026-02-01T19:44:04Z  
-**Stopped at:** Completed 01-02 DigestSelector Service  
-**Resume file:** `.planning/phases/01-foundation/01-02-SUMMARY.md`
+**Last session:** 2026-02-01T20:20:00Z  
+**Stopped at:** Completed 01-03 Digest API Endpoints - Phase 1 Foundation 100% Complete  
+**Resume file:** `.planning/phases/01-foundation/01-03-SUMMARY.md`
 
 ---
 
-*State updated after 01-02 completion*
+*State updated after 01-03 completion - Phase 1 Foundation 100% Complete*
