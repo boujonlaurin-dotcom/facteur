@@ -121,15 +121,23 @@ New Components:
 └── ArticleActionBar (adapt for 3 actions)
 ```
 
-### Plans (will be detailed in plan-phase)
+### Plans
 
-- **02-01**: Digest screen with article cards and progress bar
-- **02-02**: Article actions (Read/Save/Not Interested) + Personalization integration
-- **02-03**: Closure screen with animation and streak celebration
-- **02-04**: Feed relegation and navigation flows
+- [ ] **02-01**: Digest screen with article cards and progress bar — Wave 1
+- [ ] **02-02**: Article actions (Read/Save/Not Interested) + Personalization integration — Wave 1
+- [ ] **02-03**: Closure screen with animation and streak celebration — Wave 2
+- [ ] **02-04**: Feed relegation and navigation flows — Wave 3
 
-**Dependencies:** Requires Phase 1 API endpoints  
-**Parallelizable:** 02-01, 02-02 can be parallel; 02-03, 02-04 depend on earlier
+**Dependencies:** Requires Phase 1 API endpoints ✅  
+**Wave Structure:**
+| Wave | Plans | Dependencies |
+|------|-------|--------------|
+| 1 | 02-01, 02-02 | None (can run in parallel) |
+| 2 | 02-03 | 02-02 (action completion) |
+| 3 | 02-04 | 02-03 (closure navigation) |
+
+**Status:** 🔵 Planned (4 plans in 3 waves)  
+**Ready for execution** — Run `/gsd-execute-phase 2`
 
 ---
 
@@ -162,24 +170,24 @@ New Components:
 
 | Requirement | Phase | Plan | Status |
 |-------------|-------|------|--------|
-| DB-01 | Phase 1 | 01-01 | Pending |
-| DB-02 | Phase 1 | 01-01 | Pending |
-| DB-03 | Phase 1 | 01-01 | Pending |
-| SVC-01 | Phase 1 | 01-02 | Pending |
-| SVC-02 | Phase 1 | 01-02 | Pending |
-| SVC-03 | Phase 1 | 01-02 | Pending |
-| API-01 | Phase 1 | 01-03 | Pending |
-| API-02 | Phase 1 | 01-03 | Pending |
-| API-03 | Phase 1 | 01-03 | Pending |
-| UI-01 | Phase 2 | 02-01 | Pending |
-| UI-02 | Phase 2 | 02-01 | Pending |
-| UI-03 | Phase 2 | 02-02 | Pending |
-| UI-04 | Phase 2 | 02-02 | Pending |
-| UI-05 | Phase 2 | 02-03 | Pending |
-| UI-06 | Phase 2 | 02-03 | Pending |
-| UI-07 | Phase 2 | 02-04 | Pending |
-| GMF-01 | Phase 2 | 02-03 | Pending |
-| GMF-02 | Phase 2 | 02-03 | Pending |
+| DB-01 | Phase 1 | 01-01 | ✅ Complete |
+| DB-02 | Phase 1 | 01-01 | ✅ Complete |
+| DB-03 | Phase 1 | 01-01 | ✅ Complete |
+| SVC-01 | Phase 1 | 01-02 | ✅ Complete |
+| SVC-02 | Phase 1 | 01-02 | ✅ Complete |
+| SVC-03 | Phase 1 | 01-02 | ✅ Complete |
+| API-01 | Phase 1 | 01-03 | ✅ Complete |
+| API-02 | Phase 1 | 01-03 | ✅ Complete |
+| API-03 | Phase 1 | 01-03 | ✅ Complete |
+| UI-01 | Phase 2 | 02-01 | 🔵 Planned |
+| UI-02 | Phase 2 | 02-01 | 🔵 Planned |
+| UI-03 | Phase 2 | 02-02 | 🔵 Planned |
+| UI-04 | Phase 2 | 02-02 | 🔵 Planned |
+| UI-05 | Phase 2 | 02-03 | 🔵 Planned |
+| UI-06 | Phase 2 | 02-03 | 🔵 Planned |
+| UI-07 | Phase 2 | 02-04 | 🔵 Planned |
+| GMF-01 | Phase 2 | 02-03 | 🔵 Planned |
+| GMF-02 | Phase 2 | 02-03 | 🔵 Planned |
 | NOTIF-01 | Phase 3 | 03-01 | Pending |
 
 **100% Coverage Achieved** ✓
@@ -217,4 +225,5 @@ Wave 3 (Can start with Wave 2):
 ---
 
 *Roadmap created: 2026-02-01*  
-*Next step: Run `/gsd-plan-phase 1` to create detailed plans for Foundation phase*
+*Last updated: 2026-02-01*  
+*Next step: Run `/gsd-execute-phase 2` to build the Frontend phase*
