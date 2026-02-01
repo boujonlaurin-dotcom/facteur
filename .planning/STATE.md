@@ -1,23 +1,23 @@
 # Project State: Facteur — Epic 10 Digest Central
 
-**Current Phase:** 1 — Foundation Complete  
+**Current Phase:** 2 — Frontend In Progress  
 **Last Updated:** 2026-02-01  
-**Status:** ✅ Phase 1 Complete - Ready for Phase 2 (Frontend)
+**Status:** ✅ Phase 2 Frontend - 2/4 Plans Complete
 
 ---
 
 ## Current Position
 
 **Phase:** 02-frontend 🔵 IN PROGRESS  
-**Plan:** 02-02 Article Actions Complete  
-**Next:** Phase 02-03 Closure Screen  
+**Plan:** 02-04 Feed Relegation Complete  
+**Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 3/3 plans complete | Phase 2: 1/4 plans complete  
+**Progress:** Phase 1: 3/3 plans complete | Phase 2: 2/4 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (3/3)
-Phase 2 Frontend:   [█░░░] 25%  (1/4)
-Overall:            [████░░░░░░] 40% (4/10)
+Phase 2 Frontend:   [██░░] 50%  (2/4)
+Overall:            [█████░░░░░] 50% (5/10)
 ```
 
 ---
@@ -43,6 +43,19 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ---
 
 ## Completed Work
+
+### Frontend Phase — Plan 02-04 Complete (2026-02-01)
+
+**Feed Relegation to Explorer Plus Status**
+
+- ✅ Updated shell scaffold with 3 tabs: Essentiel (Digest), Explorer (Feed), Paramètres (Settings)
+- ✅ Changed default authenticated route from feed to digest
+- ✅ Created DigestWelcomeModal for first-time users
+- ✅ Integrated welcome modal with query param detection and shared preferences
+- ✅ Verified streak indicators in both digest and feed screens
+- ✅ All navigation flows working end-to-end
+
+See: `.planning/phases/02-frontend/02-04-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-02 Complete (2026-02-01)
 
@@ -129,11 +142,11 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ### Immediate Next Steps
 
-1. **Start Phase 2** (Frontend) ✅ Foundation Ready
-   - 02-01 Digest Screen UI - Flutter digest list with 5 cards
-   - 02-02 Action UI - Swipe/mark buttons for read/save/dismiss  
-   - 02-03 Closure Screen - Completion celebration with streak display
-   - 02-04 Feed Relegation - Update navigation to make feed secondary
+1. **Phase 2 Frontend** 🔵 2/4 Complete
+   - ✅ 02-01 Digest Screen UI - Flutter digest list with 5 cards
+   - ✅ 02-02 Action UI - Swipe/mark buttons for read/save/dismiss  
+   - ✅ 02-03 Closure Screen - Completion celebration with streak display
+   - ✅ 02-04 Feed Relegation - Update navigation to make feed secondary
 
 2. **Validate Integration**
    - End-to-end test: digest generation → API → completion
@@ -161,6 +174,9 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-01 | 3-tab navigation structure | Essentiel primary, Explorer secondary, clear hierarchy |
+| 2026-02-01 | First-time welcome via query params | Allows direct onboarding→digest flow with welcome state |
+| 2026-02-01 | SharedPreferences for welcome tracking | Ensures welcome shown only once per user |
 | 2026-02-01 | Optimistic updates for actions | Instant UI feedback, rollback on error |
 | 2026-02-01 | Confirmation sheet for "not_interested" | Prevents accidental source mutes |
 | 2026-02-01 | Haptic feedback by action type | Medium for read, light for save/dismiss, heavy for completion |
@@ -192,9 +208,15 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ## Next Action
 
-**Continue Phase 2: Frontend Implementation**
+**Phase 2 Frontend Complete - Ready for Phase 3 (Polish)**
 
-Next: **02-03 Closure Screen** - Celebration animation with streak display
+Foundation for digest-first experience is complete:
+- Digest screen with 5 articles and actions
+- Closure screen with streak celebration
+- Navigation with Essentiel/Explorer/Paramètres tabs
+- First-time welcome experience
+
+Next: **Phase 03 - Polish** for production readiness
 
 1. Create ClosureScreen widget:
    - Celebration animation when digest completes
@@ -214,9 +236,9 @@ See: `.planning/phases/02-frontend/02-03-PLAN.md` for detailed tasks
 
 ## Session Continuity
 
-**Last session:** 2026-02-01T21:30:00Z  
-**Stopped at:** Completed 02-02 Article Actions - Phase 2 Frontend 25% Complete  
-**Resume file:** `.planning/phases/02-frontend/02-02-SUMMARY.md`
+**Last session:** 2026-02-01T22:00:48Z  
+**Stopped at:** Completed 02-04 Feed Relegation - Phase 2 Frontend 50% Complete  
+**Resume file:** `.planning/phases/02-frontend/02-04-SUMMARY.md`
 
 ---
 
