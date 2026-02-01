@@ -2,20 +2,20 @@
 
 **Current Phase:** 1 — Foundation In Progress  
 **Last Updated:** 2026-02-01  
-**Status:** 🟢 Plan 01-01 Complete
+**Status:** 🟢 Plans 01-01 and 01-02 Complete
 
 ---
 
 ## Current Position
 
 **Phase:** 01-foundation  
-**Plan:** 01-01 Database Schema Complete  
-**Next:** 01-02 Digest Generation Service  
+**Plan:** 01-02 DigestSelector Service Complete  
+**Next:** 01-03 API Endpoints + Batch Job  
 
-**Progress:** Phase 1: 1/3 plans complete  
+**Progress:** Phase 1: 2/3 plans complete  
 
 ```
-Phase 1 Foundation: [█░░░] 33% (1/3)
+Phase 1 Foundation: [██░░] 66% (2/3)
 ```
 
 ---
@@ -32,15 +32,30 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 ## Phase Status
 
-| Phase | Status | Progress | Plans Ready |
-|-------|--------|----------|-------------|
-| 1 — Foundation | 🟡 In Progress | 33% | **1/3 complete** |
-| 2 — Frontend | ⚪ Not Started | 0% | No |
-| 3 — Polish | ⚪ Not Started | 0% | No |
+| Phase | Status | Progress | Plans Complete |
+|-------|--------|----------|----------------|
+| 1 — Foundation | 🟢 In Progress | 66% | **2/3** |
+| 2 — Frontend | ⚪ Not Started | 0% | 0 |
+| 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
 
 ## Completed Work
+
+### Foundation Phase — Plan 01-02 Complete (2026-02-01)
+
+**DigestSelector Service for 5-Article Daily Digest**
+
+- ✅ DigestSelector service with `select_for_user()` method
+- ✅ Diversity constraints: max 2 articles per source, max 2 per theme
+- ✅ Fallback mechanism to curated sources when user pool < 5
+- ✅ Full integration with existing ScoringEngine (no modifications)
+- ✅ Comprehensive unit tests (617 lines) covering constraints and fallback
+- ✅ Daily batch generation job with concurrency control
+- ✅ On-demand single user generation function
+- ✅ Respects muted sources, themes, and topics from PersonalizationLayer
+
+See: `.planning/phases/01-foundation/01-02-SUMMARY.md`
 
 ### Foundation Phase — Plan 01-01 Complete (2026-02-01)
 
@@ -70,6 +85,8 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 - ✅ Feed relegated (safety valve)
 - ✅ No Zen Essential in MVP (defer to V2)
 - ✅ Reuse existing scoring algorithm (no changes needed)
+- ✅ Diversity constraints: max 2 per source, max 2 per theme
+- ✅ Fallback to curated sources when pool < 5
 
 ---
 
@@ -79,9 +96,9 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 1. **Continue Phase 1** (Foundation)
    - ✅ 01-01 Database Schema Complete
-   - ⏳ 01-02 Digest Generation Service (next)
-   - ⏳ 01-03 Closure Tracking API (ready to start)
-   - ~20h estimated remaining
+   - ✅ 01-02 Digest Generation Service Complete
+   - ⏳ 01-03 Closure Tracking API (next)
+   - ~8h estimated remaining
 
 2. **Validate Phase 1**
    - API tests pass
@@ -117,6 +134,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 | 2026-02-01 | Defer Zen Essential | Sentiment analysis too costly for MVP |
 | 2026-02-01 | Feed relegated not removed | Safety valve for users wanting more |
 | 2026-02-01 | Reuse V2/V3 scoring | No algorithm changes needed |
+| 2026-02-01 | Greedy diversity algorithm | Fast, deterministic, easy to understand |
 
 ---
 
@@ -128,27 +146,31 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 | 5 articles feels too few | Fallback to curated sources; can adjust number | Configurable |
 | Personalization integration complexity | Well-understood existing system | Low risk |
 | Performance with diversity constraints | Test with large content pools | To monitor |
+| Batch job scalability | Configurable batch_size and concurrency | Controlled |
 
 ---
 
 ## Next Action
 
-**Continue with 01-02** or **01-03** (parallel execution ready)
+**Execute Plan 01-03** (API Endpoints + Batch Job)
 
-Both plans can execute independently now that schema is ready:
-- 01-02: Digest Generation Service
-- 01-03: Closure Tracking API
+1. Create digest API endpoints:
+   - GET /digest - Get today's digest for current user
+   - POST /digest/generate - On-demand generation
+   - POST /digest/{id}/read - Mark as read
+   - POST /digest/{id}/save - Save article
+   - POST /digest/{id}/not-interested - Hide article
 
-<sub>Wave 1 plans are independent — can run in parallel</sub>
+2. Configure scheduler for daily batch job at 8h Paris
 
 ---
 
 ## Session Continuity
 
-**Last session:** 2026-02-01T19:41:35Z  
-**Stopped at:** Completed 01-01 Database Schema  
-**Resume file:** `.planning/phases/01-foundation/01-01-SUMMARY.md`
+**Last session:** 2026-02-01T19:44:04Z  
+**Stopped at:** Completed 01-02 DigestSelector Service  
+**Resume file:** `.planning/phases/01-foundation/01-02-SUMMARY.md`
 
 ---
 
-*State updated after 01-01 completion*
+*State updated after 01-02 completion*
