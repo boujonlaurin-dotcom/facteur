@@ -1,7 +1,7 @@
 # Project State: Facteur — Epic 10 Digest Central
 
 **Current Phase:** 2 — Frontend Complete  
-**Last Updated:** 2026-02-01  
+**Last Updated:** 2026-02-03  
 **Status:** ✅ Phase 2 Complete - Ready for Phase 3 (Polish)
 
 ---
@@ -43,6 +43,21 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 ---
 
 ## Completed Work
+
+### Frontend Phase — Plan 02-01 Verified (2026-02-03)
+
+**Digest Screen UI with 5 Cards and Progress Bar**
+
+- ✅ Freezed models (SourceMini, DigestItem, DigestResponse, DigestCompletionResponse)
+- ✅ Digest repository with API calls to /api/digest
+- ✅ Riverpod provider with optimistic updates and auto-completion
+- ✅ ProgressBar widget with 5 animated segments
+- ✅ DigestCard widget adapted from FeedCard with rank badge
+- ✅ DigestScreen with "Votre Essentiel" app bar and list of 5 articles
+- ✅ Route configuration with digest as default authenticated route
+- ✅ Flutter analyze passes with 0 errors
+
+See: `.planning/phases/02-frontend/02-01-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-04 Complete (2026-02-01)
 
@@ -231,10 +246,10 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-01T22:45:00Z  
-**Stopped at:** Phase 2 Frontend Complete - All 4 plans executed and verified  
-**Resume file:** `.planning/phases/02-frontend/02-frontend-VERIFICATION.md`
+**Last session:** 2026-02-03T10:00:00Z  
+**Stopped at:** Verified 02-01 Digest Screen UI plan execution  
+**Resume file:** `.planning/phases/02-frontend/02-01-SUMMARY.md`
 
 ---
 
-*State updated after Phase 2 completion - Ready for Phase 3 Polish*
+*State updated after 02-01 plan verification - Phase 2 remains complete, ready for Phase 3 Polish*
