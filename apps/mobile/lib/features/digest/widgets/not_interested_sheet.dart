@@ -68,7 +68,7 @@ class NotInterestedSheet extends StatelessWidget {
 
           // Description
           Text(
-            '${item.source.name} sera temporairement moins visible dans votre flux.',
+            '${item.source?.name ?? 'Cette source'} sera temporairement moins visible dans votre flux.',
             style: TextStyle(
               color: colors.textSecondary,
               fontSize: 16,
@@ -96,12 +96,12 @@ class NotInterestedSheet extends StatelessWidget {
                     color: colors.surface,
                     borderRadius: BorderRadius.circular(FacteurRadius.small),
                   ),
-                  child: item.source.logoUrl != null
+                  child: item.source?.logoUrl != null
                       ? ClipRRect(
                           borderRadius:
                               BorderRadius.circular(FacteurRadius.small),
                           child: Image.network(
-                            item.source.logoUrl!,
+                            item.source!.logoUrl!,
                             width: 40,
                             height: 40,
                             fit: BoxFit.cover,
@@ -126,16 +126,16 @@ class NotInterestedSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        item.source.name,
+                        item.source?.name ?? 'Source inconnue',
                         style: TextStyle(
                           color: colors.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (item.source.theme != null)
+                      if (item.source?.theme != null)
                         Text(
-                          _getThemeLabel(item.source.theme!),
+                          _getThemeLabel(item.source!.theme!),
                           style: TextStyle(
                             color: colors.textSecondary,
                             fontSize: 14,

@@ -476,5 +476,13 @@ class FacteurTheme {
 }
 
 extension FacteurThemeContext on BuildContext {
-  FacteurColors get facteurColors => Theme.of(this).extension<FacteurColors>()!;
+  FacteurColors get facteurColors {
+    final colors = Theme.of(this).extension<FacteurColors>();
+    if (colors == null) {
+      debugPrint(
+          'WARNING: FacteurColors not found in theme, using light theme as fallback');
+      return FacteurPalettes.light;
+    }
+    return colors;
+  }
 }

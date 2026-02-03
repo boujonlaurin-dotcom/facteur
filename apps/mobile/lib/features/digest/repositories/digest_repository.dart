@@ -24,37 +24,52 @@ class DigestRepository {
 
   DigestRepository(this._apiClient);
 
-  /// Get or create today's digest for the current user
-  Future<DigestResponse> getDigest({DateTime? targetDate}) async {
+  /// Get today's digest for user
+  Future<DigestResponse> getDigest({DateTime? date}) async {
     try {
       final queryParams = <String, dynamic>{};
-      if (targetDate != null) {
-        queryParams['target_date'] = targetDate.toIso8601String().split('T')[0];
+      if (date != null) {
+        queryParams['target_date'] = date.toIso8601String().split('T')[0];
       }
 
+      // ignore: avoid_print
+      print(
+          'DigestRepository: GET digest ${queryParams.isNotEmpty ? queryParams : ""}');
+
       final response = await _apiClient.dio.get<dynamic>(
-        'digest/', // Trailing slash to avoid 307 redirect which strips auth header
+        'digest', // Removed trailing slash to match FastAPI exactly
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
-        return DigestResponse.fromJson(data);
+        // ignore: avoid_print
+        print('DigestRepository: Received data keys: ${data.keys}');
+
+        try {
+          return DigestResponse.fromJson(data);
+        } catch (e, stack) {
+          // ignore: avoid_print
+          print('DigestRepository: JSON PARSING ERROR: $e\n$stack');
+          // ignore: avoid_print
+          print('DigestRepository: Problematic JSON: $data');
+          rethrow;
+        }
       }
       throw Exception('Failed to load digest: ${response.statusCode}');
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        throw DigestNotFoundException('No digest found for this date');
-      } else if (e.response?.statusCode == 503) {
-        throw DigestGenerationException(
-            'Digest generation in progress or failed');
-      }
       // ignore: avoid_print
-      print('DigestRepository: [ERROR] getDigest: $e');
+      print('DigestRepository: DioException: ${e.message}');
+      if (e.response?.statusCode == 404) {
+        throw DigestNotFoundException();
+      }
+      if (e.response?.statusCode == 503) {
+        throw DigestGenerationException();
+      }
       rethrow;
     } catch (e) {
       // ignore: avoid_print
-      print('DigestRepository: [ERROR] getDigest: $e');
+      print('DigestRepository: Unexpected error: $e');
       rethrow;
     }
   }
@@ -75,12 +90,8 @@ class DigestRepository {
       if (e.response?.statusCode == 404) {
         throw DigestNotFoundException('Digest not found: $digestId');
       }
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] getDigestById: $e');
       rethrow;
     } catch (e) {
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] getDigestById: $e');
       rethrow;
     }
   }
@@ -100,15 +111,11 @@ class DigestRepository {
         },
       );
     } on DioException catch (e) {
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] applyAction DioException: ${e.message}');
       if (e.response?.data != null) {
         throw Exception('API Error: ${e.response?.data}');
       }
       rethrow;
     } catch (e) {
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] applyAction: $e');
       rethrow;
     }
   }
@@ -120,16 +127,11 @@ class DigestRepository {
         'digest/$digestId/complete',
       );
     } on DioException catch (e) {
-      // ignore: avoid_print
-      print(
-          'DigestRepository: [ERROR] completeDigest DioException: ${e.message}');
       if (e.response?.data != null) {
         throw Exception('API Error: ${e.response?.data}');
       }
       rethrow;
     } catch (e) {
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] completeDigest: $e');
       rethrow;
     }
   }
@@ -147,8 +149,6 @@ class DigestRepository {
       }
       throw Exception('Failed to generate digest: ${response.statusCode}');
     } catch (e) {
-      // ignore: avoid_print
-      print('DigestRepository: [ERROR] generateDigest: $e');
       rethrow;
     }
   }

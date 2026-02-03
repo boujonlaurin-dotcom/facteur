@@ -20,8 +20,13 @@ SourceMini _$SourceMiniFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$SourceMini {
+  @JsonKey(name: 'id')
+  String? get id => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
+  @JsonKey(name: 'logo_url')
   String? get logoUrl => throw _privateConstructorUsedError;
+  @JsonKey(name: 'type')
+  String? get type => throw _privateConstructorUsedError;
   String? get theme => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -36,7 +41,12 @@ abstract class $SourceMiniCopyWith<$Res> {
           SourceMini value, $Res Function(SourceMini) then) =
       _$SourceMiniCopyWithImpl<$Res, SourceMini>;
   @useResult
-  $Res call({String name, String? logoUrl, String? theme});
+  $Res call(
+      {@JsonKey(name: 'id') String? id,
+      String name,
+      @JsonKey(name: 'logo_url') String? logoUrl,
+      @JsonKey(name: 'type') String? type,
+      String? theme});
 }
 
 /// @nodoc
@@ -52,11 +62,17 @@ class _$SourceMiniCopyWithImpl<$Res, $Val extends SourceMini>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? id = freezed,
     Object? name = null,
     Object? logoUrl = freezed,
+    Object? type = freezed,
     Object? theme = freezed,
   }) {
     return _then(_value.copyWith(
+      id: freezed == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String?,
       name: null == name
           ? _value.name
           : name // ignore: cast_nullable_to_non_nullable
@@ -64,6 +80,10 @@ class _$SourceMiniCopyWithImpl<$Res, $Val extends SourceMini>
       logoUrl: freezed == logoUrl
           ? _value.logoUrl
           : logoUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      type: freezed == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
               as String?,
       theme: freezed == theme
           ? _value.theme
@@ -81,7 +101,12 @@ abstract class _$$SourceMiniImplCopyWith<$Res>
       __$$SourceMiniImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String name, String? logoUrl, String? theme});
+  $Res call(
+      {@JsonKey(name: 'id') String? id,
+      String name,
+      @JsonKey(name: 'logo_url') String? logoUrl,
+      @JsonKey(name: 'type') String? type,
+      String? theme});
 }
 
 /// @nodoc
@@ -95,11 +120,17 @@ class __$$SourceMiniImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
+    Object? id = freezed,
     Object? name = null,
     Object? logoUrl = freezed,
+    Object? type = freezed,
     Object? theme = freezed,
   }) {
     return _then(_$SourceMiniImpl(
+      id: freezed == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String?,
       name: null == name
           ? _value.name
           : name // ignore: cast_nullable_to_non_nullable
@@ -107,6 +138,10 @@ class __$$SourceMiniImplCopyWithImpl<$Res>
       logoUrl: freezed == logoUrl
           ? _value.logoUrl
           : logoUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      type: freezed == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
               as String?,
       theme: freezed == theme
           ? _value.theme
@@ -119,21 +154,34 @@ class __$$SourceMiniImplCopyWithImpl<$Res>
 /// @nodoc
 @JsonSerializable()
 class _$SourceMiniImpl implements _SourceMini {
-  const _$SourceMiniImpl({required this.name, this.logoUrl, this.theme});
+  const _$SourceMiniImpl(
+      {@JsonKey(name: 'id') this.id,
+      this.name = 'Inconnu',
+      @JsonKey(name: 'logo_url') this.logoUrl,
+      @JsonKey(name: 'type') this.type,
+      this.theme});
 
   factory _$SourceMiniImpl.fromJson(Map<String, dynamic> json) =>
       _$$SourceMiniImplFromJson(json);
 
   @override
+  @JsonKey(name: 'id')
+  final String? id;
+  @override
+  @JsonKey()
   final String name;
   @override
+  @JsonKey(name: 'logo_url')
   final String? logoUrl;
+  @override
+  @JsonKey(name: 'type')
+  final String? type;
   @override
   final String? theme;
 
   @override
   String toString() {
-    return 'SourceMini(name: $name, logoUrl: $logoUrl, theme: $theme)';
+    return 'SourceMini(id: $id, name: $name, logoUrl: $logoUrl, type: $type, theme: $theme)';
   }
 
   @override
@@ -141,14 +189,16 @@ class _$SourceMiniImpl implements _SourceMini {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$SourceMiniImpl &&
+            (identical(other.id, id) || other.id == id) &&
             (identical(other.name, name) || other.name == name) &&
             (identical(other.logoUrl, logoUrl) || other.logoUrl == logoUrl) &&
+            (identical(other.type, type) || other.type == type) &&
             (identical(other.theme, theme) || other.theme == theme));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, name, logoUrl, theme);
+  int get hashCode => Object.hash(runtimeType, id, name, logoUrl, type, theme);
 
   @JsonKey(ignore: true)
   @override
@@ -166,17 +216,26 @@ class _$SourceMiniImpl implements _SourceMini {
 
 abstract class _SourceMini implements SourceMini {
   const factory _SourceMini(
-      {required final String name,
-      final String? logoUrl,
+      {@JsonKey(name: 'id') final String? id,
+      final String name,
+      @JsonKey(name: 'logo_url') final String? logoUrl,
+      @JsonKey(name: 'type') final String? type,
       final String? theme}) = _$SourceMiniImpl;
 
   factory _SourceMini.fromJson(Map<String, dynamic> json) =
       _$SourceMiniImpl.fromJson;
 
   @override
+  @JsonKey(name: 'id')
+  String? get id;
+  @override
   String get name;
   @override
+  @JsonKey(name: 'logo_url')
   String? get logoUrl;
+  @override
+  @JsonKey(name: 'type')
+  String? get type;
   @override
   String? get theme;
   @override
@@ -191,20 +250,30 @@ DigestItem _$DigestItemFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$DigestItem {
+  @JsonKey(name: 'content_id')
   String get contentId => throw _privateConstructorUsedError;
   String get title => throw _privateConstructorUsedError;
   String get url => throw _privateConstructorUsedError;
+  @JsonKey(name: 'thumbnail_url')
   String? get thumbnailUrl => throw _privateConstructorUsedError;
   String? get description => throw _privateConstructorUsedError;
-  @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
+  @JsonKey(
+      name: 'content_type',
+      fromJson: _contentTypeFromJson,
+      toJson: _contentTypeToJson)
   ContentType get contentType => throw _privateConstructorUsedError;
+  @JsonKey(name: 'duration_seconds')
   int? get durationSeconds => throw _privateConstructorUsedError;
-  DateTime get publishedAt => throw _privateConstructorUsedError;
-  SourceMini get source => throw _privateConstructorUsedError;
+  @JsonKey(name: 'published_at')
+  DateTime? get publishedAt => throw _privateConstructorUsedError;
+  SourceMini? get source => throw _privateConstructorUsedError;
   int get rank => throw _privateConstructorUsedError;
   String get reason => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_read')
   bool get isRead => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_saved')
   bool get isSaved => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_dismissed')
   bool get isDismissed => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -220,23 +289,26 @@ abstract class $DigestItemCopyWith<$Res> {
       _$DigestItemCopyWithImpl<$Res, DigestItem>;
   @useResult
   $Res call(
-      {String contentId,
+      {@JsonKey(name: 'content_id') String contentId,
       String title,
       String url,
-      String? thumbnailUrl,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
       String? description,
-      @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
+      @JsonKey(
+          name: 'content_type',
+          fromJson: _contentTypeFromJson,
+          toJson: _contentTypeToJson)
       ContentType contentType,
-      int? durationSeconds,
-      DateTime publishedAt,
-      SourceMini source,
+      @JsonKey(name: 'duration_seconds') int? durationSeconds,
+      @JsonKey(name: 'published_at') DateTime? publishedAt,
+      SourceMini? source,
       int rank,
       String reason,
-      bool isRead,
-      bool isSaved,
-      bool isDismissed});
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
 
-  $SourceMiniCopyWith<$Res> get source;
+  $SourceMiniCopyWith<$Res>? get source;
 }
 
 /// @nodoc
@@ -259,8 +331,8 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? description = freezed,
     Object? contentType = null,
     Object? durationSeconds = freezed,
-    Object? publishedAt = null,
-    Object? source = null,
+    Object? publishedAt = freezed,
+    Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
     Object? isRead = null,
@@ -296,14 +368,14 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.durationSeconds
           : durationSeconds // ignore: cast_nullable_to_non_nullable
               as int?,
-      publishedAt: null == publishedAt
+      publishedAt: freezed == publishedAt
           ? _value.publishedAt
           : publishedAt // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      source: null == source
+              as DateTime?,
+      source: freezed == source
           ? _value.source
           : source // ignore: cast_nullable_to_non_nullable
-              as SourceMini,
+              as SourceMini?,
       rank: null == rank
           ? _value.rank
           : rank // ignore: cast_nullable_to_non_nullable
@@ -329,8 +401,12 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
 
   @override
   @pragma('vm:prefer-inline')
-  $SourceMiniCopyWith<$Res> get source {
-    return $SourceMiniCopyWith<$Res>(_value.source, (value) {
+  $SourceMiniCopyWith<$Res>? get source {
+    if (_value.source == null) {
+      return null;
+    }
+
+    return $SourceMiniCopyWith<$Res>(_value.source!, (value) {
       return _then(_value.copyWith(source: value) as $Val);
     });
   }
@@ -345,24 +421,27 @@ abstract class _$$DigestItemImplCopyWith<$Res>
   @override
   @useResult
   $Res call(
-      {String contentId,
+      {@JsonKey(name: 'content_id') String contentId,
       String title,
       String url,
-      String? thumbnailUrl,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
       String? description,
-      @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
+      @JsonKey(
+          name: 'content_type',
+          fromJson: _contentTypeFromJson,
+          toJson: _contentTypeToJson)
       ContentType contentType,
-      int? durationSeconds,
-      DateTime publishedAt,
-      SourceMini source,
+      @JsonKey(name: 'duration_seconds') int? durationSeconds,
+      @JsonKey(name: 'published_at') DateTime? publishedAt,
+      SourceMini? source,
       int rank,
       String reason,
-      bool isRead,
-      bool isSaved,
-      bool isDismissed});
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
 
   @override
-  $SourceMiniCopyWith<$Res> get source;
+  $SourceMiniCopyWith<$Res>? get source;
 }
 
 /// @nodoc
@@ -383,8 +462,8 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? description = freezed,
     Object? contentType = null,
     Object? durationSeconds = freezed,
-    Object? publishedAt = null,
-    Object? source = null,
+    Object? publishedAt = freezed,
+    Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
     Object? isRead = null,
@@ -420,14 +499,14 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.durationSeconds
           : durationSeconds // ignore: cast_nullable_to_non_nullable
               as int?,
-      publishedAt: null == publishedAt
+      publishedAt: freezed == publishedAt
           ? _value.publishedAt
           : publishedAt // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      source: null == source
+              as DateTime?,
+      source: freezed == source
           ? _value.source
           : source // ignore: cast_nullable_to_non_nullable
-              as SourceMini,
+              as SourceMini?,
       rank: null == rank
           ? _value.rank
           : rank // ignore: cast_nullable_to_non_nullable
@@ -456,56 +535,70 @@ class __$$DigestItemImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$DigestItemImpl implements _DigestItem {
   const _$DigestItemImpl(
-      {required this.contentId,
-      required this.title,
-      required this.url,
-      this.thumbnailUrl,
+      {@JsonKey(name: 'content_id') required this.contentId,
+      this.title = 'Sans titre',
+      this.url = '',
+      @JsonKey(name: 'thumbnail_url') this.thumbnailUrl,
       this.description,
-      @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
-      required this.contentType,
-      this.durationSeconds,
-      required this.publishedAt,
-      required this.source,
-      required this.rank,
-      required this.reason,
-      this.isRead = false,
-      this.isSaved = false,
-      this.isDismissed = false});
+      @JsonKey(
+          name: 'content_type',
+          fromJson: _contentTypeFromJson,
+          toJson: _contentTypeToJson)
+      this.contentType = ContentType.article,
+      @JsonKey(name: 'duration_seconds') this.durationSeconds,
+      @JsonKey(name: 'published_at') this.publishedAt,
+      this.source,
+      this.rank = 0,
+      this.reason = '',
+      @JsonKey(name: 'is_read') this.isRead = false,
+      @JsonKey(name: 'is_saved') this.isSaved = false,
+      @JsonKey(name: 'is_dismissed') this.isDismissed = false});
 
   factory _$DigestItemImpl.fromJson(Map<String, dynamic> json) =>
       _$$DigestItemImplFromJson(json);
 
   @override
+  @JsonKey(name: 'content_id')
   final String contentId;
   @override
+  @JsonKey()
   final String title;
   @override
+  @JsonKey()
   final String url;
   @override
+  @JsonKey(name: 'thumbnail_url')
   final String? thumbnailUrl;
   @override
   final String? description;
   @override
-  @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
+  @JsonKey(
+      name: 'content_type',
+      fromJson: _contentTypeFromJson,
+      toJson: _contentTypeToJson)
   final ContentType contentType;
   @override
+  @JsonKey(name: 'duration_seconds')
   final int? durationSeconds;
   @override
-  final DateTime publishedAt;
+  @JsonKey(name: 'published_at')
+  final DateTime? publishedAt;
   @override
-  final SourceMini source;
+  final SourceMini? source;
   @override
+  @JsonKey()
   final int rank;
   @override
+  @JsonKey()
   final String reason;
   @override
-  @JsonKey()
+  @JsonKey(name: 'is_read')
   final bool isRead;
   @override
-  @JsonKey()
+  @JsonKey(name: 'is_saved')
   final bool isSaved;
   @override
-  @JsonKey()
+  @JsonKey(name: 'is_dismissed')
   final bool isDismissed;
 
   @override
@@ -576,53 +669,67 @@ class _$DigestItemImpl implements _DigestItem {
 
 abstract class _DigestItem implements DigestItem {
   const factory _DigestItem(
-      {required final String contentId,
-      required final String title,
-      required final String url,
-      final String? thumbnailUrl,
-      final String? description,
-      @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
-      required final ContentType contentType,
-      final int? durationSeconds,
-      required final DateTime publishedAt,
-      required final SourceMini source,
-      required final int rank,
-      required final String reason,
-      final bool isRead,
-      final bool isSaved,
-      final bool isDismissed}) = _$DigestItemImpl;
+          {@JsonKey(name: 'content_id') required final String contentId,
+          final String title,
+          final String url,
+          @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
+          final String? description,
+          @JsonKey(
+              name: 'content_type',
+              fromJson: _contentTypeFromJson,
+              toJson: _contentTypeToJson)
+          final ContentType contentType,
+          @JsonKey(name: 'duration_seconds') final int? durationSeconds,
+          @JsonKey(name: 'published_at') final DateTime? publishedAt,
+          final SourceMini? source,
+          final int rank,
+          final String reason,
+          @JsonKey(name: 'is_read') final bool isRead,
+          @JsonKey(name: 'is_saved') final bool isSaved,
+          @JsonKey(name: 'is_dismissed') final bool isDismissed}) =
+      _$DigestItemImpl;
 
   factory _DigestItem.fromJson(Map<String, dynamic> json) =
       _$DigestItemImpl.fromJson;
 
   @override
+  @JsonKey(name: 'content_id')
   String get contentId;
   @override
   String get title;
   @override
   String get url;
   @override
+  @JsonKey(name: 'thumbnail_url')
   String? get thumbnailUrl;
   @override
   String? get description;
   @override
-  @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
+  @JsonKey(
+      name: 'content_type',
+      fromJson: _contentTypeFromJson,
+      toJson: _contentTypeToJson)
   ContentType get contentType;
   @override
+  @JsonKey(name: 'duration_seconds')
   int? get durationSeconds;
   @override
-  DateTime get publishedAt;
+  @JsonKey(name: 'published_at')
+  DateTime? get publishedAt;
   @override
-  SourceMini get source;
+  SourceMini? get source;
   @override
   int get rank;
   @override
   String get reason;
   @override
+  @JsonKey(name: 'is_read')
   bool get isRead;
   @override
+  @JsonKey(name: 'is_saved')
   bool get isSaved;
   @override
+  @JsonKey(name: 'is_dismissed')
   bool get isDismissed;
   @override
   @JsonKey(ignore: true)
@@ -636,12 +743,18 @@ DigestResponse _$DigestResponseFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$DigestResponse {
+  @JsonKey(name: 'digest_id')
   String get digestId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'user_id')
   String get userId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'target_date')
   DateTime get targetDate => throw _privateConstructorUsedError;
+  @JsonKey(name: 'generated_at')
   DateTime get generatedAt => throw _privateConstructorUsedError;
   List<DigestItem> get items => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_completed')
   bool get isCompleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'completed_at')
   DateTime? get completedAt => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -657,13 +770,13 @@ abstract class $DigestResponseCopyWith<$Res> {
       _$DigestResponseCopyWithImpl<$Res, DigestResponse>;
   @useResult
   $Res call(
-      {String digestId,
-      String userId,
-      DateTime targetDate,
-      DateTime generatedAt,
+      {@JsonKey(name: 'digest_id') String digestId,
+      @JsonKey(name: 'user_id') String userId,
+      @JsonKey(name: 'target_date') DateTime targetDate,
+      @JsonKey(name: 'generated_at') DateTime generatedAt,
       List<DigestItem> items,
-      bool isCompleted,
-      DateTime? completedAt});
+      @JsonKey(name: 'is_completed') bool isCompleted,
+      @JsonKey(name: 'completed_at') DateTime? completedAt});
 }
 
 /// @nodoc
@@ -729,13 +842,13 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
   @override
   @useResult
   $Res call(
-      {String digestId,
-      String userId,
-      DateTime targetDate,
-      DateTime generatedAt,
+      {@JsonKey(name: 'digest_id') String digestId,
+      @JsonKey(name: 'user_id') String userId,
+      @JsonKey(name: 'target_date') DateTime targetDate,
+      @JsonKey(name: 'generated_at') DateTime generatedAt,
       List<DigestItem> items,
-      bool isCompleted,
-      DateTime? completedAt});
+      @JsonKey(name: 'is_completed') bool isCompleted,
+      @JsonKey(name: 'completed_at') DateTime? completedAt});
 }
 
 /// @nodoc
@@ -794,28 +907,33 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$DigestResponseImpl implements _DigestResponse {
   const _$DigestResponseImpl(
-      {required this.digestId,
-      required this.userId,
-      required this.targetDate,
-      required this.generatedAt,
-      required final List<DigestItem> items,
-      this.isCompleted = false,
-      this.completedAt})
+      {@JsonKey(name: 'digest_id') required this.digestId,
+      @JsonKey(name: 'user_id') required this.userId,
+      @JsonKey(name: 'target_date') required this.targetDate,
+      @JsonKey(name: 'generated_at') required this.generatedAt,
+      final List<DigestItem> items = const [],
+      @JsonKey(name: 'is_completed') this.isCompleted = false,
+      @JsonKey(name: 'completed_at') this.completedAt})
       : _items = items;
 
   factory _$DigestResponseImpl.fromJson(Map<String, dynamic> json) =>
       _$$DigestResponseImplFromJson(json);
 
   @override
+  @JsonKey(name: 'digest_id')
   final String digestId;
   @override
+  @JsonKey(name: 'user_id')
   final String userId;
   @override
+  @JsonKey(name: 'target_date')
   final DateTime targetDate;
   @override
+  @JsonKey(name: 'generated_at')
   final DateTime generatedAt;
   final List<DigestItem> _items;
   @override
+  @JsonKey()
   List<DigestItem> get items {
     if (_items is EqualUnmodifiableListView) return _items;
     // ignore: implicit_dynamic_type
@@ -823,9 +941,10 @@ class _$DigestResponseImpl implements _DigestResponse {
   }
 
   @override
-  @JsonKey()
+  @JsonKey(name: 'is_completed')
   final bool isCompleted;
   @override
+  @JsonKey(name: 'completed_at')
   final DateTime? completedAt;
 
   @override
@@ -881,33 +1000,389 @@ class _$DigestResponseImpl implements _DigestResponse {
 
 abstract class _DigestResponse implements DigestResponse {
   const factory _DigestResponse(
-      {required final String digestId,
-      required final String userId,
-      required final DateTime targetDate,
-      required final DateTime generatedAt,
-      required final List<DigestItem> items,
-      final bool isCompleted,
-      final DateTime? completedAt}) = _$DigestResponseImpl;
+          {@JsonKey(name: 'digest_id') required final String digestId,
+          @JsonKey(name: 'user_id') required final String userId,
+          @JsonKey(name: 'target_date') required final DateTime targetDate,
+          @JsonKey(name: 'generated_at') required final DateTime generatedAt,
+          final List<DigestItem> items,
+          @JsonKey(name: 'is_completed') final bool isCompleted,
+          @JsonKey(name: 'completed_at') final DateTime? completedAt}) =
+      _$DigestResponseImpl;
 
   factory _DigestResponse.fromJson(Map<String, dynamic> json) =
       _$DigestResponseImpl.fromJson;
 
   @override
+  @JsonKey(name: 'digest_id')
   String get digestId;
   @override
+  @JsonKey(name: 'user_id')
   String get userId;
   @override
+  @JsonKey(name: 'target_date')
   DateTime get targetDate;
   @override
+  @JsonKey(name: 'generated_at')
   DateTime get generatedAt;
   @override
   List<DigestItem> get items;
   @override
+  @JsonKey(name: 'is_completed')
   bool get isCompleted;
   @override
+  @JsonKey(name: 'completed_at')
   DateTime? get completedAt;
   @override
   @JsonKey(ignore: true)
   _$$DigestResponseImplCopyWith<_$DigestResponseImpl> get copyWith =>
       throw _privateConstructorUsedError;
+}
+
+DigestCompletionResponse _$DigestCompletionResponseFromJson(
+    Map<String, dynamic> json) {
+  return _DigestCompletionResponse.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DigestCompletionResponse {
+  bool get success => throw _privateConstructorUsedError;
+  @JsonKey(name: 'digest_id')
+  String get digestId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'completed_at')
+  DateTime? get completedAt => throw _privateConstructorUsedError;
+  @JsonKey(name: 'articles_read')
+  int get articlesRead => throw _privateConstructorUsedError;
+  @JsonKey(name: 'articles_saved')
+  int get articlesSaved => throw _privateConstructorUsedError;
+  @JsonKey(name: 'articles_dismissed')
+  int get articlesDismissed => throw _privateConstructorUsedError;
+  @JsonKey(name: 'closure_time_seconds')
+  int? get closureTimeSeconds => throw _privateConstructorUsedError;
+  @JsonKey(name: 'closure_streak')
+  int get closureStreak => throw _privateConstructorUsedError;
+  @JsonKey(name: 'streak_message')
+  String? get streakMessage => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DigestCompletionResponseCopyWith<DigestCompletionResponse> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DigestCompletionResponseCopyWith<$Res> {
+  factory $DigestCompletionResponseCopyWith(DigestCompletionResponse value,
+          $Res Function(DigestCompletionResponse) then) =
+      _$DigestCompletionResponseCopyWithImpl<$Res, DigestCompletionResponse>;
+  @useResult
+  $Res call(
+      {bool success,
+      @JsonKey(name: 'digest_id') String digestId,
+      @JsonKey(name: 'completed_at') DateTime? completedAt,
+      @JsonKey(name: 'articles_read') int articlesRead,
+      @JsonKey(name: 'articles_saved') int articlesSaved,
+      @JsonKey(name: 'articles_dismissed') int articlesDismissed,
+      @JsonKey(name: 'closure_time_seconds') int? closureTimeSeconds,
+      @JsonKey(name: 'closure_streak') int closureStreak,
+      @JsonKey(name: 'streak_message') String? streakMessage});
+}
+
+/// @nodoc
+class _$DigestCompletionResponseCopyWithImpl<$Res,
+        $Val extends DigestCompletionResponse>
+    implements $DigestCompletionResponseCopyWith<$Res> {
+  _$DigestCompletionResponseCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? success = null,
+    Object? digestId = null,
+    Object? completedAt = freezed,
+    Object? articlesRead = null,
+    Object? articlesSaved = null,
+    Object? articlesDismissed = null,
+    Object? closureTimeSeconds = freezed,
+    Object? closureStreak = null,
+    Object? streakMessage = freezed,
+  }) {
+    return _then(_value.copyWith(
+      success: null == success
+          ? _value.success
+          : success // ignore: cast_nullable_to_non_nullable
+              as bool,
+      digestId: null == digestId
+          ? _value.digestId
+          : digestId // ignore: cast_nullable_to_non_nullable
+              as String,
+      completedAt: freezed == completedAt
+          ? _value.completedAt
+          : completedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+      articlesRead: null == articlesRead
+          ? _value.articlesRead
+          : articlesRead // ignore: cast_nullable_to_non_nullable
+              as int,
+      articlesSaved: null == articlesSaved
+          ? _value.articlesSaved
+          : articlesSaved // ignore: cast_nullable_to_non_nullable
+              as int,
+      articlesDismissed: null == articlesDismissed
+          ? _value.articlesDismissed
+          : articlesDismissed // ignore: cast_nullable_to_non_nullable
+              as int,
+      closureTimeSeconds: freezed == closureTimeSeconds
+          ? _value.closureTimeSeconds
+          : closureTimeSeconds // ignore: cast_nullable_to_non_nullable
+              as int?,
+      closureStreak: null == closureStreak
+          ? _value.closureStreak
+          : closureStreak // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakMessage: freezed == streakMessage
+          ? _value.streakMessage
+          : streakMessage // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DigestCompletionResponseImplCopyWith<$Res>
+    implements $DigestCompletionResponseCopyWith<$Res> {
+  factory _$$DigestCompletionResponseImplCopyWith(
+          _$DigestCompletionResponseImpl value,
+          $Res Function(_$DigestCompletionResponseImpl) then) =
+      __$$DigestCompletionResponseImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {bool success,
+      @JsonKey(name: 'digest_id') String digestId,
+      @JsonKey(name: 'completed_at') DateTime? completedAt,
+      @JsonKey(name: 'articles_read') int articlesRead,
+      @JsonKey(name: 'articles_saved') int articlesSaved,
+      @JsonKey(name: 'articles_dismissed') int articlesDismissed,
+      @JsonKey(name: 'closure_time_seconds') int? closureTimeSeconds,
+      @JsonKey(name: 'closure_streak') int closureStreak,
+      @JsonKey(name: 'streak_message') String? streakMessage});
+}
+
+/// @nodoc
+class __$$DigestCompletionResponseImplCopyWithImpl<$Res>
+    extends _$DigestCompletionResponseCopyWithImpl<$Res,
+        _$DigestCompletionResponseImpl>
+    implements _$$DigestCompletionResponseImplCopyWith<$Res> {
+  __$$DigestCompletionResponseImplCopyWithImpl(
+      _$DigestCompletionResponseImpl _value,
+      $Res Function(_$DigestCompletionResponseImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? success = null,
+    Object? digestId = null,
+    Object? completedAt = freezed,
+    Object? articlesRead = null,
+    Object? articlesSaved = null,
+    Object? articlesDismissed = null,
+    Object? closureTimeSeconds = freezed,
+    Object? closureStreak = null,
+    Object? streakMessage = freezed,
+  }) {
+    return _then(_$DigestCompletionResponseImpl(
+      success: null == success
+          ? _value.success
+          : success // ignore: cast_nullable_to_non_nullable
+              as bool,
+      digestId: null == digestId
+          ? _value.digestId
+          : digestId // ignore: cast_nullable_to_non_nullable
+              as String,
+      completedAt: freezed == completedAt
+          ? _value.completedAt
+          : completedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+      articlesRead: null == articlesRead
+          ? _value.articlesRead
+          : articlesRead // ignore: cast_nullable_to_non_nullable
+              as int,
+      articlesSaved: null == articlesSaved
+          ? _value.articlesSaved
+          : articlesSaved // ignore: cast_nullable_to_non_nullable
+              as int,
+      articlesDismissed: null == articlesDismissed
+          ? _value.articlesDismissed
+          : articlesDismissed // ignore: cast_nullable_to_non_nullable
+              as int,
+      closureTimeSeconds: freezed == closureTimeSeconds
+          ? _value.closureTimeSeconds
+          : closureTimeSeconds // ignore: cast_nullable_to_non_nullable
+              as int?,
+      closureStreak: null == closureStreak
+          ? _value.closureStreak
+          : closureStreak // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakMessage: freezed == streakMessage
+          ? _value.streakMessage
+          : streakMessage // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DigestCompletionResponseImpl implements _DigestCompletionResponse {
+  const _$DigestCompletionResponseImpl(
+      {required this.success,
+      @JsonKey(name: 'digest_id') required this.digestId,
+      @JsonKey(name: 'completed_at') this.completedAt,
+      @JsonKey(name: 'articles_read') this.articlesRead = 0,
+      @JsonKey(name: 'articles_saved') this.articlesSaved = 0,
+      @JsonKey(name: 'articles_dismissed') this.articlesDismissed = 0,
+      @JsonKey(name: 'closure_time_seconds') this.closureTimeSeconds,
+      @JsonKey(name: 'closure_streak') this.closureStreak = 0,
+      @JsonKey(name: 'streak_message') this.streakMessage});
+
+  factory _$DigestCompletionResponseImpl.fromJson(Map<String, dynamic> json) =>
+      _$$DigestCompletionResponseImplFromJson(json);
+
+  @override
+  final bool success;
+  @override
+  @JsonKey(name: 'digest_id')
+  final String digestId;
+  @override
+  @JsonKey(name: 'completed_at')
+  final DateTime? completedAt;
+  @override
+  @JsonKey(name: 'articles_read')
+  final int articlesRead;
+  @override
+  @JsonKey(name: 'articles_saved')
+  final int articlesSaved;
+  @override
+  @JsonKey(name: 'articles_dismissed')
+  final int articlesDismissed;
+  @override
+  @JsonKey(name: 'closure_time_seconds')
+  final int? closureTimeSeconds;
+  @override
+  @JsonKey(name: 'closure_streak')
+  final int closureStreak;
+  @override
+  @JsonKey(name: 'streak_message')
+  final String? streakMessage;
+
+  @override
+  String toString() {
+    return 'DigestCompletionResponse(success: $success, digestId: $digestId, completedAt: $completedAt, articlesRead: $articlesRead, articlesSaved: $articlesSaved, articlesDismissed: $articlesDismissed, closureTimeSeconds: $closureTimeSeconds, closureStreak: $closureStreak, streakMessage: $streakMessage)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DigestCompletionResponseImpl &&
+            (identical(other.success, success) || other.success == success) &&
+            (identical(other.digestId, digestId) ||
+                other.digestId == digestId) &&
+            (identical(other.completedAt, completedAt) ||
+                other.completedAt == completedAt) &&
+            (identical(other.articlesRead, articlesRead) ||
+                other.articlesRead == articlesRead) &&
+            (identical(other.articlesSaved, articlesSaved) ||
+                other.articlesSaved == articlesSaved) &&
+            (identical(other.articlesDismissed, articlesDismissed) ||
+                other.articlesDismissed == articlesDismissed) &&
+            (identical(other.closureTimeSeconds, closureTimeSeconds) ||
+                other.closureTimeSeconds == closureTimeSeconds) &&
+            (identical(other.closureStreak, closureStreak) ||
+                other.closureStreak == closureStreak) &&
+            (identical(other.streakMessage, streakMessage) ||
+                other.streakMessage == streakMessage));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      success,
+      digestId,
+      completedAt,
+      articlesRead,
+      articlesSaved,
+      articlesDismissed,
+      closureTimeSeconds,
+      closureStreak,
+      streakMessage);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DigestCompletionResponseImplCopyWith<_$DigestCompletionResponseImpl>
+      get copyWith => __$$DigestCompletionResponseImplCopyWithImpl<
+          _$DigestCompletionResponseImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DigestCompletionResponseImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DigestCompletionResponse implements DigestCompletionResponse {
+  const factory _DigestCompletionResponse(
+          {required final bool success,
+          @JsonKey(name: 'digest_id') required final String digestId,
+          @JsonKey(name: 'completed_at') final DateTime? completedAt,
+          @JsonKey(name: 'articles_read') final int articlesRead,
+          @JsonKey(name: 'articles_saved') final int articlesSaved,
+          @JsonKey(name: 'articles_dismissed') final int articlesDismissed,
+          @JsonKey(name: 'closure_time_seconds') final int? closureTimeSeconds,
+          @JsonKey(name: 'closure_streak') final int closureStreak,
+          @JsonKey(name: 'streak_message') final String? streakMessage}) =
+      _$DigestCompletionResponseImpl;
+
+  factory _DigestCompletionResponse.fromJson(Map<String, dynamic> json) =
+      _$DigestCompletionResponseImpl.fromJson;
+
+  @override
+  bool get success;
+  @override
+  @JsonKey(name: 'digest_id')
+  String get digestId;
+  @override
+  @JsonKey(name: 'completed_at')
+  DateTime? get completedAt;
+  @override
+  @JsonKey(name: 'articles_read')
+  int get articlesRead;
+  @override
+  @JsonKey(name: 'articles_saved')
+  int get articlesSaved;
+  @override
+  @JsonKey(name: 'articles_dismissed')
+  int get articlesDismissed;
+  @override
+  @JsonKey(name: 'closure_time_seconds')
+  int? get closureTimeSeconds;
+  @override
+  @JsonKey(name: 'closure_streak')
+  int get closureStreak;
+  @override
+  @JsonKey(name: 'streak_message')
+  String? get streakMessage;
+  @override
+  @JsonKey(ignore: true)
+  _$$DigestCompletionResponseImplCopyWith<_$DigestCompletionResponseImpl>
+      get copyWith => throw _privateConstructorUsedError;
 }

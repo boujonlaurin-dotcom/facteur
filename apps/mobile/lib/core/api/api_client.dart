@@ -18,7 +18,9 @@ class ApiClient {
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl ?? ApiConstants.baseUrl,
-        connectTimeout: const Duration(seconds: 10),
+        // OPTIMIZATION: Increased from 10s to 30s to handle slow digest generation
+        // Backend optimizations are in progress, this buys time for those to take effect
+        connectTimeout: const Duration(seconds: 30),
         receiveTimeout: ApiConstants.timeout,
         headers: {
           'Content-Type': 'application/json',

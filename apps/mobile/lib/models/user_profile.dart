@@ -26,18 +26,36 @@ class UserProfile {
 
   /// Créer un UserProfile depuis JSON (API response)
   factory UserProfile.fromJson(Map<String, dynamic> json) {
-    return UserProfile(
-      id: json['id'] as String,
-      userId: json['user_id'] as String,
-      displayName: json['display_name'] as String?,
-      ageRange: json['age_range'] as String,
-      gender: json['gender'] as String?,
-      onboardingCompleted: json['onboarding_completed'] as bool,
-      gamificationEnabled: json['gamification_enabled'] as bool,
-      weeklyGoal: json['weekly_goal'] as int,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-    );
+    try {
+      return UserProfile(
+        id: (json['id'] as String?) ?? '',
+        userId: (json['user_id'] as String?) ?? '',
+        displayName: json['display_name'] as String?,
+        ageRange: (json['age_range'] as String?) ?? 'unknown',
+        gender: json['gender'] as String?,
+        onboardingCompleted: (json['onboarding_completed'] as bool?) ?? false,
+        gamificationEnabled: (json['gamification_enabled'] as bool?) ?? true,
+        weeklyGoal: (json['weekly_goal'] as num?)?.toInt() ?? 10,
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
+        updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+            DateTime.now(),
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('UserProfile.fromJson: Error parsing: $e');
+      // On renvoie un objet minimal plutôt que de crash
+      return UserProfile(
+        id: (json['id'] as String?) ?? 'error',
+        userId: (json['user_id'] as String?) ?? '',
+        ageRange: 'unknown',
+        onboardingCompleted: false,
+        gamificationEnabled: true,
+        weeklyGoal: 10,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
   }
 
   /// Convertir en JSON
@@ -117,4 +135,3 @@ class UserProfile {
     );
   }
 }
-

@@ -106,10 +106,10 @@ class _StreakCelebrationState extends State<StreakCelebration>
 
   Future<void> _startAnimationSequence() async {
     // Start flame animation (0-500ms)
-    _flameController.forward();
+    await _flameController.forward();
 
     // Wait for flame to bounce (300ms), then start number animation
-    await Future.delayed(const Duration(milliseconds: 300));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
     // Count up the number
@@ -120,7 +120,7 @@ class _StreakCelebrationState extends State<StreakCelebration>
     if (!mounted) return;
 
     // Wait a bit, then start message animation (800-1200ms)
-    await Future.delayed(const Duration(milliseconds: 200));
+    await Future<void>.delayed(const Duration(milliseconds: 200));
     if (!mounted) return;
 
     await _messageController.forward();
@@ -136,10 +136,11 @@ class _StreakCelebrationState extends State<StreakCelebration>
     final interval = duration.inMilliseconds ~/ frames;
 
     for (int i = 0; i <= frames; i++) {
-      Future.delayed(Duration(milliseconds: i * interval), () {
+      Future<void>.delayed(Duration(milliseconds: i * interval), () {
         if (!mounted) return;
         setState(() {
-          _displayedNumber = ((widget.streakCount * i) ~/ frames);
+          final double progress = i / frames;
+          _displayedNumber = (progress * widget.streakCount).round();
         });
       });
     }

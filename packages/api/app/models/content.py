@@ -25,6 +25,12 @@ class Content(Base):
         Index("ix_contents_guid", "guid"),
         Index("ix_contents_published_at", "published_at"),
         Index("ix_contents_source_id", "source_id"),
+        # Performance indexes for digest optimization
+        # Composite index for Content queries ordered by published_at with source_id
+        Index("ix_contents_source_published", "source_id", "published_at"),
+        # Partial index for Emergency Fallback on curated sources
+        # Note: Partial index condition handled in migration
+        Index("ix_contents_curated_published", "published_at", "source_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -78,6 +84,9 @@ class UserContentStatus(Base):
         UniqueConstraint("user_id", "content_id", name="uq_user_content_status_user_content"),
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
+        # Performance index for digest exclusion queries
+        # Used in _get_candidates() EXISTS subquery that filters out seen/saved/hidden content
+        Index("ix_user_content_status_exclusion", "user_id", "content_id", "is_hidden", "is_saved", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(

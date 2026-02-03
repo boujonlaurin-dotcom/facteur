@@ -30,6 +30,14 @@ async def test_connection():
     from sqlalchemy import text
     from sqlalchemy.pool import NullPool
     
+    # Fix: Use psycopg dialect explicitly for v3
+    # Convert postgresql+psycopg:// to the correct format
+    if '+psycopg' in db_url:
+        # psycopg v3 is already correct
+        pass
+    elif 'postgresql://' in db_url and '+asyncpg' not in db_url:
+        db_url = db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+    
     engine = create_async_engine(
         db_url,
         poolclass=NullPool,

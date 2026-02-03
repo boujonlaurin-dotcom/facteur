@@ -38,7 +38,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   Future<DigestResponse> _loadDigest({DateTime? date}) async {
     final repository = ref.read(digestRepositoryProvider);
-    return await repository.getDigest(targetDate: date);
+    return await repository.getDigest(date: date);
   }
 
   Future<void> loadDigest({DateTime? date}) async {
@@ -108,7 +108,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       );
 
       // Trigger haptic feedback on success
-      _triggerHaptic(action);
+      await _triggerHaptic(action);
       _showActionNotification(action);
 
       // Check for completion
@@ -129,8 +129,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// Complete the digest
   Future<void> completeDigest() async {
     final currentDigest = state.value;
-    if (currentDigest == null || currentDigest.isCompleted || _isCompleting)
+    if (currentDigest == null || currentDigest.isCompleted || _isCompleting) {
       return;
+    }
 
     _isCompleting = true;
 
@@ -139,7 +140,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       await repository.completeDigest(currentDigest.digestId);
 
       // Trigger celebratory haptic
-      HapticFeedback.heavyImpact();
+      await HapticFeedback.heavyImpact();
 
       // Update local state
       state = AsyncData(currentDigest.copyWith(
@@ -150,6 +151,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       // Show completion notification
       NotificationService.showSuccess('Essentiel terminé !');
     } catch (e) {
+      // ignore: avoid_print
       print('DigestNotifier: completeDigest failed: $e');
       // Don't rethrow - completion failure shouldn't block UI
     } finally {
@@ -184,18 +186,18 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Trigger haptic feedback based on action type
-  void _triggerHaptic(String action) {
+  Future<void> _triggerHaptic(String action) async {
     switch (action) {
       case 'read':
-        HapticFeedback.mediumImpact();
+        await HapticFeedback.mediumImpact();
       case 'save':
-        HapticFeedback.lightImpact();
+        await HapticFeedback.lightImpact();
       case 'not_interested':
-        HapticFeedback.lightImpact();
+        await HapticFeedback.lightImpact();
       case 'undo':
-        HapticFeedback.lightImpact();
+        await HapticFeedback.lightImpact();
       default:
-        HapticFeedback.lightImpact();
+        await HapticFeedback.lightImpact();
     }
   }
 
