@@ -166,4 +166,26 @@ Le framework BMAD est dans `.bmad-core/` :
 - Corps : DM Sans (400)
 
 ### Icônes
-- Phosphor Icons (regular/fill)
+
+## 🛠️ Outils de Développement recommandés (MCP)
+
+Pour faciliter le développement et l'interaction avec la base de données Supabase, il est fortement recommandé d'utiliser le serveur MCP Supabase.
+
+### Configuration Opencode / Cursor
+Ajoutez cette configuration à votre fichier `~/.config/opencode/opencode.json` (ou l'équivalent pour Cursor) :
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "supabase": {
+      "type": "remote",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve",
+      "enabled": true
+    }
+  }
+}
+```
+
+Puis authentifiez-vous :
+`opencode mcp auth supabase`

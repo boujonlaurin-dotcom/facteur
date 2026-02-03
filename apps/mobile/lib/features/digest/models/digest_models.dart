@@ -9,8 +9,10 @@ part 'digest_models.g.dart';
 @freezed
 class SourceMini with _$SourceMini {
   const factory SourceMini({
-    required String name,
-    String? logoUrl,
+    @JsonKey(name: 'id') String? id,
+    @Default('Inconnu') String name,
+    @JsonKey(name: 'logo_url') String? logoUrl,
+    @JsonKey(name: 'type') String? type,
     String? theme,
   }) = _SourceMini;
 
@@ -22,21 +24,25 @@ class SourceMini with _$SourceMini {
 @freezed
 class DigestItem with _$DigestItem {
   const factory DigestItem({
-    required String contentId,
-    required String title,
-    required String url,
-    String? thumbnailUrl,
+    @JsonKey(name: 'content_id') required String contentId,
+    @Default('Sans titre') String title,
+    @Default('') String url,
+    @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
     String? description,
-    @JsonKey(fromJson: _contentTypeFromJson, toJson: _contentTypeToJson)
-    required ContentType contentType,
-    int? durationSeconds,
-    required DateTime publishedAt,
-    required SourceMini source,
-    required int rank,
-    required String reason,
-    @Default(false) bool isRead,
-    @Default(false) bool isSaved,
-    @Default(false) bool isDismissed,
+    @JsonKey(
+        name: 'content_type',
+        fromJson: _contentTypeFromJson,
+        toJson: _contentTypeToJson)
+    @Default(ContentType.article)
+    ContentType contentType,
+    @JsonKey(name: 'duration_seconds') int? durationSeconds,
+    @JsonKey(name: 'published_at') DateTime? publishedAt,
+    SourceMini? source,
+    @Default(0) int rank,
+    @Default('') String reason,
+    @JsonKey(name: 'is_read') @Default(false) bool isRead,
+    @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
+    @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
   }) = _DigestItem;
 
   factory DigestItem.fromJson(Map<String, dynamic> json) =>
@@ -47,17 +53,37 @@ class DigestItem with _$DigestItem {
 @freezed
 class DigestResponse with _$DigestResponse {
   const factory DigestResponse({
-    required String digestId,
-    required String userId,
-    required DateTime targetDate,
-    required DateTime generatedAt,
-    required List<DigestItem> items,
-    @Default(false) bool isCompleted,
-    DateTime? completedAt,
+    @JsonKey(name: 'digest_id') required String digestId,
+    @JsonKey(name: 'user_id') required String userId,
+    @JsonKey(name: 'target_date') required DateTime targetDate,
+    @JsonKey(name: 'generated_at') required DateTime generatedAt,
+    @Default([]) List<DigestItem> items,
+    @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
+    @JsonKey(name: 'completed_at') DateTime? completedAt,
   }) = _DigestResponse;
 
   factory DigestResponse.fromJson(Map<String, dynamic> json) =>
       _$DigestResponseFromJson(json);
+}
+
+/// Model representing the digest completion response from API
+/// Returned when completing a digest via POST /api/digest/{id}/complete
+@freezed
+class DigestCompletionResponse with _$DigestCompletionResponse {
+  const factory DigestCompletionResponse({
+    required bool success,
+    @JsonKey(name: 'digest_id') required String digestId,
+    @JsonKey(name: 'completed_at') DateTime? completedAt,
+    @JsonKey(name: 'articles_read') @Default(0) int articlesRead,
+    @JsonKey(name: 'articles_saved') @Default(0) int articlesSaved,
+    @JsonKey(name: 'articles_dismissed') @Default(0) int articlesDismissed,
+    @JsonKey(name: 'closure_time_seconds') int? closureTimeSeconds,
+    @JsonKey(name: 'closure_streak') @Default(0) int closureStreak,
+    @JsonKey(name: 'streak_message') String? streakMessage,
+  }) = _DigestCompletionResponse;
+
+  factory DigestCompletionResponse.fromJson(Map<String, dynamic> json) =>
+      _$DigestCompletionResponseFromJson(json);
 }
 
 // Helper functions for ContentType serialization

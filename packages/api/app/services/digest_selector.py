@@ -15,6 +15,7 @@ Réutilise l'infrastructure de scoring existante sans modification.
 """
 
 import datetime
+import time
 from dataclasses import dataclass
 from typing import Any, List, Set, Tuple, Optional, Dict
 from uuid import UUID
@@ -112,36 +113,51 @@ class DigestSelector:
         Raises:
             Aucune exception - retourne une liste vide en cas d'erreur
         """
+        start_time = time.time()
+        
         try:
             logger.info("digest_selection_started", user_id=str(user_id), limit=limit)
             
             # 1. Construire le contexte utilisateur
+            step_start = time.time()
             context = await self._build_digest_context(user_id)
+            context_time = time.time() - step_start
             
             if not context.user_profile:
                 logger.warning("digest_selection_no_profile", user_id=str(user_id))
                 return []
             
+            logger.info("digest_selector_context_built", user_id=str(user_id), duration_ms=round(context_time * 1000, 2))
+            
             # 2. Récupérer les candidats
+            step_start = time.time()
             candidates = await self._get_candidates(
                 user_id=user_id,
                 context=context,
                 hours_lookback=hours_lookback,
                 min_pool_size=limit
             )
+            candidates_time = time.time() - step_start
             
             if not candidates:
-                logger.warning("digest_selection_no_candidates", user_id=str(user_id))
+                logger.warning("digest_selection_no_candidates", user_id=str(user_id), duration_ms=round(candidates_time * 1000, 2))
                 return []
             
+            logger.info("digest_selector_candidates_fetched", user_id=str(user_id), count=len(candidates), duration_ms=round(candidates_time * 1000, 2))
+            
             # 3. Scorer les candidats
+            step_start = time.time()
             scored_candidates = await self._score_candidates(candidates, context)
+            scoring_time = time.time() - step_start
+            logger.info("digest_selector_scoring_done", user_id=str(user_id), count=len(scored_candidates), duration_ms=round(scoring_time * 1000, 2))
             
             # 4. Sélectionner avec contraintes de diversité
+            step_start = time.time()
             selected = self._select_with_diversity(
                 scored_candidates=scored_candidates,
                 target_count=limit
             )
+            diversity_time = time.time() - step_start
             
             # 5. Construire les résultats
             digest_items = []
@@ -153,18 +169,25 @@ class DigestSelector:
                     reason=reason
                 ))
             
+            total_time = time.time() - start_time
             logger.info(
                 "digest_selection_completed", 
                 user_id=str(user_id), 
                 count=len(digest_items),
                 sources=list(set(item.content.source_id for item in digest_items)),
-                themes=list(set(item.content.source.theme for item in digest_items if item.content.source))
+                themes=list(set(item.content.source.theme for item in digest_items if item.content.source)),
+                context_ms=round(context_time * 1000, 2),
+                candidates_ms=round(candidates_time * 1000, 2),
+                scoring_ms=round(scoring_time * 1000, 2),
+                diversity_ms=round(diversity_time * 1000, 2),
+                total_ms=round(total_time * 1000, 2)
             )
             
             return digest_items
             
         except Exception as e:
-            logger.error("digest_selection_error", user_id=str(user_id), error=str(e))
+            total_time = time.time() - start_time
+            logger.error("digest_selection_error", user_id=str(user_id), error=str(e), total_ms=round(total_time * 1000, 2), exc_info=True)
             return []
     
     async def _build_digest_context(self, user_id: UUID) -> DigestContext:
@@ -316,9 +339,21 @@ class DigestSelector:
             )
         
         # Étape 2: Fallback aux sources curatées si nécessaire
-        if len(candidates) < min_pool_size:
+        # OPTIMIZATION: Reduced from incremental +24h to direct max lookback
+        # Previous logic: 48h -> 72h -> 96h -> 120h -> 144h -> 168h (up to 6 iterations)
+        # New logic: 48h -> 168h (max 2 iterations) to minimize database round trips
+        max_lookback = 168  # 7 jours max
+        fallback_iterations = 0
+        
+        for current_lookback in [hours_lookback, max_lookback]:
+            fallback_iterations += 1
+            
+            if len(candidates) >= min_pool_size:
+                break
+                
             needed = min_pool_size - len(candidates)
             existing_ids = {c.id for c in candidates}
+            since_fallback = datetime.datetime.utcnow() - datetime.timedelta(hours=current_lookback)
             
             fallback_query = (
                 select(Content)
@@ -326,7 +361,7 @@ class DigestSelector:
                 .options(selectinload(Content.source))
                 .where(
                     ~excluded_stmt,
-                    Content.published_at >= since,
+                    Content.published_at >= since_fallback,
                     Source.is_curated == True,
                     # Exclure les articles déjà sélectionnés
                     Content.id.notin_(list(existing_ids)) if existing_ids else True,
@@ -347,8 +382,8 @@ class DigestSelector:
                     )
                 )
             
-            # Prioriser les thèmes d'intérêt de l'utilisateur
-            if context.user_interests:
+            # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
+            if context.user_interests and current_lookback == hours_lookback:
                 fallback_query = fallback_query.where(
                     Source.theme.in_(list(context.user_interests))
                 )
@@ -358,12 +393,29 @@ class DigestSelector:
             candidates.extend(fallback_candidates)
             
             logger.info(
-                "digest_candidates_fallback_used",
+                "digest_candidates_fallback_iteration",
                 user_id=str(user_id),
-                fallback_count=len(fallback_candidates),
+                iteration=fallback_iterations,
+                lookback_hours=current_lookback,
+                fetched_count=len(fallback_candidates),
                 total_count=len(candidates)
             )
-        
+            
+        if len(candidates) >= min_pool_size:
+            logger.info(
+                "digest_candidates_fallback_success",
+                user_id=str(user_id),
+                total_candidates=len(candidates),
+                iterations=fallback_iterations
+            )
+        else:
+            logger.warning(
+                "digest_candidates_fallback_insufficient",
+                user_id=str(user_id),
+                total_candidates=len(candidates),
+                required=min_pool_size
+            )
+            
         return candidates
     
     async def _score_candidates(

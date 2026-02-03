@@ -108,17 +108,17 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
   Future<void> _startAnimationSequence() async {
     // Headline starts immediately
-    _headlineController.forward();
+    await _headlineController.forward();
 
     // Summary starts at 1000ms
-    await Future.delayed(const Duration(milliseconds: 1000));
+    await Future<void>.delayed(const Duration(milliseconds: 1000));
     if (!mounted) return;
-    _summaryController.forward();
+    await _summaryController.forward();
 
     // Buttons start at 1400ms
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
-    _buttonsController.forward();
+    await _buttonsController.forward();
   }
 
   Future<void> _loadCompletionData() async {

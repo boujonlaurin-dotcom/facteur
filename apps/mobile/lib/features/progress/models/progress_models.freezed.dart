@@ -31,12 +31,8 @@ mixin _$UserTopicProgress {
   @JsonKey(name: 'updated_at')
   DateTime get updatedAt => throw _privateConstructorUsedError;
 
-  /// Serializes this UserTopicProgress to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of UserTopicProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $UserTopicProgressCopyWith<UserTopicProgress> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -67,8 +63,6 @@ class _$UserTopicProgressCopyWithImpl<$Res, $Val extends UserTopicProgress>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of UserTopicProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -139,8 +133,6 @@ class __$$UserTopicProgressImplCopyWithImpl<$Res>
       $Res Function(_$UserTopicProgressImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of UserTopicProgress
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -239,14 +231,12 @@ class _$UserTopicProgressImpl implements _UserTopicProgress {
                 other.updatedAt == updatedAt));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
       runtimeType, id, userId, topic, level, points, createdAt, updatedAt);
 
-  /// Create a copy of UserTopicProgress
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$UserTopicProgressImplCopyWith<_$UserTopicProgressImpl> get copyWith =>
@@ -292,11 +282,8 @@ abstract class _UserTopicProgress implements UserTopicProgress {
   @override
   @JsonKey(name: 'updated_at')
   DateTime get updatedAt;
-
-  /// Create a copy of UserTopicProgress
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$UserTopicProgressImplCopyWith<_$UserTopicProgressImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -313,12 +300,8 @@ mixin _$TopicQuiz {
   List<String> get options => throw _privateConstructorUsedError;
   int get difficulty => throw _privateConstructorUsedError;
 
-  /// Serializes this TopicQuiz to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of TopicQuiz
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $TopicQuizCopyWith<TopicQuiz> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -346,8 +329,6 @@ class _$TopicQuizCopyWithImpl<$Res, $Val extends TopicQuiz>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of TopicQuiz
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -406,8 +387,6 @@ class __$$TopicQuizImplCopyWithImpl<$Res>
       _$TopicQuizImpl _value, $Res Function(_$TopicQuizImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of TopicQuiz
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -492,14 +471,12 @@ class _$TopicQuizImpl implements _TopicQuiz {
                 other.difficulty == difficulty));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, id, topic, question,
       const DeepCollectionEquality().hash(_options), difficulty);
 
-  /// Create a copy of TopicQuiz
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$TopicQuizImplCopyWith<_$TopicQuizImpl> get copyWith =>
@@ -534,11 +511,8 @@ abstract class _TopicQuiz implements TopicQuiz {
   List<String> get options;
   @override
   int get difficulty;
-
-  /// Create a copy of TopicQuiz
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$TopicQuizImplCopyWith<_$TopicQuizImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -559,12 +533,8 @@ mixin _$QuizResultResponse {
   int? get newLevel => throw _privateConstructorUsedError;
   String get message => throw _privateConstructorUsedError;
 
-  /// Serializes this QuizResultResponse to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
-
-  /// Create a copy of QuizResultResponse
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   $QuizResultResponseCopyWith<QuizResultResponse> get copyWith =>
       throw _privateConstructorUsedError;
 }
@@ -593,8 +563,6 @@ class _$QuizResultResponseCopyWithImpl<$Res, $Val extends QuizResultResponse>
   // ignore: unused_field
   final $Res Function($Val) _then;
 
-  /// Create a copy of QuizResultResponse
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -653,8 +621,6 @@ class __$$QuizResultResponseImplCopyWithImpl<$Res>
       $Res Function(_$QuizResultResponseImpl) _then)
       : super(_value, _then);
 
-  /// Create a copy of QuizResultResponse
-  /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
   $Res call({
@@ -738,14 +704,12 @@ class _$QuizResultResponseImpl implements _QuizResultResponse {
             (identical(other.message, message) || other.message == message));
   }
 
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(
       runtimeType, isCorrect, correctAnswer, pointsEarned, newLevel, message);
 
-  /// Create a copy of QuizResultResponse
-  /// with the given fields replaced by the non-null parameter values.
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   @override
   @pragma('vm:prefer-inline')
   _$$QuizResultResponseImplCopyWith<_$QuizResultResponseImpl> get copyWith =>
@@ -785,11 +749,8 @@ abstract class _QuizResultResponse implements QuizResultResponse {
   int? get newLevel;
   @override
   String get message;
-
-  /// Create a copy of QuizResultResponse
-  /// with the given fields replaced by the non-null parameter values.
   @override
-  @JsonKey(includeFromJson: false, includeToJson: false)
+  @JsonKey(ignore: true)
   _$$QuizResultResponseImplCopyWith<_$QuizResultResponseImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

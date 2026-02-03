@@ -24,26 +24,65 @@ class DigestScreen extends ConsumerStatefulWidget {
 
 class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _showWelcome = false;
+  bool _hasCheckedWelcome = false;
 
   @override
   void initState() {
     super.initState();
-    _checkFirstTimeWelcome();
+    // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
+    // because GoRouterState.of(context) requires mounted context
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // ignore: avoid_print
+    print('DigestScreen: didChangeDependencies');
+
+    // Robust check for first-time navigation parameter
+    try {
+      final state = GoRouterState.of(context);
+      final isFirstStr = state.uri.queryParameters['first'];
+      final isFirst = isFirstStr == 'true';
+
+      // ignore: avoid_print
+      print('DigestScreen: isFirst=$isFirst (raw: $isFirstStr)');
+
+      if (isFirst && !_hasCheckedWelcome) {
+        _hasCheckedWelcome = true; // Mark as checked to prevent re-triggering
+        // Use post-frame callback to avoid showing modal during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _checkFirstTimeWelcome();
+          }
+        });
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('DigestScreen: Error accessing GoRouterState: $e');
+    }
   }
 
   Future<void> _checkFirstTimeWelcome() async {
-    // Check for 'first' query param (from onboarding)
-    final uri = GoRouterState.of(context).uri;
-    final isFirstTime = uri.queryParameters['first'] == 'true';
+    try {
+      // Check for 'first' query param (from onboarding)
+      final uri = GoRouterState.of(context).uri;
+      final isFirstTime = uri.queryParameters['first'] == 'true';
 
-    if (isFirstTime) {
-      // Also check shared preferences to ensure we only show once
-      final shouldShow = await DigestWelcomeModal.shouldShowWelcome();
-      if (shouldShow && mounted) {
-        setState(() {
-          _showWelcome = true;
-        });
+      if (isFirstTime) {
+        // Also check shared preferences to ensure we only show once
+        final shouldShow = await DigestWelcomeModal.shouldShowWelcome();
+        if (shouldShow && mounted) {
+          setState(() {
+            _showWelcome = true;
+          });
+        }
       }
+    } catch (e, stack) {
+      debugPrint('DigestScreen: Error in _checkFirstTimeWelcome: $e');
+      debugPrint('Stack: $stack');
+      // Silently ignore errors - welcome modal is not critical
     }
   }
 
@@ -57,8 +96,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('DigestScreen: build() called');
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
+    debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
     // Listen for completion to navigate to closure screen
     ref.listen(digestProvider, (previous, next) {
@@ -95,7 +136,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               padding: EdgeInsets.only(left: 16),
               child: StreakIndicator(),
             ),
-            leadingWidth: 56,
+            leadingWidth: 90,
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(4),
               child: _buildProgressBar(digestAsync, colors),
@@ -183,13 +224,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       description: item.description,
       contentType: _mapContentType(item.contentType),
       durationSeconds: item.durationSeconds,
-      publishedAt: item.publishedAt,
+      publishedAt: item.publishedAt ?? DateTime.now(),
       source: Source(
         id: item.contentId, // Use contentId as fallback for source id
-        name: item.source.name,
+        name: item.source?.name ?? 'Source inconnue',
         type: _mapSourceType(item.contentType),
-        logoUrl: item.source.logoUrl,
-        theme: item.source.theme,
+        logoUrl: item.source?.logoUrl,
+        theme: item.source?.theme,
       ),
     );
     context.push('/feed/content/${item.contentId}', extra: content);
@@ -219,7 +260,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     );
 
     if (confirmed == true) {
-      ref
+      await ref
           .read(digestProvider.notifier)
           .applyAction(item.contentId, 'not_interested');
     }

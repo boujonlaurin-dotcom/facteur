@@ -1,0 +1,101 @@
+Analyzing mobile...                                             
+
+warning • 'avoid_returning_null_for_future' was removed in Dart '3.3.0' • analysis_options.yaml:21:7 • removed_lint
+warning • The type argument(s) of the function 'get' can't be inferred • lib/core/api/api_client.dart:120:33 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'post' can't be inferred • lib/core/api/api_client.dart:135:33 • inference_failure_on_function_invocation
+warning • The type argument(s) of the constructor 'Future.delayed' can't be inferred • lib/core/api/retry_interceptor.dart:39:11 • inference_failure_on_instance_creation
+warning • The type argument(s) of the function 'fetch' can't be inferred • lib/core/api/retry_interceptor.dart:49:34 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'post' can't be inferred • lib/core/api/user_api_service.dart:25:45 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'get' can't be inferred • lib/core/api/user_api_service.dart:60:45 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'put' can't be inferred • lib/core/api/user_api_service.dart:73:43 • inference_failure_on_function_invocation
+   info • The imported package 'http' isn't a dependency of the importing package • lib/core/auth/debug_http_client.dart:1:8 • depend_on_referenced_packages
+warning • The type argument(s) of the function 'post' can't be inferred • lib/core/services/analytics_service.dart:99:28 • inference_failure_on_function_invocation
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/auth/screens/login_screen.dart:80:5 • unawaited_futures
+   info • 'hasInAppContent' is deprecated and shouldn't be used. Always returns false. Use WebView for all content types • lib/features/detail/screens/content_detail_screen.dart:121:19 • deprecated_member_use_from_same_package
+   info • 'hasInAppContent' is deprecated and shouldn't be used. Always returns false. Use WebView for all content types • lib/features/detail/screens/content_detail_screen.dart:139:25 • deprecated_member_use_from_same_package
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/detail/screens/content_detail_screen.dart:238:5 • unawaited_futures
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/detail/screens/content_detail_screen.dart:275:9 • unawaited_futures
+   info • 'hasInAppContent' is deprecated and shouldn't be used. Always returns false. Use WebView for all content types • lib/features/detail/screens/content_detail_screen.dart:335:37 • deprecated_member_use_from_same_package
+   info • Don't invoke 'print' in production code • lib/features/feed/providers/feed_provider.dart:211:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/providers/feed_provider.dart:231:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/providers/feed_provider.dart:254:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/providers/feed_provider.dart:294:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:59:15 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:72:17 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:85:17 • avoid_print
+warning • The type argument(s) of the function 'post' can't be inferred • lib/features/feed/repositories/feed_repository.dart:119:26 • inference_failure_on_function_invocation
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:133:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:175:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:176:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:178:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:179:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:180:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:182:9 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/feed_repository.dart:184:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:22:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:23:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:24:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:25:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:26:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:27:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:39:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:40:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:41:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:42:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:43:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:44:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:56:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:57:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:58:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:59:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:60:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:61:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:70:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:71:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:72:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:73:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:74:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/features/feed/repositories/personalization_repository.dart:75:7 • avoid_print
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/feed/screens/feed_screen.dart:79:39 • unawaited_futures
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/feed/screens/feed_screen.dart:91:7 • unawaited_futures
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/feed/widgets/article_viewer_modal.dart:124:5 • unawaited_futures
+   info • Missing an 'await' for the 'Future' computed by this expression • lib/features/feed/widgets/article_viewer_modal.dart:161:9 • unawaited_futures
+   info • Don't invoke 'print' in production code • lib/features/feed/widgets/personalization_nudge.dart:105:21 • avoid_print
+   info • The import of 'package:flutter/services.dart' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/material.dart' • lib/features/feed/widgets/personalization_sheet.dart:2:8 • unnecessary_import
+   info • The constant name 'q2Option45_plus' isn't a lowerCamelCase identifier • lib/features/onboarding/onboarding_strings.dart:49:23 • constant_identifier_names
+warning • The type argument(s) of the function 'openBox' can't be inferred • lib/features/onboarding/providers/conclusion_notifier.dart:111:30 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'openBox' can't be inferred • lib/features/onboarding/providers/conclusion_notifier.dart:167:30 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'openBox' can't be inferred • lib/features/onboarding/providers/onboarding_provider.dart:258:30 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'openBox' can't be inferred • lib/features/onboarding/providers/onboarding_provider.dart:294:30 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'openBox' can't be inferred • lib/features/onboarding/providers/onboarding_provider.dart:306:30 • inference_failure_on_function_invocation
+warning • The type argument(s) of the constructor 'Future.delayed' can't be inferred • lib/features/onboarding/widgets/animated_message_text.dart:44:13 • inference_failure_on_instance_creation
+warning • The type argument(s) of the constructor 'Future.delayed' can't be inferred • lib/features/onboarding/widgets/animated_message_text.dart:55:15 • inference_failure_on_instance_creation
+warning • The value of the field '_isPressed' isn't used • lib/features/onboarding/widgets/selection_card.dart:32:8 • unused_field
+warning • The type argument(s) of the function 'box' can't be inferred • lib/features/settings/providers/theme_provider.dart:15:22 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'box' can't be inferred • lib/features/settings/providers/theme_provider.dart:28:22 • inference_failure_on_function_invocation
+   info • 'activeColor' is deprecated and shouldn't be used. Use activeThumbColor or activeTrackColor instead. This feature was deprecated after v3.31.0-2.0.pre • lib/features/settings/screens/notifications_screen.dart:162:15 • deprecated_member_use
+   info • Don't invoke 'print' in production code • lib/features/sources/repositories/sources_repository.dart:36:11 • avoid_print
+   info • Import of a library in the 'lib/src' directory of another package • lib/main.dart:16:8 • implementation_imports
+   info • Don't invoke 'print' in production code • scripts/verify_router_logic.dart:2:3 • avoid_print
+   info • Don't invoke 'print' in production code • scripts/verify_router_logic.dart:3:3 • avoid_print
+   info • Don't invoke 'print' in production code • scripts/verify_router_logic.dart:29:7 • avoid_print
+   info • Don't invoke 'print' in production code • scripts/verify_router_logic.dart:31:7 • avoid_print
+   info • Don't invoke 'print' in production code • scripts/verify_router_logic.dart:71:3 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:13:3 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:18:5 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:20:7 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:23:5 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:30:5 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:32:7 • avoid_print
+   info • Don't invoke 'print' in production code • test/api_debug.dart:35:5 • avoid_print
+   info • Don't invoke 'print' in production code • test/features/auth/router_logic_proof.dart:17:7 • avoid_print
+   info • Don't invoke 'print' in production code • test/features/auth/router_logic_proof.dart:51:7 • avoid_print
+   info • Don't invoke 'print' in production code • test/features/auth/router_logic_proof.dart:62:7 • avoid_print
+   info • Don't invoke 'print' in production code • test/features/auth/router_logic_proof.dart:66:7 • avoid_print
+warning • The value of the local variable 'confirmedUser' isn't used • test/features/auth/router_redirection_test.dart:76:11 • unused_local_variable
+   info • The imported package 'riverpod' isn't a dependency of the importing package • test/features/feed/briefing_logic_test.dart:2:8 • depend_on_referenced_packages
+warning • The value of the local variable 'initialState' isn't used • test/features/feed/briefing_logic_test.dart:116:11 • unused_local_variable
+warning • The value of the local variable 'notifier' isn't used • test/features/onboarding/providers/onboarding_provider_test.dart:87:13 • unused_local_variable
+warning • The type argument(s) of the function 'openBox' can't be inferred • test/features/settings/theme_provider_test.dart:15:16 • inference_failure_on_function_invocation
+warning • The type argument(s) of the function 'box' can't be inferred • test/features/settings/theme_provider_test.dart:42:22 • inference_failure_on_function_invocation
+

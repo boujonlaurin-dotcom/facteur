@@ -20,6 +20,8 @@ class Source(Base):
     __table_args__ = (
         Index("ix_sources_is_active", "is_active"),
         Index("ix_sources_is_curated", "is_curated"),
+        # Performance index for muted theme filtering in digest queries
+        Index("ix_sources_theme", "theme"),
     )
 
     id: Mapped[UUID] = mapped_column(

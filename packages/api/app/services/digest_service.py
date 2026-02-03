@@ -12,6 +12,8 @@ Safe reuse patterns:
 - Uses existing StreakService for gamification updates
 """
 
+import time
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
@@ -32,6 +34,15 @@ from app.services.digest_selector import DigestSelector
 from app.services.streak_service import StreakService
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class EmergencyItem:
+    """Dummy DigestItem wrapper for emergency fallback."""
+    content: Content
+    score: float = 0.5
+    rank: int = 0
+    reason: str = "Sélection de la rédaction"
 
 
 class DigestService:
@@ -56,10 +67,11 @@ class DigestService:
         """Retrieves or generates today's digest for a user.
         
         Flow:
-        1. Check if digest already exists for user + date
-        2. If exists, return it with action states populated
-        3. If not exists, generate new digest using DigestSelector
-        4. Store in database and return
+        1. Ensure user profile exists (creates if missing)
+        2. Check if digest already exists for user + date
+        3. If exists, return it with action states populated
+        4. If not exists, generate new digest using DigestSelector
+        5. Store in database and return
         
         Args:
             user_id: UUID of the user
@@ -68,36 +80,105 @@ class DigestService:
         Returns:
             DigestResponse with 5 items, or None if generation failed
         """
+        start_time = time.time()
+        
         if target_date is None:
             target_date = date.today()
             
         logger.info("digest_get_or_create", user_id=str(user_id), target_date=str(target_date))
         
+        # 0. Ensure user profile exists
+        # This prevents 503 errors for new users who don't have a profile yet
+        step_start = time.time()
+        from app.services.user_service import UserService
+        user_service = UserService(self.session)
+        await user_service.get_or_create_profile(str(user_id))
+        profile_time = time.time() - step_start
+        logger.info("digest_step_profile", user_id=str(user_id), duration_ms=round(profile_time * 1000, 2))
+        
         # 1. Check for existing digest
+        step_start = time.time()
         existing_digest = await self._get_existing_digest(user_id, target_date)
+        existing_time = time.time() - step_start
         if existing_digest:
-            logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id))
+            logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
             return await self._build_digest_response(existing_digest, user_id)
+        logger.info("digest_no_existing", user_id=str(user_id), duration_ms=round(existing_time * 1000, 2))
         
         # 2. Generate new digest using DigestSelector
+        step_start = time.time()
         logger.info("digest_generating_new", user_id=str(user_id))
         digest_items = await self.selector.select_for_user(user_id, limit=5)
+        selection_time = time.time() - step_start
+        logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
+        # Emergency Fallback: If standard selection returns nothing, grab ANY recent curated content
+        # This prevents 503 errors when personalization is too restrictive or history is empty
         if not digest_items:
-            logger.warning("digest_generation_failed", user_id=str(user_id))
+            step_start = time.time()
+            logger.warning("digest_generation_standard_failed_attempting_fallback", user_id=str(user_id))
+            digest_items = await self._get_emergency_candidates(limit=5)
+            fallback_time = time.time() - step_start
+            logger.info("digest_step_fallback", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(fallback_time * 1000, 2))
+            
+        if not digest_items:
+            # If even emergency fallback fails, then we truly have a problem (empty DB?)
+            logger.error("digest_generation_failed_total", user_id=str(user_id))
             return None
         
         # 3. Store in database
+        step_start = time.time()
         digest = await self._create_digest_record(user_id, target_date, digest_items)
+        store_time = time.time() - step_start
         
+        total_time = time.time() - start_time
         logger.info(
             "digest_created", 
             user_id=str(user_id), 
             digest_id=str(digest.id),
-            items_count=len(digest_items)
+            items_count=len(digest_items),
+            store_duration_ms=round(store_time * 1000, 2),
+            total_duration_ms=round(total_time * 1000, 2)
         )
         
         return await self._build_digest_response(digest, user_id)
+
+        
+
+    async def _get_emergency_candidates(self, limit: int = 5) -> List[Any]:
+        """Last resort: get most recent curated content ignoring constraints.
+        
+        OPTIMIZATION: Added time window filter to limit query scope.
+        Only fetches content from last 7 days instead of full table scan.
+        This significantly improves performance when Content table is large.
+        """
+        from app.models.content import Content
+        from app.models.source import Source
+        from sqlalchemy import desc
+        from sqlalchemy.orm import selectinload
+        
+        # OPTIMIZATION: Limit query to last 7 days to avoid full table scan
+        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        
+        stmt = (
+            select(Content)
+            .join(Content.source)
+            .options(selectinload(Content.source))
+            .where(
+                Source.is_curated == True,
+                Content.published_at >= cutoff_date  # Add time window filter
+            )
+            .order_by(Content.published_at.desc())
+            .limit(limit)
+        )
+        
+        result = await self.session.execute(stmt)
+        contents = result.scalars().all()
+        
+        return [
+            EmergencyItem(content=c, rank=i+1) 
+            for i, c in enumerate(contents)
+        ]
     
     async def apply_action(
         self,
@@ -263,7 +344,7 @@ class DigestService:
                 "content_id": str(item.content.id),
                 "rank": item.rank,
                 "reason": item.reason,
-                "source_slug": item.content.source.slug if item.content.source else None,
+                "source_name": item.content.source.name if item.content.source else None,
                 "score": float(item.score)
             })
         

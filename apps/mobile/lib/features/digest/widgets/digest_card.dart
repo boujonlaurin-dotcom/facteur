@@ -172,12 +172,12 @@ class DigestCard extends StatelessWidget {
                   child: Row(
                     children: [
                       // Source Logo
-                      if (item.source.logoUrl != null &&
-                          item.source.logoUrl!.isNotEmpty) ...[
+                      if (item.source?.logoUrl != null &&
+                          item.source!.logoUrl!.isNotEmpty) ...[
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: CachedNetworkImage(
-                            imageUrl: item.source.logoUrl!,
+                            imageUrl: item.source!.logoUrl!,
                             width: 16,
                             height: 16,
                             fit: BoxFit.cover,
@@ -196,7 +196,7 @@ class DigestCard extends StatelessWidget {
                         flex: 2,
                         fit: FlexFit.loose,
                         child: Text(
-                          item.source.name,
+                          item.source?.name ?? 'Source inconnue',
                           style: textTheme.labelMedium?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w600,
@@ -209,9 +209,11 @@ class DigestCard extends StatelessWidget {
                       // Recency
                       const SizedBox(width: FacteurSpacing.space2),
                       Text(
-                        timeago
-                            .format(item.publishedAt, locale: 'fr_short')
-                            .replaceAll('il y a ', ''),
+                        item.publishedAt != null
+                            ? timeago
+                                .format(item.publishedAt!, locale: 'fr_short')
+                                .replaceAll('il y a ', '')
+                            : '--',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
                           fontSize: 11,
@@ -316,8 +318,8 @@ class DigestCard extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          item.source.name.isNotEmpty
-              ? item.source.name.substring(0, 1).toUpperCase()
+          (item.source?.name ?? '').isNotEmpty
+              ? item.source!.name.substring(0, 1).toUpperCase()
               : '?',
           style: TextStyle(
             fontSize: 9,
