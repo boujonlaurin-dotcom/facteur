@@ -26,21 +26,21 @@
 
 ### Frontend — Digest Screen
 
-- [ ] **UI-01**: Digest screen with 5 article cards (replaces feed as default)
-- [ ] **UI-02**: Progress bar component (X/5 articles processed)
-- [ ] **UI-03**: Article card with 3 actions: Read / Save / Not Interested
-- [ ] **UI-04**: "Not Interested" integration with existing Personalization system
+- [x] **UI-01**: Digest screen with 5 article cards (replaces feed as default)
+- [x] **UI-02**: Progress bar component (X/5 articles processed)
+- [x] **UI-03**: Article card with 3 actions: Read / Save / Not Interested
+- [x] **UI-04**: "Not Interested" integration with existing Personalization system
 
 ### Frontend — Closure Experience
 
-- [ ] **UI-05**: Closure screen with animation, "Tu es informé !" message
-- [ ] **UI-06**: Streak celebration display (closure streak)
-- [ ] **UI-07**: "Explorer plus" button to access relegated feed
+- [x] **UI-05**: Closure screen with animation, "Tu es informé !" message
+- [x] **UI-06**: Streak celebration display (closure streak)
+- [x] **UI-07**: "Explorer plus" button to access relegated feed
 
 ### Gamification
 
-- [ ] **GMF-01**: Closure streak tracking (separate from reading streak)
-- [ ] **GMF-02**: Streak UI integration in digest and closure screens
+- [x] **GMF-01**: Closure streak tracking (separate from reading streak)
+- [x] **GMF-02**: Streak UI integration in digest and closure screens
 
 ### Notifications (Optional/P1)
 
