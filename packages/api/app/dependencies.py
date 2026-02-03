@@ -1,5 +1,6 @@
 """Dépendances FastAPI (injection)."""
 
+import asyncio
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,6 +15,70 @@ security = HTTPBearer()
 _jwks_cache = None
 
 import certifi
+
+
+async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, timeout: float = 5.0) -> bool:
+    """
+    Check if user email is confirmed in database with retry logic.
+    
+    Handles connection pool timeouts and stale connections gracefully.
+    
+    Args:
+        user_id: The Supabase user ID
+        max_retries: Maximum number of retry attempts
+        timeout: Timeout per attempt in seconds
+        
+    Returns:
+        True if email is confirmed, False otherwise
+    """
+    from app.database import async_session_maker
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+    
+    for attempt in range(max_retries):
+        try:
+            # Use asyncio.wait_for to add timeout to the entire session operation
+            async with async_session_maker() as session:
+                # Execute query with timeout
+                result = await asyncio.wait_for(
+                    session.execute(
+                        text("SELECT email_confirmed_at FROM auth.users WHERE id = :uid"),
+                        {"uid": user_id}
+                    ),
+                    timeout=timeout
+                )
+                row = result.fetchone()
+                if row is not None and row[0] is not None:
+                    return True
+                return False
+                
+        except (asyncio.TimeoutError, SQLAlchemyTimeoutError) as timeout_err:
+            # Connection pool timeout - retry with backoff
+            if attempt < max_retries - 1:
+                wait_time = 0.5 * (2 ** attempt)  # Exponential backoff: 0.5s, 1s, 2s
+                print(f"⚠️ Auth: DB timeout on attempt {attempt + 1}, retrying in {wait_time}s...", flush=True)
+                await asyncio.sleep(wait_time)
+            else:
+                print(f"❌ Auth: DB check failed after {max_retries} attempts (timeout)", flush=True)
+                return False
+                
+        except OperationalError as op_err:
+            # Connection/SSL errors - retry with backoff
+            if attempt < max_retries - 1:
+                wait_time = 0.5 * (2 ** attempt)
+                print(f"⚠️ Auth: DB connection error on attempt {attempt + 1}: {op_err}, retrying in {wait_time}s...", flush=True)
+                await asyncio.sleep(wait_time)
+            else:
+                print(f"❌ Auth: DB check failed after {max_retries} attempts (operational error)", flush=True)
+                return False
+                
+        except Exception as e:
+            # Unexpected error - don't retry
+            print(f"❌ Auth: Unexpected DB error: {e}", flush=True)
+            return False
+    
+    return False
+
 
 async def fetch_jwks():
     global _jwks_cache
@@ -94,23 +159,14 @@ async def get_current_user_id(
             
             if provider == "email":
                 # Fallback: Check DB directly (JWT might be stale after manual confirmation)
-                from app.database import async_session_maker
-                from sqlalchemy import text
+                # Uses retry logic to handle connection pool timeouts gracefully
+                is_confirmed = await _check_email_confirmed_with_retry(user_id)
                 
-                try:
-                    async with async_session_maker() as session:
-                        result = await session.execute(
-                            text("SELECT email_confirmed_at FROM auth.users WHERE id = :uid"),
-                            {"uid": user_id}
-                        )
-                        row = result.fetchone()
-                        if row and row[0]:
-                            print(f"✅ Auth: User {user_id} confirmed in DB (stale JWT)", flush=True)
-                            return user_id
-                except Exception as db_err:
-                    print(f"⚠️ Auth: DB fallback check failed: {db_err}", flush=True)
-                
-                print(f"🚫 Auth: User {user_id} blocked (email not confirmed)", flush=True)
+                if is_confirmed:
+                    print(f"✅ Auth: User {user_id} confirmed in DB (stale JWT)", flush=True)
+                    return user_id
+                else:
+                    print(f"🚫 Auth: User {user_id} blocked (email not confirmed)", flush=True)
                 print(f"🔍 DEBUG JWT PAYLOAD: {payload}", flush=True)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

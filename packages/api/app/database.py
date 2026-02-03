@@ -3,12 +3,11 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 
 from app.config import get_settings
 
 settings = get_settings()
-
-from sqlalchemy.pool import NullPool
 
 # Engine async
 # Diagnostic: Print engine target
@@ -16,20 +15,49 @@ import structlog
 logger = structlog.get_logger()
 logger.info("engine_initializing", target=settings.database_url.split('@')[-1] if settings.database_url else 'NONE')
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    # IMPORTANT: With psycopg, pool_pre_ping can be True, but since we are using
-    # PgBouncer in transaction mode, we stay safe.
-    pool_pre_ping=False,
-    # Use NullPool with PgBouncer transaction pooling
-    poolclass=NullPool,
-    # Note: psycopg v3 doesn't support command_timeout in connect_args
-    # Timeouts are handled at the statement level with statement_timeout if needed
-    connect_args={
-        "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
-    },
-)
+# Determine pool configuration based on environment
+# Railway/Supabase: Use QueuePool with pre_ping for connection resilience
+# Local dev: Can use NullPool for simplicity
+_is_railway = "railway" in (settings.database_url or "").lower()
+_is_supabase = "supabase" in (settings.database_url or "").lower()
+_use_queue_pool = _is_railway or _is_supabase
+
+if _use_queue_pool:
+    # Railway/Supabase: Use AsyncAdaptedQueuePool for proper connection pooling
+    # This handles connection drops better than NullPool
+    logger.info("db_pool_config", pool_type="AsyncAdaptedQueuePool", pre_ping=True)
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+        # Enable pool_pre_ping to verify connections before use
+        # This prevents "SSL connection has been closed unexpectedly" errors
+        pool_pre_ping=True,
+        # Use AsyncAdaptedQueuePool for proper connection management
+        poolclass=AsyncAdaptedQueuePool,
+        # Pool size optimized for Railway/Supabase
+        pool_size=5,
+        max_overflow=10,
+        # Connection timeout - fail fast if pool exhausted
+        pool_timeout=30,
+        # Recycle connections after 1 hour to prevent stale connections
+        pool_recycle=3600,
+        # Connect args for PgBouncer compatibility
+        connect_args={
+            "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
+        },
+    )
+else:
+    # Local development: Use NullPool for simplicity
+    logger.info("db_pool_config", pool_type="NullPool", pre_ping=False)
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+        pool_pre_ping=False,
+        poolclass=NullPool,
+        connect_args={
+            "prepare_threshold": None,
+        },
+    )
 
 
 
