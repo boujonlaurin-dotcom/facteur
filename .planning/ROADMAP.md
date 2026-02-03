@@ -127,17 +127,19 @@ New Components:
 - [x] **02-02**: Article actions (Read/Save/Not Interested) + Personalization integration — Wave 1
 - [x] **02-03**: Closure screen with animation and streak celebration — Wave 2
 - [x] **02-04**: Feed relegation and navigation flows — Wave 3
+- [ ] **02-06**: Backend digest performance fix (gap closure for timeout issue) — Wave 1
 
 **Dependencies:** Requires Phase 1 API endpoints ✅  
 **Wave Structure:**
 | Wave | Plans | Dependencies |
 |------|-------|--------------|
-| 1 | 02-01, 02-02 | None (can run in parallel) |
+| 1 | 02-01, 02-02, 02-06 | 02-06 has no dependencies (gap closure) |
 | 2 | 02-03 | 02-02 (action completion) |
 | 3 | 02-04 | 02-03 (closure navigation) |
 
-**Status:** ✅ Complete (verified 2026-02-01)  
+**Status:** 🔄 Gap Closure In Progress — Backend digest timeout issue diagnosed (02-06)  
 **Verification:** 7/7 must-haves verified — `02-frontend-VERIFICATION.md`
+**Gap:** Digest API timeout blocking production — see `02-UAT.md` for diagnosis
 
 ---
 
