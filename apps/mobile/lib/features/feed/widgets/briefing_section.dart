@@ -5,11 +5,18 @@ import '../models/content_model.dart';
 import 'feed_card.dart';
 
 /// Section Briefing Quotidien avec design premium affiné.
+///
+/// @deprecated Use DigestBriefingSection from features/digest instead.
+/// The briefing functionality has been moved to the dedicated Digest tab
+/// with 5 articles instead of 3. This widget is kept for reference but
+/// should not be used in new code.
+@Deprecated('Use DigestBriefingSection from features/digest instead.')
 class BriefingSection extends StatelessWidget {
   final List<DailyTop3Item> briefing;
   final void Function(DailyTop3Item) onItemTap;
   final void Function(DailyTop3Item)? onPersonalize;
 
+  @Deprecated('Use DigestBriefingSection from features/digest instead.')
   const BriefingSection({
     super.key,
     required this.briefing,
