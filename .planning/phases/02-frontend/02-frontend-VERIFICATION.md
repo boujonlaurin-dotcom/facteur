@@ -7,11 +7,12 @@ re_verification:
   previous_status: passed
   previous_score: 10/10
   gaps_closed:
-    - "MissingGreenlet error fixed with eager loading (02-09)"
+    - "MissingGreenlet error fixed with eager loading (02-09) - COMPLETE after finding second location"
     - "greenlet>=3.0.0 dependency added (02-10)"
     - "All 10 plans (02-01 to 02-10) verified complete"
   gaps_remaining: []
   regressions: []
+  verification_quality_issue: "Initial verification only checked one location (line 387) but missed second location (line 487). Root cause: insufficient code audit - only searched for one pattern occurrence instead of all Content.source accesses."
 gaps:
   - truth: "Plan 02-08 has SUMMARY.md file"
     status: partial
@@ -92,7 +93,7 @@ All 12 must-have truths are verified with working implementations:
 | 9   | Closure screen displays after all 5 articles processed       | ✓ VERIFIED | `digest_screen.dart` ref.listen navigates to closure when `isCompleted` |
 | 10  | Streak updates and displays correctly                        | ✓ VERIFIED | `streak_celebration.dart` displays animated flame with count            |
 | 11  | "Explorer plus" button navigates to relegated feed           | ✓ VERIFIED | `closure_screen.dart` navigates to `RoutePaths.feed`                    |
-| 12  | MissingGreenlet error resolved in API                        | ✓ VERIFIED | `digest_service.py` line 387 uses `selectinload(Content.source)`        |
+| 12  | MissingGreenlet error resolved in API                        | ✓ VERIFIED | `digest_service.py` lines 387 and 487 use `selectinload(Content.source)` |
 
 **Score:** 12/12 truths verified
 
@@ -100,15 +101,24 @@ All 12 must-have truths are verified with working implementations:
 
 ### 02-09: Fix MissingGreenlet Error with Eager Loading
 
-**Verification:**
+**Initial Verification (INCOMPLETE):**
 - ✅ Import added: `from sqlalchemy.orm import selectinload` (line 25)
-- ✅ Pattern used in `_build_digest_response()`: 
-  ```python
-  stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
-  ```
-  (line 387)
-- ✅ Content.source accessed at line 411 with eager loading
-- ✅ Same pattern used in `_get_emergency_candidates()` (line 167)
+- ✅ Pattern used in `_build_digest_response()` (line 387)
+- ❌ **MISSED:** Second location in `_trigger_personalization_mute()` (line 487)
+
+**Issue Discovered After Testing:**
+The initial fix only addressed `_build_digest_response()` but missed `_trigger_personalization_mute()` which also accesses `content.source` after loading content. This caused MissingGreenlet errors to persist when users marked articles as "not interested".
+
+**Complete Fix Applied:**
+- ✅ `_build_digest_response()` (line 387): Uses eager loading with selectinload
+- ✅ `_trigger_personalization_mute()` (line 487): Now uses eager loading with selectinload
+- ✅ All `session.get(Content, content_id)` calls that access `content.source` have been replaced
+
+**Verification Command:**
+```bash
+grep -n "session\.get\(Content" packages/api/app/services/digest_service.py
+# Result: No matches - all fixed
+```
 
 **Result:** MissingGreenlet error resolved. No lazy loading in async context.
 
@@ -156,7 +166,7 @@ All 12 must-have truths are verified with working implementations:
 | `closure_screen.dart` | `feed_screen.dart` | `context.go(RoutePaths.feed)` | ✓ WIRED | "Explorer plus" and Close buttons |
 | `feed_card.dart` | Feed actions | `onSave`, `onNotInterested` callbacks | ✓ WIRED | Actions passed from parent widgets |
 | `shell_scaffold.dart` | Route navigation | `context.goNamed()` | ✓ WIRED | All 3 tabs navigate correctly |
-| `digest_service.py` | Content.source | `selectinload(Content.source)` | ✓ WIRED | Eager loading prevents MissingGreenlet |
+| `digest_service.py` | Content.source | `selectinload(Content.source)` | ✓ WIRED | Eager loading in TWO locations (lines 387, 487) prevents MissingGreenlet |
 
 ## API Integration Points
 
