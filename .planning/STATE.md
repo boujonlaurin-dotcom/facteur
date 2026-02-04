@@ -1,23 +1,25 @@
 # Project State: Facteur — Epic 10 Digest Central
 
-**Current Phase:** 2 — Frontend Complete  
-**Last Updated:** 2026-02-03  
-**Status:** ✅ Phase 2 Execution Complete - 6/6 plans verified
+**Current Phase:** 2 — Frontend Complete (UI/UX Rework In Progress)  
+**Last Updated:** 2026-02-04  
+**Status:** ⚠️ Phase 2 Requires UI/UX Adjustments - See `02-frontend-UI_REWORK_CONTEXT.md`
+
+**⚠️ IMPORTANT:** A UI/UX rework has been requested to properly reuse the existing `BriefingSection` component instead of the newly created `DigestCard`/`DigestScreen` approach. See `.planning/phases/02-frontend/02-frontend-UI_REWORK_CONTEXT.md` for detailed specifications.
 
 ---
 
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** All 6 plans complete  
+**Plan:** 02-07 complete (BriefingSection Refactor)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 3/3 | Phase 2: 6/6 | Total: 9/9 plans complete  
+**Progress:** Phase 1: 3/3 | Phase 2: 7/7 | Total: 10/10 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (3/3)
-Phase 2 Frontend:   [████] 100% (6/6)
-Overall:            [████████░] 90% (9/10)
+Phase 2 Frontend:   [████] 100% (7/7)
+Overall:            [██████████] 100% (10/10)
 ```
 
 ---
@@ -37,12 +39,71 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **3/3** |
-| 2 — Frontend | ✅ Complete | 100% | **4/4** |
+| 2 — Frontend | ✅ Complete | 100% | **7/7** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
 
+## ✅ UI/UX Adjustments Complete (Phase 2 - Plan 02-07)
+
+### Completed Changes
+
+All UI/UX adjustments from the rework have been successfully implemented:
+
+#### 1. ✅ **Reuse BriefingSection as Base**
+- Created `DigestBriefingSection` based on BriefingSection patterns
+- Adapted from 3 to 5 articles
+- Premium container design (gradient, 24px radius, shadow)
+
+#### 2. ✅ **Remove "Read" Button**
+- Reading is now marked automatically on article tap
+- Removed redundant "Lu" button from action bar
+
+#### 3. ✅ **Integrate Save/NotInterested in FeedCard Footer**
+- Extended FeedCard with onSave and onNotInterested callbacks
+- Save button (bookmark icon) in footer
+- NotInterested button (eye-slash icon) in footer
+- Source info compact on left side
+- Reuses `PersonalizationSheet` for "Not Interested" action
+
+#### 4. ✅ **Progress Bar in Header**
+- Elegant segmented progress bar with 5 segments (4px height, 8px width each)
+- Green when complete
+- Integrated in DigestBriefingSection header
+
+#### 5. ✅ **Feed-Style Header**
+- Uses same header style as Feed (FacteurLogo centered)
+- Title "L'Essentiel du Jour" (not "Votre Essentiel")
+
+#### 6. **Decommission Old BriefingSection** (Next: Plan 02-08)
+- Ready to remove from FeedScreen once validated
+- Can mark old code as @deprecated
+
+### Implementation Details
+- **Files created:** `digest_briefing_section.dart`
+- **Files modified:** `feed_card.dart`, `digest_screen.dart`
+- **flutter analyze:** 0 errors
+
+### Reference Document
+**Full specifications:** `.planning/phases/02-frontend/02-07-SUMMARY.md`
+
+---
+
 ## Completed Work
+
+### Frontend Phase — Plan 02-07 Complete (2026-02-04)
+
+**BriefingSection Refactor with DigestBriefingSection**
+
+- ✅ Extended FeedCard with onSave, onNotInterested, isSaved parameters
+- ✅ Created DigestBriefingSection based on BriefingSection patterns
+- ✅ Segmented progress bar (5 segments) in header
+- ✅ Refactored DigestScreen with CustomScrollView and Feed-style header
+- ✅ Reading automatic on article tap (no Read button)
+- ✅ Reuses PersonalizationSheet for NotInterested action
+- ✅ flutter analyze passes with 0 errors
+
+See: `.planning/phases/02-frontend/02-07-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-01 Verified (2026-02-03)
 
@@ -158,11 +219,12 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 ### Immediate Next Steps
 
 1. **Phase 2 Frontend** ✅ COMPLETE
-   - ✅ 02-01 Digest Screen UI - Flutter digest list with 5 cards
-   - ✅ 02-02 Action UI - Swipe/mark buttons for read/save/dismiss  
-   - ✅ 02-03 Closure Screen - Completion celebration with streak display
-   - ✅ 02-04 Feed Relegation - Update navigation to make feed secondary
-   - ✅ Verified: 7/7 must-haves passing
+   - ✅ 02-01 Digest Screen UI - Initial digest implementation
+   - ✅ 02-02 Action UI - Article actions with API integration
+   - ✅ 02-03 Closure Screen - Completion celebration
+   - ✅ 02-04 Feed Relegation - Navigation update
+   - ✅ 02-07 BriefingSection Refactor - UI/UX improvements using BriefingSection patterns
+   - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
    - Push notifications for digest ready
@@ -172,12 +234,6 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 3. **Prepare for Production**
    - End-to-end testing
    - Beta release preparation
-
-### Phase 2 Preparation
-
-- Review existing Flutter components for reuse
-- Identify Personalization UI components to adapt
-- Prepare closure screen designs
 
 ---
 
@@ -191,6 +247,9 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-04 | Extend FeedCard with optional callbacks | Maintains backward compatibility while enabling Save/NotInterested for digest |
+| 2026-02-04 | Automatic read on article tap | Consistent with BriefingSection behavior, removes redundant button |
+| 2026-02-04 | Segmented progress bar (5 segments) | Elegant, compact visualization of digest progress |
 | 2026-02-01 | 3-tab navigation structure | Essentiel primary, Explorer secondary, clear hierarchy |
 | 2026-02-01 | First-time welcome via query params | Allows direct onboarding→digest flow with welcome state |
 | 2026-02-01 | SharedPreferences for welcome tracking | Ensures welcome shown only once per user |
@@ -225,14 +284,18 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ## Next Action
 
-**Phase 2 Frontend Complete - Ready for Phase 3 (Polish)**
+**Phase 2 Frontend Complete - UI/UX Rework Done - Ready for Phase 3 (Polish)**
 
-Foundation for digest-first experience is complete:
-- Digest screen with 5 articles and actions
+Foundation for digest-first experience is complete with improved UI/UX:
+- DigestBriefingSection with premium BriefingSection design
+- 5 articles with segmented progress bar and N°1-5 rank badges
+- FeedCard footer with Save/NotInterested actions
+- Automatic read on tap (no Read button)
+- Feed-style header with FacteurLogo
 - Closure screen with streak celebration
 - Navigation with Essentiel/Explorer/Paramètres tabs
 - First-time welcome experience
-- Verified: 7/7 must-haves passing
+- Verified: All must-haves passing, flutter analyze clean
 
 Next: **Phase 03 - Polish** for production readiness
 
@@ -246,10 +309,10 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-03T10:00:00Z  
-**Stopped at:** Verified 02-01 Digest Screen UI plan execution  
-**Resume file:** `.planning/phases/02-frontend/02-01-SUMMARY.md`
+**Last session:** 2026-02-04T11:19:11Z  
+**Stopped at:** Completed 02-07 BriefingSection Refactor plan execution  
+**Resume file:** `.planning/phases/02-frontend/02-07-SUMMARY.md`
 
 ---
 
-*State updated after 02-01 plan verification - Phase 2 remains complete, ready for Phase 3 Polish*
+*State updated after 02-07 plan execution - Phase 2 UI/UX rework complete, ready for Phase 3 Polish*
