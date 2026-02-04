@@ -22,6 +22,7 @@ import structlog
 from sqlalchemy import select, and_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import selectinload
 
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
@@ -382,8 +383,10 @@ class DigestService:
         for item_data in digest.items:
             content_id = UUID(item_data["content_id"])
             
-            # Fetch content details
-            content = await self.session.get(Content, content_id)
+            # Fetch content details with eager loading of source
+            stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
+            result = await self.session.execute(stmt)
+            content = result.scalar_one_or_none()
             if not content:
                 logger.warning(
                     "digest_content_not_found",
