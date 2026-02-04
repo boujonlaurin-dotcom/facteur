@@ -1,5 +1,5 @@
 ---
-status: diagnosed
+status: complete
 phase: 02-frontend
 source:
   - .planning/phases/02-frontend/02-01-PLAN.md
@@ -7,28 +7,16 @@ source:
   - .planning/phases/02-frontend/02-03-SUMMARY.md
   - .planning/phases/02-frontend/02-04-SUMMARY.md
 started: 2026-02-01T23:15:00Z
-updated: 2026-02-04T12:05:00Z
+updated: 2026-02-04T12:15:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Digest Screen - Loading (NEW ISSUE)
-expected: |
-  When you open the app (after login), you should see:
-  1. Screen titled "Votre Essentiel" 
-  2. Progress bar at top showing "X/5" (e.g., "0/5")
-  3. Exactly 5 article cards in a scrollable list
-  4. Each card shows: article thumbnail, title, source name/logo, and a selection reason badge
-  5. Cards have rank numbers (1-5) visible
-note: |
-  NEW BUG REPORTED (2026-02-04):
-  - SQLAlchemy MissingGreenlet error when loading digest
-  - DioException: 500 status code, app crashes
-  - Different from previous timeout issue
-  
-  Ready for UI/UX testing once backend issue resolved.
-status: issue_reported
+[testing complete - fix plans created]
+
+Diagnosis complete. 2 issues identified with fix plans ready for execution:
+- Plan 02-09: Fix eager loading in digest_service.py
+- Plan 02-10: Add greenlet>=3.0.0 dependency
 
 ## Tests
 
@@ -181,29 +169,29 @@ skipped: 0
     status: fix_planned
     reason: "User reported: Application crashes with MissingGreenlet error and DioException 500 when loading digest"
     severity: blocker
-  test: 1
-  root_cause: |
-    TWO ISSUES IDENTIFIED:
-    1. CODE: digest_service.py line 386-408 uses session.get() without eager loading, then accesses content.source which triggers lazy loading in async context
-    2. DEPENDENCY: Missing greenlet>=3.0.0 in requirements.txt - required by SQLAlchemy for async context switching
-  artifacts:
-    - path: "packages/api/app/services/digest_service.py"
-      issue: "Line 386: content = await self.session.get(Content, content_id) - no eager loading. Line 408: source=content.source - triggers lazy load"
-      line: "386, 408"
-    - path: "packages/api/app/services/digest_selector.py"
-      issue: "Uses selectinload() correctly in _get_emergency_candidates() - this is the pattern to follow"
-    - path: "packages/api/requirements.txt"
-      issue: "Missing greenlet>=3.0.0 dependency"
-  missing:
-    - "Add selectinload(Content.source) to digest query in _build_digest_response()"
-    - "Add 'from sqlalchemy.orm import selectinload' import"
-    - "Add greenlet>=3.0.0 to requirements.txt and pyproject.toml"
-  fix_plans:
-    - ".planning/phases/02-frontend/02-09-PLAN.md"
-    - ".planning/phases/02-frontend/02-10-PLAN.md"
-  debug_sessions:
-    - ".planning/debug/sqlalchemy-missing-greenlet.md"
-    - ".planning/debug/async-db-session-investigation.md"
+    test: 1
+    root_cause: |
+      TWO ISSUES IDENTIFIED:
+      1. CODE: digest_service.py line 386-408 uses session.get() without eager loading, then accesses content.source which triggers lazy loading in async context
+      2. DEPENDENCY: Missing greenlet>=3.0.0 in requirements.txt - required by SQLAlchemy for async context switching
+    artifacts:
+      - path: "packages/api/app/services/digest_service.py"
+        issue: "Line 386: content = await self.session.get(Content, content_id) - no eager loading. Line 408: source=content.source - triggers lazy load"
+        line: "386, 408"
+      - path: "packages/api/app/services/digest_selector.py"
+        issue: "Uses selectinload() correctly in _get_emergency_candidates() - this is the pattern to follow"
+      - path: "packages/api/requirements.txt"
+        issue: "Missing greenlet>=3.0.0 dependency"
+    missing:
+      - "Add selectinload(Content.source) to digest query in _build_digest_response()"
+      - "Add 'from sqlalchemy.orm import selectinload' import"
+      - "Add greenlet>=3.0.0 to requirements.txt and pyproject.toml"
+    fix_plans:
+      - ".planning/phases/02-frontend/02-09-PLAN.md"
+      - ".planning/phases/02-frontend/02-10-PLAN.md"
+    debug_sessions:
+      - ".planning/debug/sqlalchemy-missing-greenlet.md"
+      - ".planning/debug/async-db-session-investigation.md"
 
 ## Gaps
 

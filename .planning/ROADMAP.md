@@ -3,7 +3,7 @@
 **Project:** Facteur  
 **Strategic Goal:** Pivot from Feed-First to Digest-First experience  
 **Estimated Duration:** ~35h development + QA  
-**Last Updated:** 2026-02-03 (Phase 2 Execution Complete)
+**Last Updated:** 2026-02-04 (Phase 2 UI/UX Rework In Progress)
 
 ---
 
@@ -107,6 +107,7 @@ New Components:
 
 ### Technical Approach
 
+#### Original Approach (Implemented but being reworked)
 ```
 Existing Code Reuse:
 ├── ContentCard component → Adapt for 3 actions
@@ -121,25 +122,68 @@ New Components:
 └── ArticleActionBar (adapt for 3 actions)
 ```
 
+#### Revised Approach (In Progress)
+Based on user feedback, we're pivoting to better reuse existing components:
+
+```
+Better Code Reuse:
+├── BriefingSection → Reuse as base for digest (5 articles instead of 3)
+├── FeedCard → Extend footer with Save/NotInterested (no new footer)
+├── PersonalizationSheet → Use directly for "Not Interested" action
+├── Feed header style → Use same header pattern (FacteurLogo centered)
+└── Streak display → Keep existing from closure work
+
+Refactored Components:
+├── DigestBriefingSection (new, extends BriefingSection)
+├── FeedCard (extend footer with onSave, onNotInterested callbacks)
+├── DigestScreen (refactored to use DigestBriefingSection)
+└── ClosureScreen (keep existing implementation)
+```
+
+**Key Changes from Original:**
+- ❌ Remove: DigestCard (redundant with FeedCard), separate ArticleActionBar
+- ❌ Remove: "Read" button (redundant with tap-to-open)
+- ❌ Remove: Separate footer below FeedCard
+- ✅ Keep: BriefingSection container design (gradient, 24px radius, shadow)
+- ✅ Keep: ClosureScreen and streak celebration
+- ✅ Add: Save/NotInterested directly in FeedCard footer
+- ✅ Add: Segmented progress bar in BriefingSection header
+
 ### Plans
 
+#### Original Implementation (Complete)
 - [x] **02-01**: Digest screen with article cards and progress bar — Wave 1
 - [x] **02-02**: Article actions (Read/Save/Not Interested) + Personalization integration — Wave 1
 - [x] **02-03**: Closure screen with animation and streak celebration — Wave 2
 - [x] **02-04**: Feed relegation and navigation flows — Wave 3
 - [x] **02-06**: Backend digest performance fix (gap closure for timeout issue) — Wave 1
 
-**Dependencies:** Requires Phase 1 API endpoints ✅  
+#### UI/UX Rework (New - In Progress)
+- [ ] **02-07**: Refactor to reuse BriefingSection with proper FeedCard integration — Wave 1
+  - **Context:** `.planning/phases/02-frontend/02-frontend-UI_REWORK_CONTEXT.md`
+  - Reuse existing BriefingSection component (premium container design)
+  - Integrate Save/NotInterested in FeedCard footer (no new footer)
+  - Remove redundant "Read" button
+  - Add segmented progress bar in header
+  - Use Feed-style header with "L'Essentiel du Jour"
+  
+- [ ] **02-08**: Decommission old BriefingSection from Feed — Wave 2
+  - Remove BriefingSection from FeedScreen
+  - Mark old code as @deprecated
+  - Clean up FeedRepository briefing parsing
+  - Backend API cleanup (optional)
+
+**Dependencies:** Requires Phase 1 API endpoints ✅
 **Wave Structure:**
 | Wave | Plans | Dependencies |
 |------|-------|--------------|
-| 1 | 02-01, 02-02, 02-06 | 02-06 has no dependencies (gap closure) |
-| 2 | 02-03 | 02-02 (action completion) |
-| 3 | 02-04 | 02-03 (closure navigation) |
+| 1 | 02-07 | None (UI rework of 02-01/02-02) |
+| 2 | 02-08 | 02-07 (must validate new digest first) |
 
-**Status:** ✅ Complete (verified 2026-02-03)  
-**Verification:** 7/7 must-haves verified — `02-frontend-VERIFICATION.md`
-**Gap:** Digest API timeout blocking production — see `02-UAT.md` for diagnosis
+**Status:** ⚠️ UI/UX Rework Required (see `02-frontend-UI_REWORK_CONTEXT.md`)
+**Original Verification:** 7/7 must-haves verified — `02-frontend-VERIFICATION.md`
+**Rework Reason:** Better reuse of existing BriefingSection component, consistent with Feed design
+**Gap:** Digest API timeout resolved — see `02-UAT.md`
 
 ---
 
