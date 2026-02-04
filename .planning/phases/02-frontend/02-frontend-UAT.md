@@ -1,5 +1,5 @@
 ---
-status: testing
+status: diagnosed
 phase: 02-frontend
 source:
   - .planning/phases/02-frontend/02-01-PLAN.md
@@ -7,13 +7,13 @@ source:
   - .planning/phases/02-frontend/02-03-SUMMARY.md
   - .planning/phases/02-frontend/02-04-SUMMARY.md
 started: 2026-02-01T23:15:00Z
-updated: 2026-02-01T23:20:00Z
+updated: 2026-02-04T12:05:00Z
 ---
 
 ## Current Test
 
 number: 1
-name: Digest Screen - Loading Issue (RETEST #6)
+name: Digest Screen - Loading (NEW ISSUE)
 expected: |
   When you open the app (after login), you should see:
   1. Screen titled "Votre Essentiel" 
@@ -22,10 +22,13 @@ expected: |
   4. Each card shows: article thumbnail, title, source name/logo, and a selection reason badge
   5. Cards have rank numbers (1-5) visible
 note: |
-  Backend now running locally (confirmed).
-  Timeout increased to 60s but still infinite loading.
-  Need to investigate why digest request hangs.
-awaiting: user response
+  NEW BUG REPORTED (2026-02-04):
+  - SQLAlchemy MissingGreenlet error when loading digest
+  - DioException: 500 status code, app crashes
+  - Different from previous timeout issue
+  
+  Ready for UI/UX testing once backend issue resolved.
+status: issue_reported
 
 ## Tests
 
@@ -38,9 +41,11 @@ expected: |
   4. Each card shows: article thumbnail, title, source name/logo, and a selection reason badge
   5. Cards have rank numbers (1-5) visible
 result: issue
-reported: "Infinite loading on Essentiel feed. API timeout errors for /digest and /users/streak endpoints (30s connection timeout)"
+reported: "Application crashes with MissingGreenlet error and DioException 500 when loading digest"
 severity: blocker
-note: "Backend connectivity issue - requests timing out"
+note: |
+  Backend async/sync mismatch in SQLAlchemy.
+  Error: sqlalchemy.exc.MissingGreenlet - greenlet_spawn has not been called.
 
 ### 2. Article Action Buttons
 expected: |
@@ -145,31 +150,60 @@ result: pending
 
 total: 12
 passed: 0
-issues: 1
+issues: 2
 pending: 11
 skipped: 0
 
-## Gaps
+## Gaps (Backend Timeout - RESOLVED)
 
 - truth: "Digest screen loads and displays 5 articles with progress bar"
-  status: diagnosed
-  reason: "Token attaches correctly, but API request times out after 30s. Same issue on production Railway backend."
+  status: fixed
+  reason: "Backend digest generation timeout resolved"
   severity: blocker
   test: 1
-  root_cause: "Digest generation on backend hangs indefinitely (>30s). Likely caused by: (1) missing user sources causing fallback loop, (2) slow database queries, or (3) digest_selector algorithm blocking."
+  root_cause: "Digest generation on backend was hanging indefinitely (>30s) due to missing database indexes and no timeout protection."
+  fix_applied: |
+    1. Added database indexes for digest queries (ix_contents_source_published, ix_contents_curated_published, ix_user_content_status_exclusion, ix_sources_theme)
+    2. Added 8-second timeout protection to digest selector with emergency fallback
+    3. Reduced candidate pool from 200 to 50 articles for faster selection
+    4. Added circuit breaker pattern to API endpoint for resilience
   artifacts:
-    - path: "apps/mobile/lib/features/digest/repositories/digest_repository.dart"
-      issue: "GET /api/digest times out after 30s"
     - path: "packages/api/app/services/digest_service.py"
-      issue: "get_or_create_digest() likely hanging during generation"
+      change: "Added asyncio.wait_for timeout protection and circuit breaker"
     - path: "packages/api/app/services/digest_selector.py"
-      issue: "select_for_user() may have infinite loop or slow query"
+      change: "Optimized query performance, added timeout handling"
+    - path: "packages/api/app/routers/digest.py"
+      change: "Added circuit breaker with 503 fail-fast response"
+  resolved_date: "2026-02-04"
+  debug_session: ".planning/debug/resolved/digest-timeout-investigation.md"
+
+  - truth: "Digest screen loads and displays 5 articles with progress bar"
+    status: fix_planned
+    reason: "User reported: Application crashes with MissingGreenlet error and DioException 500 when loading digest"
+    severity: blocker
+  test: 1
+  root_cause: |
+    TWO ISSUES IDENTIFIED:
+    1. CODE: digest_service.py line 386-408 uses session.get() without eager loading, then accesses content.source which triggers lazy loading in async context
+    2. DEPENDENCY: Missing greenlet>=3.0.0 in requirements.txt - required by SQLAlchemy for async context switching
+  artifacts:
+    - path: "packages/api/app/services/digest_service.py"
+      issue: "Line 386: content = await self.session.get(Content, content_id) - no eager loading. Line 408: source=content.source - triggers lazy load"
+      line: "386, 408"
+    - path: "packages/api/app/services/digest_selector.py"
+      issue: "Uses selectinload() correctly in _get_emergency_candidates() - this is the pattern to follow"
+    - path: "packages/api/requirements.txt"
+      issue: "Missing greenlet>=3.0.0 dependency"
   missing:
-    - "Verify user has sources configured (check user_sources table)"
-    - "Test other endpoints (/api/feed) to confirm token works"
-    - "Check Railway backend logs for errors during digest requests"
-    - "Profile digest_selector performance"
-  debug_session: ".planning/debug/digest-timeout-investigation.md"
+    - "Add selectinload(Content.source) to digest query in _build_digest_response()"
+    - "Add 'from sqlalchemy.orm import selectinload' import"
+    - "Add greenlet>=3.0.0 to requirements.txt and pyproject.toml"
+  fix_plans:
+    - ".planning/phases/02-frontend/02-09-PLAN.md"
+    - ".planning/phases/02-frontend/02-10-PLAN.md"
+  debug_sessions:
+    - ".planning/debug/sqlalchemy-missing-greenlet.md"
+    - ".planning/debug/async-db-session-investigation.md"
 
 ## Gaps
 
