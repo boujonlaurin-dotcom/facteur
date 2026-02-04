@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
-import '../../sources/models/source_model.dart';
+import '../../feed/widgets/personalization_sheet.dart';
 import '../../gamification/widgets/streak_indicator.dart';
+import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_provider.dart';
-import '../widgets/digest_card.dart';
-import '../widgets/not_interested_sheet.dart';
+import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_welcome_modal.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 5 articles
+/// Uses DigestBriefingSection with Feed-style header and segmented progress bar
 class DigestScreen extends ConsumerStatefulWidget {
   const DigestScreen({super.key});
 
@@ -94,6 +97,37 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     context.go(RoutePaths.digest);
   }
 
+  void _openArticle(DigestItem item) {
+    // Mark as read automatically when tapped
+    HapticFeedback.mediumImpact();
+    ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
+
+    // Navigate to article detail
+    final content = _convertToContent(item);
+    context.push('/feed/content/${item.contentId}', extra: content);
+  }
+
+  void _handleSave(DigestItem item) {
+    HapticFeedback.lightImpact();
+    ref.read(digestProvider.notifier).applyAction(
+          item.contentId,
+          item.isSaved ? 'unsave' : 'save',
+        );
+  }
+
+  void _handleNotInterested(DigestItem item) {
+    HapticFeedback.lightImpact();
+    // Open PersonalizationSheet (same as Feed)
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PersonalizationSheet(
+        content: _convertToContent(item),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint('DigestScreen: build() called');
@@ -119,64 +153,56 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       children: [
         Scaffold(
           backgroundColor: colors.backgroundPrimary,
-          appBar: AppBar(
-            backgroundColor: colors.backgroundPrimary,
-            elevation: 0,
-            centerTitle: false,
-            title: Text(
-              'Votre Essentiel',
-              style: TextStyle(
-                fontFamily: 'Fraunces', // Use Fraunces font family
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: colors.textPrimary,
-              ),
-            ),
-            leading: const Padding(
-              padding: EdgeInsets.only(left: 16),
-              child: StreakIndicator(),
-            ),
-            leadingWidth: 90,
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(4),
-              child: _buildProgressBar(digestAsync, colors),
-            ),
-          ),
           body: RefreshIndicator(
             onRefresh: () async {
               await ref.read(digestProvider.notifier).refreshDigest();
             },
             color: colors.primary,
-            child: digestAsync.when(
-              data: (digest) {
-                if (digest == null) {
-                  return _buildEmptyState(colors);
-                }
+            child: CustomScrollView(
+              slivers: [
+                // Feed-style header with logo and streak
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space6,
+                      vertical: FacteurSpacing.space4,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        StreakIndicator(),
+                        FacteurLogo(size: 32),
+                        // Empty space to balance layout
+                        SizedBox(width: 48),
+                      ],
+                    ),
+                  ),
+                ),
 
-                final items = digest.items;
-                if (items.isEmpty) {
-                  return _buildEmptyState(colors);
-                }
+                // Digest Briefing Section
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: digestAsync.when(
+                      data: (digest) {
+                        if (digest == null || digest.items.isEmpty) {
+                          return _buildEmptyState(colors);
+                        }
 
-                return ListView.separated(
-                  padding: const EdgeInsets.all(FacteurSpacing.space3),
-                  itemCount: items.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: FacteurSpacing.space3),
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    return DigestCard(
-                      item: item,
-                      onTap: () => _openDetail(context, item),
-                      onAction: (action) =>
-                          _handleAction(context, ref, item, action),
-                    );
-                  },
-                );
-              },
-              loading: () => _buildLoadingState(colors),
-              error: (error, stack) =>
-                  _buildErrorState(context, ref, colors, error),
+                        return DigestBriefingSection(
+                          items: digest.items,
+                          onItemTap: _openArticle,
+                          onSave: _handleSave,
+                          onNotInterested: _handleNotInterested,
+                        );
+                      },
+                      loading: () => _buildLoadingState(colors),
+                      error: (error, stack) =>
+                          _buildErrorState(context, ref, colors, error),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -189,81 +215,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           ),
       ],
     );
-  }
-
-  Widget _buildProgressBar(
-      AsyncValue<DigestResponse?> digestAsync, FacteurColors colors) {
-    final processedCount = digestAsync.value?.items
-            .where((item) => item.isRead || item.isDismissed)
-            .length ??
-        0;
-    final totalCount = digestAsync.value?.items.length ?? 5;
-    final progress = totalCount > 0 ? processedCount / totalCount : 0.0;
-
-    return Container(
-      height: 4,
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(2),
-        child: LinearProgressIndicator(
-          value: progress,
-          backgroundColor: colors.backgroundSecondary,
-          valueColor: AlwaysStoppedAnimation<Color>(colors.primary),
-        ),
-      ),
-    );
-  }
-
-  void _openDetail(BuildContext context, DigestItem item) {
-    // Navigate to content detail screen
-    final content = Content(
-      id: item.contentId,
-      title: item.title,
-      url: item.url,
-      thumbnailUrl: item.thumbnailUrl,
-      description: item.description,
-      contentType: _mapContentType(item.contentType),
-      durationSeconds: item.durationSeconds,
-      publishedAt: item.publishedAt ?? DateTime.now(),
-      source: Source(
-        id: item.contentId, // Use contentId as fallback for source id
-        name: item.source?.name ?? 'Source inconnue',
-        type: _mapSourceType(item.contentType),
-        logoUrl: item.source?.logoUrl,
-        theme: item.source?.theme,
-      ),
-    );
-    context.push('/feed/content/${item.contentId}', extra: content);
-  }
-
-  void _handleAction(
-      BuildContext context, WidgetRef ref, DigestItem item, String action) {
-    if (action == 'not_interested') {
-      _showNotInterestedSheet(context, ref, item);
-    } else {
-      ref.read(digestProvider.notifier).applyAction(item.contentId, action);
-    }
-  }
-
-  Future<void> _showNotInterestedSheet(
-      BuildContext context, WidgetRef ref, DigestItem item) async {
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => NotInterestedSheet(
-        item: item,
-        onConfirm: () => Navigator.pop(context, true),
-        onCancel: () => Navigator.pop(context, false),
-      ),
-    );
-
-    if (confirmed == true) {
-      await ref
-          .read(digestProvider.notifier)
-          .applyAction(item.contentId, 'not_interested');
-    }
   }
 
   Widget _buildLoadingState(FacteurColors colors) {
@@ -320,7 +271,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   }
 
   Widget _buildErrorState(
-      BuildContext context, WidgetRef ref, FacteurColors colors, Object error) {
+    BuildContext context,
+    WidgetRef ref,
+    FacteurColors colors,
+    Object error,
+  ) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -359,30 +314,34 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     );
   }
 
-  ContentType _mapContentType(dynamic type) {
-    if (type == null) return ContentType.article;
-    final str = type.toString().toLowerCase();
-    switch (str) {
-      case 'video':
-        return ContentType.video;
-      case 'audio':
-        return ContentType.audio;
-      case 'youtube':
-        return ContentType.youtube;
-      default:
-        return ContentType.article;
-    }
+  /// Converts DigestItem to Content for navigation and PersonalizationSheet
+  Content _convertToContent(DigestItem item) {
+    return Content(
+      id: item.contentId,
+      title: item.title,
+      url: item.url,
+      thumbnailUrl: item.thumbnailUrl,
+      description: item.description,
+      contentType: item.contentType,
+      durationSeconds: item.durationSeconds,
+      publishedAt: item.publishedAt ?? DateTime.now(),
+      source: Source(
+        id: item.source?.id ?? item.contentId,
+        name: item.source?.name ?? 'Source inconnue',
+        type: _mapSourceType(item.contentType),
+        logoUrl: item.source?.logoUrl,
+        theme: item.source?.theme,
+      ),
+    );
   }
 
-  SourceType _mapSourceType(dynamic type) {
-    if (type == null) return SourceType.article;
-    final str = type.toString().toLowerCase();
-    switch (str) {
-      case 'video':
+  SourceType _mapSourceType(ContentType type) {
+    switch (type) {
+      case ContentType.video:
         return SourceType.video;
-      case 'audio':
+      case ContentType.audio:
         return SourceType.podcast;
-      case 'youtube':
+      case ContentType.youtube:
         return SourceType.youtube;
       default:
         return SourceType.article;
