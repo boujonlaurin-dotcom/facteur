@@ -45,7 +45,6 @@ class FeedRepository {
         final data = response.data;
 
         List<Content> itemsList = [];
-        final List<DailyTop3Item> briefingList = [];
 
         // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
         if (data is List) {
@@ -74,19 +73,8 @@ class FeedRepository {
             }
           }
 
-          final briefingRaw = data['briefing'];
-          if (briefingRaw is List) {
-            for (final e in briefingRaw) {
-              try {
-                if (e is Map<String, dynamic>) {
-                  briefingList.add(DailyTop3Item.fromJson(e));
-                }
-              } catch (err) {
-                print(
-                    'FeedRepository: Skipping corrupt item in briefing: $err');
-              }
-            }
-          }
+          // Note: briefing is no longer parsed - digest moved to dedicated tab
+          // The briefing field in response is ignored
         } else if (data == null) {
           // Empty response
           itemsList = [];
@@ -98,7 +86,7 @@ class FeedRepository {
 
         return FeedResponse(
           items: itemsList,
-          briefing: briefingList,
+          briefing: const [], // Always empty - digest moved to dedicated tab
           pagination: Pagination(
             page: page,
             perPage: limit,
@@ -115,6 +103,9 @@ class FeedRepository {
     }
   }
 
+  /// @deprecated Briefing has moved to the dedicated Digest tab.
+  /// Use digest repository's applyAction with read status instead.
+  @Deprecated('Briefing moved to Digest tab. Use digest repository instead.')
   Future<void> markBriefingAsRead(String contentId) async {
     await _apiClient.dio.post('feed/briefing/$contentId/read');
   }
