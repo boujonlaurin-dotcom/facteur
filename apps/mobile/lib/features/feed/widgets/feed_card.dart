@@ -10,12 +10,18 @@ class FeedCard extends StatelessWidget {
   final Content content;
   final VoidCallback? onTap;
   final VoidCallback? onPersonalize;
+  final VoidCallback? onSave;
+  final VoidCallback? onNotInterested;
+  final bool isSaved;
 
   const FeedCard({
     super.key,
     required this.content,
     this.onTap,
     this.onPersonalize,
+    this.onSave,
+    this.onNotInterested,
+    this.isSaved = false,
   });
 
   @override
@@ -193,37 +199,76 @@ class FeedCard extends StatelessWidget {
                         ),
                       ),
 
-                      // Actions (Unified Personalization Button - Discrete)
-                      if (onPersonalize != null)
-                        InkWell(
-                          onTap: onPersonalize,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  PhosphorIcons.question(
-                                      PhosphorIconsStyle.regular),
-                                  size: 14,
-                                  // More discrete color
-                                  color: colors.textTertiary,
+                      // Actions (Save, NotInterested, Personalize)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Save button
+                          if (onSave != null)
+                            InkWell(
+                              onTap: onSave,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  isSaved
+                                      ? PhosphorIcons.bookmark(
+                                          PhosphorIconsStyle.fill)
+                                      : PhosphorIcons.bookmark(),
+                                  size: 20,
+                                  color: isSaved
+                                      ? colors.primary
+                                      : colors.textSecondary,
                                 ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Personnalisation',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    // More discrete color
-                                    color: colors.textTertiary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ),
+
+                          // NotInterested button
+                          if (onNotInterested != null)
+                            InkWell(
+                              onTap: onNotInterested,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  PhosphorIcons.eyeSlash(),
+                                  size: 20,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ),
+
+                          // Personalize button (for Feed)
+                          if (onPersonalize != null)
+                            InkWell(
+                              onTap: onPersonalize,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 4),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.question(
+                                          PhosphorIconsStyle.regular),
+                                      size: 14,
+                                      color: colors.textTertiary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Personnalisation',
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colors.textTertiary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
