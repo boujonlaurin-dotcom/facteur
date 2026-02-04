@@ -14,14 +14,21 @@ security = HTTPBearer()
 # Cache pour les clés JWKS
 _jwks_cache = None
 
+# Cache pour le statut email confirmé (user_id -> (confirmed, timestamp))
+# Simple TTL cache pour réduire les requêtes DB pendant les pics de trafic
+_email_confirmed_cache = {}
+_EMAIL_CACHE_TTL_SECONDS = 300  # 5 minutes
+
 import certifi
+import time
 
 
 async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, timeout: float = 5.0) -> bool:
     """
-    Check if user email is confirmed in database with retry logic.
+    Check if user email is confirmed in database with retry logic and caching.
     
     Handles connection pool timeouts and stale connections gracefully.
+    Uses in-memory TTL cache to reduce database load during traffic spikes.
     
     Args:
         user_id: The Supabase user ID
@@ -35,11 +42,23 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
     from sqlalchemy import text
     from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
     
+    global _email_confirmed_cache
+    
+    # Check cache first
+    current_time = time.time()
+    if user_id in _email_confirmed_cache:
+        cached_result, timestamp = _email_confirmed_cache[user_id]
+        if current_time - timestamp < _EMAIL_CACHE_TTL_SECONDS:
+            return cached_result
+        # Cache expired, remove it
+        del _email_confirmed_cache[user_id]
+    
+    # Query database with retries
     for attempt in range(max_retries):
         try:
             # Use asyncio.wait_for to add timeout to the entire session operation
             async with async_session_maker() as session:
-                # Execute query with timeout
+                # Execute query with shorter timeout to avoid holding connections
                 result = await asyncio.wait_for(
                     session.execute(
                         text("SELECT email_confirmed_at FROM auth.users WHERE id = :uid"),
@@ -48,9 +67,12 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
                     timeout=timeout
                 )
                 row = result.fetchone()
-                if row is not None and row[0] is not None:
-                    return True
-                return False
+                is_confirmed = row is not None and row[0] is not None
+                
+                # Cache the result
+                _email_confirmed_cache[user_id] = (is_confirmed, current_time)
+                
+                return is_confirmed
                 
         except (asyncio.TimeoutError, SQLAlchemyTimeoutError) as timeout_err:
             # Connection pool timeout - retry with backoff

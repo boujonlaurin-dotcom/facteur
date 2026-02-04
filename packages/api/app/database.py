@@ -34,13 +34,15 @@ if _use_queue_pool:
         pool_pre_ping=True,
         # Use AsyncAdaptedQueuePool for proper connection management
         poolclass=AsyncAdaptedQueuePool,
-        # Pool size optimized for Railway/Supabase
-        pool_size=5,
-        max_overflow=10,
-        # Connection timeout - fail fast if pool exhausted
-        pool_timeout=30,
-        # Recycle connections after 1 hour to prevent stale connections
-        pool_recycle=3600,
+        # Pool size optimized for Supabase PgBouncer (60 connection limit shared)
+        # Conservative sizing to avoid overwhelming Supabase connection pooler
+        pool_size=3,
+        max_overflow=5,
+        # Connection timeout - fail fast if pool exhausted to free up connections
+        pool_timeout=10,
+        # Recycle connections more frequently to prevent Supabase from killing them
+        # Supabase PgBouncer has idle timeout, recycle before that
+        pool_recycle=600,
         # Connect args for PgBouncer compatibility
         connect_args={
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
