@@ -159,11 +159,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Get the count of processed items (read or dismissed)
+  /// Get the count of processed items (read, dismissed, or saved)
   int get processedCount {
     final digest = state.value;
     if (digest == null) return 0;
-    return digest.items.where((item) => item.isRead || item.isDismissed).length;
+    return digest.items
+        .where((item) => item.isRead || item.isDismissed || item.isSaved)
+        .length;
   }
 
   /// Get progress as a fraction (0.0 to 1.0)
@@ -178,8 +180,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final digest = state.value;
     if (digest == null || digest.isCompleted) return;
 
-    final allProcessed =
-        digest.items.every((item) => item.isRead || item.isDismissed);
+    final allProcessed = digest.items
+        .every((item) => item.isRead || item.isDismissed || item.isSaved);
     if (allProcessed) {
       completeDigest();
     }

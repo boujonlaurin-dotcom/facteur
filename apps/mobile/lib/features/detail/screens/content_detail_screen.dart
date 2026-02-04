@@ -178,9 +178,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ContentStatus.consumed,
       );
 
-      if (mounted) {
-        NotificationService.showSuccess('Marqué comme lu', context: context);
-      }
+      // Silent update - no notification needed as this is tracked automatically
     } catch (e) {
       debugPrint('Error marking as consumed: $e');
     }

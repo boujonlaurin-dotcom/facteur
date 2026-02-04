@@ -135,19 +135,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final digestAsync = ref.watch(digestProvider);
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
-    // Listen for completion to navigate to closure screen
-    ref.listen(digestProvider, (previous, next) {
-      final prevDigest = previous?.value;
-      final nextDigest = next.value;
-
-      if (prevDigest != null &&
-          nextDigest != null &&
-          !prevDigest.isCompleted &&
-          nextDigest.isCompleted) {
-        // Navigate to closure screen when digest completes
-        context.go(RoutePaths.digestClosure, extra: nextDigest.digestId);
-      }
-    });
+    // Note: Auto-navigation to closure screen removed
+    // Users can now stay on the digest screen to re-read articles
 
     return Stack(
       children: [
@@ -176,6 +165,57 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         SizedBox(width: 48),
                       ],
                     ),
+                  ),
+                ),
+
+                // Success banner when digest is completed
+                SliverToBoxAdapter(
+                  child: digestAsync.when(
+                    data: (digest) {
+                      if (digest?.isCompleted == true) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.success.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: colors.success.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                PhosphorIcons.checkCircle(
+                                    PhosphorIconsStyle.fill),
+                                color: colors.success,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Essentiel terminé ! Tu peux relire les articles quand tu veux.',
+                                  style: TextStyle(
+                                    color: colors.success,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
                   ),
                 ),
 

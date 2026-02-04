@@ -37,10 +37,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
   late Animation<double> _buttonsOpacityAnimation;
   late Animation<Offset> _buttonsSlideAnimation;
 
-  Timer? _autoDismissTimer;
-  int _secondsRemaining = 5;
-  bool _isAutoDismissCancelled = false;
-
   DigestCompletionResponse? _completionData;
   bool _isLoadingCompletion = true;
 
@@ -50,7 +46,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _setupAnimations();
     _startAnimationSequence();
     _loadCompletionData();
-    _startAutoDismissTimer();
   }
 
   void _setupAnimations() {
@@ -162,31 +157,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     }
   }
 
-  void _startAutoDismissTimer() {
-    _autoDismissTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_isAutoDismissCancelled) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        _secondsRemaining--;
-      });
-
-      if (_secondsRemaining <= 0) {
-        timer.cancel();
-        _navigateToFeed();
-      }
-    });
-  }
-
-  void _cancelAutoDismiss() {
-    _isAutoDismissCancelled = true;
-    _autoDismissTimer?.cancel();
-  }
-
   void _navigateToFeed() {
-    _cancelAutoDismiss();
     // Replace current route (don't allow back to closure)
     context.go(RoutePaths.feed);
   }
@@ -204,7 +175,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _headlineController.dispose();
     _summaryController.dispose();
     _buttonsController.dispose();
-    _autoDismissTimer?.cancel();
     super.dispose();
   }
 
@@ -226,7 +196,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
               child: FadeTransition(
                 opacity: _headlineOpacityAnimation,
                 child: Text(
-                  'Tu es informé(e) !',
+                  'Tu es à jour !',
                   style: textTheme.displayLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colors.textPrimary,
@@ -313,11 +283,22 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
                       const SizedBox(height: FacteurSpacing.space3),
 
-                      // Text button: Close with auto-dismiss countdown
+                      // Message emphasizing user is up to date
+                      Text(
+                        'Tu es à jour. Tu peux sortir de l\'app en toute sérénité.',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: FacteurSpacing.space3),
+
+                      // Text button: Close
                       TextButton(
                         onPressed: _onClosePressed,
                         child: Text(
-                          'Fermer ${_isAutoDismissCancelled ? '' : "($_secondsRemaining)"}',
+                          'Fermer',
                           style: textTheme.bodyMedium?.copyWith(
                             color: colors.textSecondary,
                           ),

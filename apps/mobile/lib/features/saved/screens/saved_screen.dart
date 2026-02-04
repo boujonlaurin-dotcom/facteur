@@ -122,6 +122,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: FeedCard(
                                   content: content,
+                                  isSaved: true,
                                   onTap: () async {
                                     final uri = Uri.parse(content.url);
                                     if (await canLaunchUrl(uri)) {
@@ -134,6 +135,13 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                         'Impossible d\'ouvrir le lien : ${content.url}',
                                       );
                                     }
+                                  },
+                                  onSave: () async {
+                                    // Remove from saved (unbookmark)
+                                    if (!mounted) return;
+                                    await ref
+                                        .read(savedFeedProvider.notifier)
+                                        .toggleSave(content);
                                   },
                                   onPersonalize:
                                       () {}, // Can be implemented if needed

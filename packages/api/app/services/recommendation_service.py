@@ -472,13 +472,14 @@ class RecommendationService:
             .where(~exists_stmt)
         )
 
-        # Base filter: Priority to Curated sources OR explicitly Followed sources
-        query = query.where(
-            or_(
-                Source.is_curated == True,
-                Source.id.in_(list(followed_source_ids)) if followed_source_ids else False
-            )
-        )
+        # Base filter: Only show content from user's followed sources
+        # Fallback to curated sources only if user has no followed sources
+        if followed_source_ids:
+            # User has followed sources - only show content from these sources
+            query = query.where(Source.id.in_(list(followed_source_ids)))
+        else:
+            # User hasn't followed any sources yet - fallback to curated sources
+            query = query.where(Source.is_curated == True)
         
         # Apply Personalization Filters (Mutes)
         if muted_sources:
