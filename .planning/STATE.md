@@ -91,6 +91,18 @@ All UI/UX adjustments from the rework have been successfully implemented:
 
 ## Completed Work
 
+
+### Frontend Phase — Plan 02-09 Complete (2026-02-04)
+
+**Fix MissingGreenlet Error with Eager Loading**
+
+- ✅ Added `from sqlalchemy.orm import selectinload` import at top level
+- ✅ Replaced `session.get(Content, content_id)` with eager loading query in `_build_digest_response()`
+- ✅ Used `selectinload(Content.source)` pattern to prevent lazy loading in async context
+- ✅ Follows same pattern as `_get_emergency_candidates()` method
+
+See: `.planning/phases/02-frontend/02-09-SUMMARY.md`
+
 ### Frontend Phase — Plan 02-10 Complete (2026-02-04)
 
 **Add greenlet>=3.0.0 Dependency for SQLAlchemy Async Support**
