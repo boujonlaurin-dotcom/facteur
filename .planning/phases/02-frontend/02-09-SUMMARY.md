@@ -55,7 +55,9 @@ completed: 2026-02-04
 ## Accomplishments
 
 - Added `from sqlalchemy.orm import selectinload` import at top level of digest_service.py
-- Replaced `session.get(Content, content_id)` with eager loading query using `selectinload(Content.source)`
+- Fixed TWO locations with MissingGreenlet error:
+  1. `_build_digest_response()` (line ~387) - Replaced `session.get(Content, content_id)` with eager loading query
+  2. `_trigger_personalization_mute()` (line ~487) - Added selectinload for content.source relationship
 - Fixed MissingGreenlet error that occurred when accessing `content.source` in async context
 - Applied same eager loading pattern already used in `_get_emergency_candidates()` method
 - All existing error handling and warning logging preserved
@@ -65,10 +67,13 @@ completed: 2026-02-04
 Each task was committed atomically:
 
 1. **Task 1: Fix eager loading in _build_digest_response()** - `40433d8` (fix)
+2. **Task 2: Fix eager loading in _trigger_personalization_mute()** - `670e49f` (fix) - *Follow-up fix after testing revealed second location*
 
 ## Files Created/Modified
 
-- `packages/api/app/services/digest_service.py` - Added selectinload import and replaced lazy loading with eager loading in _build_digest_response()
+- `packages/api/app/services/digest_service.py` - Added selectinload import and replaced lazy loading with eager loading in TWO methods:
+  - `_build_digest_response()` (line ~387)
+  - `_trigger_personalization_mute()` (line ~487)
 
 ## Decisions Made
 
@@ -80,7 +85,11 @@ None - plan executed exactly as written.
 
 ## Issues Encountered
 
-None. The implementation followed the established pattern in `_get_emergency_candidates()` method.
+**Initial fix incomplete** - The first implementation only fixed `_build_digest_response()` but missed `_trigger_personalization_mute()` which also accessed `content.source` after `session.get()`. This caused the MissingGreenlet error to persist when users marked articles as "not interested" (which triggers the personalization mute). 
+
+**Root cause:** Insufficient code review - only searched for one pattern occurrence instead of auditing all Content.source accesses in the file.
+
+**Resolution:** Second commit (670e49f) applied the same fix to `_trigger_personalization_mute()`. All `session.get(Content, content_id)` calls that access `content.source` have now been replaced with eager loading queries.
 
 ## Next Phase Readiness
 
