@@ -483,8 +483,10 @@ class DigestService:
         content_id: UUID
     ):
         """Trigger personalization mute for content's source/theme."""
-        # Get content to find source and theme
-        content = await self.session.get(Content, content_id)
+        # Get content to find source and theme with eager loading
+        stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
+        result = await self.session.execute(stmt)
+        content = result.scalar_one_or_none()
         if not content or not content.source:
             return
         
