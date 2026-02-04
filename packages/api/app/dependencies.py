@@ -172,8 +172,14 @@ async def get_current_user_id(
 
         # Vérifier si l'email est confirmé
         # Supabase inclut email_confirmed_at dans le payload si l'email est validé
+        # OU email_verified: true dans user_metadata
         email_confirmed_at = payload.get("email_confirmed_at")
-        if not email_confirmed_at:
+        user_metadata = payload.get("user_metadata", {})
+        email_verified = user_metadata.get("email_verified", False)
+        
+        is_email_confirmed = email_confirmed_at is not None or email_verified is True
+        
+        if not is_email_confirmed:
             # On vérifie le provider pour ne pas bloquer les logins sociaux qui pourraient 
             # avoir une structure différente ou être confirmés d'office
             app_metadata = payload.get("app_metadata", {})
