@@ -31,8 +31,6 @@ import '../providers/user_bias_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../../progress/widgets/progression_card.dart';
 
-import '../widgets/briefing_section.dart';
-
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
   const FeedScreen({super.key});
@@ -136,8 +134,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
 
     // Story 4.7: Detect skips
-    // Estimate: Briefing ~400px, Card ~350px
-    final firstVisibleIndex = ((currentScroll - 400) / 350).floor();
+    // Estimate: Card ~350px (no briefing section in feed)
+    final firstVisibleIndex = (currentScroll / 350).floor();
     if (firstVisibleIndex > 0) {
       final state = ref.read(feedProvider).value;
       if (state != null) {
@@ -281,7 +279,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     feedAsync.when(
                       data: (state) {
                         final contents = state.items;
-                        final briefing = state.briefing;
 
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
@@ -304,8 +301,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                         // Calculer le childCount - TOUJOURS utiliser la formule normale
                         // Le blocage est géré dans le builder, pas par le childCount
-                        final int effectiveChildCount = 1 +
-                            contents.length +
+                        final int effectiveChildCount = contents.length +
                             1 +
                             (showCaughtUp ? 1 : 0) +
                             (showingNudge ? 1 : 0);
@@ -317,23 +313,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             key: ValueKey('feed_list_caught_up_$showCaughtUp'),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
-                                // 0: Briefing
-                                if (index == 0) {
-                                  if (briefing.isNotEmpty) {
-                                    return BriefingSection(
-                                      briefing: briefing,
-                                      onItemTap: (item) =>
-                                          _showArticleModal(item.content),
-                                      onPersonalize: (item) =>
-                                          _showPersonalizationSheet(
-                                              context, item.content),
-                                    );
-                                  } else {
-                                    return const SizedBox.shrink();
-                                  }
-                                }
-
-                                final listIndex = index - 1;
+                                final listIndex = index;
 
                                 // Interleaving logic - calculer l'offset pour les éléments intercalés
                                 int contentOffset = 0;
