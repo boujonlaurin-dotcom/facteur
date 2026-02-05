@@ -32,6 +32,7 @@ from app.models.user import UserProfile, UserInterest, UserSubtopic
 from app.models.enums import ContentStatus
 from app.services.recommendation_service import RecommendationService
 from app.services.recommendation.scoring_engine import ScoringContext
+from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = structlog.get_logger()
 
@@ -98,7 +99,7 @@ class DigestSelector:
         self, 
         user_id: UUID, 
         limit: int = 5,
-        hours_lookback: int = 48
+        hours_lookback: int = 168
     ) -> List[DigestItem]:
         """Sélectionne les articles pour le digest d'un utilisateur.
         
@@ -147,21 +148,21 @@ class DigestSelector:
             
             # 3. Scorer les candidats
             step_start = time.time()
-            scored_candidates = await self._score_candidates(candidates, context)
+            scored_candidates_with_bonus = await self._score_candidates(candidates, context)
             scoring_time = time.time() - step_start
-            logger.info("digest_selector_scoring_done", user_id=str(user_id), count=len(scored_candidates), duration_ms=round(scoring_time * 1000, 2))
+            logger.info("digest_selector_scoring_done", user_id=str(user_id), count=len(scored_candidates_with_bonus), duration_ms=round(scoring_time * 1000, 2))
             
             # 4. Sélectionner avec contraintes de diversité
             step_start = time.time()
             selected = self._select_with_diversity(
-                scored_candidates=scored_candidates,
+                scored_candidates=scored_candidates_with_bonus,
                 target_count=limit
             )
             diversity_time = time.time() - step_start
             
             # 5. Construire les résultats
             digest_items = []
-            for i, (content, score, reason) in enumerate(selected, 1):
+            for i, (content, score, reason, recency_bonus) in enumerate(selected, 1):
                 digest_items.append(DigestItem(
                     content=content,
                     score=score,
@@ -301,7 +302,7 @@ class DigestSelector:
         
         candidates = []
         
-        # Étape 1: Articles des sources suivies
+        # Étape 1: Articles des sources suivies (PRIORITY)
         if context.followed_source_ids:
             user_sources_query = (
                 select(Content)
@@ -332,87 +333,112 @@ class DigestSelector:
             user_candidates = list(result.scalars().all())
             candidates.extend(user_candidates)
             
-            logger.debug(
+            logger.info(
                 "digest_candidates_user_sources",
                 user_id=str(user_id),
-                count=len(user_candidates)
+                count=len(user_candidates),
+                lookback_hours=hours_lookback
             )
         
+        # Track user source count separately for fallback decision
+        user_source_count = len(candidates)
+        
         # Étape 2: Fallback aux sources curatées si nécessaire
-        # OPTIMIZATION: Reduced from incremental +24h to direct max lookback
-        # Previous logic: 48h -> 72h -> 96h -> 120h -> 144h -> 168h (up to 6 iterations)
-        # New logic: 48h -> 168h (max 2 iterations) to minimize database round trips
+        # CRITICAL FIX: Only use curated fallback if user sources < 3 AND total < min_pool_size
+        # This ensures users see their followed sources even if they're older
         max_lookback = 168  # 7 jours max
         fallback_iterations = 0
         
-        for current_lookback in [hours_lookback, max_lookback]:
-            fallback_iterations += 1
-            
-            if len(candidates) >= min_pool_size:
-                break
+        # Only enter fallback if we have fewer than 3 user sources AND need more
+        if user_source_count < 3 and len(candidates) < min_pool_size:
+            for current_lookback in [hours_lookback, max_lookback]:
+                fallback_iterations += 1
                 
-            needed = min_pool_size - len(candidates)
-            existing_ids = {c.id for c in candidates}
-            since_fallback = datetime.datetime.utcnow() - datetime.timedelta(hours=current_lookback)
-            
-            fallback_query = (
-                select(Content)
-                .join(Content.source)
-                .options(selectinload(Content.source))
-                .where(
-                    ~excluded_stmt,
-                    Content.published_at >= since_fallback,
-                    Source.is_curated == True,
-                    # Exclure les articles déjà sélectionnés
-                    Content.id.notin_(list(existing_ids)) if existing_ids else True,
-                    # Respecter les mutes même en fallback
-                    Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
-                    ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
-                )
-                .order_by(Content.published_at.desc())
-                .limit(needed * 3)  # Marge pour le scoring/diversité
-            )
-            
-            # Filtrage des topics muets
-            if context.muted_topics:
-                fallback_query = fallback_query.where(
-                    or_(
-                        Content.topics.is_(None),
-                        ~Content.topics.overlap(list(context.muted_topics))
+                if len(candidates) >= min_pool_size:
+                    break
+                    
+                needed = min_pool_size - len(candidates)
+                existing_ids = {c.id for c in candidates}
+                since_fallback = datetime.datetime.utcnow() - datetime.timedelta(hours=current_lookback)
+                
+                fallback_query = (
+                    select(Content)
+                    .join(Content.source)
+                    .options(selectinload(Content.source))
+                    .where(
+                        ~excluded_stmt,
+                        Content.published_at >= since_fallback,
+                        Source.is_curated == True,
+                        # Exclure les articles déjà sélectionnés
+                        Content.id.notin_(list(existing_ids)) if existing_ids else True,
+                        # Respecter les mutes même en fallback
+                        Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
+                        ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
                     )
+                    .order_by(Content.published_at.desc())
+                    .limit(needed * 3)  # Marge pour le scoring/diversité
                 )
-            
-            # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
-            if context.user_interests and current_lookback == hours_lookback:
-                fallback_query = fallback_query.where(
-                    Source.theme.in_(list(context.user_interests))
+                
+                # Filtrage des topics muets
+                if context.muted_topics:
+                    fallback_query = fallback_query.where(
+                        or_(
+                            Content.topics.is_(None),
+                            ~Content.topics.overlap(list(context.muted_topics))
+                        )
+                    )
+                
+                # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
+                if context.user_interests and current_lookback == hours_lookback:
+                    fallback_query = fallback_query.where(
+                        Source.theme.in_(list(context.user_interests))
+                    )
+                
+                result = await self.session.execute(fallback_query)
+                fallback_candidates = list(result.scalars().all())
+                candidates.extend(fallback_candidates)
+                
+                curated_count = len(candidates) - user_source_count
+                
+                logger.info(
+                    "digest_candidates_fallback_iteration",
+                    user_id=str(user_id),
+                    iteration=fallback_iterations,
+                    lookback_hours=current_lookback,
+                    fetched_count=len(fallback_candidates),
+                    total_count=len(candidates),
+                    user_sources=user_source_count,
+                    curated_sources=curated_count,
+                    reason="user_sources_below_threshold_3"
                 )
-            
-            result = await self.session.execute(fallback_query)
-            fallback_candidates = list(result.scalars().all())
-            candidates.extend(fallback_candidates)
-            
+        else:
             logger.info(
-                "digest_candidates_fallback_iteration",
+                "digest_candidates_no_fallback_needed",
                 user_id=str(user_id),
-                iteration=fallback_iterations,
-                lookback_hours=current_lookback,
-                fetched_count=len(fallback_candidates),
-                total_count=len(candidates)
+                user_source_count=user_source_count,
+                total_candidates=len(candidates),
+                min_pool_size=min_pool_size
             )
             
         if len(candidates) >= min_pool_size:
+            curated_count = len(candidates) - user_source_count
             logger.info(
-                "digest_candidates_fallback_success",
+                "digest_candidates_pool_complete",
                 user_id=str(user_id),
                 total_candidates=len(candidates),
-                iterations=fallback_iterations
+                user_sources=user_source_count,
+                curated_sources=curated_count,
+                user_to_curated_ratio=f"{user_source_count}:{curated_count}",
+                fallback_iterations=fallback_iterations
             )
         else:
+            curated_count = len(candidates) - user_source_count
             logger.warning(
-                "digest_candidates_fallback_insufficient",
+                "digest_candidates_pool_insufficient",
                 user_id=str(user_id),
                 total_candidates=len(candidates),
+                user_sources=user_source_count,
+                curated_sources=curated_count,
                 required=min_pool_size
             )
             
@@ -422,11 +448,12 @@ class DigestSelector:
         self,
         candidates: List[Content],
         context: DigestContext
-    ) -> List[Tuple[Content, float]]:
-        """Score les candidats en utilisant le ScoringEngine existant.
+    ) -> List[Tuple[Content, float, float]]:
+        """Score les candidats en utilisant le ScoringEngine existant avec bonus de fraîcheur.
         
         Cette méthode utilise le ScoringEngine configuré dans RecommendationService
-        sans aucune modification de l'algorithme de scoring.
+        et ajoute un bonus de fraîcheur hiérarchisé pour favoriser les articles
+        des sources suivies même s'ils sont plus anciens.
         """
         # Construire le ScoringContext pour le moteur existant
         scoring_context = ScoringContext(
@@ -446,8 +473,39 @@ class DigestSelector:
         scored = []
         for content in candidates:
             try:
-                score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
-                scored.append((content, score))
+                # Get base score from ScoringEngine
+                base_score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
+                
+                # Calculate recency bonus based on article age
+                hours_old = (datetime.datetime.utcnow() - content.published_at).total_seconds() / 3600
+                
+                if hours_old < 6:
+                    recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
+                elif hours_old < 24:
+                    recency_bonus = ScoringWeights.RECENT_BONUS  # +25
+                elif hours_old < 48:
+                    recency_bonus = ScoringWeights.RECENT_DAY_BONUS  # +15
+                elif hours_old < 72:
+                    recency_bonus = ScoringWeights.RECENT_YESTERDAY_BONUS  # +8
+                elif hours_old < 120:
+                    recency_bonus = ScoringWeights.RECENT_WEEK_BONUS  # +3
+                elif hours_old < 168:
+                    recency_bonus = ScoringWeights.RECENT_OLD_BONUS  # +1
+                else:
+                    recency_bonus = 0.0
+                
+                final_score = base_score + recency_bonus
+                
+                logger.debug(
+                    "digest_scoring_recency_bonus",
+                    content_id=str(content.id),
+                    hours_old=round(hours_old, 2),
+                    base_score=round(base_score, 2),
+                    recency_bonus=recency_bonus,
+                    final_score=round(final_score, 2)
+                )
+                
+                scored.append((content, final_score, recency_bonus))
             except Exception as e:
                 logger.warning(
                     "digest_scoring_failed",
@@ -455,7 +513,7 @@ class DigestSelector:
                     error=str(e)
                 )
                 # Attribuer un score minimal pour ne pas bloquer
-                scored.append((content, 0.0))
+                scored.append((content, 0.0, 0.0))
         
         # Trier par score décroissant
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -464,9 +522,9 @@ class DigestSelector:
     
     def _select_with_diversity(
         self,
-        scored_candidates: List[Tuple[Content, float]],
+        scored_candidates: List[Tuple[Content, float, float]],
         target_count: int
-    ) -> List[Tuple[Content, float, str]]:
+    ) -> List[Tuple[Content, float, str, float]]:
         """Sélectionne les articles avec contraintes de diversité.
         
         Contraintes:
@@ -485,23 +543,24 @@ class DigestSelector:
         selected = []
         source_counts = defaultdict(int)
         theme_counts = defaultdict(int)
-        
-        for content, score in scored_candidates:
+
+        for content, score, recency_bonus in scored_candidates:
             if len(selected) >= target_count:
                 break
-            
+
             source_id = content.source_id
             theme = content.source.theme if content.source else None
-            
+
             # Vérifier contraintes
             if source_counts[source_id] >= self.constraints.MAX_PER_SOURCE:
                 continue
-            
+
             if theme and theme_counts[theme] >= self.constraints.MAX_PER_THEME:
                 continue
-            
-            # Contraintes respectées - ajouter
-            selected.append((content, score, self._generate_reason(content, source_counts, theme_counts)))
+
+            # Contraintes respectées - ajouter avec bonus dans la raison
+            reason = self._generate_reason(content, source_counts, theme_counts, recency_bonus)
+            selected.append((content, score, reason, recency_bonus))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
@@ -519,19 +578,23 @@ class DigestSelector:
         self,
         content: Content,
         source_counts: Dict[UUID, int],
-        theme_counts: Dict[str, int]
+        theme_counts: Dict[str, int],
+        recency_bonus: float = 0.0
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
-        
+
         Les raisons sont en français pour l'interface utilisateur.
         """
         source_id = content.source_id
         theme = content.source.theme if content.source else None
-        
+
+        # Build bonus suffix if applicable
+        bonus_suffix = f" (+{int(recency_bonus)} pts)" if recency_bonus > 0 else ""
+
         # Première occurrence d'une source suivie
         if source_counts.get(source_id, 0) == 0 and content.source:
-            return f"Source suivie : {content.source.name}"
-        
+            return f"Source suivie : {content.source.name}{bonus_suffix}"
+
         # Premier article d'un thème d'intérêt
         if theme and theme_counts.get(theme, 0) == 0:
             theme_labels = {
@@ -548,10 +611,10 @@ class DigestSelector:
                 'culture_ideas': 'Culture & Idées',
             }
             theme_label = theme_labels.get(theme.lower(), theme.capitalize())
-            return f"Vos intérêts : {theme_label}"
-        
+            return f"Vos intérêts : {theme_label}{bonus_suffix}"
+
         # Fallback générique
         if content.source:
-            return f"Sélectionné pour vous depuis {content.source.name}"
-        
-        return "Sélectionné pour vous"
+            return f"Sélectionné pour vous depuis {content.source.name}{bonus_suffix}"
+
+        return f"Sélectionné pour vous{bonus_suffix}"

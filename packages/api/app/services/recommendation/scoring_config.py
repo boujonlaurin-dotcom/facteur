@@ -23,6 +23,28 @@ class ScoringWeights:
     # Base du score de fraîcheur (Recency).
     recency_base = 30.0
     
+    # --- DIGEST RECENCY BONUSES (Tiered) ---
+    # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
+    # Permet d'ajuster les articles plus anciens des sources suivies
+    
+    # Article très récent (< 6h): +30 pts
+    RECENT_VERY_BONUS = 30.0
+    
+    # Article récent (< 24h): +25 pts
+    RECENT_BONUS = 25.0
+    
+    # Publié aujourd'hui (< 48h): +15 pts
+    RECENT_DAY_BONUS = 15.0
+    
+    # Publié hier (< 72h): +8 pts
+    RECENT_YESTERDAY_BONUS = 8.0
+    
+    # Article de la semaine (< 120h): +3 pts
+    RECENT_WEEK_BONUS = 3.0
+    
+    # Article ancien (< 168h): +1 pt
+    RECENT_OLD_BONUS = 1.0
+    
     
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
     

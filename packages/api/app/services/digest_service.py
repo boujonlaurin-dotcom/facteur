@@ -61,23 +61,27 @@ class DigestService:
         self.streak_service = StreakService(session)
         
     async def get_or_create_digest(
-        self, 
+        self,
         user_id: UUID,
-        target_date: Optional[date] = None
+        target_date: Optional[date] = None,
+        hours_lookback: int = 168
     ) -> Optional[DigestResponse]:
         """Retrieves or generates today's digest for a user.
-        
+
         Flow:
         1. Ensure user profile exists (creates if missing)
         2. Check if digest already exists for user + date
         3. If exists, return it with action states populated
         4. If not exists, generate new digest using DigestSelector
         5. Store in database and return
-        
+
         Args:
             user_id: UUID of the user
             target_date: Date for digest (defaults to today)
-            
+            hours_lookback: Hours to look back for content (default: 168h/7 days)
+                Extended window ensures user's followed sources are prioritized
+                even if articles are older.
+
         Returns:
             DigestResponse with 5 items, or None if generation failed
         """
@@ -108,8 +112,8 @@ class DigestService:
         
         # 2. Generate new digest using DigestSelector
         step_start = time.time()
-        logger.info("digest_generating_new", user_id=str(user_id))
-        digest_items = await self.selector.select_for_user(user_id, limit=5)
+        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback)
+        digest_items = await self.selector.select_for_user(user_id, limit=5, hours_lookback=hours_lookback)
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
