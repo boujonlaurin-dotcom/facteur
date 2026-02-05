@@ -207,10 +207,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   void _showActionNotification(String action) {
     switch (action) {
       case 'read':
-        NotificationService.showInfo(
-          'Article marqué comme lu',
-          duration: const Duration(seconds: 2),
-        );
+        // Silent tracking - no notification needed for automatic read
+        break;
       case 'save':
         NotificationService.showInfo(
           'Article sauvegardé',
