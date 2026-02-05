@@ -207,82 +207,93 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   child: digestAsync.when(
                     data: (digest) {
                       if (digest?.isCompleted == true) {
-                        return Container(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.success.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: colors.success.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                PhosphorIcons.checkCircle(
-                                    PhosphorIconsStyle.fill),
-                                color: colors.success,
-                                size: 24,
+                        return Stack(
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Briefing terminé !',
-                                      style: TextStyle(
-                                        color: colors.textPrimary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Revenez demain à 8h pour votre prochaine sélection.',
-                                      style: TextStyle(
-                                        color: colors.textSecondary,
-                                        fontWeight: FontWeight.w400,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.success.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: colors.success.withValues(alpha: 0.3),
                                 ),
                               ),
-                              // Refresh button
-                              Material(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    PhosphorIcons.checkCircle(
+                                        PhosphorIconsStyle.fill),
+                                    color: colors.success,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Briefing terminé !',
+                                          style: TextStyle(
+                                            color: colors.textPrimary,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Revenez demain à 8h pour votre prochaine sélection.',
+                                          style: TextStyle(
+                                            color: colors.textSecondary,
+                                            fontWeight: FontWeight.w400,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Refresh button - top right
+                            Positioned(
+                              top: 16,
+                              right: 24,
+                              child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: () => ref
-                                      .read(digestProvider.notifier)
-                                      .forceRegenerate(),
-                                  borderRadius: BorderRadius.circular(20),
+                                  onTap: () {
+                                    final notifier =
+                                        ref.read(digestProvider.notifier);
+                                    notifier.forceRegenerate();
+                                  },
+                                  borderRadius: BorderRadius.circular(16),
                                   child: Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
-                                      color:
-                                          colors.success.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(20),
+                                      color: colors.textSecondary
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Icon(
                                       PhosphorIcons.arrowClockwise(
                                           PhosphorIconsStyle.bold),
-                                      color: colors.success,
-                                      size: 20,
+                                      color: colors.textSecondary,
+                                      size: 16,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         );
                       }
                       return const SizedBox.shrink();
