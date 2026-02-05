@@ -64,16 +64,18 @@ class DigestService:
         self,
         user_id: UUID,
         target_date: Optional[date] = None,
-        hours_lookback: int = 168
+        hours_lookback: int = 168,
+        force_regenerate: bool = False
     ) -> Optional[DigestResponse]:
         """Retrieves or generates today's digest for a user.
 
         Flow:
         1. Ensure user profile exists (creates if missing)
         2. Check if digest already exists for user + date
-        3. If exists, return it with action states populated
-        4. If not exists, generate new digest using DigestSelector
-        5. Store in database and return
+        3. If exists and force_regenerate=False, return existing
+        4. If force_regenerate=True, delete existing and regenerate
+        5. Generate new digest using DigestSelector
+        6. Store in database and return
 
         Args:
             user_id: UUID of the user
@@ -81,6 +83,7 @@ class DigestService:
             hours_lookback: Hours to look back for content (default: 168h/7 days)
                 Extended window ensures user's followed sources are prioritized
                 even if articles are older.
+            force_regenerate: If True, delete existing digest and regenerate
 
         Returns:
             DigestResponse with 5 items, or None if generation failed
@@ -106,8 +109,14 @@ class DigestService:
         existing_digest = await self._get_existing_digest(user_id, target_date)
         existing_time = time.time() - step_start
         if existing_digest:
-            logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
-            return await self._build_digest_response(existing_digest, user_id)
+            if force_regenerate:
+                # Delete existing digest and regenerate
+                logger.info("digest_force_regenerating", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
+                await self.session.delete(existing_digest)
+                await self.session.flush()
+            else:
+                logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
+                return await self._build_digest_response(existing_digest, user_id)
         logger.info("digest_no_existing", user_id=str(user_id), duration_ms=round(existing_time * 1000, 2))
         
         # 2. Generate new digest using DigestSelector

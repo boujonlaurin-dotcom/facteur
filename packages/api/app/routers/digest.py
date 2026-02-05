@@ -221,20 +221,28 @@ async def generate_digest(
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
-    
-    # For now, just get or create (force regeneration would need additional logic)
-    digest = await service.get_or_create_digest(user_uuid, target_date)
-    
+
+    # Generate digest, with optional force regeneration
+    digest = await service.get_or_create_digest(
+        user_uuid,
+        target_date,
+        force_regenerate=force
+    )
+
     if not digest:
         raise HTTPException(
             status_code=503,
             detail="Digest generation failed"
         )
-    
+
+    message = f"Digest généré avec {len(digest.items)} articles"
+    if force:
+        message += " (régénéré forcé)"
+
     return DigestGenerationResponse(
         success=True,
         digest_id=digest.digest_id,
         items_count=len(digest.items),
         generated_at=digest.generated_at,
-        message=f"Digest généré avec {len(digest.items)} articles"
+        message=message
     )
