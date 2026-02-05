@@ -257,6 +257,30 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   ],
                                 ),
                               ),
+                              // Refresh button
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () => ref
+                                      .read(digestProvider.notifier)
+                                      .forceRegenerate(),
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          colors.success.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Icon(
+                                      PhosphorIcons.arrowClockwise(
+                                          PhosphorIconsStyle.bold),
+                                      color: colors.success,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         );

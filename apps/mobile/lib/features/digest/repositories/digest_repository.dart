@@ -158,4 +158,22 @@ class DigestRepository {
       rethrow;
     }
   }
+
+  /// Force regenerate digest (deletes existing and creates new)
+  Future<DigestResponse> forceRegenerateDigest() async {
+    try {
+      final response = await _apiClient.dio.post<dynamic>(
+        'digest/generate',
+        queryParameters: {'force': 'true'},
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        return DigestResponse.fromJson(data);
+      }
+      throw Exception('Failed to regenerate digest: ${response.statusCode}');
+    } catch (e) {
+      rethrow;
+    }
+  }
 }
