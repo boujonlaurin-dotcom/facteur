@@ -75,14 +75,22 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   Future<void> forceRegenerate() async {
     if (state.isLoading) return;
 
+    // Keep previous data while loading to prevent UI from disappearing
+    final previousData = state.value;
     state = const AsyncLoading();
+
     try {
       final repository = ref.read(digestRepositoryProvider);
       final digest = await repository.forceRegenerateDigest();
       state = AsyncData(digest);
       NotificationService.showSuccess('Nouveau briefing généré !');
     } catch (e, stack) {
-      state = AsyncError(e, stack);
+      // Restore previous data on error so UI doesn't disappear
+      if (previousData != null) {
+        state = AsyncData(previousData);
+      } else {
+        state = AsyncError(e, stack);
+      }
       NotificationService.showError(
         'Erreur lors de la régénération du briefing',
       );
