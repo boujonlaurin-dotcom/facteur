@@ -11,6 +11,7 @@ import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
 import '../../../widgets/design/facteur_logo.dart';
@@ -151,6 +152,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   void _dismissWelcome() {
     setState(() {
       _showWelcome = false;
@@ -175,6 +186,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+
+    // Listen to scroll to top trigger
+    ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
 
     return PopScope(
       canPop: false,

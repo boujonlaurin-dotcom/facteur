@@ -5,16 +5,43 @@ import '../../../config/routes.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../providers/theme_provider.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 
-/// Écran des paramètres (placeholder)
-class SettingsScreen extends ConsumerWidget {
+/// Écran des paramètres
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.facteurColors;
+
+    // Listen to scroll to top trigger
+    ref.listen(settingsScrollTriggerProvider, (_, __) => _scrollToTop());
 
     return Material(
       color: colors.backgroundPrimary,
@@ -28,6 +55,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollController,
               child: Column(
                 children: [
                   const SizedBox(height: FacteurSpacing.space4),

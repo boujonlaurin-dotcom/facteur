@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/personalization_sheet.dart';
@@ -28,6 +29,23 @@ class DigestScreen extends ConsumerStatefulWidget {
 class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _showWelcome = false;
   bool _hasCheckedWelcome = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -135,6 +153,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     debugPrint('DigestScreen: build() called');
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
+
+    // Listen to scroll to top trigger
+    ref.listen(digestScrollTriggerProvider, (_, __) => _scrollToTop());
+
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
     // Navigate to closure screen when digest is completed
@@ -159,6 +181,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
             },
             color: colors.primary,
             child: CustomScrollView(
+              controller: _scrollController,
               slivers: [
                 // Feed-style header with logo and streak
                 const SliverToBoxAdapter(
