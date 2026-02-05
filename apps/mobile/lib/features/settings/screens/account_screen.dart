@@ -51,18 +51,10 @@ class AccountScreen extends ConsumerWidget {
                   const SizedBox(height: FacteurSpacing.space3),
                   _InfoRow(
                     icon: Icons.person_outline,
-                    label: 'Prénom',
-                    value: ref.watch(userProfileProvider).firstName ??
+                    label: 'Nom d\'affichage',
+                    value: ref.watch(userProfileProvider).displayName ??
                         'Non renseigné',
-                    onTap: () => _editFirstName(context, ref),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space2),
-                  _InfoRow(
-                    icon: Icons.person_outline,
-                    label: 'Nom',
-                    value: ref.watch(userProfileProvider).lastName ??
-                        'Non renseigné',
-                    onTap: () => _editLastName(context, ref),
+                    onTap: () => _editDisplayName(context, ref),
                   ),
                   const SizedBox(height: FacteurSpacing.space2),
                   Row(
@@ -178,56 +170,17 @@ class AccountScreen extends ConsumerWidget {
     );
   }
 
-  void _editFirstName(BuildContext context, WidgetRef ref) {
+  void _editDisplayName(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final currentValue = ref.read(userProfileProvider).firstName ?? '';
+    final currentValue = ref.read(userProfileProvider).displayName ?? '';
     final controller = TextEditingController(text: currentValue);
 
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: colors.surface,
-        title: Text('Prénom', style: TextStyle(color: colors.textPrimary)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: TextStyle(color: colors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Votre prénom',
-            hintStyle: TextStyle(color: colors.textTertiary),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child:
-                Text('Annuler', style: TextStyle(color: colors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              ref.read(userProfileProvider.notifier).updateProfile(
-                    firstName: controller.text.trim(),
-                    lastName: ref.read(userProfileProvider).lastName,
-                  );
-              Navigator.of(context).pop();
-            },
-            child: Text('Enregistrer', style: TextStyle(color: colors.primary)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _editLastName(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final currentValue = ref.read(userProfileProvider).lastName ?? '';
-    final controller = TextEditingController(text: currentValue);
-
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: colors.surface,
-        title: Text('Nom', style: TextStyle(color: colors.textPrimary)),
+        title: Text('Nom d\'affichage',
+            style: TextStyle(color: colors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -246,8 +199,7 @@ class AccountScreen extends ConsumerWidget {
           TextButton(
             onPressed: () {
               ref.read(userProfileProvider.notifier).updateProfile(
-                    firstName: ref.read(userProfileProvider).firstName,
-                    lastName: controller.text.trim(),
+                    displayName: controller.text.trim(),
                   );
               Navigator.of(context).pop();
             },
