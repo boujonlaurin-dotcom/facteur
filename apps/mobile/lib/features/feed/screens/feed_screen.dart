@@ -110,11 +110,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   void dispose() {
+    // Track analytics before disposing controller
+    // Note: ref may not be available during dispose in Riverpod, so we catch any errors
     try {
-      final analytics = ref.read(analyticsServiceProvider);
-      analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
+      // Only track if we have valid data and ref is still available
+      if (_itemsViewed > 0) {
+        final analytics = ref.read(analyticsServiceProvider);
+        analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
+      }
     } catch (e) {
-      debugPrint('FeedScreen: Could not track analytics on dispose: $e');
+      // Silently ignore ref errors during dispose - widget is being cleaned up
+      debugPrint('FeedScreen: Analytics tracking skipped during dispose');
     }
     _scrollController.dispose();
     super.dispose();
