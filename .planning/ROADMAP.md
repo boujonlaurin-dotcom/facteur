@@ -78,9 +78,11 @@ New Components:
 - [x] **01-01**: Database migrations (daily_digest, digest_completions, user_streaks extension)
 - [x] **01-02**: DigestSelector service with diversity constraints
 - [x] **01-03**: API endpoints (GET /digest, POST /action, completion tracking)
+- [ ] **01-04**: Critical fix — Extend digest lookback to 168h with recency bonus system (CRITICAL BUG FIX)
 
-**Status:** ✅ Complete (verified 2026-02-01)  
-**Verification:** 14/14 must-haves verified — `01-foundation-VERIFICATION.md`
+**Status:** ⚠️ Phase 1 Complete, Critical Fix Required
+**Verification:** 14/14 must-haves verified — `01-foundation-VERIFICATION.md`  
+**Critical Fix:** Digest algorithm fix to prevent users receiving non-followed source articles — `01-04-PLAN.md`
 
 ---
 
