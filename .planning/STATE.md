@@ -1,7 +1,7 @@
 # Project State: Facteur — Epic 10 Digest Central
 
 **Current Phase:** 2 — Frontend Complete (UI/UX Rework In Progress)  
-**Last Updated:** 2026-02-04  
+**Last Updated:** 2026-02-05  
 **Status:** ⚠️ Phase 2 Requires UI/UX Adjustments - See `02-frontend-UI_REWORK_CONTEXT.md`
 
 **⚠️ IMPORTANT:** A UI/UX rework has been requested to properly reuse the existing `BriefingSection` component instead of the newly created `DigestCard`/`DigestScreen` approach. See `.planning/phases/02-frontend/02-frontend-UI_REWORK_CONTEXT.md` for detailed specifications.
@@ -14,12 +14,12 @@
 **Plan:** 02-10 complete (Add greenlet dependency)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 3/3 | Phase 2: 9/9 | Total: 12/12 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 9/9 | Total: 13/13 plans complete  
 
 ```
-Phase 1 Foundation: [████] 100% (3/3)
+Phase 1 Foundation: [████] 100% (4/4)
 Phase 2 Frontend:   [████████] 100% (9/9)
-Overall:            [████████████] 100% (12/12)
+Overall:            [█████████████] 100% (13/13)
 ```
 
 ---
@@ -38,7 +38,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
-| 1 — Foundation | ✅ Complete | 100% | **3/3** |
+| 1 — Foundation | ✅ Complete | 100% | **4/4** |
 | 2 — Frontend | ✅ Complete | 100% | **9/9** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
@@ -90,6 +90,22 @@ All UI/UX adjustments from the rework have been successfully implemented:
 ---
 
 ## Completed Work
+
+
+### Foundation Phase — Plan 01-04 Complete (2026-02-05)
+
+**Critical Fix: Extended Digest Lookback to 168h with Recency Bonuses**
+
+- ✅ Extended lookback window from 48h to 168h (7 days) for user sources
+- ✅ Added 6 tiered recency bonus constants (30/25/15/8/3/1 pts) to ScoringWeights
+- ✅ Modified fallback logic: only use curated when user sources < 3 articles
+- ✅ User sources now ALWAYS prioritized over curated content
+- ✅ Recency bonuses displayed in article reason strings (+X pts format)
+- ✅ Comprehensive logging for debugging source selection
+
+**Impact:** Fixes critical bug where users received articles NOT from their followed sources because the 48h window was too narrow.
+
+See: `.planning/phases/01-foundation/01-04-SUMMARY.md`
 
 
 ### Frontend Phase — Plan 02-09 Complete (2026-02-04)

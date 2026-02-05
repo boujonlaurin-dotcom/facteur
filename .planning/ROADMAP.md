@@ -3,7 +3,7 @@
 **Project:** Facteur  
 **Strategic Goal:** Pivot from Feed-First to Digest-First experience  
 **Estimated Duration:** ~35h development + QA  
-**Last Updated:** 2026-02-04 (Phase 2 Complete - Gap Closure Done)
+**Last Updated:** 2026-02-05 (Phase 1 Critical Fix Complete)
 
 ---
 
@@ -78,11 +78,11 @@ New Components:
 - [x] **01-01**: Database migrations (daily_digest, digest_completions, user_streaks extension)
 - [x] **01-02**: DigestSelector service with diversity constraints
 - [x] **01-03**: API endpoints (GET /digest, POST /action, completion tracking)
-- [ ] **01-04**: Critical fix — Extend digest lookback to 168h with recency bonus system (CRITICAL BUG FIX)
+- [x] **01-04**: Critical fix — Extend digest lookback to 168h with recency bonus system (CRITICAL BUG FIX)
 
-**Status:** ⚠️ Phase 1 Complete, Critical Fix Required
+**Status:** ✅ Phase 1 Complete (All 4 plans)
 **Verification:** 14/14 must-haves verified — `01-foundation-VERIFICATION.md`  
-**Critical Fix:** Digest algorithm fix to prevent users receiving non-followed source articles — `01-04-PLAN.md`
+**Critical Fix:** ✅ COMPLETE — Digest algorithm now prioritizes user sources with 168h lookback
 
 ---
 
