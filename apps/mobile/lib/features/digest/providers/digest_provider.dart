@@ -71,6 +71,25 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
+  /// Force regenerate digest (deletes existing and creates new)
+  Future<void> forceRegenerate() async {
+    if (state.isLoading) return;
+
+    state = const AsyncLoading();
+    try {
+      final repository = ref.read(digestRepositoryProvider);
+      final digest = await repository.forceRegenerateDigest();
+      state = AsyncData(digest);
+      NotificationService.showSuccess('Nouveau briefing généré !');
+    } catch (e, stack) {
+      state = AsyncError(e, stack);
+      NotificationService.showError(
+        'Erreur lors de la régénération du briefing',
+      );
+      rethrow;
+    }
+  }
+
   /// Apply an action to a digest item (read, save, not_interested, undo)
   Future<void> applyAction(String contentId, String action) async {
     final currentDigest = state.value;
