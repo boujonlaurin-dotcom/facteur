@@ -84,6 +84,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
             return item.copyWith(isRead: true, isDismissed: false);
           case 'save':
             return item.copyWith(isSaved: true);
+          case 'unsave':
+            return item.copyWith(isSaved: false);
           case 'not_interested':
             return item.copyWith(isDismissed: true, isRead: false);
           case 'undo':
@@ -194,6 +196,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         await HapticFeedback.mediumImpact();
       case 'save':
         await HapticFeedback.lightImpact();
+      case 'unsave':
+        await HapticFeedback.lightImpact();
       case 'not_interested':
         await HapticFeedback.lightImpact();
       case 'undo':
@@ -212,6 +216,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       case 'save':
         NotificationService.showInfo(
           'Article sauvegardé',
+          duration: const Duration(seconds: 2),
+        );
+      case 'unsave':
+        NotificationService.showInfo(
+          'Article retiré des sauvegardes',
           duration: const Duration(seconds: 2),
         );
       case 'not_interested':
