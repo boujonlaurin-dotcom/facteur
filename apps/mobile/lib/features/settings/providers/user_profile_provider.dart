@@ -4,35 +4,29 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Modèle pour le profil utilisateur
 class UserProfile {
-  final String? firstName;
-  final String? lastName;
+  final String? displayName;
 
   const UserProfile({
-    this.firstName,
-    this.lastName,
+    this.displayName,
   });
 
   UserProfile copyWith({
-    String? firstName,
-    String? lastName,
+    String? displayName,
   }) {
     return UserProfile(
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
+      displayName: displayName ?? this.displayName,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'first_name': firstName,
-      'last_name': lastName,
+      'display_name': displayName,
     };
   }
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
-      firstName: json['first_name'] as String?,
-      lastName: json['last_name'] as String?,
+      displayName: json['display_name'] as String?,
     );
   }
 }
@@ -45,19 +39,16 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
 
   final _supabase = Supabase.instance.client;
   static const String _boxName = 'user_profile';
-  static const String _firstNameKey = 'first_name';
-  static const String _lastNameKey = 'last_name';
+  static const String _displayNameKey = 'display_name';
 
   Future<void> _loadProfile() async {
     // 1. Load from Hive cache first
     final box = await Hive.openBox<dynamic>(_boxName);
-    final cachedFirstName = box.get(_firstNameKey) as String?;
-    final cachedLastName = box.get(_lastNameKey) as String?;
+    final cachedDisplayName = box.get(_displayNameKey) as String?;
 
-    if (cachedFirstName != null || cachedLastName != null) {
+    if (cachedDisplayName != null) {
       state = UserProfile(
-        firstName: cachedFirstName,
-        lastName: cachedLastName,
+        displayName: cachedDisplayName,
       );
     }
 
@@ -68,41 +59,37 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
     try {
       final response = await _supabase
           .from('user_profiles')
-          .select('first_name, last_name')
+          .select('display_name')
           .eq('user_id', userId)
           .maybeSingle();
 
       if (response != null) {
         state = UserProfile.fromJson(response);
         // Update cache
-        await box.put(_firstNameKey, state.firstName);
-        await box.put(_lastNameKey, state.lastName);
+        await box.put(_displayNameKey, state.displayName);
       }
     } catch (e) {
       // Silently fail and use cached data
     }
   }
 
-  Future<void> updateProfile({String? firstName, String? lastName}) async {
+  Future<void> updateProfile({String? displayName}) async {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) return;
 
     // Update state
     state = state.copyWith(
-      firstName: firstName,
-      lastName: lastName,
+      displayName: displayName,
     );
 
     // Update Hive cache
     final box = await Hive.openBox<dynamic>(_boxName);
-    await box.put(_firstNameKey, firstName);
-    await box.put(_lastNameKey, lastName);
+    await box.put(_displayNameKey, displayName);
 
     // Update Supabase
     try {
       await _supabase.from('user_profiles').update({
-        'first_name': firstName,
-        'last_name': lastName,
+        'display_name': displayName,
       }).eq('user_id', userId);
     } catch (e) {
       // Silently fail - data is cached locally

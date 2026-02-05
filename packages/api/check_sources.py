@@ -1,0 +1,1 @@
+from app.database import engine; from app.models.source import Source; from sqlalchemy import select, func; import asyncio; async def count(): async with engine.connect() as conn: res = await conn.execute(select(func.count(Source.id)).where(Source.une_feed_url.is_not(None))); print(f'Sources with une_feed_url: {res.scalar()}'); asyncio.run(count())

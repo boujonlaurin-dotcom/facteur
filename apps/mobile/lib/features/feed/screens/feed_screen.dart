@@ -213,9 +213,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       ref.watch(authStateProvider).user;
 
                                   String displayName = 'Vous';
-                                  if (profile.firstName != null &&
-                                      profile.firstName!.isNotEmpty) {
-                                    displayName = profile.firstName!;
+                                  if (profile.displayName != null &&
+                                      profile.displayName!.isNotEmpty) {
+                                    displayName = profile.displayName!;
                                   } else if (authUser?.email != null) {
                                     final part = authUser!.email!.split('@')[0];
                                     final subParts = part.contains('.')
