@@ -84,10 +84,14 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
     final currentItems = state.value;
     if (currentItems == null) return;
 
-    final updatedItems = List<Content>.from(currentItems);
+    // Store original state for rollback
+    final originalItems = List<Content>.from(currentItems);
 
     // Optimistic Remove (Unsave)
+    final updatedItems = List<Content>.from(currentItems);
     updatedItems.removeWhere((c) => c.id == content.id);
+
+    // Update state safely
     state = AsyncData(updatedItems);
 
     try {
@@ -96,7 +100,8 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
       // Invalidate main feed so the item reappears there
       ref.invalidate(feedProvider);
     } catch (e) {
-      await refresh(); // Revert
+      // Rollback to original state on error
+      state = AsyncData(originalItems);
       rethrow;
     }
   }
