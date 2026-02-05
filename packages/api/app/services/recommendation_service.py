@@ -472,6 +472,14 @@ class RecommendationService:
             .where(~exists_stmt)
         )
 
+        # Debug logging for feed source filtering
+        logger.info(
+            "feed_source_filter",
+            user_id=str(user_id),
+            followed_source_count=len(followed_source_ids) if followed_source_ids else 0,
+            followed_source_ids=[str(s) for s in list(followed_source_ids)[:10]] if followed_source_ids else []
+        )
+
         # Base filter: Only show content from user's followed sources
         # Fallback to curated sources only if user has no followed sources
         if followed_source_ids:
