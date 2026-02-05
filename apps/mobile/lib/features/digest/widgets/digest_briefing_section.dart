@@ -27,11 +27,6 @@ class DigestBriefingSection extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
-    final allConsumed = items.every((item) => item.isRead || item.isDismissed);
-
-    if (allConsumed) {
-      return _buildCollapsedSection(context, colors);
-    }
 
     // Calculate reading time (average 2 min per article if null)
     final totalSeconds = items.fold<int>(0, (sum, item) {
@@ -241,64 +236,6 @@ class DigestBriefingSection extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildCollapsedSection(BuildContext context, FacteurColors colors) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor =
-        isDark ? const Color(0xFF1A1918) : colors.backgroundSecondary;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            bgColor,
-            colors.success.withValues(alpha: isDark ? 0.1 : 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: colors.success.withValues(alpha: 0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-            color: colors.success,
-            size: 28,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Briefing terminé !',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : colors.textPrimary,
-                      ),
-                ),
-                Text(
-                  'Revenez demain à 8h pour votre prochaine sélection.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.6)
-                            : colors.textSecondary,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 

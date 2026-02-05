@@ -151,7 +151,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       ));
 
       // Show completion notification
-      NotificationService.showSuccess('Essentiel terminé !');
+      NotificationService.showSuccess('Briefing terminé !');
     } catch (e) {
       // ignore: avoid_print
       print('DigestNotifier: completeDigest failed: $e');

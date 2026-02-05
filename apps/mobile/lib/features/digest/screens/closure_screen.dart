@@ -285,7 +285,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
                       // Message emphasizing user is up to date
                       Text(
-                        'Tu es à jour. Tu peux sortir de l\'app en toute sérénité.',
+                        'ps : Tu peux maintenant aussi fermer l\'app ;-)',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),

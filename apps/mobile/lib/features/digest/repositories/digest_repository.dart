@@ -96,18 +96,24 @@ class DigestRepository {
     }
   }
 
-  /// Apply an action (read, save, not_interested, undo) to a digest item
+  /// Apply an action (read, save, not_interested, undo, unsave) to a digest item
   Future<void> applyAction({
     required String digestId,
     required String contentId,
-    required String action, // 'read', 'save', 'not_interested', 'undo'
+    required String
+        action, // 'read', 'save', 'not_interested', 'undo', 'unsave'
   }) async {
     try {
+      // Handle unsave as save with is_saved=false for API compatibility
+      final apiAction = action == 'unsave' ? 'save' : action;
+      final isSaved = action == 'unsave' ? false : null;
+
       await _apiClient.dio.post<dynamic>(
         'digest/$digestId/action',
         data: {
           'content_id': contentId,
-          'action': action,
+          'action': apiAction,
+          if (isSaved != null) 'is_saved': isSaved,
         },
       );
     } on DioException catch (e) {

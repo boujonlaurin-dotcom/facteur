@@ -97,14 +97,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     context.go(RoutePaths.digest);
   }
 
-  void _openArticle(DigestItem item) {
-    // Mark as read automatically when tapped
+  void _openArticle(DigestItem item) async {
+    // Navigate to article detail first
     HapticFeedback.mediumImpact();
-    ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
-
-    // Navigate to article detail
     final content = _convertToContent(item);
-    context.push('/feed/content/${item.contentId}', extra: content);
+    await context.push('/feed/content/${item.contentId}', extra: content);
+
+    // Mark as read when returning from article (only if not already read)
+    if (!item.isRead && !item.isDismissed) {
+      ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
+    }
   }
 
   void _handleSave(DigestItem item) {
@@ -135,8 +137,17 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final digestAsync = ref.watch(digestProvider);
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
-    // Note: Auto-navigation to closure screen removed
-    // Users can now stay on the digest screen to re-read articles
+    // Navigate to closure screen when digest is completed
+    ref.listen(digestProvider, (previous, next) {
+      next.whenData((digest) {
+        if (digest != null &&
+            digest.isCompleted &&
+            previous?.value?.isCompleted != true) {
+          // Navigate to closure screen on completion
+          context.push('/digest/closure', extra: digest.digestId);
+        }
+      });
+    });
 
     return Stack(
       children: [
@@ -180,32 +191,47 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,
-                            vertical: 12,
+                            vertical: 16,
                           ),
                           decoration: BoxDecoration(
-                            color: colors.success.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
+                            color: colors.success.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: colors.success.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Icon(
                                 PhosphorIcons.checkCircle(
                                     PhosphorIconsStyle.fill),
                                 color: colors.success,
-                                size: 20,
+                                size: 24,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  'Essentiel terminé ! Tu peux relire les articles quand tu veux.',
-                                  style: TextStyle(
-                                    color: colors.success,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Briefing terminé !',
+                                      style: TextStyle(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Revenez demain à 8h pour votre prochaine sélection.',
+                                      style: TextStyle(
+                                        color: colors.textSecondary,
+                                        fontWeight: FontWeight.w400,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
