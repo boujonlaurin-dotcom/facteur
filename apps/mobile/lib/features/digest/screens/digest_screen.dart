@@ -204,8 +204,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
                 // Success banner when digest is completed
                 SliverToBoxAdapter(
-                  child: digestAsync.when(
-                    data: (digest) {
+                  child: Builder(
+                    builder: (context) {
+                      // Check if completed using valueOrNull to avoid loading state issues
+                      final digest = digestAsync.valueOrNull;
+                      final isLoading = digestAsync.isLoading;
+
                       if (digest?.isCompleted == true) {
                         return Stack(
                           children: [
@@ -263,43 +267,47 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 ],
                               ),
                             ),
-                            // Refresh button - top right
-                            Positioned(
-                              top: 16,
-                              right: 24,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () {
-                                    final notifier =
-                                        ref.read(digestProvider.notifier);
-                                    notifier.forceRegenerate();
-                                  },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: colors.textSecondary
-                                          .withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Icon(
-                                      PhosphorIcons.arrowClockwise(
-                                          PhosphorIconsStyle.bold),
-                                      color: colors.textSecondary,
-                                      size: 16,
+                            // Refresh button - top right (disabled during loading)
+                            if (!isLoading)
+                              Positioned(
+                                top: 16,
+                                right: 24,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      // Use a microtask to avoid build-phase issues
+                                      Future.microtask(() {
+                                        if (context.mounted) {
+                                          final notifier =
+                                              ref.read(digestProvider.notifier);
+                                          notifier.forceRegenerate();
+                                        }
+                                      });
+                                    },
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: colors.textSecondary
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Icon(
+                                        PhosphorIcons.arrowClockwise(
+                                            PhosphorIconsStyle.bold),
+                                        color: colors.textSecondary,
+                                        size: 16,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
                           ],
                         );
                       }
                       return const SizedBox.shrink();
                     },
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
                   ),
                 ),
 
