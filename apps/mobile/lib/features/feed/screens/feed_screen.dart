@@ -10,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
-import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
@@ -46,7 +45,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   static const int _caughtUpThreshold = 8;
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
-  final int _itemsViewed = 0;
 
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
@@ -110,18 +108,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   void dispose() {
-    // Track analytics before disposing controller
-    // Note: ref may not be available during dispose in Riverpod, so we catch any errors
-    try {
-      // Only track if we have valid data and ref is still available
-      if (_itemsViewed > 0) {
-        final analytics = ref.read(analyticsServiceProvider);
-        analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
-      }
-    } catch (e) {
-      // Silently ignore ref errors during dispose - widget is being cleaned up
-      debugPrint('FeedScreen: Analytics tracking skipped during dispose');
-    }
+    // Analytics tracking removed from dispose to avoid ref lifecycle issues
+    // The ref is not available during dispose, and using it causes crashes
+    // Analytics should be tracked during normal widget lifecycle instead
     _scrollController.dispose();
     super.dispose();
   }

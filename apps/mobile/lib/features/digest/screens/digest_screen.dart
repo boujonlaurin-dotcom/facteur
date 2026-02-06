@@ -148,6 +148,55 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     );
   }
 
+  void _showRegenerateConfirmation(BuildContext context) {
+    final colors = context.facteurColors;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: colors.backgroundPrimary,
+          title: Text(
+            'Générer un nouveau briefing ?',
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Text(
+            'Cela remplacera votre briefing actuel par une nouvelle sélection d\'articles.',
+            style: TextStyle(color: colors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                'Annuler',
+                style: TextStyle(color: colors.textSecondary),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.primary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                // Use post-frame callback to ensure we're outside build phase
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    ref.read(digestProvider.notifier).forceRegenerate();
+                  }
+                });
+              },
+              child: const Text('Générer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint('DigestScreen: build() called');
@@ -275,16 +324,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    onTap: () {
-                                      // Use a microtask to avoid build-phase issues
-                                      Future.microtask(() {
-                                        if (context.mounted) {
-                                          final notifier =
-                                              ref.read(digestProvider.notifier);
-                                          notifier.forceRegenerate();
-                                        }
-                                      });
-                                    },
+                                    onTap: () =>
+                                        _showRegenerateConfirmation(context),
                                     borderRadius: BorderRadius.circular(16),
                                     child: Container(
                                       padding: const EdgeInsets.all(6),

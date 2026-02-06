@@ -115,6 +115,28 @@ Example scenario:
 - **Before:** User gets curated sources (not TechCrunch)
 - **After:** User gets TechCrunch articles from up to 7 days ago with recency bonus
 
+### API Fix - POST /digest/generate Response Format
+**Issue Fixed (2026-02-06):** The `POST /digest/generate` endpoint was returning `DigestGenerationResponse` (metadata only) but the mobile app expected `DigestResponse` (with full items list), causing crashes during force regenerate.
+
+**Fix Applied:**
+- Changed `response_model` from `DigestGenerationResponse` to `DigestResponse`
+- Endpoint now returns the complete digest with all 5 items
+- Mobile app can now parse the response without JSON parsing errors
+
+**Verification:**
+```bash
+# Force regenerate digest
+curl -X POST "https://api.facteur.app/api/digest/generate?force=true" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Response now includes:
+# - digest_id, user_id, target_date, generated_at
+# - items: array of 5 DigestItem objects
+# - is_completed, completed_at
+```
+
+**Test Result:** ✅ PASSED - Force regenerate button works without crash
+
 ---
 
 ## Deployment Notes

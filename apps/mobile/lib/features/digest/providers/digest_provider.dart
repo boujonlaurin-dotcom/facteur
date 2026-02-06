@@ -73,24 +73,51 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   /// Force regenerate digest (deletes existing and creates new)
   Future<void> forceRegenerate() async {
-    if (state.isLoading) return;
+    // ignore: avoid_print
+    print(
+        'DigestNotifier: forceRegenerate called - isLoading=${state.isLoading}');
+
+    if (state.isLoading) {
+      // ignore: avoid_print
+      print('DigestNotifier: Already loading, returning early');
+      return;
+    }
 
     // Keep previous data while loading to prevent UI from disappearing
     final previousData = state.value;
+    // ignore: avoid_print
+    print('DigestNotifier: Setting state to AsyncLoading');
     state = const AsyncLoading();
 
     try {
+      // ignore: avoid_print
+      print('DigestNotifier: Calling repository.forceRegenerateDigest()');
       final repository = ref.read(digestRepositoryProvider);
       final digest = await repository.forceRegenerateDigest();
+      // ignore: avoid_print
+      print(
+          'DigestNotifier: Repository call successful, setting state to AsyncData');
       state = AsyncData(digest);
+      // ignore: avoid_print
+      print('DigestNotifier: Showing success notification');
       NotificationService.showSuccess('Nouveau briefing généré !');
+      // ignore: avoid_print
+      print('DigestNotifier: forceRegenerate completed successfully');
     } catch (e, stack) {
+      // ignore: avoid_print
+      print('DigestNotifier: ERROR - $e\n$stack');
       // Restore previous data on error so UI doesn't disappear
       if (previousData != null) {
+        // ignore: avoid_print
+        print('DigestNotifier: Restoring previous data');
         state = AsyncData(previousData);
       } else {
+        // ignore: avoid_print
+        print('DigestNotifier: Setting error state');
         state = AsyncError(e, stack);
       }
+      // ignore: avoid_print
+      print('DigestNotifier: Showing error notification');
       NotificationService.showError(
         'Erreur lors de la régénération du briefing',
       );

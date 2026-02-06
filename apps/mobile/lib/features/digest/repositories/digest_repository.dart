@@ -161,18 +161,42 @@ class DigestRepository {
 
   /// Force regenerate digest (deletes existing and creates new)
   Future<DigestResponse> forceRegenerateDigest() async {
+    // ignore: avoid_print
+    print('DigestRepository: forceRegenerateDigest - START');
     try {
+      // ignore: avoid_print
+      print('DigestRepository: POST digest/generate?force=true');
       final response = await _apiClient.dio.post<dynamic>(
         'digest/generate',
         queryParameters: {'force': 'true'},
       );
 
+      // ignore: avoid_print
+      print(
+          'DigestRepository: Response received - status ${response.statusCode}');
+
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
-        return DigestResponse.fromJson(data);
+        // ignore: avoid_print
+        print('DigestRepository: Parsing JSON response...');
+        try {
+          final result = DigestResponse.fromJson(data);
+          // ignore: avoid_print
+          print(
+              'DigestRepository: JSON parsed successfully - ${result.items.length} items');
+          return result;
+        } catch (e, stack) {
+          // ignore: avoid_print
+          print('DigestRepository: JSON PARSING ERROR: $e\n$stack');
+          // ignore: avoid_print
+          print('DigestRepository: Problematic JSON: $data');
+          rethrow;
+        }
       }
       throw Exception('Failed to regenerate digest: ${response.statusCode}');
-    } catch (e) {
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print('DigestRepository: ERROR in forceRegenerateDigest: $e\n$stack');
       rethrow;
     }
   }
