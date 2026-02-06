@@ -160,32 +160,40 @@ Refactored Components:
 - [x] **02-04**: Feed relegation and navigation flows — Wave 3
 - [x] **02-06**: Backend digest performance fix (gap closure for timeout issue) — Wave 1
 
-#### UI/UX Rework (New - In Progress)
-- [ ] **02-07**: Refactor to reuse BriefingSection with proper FeedCard integration — Wave 1
-  - **Context:** `.planning/phases/02-frontend/02-frontend-UI_REWORK_CONTEXT.md`
-  - Reuse existing BriefingSection component (premium container design)
-  - Integrate Save/NotInterested in FeedCard footer (no new footer)
-  - Remove redundant "Read" button
-  - Add segmented progress bar in header
-  - Use Feed-style header with "L'Essentiel du Jour"
-  
-- [ ] **02-08**: Decommission old BriefingSection from Feed — Wave 2
-  - Remove BriefingSection from FeedScreen
-  - Mark old code as @deprecated
-  - Clean up FeedRepository briefing parsing
-  - Backend API cleanup (optional)
+#### UI/UX Rework (Complete)
+- [x] **02-07**: Refactor to reuse BriefingSection with proper FeedCard integration — Wave 1
+- [x] **02-08**: Decommission old BriefingSection from Feed — Wave 2
 
-**Dependencies:** Requires Phase 1 API endpoints ✅
+#### Gap Closure (Complete)
+- [x] **02-09**: Fix SQLAlchemy eager loading for MissingGreenlet error — Wave 1
+- [x] **02-10**: Add greenlet>=3.0.0 dependency — Wave 1
+
+#### Feature Enhancement: "Pourquoi cet article?" (New)
+**Goal:** Add algorithmic transparency to digest articles, matching feed's scoring breakdown
+
+- [ ] **02-11**: Backend - "Pourquoi cet article?" Scoring Transparency API — Wave 1
+  - Extend Pydantic schemas with DigestScoreBreakdown and DigestRecommendationReason
+  - Capture scoring contributions from all layers (Core, Topics, Recency, Quality)
+  - Update API response with full reasoning breakdown
+  - Maintain backward compatibility with old 'reason' field
+  
+- [ ] **02-12**: Frontend - "Pourquoi cet article?" UI Implementation — Wave 2
+  - Extend Freezed models with scoring classes
+  - Create DigestPersonalizationSheet widget
+  - Add long-press handler in DigestBriefingSection
+  - Visual breakdown with points, colors, and trend icons
+
+**Dependencies:** Requires 02-07 (refactored digest UI) ✅
 **Wave Structure:**
 | Wave | Plans | Dependencies |
 |------|-------|--------------|
-| 1 | 02-07 | None (UI rework of 02-01/02-02) |
-| 2 | 02-08 | 02-07 (must validate new digest first) |
+| 1 | 02-11 | None (backend enhancement) |
+| 2 | 02-12 | 02-11 (requires API changes) |
 
-**Status:** ⚠️ UI/UX Rework Required (see `02-frontend-UI_REWORK_CONTEXT.md`)
-**Original Verification:** 7/7 must-haves verified — `02-frontend-VERIFICATION.md`
-**Rework Reason:** Better reuse of existing BriefingSection component, consistent with Feed design
-**Gap:** Digest API timeout resolved — see `02-UAT.md`
+**Status:** 🆕 Ready for Implementation
+**Reference:** `.planning/IMPLEMENTATION_PLAN_2026-02-06.md` Task 2
+**Time Estimate:** 12-16 hours (BIG task)
+**Purpose:** Build user trust through algorithmic transparency
 
 ---
 
@@ -236,9 +244,36 @@ Refactored Components:
 | UI-07 | Phase 2 | 02-04 | ✅ Complete |
 | GMF-01 | Phase 2 | 02-03 | ✅ Complete |
 | GMF-02 | Phase 2 | 02-03 | ✅ Complete |
+| UI-08 | Phase 2 | 02-11, 02-12 | 🆕 Scoring transparency ("Pourquoi cet article?") |
 | NOTIF-01 | Phase 3 | 03-01 | Pending |
 
 **100% Coverage Achieved** ✓
+
+---
+
+## New Feature: Score Transparency ("Pourquoi cet article?")
+
+**Requirement ID:** UI-08  
+**Phase:** 2 (Enhancement)  
+**Status:** 🆕 Planned
+
+### User Story
+As a user curious or skeptical about algorithms,  
+I want to see the detailed breakdown of why an article was recommended to me,  
+so that I can trust the platform and understand how my preferences influence my digest.
+
+### Acceptance Criteria
+1. Long-press on any digest article opens "Pourquoi cet article?" sheet
+2. Sheet shows total score and detailed breakdown of contributions
+3. Each contribution shows: label (French), points (+/-), trend icon
+4. Visual distinction: green/up for positive, red/down for negative
+5. Actions available: mute source, mute theme (reuse existing PersonalizationSheet)
+
+### Technical Implementation
+- **Backend:** Extend digest schemas, capture all scoring layer contributions
+- **Frontend:** Freezed models, bottom sheet UI, long-press gesture
+- **Reference:** Feed's existing RecommendationReason implementation
+- **Effort:** 12-16 hours (BIG task - split across 2 plans)
 
 ---
 
