@@ -151,7 +151,7 @@ Refactored Components:
 - ✅ Add: Save/NotInterested directly in FeedCard footer
 - ✅ Add: Segmented progress bar in BriefingSection header
 
-### Plans (11 Plans Complete)
+### Plans (13 Plans Complete)
 
 #### Original Implementation (Complete)
 - [x] **02-01**: Digest screen with article cards and progress bar — Wave 1
@@ -171,6 +171,10 @@ Refactored Components:
 #### Feature Enhancement (Complete)
 - [x] **02-11**: Backend - "Pourquoi cet article?" Scoring Transparency API — Wave 1
 - [x] **02-12**: Frontend - "Pourquoi cet article?" UI Implementation — Wave 2
+
+#### Gap Closure - Personalization Alignment (Complete)
+- [x] **02-13**: Fix Not Interested confirmation flow — Wave 1
+- [x] **02-14**: Unify Digest personalization with Feed pattern — Wave 2
 
 #### Feature Enhancement: "Pourquoi cet article?" (New)
 **Goal:** Add algorithmic transparency to digest articles, matching feed's scoring breakdown
