@@ -151,7 +151,7 @@ Refactored Components:
 - ✅ Add: Save/NotInterested directly in FeedCard footer
 - ✅ Add: Segmented progress bar in BriefingSection header
 
-### Plans
+### Plans (11 Plans Complete)
 
 #### Original Implementation (Complete)
 - [x] **02-01**: Digest screen with article cards and progress bar — Wave 1
@@ -168,16 +168,20 @@ Refactored Components:
 - [x] **02-09**: Fix SQLAlchemy eager loading for MissingGreenlet error — Wave 1
 - [x] **02-10**: Add greenlet>=3.0.0 dependency — Wave 1
 
+#### Feature Enhancement (Complete)
+- [x] **02-11**: Backend - "Pourquoi cet article?" Scoring Transparency API — Wave 1
+- [x] **02-12**: Frontend - "Pourquoi cet article?" UI Implementation — Wave 2
+
 #### Feature Enhancement: "Pourquoi cet article?" (New)
 **Goal:** Add algorithmic transparency to digest articles, matching feed's scoring breakdown
 
-- [ ] **02-11**: Backend - "Pourquoi cet article?" Scoring Transparency API — Wave 1
+- [x] **02-11**: Backend - "Pourquoi cet article?" Scoring Transparency API — Wave 1
   - Extend Pydantic schemas with DigestScoreBreakdown and DigestRecommendationReason
   - Capture scoring contributions from all layers (Core, Topics, Recency, Quality)
   - Update API response with full reasoning breakdown
   - Maintain backward compatibility with old 'reason' field
-  
-- [ ] **02-12**: Frontend - "Pourquoi cet article?" UI Implementation — Wave 2
+   
+- [x] **02-12**: Frontend - "Pourquoi cet article?" UI Implementation — Wave 2
   - Extend Freezed models with scoring classes
   - Create DigestPersonalizationSheet widget
   - Add long-press handler in DigestBriefingSection
@@ -190,7 +194,7 @@ Refactored Components:
 | 1 | 02-11 | None (backend enhancement) |
 | 2 | 02-12 | 02-11 (requires API changes) |
 
-**Status:** 🆕 Ready for Implementation
+**Status:** ✅ COMPLETE - 17/17 must-haves verified
 **Reference:** `.planning/IMPLEMENTATION_PLAN_2026-02-06.md` Task 2
 **Time Estimate:** 12-16 hours (BIG task)
 **Purpose:** Build user trust through algorithmic transparency
