@@ -510,7 +510,16 @@ class DigestSelector:
                 base_score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
                 
                 # Calculate recency bonus based on article age
-                hours_old = (datetime.datetime.now(datetime.timezone.utc) - content.published_at).total_seconds() / 3600
+                # Defensive: Ensure both datetimes are timezone-aware
+                published = content.published_at
+                now = datetime.datetime.now(datetime.timezone.utc)
+                
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=datetime.timezone.utc)
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=datetime.timezone.utc)
+                
+                hours_old = (now - published).total_seconds() / 3600
                 
                 if hours_old < 6:
                     recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
