@@ -24,7 +24,6 @@ from app.schemas.digest import (
     DigestActionRequest,
     DigestActionResponse,
     DigestCompletionResponse,
-    DigestGenerationResponse,
     DigestAction,
 )
 from app.services.digest_service import DigestService
@@ -199,7 +198,7 @@ async def complete_digest(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/generate", response_model=DigestGenerationResponse)
+@router.post("/generate", response_model=DigestResponse)
 async def generate_digest(
     target_date: Optional[date] = Query(None, description="Date for digest (default: today)"),
     force: bool = Query(False, description="Force regeneration even if exists"),
@@ -218,6 +217,8 @@ async def generate_digest(
     
     Note: This is primarily for testing/admin use. The GET endpoint
     automatically generates digests as needed.
+    
+    Returns the complete DigestResponse with items (same format as GET endpoint).
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
@@ -235,14 +236,5 @@ async def generate_digest(
             detail="Digest generation failed"
         )
 
-    message = f"Digest généré avec {len(digest.items)} articles"
-    if force:
-        message += " (régénéré forcé)"
-
-    return DigestGenerationResponse(
-        success=True,
-        digest_id=digest.digest_id,
-        items_count=len(digest.items),
-        generated_at=digest.generated_at,
-        message=message
-    )
+    # Return the complete digest response with items
+    return digest
