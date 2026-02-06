@@ -30,7 +30,13 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user_personalization import UserPersonalization
 from app.models.user import UserStreak
-from app.schemas.digest import DigestItem, DigestResponse, DigestAction
+from app.schemas.digest import (
+    DigestItem, 
+    DigestResponse, 
+    DigestAction, 
+    DigestScoreBreakdown, 
+    DigestRecommendationReason
+)
 from app.services.digest_selector import DigestSelector
 from app.services.streak_service import StreakService
 
@@ -398,13 +404,26 @@ class DigestService:
         # Build items JSON array
         items_json = []
         for item in digest_items:
-            items_json.append({
+            item_data = {
                 "content_id": str(item.content.id),
                 "rank": item.rank,
                 "reason": item.reason,
                 "source_name": item.content.source.name if item.content.source else None,
                 "score": float(item.score)
-            })
+            }
+            
+            # Store breakdown if available
+            if item.breakdown:
+                item_data["breakdown"] = [
+                    {
+                        "label": b.label,
+                        "points": b.points,
+                        "is_positive": b.is_positive
+                    }
+                    for b in item.breakdown
+                ]
+            
+            items_json.append(item_data)
         
         digest = DailyDigest(
             id=uuid4(),
@@ -418,6 +437,37 @@ class DigestService:
         await self.session.flush()
         
         return digest
+    
+    def _determine_top_reason(self, breakdown: List[DigestScoreBreakdown]) -> str:
+        """Extract the most significant positive reason for the label.
+        
+        Analyzes the breakdown to generate a user-friendly top-level reason.
+        """
+        if not breakdown:
+            return "Sélectionné pour vous"
+        
+        positive = [b for b in breakdown if b.is_positive]
+        if not positive:
+            return "Sélectionné pour vous"
+        
+        # Sort by points descending
+        positive.sort(key=lambda x: x.points, reverse=True)
+        top = positive[0]
+        
+        # Format based on top reason type
+        if "Thème" in top.label:
+            theme = top.label.split(": ")[1] if ": " in top.label else ""
+            return f"Vos intérêts : {theme}"
+        elif "Source de confiance" in top.label:
+            return "Source suivie"
+        elif "Source personnalisée" in top.label:
+            return "Ta source personnalisée"
+        elif "Sous-thème" in top.label:
+            topics = [b.label.split(": ")[1] for b in positive 
+                     if "Sous-thème" in b.label][:2]
+            return f"Vos centres d'intérêt : {', '.join(topics)}"
+        else:
+            return top.label
     
     async def _build_digest_response(
         self,
@@ -455,6 +505,26 @@ class DigestService:
             # Get user action state
             action_state = await self._get_item_action_state(user_id, content_id)
             
+            # Rebuild breakdown from stored data if available
+            breakdown_data = item_data.get("breakdown", [])
+            breakdown = [
+                DigestScoreBreakdown(
+                    label=b["label"],
+                    points=b["points"],
+                    is_positive=b["is_positive"]
+                )
+                for b in breakdown_data
+            ] if breakdown_data else []
+            
+            # Build recommendation_reason if breakdown exists
+            recommendation_reason = None
+            if breakdown:
+                recommendation_reason = DigestRecommendationReason(
+                    label=self._determine_top_reason(breakdown),
+                    score_total=sum(b.points for b in breakdown),
+                    breakdown=breakdown
+                )
+            
             # Build DigestItem
             items.append(DigestItem(
                 content_id=content_id,
@@ -468,6 +538,7 @@ class DigestService:
                 source=content.source,  # SourceMini will be handled by from_attributes
                 rank=item_data["rank"],
                 reason=item_data["reason"],
+                recommendation_reason=recommendation_reason,
                 is_read=action_state["is_read"],
                 is_saved=action_state["is_saved"],
                 is_dismissed=action_state["is_dismissed"]
