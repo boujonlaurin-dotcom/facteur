@@ -549,10 +549,15 @@ class DigestSelector:
                 
                 scored.append((content, final_score, recency_bonus))
             except Exception as e:
-                logger.warning(
+                logger.error(
                     "digest_scoring_failed",
                     content_id=str(content.id),
-                    error=str(e)
+                    source_id=str(content.source_id),
+                    source_name=content.source.name if content.source else None,
+                    published_at=str(content.published_at),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    exc_info=True
                 )
                 # Attribuer un score minimal pour ne pas bloquer
                 scored.append((content, 0.0, 0.0))

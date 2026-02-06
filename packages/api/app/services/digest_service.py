@@ -14,7 +14,7 @@ Safe reuse patterns:
 
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 
@@ -126,12 +126,12 @@ class DigestService:
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
-        # Emergency Fallback: If standard selection returns nothing, grab ANY recent curated content
+        # Emergency Fallback: If standard selection returns nothing, grab from user's sources first
         # This prevents 503 errors when personalization is too restrictive or history is empty
         if not digest_items:
             step_start = time.time()
             logger.warning("digest_generation_standard_failed_attempting_fallback", user_id=str(user_id))
-            digest_items = await self._get_emergency_candidates(limit=5)
+            digest_items = await self._get_emergency_candidates(user_id=user_id, limit=5)
             fallback_time = time.time() - step_start
             logger.info("digest_step_fallback", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(fallback_time * 1000, 2))
             
@@ -159,28 +159,64 @@ class DigestService:
 
         
 
-    async def _get_emergency_candidates(self, limit: int = 5) -> List[Any]:
-        """Last resort: get most recent curated content ignoring constraints.
+    async def _get_emergency_candidates(self, user_id: UUID, limit: int = 5) -> List[Any]:
+        """Last resort: get most recent content from user's followed sources first.
         
-        OPTIMIZATION: Added time window filter to limit query scope.
-        Only fetches content from last 7 days instead of full table scan.
-        This significantly improves performance when Content table is large.
+        CRITICAL FIX: Now prioritizes user's followed sources instead of just curated content.
+        Falls back to curated sources only if user has no followed sources.
         """
         from app.models.content import Content
         from app.models.source import Source
         from sqlalchemy import desc
         from sqlalchemy.orm import selectinload
         
-        # OPTIMIZATION: Limit query to last 7 days to avoid full table scan
-        cutoff_date = datetime.utcnow() - timedelta(days=7)
+        # Get user's followed sources
+        from app.models.source import UserSource
+        followed_result = await self.session.execute(
+            select(UserSource.source_id).where(UserSource.user_id == user_id)
+        )
+        followed_source_ids = set(followed_result.scalars().all())
         
+        # OPTIMIZATION: Limit query to last 7 days to avoid full table scan
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        # Try user's followed sources first
+        if followed_source_ids:
+            stmt = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    Content.source_id.in_(list(followed_source_ids)),
+                    Content.published_at >= cutoff_date
+                )
+                .order_by(Content.published_at.desc())
+                .limit(limit)
+            )
+            
+            result = await self.session.execute(stmt)
+            contents = list(result.scalars().all())
+            
+            if len(contents) >= limit:
+                logger.info(
+                    "digest_emergency_fallback_user_sources",
+                    user_id=str(user_id),
+                    count=len(contents),
+                    source="user_followed"
+                )
+                return [
+                    EmergencyItem(content=c, rank=i+1) 
+                    for i, c in enumerate(contents[:limit])
+                ]
+        
+        # Fallback to curated sources if no user sources or not enough content
         stmt = (
             select(Content)
             .join(Content.source)
             .options(selectinload(Content.source))
             .where(
                 Source.is_curated == True,
-                Content.published_at >= cutoff_date  # Add time window filter
+                Content.published_at >= cutoff_date
             )
             .order_by(Content.published_at.desc())
             .limit(limit)
@@ -188,6 +224,14 @@ class DigestService:
         
         result = await self.session.execute(stmt)
         contents = result.scalars().all()
+        
+        logger.info(
+            "digest_emergency_fallback_curated",
+            user_id=str(user_id),
+            count=len(contents),
+            source="curated",
+            had_followed_sources=bool(followed_source_ids)
+        )
         
         return [
             EmergencyItem(content=c, rank=i+1) 
