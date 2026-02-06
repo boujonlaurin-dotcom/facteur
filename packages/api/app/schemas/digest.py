@@ -8,7 +8,7 @@ Defines request/response models for the digest-first mobile app endpoints:
 
 from datetime import date, datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -17,13 +17,34 @@ from app.models.enums import ContentType
 from app.schemas.content import SourceMini, RecommendationReason
 
 
+class DigestScoreBreakdown(BaseModel):
+    """Contribution d'un facteur au score de recommandation du digest.
+    
+    Match la structure ScoreContribution du feed pour cohérence UI.
+    """
+    label: str       # ex: "Thème matché : Tech"
+    points: float    # ex: 70.0
+    is_positive: bool = True  # True pour bonus, False pour pénalités
+
+
+class DigestRecommendationReason(BaseModel):
+    """Raison complète de la recommandation avec breakdown détaillé.
+    
+    Fournit la transparence algorithmique "Pourquoi cet article ?"
+    """
+    label: str                              # ex: "Vos intérêts : Tech"
+    score_total: float = 0.0                # Somme de tous les points
+    breakdown: List[DigestScoreBreakdown] = []  # Détail par facteur
+
+
 class DigestItem(BaseModel):
     """Single item in a digest (one of 5 articles).
     
     Contains all necessary information for display and tracking:
     - content: Article metadata
     - rank: Position in digest (1-5)
-    - reason: Why this article was selected
+    - reason: Why this article was selected (legacy, backward compatibility)
+    - recommendation_reason: Detailed scoring breakdown (new, full transparency)
     - action: User's current action on this item
     """
     
@@ -42,7 +63,10 @@ class DigestItem(BaseModel):
     
     # Digest-specific info
     rank: int = Field(..., ge=1, le=5, description="Position in digest (1-5)")
-    reason: str = Field(..., description="Selection reason for display")
+    reason: str = Field(..., description="Selection reason for display (backward compatibility)")
+    recommendation_reason: Optional[DigestRecommendationReason] = Field(
+        None, description="Detailed scoring breakdown with contributions"
+    )
     
     # User action tracking (default: no action yet)
     is_read: bool = False
