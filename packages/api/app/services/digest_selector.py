@@ -150,7 +150,20 @@ class DigestSelector:
             step_start = time.time()
             scored_candidates_with_bonus = await self._score_candidates(candidates, context)
             scoring_time = time.time() - step_start
-            logger.info("digest_selector_scoring_done", user_id=str(user_id), count=len(scored_candidates_with_bonus), duration_ms=round(scoring_time * 1000, 2))
+            
+            # DEBUG: Compter les scores nuls vs non-nuls
+            non_zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s > 0]
+            zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s == 0]
+            
+            logger.info(
+                "digest_selector_scoring_done",
+                user_id=str(user_id),
+                count=len(scored_candidates_with_bonus),
+                non_zero_count=len(non_zero_scores),
+                zero_count=len(zero_scores),
+                max_score=round(max((s for _, s, _ in scored_candidates_with_bonus), default=0), 2),
+                duration_ms=round(scoring_time * 1000, 2)
+            )
             
             # 4. Sélectionner avec contraintes de diversité
             step_start = time.time()
@@ -159,6 +172,14 @@ class DigestSelector:
                 target_count=limit
             )
             diversity_time = time.time() - step_start
+            
+            logger.info(
+                "digest_diversity_selection_result",
+                user_id=str(user_id),
+                selected_count=len(selected),
+                target_count=limit,
+                had_candidates=len(scored_candidates_with_bonus) > 0
+            )
             
             # 5. Construire les résultats
             digest_items = []
