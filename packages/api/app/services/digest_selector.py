@@ -150,7 +150,20 @@ class DigestSelector:
             step_start = time.time()
             scored_candidates_with_bonus = await self._score_candidates(candidates, context)
             scoring_time = time.time() - step_start
-            logger.info("digest_selector_scoring_done", user_id=str(user_id), count=len(scored_candidates_with_bonus), duration_ms=round(scoring_time * 1000, 2))
+            
+            # DEBUG: Compter les scores nuls vs non-nuls
+            non_zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s > 0]
+            zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s == 0]
+            
+            logger.info(
+                "digest_selector_scoring_done",
+                user_id=str(user_id),
+                count=len(scored_candidates_with_bonus),
+                non_zero_count=len(non_zero_scores),
+                zero_count=len(zero_scores),
+                max_score=round(max((s for _, s, _ in scored_candidates_with_bonus), default=0), 2),
+                duration_ms=round(scoring_time * 1000, 2)
+            )
             
             # 4. Sélectionner avec contraintes de diversité
             step_start = time.time()
@@ -160,8 +173,19 @@ class DigestSelector:
             )
             diversity_time = time.time() - step_start
             
+            logger.info(
+                "digest_diversity_selection_result",
+                user_id=str(user_id),
+                selected_count=len(selected),
+                target_count=limit,
+                had_candidates=len(scored_candidates_with_bonus) > 0
+            )
+            
             # 5. Construire les résultats
             digest_items = []
+            user_source_items = []
+            curated_items = []
+            
             for i, (content, score, reason, recency_bonus) in enumerate(selected, 1):
                 digest_items.append(DigestItem(
                     content=content,
@@ -169,8 +193,19 @@ class DigestSelector:
                     rank=i,
                     reason=reason
                 ))
+                # Track source type
+                if content.source_id in context.followed_source_ids:
+                    user_source_items.append(content.id)
+                else:
+                    curated_items.append(content.id)
             
             total_time = time.time() - start_time
+            
+            # Calculate ratio of user sources vs curated in final selection
+            total_items = len(digest_items)
+            user_items_count = len(user_source_items)
+            curated_items_count = len(curated_items)
+            
             logger.info(
                 "digest_selection_completed", 
                 user_id=str(user_id), 
@@ -181,7 +216,12 @@ class DigestSelector:
                 candidates_ms=round(candidates_time * 1000, 2),
                 scoring_ms=round(scoring_time * 1000, 2),
                 diversity_ms=round(diversity_time * 1000, 2),
-                total_ms=round(total_time * 1000, 2)
+                total_ms=round(total_time * 1000, 2),
+                # Source tracking for curation verification
+                final_user_source_count=user_items_count,
+                final_curated_count=curated_items_count,
+                user_to_curated_ratio=f"{user_items_count}:{curated_items_count}",
+                percent_user_sources=round(user_items_count / total_items * 100, 1) if total_items > 0 else 0
             )
             
             return digest_items
@@ -284,7 +324,7 @@ class DigestSelector:
         2. Si pool insuffisant (< min_pool_size), compléter avec sources curatées
         3. Exclure les articles déjà vus, sauvegardés, ou masqués
         """
-        since = datetime.datetime.utcnow() - datetime.timedelta(hours=hours_lookback)
+        since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_lookback)
         
         # Construire la requête de base avec exclusions
         from sqlalchemy import exists
@@ -342,15 +382,29 @@ class DigestSelector:
         
         # Track user source count separately for fallback decision
         user_source_count = len(candidates)
+        total_candidates = len(candidates)
         
         # Étape 2: Fallback aux sources curatées si nécessaire
-        # CRITICAL FIX: Only use curated fallback if user sources < 3 AND total < min_pool_size
-        # This ensures users see their followed sources even if they're older
+        # CRITICAL FIX: Use curated fallback if user sources < 3 OR total < min_pool_size
+        # This ensures users always get a full digest even if they follow few sources
         max_lookback = 168  # 7 jours max
         fallback_iterations = 0
         
-        # Only enter fallback if we have fewer than 3 user sources AND need more
-        if user_source_count < 3 and len(candidates) < min_pool_size:
+        # Enter fallback if we have fewer than 3 user sources OR need more candidates
+        needs_fallback = user_source_count < 3 or total_candidates < min_pool_size
+        
+        logger.info(
+            "digest_fallback_decision",
+            user_id=str(user_id),
+            user_source_count=user_source_count,
+            total_candidates=total_candidates,
+            min_pool_size=min_pool_size,
+            needs_fallback=needs_fallback,
+            condition_user_sources=f"{user_source_count} < 3",
+            condition_total=f"{total_candidates} < {min_pool_size}"
+        )
+        
+        if needs_fallback:
             for current_lookback in [hours_lookback, max_lookback]:
                 fallback_iterations += 1
                 
@@ -359,7 +413,7 @@ class DigestSelector:
                     
                 needed = min_pool_size - len(candidates)
                 existing_ids = {c.id for c in candidates}
-                since_fallback = datetime.datetime.utcnow() - datetime.timedelta(hours=current_lookback)
+                since_fallback = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=current_lookback)
                 
                 fallback_query = (
                     select(Content)
@@ -462,7 +516,7 @@ class DigestSelector:
             user_interest_weights=context.user_interest_weights,
             followed_source_ids=context.followed_source_ids,
             user_prefs=context.user_prefs,
-            now=datetime.datetime.utcnow(),
+            now=datetime.datetime.now(datetime.timezone.utc),
             user_subtopics=context.user_subtopics,
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
@@ -477,7 +531,16 @@ class DigestSelector:
                 base_score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
                 
                 # Calculate recency bonus based on article age
-                hours_old = (datetime.datetime.utcnow() - content.published_at).total_seconds() / 3600
+                # Defensive: Ensure both datetimes are timezone-aware
+                published = content.published_at
+                now = datetime.datetime.now(datetime.timezone.utc)
+                
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=datetime.timezone.utc)
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=datetime.timezone.utc)
+                
+                hours_old = (now - published).total_seconds() / 3600
                 
                 if hours_old < 6:
                     recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
@@ -507,10 +570,15 @@ class DigestSelector:
                 
                 scored.append((content, final_score, recency_bonus))
             except Exception as e:
-                logger.warning(
+                logger.error(
                     "digest_scoring_failed",
                     content_id=str(content.id),
-                    error=str(e)
+                    source_id=str(content.source_id),
+                    source_name=content.source.name if content.source else None,
+                    published_at=str(content.published_at),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    exc_info=True
                 )
                 # Attribuer un score minimal pour ne pas bloquer
                 scored.append((content, 0.0, 0.0))

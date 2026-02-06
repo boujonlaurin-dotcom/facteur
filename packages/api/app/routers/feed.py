@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -89,7 +90,7 @@ async def mark_briefing_item_read(
     
     # FIX: Broaden window to last 48h to avoid timezone edge cases
     # (e.g. Generated at 23:00 UTC previous day)
-    lookback_window = datetime.utcnow() - timedelta(hours=48)
+    lookback_window = datetime.now(timezone.utc) - timedelta(hours=48)
     
     # 1. Mark in DailyTop3
     stmt = (

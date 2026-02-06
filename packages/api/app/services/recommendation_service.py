@@ -147,7 +147,7 @@ class RecommendationService:
         
         # 3. Score Candidates using ScoringEngine
         scored_candidates = []
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.timezone.utc)
         
         # Context creation
         context = ScoringContext(

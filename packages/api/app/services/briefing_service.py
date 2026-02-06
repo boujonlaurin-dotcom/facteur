@@ -51,7 +51,7 @@ class BriefingService:
             Structure: [{'rank': 1, 'reason': '...', 'content': Content object, ...}]
         """
         # 1. Tenter de récupérer le briefing existant
-        today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         
         stmt = (
             select(DailyTop3)
@@ -155,7 +155,7 @@ class BriefingService:
             user_interest_weights={i.interest_slug: i.weight for i in user_profile.interests},
             followed_source_ids=followed_source_ids,
             user_prefs={p.preference_key: p.preference_value for p in user_profile.preferences},
-            now=datetime.datetime.utcnow(),
+            now=datetime.datetime.now(datetime.timezone.utc),
             # Minimal required fields
             user_subtopics=set(),
             muted_sources=set(),
