@@ -11,15 +11,15 @@
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** 02-10 complete (Add greenlet dependency)  
+**Plan:** 02-11 complete (Digest scoring transparency)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 4/4 | Phase 2: 9/9 | Total: 13/13 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 10/10 | Total: 14/14 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (4/4)
-Phase 2 Frontend:   [████████] 100% (9/9)
-Overall:            [█████████████] 100% (13/13)
+Phase 2 Frontend:   [█████████] 100% (10/10)
+Overall:            [██████████████] 100% (14/14)
 ```
 
 ---
@@ -118,6 +118,23 @@ See: `.planning/phases/01-foundation/01-04-SUMMARY.md`
 - ✅ Follows same pattern as `_get_emergency_candidates()` method
 
 See: `.planning/phases/02-frontend/02-09-SUMMARY.md`
+
+### Frontend Phase — Plan 02-11 Complete (2026-02-06)
+
+**Digest Scoring Transparency for "Pourquoi cet article?"**
+
+- ✅ Extended Pydantic schemas with DigestScoreBreakdown and DigestRecommendationReason
+- ✅ Modified DigestSelector._score_candidates() to capture all 5 scoring layer contributions
+- ✅ Added CoreLayer contributions: Theme match (+70), Trusted source (+40), Custom source (+10)
+- ✅ Added ArticleTopicLayer: Topic matches (+60, max 2), Subtopic precision (+20)
+- ✅ Added StaticPreferenceLayer: Format match (+15)
+- ✅ Added QualityLayer: Curated source (+10), Low reliability penalty (-30)
+- ✅ Updated digest storage to persist breakdown in JSONB
+- ✅ Enhanced API response with full recommendation_reason for each item
+- ✅ Preserved backward-compatible 'reason' string field
+- ✅ Added _determine_top_reason() helper to intelligently derive label from highest contribution
+
+See: `.planning/phases/02-frontend/02-11-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-10 Complete (2026-02-04)
 
@@ -265,12 +282,16 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
    - ✅ 02-07 BriefingSection Refactor - UI/UX improvements using BriefingSection patterns
    - ✅ 02-09 Fix SQLAlchemy Eager Loading (gap closure)
    - ✅ 02-10 Add greenlet>=3.0.0 Dependency (gap closure)
+   - ✅ 02-11 Digest Scoring Transparency - "Pourquoi cet article?" backend
    - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
    - Push notifications for digest ready
    - Analytics integration for MoC metrics
    - Performance optimization (<500ms load time)
+
+3. **Upcoming: UI-08 Frontend Integration**
+   - Plan 02-12: Frontend "Pourquoi cet article?" modal implementation
 
 3. **Prepare for Production**
    - End-to-end testing
@@ -288,6 +309,9 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-06 | Match feed's ScoreContribution pattern for digest | UI consistency and proven pattern for scoring transparency |
+| 2026-02-06 | Store breakdown in JSONB | Enables historical analysis and retrieval of scoring details |
+| 2026-02-06 | Preserve legacy 'reason' string | Backward compatibility for existing clients |
 | 2026-02-04 | Extend FeedCard with optional callbacks | Maintains backward compatibility while enabling Save/NotInterested for digest |
 | 2026-02-04 | Automatic read on article tap | Consistent with BriefingSection behavior, removes redundant button |
 | 2026-02-04 | Segmented progress bar (5 segments) | Elegant, compact visualization of digest progress |
@@ -350,9 +374,9 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-04T12:02:00Z  
-**Stopped at:** Completed 02-10 Add greenlet Dependency plan execution  
-**Resume file:** `.planning/phases/02-frontend/02-10-SUMMARY.md`
+**Last session:** 2026-02-06T17:36:55Z  
+**Stopped at:** Completed 02-11 Digest Scoring Transparency plan execution  
+**Resume file:** `.planning/phases/02-frontend/02-11-SUMMARY.md`
 
 ---
 
