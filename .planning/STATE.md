@@ -1,25 +1,25 @@
 # Project State: Facteur — Epic 10 Digest Central
 
-**Current Phase:** 2 — Frontend Complete (UI/UX Rework In Progress)  
-**Last Updated:** 2026-02-05  
-**Status:** ⚠️ Phase 2 Requires UI/UX Adjustments - See `02-frontend-UI_REWORK_CONTEXT.md`
+**Current Phase:** 2 — Frontend Complete  
+**Last Updated:** 2026-02-06  
+**Status:** ✅ Phase 2 Complete - All 12 plans executed successfully
 
-**⚠️ IMPORTANT:** A UI/UX rework has been requested to properly reuse the existing `BriefingSection` component instead of the newly created `DigestCard`/`DigestScreen` approach. See `.planning/phases/02-frontend/02-frontend-UI_REWORK_CONTEXT.md` for detailed specifications.
+**Status:** ✅ All UI/UX adjustments complete — BriefingSection pattern implemented with FeedCard footer actions
 
 ---
 
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** 02-12 complete ("Pourquoi cet article?" UI)  
+**Plan:** 02-13 complete ("Not Interested" Confirmation Flow Fix)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 4/4 | Phase 2: 11/11 | Total: 15/15 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 12/12 | Total: 16/16 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (4/4)
-Phase 2 Frontend:   [███████████] 100% (11/11)
-Overall:            [███████████████] 100% (15/15)
+Phase 2 Frontend:   [████████████] 100% (12/12)
+Overall:            [████████████████] 100% (16/16)
 ```
 
 ---
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **4/4** |
-| 2 — Frontend | ✅ Complete | 100% | **11/11** |
+| 2 — Frontend | ✅ Complete | 100% | **12/12** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
@@ -135,6 +135,20 @@ See: `.planning/phases/02-frontend/02-09-SUMMARY.md`
 - ✅ Added _determine_top_reason() helper to intelligently derive label from highest contribution
 
 See: `.planning/phases/02-frontend/02-11-SUMMARY.md`
+
+### Frontend Phase — Plan 02-13 Complete (2026-02-06)
+
+**"Not Interested" Confirmation Flow Fix**
+
+- ✅ Created NotInterestedConfirmationSheet widget with confirmation flow
+- ✅ Fixed UX issue where "Pourquoi cet article?" sheet showed "Information non disponible"
+- ✅ New flow: Confirmation sheet → Apply action → Optional personalization sheet
+- ✅ Clear explanation: "Cela masquera cet article et réduira les contenus similaires"
+- ✅ Source name displayed prominently in styled container
+- ✅ Destructive action button styled with warning color (orange)
+- ✅ flutter analyze passes with 0 errors
+
+See: `.planning/phases/02-frontend/02-13-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-12 Complete (2026-02-06)
 
@@ -299,6 +313,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
    - ✅ 02-10 Add greenlet>=3.0.0 Dependency (gap closure)
    - ✅ 02-11 Digest Scoring Transparency - "Pourquoi cet article?" backend
    - ✅ 02-12 "Pourquoi cet article?" UI - Frontend modal implementation
+   - ✅ 02-13 "Not Interested" Confirmation Flow Fix - UX fix for moins voir action
    - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
@@ -322,6 +337,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-06 | Show confirmation BEFORE personalization for "Not Interested" | Avoids confusing "Information non disponible" UX issue when sheet opens |
 | 2026-02-06 | Reuse feed provider for muting actions | DRY principle - avoid duplicating personalization logic |
 | 2026-02-06 | Use GestureDetector for long-press on FeedCard | Clean extension of existing card component |
 | 2026-02-06 | Match feed's ScoreContribution pattern for digest | UI consistency and proven pattern for scoring transparency |
@@ -390,10 +406,10 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-06T17:26:05Z  
-**Stopped at:** Completed 02-12 "Pourquoi cet article?" UI plan execution  
-**Resume file:** `.planning/phases/02-frontend/02-12-SUMMARY.md`
+**Last session:** 2026-02-06T17:38:00Z  
+**Stopped at:** Completed 02-13 "Not Interested" Confirmation Flow Fix  
+**Resume file:** `.planning/phases/02-frontend/02-13-SUMMARY.md`
 
 ---
 
-*State updated after 02-12 plan execution - Phase 2 Frontend COMPLETE, ready for Phase 3 Polish*
+*State updated after 02-13 plan execution - Phase 2 Frontend COMPLETE with 12/12 plans, ready for Phase 3 Polish*
