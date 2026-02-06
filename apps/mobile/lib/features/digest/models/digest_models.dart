@@ -5,6 +5,32 @@ import '../../feed/models/content_model.dart';
 part 'digest_models.freezed.dart';
 part 'digest_models.g.dart';
 
+/// Individual scoring contribution for a digest item
+@freezed
+class DigestScoreBreakdown with _$DigestScoreBreakdown {
+  const factory DigestScoreBreakdown({
+    required String label,
+    required double points,
+    @JsonKey(name: 'is_positive') required bool isPositive,
+  }) = _DigestScoreBreakdown;
+
+  factory DigestScoreBreakdown.fromJson(Map<String, dynamic> json) =>
+      _$DigestScoreBreakdownFromJson(json);
+}
+
+/// Complete recommendation reasoning with score breakdown
+@freezed
+class DigestRecommendationReason with _$DigestRecommendationReason {
+  const factory DigestRecommendationReason({
+    required String label,
+    @JsonKey(name: 'score_total') required double scoreTotal,
+    required List<DigestScoreBreakdown> breakdown,
+  }) = _DigestRecommendationReason;
+
+  factory DigestRecommendationReason.fromJson(Map<String, dynamic> json) =>
+      _$DigestRecommendationReasonFromJson(json);
+}
+
 /// Model representing a source in minimal form (for digest items)
 @freezed
 class SourceMini with _$SourceMini {
@@ -43,6 +69,8 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
     @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
+    @JsonKey(name: 'recommendation_reason')
+    DigestRecommendationReason? recommendationReason,
   }) = _DigestItem;
 
   factory DigestItem.fromJson(Map<String, dynamic> json) =>
