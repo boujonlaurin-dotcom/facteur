@@ -216,6 +216,20 @@ class DigestBriefingSection extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              // Info button for desktop/web users (alternative to long-press)
+              if (item.recommendationReason != null)
+                InkWell(
+                  onTap: () => _showReasoningSheet(context, item),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      PhosphorIcons.info(PhosphorIconsStyle.regular),
+                      size: 16,
+                      color: colors.primary,
+                    ),
+                  ),
+                ),
               if (item.isRead)
                 Icon(
                   PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
