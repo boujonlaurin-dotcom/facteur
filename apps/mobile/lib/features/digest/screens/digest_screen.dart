@@ -17,6 +17,7 @@ import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
+import '../widgets/not_interested_confirmation_sheet.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 5 articles
 /// Uses DigestBriefingSection with Feed-style header and segmented progress bar
@@ -138,6 +139,30 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
   void _handleNotInterested(DigestItem item) {
     HapticFeedback.lightImpact();
+
+    // Show confirmation sheet first
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => NotInterestedConfirmationSheet(
+        sourceName: item.source?.name ?? 'cette source',
+        onConfirm: () {
+          Navigator.pop(context);
+          // Apply the action
+          ref.read(digestProvider.notifier).applyAction(
+                item.contentId,
+                'not_interested',
+              );
+          // Optionally show personalization sheet for more options
+          _showPersonalizationSheet(item);
+        },
+        onCancel: () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  void _showPersonalizationSheet(DigestItem item) {
     // Show DigestPersonalizationSheet with algorithm breakdown + mute options
     showModalBottomSheet<void>(
       context: context,
