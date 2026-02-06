@@ -17,11 +17,9 @@ final feedRepositoryProvider = Provider<FeedRepository>((ref) {
 // Provider des données du feed (Infinite Scroll)
 class FeedState {
   final List<Content> items;
-  final List<DailyTop3Item> briefing;
 
   FeedState({
     required this.items,
-    this.briefing = const [],
   });
 }
 
@@ -63,7 +61,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     // Check if we need to load more immediately? No.
 
-    return FeedState(items: response.items, briefing: response.briefing);
+    return FeedState(items: response.items);
   }
 
   Future<void> setFilter(String? filter) async {
@@ -96,13 +94,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
       if (newItems.isNotEmpty) {
         _page = nextPage;
-        // Append new items to the existing list, keep briefing unchanged
+        // Append new items to the existing list
         final currentItems = state.value?.items ?? [];
-        final currentBriefing = state.value?.briefing ?? [];
 
         state = AsyncData(FeedState(
           items: [...currentItems, ...newItems],
-          briefing: currentBriefing,
         ));
       }
     } catch (e, stack) {
@@ -122,8 +118,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     try {
       final response = await _fetchPage(page: 1);
-      state = AsyncData(
-          FeedState(items: response.items, briefing: response.briefing));
+      state = AsyncData(FeedState(items: response.items));
     } catch (e, stack) {
       state = AsyncError(e, stack);
       rethrow;
@@ -156,8 +151,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
 
     // Mise à jour optimiste immédiate
-    state = AsyncData(
-        FeedState(items: updatedItems, briefing: currentState.briefing));
+    state = AsyncData(FeedState(items: updatedItems));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -178,8 +172,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     updatedItems.removeWhere((c) => c.id == content.id);
 
     // Optimistic remove
-    state = AsyncData(
-        FeedState(items: updatedItems, briefing: currentState.briefing));
+    state = AsyncData(FeedState(items: updatedItems));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -201,8 +194,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this source
     final updatedItems =
         currentState.items.where((c) => c.source.id != sourceId).toList();
-    state = AsyncData(
-        FeedState(items: updatedItems, briefing: currentState.briefing));
+    state = AsyncData(FeedState(items: updatedItems));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -221,8 +213,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this theme
     final updatedItems =
         currentState.items.where((c) => c.source.theme != theme).toList();
-    state = AsyncData(
-        FeedState(items: updatedItems, briefing: currentState.briefing));
+    state = AsyncData(FeedState(items: updatedItems));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -244,8 +235,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       return itemTopic != topic;
     }).toList();
 
-    state = AsyncData(
-        FeedState(items: updatedItems, briefing: currentState.briefing));
+    state = AsyncData(FeedState(items: updatedItems));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -265,37 +255,6 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // 1. Briefing Logic
-    final briefingIndex =
-        currentState.briefing.indexWhere((b) => b.content.id == content.id);
-    final bool isBriefingItem = briefingIndex != -1;
-    List<DailyTop3Item> updatedBriefing = currentState.briefing;
-
-    if (isBriefingItem) {
-      updatedBriefing = List.from(currentState.briefing);
-      final item = updatedBriefing[briefingIndex];
-      updatedBriefing[briefingIndex] = DailyTop3Item(
-          rank: item.rank,
-          reason: item.reason,
-          isConsumed: true,
-          content: item.content);
-
-      // Update state immediately for UI feedback (strikethrough)
-      state = AsyncData(FeedState(
-          items: currentState.items, // Items not yet modified
-          briefing: updatedBriefing));
-
-      try {
-        final repository = ref.read(feedRepositoryProvider);
-        // Fire and forget both?
-        await repository.markBriefingAsRead(content.id);
-      } catch (e) {
-        // Log error but don't block
-        print('🔴 FeedNotifier: Failed to mark briefing as read: $e');
-      }
-    }
-
-    // 2. Feed Items Logic - PERSISTENCE (Story: Keep read items until refresh)
     // Check if it's in the feed items
     final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
 
@@ -305,8 +264,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       updatedItems[feedIndex] =
           updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
 
-      state = AsyncData(
-          FeedState(items: updatedItems, briefing: currentState.briefing));
+      state = AsyncData(FeedState(items: updatedItems));
 
       // Call Generic API immediately (Fire and forget)
       try {

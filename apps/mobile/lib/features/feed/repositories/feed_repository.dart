@@ -86,7 +86,6 @@ class FeedRepository {
 
         return FeedResponse(
           items: itemsList,
-          briefing: const [], // Always empty - digest moved to dedicated tab
           pagination: Pagination(
             page: page,
             perPage: limit,

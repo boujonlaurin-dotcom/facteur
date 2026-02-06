@@ -264,12 +264,10 @@ class DailyTop3Item {
 
 class FeedResponse {
   final List<Content> items;
-  final List<DailyTop3Item> briefing;
   final Pagination pagination;
 
   FeedResponse({
     required this.items,
-    this.briefing = const [],
     required this.pagination,
   });
 
@@ -277,10 +275,6 @@ class FeedResponse {
     return FeedResponse(
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => Content.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
-      briefing: (json['briefing'] as List<dynamic>?)
-              ?.map((e) => DailyTop3Item.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       pagination: json['pagination'] != null
