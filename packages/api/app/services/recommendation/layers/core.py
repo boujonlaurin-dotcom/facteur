@@ -51,10 +51,15 @@ class CoreLayer(BaseScoringLayer):
         # Score = 30 / (hours_old/24 + 1)
         if content.published_at:
             published = content.published_at
-            if published.tzinfo:
-                published = published.replace(tzinfo=None)
+            now = context.now
             
-            delta = context.now - published
+            # Ensure both datetimes are timezone-aware for comparison
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=datetime.timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=datetime.timezone.utc)
+            
+            delta = now - published
             hours_old = max(0, delta.total_seconds() / 3600)
             
             # Formule V1
