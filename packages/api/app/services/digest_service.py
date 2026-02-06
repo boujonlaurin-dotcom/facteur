@@ -520,7 +520,7 @@ class DigestService:
             action_state = await self._get_item_action_state(user_id, content_id)
             
             # Rebuild breakdown from stored data if available
-            breakdown_data = item_data.get("breakdown", [])
+            breakdown_data = item_data.get("breakdown") or []
             if breakdown_data:
                 logger.info(
                     "rebuilt_breakdown_from_stored_data",
