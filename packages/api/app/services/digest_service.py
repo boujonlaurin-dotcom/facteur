@@ -414,6 +414,13 @@ class DigestService:
             
             # Store breakdown if available
             if item.breakdown:
+                logger.info(
+                    "storing_breakdown_for_digest_item",
+                    content_id=str(item.content.id),
+                    content_title=item.content.title[:50] if item.content.title else "",
+                    breakdown_count=len(item.breakdown),
+                    breakdown_labels=[b.label for b in item.breakdown[:3]]
+                )
                 item_data["breakdown"] = [
                     {
                         "label": b.label,
@@ -422,6 +429,13 @@ class DigestService:
                     }
                     for b in item.breakdown
                 ]
+            else:
+                logger.warning(
+                    "no_breakdown_available_for_digest_item",
+                    content_id=str(item.content.id),
+                    content_title=item.content.title[:50] if item.content.title else "",
+                    item_type=type(item).__name__
+                )
             
             items_json.append(item_data)
         
@@ -507,6 +521,20 @@ class DigestService:
             
             # Rebuild breakdown from stored data if available
             breakdown_data = item_data.get("breakdown", [])
+            if breakdown_data:
+                logger.info(
+                    "rebuilt_breakdown_from_stored_data",
+                    content_id=str(content_id),
+                    breakdown_count=len(breakdown_data),
+                    breakdown_labels=[b.get("label", "") for b in breakdown_data[:3]]
+                )
+            else:
+                logger.warning(
+                    "no_breakdown_data_in_stored_item",
+                    content_id=str(content_id),
+                    digest_id=str(digest.id),
+                    item_rank=item_data.get("rank", 0)
+                )
             breakdown = [
                 DigestScoreBreakdown(
                     label=b["label"],
