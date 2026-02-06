@@ -11,15 +11,15 @@
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** 02-14 complete (Digest Personalization Unification)  
+**Plan:** 02-15 complete (Fix Missing Scoring Breakdown Data)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 4/4 | Phase 2: 13/13 | Total: 17/17 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 14/14 | Total: 18/18 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (4/4)
-Phase 2 Frontend:   [█████████████] 100% (13/13)
-Overall:            [█████████████████] 100% (17/17)
+Phase 2 Frontend:   [██████████████] 100% (14/14)
+Overall:            [██████████████████] 100% (18/18)
 ```
 
 ---
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **4/4** |
-| 2 — Frontend | ✅ Complete | 100% | **13/13** |
+| 2 — Frontend | ✅ Complete | 100% | **14/14** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
@@ -135,6 +135,20 @@ See: `.planning/phases/02-frontend/02-09-SUMMARY.md`
 - ✅ Added _determine_top_reason() helper to intelligently derive label from highest contribution
 
 See: `.planning/phases/02-frontend/02-11-SUMMARY.md`
+
+### Frontend Phase — Plan 02-15 Complete (2026-02-06)
+
+**Fix Missing Scoring Breakdown Data**
+
+- ✅ Added diagnostic logging for breakdown storage tracking
+- ✅ Added INFO log when breakdown is stored (content_id, title, count, labels)
+- ✅ Added WARNING log when breakdown is missing during storage
+- ✅ Added INFO log when breakdown is rebuilt from stored data
+- ✅ Added WARNING log when stored item has no breakdown data
+- ✅ Logs distinguish old digests (before 02-11) from new digests with breakdown
+- ✅ User can force regenerate via existing endpoint to get fresh data
+
+See: `.planning/phases/02-frontend/02-15-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-14 Complete (2026-02-06)
 
@@ -317,7 +331,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ### Immediate Next Steps
 
-1. **Phase 2 Frontend** ✅ COMPLETE
+1. **Phase 2 Frontend** ✅ COMPLETE (14/14 plans)
    - ✅ 02-01 Digest Screen UI - Initial digest implementation
    - ✅ 02-02 Action UI - Article actions with API integration
    - ✅ 02-03 Closure Screen - Completion celebration
@@ -329,6 +343,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
    - ✅ 02-12 "Pourquoi cet article?" UI - Frontend modal implementation
    - ✅ 02-13 "Not Interested" Confirmation Flow Fix - UX fix for moins voir action
    - ✅ 02-14 Digest Personalization Unification - Align with Feed pattern
+   - ✅ 02-15 Fix Missing Scoring Breakdown Data - Diagnostic logging for breakdown tracking
    - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
@@ -423,9 +438,9 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-06T18:00:00Z  
-**Stopped at:** Completed 02-14 Digest Personalization Unification  
-**Resume file:** `.planning/phases/02-frontend/02-14-SUMMARY.md`
+**Last session:** 2026-02-06T23:00:55Z  
+**Stopped at:** Completed 02-15 Fix Missing Scoring Breakdown Data  
+**Resume file:** `.planning/phases/02-frontend/02-15-SUMMARY.md`
 
 ---
 
