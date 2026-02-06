@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'digest_personalization_sheet.dart';
 
 /// Digest Briefing Section with premium design for 5 articles.
 /// Based on BriefingSection from Feed but adapted for digest-specific features.
@@ -223,16 +225,25 @@ class DigestBriefingSection extends StatelessWidget {
             ],
           ),
         ),
-        // The card with save/not interested actions
-        Opacity(
-          opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
-          child: FeedCard(
-            content: _convertToContent(item),
-            onTap: () => onItemTap(item),
-            onSave: onSave != null ? () => onSave!(item) : null,
-            onNotInterested:
-                onNotInterested != null ? () => onNotInterested!(item) : null,
-            isSaved: item.isSaved,
+        // The card with save/not interested actions and long-press for reasoning
+        GestureDetector(
+          onLongPress: item.recommendationReason != null
+              ? () {
+                  HapticFeedback.mediumImpact();
+                  _showReasoningSheet(context, item);
+                }
+              : null,
+          behavior: HitTestBehavior.translucent,
+          child: Opacity(
+            opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
+            child: FeedCard(
+              content: _convertToContent(item),
+              onTap: () => onItemTap(item),
+              onSave: onSave != null ? () => onSave!(item) : null,
+              onNotInterested:
+                  onNotInterested != null ? () => onNotInterested!(item) : null,
+              isSaved: item.isSaved,
+            ),
           ),
         ),
       ],
@@ -271,5 +282,15 @@ class DigestBriefingSection extends StatelessWidget {
       default:
         return SourceType.article;
     }
+  }
+
+  /// Show the personalization sheet with scoring breakdown
+  void _showReasoningSheet(BuildContext context, DigestItem item) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => DigestPersonalizationSheet(item: item),
+    );
   }
 }
