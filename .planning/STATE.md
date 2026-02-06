@@ -2,7 +2,7 @@
 
 **Current Phase:** 2 — Frontend Complete  
 **Last Updated:** 2026-02-06  
-**Status:** ✅ Phase 2 Complete - All 12 plans executed successfully
+**Status:** ✅ Phase 2 Complete - All 13 plans executed successfully
 
 **Status:** ✅ All UI/UX adjustments complete — BriefingSection pattern implemented with FeedCard footer actions
 
@@ -11,15 +11,15 @@
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** 02-13 complete ("Not Interested" Confirmation Flow Fix)  
+**Plan:** 02-14 complete (Digest Personalization Unification)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 4/4 | Phase 2: 12/12 | Total: 16/16 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 13/13 | Total: 17/17 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (4/4)
-Phase 2 Frontend:   [████████████] 100% (12/12)
-Overall:            [████████████████] 100% (16/16)
+Phase 2 Frontend:   [█████████████] 100% (13/13)
+Overall:            [█████████████████] 100% (17/17)
 ```
 
 ---
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **4/4** |
-| 2 — Frontend | ✅ Complete | 100% | **12/12** |
+| 2 — Frontend | ✅ Complete | 100% | **13/13** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
@@ -135,6 +135,20 @@ See: `.planning/phases/02-frontend/02-09-SUMMARY.md`
 - ✅ Added _determine_top_reason() helper to intelligently derive label from highest contribution
 
 See: `.planning/phases/02-frontend/02-11-SUMMARY.md`
+
+### Frontend Phase — Plan 02-14 Complete (2026-02-06)
+
+**Digest Personalization Unification**
+
+- ✅ Removed NotInterestedConfirmationSheet widget (156 lines deleted)
+- ✅ Unified Digest personalization with Feed pattern
+- ✅ Updated _handleNotInterested to apply action immediately (no confirmation)
+- ✅ Shows unified "Pourquoi cet article?" sheet with scoring + personalization
+- ✅ Visual design matches Feed PersonalizationSheet exactly
+- ✅ Code is simpler: 176 lines removed, 8 lines added
+- ✅ flutter analyze passes with 0 new errors
+
+See: `.planning/phases/02-frontend/02-14-SUMMARY.md`
 
 ### Frontend Phase — Plan 02-13 Complete (2026-02-06)
 
@@ -314,6 +328,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
    - ✅ 02-11 Digest Scoring Transparency - "Pourquoi cet article?" backend
    - ✅ 02-12 "Pourquoi cet article?" UI - Frontend modal implementation
    - ✅ 02-13 "Not Interested" Confirmation Flow Fix - UX fix for moins voir action
+   - ✅ 02-14 Digest Personalization Unification - Align with Feed pattern
    - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
@@ -337,6 +352,8 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-06 | Unify Digest and Feed personalization patterns | Creates consistent UX across platform, simplifies code |
+| 2026-02-06 | Apply "Not Interested" action immediately (no confirmation) | Matches Feed behavior; simpler UX flow |
 | 2026-02-06 | Show confirmation BEFORE personalization for "Not Interested" | Avoids confusing "Information non disponible" UX issue when sheet opens |
 | 2026-02-06 | Reuse feed provider for muting actions | DRY principle - avoid duplicating personalization logic |
 | 2026-02-06 | Use GestureDetector for long-press on FeedCard | Clean extension of existing card component |
@@ -406,10 +423,10 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-06T17:38:00Z  
-**Stopped at:** Completed 02-13 "Not Interested" Confirmation Flow Fix  
-**Resume file:** `.planning/phases/02-frontend/02-13-SUMMARY.md`
+**Last session:** 2026-02-06T18:00:00Z  
+**Stopped at:** Completed 02-14 Digest Personalization Unification  
+**Resume file:** `.planning/phases/02-frontend/02-14-SUMMARY.md`
 
 ---
 
-*State updated after 02-13 plan execution - Phase 2 Frontend COMPLETE with 12/12 plans, ready for Phase 3 Polish*
+*State updated after 02-14 plan execution - Phase 2 Frontend COMPLETE with 13/13 plans, ready for Phase 3 Polish*
