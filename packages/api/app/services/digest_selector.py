@@ -33,6 +33,7 @@ from app.models.enums import ContentStatus
 from app.services.recommendation_service import RecommendationService
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation.scoring_config import ScoringWeights
+from app.schemas.digest import DigestScoreBreakdown
 
 logger = structlog.get_logger()
 
@@ -46,11 +47,13 @@ class DigestItem:
         score: Le score calculé par le ScoringEngine
         rank: La position dans le digest (1-5)
         reason: La raison de sélection (pour affichage utilisateur)
+        breakdown: Les contributions détaillées au score (pour transparence)
     """
     content: Content
     score: float
     rank: int
     reason: str
+    breakdown: Optional[List[DigestScoreBreakdown]] = None
 
 
 @dataclass
@@ -148,27 +151,27 @@ class DigestSelector:
             
             # 3. Scorer les candidats
             step_start = time.time()
-            scored_candidates_with_bonus = await self._score_candidates(candidates, context)
+            scored_candidates_with_breakdown = await self._score_candidates(candidates, context)
             scoring_time = time.time() - step_start
             
             # DEBUG: Compter les scores nuls vs non-nuls
-            non_zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s > 0]
-            zero_scores = [s for _, s, _ in scored_candidates_with_bonus if s == 0]
+            non_zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s > 0]
+            zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s == 0]
             
             logger.info(
                 "digest_selector_scoring_done",
                 user_id=str(user_id),
-                count=len(scored_candidates_with_bonus),
+                count=len(scored_candidates_with_breakdown),
                 non_zero_count=len(non_zero_scores),
                 zero_count=len(zero_scores),
-                max_score=round(max((s for _, s, _ in scored_candidates_with_bonus), default=0), 2),
+                max_score=round(max((s for _, s, _ in scored_candidates_with_breakdown), default=0), 2),
                 duration_ms=round(scoring_time * 1000, 2)
             )
             
             # 4. Sélectionner avec contraintes de diversité
             step_start = time.time()
             selected = self._select_with_diversity(
-                scored_candidates=scored_candidates_with_bonus,
+                scored_candidates=scored_candidates_with_breakdown,
                 target_count=limit
             )
             diversity_time = time.time() - step_start
@@ -178,7 +181,7 @@ class DigestSelector:
                 user_id=str(user_id),
                 selected_count=len(selected),
                 target_count=limit,
-                had_candidates=len(scored_candidates_with_bonus) > 0
+                had_candidates=len(scored_candidates_with_breakdown) > 0
             )
             
             # 5. Construire les résultats
@@ -186,12 +189,13 @@ class DigestSelector:
             user_source_items = []
             curated_items = []
             
-            for i, (content, score, reason, recency_bonus) in enumerate(selected, 1):
+            for i, (content, score, reason, breakdown) in enumerate(selected, 1):
                 digest_items.append(DigestItem(
                     content=content,
                     score=score,
                     rank=i,
-                    reason=reason
+                    reason=reason,
+                    breakdown=breakdown
                 ))
                 # Track source type
                 if content.source_id in context.followed_source_ids:
@@ -502,12 +506,15 @@ class DigestSelector:
         self,
         candidates: List[Content],
         context: DigestContext
-    ) -> List[Tuple[Content, float, float]]:
+    ) -> List[Tuple[Content, float, List[DigestScoreBreakdown]]]:
         """Score les candidats en utilisant le ScoringEngine existant avec bonus de fraîcheur.
         
         Cette méthode utilise le ScoringEngine configuré dans RecommendationService
         et ajoute un bonus de fraîcheur hiérarchisé pour favoriser les articles
         des sources suivies même s'ils sont plus anciens.
+        
+        Retourne les candidats avec leur score et un breakdown détaillé des contributions
+        pour la transparence algorithmique.
         """
         # Construire le ScoringContext pour le moteur existant
         scoring_context = ScoringContext(
@@ -526,6 +533,8 @@ class DigestSelector:
         
         scored = []
         for content in candidates:
+            breakdown: List[DigestScoreBreakdown] = []
+            
             try:
                 # Get base score from ScoringEngine
                 base_score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
@@ -542,33 +551,137 @@ class DigestSelector:
                 
                 hours_old = (now - published).total_seconds() / 3600
                 
+                # Add recency contribution to breakdown
                 if hours_old < 6:
                     recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Article très récent (< 6h)",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 elif hours_old < 24:
                     recency_bonus = ScoringWeights.RECENT_BONUS  # +25
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Article récent (< 24h)",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 elif hours_old < 48:
                     recency_bonus = ScoringWeights.RECENT_DAY_BONUS  # +15
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Publié aujourd'hui",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 elif hours_old < 72:
                     recency_bonus = ScoringWeights.RECENT_YESTERDAY_BONUS  # +8
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Publié hier",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 elif hours_old < 120:
                     recency_bonus = ScoringWeights.RECENT_WEEK_BONUS  # +3
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Article de la semaine",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 elif hours_old < 168:
                     recency_bonus = ScoringWeights.RECENT_OLD_BONUS  # +1
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Article ancien",
+                        points=recency_bonus,
+                        is_positive=True
+                    ))
                 else:
                     recency_bonus = 0.0
                 
                 final_score = base_score + recency_bonus
                 
+                # Capture CoreLayer contributions
+                # Theme match
+                if content.source and content.source.theme in context.user_interests:
+                    breakdown.append(DigestScoreBreakdown(
+                        label=f"Thème matché : {content.source.theme}",
+                        points=ScoringWeights.THEME_MATCH,
+                        is_positive=True
+                    ))
+                
+                # Source followed
+                if content.source_id in context.followed_source_ids:
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Source de confiance",
+                        points=ScoringWeights.TRUSTED_SOURCE,
+                        is_positive=True
+                    ))
+                    
+                    # Custom source bonus
+                    if content.source_id in context.custom_source_ids:
+                        breakdown.append(DigestScoreBreakdown(
+                            label="Ta source personnalisée",
+                            points=ScoringWeights.CUSTOM_SOURCE_BONUS,
+                            is_positive=True
+                        ))
+                
+                # Capture ArticleTopicLayer contributions
+                if content.topics:
+                    matched_topics = 0
+                    for topic in content.topics:
+                        if topic.lower() in context.user_subtopics and matched_topics < 2:
+                            breakdown.append(DigestScoreBreakdown(
+                                label=f"Sous-thème : {topic}",
+                                points=ScoringWeights.TOPIC_MATCH,
+                                is_positive=True
+                            ))
+                            matched_topics += 1
+                    
+                    # Subtopic precision bonus if any topics matched
+                    if matched_topics > 0:
+                        breakdown.append(DigestScoreBreakdown(
+                            label="Précision thématique",
+                            points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
+                            is_positive=True
+                        ))
+                
+                # Capture StaticPreferenceLayer contributions
+                if content.content_type and context.user_prefs.get('preferred_format'):
+                    if content.content_type.value == context.user_prefs.get('preferred_format'):
+                        breakdown.append(DigestScoreBreakdown(
+                            label=f"Format préféré : {content.content_type.value}",
+                            points=15.0,  # Format preference weight
+                            is_positive=True
+                        ))
+                
+                # Capture QualityLayer contributions
+                if content.source and content.source.is_curated:
+                    breakdown.append(DigestScoreBreakdown(
+                        label="Source qualitative",
+                        points=ScoringWeights.CURATED_SOURCE,
+                        is_positive=True
+                    ))
+                
+                # Low reliability penalty (if applicable)
+                if content.source and hasattr(content.source, 'reliability_score'):
+                    reliability = content.source.reliability_score
+                    if reliability and reliability < 0.5:
+                        breakdown.append(DigestScoreBreakdown(
+                            label="Fiabilité source faible",
+                            points=ScoringWeights.FQS_LOW_MALUS,
+                            is_positive=False
+                        ))
+                
                 logger.debug(
-                    "digest_scoring_recency_bonus",
+                    "digest_scoring_breakdown",
                     content_id=str(content.id),
                     hours_old=round(hours_old, 2),
                     base_score=round(base_score, 2),
                     recency_bonus=recency_bonus,
-                    final_score=round(final_score, 2)
+                    final_score=round(final_score, 2),
+                    breakdown_count=len(breakdown)
                 )
                 
-                scored.append((content, final_score, recency_bonus))
+                scored.append((content, final_score, breakdown))
             except Exception as e:
                 logger.error(
                     "digest_scoring_failed",
@@ -581,7 +694,7 @@ class DigestSelector:
                     exc_info=True
                 )
                 # Attribuer un score minimal pour ne pas bloquer
-                scored.append((content, 0.0, 0.0))
+                scored.append((content, 0.0, breakdown))
         
         # Trier par score décroissant
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -590,9 +703,9 @@ class DigestSelector:
     
     def _select_with_diversity(
         self,
-        scored_candidates: List[Tuple[Content, float, float]],
+        scored_candidates: List[Tuple[Content, float, List[DigestScoreBreakdown]]],
         target_count: int
-    ) -> List[Tuple[Content, float, str, float]]:
+    ) -> List[Tuple[Content, float, str, List[DigestScoreBreakdown]]]:
         """Sélectionne les articles avec contraintes de diversité.
         
         Contraintes:
@@ -606,13 +719,13 @@ class DigestSelector:
         4. S'arrêter quand on atteint target_count
         
         Returns:
-            Liste de tuples (Content, score, reason)
+            Liste de tuples (Content, score, reason, breakdown)
         """
         selected = []
         source_counts = defaultdict(int)
         theme_counts = defaultdict(int)
 
-        for content, score, recency_bonus in scored_candidates:
+        for content, score, breakdown in scored_candidates:
             if len(selected) >= target_count:
                 break
 
@@ -626,9 +739,9 @@ class DigestSelector:
             if theme and theme_counts[theme] >= self.constraints.MAX_PER_THEME:
                 continue
 
-            # Contraintes respectées - ajouter avec bonus dans la raison
-            reason = self._generate_reason(content, source_counts, theme_counts, recency_bonus)
-            selected.append((content, score, reason, recency_bonus))
+            # Contraintes respectées - ajouter avec raison générée
+            reason = self._generate_reason(content, source_counts, theme_counts, breakdown)
+            selected.append((content, score, reason, breakdown))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
@@ -647,7 +760,7 @@ class DigestSelector:
         content: Content,
         source_counts: Dict[UUID, int],
         theme_counts: Dict[str, int],
-        recency_bonus: float = 0.0
+        breakdown: Optional[List[DigestScoreBreakdown]] = None
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
 
@@ -656,6 +769,14 @@ class DigestSelector:
         source_id = content.source_id
         theme = content.source.theme if content.source else None
 
+        # Extract recency bonus from breakdown for backward compatibility
+        recency_bonus = 0.0
+        if breakdown:
+            for b in breakdown:
+                if b.label.startswith(("Article très récent", "Article récent", "Publié")):
+                    recency_bonus = b.points
+                    break
+        
         # Build bonus suffix if applicable
         bonus_suffix = f" (+{int(recency_bonus)} pts)" if recency_bonus > 0 else ""
 
