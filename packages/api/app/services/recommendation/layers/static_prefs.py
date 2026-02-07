@@ -26,8 +26,14 @@ class StaticPreferenceLayer(BaseScoringLayer):
         if recency_pref == 'recent':
              # Boost supplémentaire pour les items très récents (< 24h)
              if content.published_at:
-                published = content.published_at.replace(tzinfo=None) if content.published_at.tzinfo else content.published_at
-                hours_old = (context.now - published).total_seconds() / 3600.0
+                published = content.published_at
+                now = context.now
+                # Ensure both are tz-aware for safe subtraction
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=datetime.timezone.utc)
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=datetime.timezone.utc)
+                hours_old = (now - published).total_seconds() / 3600.0
                 if hours_old < 24:
                     score += 15.0 # Bonus fraîcheur
                     context.add_reason(content.id, self.name, 15.0, "Pref: Recent content")
@@ -36,8 +42,14 @@ class StaticPreferenceLayer(BaseScoringLayer):
             # On s'en fiche un peu de la récence, donc on peut redonner des points aux vieux articles
             # pour qu'ils remontent malgré le decay du CoreLayer.
              if content.published_at:
-                published = content.published_at.replace(tzinfo=None) if content.published_at.tzinfo else content.published_at
-                hours_old = (context.now - published).total_seconds() / 3600.0
+                published = content.published_at
+                now = context.now
+                # Ensure both are tz-aware for safe subtraction
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=datetime.timezone.utc)
+                if now.tzinfo is None:
+                    now = now.replace(tzinfo=datetime.timezone.utc)
+                hours_old = (now - published).total_seconds() / 3600.0
                 if hours_old > 48:
                     score += 10.0 # Bonus "Archive"
                     context.add_reason(content.id, self.name, 10.0, "Pref: Timeless content")

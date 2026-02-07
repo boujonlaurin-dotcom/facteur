@@ -23,24 +23,23 @@ Facteur is a mobile app for intentional information consumption. After extensive
 - ✓ User profiles & onboarding — existing
 - ✓ Streak tracking system — existing, will extend for "closure streak"
 
-### Active
+### Validated (Previous Milestone: Epic 10)
 
-**Epic 10: Digest Central — MVP Scope**
+- ✓ **DIG-01 through DIG-13**: Digest Central MVP — Phase 1 & 2 complete (2026-02-07)
+  - Database migrations, DigestSelector service, API endpoints
+  - Flutter digest screen, actions, closure experience
+  - Feed relegation and navigation
 
-- [ ] **DIG-01**: Database migration from `daily_top3` to `daily_digest` (5 articles, JSONB items)
-- [ ] **DIG-02**: `DigestSelector` service — select 5 articles from user's declared sources only
-- [ ] **DIG-03**: Diversity constraints (max 2 per source, 2 per theme) in selector
-- [ ] **DIG-04**: Fallback to curated sources when user pool insufficient
-- [ ] **DIG-05**: API endpoint `GET /api/digest` — retrieve today's digest
-- [ ] **DIG-06**: API endpoint `POST /api/digest/{id}/action` — mark Read/Save/Not Interested
-- [ ] **DIG-07**: Digest completion tracking (`digest_completions` table)
-- [ ] **DIG-08**: Closure streak extension (add to `user_streaks`)
-- [ ] **DIG-09**: Flutter digest screen — 5 article cards with progress bar
-- [ ] **DIG-10**: Article card actions — Read / Save / Not Interested (reuse Personalization UI patterns)
-- [ ] **DIG-11**: Progress bar component (X/5)
-- [ ] **DIG-12**: Closure screen — animation, "Tu es informé !", streak update
-- [ ] **DIG-13**: Feed relegation — "Explorer plus" button from closure
-- [ ] **DIG-14**: Morning push notification "Digest ready" (8h) — optional
+## Active
+
+**Milestone v1.0.1: Digest Production Fixes**
+
+- [ ] **FIX-01**: Add digest generation job to scheduler (8am daily)
+- [ ] **FIX-02**: Implement source diversity with decay factor 0.70
+- [ ] **FIX-03**: Verify fixes with comprehensive testing
+
+**Previous (Deferred to v1.1):**
+- [ ] **DIG-14**: Morning push notification "Digest ready" (8h) — Phase 3 Polish
 
 ### Out of Scope
 
@@ -90,6 +89,17 @@ This pivot intentionally reuses existing systems:
 | Defer "Zen" Essential to V2 | Sentiment analysis too costly/complex for MVP; single digest validates core concept first | ✓ Confirmed |
 | Reuse existing scoring (V2/V3) | No algorithm changes needed; DigestSelector uses existing layers | ✓ Confirmed |
 
+## Current Milestone: v1.0.1 — Digest Production Fixes
+
+**Goal:** Fix 2 critical bugs blocking production release
+
+**Target features:**
+- Job scheduler integration for daily digest generation at 8am
+- Source diversity algorithm with decay factor
+- Verification tests for both fixes
+
+**Timeline:** ~4-6 hours
+
 ---
 
-*Last updated: 2026-02-01 after Epic 10 validation session*
+*Last updated: 2026-02-07 after starting v1.0.1 production fixes milestone*

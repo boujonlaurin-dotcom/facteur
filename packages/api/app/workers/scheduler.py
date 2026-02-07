@@ -9,6 +9,7 @@ import pytz
 from app.config import get_settings
 from app.workers.rss_sync import sync_all_sources
 from app.workers.top3_job import generate_daily_top3_job
+from app.jobs.digest_generation_job import run_digest_generation
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -37,6 +38,15 @@ def start_scheduler() -> None:
         trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
         id="daily_top3",
         name="Daily Top 3 Briefing",
+        replace_existing=True,
+    )
+
+    # Job Digest Quotidien (8h00 Paris)
+    scheduler.add_job(
+        run_digest_generation,
+        trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
+        id="daily_digest",
+        name="Daily Digest Generation",
         replace_existing=True,
     )
 

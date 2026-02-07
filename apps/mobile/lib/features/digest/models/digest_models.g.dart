@@ -6,6 +6,40 @@ part of 'digest_models.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+_$DigestScoreBreakdownImpl _$$DigestScoreBreakdownImplFromJson(
+        Map<String, dynamic> json) =>
+    _$DigestScoreBreakdownImpl(
+      label: json['label'] as String,
+      points: (json['points'] as num).toDouble(),
+      isPositive: json['is_positive'] as bool,
+    );
+
+Map<String, dynamic> _$$DigestScoreBreakdownImplToJson(
+        _$DigestScoreBreakdownImpl instance) =>
+    <String, dynamic>{
+      'label': instance.label,
+      'points': instance.points,
+      'is_positive': instance.isPositive,
+    };
+
+_$DigestRecommendationReasonImpl _$$DigestRecommendationReasonImplFromJson(
+        Map<String, dynamic> json) =>
+    _$DigestRecommendationReasonImpl(
+      label: json['label'] as String,
+      scoreTotal: (json['score_total'] as num).toDouble(),
+      breakdown: (json['breakdown'] as List<dynamic>)
+          .map((e) => DigestScoreBreakdown.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+
+Map<String, dynamic> _$$DigestRecommendationReasonImplToJson(
+        _$DigestRecommendationReasonImpl instance) =>
+    <String, dynamic>{
+      'label': instance.label,
+      'score_total': instance.scoreTotal,
+      'breakdown': instance.breakdown,
+    };
+
 _$SourceMiniImpl _$$SourceMiniImplFromJson(Map<String, dynamic> json) =>
     _$SourceMiniImpl(
       id: json['id'] as String?,
@@ -46,6 +80,10 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
       isRead: json['is_read'] as bool? ?? false,
       isSaved: json['is_saved'] as bool? ?? false,
       isDismissed: json['is_dismissed'] as bool? ?? false,
+      recommendationReason: json['recommendation_reason'] == null
+          ? null
+          : DigestRecommendationReason.fromJson(
+              json['recommendation_reason'] as Map<String, dynamic>),
     );
 
 Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
@@ -64,6 +102,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
       'is_dismissed': instance.isDismissed,
+      'recommendation_reason': instance.recommendationReason,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>

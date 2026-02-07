@@ -30,7 +30,13 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user_personalization import UserPersonalization
 from app.models.user import UserStreak
-from app.schemas.digest import DigestItem, DigestResponse, DigestAction
+from app.schemas.digest import (
+    DigestItem, 
+    DigestResponse, 
+    DigestAction, 
+    DigestScoreBreakdown, 
+    DigestRecommendationReason
+)
 from app.services.digest_selector import DigestSelector
 from app.services.streak_service import StreakService
 
@@ -44,6 +50,7 @@ class EmergencyItem:
     score: float = 0.5
     rank: int = 0
     reason: str = "Sélection de la rédaction"
+    breakdown: Optional[List[DigestScoreBreakdown]] = None
 
 
 class DigestService:
@@ -164,11 +171,19 @@ class DigestService:
         
         CRITICAL FIX: Now prioritizes user's followed sources instead of just curated content.
         Falls back to curated sources only if user has no followed sources.
+        
+        Applies diversity constraints (max 2 per source) and generates minimal
+        breakdown data so the personalization sheet can display properly.
         """
         from app.models.content import Content
         from app.models.source import Source
         from sqlalchemy import desc
         from sqlalchemy.orm import selectinload
+        from collections import defaultdict
+        
+        MAX_PER_SOURCE = 2  # Same constraint as DigestSelector
+        # Fetch more candidates than needed so we can apply diversity
+        fetch_limit = limit * 5  
         
         # Get user's followed sources
         from app.models.source import UserSource
@@ -179,6 +194,8 @@ class DigestService:
         
         # OPTIMIZATION: Limit query to last 7 days to avoid full table scan
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        all_contents: list = []
         
         # Try user's followed sources first
         if followed_source_ids:
@@ -191,52 +208,104 @@ class DigestService:
                     Content.published_at >= cutoff_date
                 )
                 .order_by(Content.published_at.desc())
-                .limit(limit)
+                .limit(fetch_limit)
             )
             
             result = await self.session.execute(stmt)
-            contents = list(result.scalars().all())
-            
-            if len(contents) >= limit:
-                logger.info(
-                    "digest_emergency_fallback_user_sources",
-                    user_id=str(user_id),
-                    count=len(contents),
-                    source="user_followed"
+            all_contents = list(result.scalars().all())
+        
+        # If not enough from user sources, add curated sources
+        if len(all_contents) < fetch_limit:
+            existing_ids = {c.id for c in all_contents}
+            curated_query = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    Source.is_curated == True,
+                    Content.published_at >= cutoff_date,
                 )
-                return [
-                    EmergencyItem(content=c, rank=i+1) 
-                    for i, c in enumerate(contents[:limit])
-                ]
-        
-        # Fallback to curated sources if no user sources or not enough content
-        stmt = (
-            select(Content)
-            .join(Content.source)
-            .options(selectinload(Content.source))
-            .where(
-                Source.is_curated == True,
-                Content.published_at >= cutoff_date
+                .order_by(Content.published_at.desc())
+                .limit(fetch_limit - len(all_contents))
             )
-            .order_by(Content.published_at.desc())
-            .limit(limit)
-        )
+            if existing_ids:
+                curated_query = curated_query.where(Content.id.notin_(list(existing_ids)))
+            stmt = curated_query
+            
+            result = await self.session.execute(stmt)
+            all_contents.extend(result.scalars().all())
         
-        result = await self.session.execute(stmt)
-        contents = result.scalars().all()
+        # Apply diversity constraint: max 2 articles per source
+        selected: list = []
+        source_counts: dict = defaultdict(int)
         
+        for content in all_contents:
+            if len(selected) >= limit:
+                break
+            
+            source_id = content.source_id
+            if source_counts[source_id] >= MAX_PER_SOURCE:
+                continue
+            
+            # Generate a minimal breakdown for the personalization sheet
+            breakdown_items = []
+            
+            # Recency info
+            hours_old = (datetime.now(timezone.utc) - content.published_at.replace(tzinfo=timezone.utc if content.published_at.tzinfo is None else content.published_at.tzinfo)).total_seconds() / 3600
+            if hours_old < 6:
+                breakdown_items.append(DigestScoreBreakdown(label="Article très récent (< 6h)", points=30.0, is_positive=True))
+            elif hours_old < 24:
+                breakdown_items.append(DigestScoreBreakdown(label="Article récent (< 24h)", points=25.0, is_positive=True))
+            elif hours_old < 48:
+                breakdown_items.append(DigestScoreBreakdown(label="Publié aujourd'hui", points=15.0, is_positive=True))
+            elif hours_old < 72:
+                breakdown_items.append(DigestScoreBreakdown(label="Publié hier", points=8.0, is_positive=True))
+            
+            # Source info
+            if content.source_id in followed_source_ids:
+                breakdown_items.append(DigestScoreBreakdown(label="Source de confiance", points=50.0, is_positive=True))
+            elif content.source and content.source.is_curated:
+                breakdown_items.append(DigestScoreBreakdown(label="Source qualitative", points=10.0, is_positive=True))
+            
+            # Theme info
+            if content.source and content.source.theme:
+                theme_labels = {
+                    'tech': 'Tech', 'society': 'Société', 'environment': 'Environnement',
+                    'economy': 'Économie', 'politics': 'Politique', 'culture': 'Culture',
+                    'science': 'Sciences', 'international': 'International',
+                }
+                theme_label = theme_labels.get(content.source.theme, content.source.theme.capitalize())
+                breakdown_items.append(DigestScoreBreakdown(label=f"Thème : {theme_label}", points=20.0, is_positive=True))
+            
+            # Build reason
+            if content.source_id in followed_source_ids and content.source:
+                reason = f"Source suivie : {content.source.name}"
+            elif content.source:
+                reason = f"Sélection de la rédaction : {content.source.name}"
+            else:
+                reason = "Sélection de la rédaction"
+            
+            selected.append(EmergencyItem(
+                content=content,
+                score=sum(b.points for b in breakdown_items),
+                rank=len(selected) + 1,
+                reason=reason,
+                breakdown=breakdown_items,
+            ))
+            source_counts[source_id] += 1
+        
+        # Log diversity stats
+        unique_sources = len(set(item.content.source_id for item in selected))
         logger.info(
-            "digest_emergency_fallback_curated",
+            "digest_emergency_fallback_with_diversity",
             user_id=str(user_id),
-            count=len(contents),
-            source="curated",
+            count=len(selected),
+            unique_sources=unique_sources,
+            source_distribution=dict(source_counts),
             had_followed_sources=bool(followed_source_ids)
         )
         
-        return [
-            EmergencyItem(content=c, rank=i+1) 
-            for i, c in enumerate(contents)
-        ]
+        return selected
     
     async def apply_action(
         self,
@@ -398,13 +467,43 @@ class DigestService:
         # Build items JSON array
         items_json = []
         for item in digest_items:
-            items_json.append({
+            item_data = {
                 "content_id": str(item.content.id),
                 "rank": item.rank,
                 "reason": item.reason,
                 "source_name": item.content.source.name if item.content.source else None,
                 "score": float(item.score)
-            })
+            }
+            
+            # Store breakdown if available
+            # Use getattr for safety: DigestItem (from selector) has .breakdown,
+            # but EmergencyItem (fallback) may not always have it as a direct attribute
+            breakdown = getattr(item, 'breakdown', None)
+            if breakdown:
+                logger.info(
+                    "storing_breakdown_for_digest_item",
+                    content_id=str(item.content.id),
+                    content_title=item.content.title[:50] if item.content.title else "",
+                    breakdown_count=len(breakdown),
+                    breakdown_labels=[b.label for b in breakdown[:3]]
+                )
+                item_data["breakdown"] = [
+                    {
+                        "label": b.label,
+                        "points": b.points,
+                        "is_positive": b.is_positive
+                    }
+                    for b in breakdown
+                ]
+            else:
+                logger.warning(
+                    "no_breakdown_available_for_digest_item",
+                    content_id=str(item.content.id),
+                    content_title=item.content.title[:50] if item.content.title else "",
+                    item_type=type(item).__name__
+                )
+            
+            items_json.append(item_data)
         
         digest = DailyDigest(
             id=uuid4(),
@@ -418,6 +517,37 @@ class DigestService:
         await self.session.flush()
         
         return digest
+    
+    def _determine_top_reason(self, breakdown: List[DigestScoreBreakdown]) -> str:
+        """Extract the most significant positive reason for the label.
+        
+        Analyzes the breakdown to generate a user-friendly top-level reason.
+        """
+        if not breakdown:
+            return "Sélectionné pour vous"
+        
+        positive = [b for b in breakdown if b.is_positive]
+        if not positive:
+            return "Sélectionné pour vous"
+        
+        # Sort by points descending
+        positive.sort(key=lambda x: x.points, reverse=True)
+        top = positive[0]
+        
+        # Format based on top reason type
+        if "Thème" in top.label:
+            theme = top.label.split(": ")[1] if ": " in top.label else ""
+            return f"Vos intérêts : {theme}"
+        elif "Source de confiance" in top.label:
+            return "Source suivie"
+        elif "Source personnalisée" in top.label:
+            return "Ta source personnalisée"
+        elif "Sous-thème" in top.label:
+            topics = [b.label.split(": ")[1] for b in positive 
+                     if "Sous-thème" in b.label][:2]
+            return f"Vos centres d'intérêt : {', '.join(topics)}"
+        else:
+            return top.label
     
     async def _build_digest_response(
         self,
@@ -455,6 +585,40 @@ class DigestService:
             # Get user action state
             action_state = await self._get_item_action_state(user_id, content_id)
             
+            # Rebuild breakdown from stored data if available
+            breakdown_data = item_data.get("breakdown") or []
+            if breakdown_data:
+                logger.info(
+                    "rebuilt_breakdown_from_stored_data",
+                    content_id=str(content_id),
+                    breakdown_count=len(breakdown_data),
+                    breakdown_labels=[b.get("label", "") for b in breakdown_data[:3]]
+                )
+            else:
+                logger.warning(
+                    "no_breakdown_data_in_stored_item",
+                    content_id=str(content_id),
+                    digest_id=str(digest.id),
+                    item_rank=item_data.get("rank", 0)
+                )
+            breakdown = [
+                DigestScoreBreakdown(
+                    label=b["label"],
+                    points=b["points"],
+                    is_positive=b["is_positive"]
+                )
+                for b in breakdown_data
+            ] if breakdown_data else []
+            
+            # Build recommendation_reason if breakdown exists
+            recommendation_reason = None
+            if breakdown:
+                recommendation_reason = DigestRecommendationReason(
+                    label=self._determine_top_reason(breakdown),
+                    score_total=sum(b.points for b in breakdown),
+                    breakdown=breakdown
+                )
+            
             # Build DigestItem
             items.append(DigestItem(
                 content_id=content_id,
@@ -468,6 +632,7 @@ class DigestService:
                 source=content.source,  # SourceMini will be handled by from_attributes
                 rank=item_data["rank"],
                 reason=item_data["reason"],
+                recommendation_reason=recommendation_reason,
                 is_read=action_state["is_read"],
                 is_saved=action_state["is_saved"],
                 is_dismissed=action_state["is_dismissed"]

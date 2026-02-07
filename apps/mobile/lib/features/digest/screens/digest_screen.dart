@@ -9,12 +9,13 @@ import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/widgets/personalization_sheet.dart';
+
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
+import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 5 articles
@@ -137,14 +138,19 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
   void _handleNotInterested(DigestItem item) {
     HapticFeedback.lightImpact();
-    // Open PersonalizationSheet (same as Feed)
+
+    // Only open the personalization sheet — let user choose an action
+    // (mute source, mute theme) from the modal. No immediate action.
+    _showPersonalizationSheet(item);
+  }
+
+  void _showPersonalizationSheet(DigestItem item) {
+    // Show DigestPersonalizationSheet with algorithm breakdown + mute options
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => PersonalizationSheet(
-        content: _convertToContent(item),
-      ),
+      builder: (_) => DigestPersonalizationSheet(item: item),
     );
   }
 
@@ -275,15 +281,37 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
-                                    onTap: () {
-                                      // Use a microtask to avoid build-phase issues
-                                      Future.microtask(() {
-                                        if (context.mounted) {
-                                          final notifier =
-                                              ref.read(digestProvider.notifier);
-                                          notifier.forceRegenerate();
-                                        }
-                                      });
+                                    onTap: () async {
+                                      // Show confirmation dialog before regenerating
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text(
+                                              'Générer un nouvel essentiel ?'),
+                                          content: const Text(
+                                            'Votre essentiel actuel sera remplacé par 5 nouveaux articles. Cette action est irréversible.',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: const Text('Annuler'),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: const Text('Confirmer'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (confirmed == true &&
+                                          context.mounted) {
+                                        final notifier =
+                                            ref.read(digestProvider.notifier);
+                                        notifier.forceRegenerate();
+                                      }
                                     },
                                     borderRadius: BorderRadius.circular(16),
                                     child: Container(

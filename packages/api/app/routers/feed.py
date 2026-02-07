@@ -10,7 +10,8 @@ from app.dependencies import get_current_user_id
 from app.models.content import Content
 from app.models.enums import ContentType, FeedFilterMode
 from app.services.recommendation_service import RecommendationService
-from app.schemas.content import ContentResponse, FeedResponse
+from app.schemas.content import ContentResponse
+from app.schemas.feed import FeedResponse, PaginationMeta
 
 router = APIRouter()
 
@@ -25,35 +26,15 @@ async def get_personalized_feed(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
-    Récupère le feed personnalisé + le Top 3 (Briefing).
-    """
-    from datetime import datetime
-    from sqlalchemy import select, and_
-    from sqlalchemy.orm import selectinload
+    Récupère le feed personnalisé.
     
-    from app.models.daily_top3 import DailyTop3
-    from app.schemas.content import FeedResponse, DailyTop3Response
-
+    Note: Le briefing (Top 3) a été déplacé vers l'endpoint dédié /api/digest.
+    Le feed retourne uniquement les articles réguliers.
+    """
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
     
-    # --- 1. Top 3 (Briefing) ---
-    briefing_items = []
-    
-    # On ne récupère le briefing que sur la première page par défaut
-    if offset == 0:
-        from app.services.briefing_service import BriefingService
-        briefing_service = BriefingService(db)
-        # Lazy Generation : Récupère ou génère si absent
-        briefing_dicts = await briefing_service.get_or_create_briefing(user_uuid)
-        
-        # Le service retourne des dicts, on les mappe vers DailyTop3Response pour la validation Pydantic
-        briefing_items = [DailyTop3Response(**item) for item in briefing_dicts]
-
-    # Récupérer les IDs des contenus du briefing pour exclusion
-    briefing_content_ids = [item.content.id for item in briefing_items]
-    
-    # 2. Get Feed Items
+    # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(
         user_id=user_uuid, 
         limit=limit, 
@@ -62,15 +43,19 @@ async def get_personalized_feed(
         mode=mode,
         saved_only=saved_only
     )
-    
-    # PERFORMANCE OPTIMIZATION: Exclure les items du briefing du feed sil ne l'ont pas déjà été
-    # (Le service de recommandation pourrait les inclure par défaut)
-    if briefing_content_ids:
-        feed_items = [item for item in feed_items if item.id not in briefing_content_ids]
 
+    # Calculate pagination metadata
+    # If we got 'limit' items, assume there's a next page
+    has_next = len(feed_items) >= limit
+    
     return FeedResponse(
-        briefing=briefing_items,
-        items=feed_items
+        items=feed_items,
+        pagination=PaginationMeta(
+            page=(offset // limit) + 1,
+            per_page=limit,
+            total=0,  # Total unknown without additional query
+            has_next=has_next
+        )
     )
 
 

@@ -14,6 +14,397 @@ T _$identity<T>(T value) => value;
 final _privateConstructorUsedError = UnsupportedError(
     'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
 
+DigestScoreBreakdown _$DigestScoreBreakdownFromJson(Map<String, dynamic> json) {
+  return _DigestScoreBreakdown.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DigestScoreBreakdown {
+  String get label => throw _privateConstructorUsedError;
+  double get points => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_positive')
+  bool get isPositive => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DigestScoreBreakdownCopyWith<DigestScoreBreakdown> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DigestScoreBreakdownCopyWith<$Res> {
+  factory $DigestScoreBreakdownCopyWith(DigestScoreBreakdown value,
+          $Res Function(DigestScoreBreakdown) then) =
+      _$DigestScoreBreakdownCopyWithImpl<$Res, DigestScoreBreakdown>;
+  @useResult
+  $Res call(
+      {String label,
+      double points,
+      @JsonKey(name: 'is_positive') bool isPositive});
+}
+
+/// @nodoc
+class _$DigestScoreBreakdownCopyWithImpl<$Res,
+        $Val extends DigestScoreBreakdown>
+    implements $DigestScoreBreakdownCopyWith<$Res> {
+  _$DigestScoreBreakdownCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? label = null,
+    Object? points = null,
+    Object? isPositive = null,
+  }) {
+    return _then(_value.copyWith(
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      points: null == points
+          ? _value.points
+          : points // ignore: cast_nullable_to_non_nullable
+              as double,
+      isPositive: null == isPositive
+          ? _value.isPositive
+          : isPositive // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DigestScoreBreakdownImplCopyWith<$Res>
+    implements $DigestScoreBreakdownCopyWith<$Res> {
+  factory _$$DigestScoreBreakdownImplCopyWith(_$DigestScoreBreakdownImpl value,
+          $Res Function(_$DigestScoreBreakdownImpl) then) =
+      __$$DigestScoreBreakdownImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {String label,
+      double points,
+      @JsonKey(name: 'is_positive') bool isPositive});
+}
+
+/// @nodoc
+class __$$DigestScoreBreakdownImplCopyWithImpl<$Res>
+    extends _$DigestScoreBreakdownCopyWithImpl<$Res, _$DigestScoreBreakdownImpl>
+    implements _$$DigestScoreBreakdownImplCopyWith<$Res> {
+  __$$DigestScoreBreakdownImplCopyWithImpl(_$DigestScoreBreakdownImpl _value,
+      $Res Function(_$DigestScoreBreakdownImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? label = null,
+    Object? points = null,
+    Object? isPositive = null,
+  }) {
+    return _then(_$DigestScoreBreakdownImpl(
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      points: null == points
+          ? _value.points
+          : points // ignore: cast_nullable_to_non_nullable
+              as double,
+      isPositive: null == isPositive
+          ? _value.isPositive
+          : isPositive // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DigestScoreBreakdownImpl implements _DigestScoreBreakdown {
+  const _$DigestScoreBreakdownImpl(
+      {required this.label,
+      required this.points,
+      @JsonKey(name: 'is_positive') required this.isPositive});
+
+  factory _$DigestScoreBreakdownImpl.fromJson(Map<String, dynamic> json) =>
+      _$$DigestScoreBreakdownImplFromJson(json);
+
+  @override
+  final String label;
+  @override
+  final double points;
+  @override
+  @JsonKey(name: 'is_positive')
+  final bool isPositive;
+
+  @override
+  String toString() {
+    return 'DigestScoreBreakdown(label: $label, points: $points, isPositive: $isPositive)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DigestScoreBreakdownImpl &&
+            (identical(other.label, label) || other.label == label) &&
+            (identical(other.points, points) || other.points == points) &&
+            (identical(other.isPositive, isPositive) ||
+                other.isPositive == isPositive));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, label, points, isPositive);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DigestScoreBreakdownImplCopyWith<_$DigestScoreBreakdownImpl>
+      get copyWith =>
+          __$$DigestScoreBreakdownImplCopyWithImpl<_$DigestScoreBreakdownImpl>(
+              this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DigestScoreBreakdownImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DigestScoreBreakdown implements DigestScoreBreakdown {
+  const factory _DigestScoreBreakdown(
+          {required final String label,
+          required final double points,
+          @JsonKey(name: 'is_positive') required final bool isPositive}) =
+      _$DigestScoreBreakdownImpl;
+
+  factory _DigestScoreBreakdown.fromJson(Map<String, dynamic> json) =
+      _$DigestScoreBreakdownImpl.fromJson;
+
+  @override
+  String get label;
+  @override
+  double get points;
+  @override
+  @JsonKey(name: 'is_positive')
+  bool get isPositive;
+  @override
+  @JsonKey(ignore: true)
+  _$$DigestScoreBreakdownImplCopyWith<_$DigestScoreBreakdownImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+DigestRecommendationReason _$DigestRecommendationReasonFromJson(
+    Map<String, dynamic> json) {
+  return _DigestRecommendationReason.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DigestRecommendationReason {
+  String get label => throw _privateConstructorUsedError;
+  @JsonKey(name: 'score_total')
+  double get scoreTotal => throw _privateConstructorUsedError;
+  List<DigestScoreBreakdown> get breakdown =>
+      throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DigestRecommendationReasonCopyWith<DigestRecommendationReason>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DigestRecommendationReasonCopyWith<$Res> {
+  factory $DigestRecommendationReasonCopyWith(DigestRecommendationReason value,
+          $Res Function(DigestRecommendationReason) then) =
+      _$DigestRecommendationReasonCopyWithImpl<$Res,
+          DigestRecommendationReason>;
+  @useResult
+  $Res call(
+      {String label,
+      @JsonKey(name: 'score_total') double scoreTotal,
+      List<DigestScoreBreakdown> breakdown});
+}
+
+/// @nodoc
+class _$DigestRecommendationReasonCopyWithImpl<$Res,
+        $Val extends DigestRecommendationReason>
+    implements $DigestRecommendationReasonCopyWith<$Res> {
+  _$DigestRecommendationReasonCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? label = null,
+    Object? scoreTotal = null,
+    Object? breakdown = null,
+  }) {
+    return _then(_value.copyWith(
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      scoreTotal: null == scoreTotal
+          ? _value.scoreTotal
+          : scoreTotal // ignore: cast_nullable_to_non_nullable
+              as double,
+      breakdown: null == breakdown
+          ? _value.breakdown
+          : breakdown // ignore: cast_nullable_to_non_nullable
+              as List<DigestScoreBreakdown>,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DigestRecommendationReasonImplCopyWith<$Res>
+    implements $DigestRecommendationReasonCopyWith<$Res> {
+  factory _$$DigestRecommendationReasonImplCopyWith(
+          _$DigestRecommendationReasonImpl value,
+          $Res Function(_$DigestRecommendationReasonImpl) then) =
+      __$$DigestRecommendationReasonImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {String label,
+      @JsonKey(name: 'score_total') double scoreTotal,
+      List<DigestScoreBreakdown> breakdown});
+}
+
+/// @nodoc
+class __$$DigestRecommendationReasonImplCopyWithImpl<$Res>
+    extends _$DigestRecommendationReasonCopyWithImpl<$Res,
+        _$DigestRecommendationReasonImpl>
+    implements _$$DigestRecommendationReasonImplCopyWith<$Res> {
+  __$$DigestRecommendationReasonImplCopyWithImpl(
+      _$DigestRecommendationReasonImpl _value,
+      $Res Function(_$DigestRecommendationReasonImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? label = null,
+    Object? scoreTotal = null,
+    Object? breakdown = null,
+  }) {
+    return _then(_$DigestRecommendationReasonImpl(
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      scoreTotal: null == scoreTotal
+          ? _value.scoreTotal
+          : scoreTotal // ignore: cast_nullable_to_non_nullable
+              as double,
+      breakdown: null == breakdown
+          ? _value._breakdown
+          : breakdown // ignore: cast_nullable_to_non_nullable
+              as List<DigestScoreBreakdown>,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DigestRecommendationReasonImpl implements _DigestRecommendationReason {
+  const _$DigestRecommendationReasonImpl(
+      {required this.label,
+      @JsonKey(name: 'score_total') required this.scoreTotal,
+      required final List<DigestScoreBreakdown> breakdown})
+      : _breakdown = breakdown;
+
+  factory _$DigestRecommendationReasonImpl.fromJson(
+          Map<String, dynamic> json) =>
+      _$$DigestRecommendationReasonImplFromJson(json);
+
+  @override
+  final String label;
+  @override
+  @JsonKey(name: 'score_total')
+  final double scoreTotal;
+  final List<DigestScoreBreakdown> _breakdown;
+  @override
+  List<DigestScoreBreakdown> get breakdown {
+    if (_breakdown is EqualUnmodifiableListView) return _breakdown;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_breakdown);
+  }
+
+  @override
+  String toString() {
+    return 'DigestRecommendationReason(label: $label, scoreTotal: $scoreTotal, breakdown: $breakdown)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DigestRecommendationReasonImpl &&
+            (identical(other.label, label) || other.label == label) &&
+            (identical(other.scoreTotal, scoreTotal) ||
+                other.scoreTotal == scoreTotal) &&
+            const DeepCollectionEquality()
+                .equals(other._breakdown, _breakdown));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, label, scoreTotal,
+      const DeepCollectionEquality().hash(_breakdown));
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DigestRecommendationReasonImplCopyWith<_$DigestRecommendationReasonImpl>
+      get copyWith => __$$DigestRecommendationReasonImplCopyWithImpl<
+          _$DigestRecommendationReasonImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DigestRecommendationReasonImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DigestRecommendationReason
+    implements DigestRecommendationReason {
+  const factory _DigestRecommendationReason(
+          {required final String label,
+          @JsonKey(name: 'score_total') required final double scoreTotal,
+          required final List<DigestScoreBreakdown> breakdown}) =
+      _$DigestRecommendationReasonImpl;
+
+  factory _DigestRecommendationReason.fromJson(Map<String, dynamic> json) =
+      _$DigestRecommendationReasonImpl.fromJson;
+
+  @override
+  String get label;
+  @override
+  @JsonKey(name: 'score_total')
+  double get scoreTotal;
+  @override
+  List<DigestScoreBreakdown> get breakdown;
+  @override
+  @JsonKey(ignore: true)
+  _$$DigestRecommendationReasonImplCopyWith<_$DigestRecommendationReasonImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
 SourceMini _$SourceMiniFromJson(Map<String, dynamic> json) {
   return _SourceMini.fromJson(json);
 }
@@ -275,6 +666,9 @@ mixin _$DigestItem {
   bool get isSaved => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed => throw _privateConstructorUsedError;
+  @JsonKey(name: 'recommendation_reason')
+  DigestRecommendationReason? get recommendationReason =>
+      throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -306,9 +700,12 @@ abstract class $DigestItemCopyWith<$Res> {
       String reason,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
-      @JsonKey(name: 'is_dismissed') bool isDismissed});
+      @JsonKey(name: 'is_dismissed') bool isDismissed,
+      @JsonKey(name: 'recommendation_reason')
+      DigestRecommendationReason? recommendationReason});
 
   $SourceMiniCopyWith<$Res>? get source;
+  $DigestRecommendationReasonCopyWith<$Res>? get recommendationReason;
 }
 
 /// @nodoc
@@ -338,6 +735,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? isRead = null,
     Object? isSaved = null,
     Object? isDismissed = null,
+    Object? recommendationReason = freezed,
   }) {
     return _then(_value.copyWith(
       contentId: null == contentId
@@ -396,6 +794,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.isDismissed
           : isDismissed // ignore: cast_nullable_to_non_nullable
               as bool,
+      recommendationReason: freezed == recommendationReason
+          ? _value.recommendationReason
+          : recommendationReason // ignore: cast_nullable_to_non_nullable
+              as DigestRecommendationReason?,
     ) as $Val);
   }
 
@@ -408,6 +810,19 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
 
     return $SourceMiniCopyWith<$Res>(_value.source!, (value) {
       return _then(_value.copyWith(source: value) as $Val);
+    });
+  }
+
+  @override
+  @pragma('vm:prefer-inline')
+  $DigestRecommendationReasonCopyWith<$Res>? get recommendationReason {
+    if (_value.recommendationReason == null) {
+      return null;
+    }
+
+    return $DigestRecommendationReasonCopyWith<$Res>(
+        _value.recommendationReason!, (value) {
+      return _then(_value.copyWith(recommendationReason: value) as $Val);
     });
   }
 }
@@ -438,10 +853,14 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       String reason,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
-      @JsonKey(name: 'is_dismissed') bool isDismissed});
+      @JsonKey(name: 'is_dismissed') bool isDismissed,
+      @JsonKey(name: 'recommendation_reason')
+      DigestRecommendationReason? recommendationReason});
 
   @override
   $SourceMiniCopyWith<$Res>? get source;
+  @override
+  $DigestRecommendationReasonCopyWith<$Res>? get recommendationReason;
 }
 
 /// @nodoc
@@ -469,6 +888,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? isRead = null,
     Object? isSaved = null,
     Object? isDismissed = null,
+    Object? recommendationReason = freezed,
   }) {
     return _then(_$DigestItemImpl(
       contentId: null == contentId
@@ -527,6 +947,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.isDismissed
           : isDismissed // ignore: cast_nullable_to_non_nullable
               as bool,
+      recommendationReason: freezed == recommendationReason
+          ? _value.recommendationReason
+          : recommendationReason // ignore: cast_nullable_to_non_nullable
+              as DigestRecommendationReason?,
     ));
   }
 }
@@ -552,7 +976,8 @@ class _$DigestItemImpl implements _DigestItem {
       this.reason = '',
       @JsonKey(name: 'is_read') this.isRead = false,
       @JsonKey(name: 'is_saved') this.isSaved = false,
-      @JsonKey(name: 'is_dismissed') this.isDismissed = false});
+      @JsonKey(name: 'is_dismissed') this.isDismissed = false,
+      @JsonKey(name: 'recommendation_reason') this.recommendationReason});
 
   factory _$DigestItemImpl.fromJson(Map<String, dynamic> json) =>
       _$$DigestItemImplFromJson(json);
@@ -600,10 +1025,13 @@ class _$DigestItemImpl implements _DigestItem {
   @override
   @JsonKey(name: 'is_dismissed')
   final bool isDismissed;
+  @override
+  @JsonKey(name: 'recommendation_reason')
+  final DigestRecommendationReason? recommendationReason;
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isRead: $isRead, isSaved: $isSaved, isDismissed: $isDismissed)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isRead: $isRead, isSaved: $isSaved, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
   }
 
   @override
@@ -631,7 +1059,9 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.isRead, isRead) || other.isRead == isRead) &&
             (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
             (identical(other.isDismissed, isDismissed) ||
-                other.isDismissed == isDismissed));
+                other.isDismissed == isDismissed) &&
+            (identical(other.recommendationReason, recommendationReason) ||
+                other.recommendationReason == recommendationReason));
   }
 
   @JsonKey(ignore: true)
@@ -651,7 +1081,8 @@ class _$DigestItemImpl implements _DigestItem {
       reason,
       isRead,
       isSaved,
-      isDismissed);
+      isDismissed,
+      recommendationReason);
 
   @JsonKey(ignore: true)
   @override
@@ -686,7 +1117,9 @@ abstract class _DigestItem implements DigestItem {
           final String reason,
           @JsonKey(name: 'is_read') final bool isRead,
           @JsonKey(name: 'is_saved') final bool isSaved,
-          @JsonKey(name: 'is_dismissed') final bool isDismissed}) =
+          @JsonKey(name: 'is_dismissed') final bool isDismissed,
+          @JsonKey(name: 'recommendation_reason')
+          final DigestRecommendationReason? recommendationReason}) =
       _$DigestItemImpl;
 
   factory _DigestItem.fromJson(Map<String, dynamic> json) =
@@ -731,6 +1164,9 @@ abstract class _DigestItem implements DigestItem {
   @override
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed;
+  @override
+  @JsonKey(name: 'recommendation_reason')
+  DigestRecommendationReason? get recommendationReason;
   @override
   @JsonKey(ignore: true)
   _$$DigestItemImplCopyWith<_$DigestItemImpl> get copyWith =>

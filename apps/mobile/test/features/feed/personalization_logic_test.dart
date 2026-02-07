@@ -73,7 +73,6 @@ void main() {
 
   test('muteSource should filter items optimistically', () async {
     // 1. Setup Feed with one item
-    final briefing = <DailyTop3Item>[];
     final items = [mockContent];
 
     when(() => mockFeedRepo.getFeed(
@@ -82,7 +81,6 @@ void main() {
             mode: any(named: 'mode')))
         .thenAnswer((_) async => FeedResponse(
             items: items,
-            briefing: briefing,
             pagination:
                 Pagination(page: 1, perPage: 20, total: 1, hasNext: false)));
 
@@ -116,7 +114,6 @@ void main() {
             mode: any(named: 'mode')))
         .thenAnswer((_) async => FeedResponse(
             items: items,
-            briefing: [],
             pagination:
                 Pagination(page: 1, perPage: 20, total: 1, hasNext: false)));
 
