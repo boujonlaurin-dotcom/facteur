@@ -476,13 +476,16 @@ class DigestService:
             }
             
             # Store breakdown if available
-            if item.breakdown:
+            # Use getattr for safety: DigestItem (from selector) has .breakdown,
+            # but EmergencyItem (fallback) may not always have it as a direct attribute
+            breakdown = getattr(item, 'breakdown', None)
+            if breakdown:
                 logger.info(
                     "storing_breakdown_for_digest_item",
                     content_id=str(item.content.id),
                     content_title=item.content.title[:50] if item.content.title else "",
-                    breakdown_count=len(item.breakdown),
-                    breakdown_labels=[b.label for b in item.breakdown[:3]]
+                    breakdown_count=len(breakdown),
+                    breakdown_labels=[b.label for b in breakdown[:3]]
                 )
                 item_data["breakdown"] = [
                     {
@@ -490,7 +493,7 @@ class DigestService:
                         "points": b.points,
                         "is_positive": b.is_positive
                     }
-                    for b in item.breakdown
+                    for b in breakdown
                 ]
             else:
                 logger.warning(
