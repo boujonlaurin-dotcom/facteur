@@ -543,9 +543,13 @@ class DigestService:
         elif "Source personnalisée" in top.label:
             return "Ta source personnalisée"
         elif "Sous-thème" in top.label:
-            topics = [b.label.split(": ")[1] for b in positive 
-                     if "Sous-thème" in b.label][:2]
-            return f"Vos centres d'intérêt : {', '.join(topics)}"
+            topics = [
+                parts[1] for b in positive
+                if "Sous-thème" in b.label
+                for parts in [b.label.split(": ", 1)]
+                if len(parts) > 1
+            ][:2]
+            return f"Vos centres d'intérêt : {', '.join(topics)}" if topics else "Vos centres d'intérêt"
         else:
             return top.label
     
@@ -574,11 +578,13 @@ class DigestService:
             stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
             result = await self.session.execute(stmt)
             content = result.scalar_one_or_none()
-            if not content:
+            if not content or not content.source:
                 logger.warning(
-                    "digest_content_not_found",
+                    "digest_content_or_source_not_found",
                     content_id=str(content_id),
-                    digest_id=str(digest.id)
+                    digest_id=str(digest.id),
+                    content_found=content is not None,
+                    source_found=bool(content and content.source)
                 )
                 continue
             
@@ -603,11 +609,12 @@ class DigestService:
                 )
             breakdown = [
                 DigestScoreBreakdown(
-                    label=b["label"],
-                    points=b["points"],
-                    is_positive=b["is_positive"]
+                    label=b.get("label", ""),
+                    points=b.get("points", 0.0),
+                    is_positive=b.get("is_positive", True)
                 )
                 for b in breakdown_data
+                if isinstance(b, dict) and b.get("label")
             ] if breakdown_data else []
             
             # Build recommendation_reason if breakdown exists
