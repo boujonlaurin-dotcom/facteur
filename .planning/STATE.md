@@ -10,14 +10,14 @@
 
 **Milestone:** v1.0.1 — Digest Production Fixes  
 **Phase:** 01-production-fixes  
-**Plan:** 1 of 3 completed  
+**Plan:** 2 of 3 completed  
 **Status:** In progress  
-**Last activity:** 2026-02-07 - Completed 01-production-fixes-01-PLAN.md
+**Last activity:** 2026-02-07 - Completed 01-production-fixes-02-PLAN.md
 
-**Progress:** Phase 1: 1/3 plans  
+**Progress:** Phase 1: 2/3 plans  
 
 ```
-Phase 1 Production Fixes: [●○○] 33% (1/3)
+Phase 1 Production Fixes: [●●○] 67% (2/3)
 ```
 
 ---
@@ -36,7 +36,7 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
-| 1 — Production Fixes | ⚪ Not Started | 0% | 0/3 |
+| 1 — Production Fixes | 🟡 In Progress | 67% | 2/3 |
 
 ---
 
@@ -72,10 +72,10 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 ### Immediate Next Steps
 
-1. **Phase 1 Production Fixes** 🟡 IN PROGRESS (1/3 plans)
+1. **Phase 1 Production Fixes** 🟡 IN PROGRESS (2/3 plans)
    - ✅ 01-01: Add digest generation job to scheduler - COMPLETE
-   - 🔄 01-02: Implement source diversity with decay factor - NEXT
-   - ⏳ 01-03: Verify fixes (scheduler + diversity tests) - WAITING
+   - ✅ 01-02: Implement source diversity with decay factor - COMPLETE
+   - 🔄 01-03: Verify fixes (scheduler + diversity tests) - NEXT
 
 ---
 
@@ -108,26 +108,26 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 ## Next Action
 
-**Phase 1 Production Fixes — Ready for Planning**
+**Phase 1 Production Fixes — Execute Verification Plan**
 
-Critical bugs identified:
-1. Scheduler missing digest generation job
-2. Diversity algorithm not implemented
+Both bug fixes complete:
+1. ✅ Scheduler: Digest generation job added at 8am daily
+2. ✅ Diversity: Decay factor 0.70 implemented in _select_with_diversity()
 
-Run `/gsd-plan-phase 1` to create detailed plans.
+Next: Execute **01-production-fixes-03** to verify both fixes with comprehensive tests.
 
 ---
 
 ## Session Continuity
 
 **Last session:** 2026-02-07  
-**Stopped at:** Completed 01-production-fixes-01-PLAN.md  
+**Stopped at:** Completed 01-production-fixes-02-PLAN.md  
 **Resume file:** None
 
 ---
 
-*Next step: Execute 01-production-fixes-02-PLAN.md or 01-production-fixes-01-PLAN.md (can run in parallel)*
+*Next step: Execute 01-production-fixes-03-PLAN.md to verify both fixes*
 
 ---
 
-*State initialized for milestone v1.0.1 — Digest Production Fixes*
+*State updated after completing Plan 02 — Digest Production Fixes v1.0.1*
