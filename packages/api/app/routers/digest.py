@@ -9,6 +9,7 @@ Follows existing FastAPI patterns from feed.py and personalization.py.
 Safe reuse of existing services through DigestService.
 """
 
+import logging
 from datetime import date
 from typing import Optional
 from uuid import UUID
@@ -27,6 +28,8 @@ from app.schemas.digest import (
     DigestAction,
 )
 from app.services.digest_service import DigestService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -69,15 +72,22 @@ async def get_digest(
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
-    
-    digest = await service.get_or_create_digest(user_uuid, target_date)
-    
+
+    try:
+        digest = await service.get_or_create_digest(user_uuid, target_date)
+    except Exception:
+        logger.exception("digest_endpoint_unhandled_error user_id=%s", current_user_id)
+        raise HTTPException(
+            status_code=503,
+            detail="Digest generation encountered an unexpected error. Please try again later."
+        )
+
     if not digest:
         raise HTTPException(
             status_code=503,
             detail="Digest generation failed. Please try again later."
         )
-    
+
     return digest
 
 

@@ -301,7 +301,7 @@ class DigestService:
             user_id=str(user_id),
             count=len(selected),
             unique_sources=unique_sources,
-            source_distribution=dict(source_counts),
+            source_distribution={str(k): v for k, v in source_counts.items()},
             had_followed_sources=bool(followed_source_ids)
         )
         

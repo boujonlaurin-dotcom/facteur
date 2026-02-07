@@ -768,7 +768,7 @@ class DigestSelector:
         logger.debug(
             "digest_diversity_selection",
             selected_count=len(selected),
-            source_distribution=dict(source_counts),
+            source_distribution={str(k): v for k, v in source_counts.items()},
             theme_distribution=dict(theme_counts),
             decay_factor=DECAY_FACTOR
         )
