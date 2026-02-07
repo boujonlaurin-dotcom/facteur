@@ -11,15 +11,15 @@
 ## Current Position
 
 **Phase:** 02-frontend ✅ COMPLETE  
-**Plan:** 02-15 complete (Fix Missing Scoring Breakdown Data)  
+**Plan:** 02-16 complete (Fix API Response Scoring Breakdown Bug)  
 **Next:** Phase 03 (Polish)  
 
-**Progress:** Phase 1: 4/4 | Phase 2: 14/14 | Total: 18/18 plans complete  
+**Progress:** Phase 1: 4/4 | Phase 2: 15/15 | Total: 19/19 plans complete  
 
 ```
 Phase 1 Foundation: [████] 100% (4/4)
-Phase 2 Frontend:   [██████████████] 100% (14/14)
-Overall:            [██████████████████] 100% (18/18)
+Phase 2 Frontend:   [███████████████] 100% (15/15)
+Overall:            [███████████████████] 100% (19/19)
 ```
 
 ---
@@ -39,7 +39,7 @@ See: .planning/PROJECT.md (updated 2026-02-01)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Foundation | ✅ Complete | 100% | **4/4** |
-| 2 — Frontend | ✅ Complete | 100% | **14/14** |
+| 2 — Frontend | ✅ Complete | 100% | **15/15** |
 | 3 — Polish | ⚪ Not Started | 0% | 0 |
 
 ---
@@ -90,6 +90,21 @@ All UI/UX adjustments from the rework have been successfully implemented:
 ---
 
 ## Completed Work
+
+
+### Frontend Phase — Plan 02-16 Complete (2026-02-06)
+
+**Fix API Response Scoring Breakdown Bug**
+
+- ✅ Fixed null handling for breakdown data from database JSONB
+- ✅ Changed `item_data.get("breakdown", [])` to `item_data.get("breakdown") or []`
+- ✅ Fixed mutable default in Pydantic schema (`Field(default_factory=list)`)
+- ✅ API response now correctly includes `recommendation_reason` with full scoring breakdown
+- ✅ Flutter app will receive non-null `recommendationReason` for all digest items
+
+**Root cause:** `dict.get("key", default)` only returns default if key is missing, not if value is `null`. PostgreSQL JSONB null values were returned as Python `None`, causing the breakdown to be skipped.
+
+See: `.planning/phases/02-frontend/02-16-SUMMARY.md`
 
 
 ### Foundation Phase — Plan 01-04 Complete (2026-02-05)
@@ -331,7 +346,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 
 ### Immediate Next Steps
 
-1. **Phase 2 Frontend** ✅ COMPLETE (14/14 plans)
+1. **Phase 2 Frontend** ✅ COMPLETE (15/15 plans)
    - ✅ 02-01 Digest Screen UI - Initial digest implementation
    - ✅ 02-02 Action UI - Article actions with API integration
    - ✅ 02-03 Closure Screen - Completion celebration
@@ -344,6 +359,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
    - ✅ 02-13 "Not Interested" Confirmation Flow Fix - UX fix for moins voir action
    - ✅ 02-14 Digest Personalization Unification - Align with Feed pattern
    - ✅ 02-15 Fix Missing Scoring Breakdown Data - Diagnostic logging for breakdown tracking
+   - ✅ 02-16 Fix API Response Scoring Breakdown Bug - Fixed null handling in JSONB retrieval
    - ✅ Verified: All must-haves passing
 
 2. **Next: Phase 3 Polish**
@@ -372,6 +388,7 @@ See: `.planning/phases/01-foundation/01-01-SUMMARY.md`
 | 2026-02-06 | Show confirmation BEFORE personalization for "Not Interested" | Avoids confusing "Information non disponible" UX issue when sheet opens |
 | 2026-02-06 | Reuse feed provider for muting actions | DRY principle - avoid duplicating personalization logic |
 | 2026-02-06 | Use GestureDetector for long-press on FeedCard | Clean extension of existing card component |
+| 2026-02-06 | Use 'or []' pattern for null JSONB handling | dict.get('key', []) doesn't handle null values from PostgreSQL JSONB |
 | 2026-02-06 | Match feed's ScoreContribution pattern for digest | UI consistency and proven pattern for scoring transparency |
 | 2026-02-06 | Store breakdown in JSONB | Enables historical analysis and retrieval of scoring details |
 | 2026-02-06 | Preserve legacy 'reason' string | Backward compatibility for existing clients |
@@ -438,10 +455,10 @@ Run `/gsd-plan-phase 3` to create detailed plans.
 
 ## Session Continuity
 
-**Last session:** 2026-02-06T23:00:55Z  
-**Stopped at:** Completed 02-15 Fix Missing Scoring Breakdown Data  
-**Resume file:** `.planning/phases/02-frontend/02-15-SUMMARY.md`
+**Last session:** 2026-02-06T23:24:00Z  
+**Stopped at:** Completed 02-16 Fix API Response Scoring Breakdown Bug  
+**Resume file:** `.planning/phases/02-frontend/02-16-SUMMARY.md`
 
 ---
 
-*State updated after 02-14 plan execution - Phase 2 Frontend COMPLETE with 13/13 plans, ready for Phase 3 Polish*
+*State updated after 02-16 plan execution - Phase 2 Frontend COMPLETE with 15/15 plans, ready for Phase 3 Polish*
