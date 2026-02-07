@@ -214,7 +214,7 @@ class DigestSelector:
                 "digest_selection_completed", 
                 user_id=str(user_id), 
                 count=len(digest_items),
-                sources=list(set(item.content.source_id for item in digest_items)),
+                sources=[str(s) for s in set(item.content.source_id for item in digest_items)],
                 themes=list(set(item.content.source.theme for item in digest_items if item.content.source)),
                 context_ms=round(context_time * 1000, 2),
                 candidates_ms=round(candidates_time * 1000, 2),
