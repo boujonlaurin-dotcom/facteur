@@ -24,7 +24,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
-from app.database import get_async_session
+from app.database import async_session_maker
 from app.models.user import UserProfile
 from app.models.daily_digest import DailyDigest
 from app.services.digest_selector import DigestSelector, DigestItem
@@ -297,7 +297,7 @@ async def run_digest_generation(
     )
     
     # Obtenir une session depuis le contexte
-    async for session in get_async_session():
+    async with async_session_maker() as session:
         try:
             result = await job.run(session, target_date)
             await session.commit()
@@ -337,7 +337,7 @@ async def generate_digest_for_user(
     if target_date is None:
         target_date = datetime.date.today()
     
-    async for session in get_async_session():
+    async with async_session_maker() as session:
         try:
             # Vérifier l'existant
             if not force:
