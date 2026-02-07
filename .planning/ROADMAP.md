@@ -81,8 +81,9 @@ New Components:
 - [x] **01-04**: Critical fix — Extend digest lookback to 168h with recency bonus system (CRITICAL BUG FIX)
 
 **Status:** ✅ Phase 1 Complete (All 4 plans)
-**Verification:** 14/14 must-haves verified — `01-foundation-VERIFICATION.md`  
+**Verification:** 14/14 must-haves verified — `01-foundation-VERIFICATION.md`
 **Critical Fix:** ✅ COMPLETE — Digest algorithm now prioritizes user sources with 168h lookback
+**Last Updated:** 2026-02-07
 
 ---
 
@@ -151,7 +152,7 @@ Refactored Components:
 - ✅ Add: Save/NotInterested directly in FeedCard footer
 - ✅ Add: Segmented progress bar in BriefingSection header
 
-### Plans (13 Plans Complete)
+### Plans (15 Plans Complete)
 
 #### Original Implementation (Complete)
 - [x] **02-01**: Digest screen with article cards and progress bar — Wave 1
@@ -175,6 +176,13 @@ Refactored Components:
 #### Gap Closure - Personalization Alignment (Complete)
 - [x] **02-13**: Fix Not Interested confirmation flow — Wave 1
 - [x] **02-14**: Unify Digest personalization with Feed pattern — Wave 2
+
+#### Gap Closure - API Response Fix (Complete)
+- [x] **02-15**: Fix Missing Scoring Breakdown Data — Diagnostic logging — Wave 1
+- [x] **02-16**: Fix API Response Scoring Breakdown Bug — Wave 1
+  - Fixed null handling for breakdown data from JSONB
+  - Fixed mutable default in Pydantic schema
+  - API now correctly returns `recommendation_reason` field
 
 #### Feature Enhancement: "Pourquoi cet article?" (New)
 **Goal:** Add algorithmic transparency to digest articles, matching feed's scoring breakdown
