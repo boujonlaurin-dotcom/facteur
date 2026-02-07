@@ -707,20 +707,26 @@ class DigestSelector:
         target_count: int
     ) -> List[Tuple[Content, float, str, List[DigestScoreBreakdown]]]:
         """Sélectionne les articles avec contraintes de diversité.
-        
+
         Contraintes:
         - Maximum 2 articles par source
         - Maximum 2 articles par thème
-        
+        - Minimum 3 sources différentes
+        - Facteur de décroissance: 0.70 (même algorithme que le feed)
+
         Algorithme:
         1. Parcourir les candidats par ordre de score
-        2. Pour chaque candidat, vérifier les contraintes
-        3. Si contraintes respectées, ajouter à la sélection
-        4. S'arrêter quand on atteint target_count
-        
+        2. Pour chaque candidat, appliquer le facteur de décroissance
+        3. Vérifier les contraintes avec les scores pondérés
+        4. Si contraintes respectées, ajouter à la sélection
+        5. S'arrêter quand on atteint target_count
+
         Returns:
             Liste de tuples (Content, score, reason, breakdown)
         """
+        DECAY_FACTOR = 0.70  # Same as feed algorithm
+        MIN_SOURCES = 3
+
         selected = []
         source_counts = defaultdict(int)
         theme_counts = defaultdict(int)
@@ -732,6 +738,10 @@ class DigestSelector:
             source_id = content.source_id
             theme = content.source.theme if content.source else None
 
+            # Apply decay factor based on how many articles already selected from this source
+            current_source_count = source_counts.get(source_id, 0)
+            decayed_score = score * (DECAY_FACTOR ** current_source_count)
+
             # Vérifier contraintes
             if source_counts[source_id] >= self.constraints.MAX_PER_SOURCE:
                 continue
@@ -741,18 +751,28 @@ class DigestSelector:
 
             # Contraintes respectées - ajouter avec raison générée
             reason = self._generate_reason(content, source_counts, theme_counts, breakdown)
-            selected.append((content, score, reason, breakdown))
+            selected.append((content, decayed_score, reason, breakdown))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
-        
+
+        # Ensure minimum source diversity
+        selected_sources = set(item[0].source_id for item in selected)
+        if len(selected_sources) < MIN_SOURCES and len(scored_candidates) >= target_count:
+            logger.warning(
+                "digest_diversity_insufficient_sources",
+                selected_sources=len(selected_sources),
+                min_required=MIN_SOURCES
+            )
+
         logger.debug(
             "digest_diversity_selection",
             selected_count=len(selected),
             source_distribution=dict(source_counts),
-            theme_distribution=dict(theme_counts)
+            theme_distribution=dict(theme_counts),
+            decay_factor=DECAY_FACTOR
         )
-        
+
         return selected
     
     def _generate_reason(
