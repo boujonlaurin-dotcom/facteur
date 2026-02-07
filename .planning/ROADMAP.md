@@ -1,9 +1,9 @@
-# Roadmap: Facteur — Digest Production Fixes (v1.0.1)
+# Roadmap: Facteur — Digest Production Fixes & Polish
 
 **Project:** Facteur  
-**Milestone:** v1.0.1 — Critical Production Fixes  
-**Goal:** Fix 2 critical bugs blocking digest production release  
-**Estimated Duration:** ~4-6 hours  
+**Milestone:** v1.1 — Digest Production Fixes + Polish  
+**Goal:** Fix production bugs, add push notifications, analytics, tests, and performance optimization  
+**Estimated Duration:** ~12-16 hours  
 **Last Updated:** 2026-02-07
 
 ---
@@ -17,7 +17,9 @@
   - Digest generates automatically at 8am daily
   - Digest contains articles from at least 3 different sources
   - No single source contributes more than 2 articles
-- **Quality**: Existing digest features continue working
+  - Daily push notification at 8am (opt-in)
+  - Digest analytics tracked (open, action, closure)
+- **Quality**: Existing digest features continue working, performance improved
 
 ---
 
@@ -26,8 +28,9 @@
 | # | Phase | Goal | Key Deliverables | Est. Hours |
 |---|-------|------|------------------|------------|
 | 1 | Production Fixes | Fix scheduler and diversity bugs | 2 bug fixes, 2 verifications | ~4-6h |
+| 3 | Polish | Push notifications, analytics, tests, performance | 4 plans across 2 waves | ~6-10h |
 
-**Total:** ~4-6h
+**Total:** ~12-16h
 
 ---
 
@@ -76,19 +79,19 @@ Action:
 
 ### Plans
 
-- [ ] **01-01**: Add digest generation job to scheduler — Wave 1
-- [ ] **01-02**: Implement source diversity with decay factor — Wave 1
+- [x] **01-01**: Add digest generation job to scheduler — Wave 1
+- [x] **01-02**: Implement source diversity with decay factor — Wave 1
 - [ ] **01-03**: Verify fixes (scheduler + diversity tests) — Wave 2
 
-**Status:** ✓ Planned (3 plans in 2 waves)  
+**Status:** 🟡 In Progress (2/3 plans complete)  
 **Dependencies:** None (bug fixes on existing code)
 
 ### Plan Files Created
 
 | Plan | Objective | Wave | Status |
 |------|-----------|------|--------|
-| [01-production-fixes-01-PLAN.md](phases/01-production-fixes/01-production-fixes-01-PLAN.md) | Add digest generation job to scheduler | 1 | Ready |
-| [01-production-fixes-02-PLAN.md](phases/01-production-fixes/01-production-fixes-02-PLAN.md) | Implement source diversity with decay factor | 1 | Ready |
+| [01-production-fixes-01-PLAN.md](phases/01-production-fixes/01-production-fixes-01-PLAN.md) | Add digest generation job to scheduler | 1 | ✓ Complete |
+| [01-production-fixes-02-PLAN.md](phases/01-production-fixes/01-production-fixes-02-PLAN.md) | Implement source diversity with decay factor | 1 | ✓ Complete |
 | [01-production-fixes-03-PLAN.md](phases/01-production-fixes/01-production-fixes-03-PLAN.md) | Verify fixes (scheduler + diversity tests) | 2 | Ready |
 
 **Wave Structure:**
@@ -96,6 +99,55 @@ Action:
 |------|-------|--------------|
 | 1 | 01-01, 01-02 | None (can run in parallel) |
 | 2 | 01-03 | 01-01, 01-02 (verification) |
+
+---
+
+## Phase 3: Polish
+
+**Goal:** Add push notifications, digest analytics, comprehensive tests, and performance optimization
+
+### Requirements Addressed
+
+- POLISH-01 (Push notification "Digest prêt" — FR21.5 / Story 10.15)
+- POLISH-02 (Digest analytics events — Story 10.16)
+- POLISH-03 (DigestSelector unit tests — Story 10.17)
+- POLISH-04 (Performance optimization — eager loading, caching)
+
+### Success Criteria
+
+1. Daily local push notification at 8am "Ton essentiel du jour est prêt"
+2. Notification tap opens DigestScreen
+3. Opt-out in settings (wired to existing toggle)
+4. Analytics events: digest_open, digest_action, digest_closure tracked
+5. Backend /analytics/digest-metrics endpoint available
+6. DigestSelector unit tests: selection, diversity, decay, fallback
+7. Digest API uses eager loading (no N+1 queries)
+8. Mobile caches daily digest in memory
+
+### Plans
+
+- [ ] **03-01**: Local push notification "Digest prêt" — Wave 1
+- [ ] **03-02**: Digest analytics events (mobile + backend) — Wave 1
+- [ ] **03-03**: DigestSelector & DigestService tests (TDD) — Wave 1
+- [ ] **03-04**: Performance optimization (eager loading + caching) — Wave 2
+
+**Status:** ✓ Planned (4 plans in 2 waves)  
+**Dependencies:** Phase 1 complete (production fixes deployed)
+
+### Plan Files Created
+
+| Plan | Objective | Wave | Status |
+|------|-----------|------|--------|
+| [03-01-PLAN.md](phases/03-polish/03-01-PLAN.md) | Local push notification at 8am | 1 | Ready |
+| [03-02-PLAN.md](phases/03-polish/03-02-PLAN.md) | Digest analytics events (MoC metrics) | 1 | Ready |
+| [03-03-PLAN.md](phases/03-polish/03-03-PLAN.md) | DigestSelector & DigestService tests | 1 | Ready |
+| [03-04-PLAN.md](phases/03-polish/03-04-PLAN.md) | Performance optimization | 2 | Ready |
+
+**Wave Structure:**
+| Wave | Plans | Dependencies |
+|------|-------|--------------|
+| 1 | 03-01, 03-02, 03-03 | None (can run in parallel) |
+| 2 | 03-04 | 03-03 (tests as safety net for refactoring) |
 
 ---
 
@@ -107,6 +159,10 @@ Action:
 | FIX-02 | Phase 1 | 01-02 | Pending |
 | TEST-01 | Phase 1 | 01-03 | Pending |
 | TEST-02 | Phase 1 | 01-03 | Pending |
+| POLISH-01 | Phase 3 | 03-01 | Pending |
+| POLISH-02 | Phase 3 | 03-02 | Pending |
+| POLISH-03 | Phase 3 | 03-03 | Pending |
+| POLISH-04 | Phase 3 | 03-04 | Pending |
 
 **100% Coverage Achieved** ✓
 
@@ -115,11 +171,13 @@ Action:
 ## Execution Flow
 
 ```
-Wave 1 (Parallel):
-  └── Plans: 01-01 (scheduler), 01-02 (diversity)
+Phase 1:
+  Wave 1 (Parallel): 01-01 (scheduler), 01-02 (diversity)
+  Wave 2: 01-03 (verification)
 
-Wave 2 (Sequential):
-  └── Plan: 01-03 (verification)
+Phase 3:
+  Wave 1 (Parallel): 03-01 (notifications), 03-02 (analytics), 03-03 (tests)
+  Wave 2: 03-04 (performance)
 ```
 
 ---
@@ -131,8 +189,12 @@ Wave 2 (Sequential):
 | Decay factor 0.70 | Matches existing feed algorithm for consistency | 1 |
 | Min 3 sources | Ensures meaningful diversity in 5-article digest | 1 |
 | 8am Europe/Paris | Matches Top 3 schedule, user expectation | 1 |
+| Local notifications (not FCM) | Simpler, no backend needed, story dev notes recommend for MVP | 3 |
+| Extend existing AnalyticsService | No new dependencies, reuse plumbing | 3 |
+| TDD for DigestSelector | Clear inputs/outputs, safety net for perf refactoring | 3 |
 
 ---
 
 *Roadmap created: 2026-02-07*  
-*Next step: Run `/gsd-plan-phase 1` to create detailed plans*
+*Phase 3 planned: 2026-02-07*  
+*Next step: Run `/gsd-execute-phase 3` to execute Phase 3*
