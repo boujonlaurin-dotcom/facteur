@@ -664,7 +664,7 @@ class DigestSelector:
                 # Low reliability penalty (if applicable)
                 if content.source and hasattr(content.source, 'reliability_score'):
                     reliability = content.source.reliability_score
-                    if reliability and reliability < 0.5:
+                    if reliability and reliability.value == "low":
                         breakdown.append(DigestScoreBreakdown(
                             label="Fiabilité source faible",
                             points=ScoringWeights.FQS_LOW_MALUS,
