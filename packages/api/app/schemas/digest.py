@@ -34,7 +34,7 @@ class DigestRecommendationReason(BaseModel):
     """
     label: str                              # ex: "Vos intérêts : Tech"
     score_total: float = 0.0                # Somme de tous les points
-    breakdown: List[DigestScoreBreakdown] = []  # Détail par facteur
+    breakdown: List[DigestScoreBreakdown] = Field(default_factory=list)  # Détail par facteur
 
 
 class DigestItem(BaseModel):
