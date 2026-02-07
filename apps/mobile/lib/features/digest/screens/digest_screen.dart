@@ -139,13 +139,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   void _handleNotInterested(DigestItem item) {
     HapticFeedback.lightImpact();
 
-    // Apply the action immediately
-    ref.read(digestProvider.notifier).applyAction(
-          item.contentId,
-          'not_interested',
-        );
-
-    // Show unified personalization sheet (scoring + personalization)
+    // Only open the personalization sheet — let user choose an action
+    // (mute source, mute theme) from the modal. No immediate action.
     _showPersonalizationSheet(item);
   }
 

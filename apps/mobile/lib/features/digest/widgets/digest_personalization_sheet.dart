@@ -22,7 +22,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     final reason = item.recommendationReason;
 
     if (reason == null) {
-      return _buildNoReasonView(context, colors);
+      return _buildNoReasonView(context, ref, colors);
     }
 
     return Container(
@@ -249,7 +249,8 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildNoReasonView(BuildContext context, FacteurColors colors) {
+  Widget _buildNoReasonView(
+      BuildContext context, WidgetRef ref, FacteurColors colors) {
     return Container(
       padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
       decoration: BoxDecoration(
@@ -258,32 +259,48 @@ class DigestPersonalizationSheet extends ConsumerWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildDragHandle(colors),
-          const SizedBox(height: 24),
-          Icon(
-            PhosphorIcons.question(PhosphorIconsStyle.bold),
-            color: colors.textTertiary,
-            size: 32,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Information non disponible',
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+          const SizedBox(height: 20),
+
+          // Header — still show a useful title
+          Row(
+            children: [
+              Icon(
+                PhosphorIcons.sliders(PhosphorIconsStyle.bold),
+                color: colors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Personnaliser',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Les détails de recommandation ne sont pas disponibles pour cet article.',
+            'Ajustez vos préférences pour cet article.',
             style: TextStyle(
               color: colors.textSecondary,
               fontSize: 14,
             ),
-            textAlign: TextAlign.center,
           ),
+
+          // Always show personalization actions if source is available
+          if (item.source != null) ...[
+            const SizedBox(height: 16),
+            Divider(color: colors.border),
+            const SizedBox(height: 16),
+            _buildActions(context, ref, colors, item),
+          ],
         ],
       ),
     );

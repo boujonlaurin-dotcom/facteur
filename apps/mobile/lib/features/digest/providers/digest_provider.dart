@@ -251,10 +251,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           duration: const Duration(seconds: 2),
         );
       case 'not_interested':
-        NotificationService.showInfo(
-          'Source masquée',
-          duration: const Duration(seconds: 2),
-        );
+        // Silent — user will get specific feedback from the personalization sheet
+        // after choosing to mute source or theme
+        break;
       case 'undo':
         NotificationService.showInfo(
           'Action annulée',

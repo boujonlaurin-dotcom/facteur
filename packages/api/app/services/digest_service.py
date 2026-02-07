@@ -50,6 +50,7 @@ class EmergencyItem:
     score: float = 0.5
     rank: int = 0
     reason: str = "Sélection de la rédaction"
+    breakdown: Optional[List[DigestScoreBreakdown]] = None
 
 
 class DigestService:
@@ -170,11 +171,19 @@ class DigestService:
         
         CRITICAL FIX: Now prioritizes user's followed sources instead of just curated content.
         Falls back to curated sources only if user has no followed sources.
+        
+        Applies diversity constraints (max 2 per source) and generates minimal
+        breakdown data so the personalization sheet can display properly.
         """
         from app.models.content import Content
         from app.models.source import Source
         from sqlalchemy import desc
         from sqlalchemy.orm import selectinload
+        from collections import defaultdict
+        
+        MAX_PER_SOURCE = 2  # Same constraint as DigestSelector
+        # Fetch more candidates than needed so we can apply diversity
+        fetch_limit = limit * 5  
         
         # Get user's followed sources
         from app.models.source import UserSource
@@ -185,6 +194,8 @@ class DigestService:
         
         # OPTIMIZATION: Limit query to last 7 days to avoid full table scan
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=7)
+        
+        all_contents: list = []
         
         # Try user's followed sources first
         if followed_source_ids:
@@ -197,52 +208,104 @@ class DigestService:
                     Content.published_at >= cutoff_date
                 )
                 .order_by(Content.published_at.desc())
-                .limit(limit)
+                .limit(fetch_limit)
             )
             
             result = await self.session.execute(stmt)
-            contents = list(result.scalars().all())
-            
-            if len(contents) >= limit:
-                logger.info(
-                    "digest_emergency_fallback_user_sources",
-                    user_id=str(user_id),
-                    count=len(contents),
-                    source="user_followed"
+            all_contents = list(result.scalars().all())
+        
+        # If not enough from user sources, add curated sources
+        if len(all_contents) < fetch_limit:
+            existing_ids = {c.id for c in all_contents}
+            curated_query = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    Source.is_curated == True,
+                    Content.published_at >= cutoff_date,
                 )
-                return [
-                    EmergencyItem(content=c, rank=i+1) 
-                    for i, c in enumerate(contents[:limit])
-                ]
-        
-        # Fallback to curated sources if no user sources or not enough content
-        stmt = (
-            select(Content)
-            .join(Content.source)
-            .options(selectinload(Content.source))
-            .where(
-                Source.is_curated == True,
-                Content.published_at >= cutoff_date
+                .order_by(Content.published_at.desc())
+                .limit(fetch_limit - len(all_contents))
             )
-            .order_by(Content.published_at.desc())
-            .limit(limit)
-        )
+            if existing_ids:
+                curated_query = curated_query.where(Content.id.notin_(list(existing_ids)))
+            stmt = curated_query
+            
+            result = await self.session.execute(stmt)
+            all_contents.extend(result.scalars().all())
         
-        result = await self.session.execute(stmt)
-        contents = result.scalars().all()
+        # Apply diversity constraint: max 2 articles per source
+        selected: list = []
+        source_counts: dict = defaultdict(int)
         
+        for content in all_contents:
+            if len(selected) >= limit:
+                break
+            
+            source_id = content.source_id
+            if source_counts[source_id] >= MAX_PER_SOURCE:
+                continue
+            
+            # Generate a minimal breakdown for the personalization sheet
+            breakdown_items = []
+            
+            # Recency info
+            hours_old = (datetime.now(timezone.utc) - content.published_at.replace(tzinfo=timezone.utc if content.published_at.tzinfo is None else content.published_at.tzinfo)).total_seconds() / 3600
+            if hours_old < 6:
+                breakdown_items.append(DigestScoreBreakdown(label="Article très récent (< 6h)", points=30.0, is_positive=True))
+            elif hours_old < 24:
+                breakdown_items.append(DigestScoreBreakdown(label="Article récent (< 24h)", points=25.0, is_positive=True))
+            elif hours_old < 48:
+                breakdown_items.append(DigestScoreBreakdown(label="Publié aujourd'hui", points=15.0, is_positive=True))
+            elif hours_old < 72:
+                breakdown_items.append(DigestScoreBreakdown(label="Publié hier", points=8.0, is_positive=True))
+            
+            # Source info
+            if content.source_id in followed_source_ids:
+                breakdown_items.append(DigestScoreBreakdown(label="Source de confiance", points=50.0, is_positive=True))
+            elif content.source and content.source.is_curated:
+                breakdown_items.append(DigestScoreBreakdown(label="Source qualitative", points=10.0, is_positive=True))
+            
+            # Theme info
+            if content.source and content.source.theme:
+                theme_labels = {
+                    'tech': 'Tech', 'society': 'Société', 'environment': 'Environnement',
+                    'economy': 'Économie', 'politics': 'Politique', 'culture': 'Culture',
+                    'science': 'Sciences', 'international': 'International',
+                }
+                theme_label = theme_labels.get(content.source.theme, content.source.theme.capitalize())
+                breakdown_items.append(DigestScoreBreakdown(label=f"Thème : {theme_label}", points=20.0, is_positive=True))
+            
+            # Build reason
+            if content.source_id in followed_source_ids and content.source:
+                reason = f"Source suivie : {content.source.name}"
+            elif content.source:
+                reason = f"Sélection de la rédaction : {content.source.name}"
+            else:
+                reason = "Sélection de la rédaction"
+            
+            selected.append(EmergencyItem(
+                content=content,
+                score=sum(b.points for b in breakdown_items),
+                rank=len(selected) + 1,
+                reason=reason,
+                breakdown=breakdown_items,
+            ))
+            source_counts[source_id] += 1
+        
+        # Log diversity stats
+        unique_sources = len(set(item.content.source_id for item in selected))
         logger.info(
-            "digest_emergency_fallback_curated",
+            "digest_emergency_fallback_with_diversity",
             user_id=str(user_id),
-            count=len(contents),
-            source="curated",
+            count=len(selected),
+            unique_sources=unique_sources,
+            source_distribution=dict(source_counts),
             had_followed_sources=bool(followed_source_ids)
         )
         
-        return [
-            EmergencyItem(content=c, rank=i+1) 
-            for i, c in enumerate(contents)
-        ]
+        return selected
     
     async def apply_action(
         self,

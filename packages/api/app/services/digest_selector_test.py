@@ -547,6 +547,143 @@ class TestDigestContextBuilding:
         assert isinstance(context.muted_topics, set)
 
 
+class TestDiversityDecayAlgorithm:
+    """Tests for the diversity decay factor algorithm."""
+    
+    def test_diversity_decay_factor_applied(self, selector, sample_content_factory, sample_source_factory):
+        """TEST-02: Verify decay factor reduces scores for same-source articles."""
+        # Create a single source
+        source = sample_source_factory(source_id=uuid4(), name="Test Source")
+        
+        # Create 3 articles from same source with equal base scores
+        from datetime import datetime, timezone, timedelta
+        articles = []
+        for i in range(3):
+            content = sample_content_factory(
+                source=source,
+                title=f"Article {i}",
+                published_at=datetime.now(timezone.utc) - timedelta(hours=i)
+            )
+            articles.append(content)
+        
+        # Score them equally (simulate scoring)
+        scored = [(article, 100.0, []) for article in articles]
+        
+        # Select with diversity
+        selected = selector._select_with_diversity(scored, target_count=3)
+        
+        # Verify decay is applied - scores should be reduced
+        assert len(selected) == 3
+        
+        # First: 100 * (0.70^0) = 100
+        # Second: 100 * (0.70^1) = 70
+        # Third: 100 * (0.70^2) = 49
+        scores = [item[1] for item in selected]
+        assert scores[0] == 100.0
+        assert scores[1] == 70.0  # 100 * 0.70
+        assert scores[2] == 49.0  # 100 * 0.70^2
+    
+    def test_minimum_three_sources_enforced(self, selector, sample_content_factory, sample_source_factory):
+        """Verify digest has at least 3 different sources when possible."""
+        from datetime import datetime, timezone, timedelta
+        
+        # Create articles from 5 different sources
+        sources_articles = []
+        for i in range(5):
+            source = sample_source_factory(source_id=uuid4(), name=f"Source {i}", theme=f"theme_{i}")
+            content = sample_content_factory(
+                source=source,
+                title=f"Article from {source.name}",
+                published_at=datetime.now(timezone.utc) - timedelta(hours=i)
+            )
+            sources_articles.append((content, 100.0 - i * 5, []))  # Varying scores
+        
+        selected = selector._select_with_diversity(sources_articles, target_count=5)
+        
+        # Count unique sources
+        selected_sources = set(item[0].source_id for item in selected)
+        assert len(selected_sources) >= 3, f"Only {len(selected_sources)} sources in digest, expected at least 3"
+    
+    def test_le_monde_only_user_gets_diversity(self, selector, sample_content_factory, sample_source_factory):
+        """TEST-02: Le Monde-only user should still get 3+ sources via fallback."""
+        from datetime import datetime, timezone, timedelta
+        
+        # Simulate user who only follows Le Monde
+        le_monde = sample_source_factory(source_id=uuid4(), name="Le Monde", theme="society")
+        other_sources = [
+            sample_source_factory(source_id=uuid4(), name="Source A", theme="tech"),
+            sample_source_factory(source_id=uuid4(), name="Source B", theme="science"),
+            sample_source_factory(source_id=uuid4(), name="Source C", theme="culture"),
+            sample_source_factory(source_id=uuid4(), name="Source D", theme="economy"),
+        ]
+        
+        # Create articles - 2 from Le Monde (high scores), rest from other sources
+        articles = []
+        
+        # 2 from Le Monde
+        for i in range(2):
+            content = sample_content_factory(
+                source=le_monde,
+                title=f"Le Monde Article {i}",
+                published_at=datetime.now(timezone.utc) - timedelta(hours=i)
+            )
+            articles.append((content, 100.0, []))
+        
+        # 5 from other sources (slightly lower scores)
+        for i, source in enumerate(other_sources):
+            content = sample_content_factory(
+                source=source,
+                title=f"Other Source Article {i}",
+                published_at=datetime.now(timezone.utc) - timedelta(hours=i+2)
+            )
+            articles.append((content, 90.0, []))
+        
+        selected = selector._select_with_diversity(articles, target_count=5)
+        
+        # Count sources
+        selected_sources = set(item[0].source_id for item in selected)
+        
+        # With decay and diversity, should have 3+ sources
+        assert len(selected_sources) >= 3, \
+            f"Le Monde-only user scenario: only {len(selected_sources)} sources, expected 3+"
+        
+        # No source should have more than 2
+        source_counts = {}
+        for item in selected:
+            sid = item[0].source_id
+            source_counts[sid] = source_counts.get(sid, 0) + 1
+        
+        max_count = max(source_counts.values()) if source_counts else 0
+        assert max_count <= 2, f"Source has {max_count} articles, max allowed is 2"
+    
+    def test_no_single_source_exceeds_two_articles(self, selector, sample_content_factory, sample_source_factory):
+        """Verify no single source has more than 2 articles in digest."""
+        from datetime import datetime, timezone, timedelta
+        
+        # Create 10 articles from same source
+        source = sample_source_factory(source_id=uuid4(), name="Single Source")
+        articles = []
+        for i in range(10):
+            content = sample_content_factory(
+                source=source,
+                title=f"Article {i}",
+                published_at=datetime.now(timezone.utc) - timedelta(hours=i)
+            )
+            articles.append((content, 100.0 - i * 2, []))
+        
+        selected = selector._select_with_diversity(articles, target_count=5)
+        
+        # Count articles per source
+        source_counts = {}
+        for item in selected:
+            sid = item[0].source_id
+            source_counts[sid] = source_counts.get(sid, 0) + 1
+        
+        # No source should exceed 2
+        for sid, count in source_counts.items():
+            assert count <= 2, f"Source {sid} has {count} articles, max is 2"
+
+
 class TestDiversityConstraintsConstants:
     """Tests pour les constantes de diversité."""
     
@@ -557,6 +694,15 @@ class TestDiversityConstraintsConstants:
         assert constraints.MAX_PER_SOURCE == 2
         assert constraints.MAX_PER_THEME == 2
         assert constraints.TARGET_DIGEST_SIZE == 5
+    
+    def test_decay_factor_value(self, selector):
+        """Verify decay factor is 0.70 as per algorithm spec."""
+        # The decay factor should be 0.70 (same as feed algorithm)
+        # This is hardcoded in _select_with_diversity method
+        import inspect
+        source = inspect.getsource(selector._select_with_diversity)
+        assert "0.70" in source or "DECAY_FACTOR = 0.70" in source, \
+            "Decay factor should be 0.70"
 
 
 class TestIntegrationSelectForUser:
