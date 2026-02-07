@@ -80,8 +80,16 @@ Action:
 - [ ] **01-02**: Implement source diversity with decay factor — Wave 1
 - [ ] **01-03**: Verify fixes (scheduler + diversity tests) — Wave 2
 
-**Status:** ⚪ Not Started  
+**Status:** ✓ Planned (3 plans in 2 waves)  
 **Dependencies:** None (bug fixes on existing code)
+
+### Plan Files Created
+
+| Plan | Objective | Wave | Status |
+|------|-----------|------|--------|
+| [01-production-fixes-01-PLAN.md](phases/01-production-fixes/01-production-fixes-01-PLAN.md) | Add digest generation job to scheduler | 1 | Ready |
+| [01-production-fixes-02-PLAN.md](phases/01-production-fixes/01-production-fixes-02-PLAN.md) | Implement source diversity with decay factor | 1 | Ready |
+| [01-production-fixes-03-PLAN.md](phases/01-production-fixes/01-production-fixes-03-PLAN.md) | Verify fixes (scheduler + diversity tests) | 2 | Ready |
 
 **Wave Structure:**
 | Wave | Plans | Dependencies |
