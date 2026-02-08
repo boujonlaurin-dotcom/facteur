@@ -9,6 +9,11 @@ from sqlalchemy import select, func, text, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
+from app.schemas.analytics import (
+    ContentInteractionPayload,
+    DigestSessionPayload,
+    FeedSessionPayload,
+)
 
 logger = structlog.get_logger()
 
@@ -54,3 +59,49 @@ class AnalyticsService:
         stmt = select(AnalyticsEvent).order_by(desc(AnalyticsEvent.created_at)).limit(limit)
         result = await self.session.scalars(stmt)
         return list(result.all())
+
+    async def log_content_interaction(
+        self,
+        user_id: UUID,
+        payload: ContentInteractionPayload,
+        device_id: str | None = None,
+    ) -> AnalyticsEvent:
+        """Enregistre une interaction contenu unifiée (feed ou digest).
+
+        Valide le payload via Pydantic, puis délègue au transport log_event.
+        Remplace les événements fragmentés (article_read, feed_scroll).
+        """
+        return await self.log_event(
+            user_id=user_id,
+            event_type="content_interaction",
+            event_data=payload.model_dump(mode="json"),
+            device_id=device_id,
+        )
+
+    async def log_digest_session(
+        self,
+        user_id: UUID,
+        payload: DigestSessionPayload,
+        device_id: str | None = None,
+    ) -> AnalyticsEvent:
+        """Enregistre une session digest complète (closure, stats, streak)."""
+        return await self.log_event(
+            user_id=user_id,
+            event_type="digest_session",
+            event_data=payload.model_dump(mode="json"),
+            device_id=device_id,
+        )
+
+    async def log_feed_session(
+        self,
+        user_id: UUID,
+        payload: FeedSessionPayload,
+        device_id: str | None = None,
+    ) -> AnalyticsEvent:
+        """Enregistre une session feed complète (scroll depth, items)."""
+        return await self.log_event(
+            user_id=user_id,
+            event_type="feed_session",
+            event_data=payload.model_dump(mode="json"),
+            device_id=device_id,
+        )
