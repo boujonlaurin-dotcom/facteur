@@ -105,3 +105,103 @@ class AnalyticsService:
             event_data=payload.model_dump(mode="json"),
             device_id=device_id,
         )
+
+    # ──────────────────────────────────────────────────────────────
+    # Digest metrics query helpers
+    # ──────────────────────────────────────────────────────────────
+
+    async def get_digest_metrics(
+        self, user_id: UUID, days: int = 7
+    ) -> dict[str, float | int]:
+        """Calcule les métriques de sessions digest sur une période.
+
+        Returns:
+            completion_rate: fraction de sessions avec closure_achieved=true
+            avg_closure_time_seconds: temps moyen des sessions complétées
+            total_closures: nombre de sessions complétées
+            total_sessions: nombre total de sessions
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+
+        result = await self.session.execute(
+            text("""
+                SELECT
+                    COUNT(*)::int AS total_sessions,
+                    COUNT(*) FILTER (
+                        WHERE event_data->>'closure_achieved' = 'true'
+                    )::int AS total_closures,
+                    COALESCE(
+                        AVG(
+                            (event_data->>'total_time_seconds')::int
+                        ) FILTER (
+                            WHERE event_data->>'closure_achieved' = 'true'
+                        ),
+                        0
+                    ) AS avg_closure_time_seconds
+                FROM analytics_events
+                WHERE user_id = :user_id
+                  AND event_type = 'digest_session'
+                  AND created_at >= :since
+            """),
+            {"user_id": str(user_id), "since": since},
+        )
+
+        row = result.one()
+        total_sessions = row.total_sessions or 0
+        total_closures = row.total_closures or 0
+        avg_time = float(row.avg_closure_time_seconds or 0)
+
+        completion_rate = (
+            total_closures / total_sessions if total_sessions > 0 else 0.0
+        )
+
+        return {
+            "completion_rate": round(completion_rate, 3),
+            "avg_closure_time_seconds": round(avg_time, 1),
+            "total_closures": total_closures,
+            "total_sessions": total_sessions,
+        }
+
+    async def get_interaction_breakdown(
+        self, user_id: UUID, surface: str = "digest", days: int = 7
+    ) -> dict[str, int]:
+        """Comptabilise les interactions contenu par type d'action.
+
+        Returns:
+            read, save, dismiss, pass counts + total
+        """
+        since = datetime.utcnow() - timedelta(days=days)
+
+        result = await self.session.execute(
+            text("""
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE event_data->>'action' = 'read'
+                    )::int AS read_count,
+                    COUNT(*) FILTER (
+                        WHERE event_data->>'action' = 'save'
+                    )::int AS save_count,
+                    COUNT(*) FILTER (
+                        WHERE event_data->>'action' = 'dismiss'
+                    )::int AS dismiss_count,
+                    COUNT(*) FILTER (
+                        WHERE event_data->>'action' = 'pass'
+                    )::int AS pass_count,
+                    COUNT(*)::int AS total
+                FROM analytics_events
+                WHERE user_id = :user_id
+                  AND event_type = 'content_interaction'
+                  AND event_data->>'surface' = :surface
+                  AND created_at >= :since
+            """),
+            {"user_id": str(user_id), "surface": surface, "since": since},
+        )
+
+        row = result.one()
+        return {
+            "read": row.read_count or 0,
+            "save": row.save_count or 0,
+            "dismiss": row.dismiss_count or 0,
+            "pass": row.pass_count or 0,
+            "total": row.total or 0,
+        }

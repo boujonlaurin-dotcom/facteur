@@ -35,3 +35,20 @@ async def log_event(
         device_id=event.device_id
     )
     return {"status": "ok"}
+
+
+@router.get("/digest-metrics")
+async def get_digest_metrics(
+    days: int = 7,
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Métriques d'engagement digest: taux de complétion, temps moyen, breakdown des actions."""
+    service = AnalyticsService(db)
+    metrics = await service.get_digest_metrics(user_id, days)
+    breakdown = await service.get_interaction_breakdown(user_id, "digest", days)
+    return {
+        "period_days": days,
+        "digest_sessions": metrics,
+        "interaction_breakdown": breakdown,
+    }
