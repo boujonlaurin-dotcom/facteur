@@ -558,8 +558,15 @@ class DigestService:
         digest: DailyDigest,
         user_id: UUID
     ) -> DigestResponse:
-        """Build DigestResponse from database record with action states."""
-        # Check for existing completion
+        """Build DigestResponse from database record with action states.
+        
+        Optimized: batch-fetches all content and action states in 3 queries
+        instead of 2*N queries (N per content + N per action state).
+        """
+        # Extract all content IDs upfront
+        content_ids = [UUID(item_data["content_id"]) for item_data in digest.items]
+        
+        # Batch query 1: Check for existing completion
         completion = await self.session.scalar(
             select(DigestCompletion).where(
                 and_(
@@ -569,15 +576,32 @@ class DigestService:
             )
         )
         
-        # Build items with their action states
+        # Batch query 2: Fetch ALL content with eager-loaded sources in one query
+        content_stmt = (
+            select(Content)
+            .options(selectinload(Content.source))
+            .where(Content.id.in_(content_ids))
+        )
+        content_result = await self.session.execute(content_stmt)
+        content_map = {c.id: c for c in content_result.scalars().all()}
+        
+        # Batch query 3: Fetch ALL action states in one query
+        action_states_map = await self._get_batch_action_states(user_id, content_ids)
+        
+        logger.info(
+            "digest_response_batch_loaded",
+            digest_id=str(digest.id),
+            content_found=len(content_map),
+            content_expected=len(content_ids),
+            action_states_found=len(action_states_map),
+        )
+        
+        # Build items using pre-fetched data (no more per-item queries)
         items = []
         for item_data in digest.items:
             content_id = UUID(item_data["content_id"])
+            content = content_map.get(content_id)
             
-            # Fetch content details with eager loading of source
-            stmt = select(Content).options(selectinload(Content.source)).where(Content.id == content_id)
-            result = await self.session.execute(stmt)
-            content = result.scalar_one_or_none()
             if not content or not content.source:
                 logger.warning(
                     "digest_content_or_source_not_found",
@@ -588,20 +612,16 @@ class DigestService:
                 )
                 continue
             
-            # Get user action state
-            action_state = await self._get_item_action_state(user_id, content_id)
+            # Get action state from pre-fetched map
+            action_state = action_states_map.get(
+                content_id,
+                {"is_read": False, "is_saved": False, "is_dismissed": False}
+            )
             
             # Rebuild breakdown from stored data if available
             breakdown_data = item_data.get("breakdown") or []
-            if breakdown_data:
-                logger.info(
-                    "rebuilt_breakdown_from_stored_data",
-                    content_id=str(content_id),
-                    breakdown_count=len(breakdown_data),
-                    breakdown_labels=[b.get("label", "") for b in breakdown_data[:3]]
-                )
-            else:
-                logger.warning(
+            if not breakdown_data:
+                logger.debug(
                     "no_breakdown_data_in_stored_item",
                     content_id=str(content_id),
                     digest_id=str(digest.id),
@@ -677,6 +697,37 @@ class DigestService:
             "is_read": status.status == ContentStatus.CONSUMED,
             "is_saved": status.is_saved,
             "is_dismissed": status.is_hidden
+        }
+    
+    async def _get_batch_action_states(
+        self,
+        user_id: UUID,
+        content_ids: List[UUID]
+    ) -> Dict[UUID, Dict[str, bool]]:
+        """Batch-fetch action states for multiple content items in one query.
+        
+        Optimized replacement for calling _get_item_action_state per item.
+        Reduces N queries to 1 query for the entire digest.
+        """
+        if not content_ids:
+            return {}
+        
+        stmt = select(UserContentStatus).where(
+            and_(
+                UserContentStatus.user_id == user_id,
+                UserContentStatus.content_id.in_(content_ids)
+            )
+        )
+        result = await self.session.execute(stmt)
+        statuses = result.scalars().all()
+        
+        return {
+            status.content_id: {
+                "is_read": status.status == ContentStatus.CONSUMED,
+                "is_saved": status.is_saved,
+                "is_dismissed": status.is_hidden
+            }
+            for status in statuses
         }
     
     async def _get_or_create_content_status(
