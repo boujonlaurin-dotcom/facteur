@@ -6,11 +6,13 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   flutter_inappwebview_windows
   flutter_secure_storage_windows
+  flutter_timezone
   sentry_flutter
   url_launcher_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  flutter_local_notifications_windows
   jni
 )
 
