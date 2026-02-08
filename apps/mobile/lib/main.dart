@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/services/push_notification_service.dart';
+import 'core/ui/notification_service.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 // Note: Certains packages demandent l'import src pour les messages spécifiques s'ils ne sont pas exportés,
@@ -62,6 +64,22 @@ Future<void> main() async {
   } else {
     debugPrint('Main: Hive supabase_session NOT FOUND in box.');
   }
+
+  // Initialiser les notifications push locales
+  debugPrint('Main: Initializing push notifications...');
+  final pushNotificationService = PushNotificationService();
+  PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
+  await pushNotificationService.init();
+  await pushNotificationService.requestPermission();
+
+  // Vérifier si les notifications sont activées dans Hive avant de planifier
+  final settingsBox = Hive.box<dynamic>('settings');
+  final pushEnabled =
+      settingsBox.get('push_notifications_enabled', defaultValue: true) as bool;
+  if (pushEnabled) {
+    await pushNotificationService.scheduleDailyDigestNotification();
+  }
+  debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
 
   // Validation Supabase avant initialisation
   if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
