@@ -10,16 +10,16 @@
 
 **Milestone:** v1.1 — Digest Production Fixes + Polish  
 **Phase:** 03-polish  
-**Plan:** 2 of 5 completed in current phase  
+**Plan:** 3 of 5 completed in current phase  
 **Status:** In progress  
-**Last activity:** 2026-02-08 - Completed 03-04-PLAN.md (DigestSelector & DigestService tests)
+**Last activity:** 2026-02-08 - Completed 03-01-PLAN.md (Local push notification)
 
 **Progress:**
 
 ```
 Phase 1 Production Fixes: [●●○] 67% (2/3)
-Phase 3 Polish:           [●●○○○] 40% (2/5)
-Overall:                  █████████████████░░░ 83% (23/28)
+Phase 3 Polish:           [●●●○○] 60% (3/5)
+Overall:                  ██████████████████░░ 85% (24/28)
 ```
 
 ---
@@ -38,7 +38,7 @@ See: .planning/PROJECT.md
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Production Fixes | 🟡 In Progress | 67% | 2/3 |
-| 3 — Polish | 🟡 In Progress | 40% | 2/5 |
+| 3 — Polish | 🟡 In Progress | 60% | 3/5 |
 
 ---
 
@@ -46,7 +46,7 @@ See: .planning/PROJECT.md
 
 ### Phase 3 Polish
 
-- ⬜ 03-01: Local push notification "Digest prêt" — Wave 1
+- ✅ 03-01: Local push notification "Digest prêt" — COMPLETE
 - ✅ 03-02: Unified analytics schema + service methods — COMPLETE
 - ⬜ 03-03: Wire analytics into digest screens + metrics endpoint — Wave 2 (depends on 03-02)
 - ✅ 03-04: DigestSelector & DigestService tests (TDD) — COMPLETE
@@ -70,6 +70,8 @@ See: .planning/PROJECT.md
 | 2026-02-08 | Forward-compatible atomic_themes field | Nullable, ready for Camembert without schema migration |
 | 2026-02-08 | Characterization tests over strict RED-first TDD | Implementation exists, tests lock down behavior |
 | 2026-02-08 | Test _select_with_diversity directly (sync) | No DB mocking needed, fast and reliable |
+| 2026-02-08 | PushNotificationService (not NotificationService) | Avoids collision with existing SnackBar NotificationService |
+| 2026-02-08 | Local notifications only (no FCM) | Simpler, no backend needed, story dev notes recommend for MVP |
 
 ---
 
@@ -77,7 +79,7 @@ See: .planning/PROJECT.md
 
 | Risk | Mitigation | Status |
 |------|------------|--------|
-| pubspec.yaml conflict (timezone ^0.9.4 vs ^0.10.0) | Needs resolution in Plan 03-01 | ⚠️ Blocking 03-01 |
+| pubspec.yaml conflict (timezone ^0.9.4 vs ^0.10.0) | Resolved: used ^0.10.0 (required by v20) | ✅ Resolved |
 | Regression in digest functionality | 24 tests in 03-04 now provide safety net | ✅ Mitigated |
 
 ---
@@ -85,9 +87,9 @@ See: .planning/PROJECT.md
 ## Session Continuity
 
 **Last session:** 2026-02-08  
-**Stopped at:** Completed 03-04-PLAN.md  
+**Stopped at:** Completed 03-01-PLAN.md  
 **Resume file:** None
 
 ---
 
-*Next step: Execute remaining Wave 1 plan (03-01) or Wave 2 (03-03)*
+*Next step: Execute Wave 2 plan (03-03: wire analytics into digest + metrics endpoint)*

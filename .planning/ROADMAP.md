@@ -128,20 +128,20 @@ Action:
 
 ### Plans
 
-- [ ] **03-01**: Local push notification "Digest prêt" — Wave 1
+- [x] **03-01**: Local push notification "Digest prêt" — Wave 1
 - [x] **03-02**: Unified analytics schema + service methods (backend + mobile) — Wave 1
 - [ ] **03-03**: Wire analytics into digest screens + metrics endpoint — Wave 2
 - [x] **03-04**: DigestSelector & DigestService tests (TDD) — Wave 1
 - [ ] **03-05**: Performance optimization (eager loading + caching) — Wave 3
 
-**Status:** 🟡 In Progress (2/5 plans complete)  
+**Status:** 🟡 In Progress (3/5 plans complete)  
 **Dependencies:** Phase 1 complete (production fixes deployed)
 
 ### Plan Files Created
 
 | Plan | Objective | Wave | Status |
 |------|-----------|------|--------|
-| [03-01-PLAN.md](phases/03-polish/03-01-PLAN.md) | Local push notification at 8am (v20 API) | 1 | Ready |
+| [03-01-PLAN.md](phases/03-polish/03-01-PLAN.md) | Local push notification at 8am (v20 API) | 1 | ✓ Complete |
 | [03-02-PLAN.md](phases/03-polish/03-02-PLAN.md) | Unified content_interaction analytics schema + service | 1 | ✓ Complete |
 | [03-03-PLAN.md](phases/03-polish/03-03-PLAN.md) | Wire analytics into digest + metrics endpoint | 2 | Ready |
 | [03-04-PLAN.md](phases/03-polish/03-04-PLAN.md) | DigestSelector & DigestService tests (TDD) | 1 | ✓ Complete |
