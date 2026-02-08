@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/streak_celebration.dart';
@@ -39,6 +40,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
   DigestCompletionResponse? _completionData;
   bool _isLoadingCompletion = true;
+  bool _hasTrackedSession = false;
 
   @override
   void initState() {
@@ -136,24 +138,61 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
       // Get streak info from provider or use defaults
       // In a real implementation, this would come from the API response
+      final completionData = DigestCompletionResponse(
+        success: true,
+        digestId: widget.digestId,
+        completedAt: DateTime.now(),
+        articlesRead: readCount,
+        articlesSaved: savedCount,
+        articlesDismissed: dismissedCount,
+        closureTimeSeconds: null, // Would come from API
+        closureStreak: 1, // Would come from streak provider
+        streakMessage: null, // Would come from API
+      );
+
       setState(() {
-        _completionData = DigestCompletionResponse(
-          success: true,
-          digestId: widget.digestId,
-          completedAt: DateTime.now(),
-          articlesRead: readCount,
-          articlesSaved: savedCount,
-          articlesDismissed: dismissedCount,
-          closureTimeSeconds: null, // Would come from API
-          closureStreak: 1, // Would come from streak provider
-          streakMessage: null, // Would come from API
-        );
+        _completionData = completionData;
         _isLoadingCompletion = false;
       });
+
+      // Fire digest_session analytics event (once only)
+      _trackDigestSession(completionData, digest);
     } else {
       setState(() {
         _isLoadingCompletion = false;
       });
+    }
+  }
+
+  /// Fire a digest_session analytics event once per closure.
+  void _trackDigestSession(
+    DigestCompletionResponse completionData,
+    DigestResponse digest,
+  ) {
+    if (_hasTrackedSession) return;
+    _hasTrackedSession = true;
+
+    try {
+      // Calculate articles passed: total minus read/saved/dismissed
+      final totalItems = digest.items.length;
+      final passedCount = totalItems -
+          completionData.articlesRead -
+          completionData.articlesSaved -
+          completionData.articlesDismissed;
+
+      ref.read(analyticsServiceProvider).trackDigestSession(
+            digestDate: digest.targetDate.toIso8601String().split('T').first,
+            articlesRead: completionData.articlesRead,
+            articlesSaved: completionData.articlesSaved,
+            articlesDismissed: completionData.articlesDismissed,
+            articlesPassed: passedCount > 0 ? passedCount : 0,
+            totalTimeSeconds: completionData.closureTimeSeconds ?? 0,
+            closureAchieved: true,
+            streak: completionData.closureStreak,
+          );
+    } catch (e) {
+      // Fail silently — analytics should never block closure UX
+      debugPrint('ClosureScreen: analytics tracking failed: $e');
     }
   }
 

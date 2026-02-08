@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
@@ -136,6 +137,17 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         action: action,
       );
 
+      // Track content_interaction analytics event (unified schema)
+      _trackContentInteraction(
+        action: action,
+        item: currentDigest.items.firstWhere(
+          (i) => i.contentId == contentId,
+          orElse: () => currentDigest.items.first,
+        ),
+        position:
+            currentDigest.items.indexWhere((i) => i.contentId == contentId) + 1,
+      );
+
       // Trigger haptic feedback on success
       await _triggerHaptic(action);
       _showActionNotification(action);
@@ -213,6 +225,49 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         .every((item) => item.isRead || item.isDismissed || item.isSaved);
     if (allProcessed) {
       completeDigest();
+    }
+  }
+
+  /// Track a content interaction event for analytics (unified schema).
+  /// Maps UI action names to analytics action names.
+  void _trackContentInteraction({
+    required String action,
+    required DigestItem item,
+    required int position,
+  }) {
+    // Map UI action names to analytics action names
+    final String analyticsAction;
+    switch (action) {
+      case 'read':
+        analyticsAction = 'read';
+      case 'save':
+        analyticsAction = 'save';
+      case 'unsave':
+        // unsave is not a tracked interaction event
+        return;
+      case 'not_interested':
+        analyticsAction = 'dismiss';
+      case 'undo':
+        // undo is not a tracked interaction event
+        return;
+      default:
+        return;
+    }
+
+    try {
+      ref.read(analyticsServiceProvider).trackContentInteraction(
+            action: analyticsAction,
+            surface: 'digest',
+            contentId: item.contentId,
+            sourceId: item.source?.id ?? '',
+            topics: const [], // Topics not available on DigestItem model
+            position: position,
+            timeSpentSeconds: 0,
+          );
+    } catch (e) {
+      // Fail silently — analytics should never block user actions
+      // ignore: avoid_print
+      print('DigestNotifier: analytics tracking failed: $e');
     }
   }
 
