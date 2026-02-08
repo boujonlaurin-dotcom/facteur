@@ -10,16 +10,16 @@
 
 **Milestone:** v1.1 — Digest Production Fixes + Polish  
 **Phase:** 03-polish  
-**Plan:** 1 of 5 completed in current phase  
+**Plan:** 2 of 5 completed in current phase  
 **Status:** In progress  
-**Last activity:** 2026-02-08 - Completed 03-02-PLAN.md (unified analytics schema)
+**Last activity:** 2026-02-08 - Completed 03-04-PLAN.md (DigestSelector & DigestService tests)
 
 **Progress:**
 
 ```
 Phase 1 Production Fixes: [●●○] 67% (2/3)
-Phase 3 Polish:           [●○○○○] 20% (1/5)
-Overall:                  ████████████████░░░░ 79% (22/28)
+Phase 3 Polish:           [●●○○○] 40% (2/5)
+Overall:                  █████████████████░░░ 83% (23/28)
 ```
 
 ---
@@ -38,7 +38,7 @@ See: .planning/PROJECT.md
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Production Fixes | 🟡 In Progress | 67% | 2/3 |
-| 3 — Polish | 🟡 In Progress | 20% | 1/5 |
+| 3 — Polish | 🟡 In Progress | 40% | 2/5 |
 
 ---
 
@@ -49,7 +49,7 @@ See: .planning/PROJECT.md
 - ⬜ 03-01: Local push notification "Digest prêt" — Wave 1
 - ✅ 03-02: Unified analytics schema + service methods — COMPLETE
 - ⬜ 03-03: Wire analytics into digest screens + metrics endpoint — Wave 2 (depends on 03-02)
-- ⬜ 03-04: DigestSelector & DigestService tests (TDD) — Wave 1
+- ✅ 03-04: DigestSelector & DigestService tests (TDD) — COMPLETE
 - ⬜ 03-05: Performance optimization (eager loading + caching) — Wave 3
 
 ### Phase 1 Remaining
@@ -68,6 +68,8 @@ See: .planning/PROJECT.md
 | 2026-02-08 | Single content_interaction event type | CONTEXT.md: one event across surfaces, not separate per feature |
 | 2026-02-08 | Clean break with deprecation for legacy analytics | Old methods @deprecated, new unified methods alongside |
 | 2026-02-08 | Forward-compatible atomic_themes field | Nullable, ready for Camembert without schema migration |
+| 2026-02-08 | Characterization tests over strict RED-first TDD | Implementation exists, tests lock down behavior |
+| 2026-02-08 | Test _select_with_diversity directly (sync) | No DB mocking needed, fast and reliable |
 
 ---
 
@@ -76,16 +78,16 @@ See: .planning/PROJECT.md
 | Risk | Mitigation | Status |
 |------|------------|--------|
 | pubspec.yaml conflict (timezone ^0.9.4 vs ^0.10.0) | Needs resolution in Plan 03-01 | ⚠️ Blocking 03-01 |
-| Regression in digest functionality | Tests in 01-03 and 03-04 | To verify |
+| Regression in digest functionality | 24 tests in 03-04 now provide safety net | ✅ Mitigated |
 
 ---
 
 ## Session Continuity
 
 **Last session:** 2026-02-08  
-**Stopped at:** Completed 03-02-PLAN.md  
+**Stopped at:** Completed 03-04-PLAN.md  
 **Resume file:** None
 
 ---
 
-*Next step: Execute remaining Wave 1 plans (03-01, 03-04) or Wave 2 (03-03)*
+*Next step: Execute remaining Wave 1 plan (03-01) or Wave 2 (03-03)*
