@@ -1,34 +1,35 @@
-# Project State: Facteur — Digest Production Fixes (v1.0.1)
+# Project State: Facteur — Digest Polish (v1.1)
 
-**Current Phase:** 1 — Production Fixes  
-**Last Updated:** 2026-02-07  
-**Status:** ⚪ Milestone initialized — Ready for planning
+**Current Phase:** 3 — Polish  
+**Last Updated:** 2026-02-08  
+**Status:** 🟡 In Progress
 
 ---
 
 ## Current Position
 
-**Milestone:** v1.0.1 — Digest Production Fixes  
-**Phase:** 01-production-fixes  
-**Plan:** 2 of 3 completed  
+**Milestone:** v1.1 — Digest Production Fixes + Polish  
+**Phase:** 03-polish  
+**Plan:** 1 of 5 completed in current phase  
 **Status:** In progress  
-**Last activity:** 2026-02-07 - Completed 01-production-fixes-02-PLAN.md
+**Last activity:** 2026-02-08 - Completed 03-02-PLAN.md (unified analytics schema)
 
-**Progress:** Phase 1: 2/3 plans  
+**Progress:**
 
 ```
 Phase 1 Production Fixes: [●●○] 67% (2/3)
+Phase 3 Polish:           [●○○○○] 20% (1/5)
+Overall:                  ████████████████░░░░ 79% (22/28)
 ```
 
 ---
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-07)
-
-**Core value:** Digest must regenerate daily at 8am with diverse source representation  
-**Current focus:** v1.0.1 — Critical bug fixes  
-**Key principle:** Minimal changes, maximum safety
+See: .planning/PROJECT.md  
+**Core value:** Users feel "finished" and informed in 2-4 minutes  
+**Current focus:** v1.1 — Polish (notifications, analytics, tests, performance)  
+**Key principle:** Unified analytics across surfaces, safe reuse of existing logic
 
 ---
 
@@ -37,51 +38,23 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 | Phase | Status | Progress | Plans Complete |
 |-------|--------|----------|----------------|
 | 1 — Production Fixes | 🟡 In Progress | 67% | 2/3 |
-
----
-
-## Milestone Context
-
-**Previous Milestone (Epic 10):** ✅ COMPLETE
-- Phase 1 Foundation: 4/4 plans
-- Phase 2 Frontend: 15/15 plans
-- Phase 3 Polish: Deferred to v1.1
-
-**This Milestone (v1.0.1):**
-- Critical production bug fixes
-- 2 bugs identified in hand-off
-- Estimated 4-6 hours
-
----
-
-## Critical Bugs to Fix
-
-### Bug 1: Job Scheduler Missing
-**Impact:** Digest not regenerating at 8am  
-**Fix:** Add `run_digest_generation` to scheduler.py  
-**File:** `packages/api/app/workers/scheduler.py`
-
-### Bug 2: Source Diversity Missing  
-**Impact:** 5 articles from same source  
-**Fix:** Implement decay factor 0.70 in `_select_with_diversity()`  
-**File:** `packages/api/app/services/digest_selector.py`
+| 3 — Polish | 🟡 In Progress | 20% | 1/5 |
 
 ---
 
 ## Pending Work
 
-### Immediate Next Steps
+### Phase 3 Polish
 
-1. **Phase 1 Production Fixes** 🟡 IN PROGRESS (2/3 plans)
-   - ✅ 01-01: Add digest generation job to scheduler - COMPLETE
-   - ✅ 01-02: Implement source diversity with decay factor - COMPLETE
-   - 🔄 01-03: Verify fixes (scheduler + diversity tests) - NEXT
+- ⬜ 03-01: Local push notification "Digest prêt" — Wave 1
+- ✅ 03-02: Unified analytics schema + service methods — COMPLETE
+- ⬜ 03-03: Wire analytics into digest screens + metrics endpoint — Wave 2 (depends on 03-02)
+- ⬜ 03-04: DigestSelector & DigestService tests (TDD) — Wave 1
+- ⬜ 03-05: Performance optimization (eager loading + caching) — Wave 3
 
----
+### Phase 1 Remaining
 
-## Current Blockers
-
-**None** — Ready to proceed with Phase 1 planning.
+- ⬜ 01-03: Verify fixes (scheduler + diversity tests) — Wave 2
 
 ---
 
@@ -89,10 +62,12 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-02-07 | Decay factor 0.70 | Matches existing feed algorithm for consistency |
-| 2026-02-07 | Min 3 sources requirement | Ensures meaningful diversity in 5-article digest |
-| 2026-02-07 | 8am Europe/Paris timezone | Matches Top 3 schedule, user expectation |
-| 2026-02-07 | Skip Phase 3 (Polish) for v1.0.1 | Production fixes are priority, defer notifications |
+| 2026-02-07 | Decay factor 0.70 | Matches existing feed algorithm |
+| 2026-02-07 | Min 3 sources requirement | Ensures diversity in 5-article digest |
+| 2026-02-07 | 8am Europe/Paris timezone | Matches Top 3 schedule |
+| 2026-02-08 | Single content_interaction event type | CONTEXT.md: one event across surfaces, not separate per feature |
+| 2026-02-08 | Clean break with deprecation for legacy analytics | Old methods @deprecated, new unified methods alongside |
+| 2026-02-08 | Forward-compatible atomic_themes field | Nullable, ready for Camembert without schema migration |
 
 ---
 
@@ -100,34 +75,17 @@ See: .planning/PROJECT.md (updated 2026-02-07)
 
 | Risk | Mitigation | Status |
 |------|------------|--------|
-| Regression in digest functionality | Comprehensive verification in 01-03 | To monitor |
-| Diversity algorithm too aggressive | Test with "Le Monde only" user case | To verify |
-| Scheduler timezone issues | Use Europe/Paris, match existing pattern | Low risk |
-
----
-
-## Next Action
-
-**Phase 1 Production Fixes — Execute Verification Plan**
-
-Both bug fixes complete:
-1. ✅ Scheduler: Digest generation job added at 8am daily
-2. ✅ Diversity: Decay factor 0.70 implemented in _select_with_diversity()
-
-Next: Execute **01-production-fixes-03** to verify both fixes with comprehensive tests.
+| pubspec.yaml conflict (timezone ^0.9.4 vs ^0.10.0) | Needs resolution in Plan 03-01 | ⚠️ Blocking 03-01 |
+| Regression in digest functionality | Tests in 01-03 and 03-04 | To verify |
 
 ---
 
 ## Session Continuity
 
-**Last session:** 2026-02-07  
-**Stopped at:** Completed 01-production-fixes-02-PLAN.md  
+**Last session:** 2026-02-08  
+**Stopped at:** Completed 03-02-PLAN.md  
 **Resume file:** None
 
 ---
 
-*Next step: Execute 01-production-fixes-03-PLAN.md to verify both fixes*
-
----
-
-*State updated after completing Plan 02 — Digest Production Fixes v1.0.1*
+*Next step: Execute remaining Wave 1 plans (03-01, 03-04) or Wave 2 (03-03)*
