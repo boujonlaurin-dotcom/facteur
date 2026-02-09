@@ -13,6 +13,10 @@ from app.services.recommendation_service import RecommendationService
 from app.schemas.content import ContentResponse
 from app.schemas.feed import FeedResponse, PaginationMeta
 
+import structlog
+
+logger = structlog.get_logger()
+
 router = APIRouter()
 
 @router.get("/", response_model=FeedResponse)
@@ -91,8 +95,8 @@ async def mark_briefing_item_read(
     await db.commit()
     
     if result.rowcount == 0:
-        print(f"⚠️ [WARNING] No DailyTop3 item found to mark as read for user {user_uuid} and content {c_uuid}")
+        logger.warning("briefing_mark_read_not_found", user_id=str(user_uuid), content_id=str(c_uuid))
     else:
-        print(f"✅ [SUCCESS] Marked {result.rowcount} DailyTop3 items as read for user {user_uuid}")
+        logger.info("briefing_mark_read_success", user_id=str(user_uuid), updated_count=result.rowcount)
 
     return {"message": "Briefing item marked as read", "updated": result.rowcount}

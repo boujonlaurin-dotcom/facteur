@@ -8,6 +8,10 @@ from jose import JWTError, jwt
 
 from app.config import get_settings
 
+import structlog
+
+logger = structlog.get_logger()
+
 settings = get_settings()
 security = HTTPBearer()
 
@@ -78,25 +82,25 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
             # Connection pool timeout - retry with backoff
             if attempt < max_retries - 1:
                 wait_time = 0.5 * (2 ** attempt)  # Exponential backoff: 0.5s, 1s, 2s
-                print(f"⚠️ Auth: DB timeout on attempt {attempt + 1}, retrying in {wait_time}s...", flush=True)
+                logger.warning("auth_db_timeout_retry", attempt=attempt + 1, wait_time=wait_time)
                 await asyncio.sleep(wait_time)
             else:
-                print(f"❌ Auth: DB check failed after {max_retries} attempts (timeout)", flush=True)
+                logger.error("auth_db_check_failed", reason="timeout", max_retries=max_retries)
                 return False
                 
         except OperationalError as op_err:
             # Connection/SSL errors - retry with backoff
             if attempt < max_retries - 1:
                 wait_time = 0.5 * (2 ** attempt)
-                print(f"⚠️ Auth: DB connection error on attempt {attempt + 1}: {op_err}, retrying in {wait_time}s...", flush=True)
+                logger.warning("auth_db_connection_error_retry", attempt=attempt + 1, error=str(op_err), wait_time=wait_time)
                 await asyncio.sleep(wait_time)
             else:
-                print(f"❌ Auth: DB check failed after {max_retries} attempts (operational error)", flush=True)
+                logger.error("auth_db_check_failed", reason="operational_error", max_retries=max_retries)
                 return False
                 
         except Exception as e:
             # Unexpected error - don't retry
-            print(f"❌ Auth: Unexpected DB error: {e}", flush=True)
+            logger.error("auth_db_unexpected_error", error=str(e))
             return False
     
     return False
@@ -113,17 +117,17 @@ async def fetch_jwks():
         # Use certifi bundle for SSL verification (fix for macOS local issuer error)
         # Add timeout to prevent hanging indefinite requests
         async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
-            print(f"🔐 Auth: Fetching JWKS from {jwks_url}...", flush=True)
+            logger.info("auth_jwks_fetching", url=jwks_url)
             response = await client.get(jwks_url)
             response.raise_for_status()
             _jwks_cache = response.json()
-            print("✅ Auth: JWKS fetched successfully.", flush=True)
+            logger.info("auth_jwks_fetched_successfully")
             return _jwks_cache
     except Exception as e:
-        print(f"❌ Auth: Failed to fetch JWKS: {str(e)}", flush=True)
+        logger.error("auth_jwks_fetch_failed", error=str(e))
         # Log response content if available (for 4xx/5xx errors)
         if 'response' in locals():
-            print(f"   Response: {response.text}", flush=True)
+            logger.error("auth_jwks_fetch_response", response_text=response.text)
         # Rethrow as 500 (will be caught by main.py logger) but with clear message
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED, # 501 or 503 might be more appropriate, but keeping it simple
@@ -191,11 +195,10 @@ async def get_current_user_id(
                 is_confirmed = await _check_email_confirmed_with_retry(user_id)
                 
                 if is_confirmed:
-                    print(f"✅ Auth: User {user_id} confirmed in DB (stale JWT)", flush=True)
+                    logger.info("auth_user_confirmed_in_db", user_id=user_id)
                     return user_id
                 else:
-                    print(f"🚫 Auth: User {user_id} blocked (email not confirmed)", flush=True)
-                print(f"🔍 DEBUG JWT PAYLOAD: {payload}", flush=True)
+                    logger.warning("auth_user_blocked_unconfirmed", user_id=user_id)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Email not confirmed",

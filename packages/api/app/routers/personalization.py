@@ -15,6 +15,10 @@ from app.models.user_personalization import UserPersonalization
 
 from app.services.user_service import UserService
 
+import structlog
+
+logger = structlog.get_logger()
+
 router = APIRouter()
 
 
@@ -71,7 +75,6 @@ async def mute_source(
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
     # Garantir l'existence du profil utilisateur (requis pour la FK)
-    print(f">>> MUTE_SOURCE CALLED V3 (FIX_COMMIT applied) for user {user_uuid} <<<")
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
@@ -79,8 +82,6 @@ async def mute_source(
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
     
-    import structlog
-    logger = structlog.get_logger()
 
     try:
         # Upsert: Insert if not exists, update if exists
@@ -116,7 +117,6 @@ async def mute_theme(
     user_uuid = UUID(current_user_id)
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     theme_slug = request.theme.lower().strip()
-    print(f"\n\n🚀 [TRACER] MUTE_THEME CALLED: {theme_slug} for user {user_uuid} 🚀\n\n", flush=True)
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
@@ -124,8 +124,6 @@ async def mute_theme(
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()
     
-    import structlog
-    logger = structlog.get_logger()
 
     try:
         stmt = pg_insert(UserPersonalization).values(
@@ -159,7 +157,6 @@ async def mute_topic(
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_uuid = UUID(current_user_id)
     topic_slug = request.topic.lower().strip()
-    print(f"\n\n🚀 [TRACER] MUTE_TOPIC CALLED: {topic_slug} for user {user_uuid} 🚀\n\n", flush=True)
     
     # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
@@ -167,8 +164,6 @@ async def mute_topic(
     await user_service.get_or_create_profile(current_user_id)
     await db.commit()
     
-    import structlog
-    logger = structlog.get_logger()
 
     try:
         stmt = pg_insert(UserPersonalization).values(

@@ -10,8 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import sys
 
-import os
-import sys
 
 # DEBUG STARTUP
 structlog.configure(
