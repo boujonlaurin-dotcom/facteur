@@ -66,20 +66,24 @@ Future<void> main() async {
   }
 
   // Initialiser les notifications push locales
-  debugPrint('Main: Initializing push notifications...');
-  final pushNotificationService = PushNotificationService();
-  PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
-  await pushNotificationService.init();
-  await pushNotificationService.requestPermission();
+  try {
+    debugPrint('Main: Initializing push notifications...');
+    final pushNotificationService = PushNotificationService();
+    PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
+    await pushNotificationService.init();
+    await pushNotificationService.requestPermission();
 
-  // Vérifier si les notifications sont activées dans Hive avant de planifier
-  final settingsBox = Hive.box<dynamic>('settings');
-  final pushEnabled =
-      settingsBox.get('push_notifications_enabled', defaultValue: true) as bool;
-  if (pushEnabled) {
-    await pushNotificationService.scheduleDailyDigestNotification();
+    // Vérifier si les notifications sont activées dans Hive avant de planifier
+    final settingsBox = Hive.box<dynamic>('settings');
+    final pushEnabled = settingsBox.get('push_notifications_enabled',
+        defaultValue: true) as bool;
+    if (pushEnabled) {
+      await pushNotificationService.scheduleDailyDigestNotification();
+    }
+    debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
+  } catch (e, s) {
+    debugPrint('ERROR: Failed to initialize push notifications: $e\n$s');
   }
-  debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
 
   // Validation Supabase avant initialisation
   if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
