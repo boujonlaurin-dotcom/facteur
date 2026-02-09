@@ -107,13 +107,35 @@ class AuthErrorMessages {
     }
 
     // ============================================
-    // Session / Token
+    // Erreurs de configuration / Réseau critiques
     // ============================================
 
-    if (lowerMessage.contains('session') ||
-        lowerMessage.contains('token') ||
-        lowerMessage.contains('expired')) {
+    if (lowerMessage.contains('bad request') ||
+        lowerMessage.contains('invalid request')) {
+      return 'Erreur de configuration. Veuillez réessayer plus tard.';
+    }
+
+    if (lowerMessage.contains('unauthorized') || lowerMessage.contains('401')) {
+      return 'Accès non autorisé. Veuillez vérifier vos identifiants.';
+    }
+
+    if (lowerMessage.contains('forbidden') || lowerMessage.contains('403')) {
+      return 'Accès refusé. Votre compte n\'a pas les permissions nécessaires.';
+    }
+
+    // ============================================
+    // Session / Token - Plus spécifique
+    // ============================================
+
+    if (lowerMessage.contains('session not found') ||
+        lowerMessage.contains('token has expired') ||
+        lowerMessage.contains('jwt expired')) {
       return 'Ta session a expiré. Reconnecte-toi.';
+    }
+
+    if (lowerMessage.contains('invalid token') ||
+        lowerMessage.contains('invalid signature')) {
+      return 'Session invalide. Reconnecte-toi.';
     }
 
     // ============================================

@@ -113,7 +113,7 @@ class DigestCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           height: 1.2,
                         ),
-                        maxLines: 2,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
 

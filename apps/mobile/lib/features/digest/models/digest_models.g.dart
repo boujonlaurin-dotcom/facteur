@@ -115,6 +115,8 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      completionThreshold:
+          (json['completion_threshold'] as num?)?.toInt() ?? 5,
       isCompleted: json['is_completed'] as bool? ?? false,
       completedAt: json['completed_at'] == null
           ? null
@@ -129,6 +131,7 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'target_date': instance.targetDate.toIso8601String(),
       'generated_at': instance.generatedAt.toIso8601String(),
       'items': instance.items,
+      'completion_threshold': instance.completionThreshold,
       'is_completed': instance.isCompleted,
       'completed_at': instance.completedAt?.toIso8601String(),
     };

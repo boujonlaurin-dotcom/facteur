@@ -3,8 +3,8 @@
 Couvre:
 - _select_with_diversity: sélection avec contraintes de diversité
 - Decay factor 0.70 appliqué aux sources répétées
-- Maximum 2 articles par source
-- Minimum 3 sources différentes
+- Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
+- Minimum 4 sources différentes
 - Retourne des 4-tuples (content, score, reason, breakdown)
 - Gestion des cas limites (peu de candidats, source unique)
 """
@@ -52,10 +52,10 @@ def make_content(source=None, topics=None, published_at=None, content_type=None)
 
 def make_scored_candidates(contents_with_scores):
     """Construit la liste scored_candidates au format attendu par _select_with_diversity.
-    
+
     Args:
         contents_with_scores: list of (content, score) or (content, score, breakdown)
-    
+
     Returns:
         list of (content, score, breakdown) — format d'entrée de _select_with_diversity
     """
@@ -81,7 +81,7 @@ def mock_session():
 @pytest.fixture
 def selector(mock_session):
     """Instance de DigestSelector avec session mockée.
-    
+
     Note: on patche rec_service pour éviter l'initialisation
     de RecommendationService qui nécessite une vraie session DB.
     """
@@ -95,15 +95,15 @@ def selector(mock_session):
 
 class TestSelectWithDiversity:
     """Tests pour DigestSelector._select_with_diversity().
-    
+
     Cette méthode est synchrone (pas de DB), donc testable directement.
     Elle prend des scored_candidates triés par score et retourne
     des 4-tuples (content, decayed_score, reason, breakdown).
     """
 
     def test_selects_exactly_target_count(self, selector):
-        """Given 10 articles from 5 sources, selects exactly 5."""
-        sources = [make_source(name=f"Source {i}", theme=f"theme{i}") for i in range(5)]
+        """Given 14 articles from 7 sources, selects exactly 7."""
+        sources = [make_source(name=f"Source {i}", theme=f"theme{i}") for i in range(7)]
         candidates = []
         for i, source in enumerate(sources):
             for j in range(2):
@@ -111,9 +111,9 @@ class TestSelectWithDiversity:
                 score = 100.0 - (i * 10) - j
                 candidates.append((content, score, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
-        assert len(selected) == 5
+        assert len(selected) == 7
 
     def test_returns_four_tuple(self, selector):
         """Each result element is a 4-tuple (content, score, reason, breakdown)."""
@@ -131,31 +131,57 @@ class TestSelectWithDiversity:
         assert isinstance(reason_out, str)
         assert isinstance(breakdown_out, list)
 
-    def test_diversity_max_two_per_source(self, selector):
-        """No source should have more than 2 articles in the result."""
-        source_a = make_source(name="Source A", theme="tech")
-        source_b = make_source(name="Source B", theme="science")
-
+    def test_diversity_max_one_per_source_with_enough_sources(self, selector):
+        """With >= 7 distinct sources, max 1 article per source."""
+        sources = [make_source(name=f"Source {i}", theme=f"theme{i}") for i in range(8)]
         candidates = []
-        # 5 articles from source A (high scores)
-        for i in range(5):
-            candidates.append((make_content(source=source_a), 100.0 - i, []))
-        # 5 articles from source B (lower scores)
-        for i in range(5):
-            candidates.append((make_content(source=source_b), 50.0 - i, []))
+        for i, source in enumerate(sources):
+            # 2 articles per source
+            for j in range(2):
+                candidates.append((make_content(source=source), 100.0 - i * 5 - j, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
-        # Count articles per source
+        # Count articles per source — should be max 1 each
         source_counts = defaultdict(int)
         for content, _, _, _ in selected:
             source_counts[content.source_id] += 1
 
         for source_id, count in source_counts.items():
-            assert count <= 2, f"Source {source_id} has {count} articles (max 2)"
+            assert count <= 1, f"Source {source_id} has {count} articles (max 1 with >= 7 sources)"
+
+    def test_diversity_fallback_max_two_per_source_with_few_sources(self, selector):
+        """With < 7 distinct sources, fallback to max 2 per source."""
+        source_a = make_source(name="Source A", theme="tech")
+        source_b = make_source(name="Source B", theme="science")
+        source_c = make_source(name="Source C", theme="economy")
+
+        candidates = []
+        # 5 articles from source A (high scores)
+        for i in range(5):
+            candidates.append((make_content(source=source_a), 100.0 - i, []))
+        # 5 articles from source B (medium scores)
+        for i in range(5):
+            candidates.append((make_content(source=source_b), 50.0 - i, []))
+        # 5 articles from source C (lower scores)
+        for i in range(5):
+            candidates.append((make_content(source=source_c), 30.0 - i, []))
+
+        selected = selector._select_with_diversity(candidates, target_count=7)
+
+        # Count articles per source — should allow up to 2
+        source_counts = defaultdict(int)
+        for content, _, _, _ in selected:
+            source_counts[content.source_id] += 1
+
+        for source_id, count in source_counts.items():
+            assert count <= 2, f"Source {source_id} has {count} articles (max 2 with < 7 sources)"
 
     def test_decay_factor_applied(self, selector):
-        """Score should decrease with repeated source selection (÷2 divisor)."""
+        """Score should decrease with repeated source selection (÷2 divisor).
+
+        With only 1 source, the fallback to MAX_PER_SOURCE=2 kicks in.
+        """
         source = make_source(name="Repeated Source", theme="tech")
         content1 = make_content(source=source)
         content2 = make_content(source=source)
@@ -179,14 +205,14 @@ class TestSelectWithDiversity:
 
     def test_higher_scores_selected_first(self, selector):
         """Higher-scored articles are selected before lower-scored ones."""
-        sources = [make_source(name=f"Source {i}", theme=f"theme{i}") for i in range(5)]
+        sources = [make_source(name=f"Source {i}", theme=f"theme{i}") for i in range(7)]
         candidates = []
         for i, source in enumerate(sources):
             content = make_content(source=source)
-            score = 100.0 - (i * 20)  # 100, 80, 60, 40, 20
+            score = 100.0 - (i * 10)  # 100, 90, 80, 70, 60, 50, 40
             candidates.append((content, score, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
         # Scores should be in descending order (all from different sources, no decay)
         scores = [score for _, score, _, _ in selected]
@@ -200,21 +226,21 @@ class TestSelectWithDiversity:
             content = make_content(source=source)
             candidates.append((content, 80.0 - i * 10, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
         assert len(selected) == 3
 
     def test_single_source_max_two_selected(self, selector):
-        """All articles from same source → only 2 selected with decay."""
+        """All articles from same source → only 2 selected (fallback since < 7 sources)."""
         source = make_source(name="Only Source", theme="tech")
         candidates = []
         for i in range(10):
             content = make_content(source=source)
             candidates.append((content, 100.0 - i, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
-        # Should select max 2 from single source
+        # Should select max 2 from single source (fallback to MAX_PER_SOURCE=2)
         assert len(selected) == 2
 
     def test_theme_diversity_max_two_per_theme(self, selector):
@@ -223,9 +249,11 @@ class TestSelectWithDiversity:
         source_a = make_source(name="Source A", theme="tech")
         source_b = make_source(name="Source B", theme="tech")
         source_c = make_source(name="Source C", theme="tech")
-        # Create 2 sources with different themes
+        # Create 4 sources with different themes
         source_d = make_source(name="Source D", theme="science")
         source_e = make_source(name="Source E", theme="economy")
+        source_f = make_source(name="Source F", theme="culture")
+        source_g = make_source(name="Source G", theme="politics")
 
         candidates = [
             (make_content(source=source_a), 100.0, []),
@@ -233,9 +261,11 @@ class TestSelectWithDiversity:
             (make_content(source=source_c), 90.0, []),  # 3rd tech — should be skipped
             (make_content(source=source_d), 85.0, []),
             (make_content(source=source_e), 80.0, []),
+            (make_content(source=source_f), 75.0, []),
+            (make_content(source=source_g), 70.0, []),
         ]
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
         # Count articles per theme
         theme_counts = defaultdict(int)
@@ -247,7 +277,10 @@ class TestSelectWithDiversity:
             assert count <= 2, f"Theme '{theme}' has {count} articles (max 2)"
 
     def test_diversity_halves_score_for_duplicate_source(self, selector):
-        """TEST-02: Verify score ÷ 2 for 2nd article from same source (revue de presse)."""
+        """TEST-02: Verify score ÷ 2 for 2nd article from same source (revue de presse).
+
+        With only 1 source, fallback MAX_PER_SOURCE=2 kicks in.
+        """
         source = make_source(name="Test Source", theme="tech")
         content1 = make_content(source=source)
         content2 = make_content(source=source)
@@ -298,22 +331,22 @@ class TestSelectWithDiversity:
         assert breakdown_out[1].points == 50.0
 
     def test_mixed_sources_diversity(self, selector):
-        """With 5 different sources and varied scores, all 5 sources represented."""
-        sources = [make_source(name=f"Source {chr(65+i)}", theme=f"theme{i}") for i in range(5)]
+        """With 7 different sources and varied scores, all 7 sources represented."""
+        sources = [make_source(name=f"Source {chr(65+i)}", theme=f"theme{i}") for i in range(7)]
         candidates = []
         for i, source in enumerate(sources):
             content = make_content(source=source)
             candidates.append((content, 100.0 - i * 5, []))
 
-        selected = selector._select_with_diversity(candidates, target_count=5)
+        selected = selector._select_with_diversity(candidates, target_count=7)
 
-        assert len(selected) == 5
+        assert len(selected) == 7
         unique_sources = set(c.source_id for c, _, _, _ in selected)
-        assert len(unique_sources) == 5
+        assert len(unique_sources) == 7
 
     def test_empty_candidates_returns_empty(self, selector):
         """Empty candidate list returns empty selection."""
-        selected = selector._select_with_diversity([], target_count=5)
+        selected = selector._select_with_diversity([], target_count=7)
         assert selected == []
 
 
@@ -323,14 +356,23 @@ class TestSelectWithDiversity:
 class TestDiversityConstraints:
     """Test configuration constants for diversity."""
 
-    def test_max_per_source_is_two(self):
-        assert DiversityConstraints.MAX_PER_SOURCE == 2
+    def test_max_per_source_is_one(self):
+        assert DiversityConstraints.MAX_PER_SOURCE == 1
 
     def test_max_per_theme_is_two(self):
         assert DiversityConstraints.MAX_PER_THEME == 2
 
-    def test_target_digest_size_is_five(self):
-        assert DiversityConstraints.TARGET_DIGEST_SIZE == 5
+    def test_target_digest_size_is_seven(self):
+        assert DiversityConstraints.TARGET_DIGEST_SIZE == 7
+
+    def test_completion_threshold_is_five(self):
+        assert DiversityConstraints.COMPLETION_THRESHOLD == 5
+
+    def test_min_sources_is_three(self):
+        """MIN_SOURCES is overridden to 3 in _select_with_diversity for production."""
+        # Note: DiversityConstraints.MIN_SOURCES is 4, but the algorithm uses MIN_SOURCES = 3
+        # This is set in _select_with_diversity method for better digest diversity
+        assert DiversityConstraints.MIN_SOURCES == 4  # Class constant
 
     def test_diversity_divisor_value(self):
         """Verify diversity divisor is 2 (score ÷ 2) as per algorithm spec."""

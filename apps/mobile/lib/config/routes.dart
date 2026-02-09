@@ -22,6 +22,7 @@ import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
+import '../features/saved/screens/saved_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/shell_scaffold.dart';
@@ -226,6 +227,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                 },
               ),
             ],
+          ),
+
+          // Saved (Sauvegardés)
+          GoRoute(
+            path: RoutePaths.saved,
+            name: RouteNames.saved,
+            builder: (context, state) => const SavedScreen(),
           ),
 
           // MVP: Progressions routes temporarily disabled
