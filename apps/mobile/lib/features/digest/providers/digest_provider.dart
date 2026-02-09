@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
@@ -23,13 +24,30 @@ final digestProvider =
 class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   bool _isCompleting = false;
 
+  /// In-memory cache to avoid redundant API calls when navigating
+  /// back to the digest screen within the same day.
+  DigestResponse? _cachedDigest;
+  String? _cachedDate; // ISO date string (YYYY-MM-DD) for cache invalidation
+
+  /// Get today's date as a string for cache comparison.
+  String get _todayDateString {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
   @override
   FutureOr<DigestResponse?> build() async {
     // Watch auth state to handle logout/user change
     final authState = ref.watch(authStateProvider);
 
     if (!authState.isAuthenticated || authState.user == null) {
+      _clearCache();
       return null;
+    }
+
+    // Return cached digest if available for today
+    if (_cachedDigest != null && _cachedDate == _todayDateString) {
+      return _cachedDigest;
     }
 
     // Load digest on initialization
@@ -38,15 +56,27 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   Future<DigestResponse> _loadDigest({DateTime? date}) async {
     final repository = ref.read(digestRepositoryProvider);
-    return await repository.getDigest(date: date);
+    final digest = await repository.getDigest(date: date);
+    // Update cache after successful API call
+    _updateCache(digest);
+    return digest;
   }
 
   Future<void> loadDigest({DateTime? date}) async {
+    // Check cache for today's digest (no specific date requested)
+    if (date == null &&
+        _cachedDigest != null &&
+        _cachedDate == _todayDateString) {
+      state = AsyncData(_cachedDigest);
+      return;
+    }
+
     state = const AsyncLoading();
     try {
       final digest = await _loadDigest(date: date);
       state = AsyncData(digest);
     } catch (e, stack) {
+      _clearCache();
       state = AsyncError(e, stack);
       rethrow;
     }
@@ -66,9 +96,17 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       final digest = await _loadDigest(date: currentDigest.targetDate);
       state = AsyncData(digest);
     } catch (e, stack) {
+      _clearCache();
       state = AsyncError(e, stack);
       rethrow;
     }
+  }
+
+  /// Force refresh: clears cache and re-fetches from API.
+  /// Use when the user explicitly wants fresh data (e.g., pull-to-refresh).
+  Future<void> forceRefresh() async {
+    _clearCache();
+    await loadDigest();
   }
 
   /// Force regenerate digest (deletes existing and creates new)
@@ -82,6 +120,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     try {
       final repository = ref.read(digestRepositoryProvider);
       final digest = await repository.forceRegenerateDigest();
+      _updateCache(digest);
       state = AsyncData(digest);
       NotificationService.showSuccess('Nouveau briefing généré !');
     } catch (e, stack) {
@@ -89,6 +128,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       if (previousData != null) {
         state = AsyncData(previousData);
       } else {
+        _clearCache();
         state = AsyncError(e, stack);
       }
       NotificationService.showError(
@@ -96,6 +136,18 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       );
       rethrow;
     }
+  }
+
+  /// Update the in-memory cache with a new digest response.
+  void _updateCache(DigestResponse digest) {
+    _cachedDigest = digest;
+    _cachedDate = _todayDateString;
+  }
+
+  /// Clear the in-memory cache (forces next load to call API).
+  void _clearCache() {
+    _cachedDigest = null;
+    _cachedDate = null;
   }
 
   /// Apply an action to a digest item (read, save, not_interested, undo)
@@ -125,7 +177,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return item;
     }).toList();
 
-    state = AsyncData(currentDigest.copyWith(items: updatedItems));
+    final updatedDigest = currentDigest.copyWith(items: updatedItems);
+    state = AsyncData(updatedDigest);
+    // Optimistically update cache so navigating away and back reflects the action
+    _updateCache(updatedDigest);
 
     // Call API
     try {
@@ -136,6 +191,17 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         action: action,
       );
 
+      // Track content_interaction analytics event (unified schema)
+      _trackContentInteraction(
+        action: action,
+        item: currentDigest.items.firstWhere(
+          (i) => i.contentId == contentId,
+          orElse: () => currentDigest.items.first,
+        ),
+        position:
+            currentDigest.items.indexWhere((i) => i.contentId == contentId) + 1,
+      );
+
       // Trigger haptic feedback on success
       await _triggerHaptic(action);
       _showActionNotification(action);
@@ -143,8 +209,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       // Check for completion
       _checkAndHandleCompletion();
     } catch (e) {
-      // Rollback on error
+      // Rollback on error — restore original state and cache
       state = AsyncData(currentDigest);
+      _updateCache(currentDigest);
       NotificationService.showError('Erreur lors de l\'action');
       rethrow;
     }
@@ -171,11 +238,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       // Trigger celebratory haptic
       await HapticFeedback.heavyImpact();
 
-      // Update local state
-      state = AsyncData(currentDigest.copyWith(
+      // Update local state and cache
+      final completedDigest = currentDigest.copyWith(
         isCompleted: true,
         completedAt: DateTime.now(),
-      ));
+      );
+      state = AsyncData(completedDigest);
+      _updateCache(completedDigest);
 
       // Show completion notification
       NotificationService.showSuccess('Briefing terminé !');
@@ -213,6 +282,49 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         .every((item) => item.isRead || item.isDismissed || item.isSaved);
     if (allProcessed) {
       completeDigest();
+    }
+  }
+
+  /// Track a content interaction event for analytics (unified schema).
+  /// Maps UI action names to analytics action names.
+  void _trackContentInteraction({
+    required String action,
+    required DigestItem item,
+    required int position,
+  }) {
+    // Map UI action names to analytics action names
+    final String analyticsAction;
+    switch (action) {
+      case 'read':
+        analyticsAction = 'read';
+      case 'save':
+        analyticsAction = 'save';
+      case 'unsave':
+        // unsave is not a tracked interaction event
+        return;
+      case 'not_interested':
+        analyticsAction = 'dismiss';
+      case 'undo':
+        // undo is not a tracked interaction event
+        return;
+      default:
+        return;
+    }
+
+    try {
+      ref.read(analyticsServiceProvider).trackContentInteraction(
+            action: analyticsAction,
+            surface: 'digest',
+            contentId: item.contentId,
+            sourceId: item.source?.id ?? '',
+            topics: const [], // Topics not available on DigestItem model
+            position: position,
+            timeSpentSeconds: 0,
+          );
+    } catch (e) {
+      // Fail silently — analytics should never block user actions
+      // ignore: avoid_print
+      print('DigestNotifier: analytics tracking failed: $e');
     }
   }
 
@@ -279,6 +391,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return item;
     }).toList();
 
-    state = AsyncData(currentDigest.copyWith(items: updatedItems));
+    final updatedDigest = currentDigest.copyWith(items: updatedItems);
+    state = AsyncData(updatedDigest);
+    _updateCache(updatedDigest);
   }
 }

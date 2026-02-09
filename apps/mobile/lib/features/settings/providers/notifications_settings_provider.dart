@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
+import '../../../core/services/push_notification_service.dart';
 
 /// État des préférences de notifications
 class NotificationsSettings {
@@ -45,6 +48,20 @@ class NotificationsSettingsNotifier
     state = state.copyWith(pushEnabled: value);
     final box = await Hive.openBox<dynamic>(_boxName);
     await box.put(_pushKey, value);
+
+    // Planifier ou annuler la notification de digest selon le toggle
+    try {
+      final pushService = PushNotificationService();
+      if (value) {
+        await pushService.scheduleDailyDigestNotification();
+        debugPrint('NotificationsSettings: Digest notification scheduled');
+      } else {
+        await pushService.cancelDigestNotification();
+        debugPrint('NotificationsSettings: Digest notification cancelled');
+      }
+    } catch (e) {
+      debugPrint('NotificationsSettings: Error toggling notification: $e');
+    }
   }
 
   Future<void> setEmailDigestEnabled(bool value) async {

@@ -9,11 +9,12 @@ Follows existing FastAPI patterns from feed.py and personalization.py.
 Safe reuse of existing services through DigestService.
 """
 
-import logging
+import time
 from datetime import date
 from typing import Optional
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +30,7 @@ from app.schemas.digest import (
 )
 from app.services.digest_service import DigestService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -72,22 +73,42 @@ async def get_digest(
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
+    start = time.monotonic()
 
     try:
         digest = await service.get_or_create_digest(user_uuid, target_date)
     except Exception:
-        logger.exception("digest_endpoint_unhandled_error user_id=%s", current_user_id)
+        elapsed = time.monotonic() - start
+        logger.exception(
+            "digest_endpoint_unhandled_error",
+            user_id=current_user_id,
+            elapsed_ms=round(elapsed * 1000, 1),
+        )
         raise HTTPException(
             status_code=503,
             detail="Digest generation encountered an unexpected error. Please try again later."
         )
 
+    elapsed = time.monotonic() - start
+
     if not digest:
+        logger.warning(
+            "digest_generation_returned_none",
+            user_id=current_user_id,
+            elapsed_ms=round(elapsed * 1000, 1),
+        )
         raise HTTPException(
             status_code=503,
             detail="Digest generation failed. Please try again later."
         )
 
+    logger.info(
+        "digest_retrieved",
+        user_id=current_user_id,
+        elapsed_ms=round(elapsed * 1000, 1),
+        items_count=len(digest.items),
+        is_completed=digest.is_completed,
+    )
     return digest
 
 
@@ -120,6 +141,7 @@ async def apply_digest_action(
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
     digest_uuid = UUID(digest_id)
+    start = time.monotonic()
     
     try:
         result = await service.apply_action(
@@ -127,6 +149,15 @@ async def apply_digest_action(
             user_id=user_uuid,
             content_id=request.content_id,
             action=request.action
+        )
+        
+        elapsed = time.monotonic() - start
+        logger.info(
+            "digest_action_applied",
+            user_id=current_user_id,
+            digest_id=digest_id,
+            action=request.action.value,
+            elapsed_ms=round(elapsed * 1000, 1),
         )
         
         # Determine message based on action
@@ -184,12 +215,22 @@ async def complete_digest(
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
     digest_uuid = UUID(digest_id)
+    start = time.monotonic()
     
     try:
         result = await service.complete_digest(
             digest_id=digest_uuid,
             user_id=user_uuid,
             closure_time_seconds=closure_time_seconds
+        )
+        
+        elapsed = time.monotonic() - start
+        logger.info(
+            "digest_completed",
+            user_id=current_user_id,
+            digest_id=digest_id,
+            elapsed_ms=round(elapsed * 1000, 1),
+            closure_streak=result["closure_streak"],
         )
         
         return DigestCompletionResponse(

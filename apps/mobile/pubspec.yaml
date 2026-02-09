@@ -51,6 +51,11 @@ dependencies:
   url_launcher: ^6.2.5
   flutter_secure_storage: ^10.0.0
   
+  # Push Notifications (local, no FCM)
+  flutter_local_notifications: ^20.0.0
+  timezone: ^0.10.0
+  flutter_timezone: ^3.0.1
+
   # Error Tracking
   sentry_flutter: ^9.9.2
   google_fonts: ^7.0.0
