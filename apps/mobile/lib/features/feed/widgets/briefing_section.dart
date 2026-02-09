@@ -200,7 +200,7 @@ class BriefingSection extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                item.reason.toUpperCase(),
+                (item.reason.contains(':') ? item.reason.split(':').first.trim() : item.reason).toUpperCase(),
                 style: TextStyle(
                   color: labelColor,
                   fontWeight: FontWeight.w600,

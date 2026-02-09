@@ -221,7 +221,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           children: [
                             Container(
                               margin: const EdgeInsets.symmetric(
-                                horizontal: 16,
+                                horizontal: 8,
                                 vertical: 8,
                               ),
                               padding: const EdgeInsets.symmetric(
@@ -342,7 +342,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                 // Digest Briefing Section
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: digestAsync.when(
                       data: (digest) {
                         if (digest == null || digest.items.isEmpty) {

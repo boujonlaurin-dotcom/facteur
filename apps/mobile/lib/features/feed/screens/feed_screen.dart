@@ -221,7 +221,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                        padding: const EdgeInsets.fromLTRB(8, 16, 8, 4),
                         child: Row(
                           children: [
                             Expanded(
@@ -270,7 +270,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
                           'Vos news personnalisées du jour.',
                           style: Theme.of(context)
@@ -282,7 +282,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
                         child: FilterBar(
                           selectedFilter:
                               ref.read(feedProvider.notifier).selectedFilter,
@@ -327,7 +327,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             (showingNudge ? 1 : 0);
 
                         return SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           sliver: SliverList(
                             // Key pour forcer rebuild complet quand showCaughtUp change
                             key: ValueKey('feed_list_caught_up_$showCaughtUp'),

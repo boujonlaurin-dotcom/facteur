@@ -50,7 +50,7 @@ class DigestBriefingSection extends StatelessWidget {
         isDark ? Colors.white.withValues(alpha: 0.6) : colors.textSecondary;
 
     return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 24),
+      margin: const EdgeInsets.only(top: 16, bottom: 24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -217,7 +217,7 @@ class DigestBriefingSection extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                item.reason.toUpperCase(),
+                (item.reason.contains(':') ? item.reason.split(':').first.trim() : item.reason).toUpperCase(),
                 style: TextStyle(
                   color: labelColor,
                   fontWeight: FontWeight.w600,
