@@ -715,24 +715,34 @@ class DigestSelector:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
-        - Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
+        - Maximum 1 article par source (fallback à 2 si < 5 sources distinctes)
         - Maximum 2 articles par thème
-        - Minimum 4 sources différentes
-        - Facteur de décroissance: 0.70 (même algorithme que le feed)
+        - Minimum 3 sources différentes
+        - Diversité revue de presse: score ÷ 2 dès le 2ème article d'une même source
 
         Algorithme:
         1. Compter les sources distinctes dans le pool candidat
         2. Si < TARGET_DIGEST_SIZE sources → relax MAX_PER_SOURCE à 2
         3. Parcourir les candidats par ordre de score
-        4. Pour chaque candidat, appliquer le facteur de décroissance
+        4. Pour chaque candidat, appliquer la pénalité ÷2 si source déjà présente
         5. Vérifier les contraintes avec les scores pondérés
         6. Si contraintes respectées, ajouter à la sélection
         7. S'arrêter quand on atteint target_count
 
+        Rationale de la pénalité ÷2:
+        Les articles du top digest scorent typiquement entre 150 et 260 pts.
+        Une pénalité fixe (-10, -30) est insuffisante pour empêcher les doublons
+        à ces niveaux. Le ÷2 garantit qu'un doublon à 220 pts (→ 110 pts) sera
+        systématiquement dépassé par un article d'une autre source à 150 pts.
+        Cela crée l'effet "revue de presse" souhaité (pluralité des sources).
+        Un doublon peut quand même passer si son score ÷2 reste supérieur aux
+        alternatives — c'est voulu, l'article est alors vraiment exceptionnel.
+
         Returns:
             Liste de tuples (Content, score, reason, breakdown)
         """
-        DECAY_FACTOR = 0.70  # Same as feed algorithm
+        DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
+        MIN_SOURCES = 3
 
         # Count distinct sources in candidate pool for fallback decision
         distinct_sources = set(c.source_id for c, _, _ in scored_candidates)
@@ -758,20 +768,32 @@ class DigestSelector:
             source_id = content.source_id
             theme = content.source.theme if content.source else None
 
-            # Apply decay factor based on how many articles already selected from this source
-            current_source_count = source_counts.get(source_id, 0)
-            decayed_score = score * (DECAY_FACTOR ** current_source_count)
-
-            # Vérifier contraintes
+            # Vérifier contraintes hard (max par source / thème)
             if source_counts[source_id] >= effective_max_per_source:
                 continue
 
             if theme and theme_counts[theme] >= self.constraints.MAX_PER_THEME:
                 continue
 
+            # Appliquer la pénalité diversité si source déjà présente
+            current_source_count = source_counts.get(source_id, 0)
+            if current_source_count > 0:
+                # Score ÷ 2 pour le 2ème article d'une même source
+                diversity_penalty = -(score / DIVERSITY_DIVISOR)
+                final_score = score + diversity_penalty
+                # Ajouter au breakdown pour transparence (règle d'or : visible à l'utilisateur)
+                breakdown = list(breakdown)  # Copie pour ne pas muter l'original
+                breakdown.append(DigestScoreBreakdown(
+                    label="Diversité revue de presse",
+                    points=round(diversity_penalty, 1),
+                    is_positive=False
+                ))
+            else:
+                final_score = score
+
             # Contraintes respectées - ajouter avec raison générée
             reason = self._generate_reason(content, source_counts, theme_counts, breakdown)
-            selected.append((content, decayed_score, reason, breakdown))
+            selected.append((content, final_score, reason, breakdown))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
@@ -790,7 +812,7 @@ class DigestSelector:
             selected_count=len(selected),
             source_distribution={str(k): v for k, v in source_counts.items()},
             theme_distribution=dict(theme_counts),
-            decay_factor=DECAY_FACTOR,
+            diversity_divisor=DIVERSITY_DIVISOR,
             effective_max_per_source=effective_max_per_source
         )
 

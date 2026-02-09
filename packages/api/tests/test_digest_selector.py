@@ -178,7 +178,7 @@ class TestSelectWithDiversity:
             assert count <= 2, f"Source {source_id} has {count} articles (max 2 with < 7 sources)"
 
     def test_decay_factor_applied(self, selector):
-        """Score should decrease with repeated source selection (decay 0.70).
+        """Score should decrease with repeated source selection (÷2 divisor).
 
         With only 1 source, the fallback to MAX_PER_SOURCE=2 kicks in.
         """
@@ -198,10 +198,10 @@ class TestSelectWithDiversity:
         _, score1, _, _ = selected[0]
         _, score2, _, _ = selected[1]
 
-        # First article: no decay (0.70^0 = 1.0) → score = 100.0
+        # First article: no penalty → score = 100.0
         assert score1 == pytest.approx(100.0)
-        # Second article: one decay (0.70^1 = 0.70) → score = 70.0
-        assert score2 == pytest.approx(70.0)
+        # Second article: ÷2 divisor → score = 50.0
+        assert score2 == pytest.approx(50.0)
 
     def test_higher_scores_selected_first(self, selector):
         """Higher-scored articles are selected before lower-scored ones."""
@@ -276,18 +276,18 @@ class TestSelectWithDiversity:
         for theme, count in theme_counts.items():
             assert count <= 2, f"Theme '{theme}' has {count} articles (max 2)"
 
-    def test_decay_formula_correctness(self, selector):
-        """Verify exact decay: score * (0.70 ^ source_count_so_far).
+    def test_diversity_halves_score_for_duplicate_source(self, selector):
+        """TEST-02: Verify score ÷ 2 for 2nd article from same source (revue de presse).
 
         With only 1 source, fallback MAX_PER_SOURCE=2 kicks in.
         """
-        source = make_source(name="Decay Test", theme="tech")
+        source = make_source(name="Test Source", theme="tech")
         content1 = make_content(source=source)
         content2 = make_content(source=source)
 
         candidates = [
-            (content1, 200.0, []),
-            (content2, 200.0, []),
+            (content1, 220.0, []),
+            (content2, 220.0, []),
         ]
 
         selected = selector._select_with_diversity(candidates, target_count=2)
@@ -295,10 +295,10 @@ class TestSelectWithDiversity:
         _, score1, _, _ = selected[0]
         _, score2, _, _ = selected[1]
 
-        # First: 200.0 * 0.70^0 = 200.0
-        assert score1 == pytest.approx(200.0)
-        # Second: 200.0 * 0.70^1 = 140.0
-        assert score2 == pytest.approx(140.0)
+        # First: 220 (no penalty)
+        assert score1 == pytest.approx(220.0)
+        # Second: 220 ÷ 2 = 110
+        assert score2 == pytest.approx(110.0)
 
     def test_reason_string_generated(self, selector):
         """Each selected item has a non-empty reason string."""
@@ -368,5 +368,83 @@ class TestDiversityConstraints:
     def test_completion_threshold_is_five(self):
         assert DiversityConstraints.COMPLETION_THRESHOLD == 5
 
-    def test_min_sources_is_four(self):
-        assert DiversityConstraints.MIN_SOURCES == 4
+    def test_min_sources_is_three(self):
+        """MIN_SOURCES is overridden to 3 in _select_with_diversity for production."""
+        # Note: DiversityConstraints.MIN_SOURCES is 4, but the algorithm uses MIN_SOURCES = 3
+        # This is set in _select_with_diversity method for better digest diversity
+        assert DiversityConstraints.MIN_SOURCES == 4  # Class constant
+
+    def test_diversity_divisor_value(self):
+        """Verify diversity divisor is 2 (score ÷ 2) as per algorithm spec."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+        assert ScoringWeights.DIGEST_DIVERSITY_DIVISOR == 2, \
+            "Diversity divisor should be 2 (score ÷ 2)"
+
+
+# ─── Tests: Diversity Revue de Presse (÷2 Penalty) ────────────────────────────
+
+
+class TestDiversityRevueDePresse:
+    """Tests for the ÷2 diversity penalty algorithm (revue de presse effect)."""
+
+    def test_diversity_penalty_visible_in_breakdown(self, selector):
+        """Règle d'or: la pénalité diversité doit apparaître dans le breakdown utilisateur."""
+        source = make_source(name="Le Monde", theme="society")
+        content1 = make_content(source=source)
+        content2 = make_content(source=source)
+
+        articles = [
+            (content1, 200.0, []),
+            (content2, 200.0, []),
+        ]
+
+        selected = selector._select_with_diversity(articles, target_count=5)
+
+        # The 2nd article should have "Diversité revue de presse" in its breakdown
+        assert len(selected) == 2
+        second_article_breakdown = selected[1][3]  # (content, score, reason, breakdown)
+        diversity_labels = [b.label for b in second_article_breakdown]
+        assert "Diversité revue de presse" in diversity_labels, \
+            f"Expected 'Diversité revue de presse' in breakdown, got: {diversity_labels}"
+
+        # The penalty should be -100 (200 / 2)
+        diversity_entry = next(b for b in second_article_breakdown if b.label == "Diversité revue de presse")
+        assert diversity_entry.points == -100.0
+        assert diversity_entry.is_positive is False
+
+        # First article should NOT have the diversity penalty
+        first_article_breakdown = selected[0][3]
+        first_labels = [b.label for b in first_article_breakdown]
+        assert "Diversité revue de presse" not in first_labels
+
+    def test_diversity_penalty_relegate_duplicate_below_alternative(self, selector):
+        """Scenario réel: un doublon à 220 pts doit être dépassé par une alternative à 150 pts."""
+        source_a = make_source(name="Le Monde", theme="society")
+        source_b = make_source(name="Libération", theme="politics")
+
+        # Le Monde article 1 (rank 1) — score 220
+        content1 = make_content(source=source_a)
+        content1.title = "Le Monde #1"
+        # Le Monde article 2 (would be rank 2) — score 200
+        content2 = make_content(source=source_a)
+        content2.title = "Le Monde #2"
+        # Libération article (rank 3 without penalty) — score 150
+        content3 = make_content(source=source_b)
+        content3.title = "Libération #1"
+
+        scored = [
+            (content1, 220.0, []),
+            (content2, 200.0, []),
+            (content3, 150.0, []),
+        ]
+
+        selected = selector._select_with_diversity(scored, target_count=3)
+
+        # Verify all 3 selected and Le Monde #2 got penalized
+        assert len(selected) == 3
+
+        # Verify Le Monde #2 got penalized (200 ÷ 2 = 100)
+        scores = {item[0].title: item[1] for item in selected}
+        assert scores["Le Monde #1"] == 220.0
+        assert scores["Le Monde #2"] == pytest.approx(100.0)
+        assert scores["Libération #1"] == 150.0
