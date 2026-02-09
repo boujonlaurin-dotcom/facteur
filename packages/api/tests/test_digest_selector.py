@@ -155,7 +155,7 @@ class TestSelectWithDiversity:
             assert count <= 2, f"Source {source_id} has {count} articles (max 2)"
 
     def test_decay_factor_applied(self, selector):
-        """Score should decrease with repeated source selection (decay 0.70)."""
+        """Score should decrease with repeated source selection (÷2 divisor)."""
         source = make_source(name="Repeated Source", theme="tech")
         content1 = make_content(source=source)
         content2 = make_content(source=source)
@@ -172,10 +172,10 @@ class TestSelectWithDiversity:
         _, score1, _, _ = selected[0]
         _, score2, _, _ = selected[1]
 
-        # First article: no decay (0.70^0 = 1.0) → score = 100.0
+        # First article: no penalty → score = 100.0
         assert score1 == pytest.approx(100.0)
-        # Second article: one decay (0.70^1 = 0.70) → score = 70.0
-        assert score2 == pytest.approx(70.0)
+        # Second article: ÷2 divisor → score = 50.0
+        assert score2 == pytest.approx(50.0)
 
     def test_higher_scores_selected_first(self, selector):
         """Higher-scored articles are selected before lower-scored ones."""
