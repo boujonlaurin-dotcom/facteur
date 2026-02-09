@@ -12,7 +12,7 @@ import '../providers/digest_provider.dart';
 import '../widgets/streak_celebration.dart';
 import '../widgets/digest_summary.dart';
 
-/// Closure screen displayed after completing all 5 digest articles
+/// Closure screen displayed after completing the digest (5/7 threshold)
 /// Shows celebration animation, streak count, and digest summary
 class ClosureScreen extends ConsumerStatefulWidget {
   final String digestId;

@@ -18,7 +18,7 @@ import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
 
-/// Main digest screen showing the daily "Essentiel" with 5 articles
+/// Main digest screen showing the daily "Essentiel" with 7 articles
 /// Uses DigestBriefingSection with Feed-style header and segmented progress bar
 class DigestScreen extends ConsumerStatefulWidget {
   const DigestScreen({super.key});
@@ -351,6 +351,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
                         return DigestBriefingSection(
                           items: digest.items,
+                          completionThreshold: digest.completionThreshold,
                           onItemTap: _openArticle,
                           onSave: _handleSave,
                           onNotInterested: _handleNotInterested,

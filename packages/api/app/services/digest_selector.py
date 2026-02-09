@@ -1,15 +1,19 @@
 from __future__ import annotations
-"""Service de sélection d'articles pour le Digest quotidien (5 articles).
+"""Service de sélection d'articles pour le Digest quotidien (7 articles).
 
 Ce service implémente l'algorithme de sélection intelligent pour Epic 10,
 avec contraintes de diversité et mécanisme de fallback.
 
 Contraintes de diversité:
-- Maximum 2 articles par source
+- Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
 - Maximum 2 articles par thème
+- Minimum 4 sources différentes
+
+Completion:
+- Seuil de completion à 5/7 interactions (configurable via COMPLETION_THRESHOLD)
 
 Fallback:
-- Si le pool utilisateur < 5 articles, complète avec les sources curatées
+- Si le pool utilisateur < 7 articles, complète avec les sources curatées
 
 Réutilise l'infrastructure de scoring existante sans modification.
 """
@@ -77,15 +81,17 @@ class DigestContext:
 
 class DiversityConstraints:
     """Configuration des contraintes de diversité."""
-    MAX_PER_SOURCE = 2
+    MAX_PER_SOURCE = 1
     MAX_PER_THEME = 2
-    TARGET_DIGEST_SIZE = 5
+    TARGET_DIGEST_SIZE = 7
+    COMPLETION_THRESHOLD = 5
+    MIN_SOURCES = 4
 
 
 class DigestSelector:
     """Sélecteur intelligent d'articles pour le digest quotidien.
-    
-    Cette classe implémente la logique de sélection des 5 articles
+
+    Cette classe implémente la logique de sélection des 7 articles
     du digest avec garanties de diversité et mécanisme de fallback.
     
     Usage:
@@ -99,17 +105,17 @@ class DigestSelector:
         self.constraints = DiversityConstraints()
         
     async def select_for_user(
-        self, 
-        user_id: UUID, 
-        limit: int = 5,
+        self,
+        user_id: UUID,
+        limit: int = 7,
         hours_lookback: int = 168
     ) -> List[DigestItem]:
         """Sélectionne les articles pour le digest d'un utilisateur.
-        
+
         Args:
             user_id: ID de l'utilisateur
-            limit: Nombre d'articles à sélectionner (défaut: 5)
-            hours_lookback: Fenêtre temporelle pour les candidats (défaut: 48h)
+            limit: Nombre d'articles à sélectionner (défaut: 7)
+            hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
             
         Returns:
             Liste de DigestItem ordonnée par rank (1 à limit)
@@ -709,23 +715,37 @@ class DigestSelector:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
-        - Maximum 2 articles par source
+        - Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
         - Maximum 2 articles par thème
-        - Minimum 3 sources différentes
+        - Minimum 4 sources différentes
         - Facteur de décroissance: 0.70 (même algorithme que le feed)
 
         Algorithme:
-        1. Parcourir les candidats par ordre de score
-        2. Pour chaque candidat, appliquer le facteur de décroissance
-        3. Vérifier les contraintes avec les scores pondérés
-        4. Si contraintes respectées, ajouter à la sélection
-        5. S'arrêter quand on atteint target_count
+        1. Compter les sources distinctes dans le pool candidat
+        2. Si < TARGET_DIGEST_SIZE sources → relax MAX_PER_SOURCE à 2
+        3. Parcourir les candidats par ordre de score
+        4. Pour chaque candidat, appliquer le facteur de décroissance
+        5. Vérifier les contraintes avec les scores pondérés
+        6. Si contraintes respectées, ajouter à la sélection
+        7. S'arrêter quand on atteint target_count
 
         Returns:
             Liste de tuples (Content, score, reason, breakdown)
         """
         DECAY_FACTOR = 0.70  # Same as feed algorithm
-        MIN_SOURCES = 3
+
+        # Count distinct sources in candidate pool for fallback decision
+        distinct_sources = set(c.source_id for c, _, _ in scored_candidates)
+        effective_max_per_source = self.constraints.MAX_PER_SOURCE
+
+        if len(distinct_sources) < self.constraints.TARGET_DIGEST_SIZE:
+            effective_max_per_source = 2
+            logger.info(
+                "digest_diversity_fallback_max_per_source",
+                distinct_sources=len(distinct_sources),
+                target=self.constraints.TARGET_DIGEST_SIZE,
+                effective_max_per_source=effective_max_per_source
+            )
 
         selected = []
         source_counts = defaultdict(int)
@@ -743,7 +763,7 @@ class DigestSelector:
             decayed_score = score * (DECAY_FACTOR ** current_source_count)
 
             # Vérifier contraintes
-            if source_counts[source_id] >= self.constraints.MAX_PER_SOURCE:
+            if source_counts[source_id] >= effective_max_per_source:
                 continue
 
             if theme and theme_counts[theme] >= self.constraints.MAX_PER_THEME:
@@ -758,11 +778,11 @@ class DigestSelector:
 
         # Ensure minimum source diversity
         selected_sources = set(item[0].source_id for item in selected)
-        if len(selected_sources) < MIN_SOURCES and len(scored_candidates) >= target_count:
+        if len(selected_sources) < self.constraints.MIN_SOURCES and len(scored_candidates) >= target_count:
             logger.warning(
                 "digest_diversity_insufficient_sources",
                 selected_sources=len(selected_sources),
-                min_required=MIN_SOURCES
+                min_required=self.constraints.MIN_SOURCES
             )
 
         logger.debug(
@@ -770,7 +790,8 @@ class DigestSelector:
             selected_count=len(selected),
             source_distribution={str(k): v for k, v in source_counts.items()},
             theme_distribution=dict(theme_counts),
-            decay_factor=DECAY_FACTOR
+            decay_factor=DECAY_FACTOR,
+            effective_max_per_source=effective_max_per_source
         )
 
         return selected

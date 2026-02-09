@@ -16,13 +16,13 @@ if TYPE_CHECKING:
 
 
 class DailyDigest(Base):
-    """Digest quotidien de 5 articles pour un utilisateur.
-    
+    """Digest quotidien de 7 articles pour un utilisateur.
+
     Remplace le modèle DailyTop3 (3 articles) par un digest plus riche
-    avec 5 articles sélectionnés pour créer un sentiment de "mission accomplie".
-    
+    avec 7 articles sélectionnés. La completion se déclenche après 5 interactions.
+
     Les articles sont stockés dans une colonne JSONB 'items' qui contient
-    un tableau de 5 objets avec les références content_id et les métadonnées.
+    un tableau de 7 objets avec les références content_id et les métadonnées.
     
     Attributes:
         user_id: UUID de l'utilisateur.

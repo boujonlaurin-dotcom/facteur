@@ -37,6 +37,8 @@ class _BottomNavBar extends ConsumerWidget {
 
     // Tab 1: Explorer (Feed)
     if (location.startsWith(RoutePaths.feed)) return 1;
+    // Saved screen: show as part of settings (nearest logical tab)
+    if (location.startsWith(RoutePaths.saved)) return 2;
     // MVP: Progressions tab removed - redirect to feed if accessed
     if (location.startsWith(RoutePaths.progress)) return 1;
 
