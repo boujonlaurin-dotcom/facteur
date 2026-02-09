@@ -195,7 +195,6 @@ async def get_current_user_id(
                     return user_id
                 else:
                     print(f"🚫 Auth: User {user_id} blocked (email not confirmed)", flush=True)
-                print(f"🔍 DEBUG JWT PAYLOAD: {payload}", flush=True)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Email not confirmed",
