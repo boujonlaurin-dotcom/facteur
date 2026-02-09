@@ -80,8 +80,8 @@ class NotificationsScreen extends ConsumerWidget {
                 horizontal: FacteurSpacing.space2,
               ),
               child: Text(
-                'Les notifications push ne sont pas encore actives. '
-                'Cette fonctionnalité sera disponible prochainement.',
+                'Recevez une notification chaque matin à 8h '
+                'quand votre Essentiel du Jour est prêt.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textTertiary,
                       fontStyle: FontStyle.italic,
@@ -104,65 +104,38 @@ class NotificationsScreen extends ConsumerWidget {
   }) {
     final colors = context.facteurColors;
 
-    return Opacity(
-      opacity: 0.5, // Grayed out
-      child: Padding(
-        padding: const EdgeInsets.all(FacteurSpacing.space4),
-        child: Row(
-          children: [
-            Icon(icon, color: colors.primary, size: 24),
-            const SizedBox(width: FacteurSpacing.space4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        title,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w500,
-                            ),
+    return Padding(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Row(
+        children: [
+          Icon(icon, color: colors.primary, size: 24),
+          const SizedBox(width: FacteurSpacing.space4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(width: FacteurSpacing.space2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space2,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: 0.1),
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.small),
-                        ),
-                        child: Text(
-                          'Arrive bientôt !',
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colors.primary,
-                                    fontSize: 10,
-                                  ),
-                        ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Switch.adaptive(
-              value: value,
-              onChanged: null, // Disabled
-              activeColor: colors.primary,
-            ),
-          ],
-        ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeColor: colors.primary,
+          ),
+        ],
       ),
     );
   }
