@@ -78,3 +78,23 @@ class ScoringWeights:
     # Bonus de précision : si article a match thème ET sous-thème
     # Récompense la granularité (ex: Tech + IA > Tech seul)
     SUBTOPIC_PRECISION_BONUS = 20.0
+    
+    # --- DIGEST DIVERSITY (Revue de presse) ---
+    
+    # Diviseur appliqué au score du 2ème article d'une même source dans le digest.
+    # Effet : score ÷ 2 pour tout doublon de source.
+    #
+    # Rationale:
+    # Les articles du top digest scorent entre 150 et 260 pts. Une pénalité fixe
+    # (-10, -30) est insuffisante : un doublon à 220 pts resterait à 190+ pts,
+    # bien au-dessus des articles alternatifs. Le ÷2 relègue ce doublon à 110 pts,
+    # permettant aux articles d'autres sources (typiquement 140-180 pts) de prendre
+    # la place. Cela crée l'effet "revue de presse" souhaité — pluralité des sources
+    # plutôt que domination d'une seule.
+    #
+    # Un doublon peut quand même passer si son score ÷2 reste supérieur à toutes
+    # les alternatives — l'article est alors vraiment exceptionnel.
+    #
+    # Visible à l'utilisateur via la ligne "Diversité revue de presse" dans le
+    # breakdown de scoring (sheet "Pourquoi cet article ?").
+    DIGEST_DIVERSITY_DIVISOR = 2
