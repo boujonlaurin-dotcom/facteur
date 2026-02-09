@@ -216,13 +216,17 @@ class DigestBriefingSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                (item.reason.contains(':') ? item.reason.split(':').first.trim() : item.reason).toUpperCase(),
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                  letterSpacing: 0.5,
+              Flexible(
+                child: Text(
+                  _simplifyReason(item.reason),
+                  style: TextStyle(
+                    color: labelColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
@@ -306,6 +310,19 @@ class DigestBriefingSection extends StatelessWidget {
       default:
         return SourceType.article;
     }
+  }
+
+  /// Simplify legacy reason strings for display (strip source name, points).
+  /// New backend returns short labels directly; this handles old cached data.
+  static String _simplifyReason(String reason) {
+    var r = reason;
+    // Strip " (+N pts)" suffix
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts\)'), '');
+    // Strip everything after ":"
+    if (r.contains(':')) r = r.split(':').first.trim();
+    // Strip " depuis ..." suffix
+    r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
+    return r.trim().toUpperCase();
   }
 
   /// Show the personalization sheet with scoring breakdown
