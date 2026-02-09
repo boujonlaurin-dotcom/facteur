@@ -79,42 +79,33 @@ class TestScheduler:
             mock_scheduler = Mock()
             mock_scheduler_class.return_value = mock_scheduler
             
-            trigger_calls = []
+            captured_jobs = {}
             def capture_add_job(*args, **kwargs):
-                trigger_calls.append(kwargs.get('trigger'))
+                job_id = kwargs.get('id')
+                if job_id:
+                    captured_jobs[job_id] = kwargs
             
             mock_scheduler.add_job = capture_add_job
             
             start_scheduler()
             
-            # Find the digest trigger
-            digest_trigger = None
-            for call in mock_scheduler.add_job.call_args_list if hasattr(mock_scheduler.add_job, 'call_args_list') else []:
-                if call and call.kwargs.get('id') == 'daily_digest':
-                    digest_trigger = call.kwargs.get('trigger')
-                    break
+            # Find the daily_digest job
+            assert 'daily_digest' in captured_jobs, \
+                f"daily_digest job not found. Jobs: {list(captured_jobs.keys())}"
             
-            # Alternative: check from our captured calls
-            if digest_trigger is None:
-                # We captured via the capture_add_job function
-                # Need to inspect the trigger from the mock
-                for call in mock_scheduler.add_job.call_args_list if hasattr(mock_scheduler, 'add_job') else []:
-                    pass  # Skip if no call_args_list
+            digest_job = captured_jobs['daily_digest']
+            trigger = digest_job['trigger']
             
-            # Re-examine: just verify the trigger fields
-            # The CronTrigger should have hour=8, minute=0
-            # Let's inspect the actual scheduler.add_job calls
-            if hasattr(mock_scheduler.add_job, 'call_args_list'):
-                for call in mock_scheduler.add_job.call_args_list:
-                    if call.kwargs.get('id') == 'daily_digest':
-                        trigger = call.kwargs.get('trigger')
-                        # Check if it's a CronTrigger with hour=8, minute=0
-                        assert isinstance(trigger, CronTrigger)
-                        # The trigger should have these fields set
-                        # We can verify by checking the string representation
-                        trigger_str = str(trigger)
-                        assert '8' in trigger_str and '0' in trigger_str, \
-                            f"Trigger should have hour=8 and minute=0, got: {trigger_str}"
+            # Verify it's a CronTrigger
+            assert isinstance(trigger, CronTrigger), \
+                f"Expected CronTrigger, got {type(trigger)}"
+            
+            # CronTrigger fields: [year, month, day, week, day_of_week, hour, minute, second]
+            # Verify hour=8, minute=0
+            assert str(trigger.fields[5]) == '8', \
+                f"Expected hour=8, got {trigger.fields[5]}"
+            assert str(trigger.fields[6]) == '0', \
+                f"Expected minute=0, got {trigger.fields[6]}"
     
     def test_scheduler_includes_rss_sync_job(self):
         """Verify RSS sync job is scheduled."""
@@ -211,9 +202,9 @@ class TestDigestJobConfiguration:
             digest_trigger = captured_triggers.get('daily_digest')
             assert digest_trigger is not None, "daily_digest trigger not found"
             
-            # Verify CronTrigger fields
-            # hour should be 8, minute should be 0
-            assert digest_trigger.fields[0].__str__() == '0', \
-                f"Expected minute=0, got {digest_trigger.fields[0]}"
-            assert digest_trigger.fields[1].__str__() == '8', \
-                f"Expected hour=8, got {digest_trigger.fields[1]}"
+            # CronTrigger fields: [year, month, day, week, day_of_week, hour, minute, second]
+            # Verify hour=8 (index 5), minute=0 (index 6)
+            assert str(digest_trigger.fields[5]) == '8', \
+                f"Expected hour=8, got {digest_trigger.fields[5]}"
+            assert str(digest_trigger.fields[6]) == '0', \
+                f"Expected minute=0, got {digest_trigger.fields[6]}"
