@@ -18,7 +18,7 @@ const RESOURCES = {"flutter.js": "24bc71911b75b5f8135c949e27a2984e",
 "assets/assets/icons/logo%2520facteur%2520fond_clair.png": "45760e0ca20ec59ef690ec50f3a40f96",
 "assets/assets/icons/logo%2520facteur%2520fond_sombre.png": "2a2641766a2fb15f288e3ac213eb95c1",
 "assets/assets/icons/facteur_logo.png": "f4fb6d124b9bb6b5488d5592cf93bc77",
-"assets/fonts/MaterialIcons-Regular.otf": "a01552e82a59bddd27ab0692a3121d90",
+"assets/fonts/MaterialIcons-Regular.otf": "2d3b46e0021f3f8168c22ded6650c604",
 "assets/NOTICES": "d6f98f1c5e26db32e6a807810300bcdb",
 "assets/packages/flutter_inappwebview_web/assets/web/web_support.js": "509ae636cfdd93e49b5a6eaf0f06d79f",
 "assets/packages/phosphor_flutter/lib/fonts/Phosphor-Thin.ttf": "f128e0009c7b98aba23cafe9c2a5eb06",
@@ -46,9 +46,9 @@ const RESOURCES = {"flutter.js": "24bc71911b75b5f8135c949e27a2984e",
 "canvaskit/canvaskit.js.symbols": "a3c9f77715b642d0437d9c275caba91e",
 "canvaskit/skwasm.js.symbols": "3a4aadf4e8141f284bd524976b1d6bdc",
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
-"flutter_bootstrap.js": "064c30f21e4c20c2d9523c6a5fcd3d6a",
+"flutter_bootstrap.js": "27f51ada1f304c2083f1a4df04566956",
 "version.json": "23790d96eb676a5e9516ef2c8bac14dd",
-"main.dart.js": "d1198d5020b6cc23ebf567dda9b7edd5"};
+"main.dart.js": "3cba0b87bc04dfac542807b3c701e2d7"};
 // The application shell files that are downloaded before a service worker can
 // start.
 const CORE = ["main.dart.js",
