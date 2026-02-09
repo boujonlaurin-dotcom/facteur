@@ -127,14 +127,29 @@ class RecommendationService:
                  
              return results
         
-        # 2. Get Candidates (Top 500 recent unseen contents)
+        # 2. Get today's digest content_ids to exclude from feed (Story 10.20)
+        from app.models.daily_digest import DailyDigest
+        from datetime import date as date_module
+        digest_content_ids: list[UUID] = []
+        try:
+            digest_row = await self.session.scalar(
+                select(DailyDigest).where(
+                    DailyDigest.user_id == user_id,
+                    DailyDigest.target_date == date_module.today()
+                )
+            )
+            if digest_row and digest_row.items:
+                digest_content_ids = [UUID(item["content_id"]) for item in digest_row.items]
+        except Exception as e:
+            logger.warning("feed_digest_exclusion_failed", error=str(e))
+
         # Story 4.7: Personalization filters
         muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
         muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
         muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
 
         candidates = await self._get_candidates(
-            user_id, 
+            user_id,
             limit_candidates=500,
             content_type=content_type,
             mode=mode,
@@ -142,7 +157,9 @@ class RecommendationService:
             # Story 4.7 : Filter out muted items at DB level
             muted_sources=muted_sources,
             muted_themes=muted_themes,
-            muted_topics=muted_topics
+            muted_topics=muted_topics,
+            # Story 10.20 : Exclude today's digest articles from feed
+            digest_content_ids=digest_content_ids,
         )
         
         # 3. Score Candidates using ScoringEngine
@@ -427,7 +444,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, digest_content_ids: list[UUID] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -468,9 +485,13 @@ class RecommendationService:
         query = (
             select(Content)
             .join(Content.source) # Join needed for all mode filters
-            .options(selectinload(Content.source)) 
+            .options(selectinload(Content.source))
             .where(~exists_stmt)
         )
+
+        # Story 10.20: Exclude today's digest articles from feed
+        if digest_content_ids:
+            query = query.where(Content.id.notin_(digest_content_ids))
 
         # Debug logging for feed source filtering
         logger.info(

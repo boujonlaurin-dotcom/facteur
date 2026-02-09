@@ -8,10 +8,11 @@ import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'digest_personalization_sheet.dart';
 
-/// Digest Briefing Section with premium design for 5 articles.
+/// Digest Briefing Section with premium design for 7 articles.
 /// Based on BriefingSection from Feed but adapted for digest-specific features.
 class DigestBriefingSection extends StatelessWidget {
   final List<DigestItem> items;
+  final int completionThreshold;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
@@ -19,6 +20,7 @@ class DigestBriefingSection extends StatelessWidget {
   const DigestBriefingSection({
     super.key,
     required this.items,
+    this.completionThreshold = 5,
     required this.onItemTap,
     this.onSave,
     this.onNotInterested,
@@ -135,14 +137,17 @@ class DigestBriefingSection extends StatelessWidget {
   }
 
   Widget _buildSegmentedProgressBar(FacteurColors colors) {
-    final readCount = items.where((item) => item.isRead).length;
-    final isDone = readCount == 5;
+    final processedCount = items
+        .where((item) => item.isRead || item.isDismissed || item.isSaved)
+        .length;
+    final isDone = processedCount >= completionThreshold;
+    final totalCount = items.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          '$readCount/5',
+          '$processedCount/$completionThreshold',
           style: TextStyle(
             color: isDone ? colors.success : colors.primary,
             fontWeight: FontWeight.bold,
@@ -151,12 +156,17 @@ class DigestBriefingSection extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Row(
-          children: List.generate(5, (index) {
-            final isFilled = index < readCount;
+          children: List.generate(totalCount, (index) {
+            final isFilled = index < processedCount;
+            final isThresholdBoundary =
+                completionThreshold < totalCount &&
+                    index == completionThreshold - 1;
             return Container(
               width: 8,
               height: 4,
-              margin: const EdgeInsets.only(right: 2),
+              margin: EdgeInsets.only(
+                right: isThresholdBoundary ? 6 : 2,
+              ),
               decoration: BoxDecoration(
                 color: isFilled
                     ? (isDone ? colors.success : colors.primary)

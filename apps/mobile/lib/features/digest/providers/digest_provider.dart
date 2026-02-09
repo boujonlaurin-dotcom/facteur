@@ -273,14 +273,14 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return processedCount / digest.items.length;
   }
 
-  /// Check if all items are processed and trigger completion
+  /// Check if enough items are processed and trigger completion.
+  /// Completion triggers at completionThreshold (default 5) interactions,
+  /// not when all items are processed.
   void _checkAndHandleCompletion() {
     final digest = state.value;
     if (digest == null || digest.isCompleted) return;
 
-    final allProcessed = digest.items
-        .every((item) => item.isRead || item.isDismissed || item.isSaved);
-    if (allProcessed) {
+    if (processedCount >= digest.completionThreshold) {
       completeDigest();
     }
   }

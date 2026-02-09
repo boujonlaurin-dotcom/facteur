@@ -52,7 +52,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
         children: [
           AppBar(
             title: Text(
-              'À consulter plus tard',
+              'Mes sauvegardes',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             centerTitle: false,
@@ -71,14 +71,14 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            PhosphorIcons.clockClockwise(
+                            PhosphorIcons.bookmarkSimple(
                                 PhosphorIconsStyle.duotone),
                             size: 64,
                             color: colors.textSecondary,
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Aucun contenu à consulter',
+                            'Aucune sauvegarde',
                             style: Theme.of(context)
                                 .textTheme
                                 .titleMedium

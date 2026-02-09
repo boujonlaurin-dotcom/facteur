@@ -1188,6 +1188,8 @@ mixin _$DigestResponse {
   @JsonKey(name: 'generated_at')
   DateTime get generatedAt => throw _privateConstructorUsedError;
   List<DigestItem> get items => throw _privateConstructorUsedError;
+  @JsonKey(name: 'completion_threshold')
+  int get completionThreshold => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_completed')
   bool get isCompleted => throw _privateConstructorUsedError;
   @JsonKey(name: 'completed_at')
@@ -1211,6 +1213,7 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
       List<DigestItem> items,
+      @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt});
 }
@@ -1233,6 +1236,7 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
     Object? targetDate = null,
     Object? generatedAt = null,
     Object? items = null,
+    Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
   }) {
@@ -1257,6 +1261,10 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
           ? _value.items
           : items // ignore: cast_nullable_to_non_nullable
               as List<DigestItem>,
+      completionThreshold: null == completionThreshold
+          ? _value.completionThreshold
+          : completionThreshold // ignore: cast_nullable_to_non_nullable
+              as int,
       isCompleted: null == isCompleted
           ? _value.isCompleted
           : isCompleted // ignore: cast_nullable_to_non_nullable
@@ -1283,6 +1291,7 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
       List<DigestItem> items,
+      @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt});
 }
@@ -1303,6 +1312,7 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
     Object? targetDate = null,
     Object? generatedAt = null,
     Object? items = null,
+    Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
   }) {
@@ -1327,6 +1337,10 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
           ? _value._items
           : items // ignore: cast_nullable_to_non_nullable
               as List<DigestItem>,
+      completionThreshold: null == completionThreshold
+          ? _value.completionThreshold
+          : completionThreshold // ignore: cast_nullable_to_non_nullable
+              as int,
       isCompleted: null == isCompleted
           ? _value.isCompleted
           : isCompleted // ignore: cast_nullable_to_non_nullable
@@ -1348,6 +1362,7 @@ class _$DigestResponseImpl implements _DigestResponse {
       @JsonKey(name: 'target_date') required this.targetDate,
       @JsonKey(name: 'generated_at') required this.generatedAt,
       final List<DigestItem> items = const [],
+      @JsonKey(name: 'completion_threshold') this.completionThreshold = 5,
       @JsonKey(name: 'is_completed') this.isCompleted = false,
       @JsonKey(name: 'completed_at') this.completedAt})
       : _items = items;
@@ -1377,6 +1392,9 @@ class _$DigestResponseImpl implements _DigestResponse {
   }
 
   @override
+  @JsonKey(name: 'completion_threshold')
+  final int completionThreshold;
+  @override
   @JsonKey(name: 'is_completed')
   final bool isCompleted;
   @override
@@ -1385,7 +1403,7 @@ class _$DigestResponseImpl implements _DigestResponse {
 
   @override
   String toString() {
-    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, items: $items, isCompleted: $isCompleted, completedAt: $completedAt)';
+    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, items: $items, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt)';
   }
 
   @override
@@ -1401,6 +1419,8 @@ class _$DigestResponseImpl implements _DigestResponse {
             (identical(other.generatedAt, generatedAt) ||
                 other.generatedAt == generatedAt) &&
             const DeepCollectionEquality().equals(other._items, _items) &&
+            (identical(other.completionThreshold, completionThreshold) ||
+                other.completionThreshold == completionThreshold) &&
             (identical(other.isCompleted, isCompleted) ||
                 other.isCompleted == isCompleted) &&
             (identical(other.completedAt, completedAt) ||
@@ -1416,6 +1436,7 @@ class _$DigestResponseImpl implements _DigestResponse {
       targetDate,
       generatedAt,
       const DeepCollectionEquality().hash(_items),
+      completionThreshold,
       isCompleted,
       completedAt);
 
@@ -1441,6 +1462,7 @@ abstract class _DigestResponse implements DigestResponse {
           @JsonKey(name: 'target_date') required final DateTime targetDate,
           @JsonKey(name: 'generated_at') required final DateTime generatedAt,
           final List<DigestItem> items,
+          @JsonKey(name: 'completion_threshold') final int completionThreshold,
           @JsonKey(name: 'is_completed') final bool isCompleted,
           @JsonKey(name: 'completed_at') final DateTime? completedAt}) =
       _$DigestResponseImpl;
@@ -1462,6 +1484,9 @@ abstract class _DigestResponse implements DigestResponse {
   DateTime get generatedAt;
   @override
   List<DigestItem> get items;
+  @override
+  @JsonKey(name: 'completion_threshold')
+  int get completionThreshold;
   @override
   @JsonKey(name: 'is_completed')
   bool get isCompleted;

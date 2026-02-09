@@ -93,7 +93,7 @@ class DigestService:
             force_regenerate: If True, delete existing digest and regenerate
 
         Returns:
-            DigestResponse with 5 items, or None if generation failed
+            DigestResponse with 7 items, or None if generation failed
         """
         start_time = time.time()
         
@@ -129,7 +129,9 @@ class DigestService:
         # 2. Generate new digest using DigestSelector
         step_start = time.time()
         logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback)
-        digest_items = await self.selector.select_for_user(user_id, limit=5, hours_lookback=hours_lookback)
+        from app.services.digest_selector import DiversityConstraints
+        target_size = DiversityConstraints.TARGET_DIGEST_SIZE
+        digest_items = await self.selector.select_for_user(user_id, limit=target_size, hours_lookback=hours_lookback)
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
@@ -138,7 +140,7 @@ class DigestService:
         if not digest_items:
             step_start = time.time()
             logger.warning("digest_generation_standard_failed_attempting_fallback", user_id=str(user_id))
-            digest_items = await self._get_emergency_candidates(user_id=user_id, limit=5)
+            digest_items = await self._get_emergency_candidates(user_id=user_id, limit=target_size)
             fallback_time = time.time() - step_start
             logger.info("digest_step_fallback", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(fallback_time * 1000, 2))
             
@@ -665,12 +667,14 @@ class DigestService:
                 is_dismissed=action_state["is_dismissed"]
             ))
         
+        from app.services.digest_selector import DiversityConstraints
         return DigestResponse(
             digest_id=digest.id,
             user_id=digest.user_id,
             target_date=digest.target_date,
             generated_at=digest.generated_at,
             items=items,
+            completion_threshold=DiversityConstraints.COMPLETION_THRESHOLD,
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None
         )

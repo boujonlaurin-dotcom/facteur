@@ -38,16 +38,16 @@ class DigestRecommendationReason(BaseModel):
 
 
 class DigestItem(BaseModel):
-    """Single item in a digest (one of 5 articles).
-    
+    """Single item in a digest (one of 7 articles).
+
     Contains all necessary information for display and tracking:
     - content: Article metadata
-    - rank: Position in digest (1-5)
+    - rank: Position in digest (1-7)
     - reason: Why this article was selected (legacy, backward compatibility)
     - recommendation_reason: Detailed scoring breakdown (new, full transparency)
     - action: User's current action on this item
     """
-    
+
     # Content metadata
     content_id: UUID
     title: str
@@ -57,12 +57,12 @@ class DigestItem(BaseModel):
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: Optional[int] = None
     published_at: datetime
-    
+
     # Source info
     source: SourceMini
-    
+
     # Digest-specific info
-    rank: int = Field(..., ge=1, le=5, description="Position in digest (1-5)")
+    rank: int = Field(..., ge=1, le=7, description="Position in digest (1-7)")
     reason: str = Field(..., description="Selection reason for display (backward compatibility)")
     recommendation_reason: Optional[DigestRecommendationReason] = Field(
         None, description="Detailed scoring breakdown with contributions"
@@ -79,19 +79,24 @@ class DigestItem(BaseModel):
 
 class DigestResponse(BaseModel):
     """Response for GET /api/digest.
-    
-    Returns the daily digest for the current user, containing exactly 5 articles
+
+    Returns the daily digest for the current user, containing 7 articles
     or empty items array if digest hasn't been generated yet.
+    Completion is triggered after completion_threshold interactions (default: 5).
     """
-    
+
     digest_id: UUID
     user_id: UUID
     target_date: date
     generated_at: datetime
-    items: list[DigestItem] = Field(..., description="Array of 5 digest items")
+    items: list[DigestItem] = Field(..., description="Array of 7 digest items")
+    completion_threshold: int = Field(
+        default=5,
+        description="Number of interactions needed to complete the digest"
+    )
     is_completed: bool = False
     completed_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True
 

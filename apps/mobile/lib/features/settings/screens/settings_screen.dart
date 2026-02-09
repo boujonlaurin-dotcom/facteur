@@ -66,6 +66,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     children: [
                       _buildTile(
                         context,
+                        icon: Icons.bookmark_outline,
+                        title: 'Mes sauvegardes',
+                        subtitle: 'Articles à consulter plus tard',
+                        onTap: () {
+                          context.go(RoutePaths.saved);
+                        },
+                      ),
+                      _buildTile(
+                        context,
                         icon: Icons.star_outline,
                         title: 'Sources de confiance',
                         subtitle: 'Gérer vos préférences',
