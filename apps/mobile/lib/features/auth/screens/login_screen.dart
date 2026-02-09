@@ -343,16 +343,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ],
                         ),
-                        // DEBUG: Afficher l'URL Supabase
-                        const SizedBox(height: 8),
-                        Text(
-                          'Supabase URL: ${SupabaseConstants.url}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                  color: colors.textSecondary, fontSize: 10),
-                        ),
                       ],
                     ),
                   ),

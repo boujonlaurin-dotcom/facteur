@@ -254,14 +254,19 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
           'AUTH_DEBUG signIn AuthException: ${e.message} | statusCode: ${e.statusCode}');
       state = state.copyWith(
         isLoading: false,
-        // DEBUG: Afficher l'erreur brute pour identifier le problème
         error: AuthErrorMessages.translate(e.message),
+      );
+    } on FormatException catch (e) {
+      // Erreur de parsing - souvent liée à une mauvaise configuration
+      debugPrint('AUTH_DEBUG signIn FormatException (likely config error): $e');
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Erreur de configuration. Veuillez contacter le support.',
       );
     } catch (e) {
       debugPrint('AUTH_DEBUG signIn Unknown Error: $e');
       state = state.copyWith(
         isLoading: false,
-        // DEBUG: Afficher l'erreur brute
         error: 'Une erreur est survenue',
       );
     }

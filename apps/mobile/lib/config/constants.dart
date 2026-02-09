@@ -39,10 +39,9 @@ class SupabaseConstants {
   SupabaseConstants._();
 
   /// URL Supabase (à configurer via env)
-  static final String url = _cleanEnvVar(const String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: '',
-  ));
+  static final String url = _validateAndCleanSupabaseUrl(
+    const String.fromEnvironment('SUPABASE_URL', defaultValue: ''),
+  );
 
   /// Clé anonyme Supabase (à configurer via env)
   static final String anonKey = _cleanEnvVar(const String.fromEnvironment(
@@ -65,6 +64,36 @@ class SupabaseConstants {
     while (cleaned.endsWith('/')) {
       cleaned = cleaned.substring(0, cleaned.length - 1);
     }
+    return cleaned;
+  }
+
+  /// Valide et nettoie l'URL Supabase
+  /// Détecte les erreurs courantes comme l'URL du dashboard au lieu de l'URL API
+  static String _validateAndCleanSupabaseUrl(String value) {
+    String cleaned = _cleanEnvVar(value);
+
+    if (cleaned.isEmpty) return cleaned;
+
+    // Détecter si c'est l'URL du dashboard au lieu de l'URL API
+    if (cleaned.contains('supabase.com/dashboard')) {
+      // Essayer d'extraire le project ref
+      final RegExp projectRefRegex = RegExp(r'project/([a-z0-9]+)');
+      final Match? match = projectRefRegex.firstMatch(cleaned);
+      if (match != null) {
+        final String projectRef = match.group(1)!;
+        return 'https://$projectRef.supabase.co';
+      }
+    }
+
+    // Vérifier que l'URL finit par .supabase.co
+    if (!cleaned.contains('.supabase.co') &&
+        !cleaned.contains('localhost') &&
+        !cleaned.contains('127.0.0.1')) {
+      // URL invalide - retourner l'URL brute pour permettre le diagnostic
+      // mais elle échouera à la connexion
+      return cleaned;
+    }
+
     return cleaned;
   }
 }
