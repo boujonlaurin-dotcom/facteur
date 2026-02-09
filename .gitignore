@@ -1,5 +1,5 @@
 # General
-.DS_Store
+**/.DS_Store
 .AppleDouble
 .LSOverride
 Icon
@@ -58,9 +58,21 @@ android/app/release
 ios/Flutter/.last_build_id
 ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
+android/local.properties
+
+# Mobile build/debug artifacts
+analysis_*.txt
+*_output.txt
+*_proof*.txt
+flutter_version.txt
+*.hive
+onboarding.lock
+run_test_proof.sh
+
+# CORS debug files
+cors_test*.html
+serve_test.py
 
 # Logs
 *.log
-
-# Project specific
-web-bundles/.DS_Store
