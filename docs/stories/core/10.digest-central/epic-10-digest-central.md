@@ -1,9 +1,9 @@
 # Epic 10 : Pivot Digest Central
 
-**Version:** 1.0  
-**Date:** 31 janvier 2026  
-**Auteur:** BMad Master  
-**Statut:** Draft — En attente de développement
+**Version:** 2.0
+**Date:** 9 février 2026
+**Auteur:** BMad Master
+**Statut:** Phase 2 — Phases 1-3 livrées (GSD, 01/02→08/02), Phase 4 en cours (stories 10.19-10.21)
 
 ---
 
@@ -184,7 +184,26 @@ ALTER TABLE user_streaks ADD COLUMN IF NOT EXISTS last_closure_date DATE;
 | 10.17 | Tests unitaires DigestSelector | P1 | 2h |
 | 10.18 | Tests E2E flow digest → closure | P2 | 3h |
 
-**Total estimé : ~45h (7 jours dev + QA)**
+**Sous-total Phase 1-3 : ~45h** ✅ Livré (01/02 → 08/02/2026)
+
+> **Note post-implémentation (2026-02-09):** Toutes les stories 10.1 à 10.17 ont été implémentées
+> via le framework GSD (phases 01-foundation, 02-frontend, 03-polish) entre le 01/02 et le 08/02/2026.
+> La story 10.18 (Tests E2E) est partiellement couverte (tests unitaires existants, tests d'intégration non formalisés).
+> Les stories BMAD restaient en statut "Draft" pendant que GSD trackait l'exécution — cette mise à jour
+> aligne la documentation BMAD avec l'état réel du code.
+
+### Phase 4 : Daily Essentials Refinement (P0)
+
+| # | Story | Priorité | Estimation |
+|---|-------|----------|------------|
+| 10.19 | Passage à 7 articles avec completion 5/7 + MAX_PER_SOURCE=1 | P0 | 3h |
+| 10.20 | Filtrage des articles du digest dans le feed | P0 | 2h |
+| 10.21 | Bookmark valide l'objectif du jour + écran "Sauvegardés" | P0 | 5h |
+
+**Sous-total Phase 4 : ~10h**
+
+> Les 3 stories sont indépendantes et peuvent être développées en parallèle.
+> Origine : brainstorm CEO + BMAD experts (Analyst, PM, PO, Architect) du 09/02/2026.
 
 ---
 
@@ -212,6 +231,10 @@ graph TD
     10.7 --> 10.16[10.16 Analytics]
     10.2 --> 10.17[10.17 Tests Unit]
     10.12 --> 10.18[10.18 Tests E2E]
+
+    10.2 --> 10.19[10.19 7 articles + 5/7]
+    10.14 --> 10.20[10.20 Filtrage feed]
+    10.10 --> 10.21[10.21 Bookmark + Saved]
 ```
 
 ---
@@ -231,11 +254,14 @@ graph TD
 
 ### Validées
 
-1. **5 articles fixes** — Pas de scroll, pas de "load more"
-2. **Binaire obligatoire** — Chaque article doit être "Lu" ou "Sauvegardé" pour avancer
+1. **5 articles fixes** — Pas de scroll, pas de "load more" *(Phase 1-3 — étendu à 7 en Phase 4, story 10.19)*
+2. **Ternaire** — Chaque article peut être "Lu", "Sauvegardé" ou "Pas intéressé" pour avancer
 3. **Feed relégué** — Accessible via bouton discret "Explorer plus", jamais promu
 4. **Sources déclarées only** — AUCUN article hors des sources explicitement choisies
 5. **Fallback curées** — Si pool insuffisant, compléter avec meilleures sources catalogue
+6. **Decay 0.70** — Facteur de décroissance multiplicatif pour diversité des sources
+7. **Notification locale 8h** — Push matinal "Ton digest est prêt" (opt-in)
+8. **Analytics unifiés** — Schéma content_interaction unique cross-surfaces
 
 ### Reportées V2
 
@@ -244,6 +270,12 @@ graph TD
 3. **Quiz post-closure** — "As-tu retenu ?"
 4. **Audio digest** — Version podcast du résumé
 
+### Phase 4 — Daily Essentials Refinement (10.19-10.21)
+
+1. **Passage à 7 articles** — Augmente la marge d'erreur reco, completion à 5/7, MAX_PER_SOURCE=1
+2. **Filtrage digest/feed** — Exclure les articles du digest du feed "Explorer plus"
+3. **Bookmark = objectif** — Le bookmark valide l'objectif du jour + écran "Sauvegardés"
+
 ---
 
 ## Change Log
@@ -251,3 +283,4 @@ graph TD
 | Date | Version | Description | Auteur |
 |------|---------|-------------|--------|
 | 31/01/2026 | 1.0 | Création Epic suite session BMad | BMad Master |
+| 09/02/2026 | 2.0 | Alignement BMAD avec implémentation GSD (Phases 01-03). Ajout Phase 4 (stories 10.19-10.21). Décisions validées (decay, analytics, notifications). | BMad Master |

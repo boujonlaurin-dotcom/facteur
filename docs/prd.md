@@ -87,6 +87,9 @@ Les solutions existantes (agrégateurs RSS, apps de news) échouent soit par man
 | **FR21.3** | **(Epic 10)** Le système maintient un **streak de closure** distinct du streak de lecture, basé sur la complétion quotidienne du digest |
 | **FR21.4** | **(Epic 10)** Le Feed infini reste accessible mais est relégué à un écran secondaire "Explorer plus", accessible depuis l'écran de closure |
 | **FR21.5** | **(Epic 10)** Le système envoie une notification push le matin à 8h pour annoncer que le Digest est prêt (opt-in) |
+| **FR21.6** | **(Epic 10)** Le Digest passe de 5 à **7 articles**, avec un seuil de completion configurable à **5/7 interactions** minimum pour déclencher la closure |
+| **FR21.7** | **(Epic 10)** Les articles présents dans le Digest du jour sont **exclus du feed** "Explorer plus" pour éviter la redondance |
+| **FR21.8** | **(Epic 10)** Le **bookmark valide l'objectif du jour** (même comportement que "Lu" pour la progression). Un écran **"Mes sauvegardés"** permet de consulter les articles bookmarkés |
 
 ---
 
@@ -433,8 +436,9 @@ uuid    | "Elon Musk" | PERSON       | 10    | 2026-01-28
 | 6 | Premium & Paiement | RevenueCat, trial, paywall, abonnement, paramètres Compte/Notif | 8 |
 | 7 | Mise en perspective | Clustering de stories et profiling de sources (Ground News style) | 5 |
 | 8 | Approfondissement & Progression | ⏸️ **MVP: Teaser only** — Le "Duolingo de l'info" (quiz, badges) | 7 |
+| 10 | Pivot Digest Central | 🟡 **Phase 2** — Pivot "Digest-First" livré (18 stories), 3 refinements en cours (10.19-10.21) | 21 |
 
-**Total : 45 stories**
+**Total : 48 stories**
 
 ---
 
