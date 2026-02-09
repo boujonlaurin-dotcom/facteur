@@ -279,11 +279,9 @@ class DigestService:
                 theme_label = theme_labels.get(content.source.theme, content.source.theme.capitalize())
                 breakdown_items.append(DigestScoreBreakdown(label=f"Thème : {theme_label}", points=20.0, is_positive=True))
             
-            # Build reason
-            if content.source_id in followed_source_ids and content.source:
-                reason = f"Source suivie : {content.source.name}"
-            elif content.source:
-                reason = f"Sélection de la rédaction : {content.source.name}"
+            # Build reason (short label — details in breakdown)
+            if content.source_id in followed_source_ids:
+                reason = "Source suivie"
             else:
                 reason = "Sélection de la rédaction"
             

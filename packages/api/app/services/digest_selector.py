@@ -832,41 +832,13 @@ class DigestSelector:
         source_id = content.source_id
         theme = content.source.theme if content.source else None
 
-        # Extract recency bonus from breakdown for backward compatibility
-        recency_bonus = 0.0
-        if breakdown:
-            for b in breakdown:
-                if b.label.startswith(("Article très récent", "Article récent", "Publié")):
-                    recency_bonus = b.points
-                    break
-        
-        # Build bonus suffix if applicable
-        bonus_suffix = f" (+{int(recency_bonus)} pts)" if recency_bonus > 0 else ""
-
         # Première occurrence d'une source suivie
         if source_counts.get(source_id, 0) == 0 and content.source:
-            return f"Source suivie : {content.source.name}{bonus_suffix}"
+            return "Source suivie"
 
         # Premier article d'un thème d'intérêt
         if theme and theme_counts.get(theme, 0) == 0:
-            theme_labels = {
-                'tech': 'Tech & Innovation',
-                'society': 'Société',
-                'environment': 'Environnement',
-                'economy': 'Économie',
-                'politics': 'Politique',
-                'culture': 'Culture & Idées',
-                'science': 'Sciences',
-                'international': 'Géopolitique',
-                'geopolitics': 'Géopolitique',
-                'society_climate': 'Société',
-                'culture_ideas': 'Culture & Idées',
-            }
-            theme_label = theme_labels.get(theme.lower(), theme.capitalize())
-            return f"Vos intérêts : {theme_label}{bonus_suffix}"
+            return "Thème d'intérêt"
 
         # Fallback générique
-        if content.source:
-            return f"Sélectionné pour vous depuis {content.source.name}{bonus_suffix}"
-
-        return f"Sélectionné pour vous{bonus_suffix}"
+        return "Sélectionné pour vous"
