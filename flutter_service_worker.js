@@ -20,7 +20,7 @@ const RESOURCES = {"flutter.js": "24bc71911b75b5f8135c949e27a2984e",
 "assets/assets/icons/logo%2520facteur%2520fond_sombre.png": "2a2641766a2fb15f288e3ac213eb95c1",
 "assets/assets/icons/facteur_logo.png": "f4fb6d124b9bb6b5488d5592cf93bc77",
 "assets/fonts/MaterialIcons-Regular.otf": "a01552e82a59bddd27ab0692a3121d90",
-"assets/NOTICES": "2ae263b195bfcce54cc94c07091cc9e3",
+"assets/NOTICES": "d6f98f1c5e26db32e6a807810300bcdb",
 "assets/packages/flutter_inappwebview_web/assets/web/web_support.js": "509ae636cfdd93e49b5a6eaf0f06d79f",
 "assets/packages/phosphor_flutter/lib/fonts/Phosphor-Thin.ttf": "f128e0009c7b98aba23cafe9c2a5eb06",
 "assets/packages/phosphor_flutter/lib/fonts/Phosphor-Light.ttf": "f2dc1cd993671b155e3235044280ba47",
@@ -49,9 +49,9 @@ const RESOURCES = {"flutter.js": "24bc71911b75b5f8135c949e27a2984e",
 "cors_test.html": "fa729fe5509efe13473215d0a3e50056",
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "serve_test.py": "152f32672c5edf9dcbc194e2940b9c43",
-"flutter_bootstrap.js": "55dd90f6c131b4d09101ea07662c86e2",
+"flutter_bootstrap.js": "095bdc8fee9f1719ab2f15aabe3debd2",
 "version.json": "23790d96eb676a5e9516ef2c8bac14dd",
-"main.dart.js": "6b29d94dd3516759736c5f853e3c00d3"};
+"main.dart.js": "5a71cb81ce3f9e53a97c950b4339f280"};
 // The application shell files that are downloaded before a service worker can
 // start.
 const CORE = ["main.dart.js",
