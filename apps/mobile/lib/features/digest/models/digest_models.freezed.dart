@@ -1374,7 +1374,7 @@ class _$DigestResponseImpl implements _DigestResponse {
       @JsonKey(name: 'user_id') required this.userId,
       @JsonKey(name: 'target_date') required this.targetDate,
       @JsonKey(name: 'generated_at') required this.generatedAt,
-      this.mode = 'pour_vous',
+      @JsonKey(defaultValue: 'pour_vous') this.mode = 'pour_vous',
       final List<DigestItem> items = const [],
       @JsonKey(name: 'completion_threshold') this.completionThreshold = 5,
       @JsonKey(name: 'is_completed') this.isCompleted = false,

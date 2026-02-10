@@ -85,7 +85,7 @@ class DigestResponse with _$DigestResponse {
     @JsonKey(name: 'user_id') required String userId,
     @JsonKey(name: 'target_date') required DateTime targetDate,
     @JsonKey(name: 'generated_at') required DateTime generatedAt,
-    @Default('pour_vous') String mode,
+    @JsonKey(defaultValue: 'pour_vous') @Default('pour_vous') String mode,
     @Default([]) List<DigestItem> items,
     @JsonKey(name: 'completion_threshold') @Default(5) int completionThreshold,
     @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
