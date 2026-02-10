@@ -29,6 +29,7 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../../progress/widgets/progression_card.dart';
 
