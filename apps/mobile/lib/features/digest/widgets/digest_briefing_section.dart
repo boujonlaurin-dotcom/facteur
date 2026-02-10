@@ -312,15 +312,17 @@ class DigestBriefingSection extends StatelessWidget {
     }
   }
 
-  /// Simplify legacy reason strings for display (strip source name, points).
-  /// New backend returns short labels directly; this handles old cached data.
+  /// Clean up reason strings for display.
+  /// New format "Thème : X" is kept. Legacy formats are simplified.
   static String _simplifyReason(String reason) {
     var r = reason;
-    // Strip " (+N pts)" suffix
-    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts\)'), '');
-    // Strip everything after ":"
-    if (r.contains(':')) r = r.split(':').first.trim();
-    // Strip " depuis ..." suffix
+    // Strip " (+N pts)" suffix from legacy data
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
+    // Keep "Thème : X" as-is, strip detail after ":" for other patterns
+    if (r.contains(':') && !r.startsWith('Thème')) {
+      r = r.split(':').first.trim();
+    }
+    // Strip " depuis ..." from legacy "Sélectionné pour vous depuis X"
     r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
     return r.trim().toUpperCase();
   }

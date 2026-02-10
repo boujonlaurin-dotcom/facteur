@@ -353,8 +353,10 @@ class DigestCard extends StatelessWidget {
 
   static String _simplifyReason(String reason) {
     var r = reason;
-    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts\)'), '');
-    if (r.contains(':')) r = r.split(':').first.trim();
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
+    if (r.contains(':') && !r.startsWith('Thème')) {
+      r = r.split(':').first.trim();
+    }
     r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
     return r.trim();
   }
