@@ -176,4 +176,44 @@ class DigestRepository {
       rethrow;
     }
   }
+
+  /// Regenerate digest with a specific mode
+  Future<DigestResponse> regenerateWithMode({
+    required String mode,
+    String? focusTheme,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'force': 'true',
+        'mode': mode,
+      };
+      if (focusTheme != null) {
+        queryParams['focus_theme'] = focusTheme;
+      }
+
+      final response = await _apiClient.dio.post<dynamic>(
+        'digest/generate',
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        return DigestResponse.fromJson(data);
+      }
+      throw Exception('Failed to regenerate digest: ${response.statusCode}');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Update a user preference (key-value)
+  Future<void> updatePreference({
+    required String key,
+    required String value,
+  }) async {
+    await _apiClient.dio.put<dynamic>(
+      'users/preferences',
+      data: {'key': key, 'value': value},
+    );
+  }
 }

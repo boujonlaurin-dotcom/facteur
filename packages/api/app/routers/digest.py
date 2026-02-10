@@ -253,22 +253,23 @@ async def complete_digest(
 async def generate_digest(
     target_date: Optional[date] = Query(None, description="Date for digest (default: today)"),
     force: bool = Query(False, description="Force regeneration even if exists"),
+    mode: Optional[str] = Query(None, description="Digest mode (pour_vous, serein, perspective, theme_focus)"),
+    focus_theme: Optional[str] = Query(None, description="Theme slug for theme_focus mode"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
     Generate a new digest on-demand.
-    
+
     Explicitly generates a digest for the user. If a digest already exists
     for the date, it will be returned unless force=True.
-    
+
     Query Parameters:
     - target_date: Optional specific date (default: today)
     - force: If true, regenerates even if digest exists
-    
-    Note: This is primarily for testing/admin use. The GET endpoint
-    automatically generates digests as needed.
-    
+    - mode: Digest mode (pour_vous, serein, perspective, theme_focus)
+    - focus_theme: Theme slug when mode=theme_focus
+
     Returns the complete DigestResponse with items (same format as GET endpoint).
     """
     service = DigestService(db)
@@ -278,7 +279,9 @@ async def generate_digest(
     digest = await service.get_or_create_digest(
         user_uuid,
         target_date,
-        force_regenerate=force
+        force_regenerate=force,
+        mode=mode,
+        focus_theme=focus_theme,
     )
 
     if not digest:

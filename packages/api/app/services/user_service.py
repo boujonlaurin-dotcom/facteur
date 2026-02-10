@@ -184,6 +184,28 @@ class UserService:
         )
         return list(result.scalars().all())
 
+    async def upsert_preference(self, user_id: str, key: str, value: str) -> None:
+        """Upsert une préférence clé-valeur pour l'utilisateur."""
+        uid = UUID(user_id)
+        result = await self.db.execute(
+            select(UserPreference).where(
+                UserPreference.user_id == uid,
+                UserPreference.preference_key == key,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            existing.preference_value = value
+        else:
+            pref = UserPreference(
+                id=uuid4(),
+                user_id=uid,
+                preference_key=key,
+                preference_value=value,
+            )
+            self.db.add(pref)
+        await self.db.flush()
+
     async def get_stats(self, user_id: str) -> UserStatsResponse:
         """Récupère les statistiques utilisateur."""
         # TODO: Implémenter les vraies stats avec des requêtes SQL

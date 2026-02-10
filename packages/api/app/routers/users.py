@@ -1,6 +1,9 @@
 """Routes utilisateur."""
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -116,3 +119,49 @@ async def get_streak(
     """Récupérer le streak actuel."""
     service = StreakService(db)
     return await service.get_streak(user_id)
+
+
+class PreferenceUpdateRequest(BaseModel):
+    """Requête de mise à jour de préférence clé-valeur."""
+    key: str
+    value: str
+
+
+class PreferenceUpdateResponse(BaseModel):
+    """Réponse de mise à jour de préférence."""
+    success: bool
+    key: str
+    value: str
+
+
+@router.put("/preferences", response_model=PreferenceUpdateResponse)
+async def update_preference(
+    data: PreferenceUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> PreferenceUpdateResponse:
+    """Mettre à jour une préférence utilisateur (upsert clé-valeur)."""
+    service = UserService(db)
+    await service.upsert_preference(user_id, data.key, data.value)
+    return PreferenceUpdateResponse(success=True, key=data.key, value=data.value)
+
+
+class TopThemeResponse(BaseModel):
+    """Un thème utilisateur avec son poids."""
+    interest_slug: str
+    weight: float
+
+
+@router.get("/top-themes", response_model=list[TopThemeResponse])
+async def get_top_themes(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[TopThemeResponse]:
+    """Retourne les thèmes de l'utilisateur triés par poids décroissant."""
+    service = UserService(db)
+    interests = await service.get_interests(user_id)
+    themes = sorted(interests, key=lambda i: i.weight, reverse=True)
+    return [
+        TopThemeResponse(interest_slug=i.interest_slug, weight=i.weight)
+        for i in themes
+    ]
