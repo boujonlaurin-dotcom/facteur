@@ -33,10 +33,16 @@ from sqlalchemy.orm import selectinload
 from app.models.content import Content, UserContentStatus
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserInterest, UserSubtopic
-from app.models.enums import ContentStatus
+from app.models.enums import ContentStatus, DigestMode, BiasStance
 from app.services.recommendation_service import RecommendationService
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.filter_presets import (
+    apply_serein_filter,
+    apply_theme_focus_filter,
+    get_opposing_biases,
+    calculate_user_bias,
+)
 from app.schemas.digest import DigestScoreBreakdown
 
 logger = structlog.get_logger()
@@ -77,6 +83,7 @@ class DigestContext:
     muted_sources: Set[UUID]
     muted_themes: Set[str]
     muted_topics: Set[str]
+    user_bias_stance: Optional[BiasStance] = None
 
 
 class DiversityConstraints:
@@ -108,7 +115,9 @@ class DigestSelector:
         self,
         user_id: UUID,
         limit: int = 7,
-        hours_lookback: int = 168
+        hours_lookback: int = 168,
+        mode: str = "pour_vous",
+        focus_theme: Optional[str] = None,
     ) -> List[DigestItem]:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
@@ -116,21 +125,23 @@ class DigestSelector:
             user_id: ID de l'utilisateur
             limit: Nombre d'articles à sélectionner (défaut: 7)
             hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
-            
+            mode: Mode de digest (pour_vous, serein, perspective, theme_focus)
+            focus_theme: Slug du thème pour le mode theme_focus
+
         Returns:
             Liste de DigestItem ordonnée par rank (1 à limit)
-            
+
         Raises:
             Aucune exception - retourne une liste vide en cas d'erreur
         """
         start_time = time.time()
-        
+
         try:
-            logger.info("digest_selection_started", user_id=str(user_id), limit=limit)
-            
+            logger.info("digest_selection_started", user_id=str(user_id), limit=limit, mode=mode, focus_theme=focus_theme)
+
             # 1. Construire le contexte utilisateur
             step_start = time.time()
-            context = await self._build_digest_context(user_id)
+            context = await self._build_digest_context(user_id, mode=mode)
             context_time = time.time() - step_start
             
             if not context.user_profile:
@@ -145,7 +156,9 @@ class DigestSelector:
                 user_id=user_id,
                 context=context,
                 hours_lookback=hours_lookback,
-                min_pool_size=limit
+                min_pool_size=limit,
+                mode=mode,
+                focus_theme=focus_theme,
             )
             candidates_time = time.time() - step_start
             
@@ -157,7 +170,7 @@ class DigestSelector:
             
             # 3. Scorer les candidats
             step_start = time.time()
-            scored_candidates_with_breakdown = await self._score_candidates(candidates, context)
+            scored_candidates_with_breakdown = await self._score_candidates(candidates, context, mode=mode)
             scoring_time = time.time() - step_start
             
             # DEBUG: Compter les scores nuls vs non-nuls
@@ -178,7 +191,8 @@ class DigestSelector:
             step_start = time.time()
             selected = self._select_with_diversity(
                 scored_candidates=scored_candidates_with_breakdown,
-                target_count=limit
+                target_count=limit,
+                mode=mode,
             )
             diversity_time = time.time() - step_start
             
@@ -241,10 +255,11 @@ class DigestSelector:
             logger.error("digest_selection_error", user_id=str(user_id), error=str(e), total_ms=round(total_time * 1000, 2), exc_info=True)
             return []
     
-    async def _build_digest_context(self, user_id: UUID) -> DigestContext:
+    async def _build_digest_context(self, user_id: UUID, mode: str = "pour_vous") -> DigestContext:
         """Construit le contexte utilisateur pour la sélection.
-        
+
         Récupère les données utilisateur nécessaires depuis la base de données.
+        Si mode=perspective, calcule le biais utilisateur pour le scoring.
         """
         # Récupérer le profil avec intérêts et préférences
         profile_stmt = (
@@ -306,6 +321,11 @@ class DigestSelector:
             if personalization.muted_topics:
                 muted_topics = set(t.lower() for t in personalization.muted_topics if t)
         
+        # Calculer le biais utilisateur si mode perspective
+        user_bias_stance = None
+        if mode == DigestMode.PERSPECTIVE:
+            user_bias_stance = await calculate_user_bias(self.session, user_id)
+
         return DigestContext(
             user_id=user_id,
             user_profile=user_profile,
@@ -317,7 +337,8 @@ class DigestSelector:
             user_subtopics=user_subtopics,
             muted_sources=muted_sources,
             muted_themes=muted_themes,
-            muted_topics=muted_topics
+            muted_topics=muted_topics,
+            user_bias_stance=user_bias_stance,
         )
     
     async def _get_candidates(
@@ -325,14 +346,17 @@ class DigestSelector:
         user_id: UUID,
         context: DigestContext,
         hours_lookback: int,
-        min_pool_size: int
+        min_pool_size: int,
+        mode: str = "pour_vous",
+        focus_theme: Optional[str] = None,
     ) -> List[Content]:
         """Récupère les candidats pour le digest.
-        
+
         Strategy:
         1. D'abord, récupérer les articles des sources suivies par l'utilisateur
         2. Si pool insuffisant (< min_pool_size), compléter avec sources curatées
         3. Exclure les articles déjà vus, sauvegardés, ou masqués
+        4. Appliquer les filtres de mode (serein, theme_focus)
         """
         since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_lookback)
         
@@ -378,7 +402,13 @@ class DigestSelector:
                         ~Content.topics.overlap(list(context.muted_topics))
                     )
                 )
-            
+
+            # Appliquer les filtres de mode sur les sources utilisateur
+            if mode == DigestMode.SEREIN:
+                user_sources_query = apply_serein_filter(user_sources_query)
+            elif mode == DigestMode.THEME_FOCUS and focus_theme:
+                user_sources_query = apply_theme_focus_filter(user_sources_query, focus_theme)
+
             result = await self.session.execute(user_sources_query)
             user_candidates = list(result.scalars().all())
             candidates.extend(user_candidates)
@@ -451,7 +481,13 @@ class DigestSelector:
                             ~Content.topics.overlap(list(context.muted_topics))
                         )
                     )
-                
+
+                # Appliquer les filtres de mode sur le fallback aussi
+                if mode == DigestMode.SEREIN:
+                    fallback_query = apply_serein_filter(fallback_query)
+                elif mode == DigestMode.THEME_FOCUS and focus_theme:
+                    fallback_query = apply_theme_focus_filter(fallback_query, focus_theme)
+
                 # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
                 if context.user_interests and current_lookback == hours_lookback:
                     fallback_query = fallback_query.where(
@@ -511,14 +547,17 @@ class DigestSelector:
     async def _score_candidates(
         self,
         candidates: List[Content],
-        context: DigestContext
+        context: DigestContext,
+        mode: str = "pour_vous",
     ) -> List[Tuple[Content, float, List[DigestScoreBreakdown]]]:
         """Score les candidats en utilisant le ScoringEngine existant avec bonus de fraîcheur.
-        
+
         Cette méthode utilise le ScoringEngine configuré dans RecommendationService
         et ajoute un bonus de fraîcheur hiérarchisé pour favoriser les articles
         des sources suivies même s'ils sont plus anciens.
-        
+
+        En mode PERSPECTIVE, ajoute un boost de +80 pts aux articles de biais opposé.
+
         Retourne les candidats avec leur score et un breakdown détaillé des contributions
         pour la transparence algorithmique.
         """
@@ -603,8 +642,20 @@ class DigestSelector:
                 else:
                     recency_bonus = 0.0
                 
-                final_score = base_score + recency_bonus
-                
+                # Mode PERSPECTIVE : boost articles de biais opposé
+                perspective_bonus = 0.0
+                if mode == DigestMode.PERSPECTIVE and context.user_bias_stance:
+                    opposing = get_opposing_biases(context.user_bias_stance)
+                    if content.source and content.source.bias_stance in opposing:
+                        perspective_bonus = 80.0
+                        breakdown.append(DigestScoreBreakdown(
+                            label="Perspective opposée",
+                            points=perspective_bonus,
+                            is_positive=True
+                        ))
+
+                final_score = base_score + recency_bonus + perspective_bonus
+
                 # Capture CoreLayer contributions
                 # Theme match
                 if content.source and content.source.theme in context.user_interests:
@@ -710,13 +761,14 @@ class DigestSelector:
     def _select_with_diversity(
         self,
         scored_candidates: List[Tuple[Content, float, List[DigestScoreBreakdown]]],
-        target_count: int
+        target_count: int,
+        mode: str = "pour_vous",
     ) -> List[Tuple[Content, float, str, List[DigestScoreBreakdown]]]:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
         - Maximum 1 article par source (fallback à 2 si < 5 sources distinctes)
-        - Maximum 2 articles par thème
+        - Maximum 2 articles par thème (relaxé à 7 en mode THEME_FOCUS)
         - Minimum 3 sources différentes
         - Diversité revue de presse: score ÷ 2 dès le 2ème article d'une même source
 
@@ -743,6 +795,11 @@ class DigestSelector:
         """
         DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
         MIN_SOURCES = 3
+
+        # Relax max_per_theme in THEME_FOCUS mode (all articles are same theme)
+        effective_max_per_theme = self.constraints.MAX_PER_THEME
+        if mode == DigestMode.THEME_FOCUS:
+            effective_max_per_theme = target_count  # No theme limit
 
         # Count distinct sources in candidate pool for fallback decision
         distinct_sources = set(c.source_id for c, _, _ in scored_candidates)
@@ -772,7 +829,7 @@ class DigestSelector:
             if source_counts[source_id] >= effective_max_per_source:
                 continue
 
-            if theme and theme_counts[theme] >= self.constraints.MAX_PER_THEME:
+            if theme and theme_counts[theme] >= effective_max_per_theme:
                 continue
 
             # Appliquer la pénalité diversité si source déjà présente

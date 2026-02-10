@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,6 +52,9 @@ class DailyDigest(Base):
     )
     items: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
+    )
+    mode: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True, default="pour_vous"
     )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

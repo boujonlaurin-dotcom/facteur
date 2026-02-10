@@ -89,6 +89,7 @@ class DigestResponse(BaseModel):
     user_id: UUID
     target_date: date
     generated_at: datetime
+    mode: str = Field(default="pour_vous", description="Digest mode (pour_vous, serein, perspective, theme_focus)")
     items: list[DigestItem] = Field(..., description="Array of 7 digest items")
     completion_threshold: int = Field(
         default=5,

@@ -72,7 +72,9 @@ class DigestService:
         user_id: UUID,
         target_date: Optional[date] = None,
         hours_lookback: int = 168,
-        force_regenerate: bool = False
+        force_regenerate: bool = False,
+        mode: Optional[str] = None,
+        focus_theme: Optional[str] = None,
     ) -> Optional[DigestResponse]:
         """Retrieves or generates today's digest for a user.
 
@@ -126,12 +128,23 @@ class DigestService:
                 return await self._build_digest_response(existing_digest, user_id)
         logger.info("digest_no_existing", user_id=str(user_id), duration_ms=round(existing_time * 1000, 2))
         
-        # 2. Generate new digest using DigestSelector
+        # 2. Determine effective mode (param > user pref > default)
+        effective_mode = mode
+        if not effective_mode:
+            effective_mode = await self._get_user_digest_mode(user_id)
+        effective_focus_theme = focus_theme
+        if not effective_focus_theme and effective_mode == "theme_focus":
+            effective_focus_theme = await self._get_user_focus_theme(user_id)
+
+        # 3. Generate new digest using DigestSelector
         step_start = time.time()
-        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback)
+        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme)
         from app.services.digest_selector import DiversityConstraints
         target_size = DiversityConstraints.TARGET_DIGEST_SIZE
-        digest_items = await self.selector.select_for_user(user_id, limit=target_size, hours_lookback=hours_lookback)
+        digest_items = await self.selector.select_for_user(
+            user_id, limit=target_size, hours_lookback=hours_lookback,
+            mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
+        )
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
@@ -149,9 +162,9 @@ class DigestService:
             logger.error("digest_generation_failed_total", user_id=str(user_id))
             return None
         
-        # 3. Store in database
+        # 4. Store in database
         step_start = time.time()
-        digest = await self._create_digest_record(user_id, target_date, digest_items)
+        digest = await self._create_digest_record(user_id, target_date, digest_items, mode=effective_mode)
         store_time = time.time() - step_start
         
         total_time = time.time() - start_time
@@ -469,7 +482,8 @@ class DigestService:
         self,
         user_id: UUID,
         target_date: date,
-        digest_items: List[Any]  # List[DigestItem]
+        digest_items: List[Any],  # List[DigestItem]
+        mode: Optional[str] = None,
     ) -> DailyDigest:
         """Create a new DailyDigest database record."""
         # Build items JSON array
@@ -518,6 +532,7 @@ class DigestService:
             user_id=user_id,
             target_date=target_date,
             items=items_json,
+            mode=mode or "pour_vous",
             generated_at=datetime.utcnow()
         )
         
@@ -679,6 +694,7 @@ class DigestService:
             user_id=digest.user_id,
             target_date=digest.target_date,
             generated_at=digest.generated_at,
+            mode=digest.mode or "pour_vous",
             items=items,
             completion_threshold=DiversityConstraints.COMPLETION_THRESHOLD,
             is_completed=completion is not None,
@@ -900,3 +916,31 @@ class DigestService:
             "longest": streak.longest_closure_streak,
             "message": message
         }
+
+    async def _get_user_digest_mode(self, user_id: UUID) -> Optional[str]:
+        """Lit la préférence digest_mode depuis user_preferences."""
+        from app.models.user import UserPreference, UserProfile
+        result = await self.session.execute(
+            select(UserPreference.preference_value)
+            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
+            .where(
+                UserProfile.user_id == user_id,
+                UserPreference.preference_key == "digest_mode",
+            )
+        )
+        value = result.scalar_one_or_none()
+        return value if value else None
+
+    async def _get_user_focus_theme(self, user_id: UUID) -> Optional[str]:
+        """Lit la préférence digest_focus_theme depuis user_preferences."""
+        from app.models.user import UserPreference, UserProfile
+        result = await self.session.execute(
+            select(UserPreference.preference_value)
+            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
+            .where(
+                UserProfile.user_id == user_id,
+                UserPreference.preference_key == "digest_focus_theme",
+            )
+        )
+        value = result.scalar_one_or_none()
+        return value if value else None

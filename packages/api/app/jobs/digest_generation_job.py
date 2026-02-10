@@ -201,12 +201,34 @@ class DigestGenerationJob:
                 self.stats["skipped"] += 1
                 return
             
+            # Lire les préférences de mode digest de l'utilisateur
+            from app.models.user import UserPreference
+            mode_result = await session.execute(
+                select(UserPreference.preference_value).where(
+                    UserPreference.user_id == user_id,
+                    UserPreference.preference_key == "digest_mode",
+                )
+            )
+            digest_mode = mode_result.scalar_one_or_none() or "pour_vous"
+
+            focus_theme = None
+            if digest_mode == "theme_focus":
+                theme_result = await session.execute(
+                    select(UserPreference.preference_value).where(
+                        UserPreference.user_id == user_id,
+                        UserPreference.preference_key == "digest_focus_theme",
+                    )
+                )
+                focus_theme = theme_result.scalar_one_or_none()
+
             # Sélectionner les articles via DigestSelector
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,
-                hours_lookback=self.hours_lookback
+                hours_lookback=self.hours_lookback,
+                mode=digest_mode,
+                focus_theme=focus_theme,
             )
             
             if not digest_items:
@@ -236,6 +258,7 @@ class DigestGenerationJob:
                 user_id=user_id,
                 target_date=target_date,
                 items=items,
+                mode=digest_mode,
                 generated_at=datetime.datetime.utcnow()
             )
             
