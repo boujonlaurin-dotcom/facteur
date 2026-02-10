@@ -13,6 +13,7 @@ class FeedRepository {
     String? contentType,
     bool savedOnly = false,
     String? mode,
+    String? theme,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -34,6 +35,10 @@ class FeedRepository {
 
       if (mode != null) {
         queryParams['mode'] = mode;
+      }
+
+      if (theme != null) {
+        queryParams['theme'] = theme;
       }
 
       final response = await _apiClient.dio.get<dynamic>(
