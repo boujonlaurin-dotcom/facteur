@@ -199,13 +199,17 @@ class BriefingSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                (item.reason.contains(':') ? item.reason.split(':').first.trim() : item.reason).toUpperCase(),
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                  letterSpacing: 0.5,
+              Flexible(
+                child: Text(
+                  _simplifyReason(item.reason),
+                  style: TextStyle(
+                    color: labelColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
@@ -230,6 +234,16 @@ class BriefingSection extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  static String _simplifyReason(String reason) {
+    var r = reason;
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
+    if (r.contains(':') && !r.startsWith('Thème')) {
+      r = r.split(':').first.trim();
+    }
+    r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
+    return r.trim().toUpperCase();
   }
 
   Widget _buildCollapsedSection(BuildContext context, FacteurColors colors) {

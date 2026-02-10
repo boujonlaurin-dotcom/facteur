@@ -93,7 +93,7 @@ class DigestCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          item.reason,
+                          _simplifyReason(item.reason),
                           style: TextStyle(
                             color: colors.primary,
                             fontSize: 12,
@@ -349,6 +349,16 @@ class DigestCard extends StatelessWidget {
     }
 
     return Icon(icon, size: 14, color: colors.textSecondary);
+  }
+
+  static String _simplifyReason(String reason) {
+    var r = reason;
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
+    if (r.contains(':') && !r.startsWith('Thème')) {
+      r = r.split(':').first.trim();
+    }
+    r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
+    return r.trim();
   }
 
   String _formatDuration(int seconds) {

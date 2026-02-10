@@ -818,6 +818,20 @@ class DigestSelector:
 
         return selected
     
+    _THEME_LABELS: Dict[str, str] = {
+        'tech': 'Tech & Innovation',
+        'society': 'Société',
+        'environment': 'Environnement',
+        'economy': 'Économie',
+        'politics': 'Politique',
+        'culture': 'Culture & Idées',
+        'science': 'Sciences',
+        'international': 'Géopolitique',
+        'geopolitics': 'Géopolitique',
+        'society_climate': 'Société',
+        'culture_ideas': 'Culture & Idées',
+    }
+
     def _generate_reason(
         self,
         content: Content,
@@ -827,46 +841,27 @@ class DigestSelector:
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
 
-        Les raisons sont en français pour l'interface utilisateur.
+        Priorité : sous-thème > thème > source suivie > fallback.
+        Le détail des scores reste dans le breakdown (personalization sheet).
         """
-        source_id = content.source_id
-        theme = content.source.theme if content.source else None
-
-        # Extract recency bonus from breakdown for backward compatibility
-        recency_bonus = 0.0
+        # 1. Sous-thème matché (le plus précis) — ex: "Thème : AI"
         if breakdown:
             for b in breakdown:
-                if b.label.startswith(("Article très récent", "Article récent", "Publié")):
-                    recency_bonus = b.points
-                    break
-        
-        # Build bonus suffix if applicable
-        bonus_suffix = f" (+{int(recency_bonus)} pts)" if recency_bonus > 0 else ""
+                if b.label.startswith("Sous-thème : "):
+                    topic = b.label.removeprefix("Sous-thème : ")
+                    return f"Thème : {topic}"
 
-        # Première occurrence d'une source suivie
-        if source_counts.get(source_id, 0) == 0 and content.source:
-            return f"Source suivie : {content.source.name}{bonus_suffix}"
+        # 2. Thème de la source — ex: "Thème : Environnement"
+        theme = content.source.theme if content.source else None
+        if theme:
+            label = self._THEME_LABELS.get(theme.lower(), theme.capitalize())
+            return f"Thème : {label}"
 
-        # Premier article d'un thème d'intérêt
-        if theme and theme_counts.get(theme, 0) == 0:
-            theme_labels = {
-                'tech': 'Tech & Innovation',
-                'society': 'Société',
-                'environment': 'Environnement',
-                'economy': 'Économie',
-                'politics': 'Politique',
-                'culture': 'Culture & Idées',
-                'science': 'Sciences',
-                'international': 'Géopolitique',
-                'geopolitics': 'Géopolitique',
-                'society_climate': 'Société',
-                'culture_ideas': 'Culture & Idées',
-            }
-            theme_label = theme_labels.get(theme.lower(), theme.capitalize())
-            return f"Vos intérêts : {theme_label}{bonus_suffix}"
+        # 3. Source suivie (aucun thème disponible)
+        if breakdown:
+            for b in breakdown:
+                if b.label == "Source de confiance":
+                    return "Source suivie"
 
-        # Fallback générique
-        if content.source:
-            return f"Sélectionné pour vous depuis {content.source.name}{bonus_suffix}"
-
-        return f"Sélectionné pour vous{bonus_suffix}"
+        # 4. Fallback
+        return "Sélectionné pour vous"

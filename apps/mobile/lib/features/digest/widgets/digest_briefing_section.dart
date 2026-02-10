@@ -216,13 +216,17 @@ class DigestBriefingSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                (item.reason.contains(':') ? item.reason.split(':').first.trim() : item.reason).toUpperCase(),
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                  letterSpacing: 0.5,
+              Flexible(
+                child: Text(
+                  _simplifyReason(item.reason),
+                  style: TextStyle(
+                    color: labelColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const Spacer(),
@@ -306,6 +310,21 @@ class DigestBriefingSection extends StatelessWidget {
       default:
         return SourceType.article;
     }
+  }
+
+  /// Clean up reason strings for display.
+  /// New format "Thème : X" is kept. Legacy formats are simplified.
+  static String _simplifyReason(String reason) {
+    var r = reason;
+    // Strip " (+N pts)" suffix from legacy data
+    r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
+    // Keep "Thème : X" as-is, strip detail after ":" for other patterns
+    if (r.contains(':') && !r.startsWith('Thème')) {
+      r = r.split(':').first.trim();
+    }
+    // Strip " depuis ..." from legacy "Sélectionné pour vous depuis X"
+    r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
+    return r.trim().toUpperCase();
   }
 
   /// Show the personalization sheet with scoring breakdown

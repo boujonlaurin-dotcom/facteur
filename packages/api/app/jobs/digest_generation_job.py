@@ -27,7 +27,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.database import async_session_maker
 from app.models.user import UserProfile
 from app.models.daily_digest import DailyDigest
-from app.services.digest_selector import DigestSelector, DigestItem
+from app.services.digest_selector import DigestSelector, DigestItem, DiversityConstraints
 
 logger = structlog.get_logger()
 
@@ -205,7 +205,7 @@ class DigestGenerationJob:
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
-                limit=5,
+                limit=DiversityConstraints.TARGET_DIGEST_SIZE,
                 hours_lookback=self.hours_lookback
             )
             
@@ -359,7 +359,7 @@ async def generate_digest_for_user(
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
-                limit=5,
+                limit=DiversityConstraints.TARGET_DIGEST_SIZE,
                 hours_lookback=48
             )
             
