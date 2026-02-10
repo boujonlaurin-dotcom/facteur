@@ -7,7 +7,7 @@ DigestSelector (digest).
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
@@ -37,8 +37,14 @@ def apply_serein_filter(query):
     """
     query = query.where(Source.theme.notin_(SEREIN_EXCLUDED_THEMES))
     keywords_pattern = "|".join(SEREIN_KEYWORDS)
-    query = query.where(~Content.title.op("~*")(keywords_pattern))
-    query = query.where(~Content.description.op("~*")(keywords_pattern))
+    # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
+    # which silently excludes rows. Use OR IS NULL to keep them.
+    query = query.where(
+        or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
+    )
+    query = query.where(
+        or_(Content.description.is_(None), ~Content.description.op("~*")(keywords_pattern))
+    )
     return query
 
 
