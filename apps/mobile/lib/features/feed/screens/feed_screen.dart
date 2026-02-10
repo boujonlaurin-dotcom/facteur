@@ -291,30 +291,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           final themeFilters =
                               themeFiltersAsync.valueOrNull ?? [];
 
-                          // Combine: theme filters first, then legacy mode filters
-                          final allFilters = [
-                            ...themeFilters,
-                            ...ref.watch(personalizedFiltersProvider),
-                          ];
-
-                          // Determine which filter is currently active
                           final notifier = ref.read(feedProvider.notifier);
-                          final activeFilter =
-                              notifier.selectedTheme ?? notifier.selectedFilter;
 
                           return FilterBar(
-                            selectedFilter: activeFilter,
+                            selectedFilter: notifier.selectedTheme,
                             userBias: ref.watch(userBiasProvider).valueOrNull,
-                            availableFilters: allFilters,
+                            availableFilters: themeFilters,
                             onFilterChanged: (String? filter) {
-                              // Check if the filter is a theme slug or a mode
-                              final isTheme =
-                                  themeFilters.any((f) => f.key == filter);
-                              if (isTheme) {
-                                notifier.setTheme(filter);
-                              } else {
-                                notifier.setFilter(filter);
-                              }
+                              notifier.setTheme(filter);
                             },
                           );
                         }),
