@@ -17,15 +17,13 @@ logger = structlog.get_logger()
 
 from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
 from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer, PersonalizationLayer
+from app.services.recommendation.filter_presets import (
+    apply_serein_filter,
+    apply_theme_focus_filter,
+    get_opposing_biases,
+    calculate_user_bias,
+)
 from app.schemas.content import RecommendationReason, ScoreContribution
-
-# Mots-clés filtrés par défaut pour le mode "Rester serein"
-SERENE_FILTER_KEYWORDS = [
-    'politique', 'guerre', 'conflit', 'élections', 'inflation', 'grève', 'drame',
-    'fait divers', 'faits divers', 'crise', 'scandale', 'terrorisme', 'corruption',
-    'procès', 'violence', 'catastrophe', 'manifestation', 'géopolitique',
-    'trump', 'musk', 'poutine', 'macron', 'netanyahou', 'zelensky', 'ukraine', 'gaza'
-]
 
 class RecommendationService:
     def __init__(self, session: AsyncSession):
@@ -42,7 +40,7 @@ class RecommendationService:
             PersonalizationLayer()  # Story 4.7
         ])
 
-    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False) -> List[Content]:
+    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None) -> List[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
         
@@ -160,6 +158,8 @@ class RecommendationService:
             muted_topics=muted_topics,
             # Story 10.20 : Exclude today's digest articles from feed
             digest_content_ids=digest_content_ids,
+            # Story 11 : Feed par thème
+            theme=theme,
         )
         
         # 3. Score Candidates using ScoringEngine
@@ -444,7 +444,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, digest_content_ids: list[UUID] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -537,16 +537,9 @@ class RecommendationService:
         # Apply Mode Logic
         if mode:
             if mode == FeedFilterMode.INSPIRATION:
-                # Mode "Sérénité" : Positive/Zen. Exclude Hard News themes.
-                # Hard News = society_climate, geopolitics, economy (themes en DB via THEME_MAPPING)
-                query = query.where(Source.theme.notin_(['society_climate', 'geopolitics', 'economy']))
-                
-                # Exclude content containing stressful keywords in title or description
-                # (Case-insensitive regex match in Postgres)
-                keywords_pattern = '|'.join(SERENE_FILTER_KEYWORDS)
-                query = query.where(~Content.title.op('~*')(keywords_pattern))
-                query = query.where(~Content.description.op('~*')(keywords_pattern))
-            
+                # Mode "Sérénité" : Positive/Zen — via filter_presets partagés
+                query = apply_serein_filter(query)
+
             elif mode == FeedFilterMode.DEEP_DIVE:
                 # Mode "Grand Format" : Contenus > 10min (videos, podcasts, OU articles longs)
                 # Note: 45 videos ont duration_seconds=NULL en base. On les inclut par défaut.
@@ -569,11 +562,15 @@ class RecommendationService:
 
 
             elif mode == FeedFilterMode.PERSPECTIVES:
-                # Mode "Angle Mort" : Perspective swap
-                user_bias_stance = await self._calculate_user_bias(user_id)
-                target_bias = self._get_opposing_biases(user_bias_stance)
-                
+                # Mode "Angle Mort" : Perspective swap — via filter_presets partagés
+                user_bias_stance = await calculate_user_bias(self.session, user_id)
+                target_bias = get_opposing_biases(user_bias_stance)
+
                 query = query.where(Source.bias_stance.in_(target_bias))
+
+        # Apply theme filter (Story 2 - Feed par thème)
+        if theme:
+            query = apply_theme_focus_filter(query, theme)
 
         query = (
             query
@@ -593,39 +590,6 @@ class RecommendationService:
 
         return candidates_list
 
-    async def _calculate_user_bias(self, user_id: UUID) -> BiasStance:
-        """Heuristic: Determine user's dominant bias based on followed sources."""
-        # TODO: Refine with actual consumption history. For now, followed sources.
-        result = await self.session.execute(
-            select(Source.bias_stance)
-            .join(UserSource)
-            .where(UserSource.user_id == user_id)
-        )
-        biases = result.scalars().all()
-        
-        score = 0
-        for b in biases:
-            if b in [BiasStance.LEFT, BiasStance.CENTER_LEFT]:
-                score -= 1
-            elif b in [BiasStance.RIGHT, BiasStance.CENTER_RIGHT]:
-                score += 1
-        
-        if score < 0:
-            return BiasStance.LEFT # Represents "Left Leaning"
-        elif score > 0:
-            return BiasStance.RIGHT # Represents "Right Leaning"
-        else:
-            return BiasStance.CENTER # Balanced or None
-            
-    def _get_opposing_biases(self, user_stance: BiasStance) -> List[BiasStance]:
-        """Return list of biases to show for perspective swap."""
-        if user_stance == BiasStance.LEFT:
-             # User is Left -> Show Right
-             return [BiasStance.RIGHT, BiasStance.CENTER_RIGHT]
-        elif user_stance == BiasStance.RIGHT:
-             # User is Right -> Show Left
-             return [BiasStance.LEFT, BiasStance.CENTER_LEFT]
-        else:
-             # User is Center/Neutral -> Show Extremes or Alternative
-             return [BiasStance.ALTERNATIVE, BiasStance.SPECIALIZED, BiasStance.LEFT, BiasStance.RIGHT]
+    # _calculate_user_bias and _get_opposing_biases moved to
+    # app.services.recommendation.filter_presets (shared with DigestSelector)
 

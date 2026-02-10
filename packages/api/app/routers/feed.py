@@ -25,6 +25,7 @@ async def get_personalized_feed(
     offset: int = Query(0, ge=0),
     content_type: Optional[ContentType] = Query(None, alias="type"),
     mode: Optional[FeedFilterMode] = Query(None),
+    theme: Optional[str] = Query(None, description="Theme slug to filter by (e.g. 'tech', 'science')"),
     saved_only: bool = Query(False, alias="saved"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
@@ -40,12 +41,13 @@ async def get_personalized_feed(
     
     # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(
-        user_id=user_uuid, 
-        limit=limit, 
+        user_id=user_uuid,
+        limit=limit,
         offset=offset,
         content_type=content_type,
         mode=mode,
-        saved_only=saved_only
+        saved_only=saved_only,
+        theme=theme,
     )
 
     # Calculate pagination metadata
