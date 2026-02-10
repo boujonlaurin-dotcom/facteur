@@ -1187,6 +1187,7 @@ mixin _$DigestResponse {
   DateTime get targetDate => throw _privateConstructorUsedError;
   @JsonKey(name: 'generated_at')
   DateTime get generatedAt => throw _privateConstructorUsedError;
+  String get mode => throw _privateConstructorUsedError;
   List<DigestItem> get items => throw _privateConstructorUsedError;
   @JsonKey(name: 'completion_threshold')
   int get completionThreshold => throw _privateConstructorUsedError;
@@ -1212,6 +1213,7 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'user_id') String userId,
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
+      String mode,
       List<DigestItem> items,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
@@ -1235,6 +1237,7 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
     Object? userId = null,
     Object? targetDate = null,
     Object? generatedAt = null,
+    Object? mode = null,
     Object? items = null,
     Object? completionThreshold = null,
     Object? isCompleted = null,
@@ -1257,6 +1260,10 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
           ? _value.generatedAt
           : generatedAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
+      mode: null == mode
+          ? _value.mode
+          : mode // ignore: cast_nullable_to_non_nullable
+              as String,
       items: null == items
           ? _value.items
           : items // ignore: cast_nullable_to_non_nullable
@@ -1290,6 +1297,7 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'user_id') String userId,
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
+      String mode,
       List<DigestItem> items,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
@@ -1311,6 +1319,7 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
     Object? userId = null,
     Object? targetDate = null,
     Object? generatedAt = null,
+    Object? mode = null,
     Object? items = null,
     Object? completionThreshold = null,
     Object? isCompleted = null,
@@ -1333,6 +1342,10 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
           ? _value.generatedAt
           : generatedAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
+      mode: null == mode
+          ? _value.mode
+          : mode // ignore: cast_nullable_to_non_nullable
+              as String,
       items: null == items
           ? _value._items
           : items // ignore: cast_nullable_to_non_nullable
@@ -1361,6 +1374,7 @@ class _$DigestResponseImpl implements _DigestResponse {
       @JsonKey(name: 'user_id') required this.userId,
       @JsonKey(name: 'target_date') required this.targetDate,
       @JsonKey(name: 'generated_at') required this.generatedAt,
+      this.mode = 'pour_vous',
       final List<DigestItem> items = const [],
       @JsonKey(name: 'completion_threshold') this.completionThreshold = 5,
       @JsonKey(name: 'is_completed') this.isCompleted = false,
@@ -1382,6 +1396,9 @@ class _$DigestResponseImpl implements _DigestResponse {
   @override
   @JsonKey(name: 'generated_at')
   final DateTime generatedAt;
+  @override
+  @JsonKey()
+  final String mode;
   final List<DigestItem> _items;
   @override
   @JsonKey()
@@ -1403,7 +1420,7 @@ class _$DigestResponseImpl implements _DigestResponse {
 
   @override
   String toString() {
-    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, items: $items, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt)';
+    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, items: $items, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt)';
   }
 
   @override
@@ -1418,6 +1435,7 @@ class _$DigestResponseImpl implements _DigestResponse {
                 other.targetDate == targetDate) &&
             (identical(other.generatedAt, generatedAt) ||
                 other.generatedAt == generatedAt) &&
+            (identical(other.mode, mode) || other.mode == mode) &&
             const DeepCollectionEquality().equals(other._items, _items) &&
             (identical(other.completionThreshold, completionThreshold) ||
                 other.completionThreshold == completionThreshold) &&
@@ -1435,6 +1453,7 @@ class _$DigestResponseImpl implements _DigestResponse {
       userId,
       targetDate,
       generatedAt,
+      mode,
       const DeepCollectionEquality().hash(_items),
       completionThreshold,
       isCompleted,
@@ -1461,6 +1480,7 @@ abstract class _DigestResponse implements DigestResponse {
           @JsonKey(name: 'user_id') required final String userId,
           @JsonKey(name: 'target_date') required final DateTime targetDate,
           @JsonKey(name: 'generated_at') required final DateTime generatedAt,
+          final String mode,
           final List<DigestItem> items,
           @JsonKey(name: 'completion_threshold') final int completionThreshold,
           @JsonKey(name: 'is_completed') final bool isCompleted,
@@ -1482,6 +1502,8 @@ abstract class _DigestResponse implements DigestResponse {
   @override
   @JsonKey(name: 'generated_at')
   DateTime get generatedAt;
+  @override
+  String get mode;
   @override
   List<DigestItem> get items;
   @override

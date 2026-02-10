@@ -111,6 +111,7 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
       userId: json['user_id'] as String,
       targetDate: DateTime.parse(json['target_date'] as String),
       generatedAt: DateTime.parse(json['generated_at'] as String),
+      mode: json['mode'] as String? ?? 'pour_vous',
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -130,6 +131,7 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'user_id': instance.userId,
       'target_date': instance.targetDate.toIso8601String(),
       'generated_at': instance.generatedAt.toIso8601String(),
+      'mode': instance.mode,
       'items': instance.items,
       'completion_threshold': instance.completionThreshold,
       'is_completed': instance.isCompleted,

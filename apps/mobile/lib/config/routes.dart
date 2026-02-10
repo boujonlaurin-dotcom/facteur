@@ -17,6 +17,7 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
+import '../features/settings/screens/digest_settings_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
@@ -50,6 +51,7 @@ class RouteNames {
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
+  static const String digestSettings = 'digest-settings';
 }
 
 /// Chemins des routes
@@ -71,6 +73,7 @@ class RoutePaths {
   static const String account = '/settings/account';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
+  static const String digestSettings = '/settings/digest';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
@@ -295,6 +298,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'about', // /settings/about
                 name: RouteNames.about,
                 builder: (context, state) => const AboutScreen(),
+              ),
+              GoRoute(
+                path: 'digest', // /settings/digest
+                name: RouteNames.digestSettings,
+                builder: (context, state) => const DigestSettingsScreen(),
               ),
             ],
           ),

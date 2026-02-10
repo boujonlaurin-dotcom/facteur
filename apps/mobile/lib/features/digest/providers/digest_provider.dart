@@ -150,6 +150,13 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     _cachedDate = null;
   }
 
+  /// Met à jour l'état avec une nouvelle réponse (utilisé par DigestModeNotifier
+  /// après régénération avec un nouveau mode).
+  void updateFromResponse(DigestResponse digest) {
+    _updateCache(digest);
+    state = AsyncData(digest);
+  }
+
   /// Apply an action to a digest item (read, save, not_interested, undo)
   Future<void> applyAction(String contentId, String action) async {
     final currentDigest = state.value;

@@ -6,16 +6,21 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import '../models/digest_mode.dart';
 import 'digest_personalization_sheet.dart';
 
 /// Digest Briefing Section with premium design for 7 articles.
-/// Based on BriefingSection from Feed but adapted for digest-specific features.
+/// Container adapts its gradient, border color, emoji, and subtitle
+/// based on the active DigestMode.
 class DigestBriefingSection extends StatelessWidget {
   final List<DigestItem> items;
   final int completionThreshold;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
+  final DigestMode mode;
+  final String? focusTheme;
+  final bool isRegenerating;
 
   const DigestBriefingSection({
     super.key,
@@ -24,6 +29,9 @@ class DigestBriefingSection extends StatelessWidget {
     required this.onItemTap,
     this.onSave,
     this.onNotInterested,
+    this.mode = DigestMode.pourVous,
+    this.focusTheme,
+    this.isRegenerating = false,
   });
 
   @override
@@ -40,16 +48,19 @@ class DigestBriefingSection extends StatelessWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Adaptive colors for container
+    // Mode-adaptive colors for container
+    final modeColor = mode.effectiveColor(colors.primary);
     final containerBgColors = isDark
-        ? [const Color(0xFF1A1918), const Color(0xFF2C2A29)] // Obsidian
+        ? [mode.gradientStart, mode.gradientEnd]
         : [colors.backgroundSecondary, colors.backgroundPrimary];
 
     final headerTextColor = isDark ? Colors.white : colors.textPrimary;
     final subheaderTextColor =
         isDark ? Colors.white.withValues(alpha: 0.6) : colors.textSecondary;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
       margin: const EdgeInsets.only(top: 16, bottom: 24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -60,8 +71,8 @@ class DigestBriefingSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDark
-              ? colors.primary.withValues(alpha: 0.3)
-              : colors.primary.withValues(alpha: 0.15),
+              ? modeColor.withValues(alpha: 0.3)
+              : modeColor.withValues(alpha: 0.15),
           width: 1,
         ),
         boxShadow: [
@@ -85,7 +96,7 @@ class DigestBriefingSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "L'Essentiel du Jour",
+                      "${mode.emoji} L'Essentiel du Jour",
                       style: Theme.of(context).textTheme.displaySmall?.copyWith(
                             fontSize: 24,
                             fontWeight: FontWeight.w800,
@@ -93,6 +104,19 @@ class DigestBriefingSection extends StatelessWidget {
                             color: headerTextColor,
                           ),
                     ),
+                    if (mode != DigestMode.pourVous) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        mode.getSubtitle(focusTheme: focusTheme),
+                        style: TextStyle(
+                          color: modeColor.withValues(alpha: 0.8),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          fontStyle: FontStyle.italic,
+                          fontFamily: 'DM Sans',
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Row(
                       children: [

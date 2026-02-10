@@ -13,8 +13,11 @@ import '../../feed/models/content_model.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import '../models/digest_mode.dart';
+import '../providers/digest_mode_provider.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
+import '../widgets/digest_mode_tab_selector.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
 
@@ -159,6 +162,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     debugPrint('DigestScreen: build() called');
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
+    final modeState = ref.watch(digestModeProvider);
+
+    // Initialiser le mode depuis la réponse API
+    ref.listen(digestProvider, (previous, next) {
+      next.whenData((digest) {
+        if (digest != null && previous?.value?.mode != digest.mode) {
+          ref.read(digestModeProvider.notifier).initFromDigestResponse(digest.mode);
+        }
+      });
+    });
 
     // Listen to scroll to top trigger
     ref.listen(digestScrollTriggerProvider, (_, __) => _scrollToTop());
@@ -207,6 +220,42 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                   ),
                 ),
+
+                // Mode tab selector
+                SliverToBoxAdapter(
+                  child: DigestModeTabSelector(
+                    selectedMode: modeState.mode,
+                    isRegenerating: modeState.isRegenerating,
+                    onModeChanged: (mode) {
+                      ref.read(digestModeProvider.notifier).setMode(mode);
+                    },
+                  ),
+                ),
+
+                // Mode changed message
+                if (modeState.showModeChangedMessage)
+                  SliverToBoxAdapter(
+                    child: AnimatedOpacity(
+                      opacity: modeState.showModeChangedMessage ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 300),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space6,
+                          vertical: FacteurSpacing.space1,
+                        ),
+                        child: Text(
+                          'Votre essentiel de demain sera aussi en mode ${modeState.mode.label}',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            fontFamily: 'DM Sans',
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
 
                 // Success banner when digest is completed
                 SliverToBoxAdapter(
@@ -349,12 +398,19 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           return _buildEmptyState(colors);
                         }
 
-                        return DigestBriefingSection(
-                          items: digest.items,
-                          completionThreshold: digest.completionThreshold,
-                          onItemTap: _openArticle,
-                          onSave: _handleSave,
-                          onNotInterested: _handleNotInterested,
+                        return AnimatedOpacity(
+                          opacity: modeState.isRegenerating ? 0.5 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: DigestBriefingSection(
+                            items: digest.items,
+                            completionThreshold: digest.completionThreshold,
+                            onItemTap: _openArticle,
+                            onSave: _handleSave,
+                            onNotInterested: _handleNotInterested,
+                            mode: modeState.mode,
+                            focusTheme: modeState.focusTheme,
+                            isRegenerating: modeState.isRegenerating,
+                          ),
                         );
                       },
                       loading: () => _buildLoadingState(colors),
