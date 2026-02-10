@@ -818,6 +818,20 @@ class DigestSelector:
 
         return selected
     
+    _THEME_LABELS: Dict[str, str] = {
+        'tech': 'Tech & Innovation',
+        'society': 'Société',
+        'environment': 'Environnement',
+        'economy': 'Économie',
+        'politics': 'Politique',
+        'culture': 'Culture & Idées',
+        'science': 'Sciences',
+        'international': 'Géopolitique',
+        'geopolitics': 'Géopolitique',
+        'society_climate': 'Société',
+        'culture_ideas': 'Culture & Idées',
+    }
+
     def _generate_reason(
         self,
         content: Content,
@@ -827,18 +841,27 @@ class DigestSelector:
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
 
-        Les raisons sont en français pour l'interface utilisateur.
+        Priorité : sous-thème > thème > source suivie > fallback.
+        Le détail des scores reste dans le breakdown (personalization sheet).
         """
-        source_id = content.source_id
+        # 1. Sous-thème matché (le plus précis) — ex: "Thème : AI"
+        if breakdown:
+            for b in breakdown:
+                if b.label.startswith("Sous-thème : "):
+                    topic = b.label.removeprefix("Sous-thème : ")
+                    return f"Thème : {topic}"
+
+        # 2. Thème de la source — ex: "Thème : Environnement"
         theme = content.source.theme if content.source else None
+        if theme:
+            label = self._THEME_LABELS.get(theme.lower(), theme.capitalize())
+            return f"Thème : {label}"
 
-        # Première occurrence d'une source suivie
-        if source_counts.get(source_id, 0) == 0 and content.source:
-            return "Source suivie"
+        # 3. Source suivie (aucun thème disponible)
+        if breakdown:
+            for b in breakdown:
+                if b.label == "Source de confiance":
+                    return "Source suivie"
 
-        # Premier article d'un thème d'intérêt
-        if theme and theme_counts.get(theme, 0) == 0:
-            return "Thème d'intérêt"
-
-        # Fallback générique
+        # 4. Fallback
         return "Sélectionné pour vous"

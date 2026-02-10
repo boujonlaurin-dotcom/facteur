@@ -279,8 +279,16 @@ class DigestService:
                 theme_label = theme_labels.get(content.source.theme, content.source.theme.capitalize())
                 breakdown_items.append(DigestScoreBreakdown(label=f"Thème : {theme_label}", points=20.0, is_positive=True))
             
-            # Build reason (short label — details in breakdown)
-            if content.source_id in followed_source_ids:
+            # Build reason — prefer theme info over generic label
+            theme_labels = {
+                'tech': 'Tech & Innovation', 'society': 'Société', 'environment': 'Environnement',
+                'economy': 'Économie', 'politics': 'Politique', 'culture': 'Culture & Idées',
+                'science': 'Sciences', 'international': 'Géopolitique', 'geopolitics': 'Géopolitique',
+            }
+            if content.source and content.source.theme:
+                label = theme_labels.get(content.source.theme.lower(), content.source.theme.capitalize())
+                reason = f"Thème : {label}"
+            elif content.source_id in followed_source_ids:
                 reason = "Source suivie"
             else:
                 reason = "Sélection de la rédaction"
