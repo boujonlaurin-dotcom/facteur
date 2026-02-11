@@ -51,9 +51,13 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
       child: Column(
         children: [
           AppBar(
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: colors.textPrimary),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
             title: Text(
               'Mes sauvegardes',
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(context).textTheme.displaySmall,
             ),
             centerTitle: false,
             backgroundColor: colors.backgroundPrimary,
