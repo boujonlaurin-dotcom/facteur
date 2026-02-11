@@ -10,18 +10,33 @@ class DigestModeState {
   /// True pendant le changement de mode (régénération en cours)
   final bool isRegenerating;
 
+  /// Message d'erreur affiché quand la régénération échoue
+  final String? errorMessage;
+
   const DigestModeState({
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
+    this.errorMessage,
   });
 
   DigestModeState copyWith({
     DigestMode? mode,
     bool? isRegenerating,
+    String? errorMessage,
   }) {
     return DigestModeState(
       mode: mode ?? this.mode,
       isRegenerating: isRegenerating ?? this.isRegenerating,
+      errorMessage: errorMessage,
+    );
+  }
+
+  /// Copie sans erreur (pour effacer le message)
+  DigestModeState clearError() {
+    return DigestModeState(
+      mode: mode,
+      isRegenerating: isRegenerating,
+      errorMessage: null,
     );
   }
 }
@@ -50,6 +65,13 @@ class DigestModeNotifier extends StateNotifier<DigestModeState> {
     }
   }
 
+  /// Efface le message d'erreur
+  void clearError() {
+    if (state.errorMessage != null) {
+      state = state.clearError();
+    }
+  }
+
   /// Change le mode du digest.
   ///
   /// 1. Met à jour l'UI immédiatement (couleur, gradient, sous-titre)
@@ -58,8 +80,10 @@ class DigestModeNotifier extends StateNotifier<DigestModeState> {
   Future<void> setMode(DigestMode newMode) async {
     if (newMode == state.mode) return;
 
+    final previousMode = state.mode;
+
     // 1. UI immédiate
-    state = state.copyWith(
+    state = DigestModeState(
       mode: newMode,
       isRegenerating: true,
     );
@@ -78,10 +102,14 @@ class DigestModeNotifier extends StateNotifier<DigestModeState> {
       // Mettre à jour le digestProvider avec la nouvelle réponse
       _ref.read(digestProvider.notifier).updateFromResponse(newDigest);
 
-      state = state.copyWith(isRegenerating: false);
+      state = DigestModeState(mode: newMode);
     } catch (e) {
-      // Rollback en cas d'erreur
-      state = state.copyWith(isRegenerating: false);
+      // Rollback au mode précédent + message d'erreur
+      state = DigestModeState(
+        mode: previousMode,
+        errorMessage:
+            'Ce mode sera appliqué demain. Le digest du jour ne peut pas être recalculé.',
+      );
     }
   }
 }
