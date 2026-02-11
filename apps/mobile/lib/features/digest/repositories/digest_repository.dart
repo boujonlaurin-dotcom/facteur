@@ -180,16 +180,12 @@ class DigestRepository {
   /// Regenerate digest with a specific mode
   Future<DigestResponse> regenerateWithMode({
     required String mode,
-    String? focusTheme,
   }) async {
     try {
       final queryParams = <String, dynamic>{
         'force': 'true',
         'mode': mode,
       };
-      if (focusTheme != null) {
-        queryParams['focus_theme'] = focusTheme;
-      }
 
       final response = await _apiClient.dio.post<dynamic>(
         'digest/generate',

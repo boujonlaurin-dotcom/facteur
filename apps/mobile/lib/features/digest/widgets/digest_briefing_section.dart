@@ -10,8 +10,11 @@ import '../models/digest_mode.dart';
 import 'digest_personalization_sheet.dart';
 
 /// Digest Briefing Section with premium design for 7 articles.
-/// Container adapts its gradient, border color, emoji, and subtitle
+/// Container adapts its gradient, border color, and subtitle
 /// based on the active DigestMode.
+///
+/// Mode badges (icon-only) are embedded in the header row,
+/// right of the title text.
 class DigestBriefingSection extends StatelessWidget {
   final List<DigestItem> items;
   final int completionThreshold;
@@ -19,8 +22,8 @@ class DigestBriefingSection extends StatelessWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
   final DigestMode mode;
-  final String? focusTheme;
   final bool isRegenerating;
+  final ValueChanged<DigestMode>? onModeChanged;
 
   const DigestBriefingSection({
     super.key,
@@ -30,8 +33,8 @@ class DigestBriefingSection extends StatelessWidget {
     this.onSave,
     this.onNotInterested,
     this.mode = DigestMode.pourVous,
-    this.focusTheme,
     this.isRegenerating = false,
+    this.onModeChanged,
   });
 
   @override
@@ -61,7 +64,7 @@ class DigestBriefingSection extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(top: 16, bottom: 24),
+      margin: const EdgeInsets.only(top: 16, bottom: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -87,36 +90,62 @@ class DigestBriefingSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with segmented progress bar
+          // Header row: title + mode badges + progress bar
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Title + badges on the left
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "${mode.emoji} L'Essentiel du Jour",
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            color: headerTextColor,
-                          ),
+                    // Title row with inline mode badges
+                    Row(
+                      children: [
+                        Text(
+                          "L'Essentiel",
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: headerTextColor,
+                              ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Icon-only mode badges
+                        ...DigestMode.values.map((m) => _ModeBadge(
+                              mode: m,
+                              isSelected: m == mode,
+                              primaryColor: colors.primary,
+                              dimColor: colors.textTertiary,
+                              onTap: isRegenerating || onModeChanged == null
+                                  ? null
+                                  : () {
+                                      HapticFeedback.lightImpact();
+                                      onModeChanged!(m);
+                                    },
+                            )),
+                      ],
                     ),
-                    if (mode != DigestMode.pourVous) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        mode.getSubtitle(focusTheme: focusTheme),
+                    // Mode subtitle (always visible, describes current mode)
+                    const SizedBox(height: 3),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: Text(
+                        mode.subtitle,
+                        key: ValueKey(mode.key),
                         style: TextStyle(
                           color: modeColor.withValues(alpha: 0.8),
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                           fontStyle: FontStyle.italic,
                           fontFamily: 'DM Sans',
                         ),
                       ),
-                    ],
+                    ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -149,7 +178,7 @@ class DigestBriefingSection extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: items.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 14),
+            separatorBuilder: (context, index) => const SizedBox(height: 7),
             itemBuilder: (context, index) {
               final item = items[index];
               return _buildRankedCard(context, item, index + 1, isDark);
@@ -240,7 +269,7 @@ class DigestBriefingSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Flexible(
+              Expanded(
                 child: Text(
                   _simplifyReason(item.reason),
                   style: TextStyle(
@@ -253,8 +282,7 @@ class DigestBriefingSection extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
-              // Info button for desktop/web users (alternative to long-press)
+              // Info button for algorithm transparency
               if (item.recommendationReason != null)
                 InkWell(
                   onTap: () => _showReasoningSheet(context, item),
@@ -358,6 +386,58 @@ class DigestBriefingSection extends StatelessWidget {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => DigestPersonalizationSheet(item: item),
+    );
+  }
+}
+
+/// Icon-only badge for a digest mode, displayed inline in the header.
+class _ModeBadge extends StatelessWidget {
+  final DigestMode mode;
+  final bool isSelected;
+  final Color primaryColor;
+  final Color dimColor;
+  final VoidCallback? onTap;
+
+  const _ModeBadge({
+    required this.mode,
+    required this.isSelected,
+    required this.primaryColor,
+    required this.dimColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final modeColor = mode.effectiveColor(primaryColor);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        margin: const EdgeInsets.only(left: 6),
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: isSelected
+              ? modeColor.withValues(alpha: 0.18)
+              : Colors.transparent,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected
+                ? modeColor.withValues(alpha: 0.6)
+                : dimColor.withValues(alpha: 0.25),
+            width: 1.5,
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            mode.icon,
+            size: 14,
+            color: isSelected ? modeColor : dimColor,
+          ),
+        ),
+      ),
     );
   }
 }

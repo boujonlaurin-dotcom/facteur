@@ -41,7 +41,7 @@ class DigestSettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: FacteurSpacing.space3),
 
-            // 4 mode cards
+            // 3 mode cards (theme_focus déprécié)
             ...DigestMode.values.map((mode) {
               final isSelected = mode == modeState.mode;
               final modeColor = mode.effectiveColor(colors.primary);
@@ -116,8 +116,6 @@ class _ModeCard extends StatelessWidget {
         return 'Pas de politique, pas de faits divers ni de sujets anxiogènes. Zen.';
       case DigestMode.perspective:
         return 'Découvrez des points de vue opposés à vos habitudes de lecture.';
-      case DigestMode.themeFocus:
-        return 'Concentrez votre essentiel sur un seul thème de votre choix.';
     }
   }
 
@@ -161,7 +159,7 @@ class _ModeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${mode.emoji} ${mode.label}',
+                    mode.label,
                     style: TextStyle(
                       color: isSelected ? modeColor : colors.textPrimary,
                       fontSize: 15,

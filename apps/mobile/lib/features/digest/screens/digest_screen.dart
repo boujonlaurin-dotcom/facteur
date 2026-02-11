@@ -17,7 +17,6 @@ import '../models/digest_mode.dart';
 import '../providers/digest_mode_provider.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
-import '../widgets/digest_mode_tab_selector.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
 
@@ -221,42 +220,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   ),
                 ),
 
-                // Mode tab selector
-                SliverToBoxAdapter(
-                  child: DigestModeTabSelector(
-                    selectedMode: modeState.mode,
-                    isRegenerating: modeState.isRegenerating,
-                    onModeChanged: (mode) {
-                      ref.read(digestModeProvider.notifier).setMode(mode);
-                    },
-                  ),
-                ),
-
-                // Mode changed message
-                if (modeState.showModeChangedMessage)
-                  SliverToBoxAdapter(
-                    child: AnimatedOpacity(
-                      opacity: modeState.showModeChangedMessage ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 300),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space6,
-                          vertical: FacteurSpacing.space1,
-                        ),
-                        child: Text(
-                          'Votre essentiel de demain sera aussi en mode ${modeState.mode.label}',
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                            fontFamily: 'DM Sans',
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ),
-
                 // Success banner when digest is completed
                 SliverToBoxAdapter(
                   child: Builder(
@@ -408,8 +371,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             onSave: _handleSave,
                             onNotInterested: _handleNotInterested,
                             mode: modeState.mode,
-                            focusTheme: modeState.focusTheme,
                             isRegenerating: modeState.isRegenerating,
+                            onModeChanged: (mode) {
+                              ref.read(digestModeProvider.notifier).setMode(mode);
+                            },
                           ),
                         );
                       },

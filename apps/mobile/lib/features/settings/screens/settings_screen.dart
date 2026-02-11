@@ -72,7 +72,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           context,
                           icon: PhosphorIcons.sliders(PhosphorIconsStyle.regular),
                           title: 'Mon Essentiel',
-                          subtitle: 'Mode : ${modeState.mode.label} ${modeState.mode.emoji}',
+                          subtitle: 'Mode : ${modeState.mode.label}',
                           onTap: () {
                             context.pushNamed(RouteNames.digestSettings);
                           },
