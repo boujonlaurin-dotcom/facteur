@@ -52,15 +52,20 @@ class DigestBriefingSection extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final modeColor = mode.effectiveColor(colors.primary);
 
+    // Resolve gradient colors based on brightness
+    final gradStart = isDark ? mode.gradientStart : mode.lightGradientStart;
+    final gradEnd = isDark ? mode.gradientEnd : mode.lightGradientEnd;
+    final bgColor = isDark ? mode.backgroundColor : mode.lightBackgroundColor;
+
     // Use TweenAnimationBuilder for smooth color transitions.
     // Only set `end` so the builder animates from current → new on mode change.
     // (AnimatedContainer can't animate BoxDecoration.gradient)
     return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(end: mode.gradientStart),
+      tween: ColorTween(end: gradStart),
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOutCubic,
       builder: (context, animatedBaseColor, child) {
-        final baseColor = animatedBaseColor ?? mode.gradientStart;
+        final baseColor = animatedBaseColor ?? gradStart;
         return TweenAnimationBuilder<Color?>(
           tween: ColorTween(end: modeColor),
           duration: const Duration(milliseconds: 500),
@@ -70,53 +75,37 @@ class DigestBriefingSection extends StatelessWidget {
             return Container(
               margin: const EdgeInsets.only(top: 16, bottom: 12),
               decoration: BoxDecoration(
-                gradient: isDark
-                    ? LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          baseColor,
-                          Color.lerp(baseColor, mode.gradientEnd, 0.7)!,
-                          mode.backgroundColor.withValues(alpha: 0.0),
-                        ],
-                        stops: const [0.0, 0.65, 1.0],
-                      )
-                    : LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          colors.backgroundSecondary,
-                          colors.backgroundPrimary,
-                        ],
-                      ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    baseColor,
+                    Color.lerp(baseColor, gradEnd, 0.7)!,
+                    bgColor.withValues(alpha: 0.0),
+                  ],
+                  stops: const [0.0, 0.65, 1.0],
+                ),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: isDark
-                      ? effectiveModeColor.withValues(alpha: 0.25)
-                      : effectiveModeColor.withValues(alpha: 0.12),
+                  color: effectiveModeColor.withValues(
+                      alpha: isDark ? 0.25 : 0.20),
                   width: 1,
                 ),
-                boxShadow: isDark
-                    ? [
-                        BoxShadow(
-                          color: effectiveModeColor.withValues(alpha: 0.18),
-                          blurRadius: 30,
-                          spreadRadius: -5,
-                          offset: const Offset(0, -4),
-                        ),
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ]
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
+                boxShadow: [
+                  BoxShadow(
+                    color: effectiveModeColor.withValues(
+                        alpha: isDark ? 0.18 : 0.12),
+                    blurRadius: 30,
+                    spreadRadius: -5,
+                    offset: const Offset(0, -4),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                        alpha: isDark ? 0.3 : 0.06),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -200,7 +189,7 @@ class DigestBriefingSection extends StatelessWidget {
                               mode.subtitle,
                               key: ValueKey(mode.key),
                               style: TextStyle(
-                                color: animatedModeColor
+                                color: effectiveModeColor
                                     .withValues(alpha: 0.85),
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,

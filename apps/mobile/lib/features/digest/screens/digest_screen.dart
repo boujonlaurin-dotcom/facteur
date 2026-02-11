@@ -189,10 +189,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       });
     });
 
-    // Background color adapts to the current digest mode
+    // Background color adapts to the current digest mode (both themes)
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final modeBackgroundColor = isDark
         ? modeState.mode.backgroundColor
+        : modeState.mode.lightBackgroundColor;
+    final bgFadeTarget = isDark
+        ? const Color(0xFF080808)
         : colors.backgroundPrimary;
 
     return Stack(
@@ -202,17 +205,14 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            gradient: isDark
-                ? LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      modeBackgroundColor,
-                      Color.lerp(modeBackgroundColor, const Color(0xFF080808), 0.6)!,
-                    ],
-                  )
-                : null,
-            color: isDark ? null : modeBackgroundColor,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                modeBackgroundColor,
+                Color.lerp(modeBackgroundColor, bgFadeTarget, 0.6)!,
+              ],
+            ),
           ),
         ),
         Scaffold(
