@@ -42,6 +42,8 @@ class DigestBriefingSection extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final modeColor = mode.effectiveColor(colors.primary);
 
     // Calculate reading time (average 2 min per article if null)
     final totalSeconds = items.fold<int>(0, (sum, item) {
@@ -49,179 +51,156 @@ class DigestBriefingSection extends StatelessWidget {
     });
     final totalMinutes = (totalSeconds / 60).ceil();
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modeColor = mode.effectiveColor(colors.primary);
-
     // Resolve gradient colors based on brightness
     final gradStart = isDark ? mode.gradientStart : mode.lightGradientStart;
     final gradEnd = isDark ? mode.gradientEnd : mode.lightGradientEnd;
-    final bgColor = isDark ? mode.backgroundColor : mode.lightBackgroundColor;
 
-    // Use TweenAnimationBuilder for smooth color transitions.
-    // Only set `end` so the builder animates from current → new on mode change.
-    // (AnimatedContainer can't animate BoxDecoration.gradient)
+    // TweenAnimationBuilder for smooth gradient transitions between modes.
+    // Only `end` is set so changes animate from current value → new.
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(end: gradStart),
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOutCubic,
       builder: (context, animatedBaseColor, child) {
         final baseColor = animatedBaseColor ?? gradStart;
-        return TweenAnimationBuilder<Color?>(
-          tween: ColorTween(end: modeColor),
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeOutCubic,
-          builder: (context, animatedModeColor, child) {
-            final effectiveModeColor = animatedModeColor ?? modeColor;
-            return Container(
-              margin: const EdgeInsets.only(top: 16, bottom: 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    baseColor,
-                    Color.lerp(baseColor, gradEnd, 0.7)!,
-                    bgColor.withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.65, 1.0],
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: effectiveModeColor.withValues(
-                      alpha: isDark ? 0.25 : 0.20),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: effectiveModeColor.withValues(
-                        alpha: isDark ? 0.18 : 0.12),
-                    blurRadius: 30,
-                    spreadRadius: -5,
-                    offset: const Offset(0, -4),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                        alpha: isDark ? 0.3 : 0.06),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+        return Container(
+          margin: const EdgeInsets.only(top: 16, bottom: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                baseColor,
+                Color.lerp(baseColor, gradEnd, 0.7)!,
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.06),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color:
+                    Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
-              padding: const EdgeInsets.all(16),
-              child: Column(
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: title+progress (left) | selector+subtitle (right)
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header row: title+progress (left) | selector+subtitle (right)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left: title + reading time
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  // Left: title + reading time
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Text(
-                                  "L'Essentiel du jour",
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .displaySmall
-                                      ?.copyWith(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: -0.5,
-                                        color: isDark
-                                            ? Colors.white
-                                            : colors.textPrimary,
-                                      ),
-                                ),
-                                const SizedBox(width: 10),
-                                _buildSegmentedProgressBar(colors),
-                              ],
+                            Text(
+                              "L'Essentiel du jour",
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .displaySmall
+                                  ?.copyWith(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.5,
+                                    color: isDark
+                                        ? Colors.white
+                                        : colors.textPrimary,
+                                  ),
                             ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Icon(
-                                  PhosphorIcons.clock(
-                                      PhosphorIconsStyle.regular),
-                                  size: 14,
-                                  color: isDark
-                                      ? Colors.white.withValues(alpha: 0.5)
-                                      : colors.textSecondary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '$totalMinutes min de lecture',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: isDark
-                                            ? Colors.white
-                                                .withValues(alpha: 0.5)
-                                            : colors.textSecondary,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                ),
-                              ],
+                            const SizedBox(width: 10),
+                            _buildSegmentedProgressBar(colors),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.clock(
+                                  PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.5)
+                                  : colors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$totalMinutes min de lecture',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: isDark
+                                        ? Colors.white
+                                            .withValues(alpha: 0.5)
+                                        : colors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                             ),
                           ],
                         ),
-                      ),
-                      // Right: segmented control + subtitle
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (onModeChanged != null)
-                            DigestModeSegmentedControl(
-                              selectedMode: mode,
-                              isRegenerating: isRegenerating,
-                              onModeChanged: (newMode) {
-                                onModeChanged!(newMode);
-                              },
-                            ),
-                          const SizedBox(height: 6),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 250),
-                            child: Text(
-                              mode.subtitle,
-                              key: ValueKey(mode.key),
-                              style: TextStyle(
-                                color: effectiveModeColor
-                                    .withValues(alpha: 0.85),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                fontFamily: 'DM Sans',
-                                letterSpacing: 0.1,
-                              ),
-                              textAlign: TextAlign.right,
-                            ),
+                      ],
+                    ),
+                  ),
+                  // Right: segmented control + subtitle
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (onModeChanged != null)
+                        DigestModeSegmentedControl(
+                          selectedMode: mode,
+                          isRegenerating: isRegenerating,
+                          onModeChanged: (newMode) {
+                            onModeChanged!(newMode);
+                          },
+                        ),
+                      const SizedBox(height: 6),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: Text(
+                          mode.subtitle,
+                          key: ValueKey(mode.key),
+                          style: TextStyle(
+                            color: modeColor.withValues(alpha: 0.85),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            fontFamily: 'DM Sans',
+                            letterSpacing: 0.1,
                           ),
-                        ],
+                          textAlign: TextAlign.right,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // List of articles
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 7),
-                    itemBuilder: (context, index) {
-                      final item = items[index];
-                      return _buildRankedCard(
-                          context, item, index + 1, isDark);
-                    },
-                  ),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 16),
+
+              // List of articles
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 7),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return _buildRankedCard(context, item, index + 1, isDark);
+                },
+              ),
+            ],
+          ),
         );
       },
     );

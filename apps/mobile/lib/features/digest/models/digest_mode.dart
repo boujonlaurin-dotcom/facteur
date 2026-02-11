@@ -21,10 +21,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF1A1408),
     backgroundColor: Color(0xFF1A150C),
     cardGlowColor: Color(0x30D4944C),
-    // Light mode
-    lightGradientStart: Color(0xFFF5E6D0),
-    lightGradientEnd: Color(0xFFEDD8BE),
-    lightBackgroundColor: Color(0xFFF0DDCA),
+    // Light mode — warm amber, very visible
+    lightGradientStart: Color(0xFFF2D5A8),
+    lightGradientEnd: Color(0xFFEBC48E),
+    lightBackgroundColor: Color(0xFFF5DFC0),
   ),
   serein(
     key: 'serein',
@@ -39,10 +39,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF0A1A10),
     backgroundColor: Color(0xFF0C1A10),
     cardGlowColor: Color(0x304CAF7D),
-    // Light mode
-    lightGradientStart: Color(0xFFD6EDE0),
-    lightGradientEnd: Color(0xFFC5E3D2),
-    lightBackgroundColor: Color(0xFFD0E8D8),
+    // Light mode — cool green, very visible
+    lightGradientStart: Color(0xFFB8E0C8),
+    lightGradientEnd: Color(0xFFA0D4B4),
+    lightBackgroundColor: Color(0xFFC5E8D5),
   ),
   perspective(
     key: 'perspective',
@@ -57,10 +57,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF0A101E),
     backgroundColor: Color(0xFF0C1220),
     cardGlowColor: Color(0x306B8FBF),
-    // Light mode
-    lightGradientStart: Color(0xFFD6E2F0),
-    lightGradientEnd: Color(0xFFC5D5E8),
-    lightBackgroundColor: Color(0xFFD0DBEB),
+    // Light mode — cool blue, very visible
+    lightGradientStart: Color(0xFFB5CBEA),
+    lightGradientEnd: Color(0xFF9FBBDF),
+    lightBackgroundColor: Color(0xFFC2D5EE),
   );
 
   const DigestMode({
