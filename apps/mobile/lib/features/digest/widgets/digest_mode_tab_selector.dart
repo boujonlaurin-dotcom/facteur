@@ -30,7 +30,6 @@ class DigestModeSegmentedControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedIndex = DigestMode.values.indexOf(selectedMode);
     final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Le sélecteur est toujours sur fond sombre (carte digest always-dark)
     // → toujours utiliser les teintes blanches, sans brancher sur isDark.
@@ -39,9 +38,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
       height: _height,
       child: Container(
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.08),
+          color: Colors.white.withValues(alpha: 0.14),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Stack(
@@ -58,17 +55,15 @@ class DigestModeSegmentedControl extends StatelessWidget {
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutCubic,
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : Colors.white.withValues(alpha: 0.65),
+                  color: Colors.white.withValues(alpha: 0.20),
                   borderRadius: BorderRadius.circular(17),
                   border: Border.all(
-                    color: modeColor.withValues(alpha: isDark ? 0.30 : 0.45),
+                    color: modeColor.withValues(alpha: 0.30),
                     width: 1,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: modeColor.withValues(alpha: isDark ? 0.15 : 0.20),
+                      color: modeColor.withValues(alpha: 0.15),
                       blurRadius: 8,
                       spreadRadius: -1,
                     ),
@@ -104,9 +99,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
                             size: isSelected ? 19 : 17,
                             color: isSelected
                                 ? mode.effectiveColor(const Color(0xFFC0392B))
-                                : isDark
-                                    ? Colors.white.withValues(alpha: 0.35)
-                                    : Colors.black.withValues(alpha: 0.30),
+                                : Colors.white.withValues(alpha: 0.55),
                           ),
                         ),
                       ),
