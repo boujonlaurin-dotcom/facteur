@@ -21,10 +21,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF1A1408),
     backgroundColor: Color(0xFF1A150C),
     cardGlowColor: Color(0x30D4944C),
-    // Light mode — warm amber, very visible
-    lightGradientStart: Color(0xFFF2D5A8),
-    lightGradientEnd: Color(0xFFEBC48E),
-    lightBackgroundColor: Color(0xFFF5DFC0),
+    // Light mode — amber doré saturé, gradient visible sur fond crème
+    lightGradientStart: Color(0xFFD9A86A),
+    lightGradientEnd: Color(0xFFC49050),
+    lightBackgroundColor: Color(0xFFE0B87A),
   ),
   serein(
     key: 'serein',
@@ -39,10 +39,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF0A1A10),
     backgroundColor: Color(0xFF0C1A10),
     cardGlowColor: Color(0x304CAF7D),
-    // Light mode — cool green, very visible
-    lightGradientStart: Color(0xFFB8E0C8),
-    lightGradientEnd: Color(0xFFA0D4B4),
-    lightBackgroundColor: Color(0xFFC5E8D5),
+    // Light mode — vert sauge saturé, gradient visible sur fond crème
+    lightGradientStart: Color(0xFF8CC9A5),
+    lightGradientEnd: Color(0xFF72BD90),
+    lightBackgroundColor: Color(0xFF7ABF98),
   ),
   perspective(
     key: 'perspective',
@@ -57,10 +57,10 @@ enum DigestMode {
     gradientEnd: Color(0xFF0A101E),
     backgroundColor: Color(0xFF0C1220),
     cardGlowColor: Color(0x306B8FBF),
-    // Light mode — cool blue, very visible
-    lightGradientStart: Color(0xFFB5CBEA),
-    lightGradientEnd: Color(0xFF9FBBDF),
-    lightBackgroundColor: Color(0xFFC2D5EE),
+    // Light mode — bleu acier saturé, gradient visible sur fond crème
+    lightGradientStart: Color(0xFF8AADCF),
+    lightGradientEnd: Color(0xFF739DC4),
+    lightBackgroundColor: Color(0xFF7DA4C8),
   );
 
   const DigestMode({
@@ -123,9 +123,9 @@ enum DigestMode {
       case DigestMode.pourVous:
         return PhosphorIcons.sunDim(PhosphorIconsStyle.fill);
       case DigestMode.serein:
-        return PhosphorIcons.leaf(PhosphorIconsStyle.fill);
+        return PhosphorIcons.flowerLotus(PhosphorIconsStyle.fill);
       case DigestMode.perspective:
-        return PhosphorIcons.compass(PhosphorIconsStyle.fill);
+        return PhosphorIcons.detective(PhosphorIconsStyle.fill);
     }
   }
 
