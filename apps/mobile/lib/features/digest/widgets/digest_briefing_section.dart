@@ -13,8 +13,8 @@ import 'digest_personalization_sheet.dart';
 /// Container adapts its gradient, border color, and subtitle
 /// based on the active DigestMode.
 ///
-/// Mode badges (icon-only) are embedded in the header row,
-/// right of the title text.
+/// Mode badges (emoji) are positioned top-right of the header,
+/// progress counter is near the title on the left.
 class DigestBriefingSection extends StatelessWidget {
   final List<DigestItem> items;
   final int completionThreshold;
@@ -90,16 +90,16 @@ class DigestBriefingSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row: title + mode badges + progress bar
+          // Header row: title + progress (left) | mode emoji badges (right)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title + badges on the left
+              // Title + progress on the left
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title row with inline mode badges
+                    // Title row with inline progress
                     Row(
                       children: [
                         Text(
@@ -115,38 +115,10 @@ class DigestBriefingSection extends StatelessWidget {
                               ),
                         ),
                         const SizedBox(width: 10),
-                        // Icon-only mode badges
-                        ...DigestMode.values.map((m) => _ModeBadge(
-                              mode: m,
-                              isSelected: m == mode,
-                              primaryColor: colors.primary,
-                              dimColor: colors.textTertiary,
-                              onTap: isRegenerating || onModeChanged == null
-                                  ? null
-                                  : () {
-                                      HapticFeedback.lightImpact();
-                                      onModeChanged!(m);
-                                    },
-                            )),
+                        _buildSegmentedProgressBar(colors),
                       ],
                     ),
-                    // Mode subtitle (always visible, describes current mode)
-                    const SizedBox(height: 3),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
-                      child: Text(
-                        mode.subtitle,
-                        key: ValueKey(mode.key),
-                        style: TextStyle(
-                          color: modeColor.withValues(alpha: 0.8),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          fontStyle: FontStyle.italic,
-                          fontFamily: 'DM Sans',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         Icon(
@@ -168,7 +140,45 @@ class DigestBriefingSection extends StatelessWidget {
                   ],
                 ),
               ),
-              _buildSegmentedProgressBar(colors),
+              // Emoji mode badges + subtitle on the right
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Emoji badges row
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: DigestMode.values.map((m) => _ModeBadge(
+                          mode: m,
+                          isSelected: m == mode,
+                          primaryColor: colors.primary,
+                          dimColor: colors.textTertiary,
+                          onTap: isRegenerating || onModeChanged == null
+                              ? null
+                              : () {
+                                  HapticFeedback.lightImpact();
+                                  onModeChanged!(m);
+                                },
+                        )).toList(),
+                  ),
+                  // Mode subtitle aligned under badges
+                  const SizedBox(height: 6),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Text(
+                      mode.subtitle,
+                      key: ValueKey(mode.key),
+                      style: TextStyle(
+                        color: modeColor.withValues(alpha: 0.7),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        fontStyle: FontStyle.italic,
+                        fontFamily: 'DM Sans',
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -196,8 +206,8 @@ class DigestBriefingSection extends StatelessWidget {
     final isDone = processedCount >= completionThreshold;
     final totalCount = items.length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '$processedCount/$completionThreshold',
@@ -207,8 +217,9 @@ class DigestBriefingSection extends StatelessWidget {
             fontSize: 12,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(width: 6),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: List.generate(totalCount, (index) {
             final isFilled = index < processedCount;
             final isThresholdBoundary =
@@ -251,7 +262,7 @@ class DigestBriefingSection extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                'N°$rank',
+                'N\u00B0$rank',
                 style: TextStyle(
                   color: colors.primary.withValues(alpha: isDark ? 0.9 : 1.0),
                   fontWeight: FontWeight.w900,
@@ -390,7 +401,8 @@ class DigestBriefingSection extends StatelessWidget {
   }
 }
 
-/// Icon-only badge for a digest mode, displayed inline in the header.
+/// Emoji badge for a digest mode, displayed top-right of the header.
+/// Premium design with subtle glow when selected.
 class _ModeBadge extends StatelessWidget {
   final DigestMode mode;
   final bool isSelected;
@@ -413,28 +425,38 @@ class _ModeBadge extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
         margin: const EdgeInsets.only(left: 6),
-        width: 30,
-        height: 30,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: isSelected
-              ? modeColor.withValues(alpha: 0.18)
+              ? modeColor.withValues(alpha: 0.15)
               : Colors.transparent,
-          shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected
-                ? modeColor.withValues(alpha: 0.6)
-                : dimColor.withValues(alpha: 0.25),
-            width: 1.5,
+                ? modeColor.withValues(alpha: 0.5)
+                : dimColor.withValues(alpha: 0.15),
+            width: isSelected ? 1.5 : 1.0,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: modeColor.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    spreadRadius: 0,
+                  ),
+                ]
+              : null,
         ),
         child: Center(
-          child: Icon(
-            mode.icon,
-            size: 14,
-            color: isSelected ? modeColor : dimColor,
+          child: Text(
+            mode.emoji,
+            style: TextStyle(
+              fontSize: isSelected ? 18 : 16,
+            ),
           ),
         ),
       ),

@@ -12,24 +12,31 @@ enum DigestMode {
     key: 'pour_vous',
     label: 'Pour vous',
     subtitle: 'Votre sélection personnalisée',
-    gradientStart: Color(0xFF1A1918),
-    gradientEnd: Color(0xFF2C2A29),
+    emoji: '☀️',
+    color: Color(0xFFCB9B6A),
+    gradientStart: Color(0xFF1C1814),
+    gradientEnd: Color(0xFF262018),
+    backgroundColor: Color(0xFF181410),
   ),
   serein(
     key: 'serein',
     label: 'Serein',
     subtitle: 'Sans politique ni infos anxiogènes',
-    color: Color(0xFF2ECC71),
-    gradientStart: Color(0xFF1A201A),
-    gradientEnd: Color(0xFF1E2C1E),
+    emoji: '🌿',
+    color: Color(0xFF3D8B6E),
+    gradientStart: Color(0xFF141C18),
+    gradientEnd: Color(0xFF1A2620),
+    backgroundColor: Color(0xFF0E1610),
   ),
   perspective(
     key: 'perspective',
     label: 'Changer de bord',
     subtitle: "Découvrir l'autre bord politique",
-    color: Color(0xFF6B9AC4),
-    gradientStart: Color(0xFF1A1A20),
-    gradientEnd: Color(0xFF201A1A),
+    emoji: '🧭',
+    color: Color(0xFF5A7BA8),
+    gradientStart: Color(0xFF14161E),
+    gradientEnd: Color(0xFF1A1E2A),
+    backgroundColor: Color(0xFF0E1018),
   );
 
   const DigestMode({
@@ -39,6 +46,7 @@ enum DigestMode {
     this.color,
     required this.gradientStart,
     required this.gradientEnd,
+    required this.backgroundColor,
   });
 
   /// Clé API (stockée en user_preferences)
@@ -50,12 +58,18 @@ enum DigestMode {
   /// Sous-titre contextuel affiché dans le container digest
   final String subtitle;
 
+  /// Emoji affiché dans le badge de sélection
+  final String emoji;
+
   /// Couleur du mode (null = utilise primary/terracotta)
   final Color? color;
 
   /// Couleurs du gradient du container digest (dark mode)
   final Color gradientStart;
   final Color gradientEnd;
+
+  /// Couleur de fond de l'écran digest pour ce mode
+  final Color backgroundColor;
 
   /// Retourne la couleur effective (couleur du mode ou primary par défaut)
   Color effectiveColor(Color primaryColor) => color ?? primaryColor;

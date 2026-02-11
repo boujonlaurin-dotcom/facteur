@@ -39,7 +39,7 @@ final themeFiltersProvider =
       return themes.map<FilterConfig>((t) {
         final slug = t['interest_slug'] as String;
         final meta = _themeMetadata[slug];
-        final label = meta != null ? '${meta.emoji} ${meta.label}' : slug;
+        final label = meta != null ? meta.label : slug;
         final description = meta != null
             ? 'Contenus ${meta.label} de vos sources'
             : 'Contenus $slug de vos sources';

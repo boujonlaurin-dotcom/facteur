@@ -189,10 +189,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       });
     });
 
+    // Background color adapts to the current digest mode
+    final modeBackgroundColor = Theme.of(context).brightness == Brightness.dark
+        ? modeState.mode.backgroundColor
+        : colors.backgroundPrimary;
+
     return Stack(
       children: [
+        // Animated background layer for mode-based color shift
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOutCubic,
+          color: modeBackgroundColor,
+        ),
         Scaffold(
-          backgroundColor: colors.backgroundPrimary,
+          backgroundColor: Colors.transparent,
           body: RefreshIndicator(
             onRefresh: () async {
               await ref.read(digestProvider.notifier).refreshDigest();
