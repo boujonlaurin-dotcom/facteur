@@ -43,7 +43,6 @@ enum DigestMode {
     required this.key,
     required this.label,
     required this.subtitle,
-    required this.emoji,
     this.color,
     required this.gradientStart,
     required this.gradientEnd,
