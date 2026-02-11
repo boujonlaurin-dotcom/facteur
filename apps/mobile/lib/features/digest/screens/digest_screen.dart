@@ -189,31 +189,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       });
     });
 
-    // Background color adapts to the current digest mode
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modeBackgroundColor = isDark
-        ? modeState.mode.backgroundColor
-        : colors.backgroundPrimary;
-
+    // Background is static — only the card changes color per mode
     return Stack(
       children: [
-        // Animated background layer for mode-based color shift
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            gradient: isDark
-                ? LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      modeBackgroundColor,
-                      Color.lerp(modeBackgroundColor, const Color(0xFF080808), 0.6)!,
-                    ],
-                  )
-                : null,
-            color: isDark ? null : modeBackgroundColor,
-          ),
+        Container(
+          color: colors.backgroundPrimary,
         ),
         Scaffold(
           backgroundColor: Colors.transparent,
