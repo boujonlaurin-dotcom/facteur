@@ -353,12 +353,21 @@ class DigestCard extends StatelessWidget {
 
   static String _simplifyReason(String reason) {
     var r = reason;
+    // Remove points notation
     r = r.replaceAll(RegExp(r'\s*\(\+\d+\s*pts?\)'), '');
-    if (r.contains(':') && !r.startsWith('Thème')) {
-      r = r.split(':').first.trim();
-    }
+    // Remove "depuis..." suffix
     r = r.replaceAll(RegExp(r'\s+depuis\s+.*', caseSensitive: false), '');
-    return r.trim();
+
+    // Extract theme name if it's a theme-based reason (e.g., "Thème : Environnement")
+    if (r.contains(':')) {
+      final parts = r.split(':');
+      if (parts.isNotEmpty) {
+        r = parts.last.trim();
+      }
+    }
+
+    // Return only the theme/category name, default to "Environnement"
+    return r.trim().isEmpty ? 'Environnement' : r.trim();
   }
 
   String _formatDuration(int seconds) {
