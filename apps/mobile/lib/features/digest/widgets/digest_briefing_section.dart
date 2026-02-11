@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -15,7 +17,7 @@ import 'digest_personalization_sheet.dart';
 /// based on the active DigestMode using TweenAnimationBuilder.
 ///
 /// Compact iOS-style segmented control sits top-right in the header.
-class DigestBriefingSection extends StatelessWidget {
+class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
   final int completionThreshold;
   final void Function(DigestItem) onItemTap;
@@ -38,22 +40,51 @@ class DigestBriefingSection extends StatelessWidget {
   });
 
   @override
+  State<DigestBriefingSection> createState() => _DigestBriefingSectionState();
+}
+
+class _DigestBriefingSectionState extends State<DigestBriefingSection> {
+  /// Le sous-titre n'apparaît qu'après un changement de mode, puis disparaît après 4s.
+  bool _showSubtitle = false;
+  Timer? _subtitleTimer;
+
+  @override
+  void didUpdateWidget(DigestBriefingSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mode != widget.mode) {
+      _subtitleTimer?.cancel();
+      setState(() => _showSubtitle = true);
+      _subtitleTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _showSubtitle = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _subtitleTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
+    if (widget.items.isEmpty) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modeColor = mode.effectiveColor(colors.primary);
+    final modeColor = widget.mode.effectiveColor(colors.primary);
 
     // Calculate reading time (average 2 min per article if null)
-    final totalSeconds = items.fold<int>(0, (sum, item) {
+    final totalSeconds = widget.items.fold<int>(0, (sum, item) {
       return sum + (item.durationSeconds ?? 120);
     });
     final totalMinutes = (totalSeconds / 60).ceil();
 
     // Resolve gradient colors based on brightness
-    final gradStart = isDark ? mode.gradientStart : mode.lightGradientStart;
-    final gradEnd = isDark ? mode.gradientEnd : mode.lightGradientEnd;
+    final gradStart =
+        isDark ? widget.mode.gradientStart : widget.mode.lightGradientStart;
+    final gradEnd =
+        isDark ? widget.mode.gradientEnd : widget.mode.lightGradientEnd;
 
     // TweenAnimationBuilder for smooth gradient transitions between modes.
     // Only `end` is set so changes animate from current value → new.
@@ -78,13 +109,13 @@ class DigestBriefingSection extends StatelessWidget {
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.black.withValues(alpha: 0.06),
+                  : Colors.black.withValues(alpha: 0.10),
               width: 1,
             ),
             boxShadow: [
               BoxShadow(
                 color:
-                    Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+                    Colors.black.withValues(alpha: isDark ? 0.25 : 0.12),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -105,19 +136,23 @@ class DigestBriefingSection extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              "L'Essentiel du jour",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .displaySmall
-                                  ?.copyWith(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.5,
-                                    color: isDark
-                                        ? Colors.white
-                                        : colors.textPrimary,
-                                  ),
+                            Flexible(
+                              child: Text(
+                                "L'Essentiel du jour",
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .displaySmall
+                                    ?.copyWith(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: -0.5,
+                                      color: isDark
+                                          ? Colors.white
+                                          : colors.textPrimary,
+                                    ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: 10),
                             _buildSegmentedProgressBar(colors),
@@ -153,33 +188,38 @@ class DigestBriefingSection extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Right: segmented control + subtitle
+                  // Right: segmented control + subtitle (apparaît puis disparaît)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (onModeChanged != null)
+                      if (widget.onModeChanged != null)
                         DigestModeSegmentedControl(
-                          selectedMode: mode,
-                          isRegenerating: isRegenerating,
+                          selectedMode: widget.mode,
+                          isRegenerating: widget.isRegenerating,
                           onModeChanged: (newMode) {
-                            onModeChanged!(newMode);
+                            widget.onModeChanged!(newMode);
                           },
                         ),
                       const SizedBox(height: 6),
+                      // Sous-titre visible uniquement après changement de mode
                       AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 250),
-                        child: Text(
-                          mode.subtitle,
-                          key: ValueKey(mode.key),
-                          style: TextStyle(
-                            color: modeColor.withValues(alpha: 0.85),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            fontFamily: 'DM Sans',
-                            letterSpacing: 0.1,
-                          ),
-                          textAlign: TextAlign.right,
-                        ),
+                        duration: const Duration(milliseconds: 300),
+                        child: _showSubtitle
+                            ? Text(
+                                widget.mode.subtitle,
+                                key: ValueKey(widget.mode.key),
+                                style: TextStyle(
+                                  color: modeColor.withValues(alpha: 0.85),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  fontFamily: 'DM Sans',
+                                  letterSpacing: 0.1,
+                                ),
+                                textAlign: TextAlign.right,
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey('empty_subtitle'),
+                              ),
                       ),
                     ],
                   ),
@@ -191,11 +231,11 @@ class DigestBriefingSection extends StatelessWidget {
               ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: items.length,
+                itemCount: widget.items.length,
                 separatorBuilder: (context, index) =>
                     const SizedBox(height: 7),
                 itemBuilder: (context, index) {
-                  final item = items[index];
+                  final item = widget.items[index];
                   return _buildRankedCard(context, item, index + 1, isDark);
                 },
               ),
@@ -207,17 +247,17 @@ class DigestBriefingSection extends StatelessWidget {
   }
 
   Widget _buildSegmentedProgressBar(FacteurColors colors) {
-    final processedCount = items
+    final processedCount = widget.items
         .where((item) => item.isRead || item.isDismissed || item.isSaved)
         .length;
-    final isDone = processedCount >= completionThreshold;
-    final totalCount = items.length;
+    final isDone = processedCount >= widget.completionThreshold;
+    final totalCount = widget.items.length;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '$processedCount/$completionThreshold',
+          '$processedCount/${widget.completionThreshold}',
           style: TextStyle(
             color: isDone ? colors.success : colors.primary,
             fontWeight: FontWeight.bold,
@@ -230,8 +270,8 @@ class DigestBriefingSection extends StatelessWidget {
           children: List.generate(totalCount, (index) {
             final isFilled = index < processedCount;
             final isThresholdBoundary =
-                completionThreshold < totalCount &&
-                    index == completionThreshold - 1;
+                widget.completionThreshold < totalCount &&
+                    index == widget.completionThreshold - 1;
             return Container(
               width: 8,
               height: 4,
@@ -336,10 +376,11 @@ class DigestBriefingSection extends StatelessWidget {
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
               content: _convertToContent(item),
-              onTap: () => onItemTap(item),
-              onSave: onSave != null ? () => onSave!(item) : null,
-              onNotInterested:
-                  onNotInterested != null ? () => onNotInterested!(item) : null,
+              onTap: () => widget.onItemTap(item),
+              onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
+              onNotInterested: widget.onNotInterested != null
+                  ? () => widget.onNotInterested!(item)
+                  : null,
               isSaved: item.isSaved,
             ),
           ),
