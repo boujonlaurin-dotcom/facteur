@@ -83,6 +83,7 @@ class UserContentStatus(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "content_id", name="uq_user_content_status_user_content"),
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
+        Index("ix_user_content_status_user_liked", "user_id", "is_liked"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
         # Performance index for digest exclusion queries
         # Used in _get_candidates() EXISTS subquery that filters out seen/saved/hidden content
@@ -102,6 +103,7 @@ class UserContentStatus(Base):
         default=ContentStatus.UNSEEN,
     )
     is_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
+    is_liked: Mapped[bool] = mapped_column(default=False, server_default="false")
     is_hidden: Mapped[bool] = mapped_column(default=False, server_default="false")
     hidden_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     seen_at: Mapped[Optional[datetime]] = mapped_column(
@@ -109,6 +111,9 @@ class UserContentStatus(Base):
     )
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
     saved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    liked_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

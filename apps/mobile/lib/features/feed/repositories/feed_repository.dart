@@ -144,6 +144,20 @@ class FeedRepository {
     }
   }
 
+  Future<void> toggleLike(String contentId, bool isLiked) async {
+    try {
+      if (isLiked) {
+        await _apiClient.dio.post<void>('contents/$contentId/like');
+      } else {
+        await _apiClient.dio.delete<void>('contents/$contentId/like');
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] toggleLike: $e');
+      rethrow;
+    }
+  }
+
   Future<void> hideContent(String contentId, HiddenReason reason) async {
     try {
       await _apiClient.dio.post<void>(

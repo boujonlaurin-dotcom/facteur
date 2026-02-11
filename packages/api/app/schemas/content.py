@@ -57,6 +57,7 @@ class ContentResponse(BaseModel):
     source: SourceMini
     status: ContentStatus = ContentStatus.UNSEEN
     is_saved: bool = False
+    is_liked: bool = False
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
     description: Optional[str] = None
@@ -82,6 +83,7 @@ class ContentDetailResponse(BaseModel):
     source: SourceMini
     status: ContentStatus
     is_saved: bool = False
+    is_liked: bool = False
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
     time_spent_seconds: int = 0
