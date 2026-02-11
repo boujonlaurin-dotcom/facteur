@@ -96,6 +96,46 @@ async def unsave_content(
     return {"status": "ok", "is_saved": False}
 
 
+@router.post("/{content_id}/like", status_code=status.HTTP_200_OK)
+async def like_content(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Ajoute un like sur un contenu."""
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+
+    updated_status = await service.set_like_status(
+        user_id=user_uuid,
+        content_id=content_id,
+        is_liked=True,
+    )
+
+    await db.commit()
+    return {"status": "ok", "is_liked": True}
+
+
+@router.delete("/{content_id}/like", status_code=status.HTTP_200_OK)
+async def unlike_content(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retire le like d'un contenu."""
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+
+    updated_status = await service.set_like_status(
+        user_id=user_uuid,
+        content_id=content_id,
+        is_liked=False,
+    )
+
+    await db.commit()
+    return {"status": "ok", "is_liked": False}
+
+
 @router.post("/{content_id}/hide", status_code=status.HTTP_200_OK)
 async def hide_content(
     content_id: UUID,

@@ -98,3 +98,14 @@ class ScoringWeights:
     # Visible à l'utilisateur via la ligne "Diversité revue de presse" dans le
     # breakdown de scoring (sheet "Pourquoi cet article ?").
     DIGEST_DIVERSITY_DIVISOR = 2
+
+    # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
+
+    # Delta applied to user_subtopics.weight when liking/unliking content.
+    LIKE_TOPIC_BOOST = 0.15
+
+    # Delta applied to user_subtopics.weight when bookmarking content.
+    BOOKMARK_TOPIC_BOOST = 0.05
+
+    # Learning rate applied to UserInterest.weight on like/bookmark.
+    LIKE_INTEREST_RATE = 0.03
