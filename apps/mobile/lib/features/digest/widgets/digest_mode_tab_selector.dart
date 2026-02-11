@@ -32,6 +32,8 @@ class DigestModeSegmentedControl extends StatelessWidget {
     final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // Le sélecteur est toujours sur fond sombre (carte digest always-dark)
+    // → toujours utiliser les teintes blanches, sans brancher sur isDark.
     return SizedBox(
       width: _width,
       height: _height,
