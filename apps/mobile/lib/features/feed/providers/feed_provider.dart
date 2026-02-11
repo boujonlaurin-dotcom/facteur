@@ -175,6 +175,36 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  Future<void> toggleLike(Content content) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    final currentItems = currentState.items;
+    final index = currentItems.indexWhere((c) => c.id == content.id);
+
+    final bool currentlyInList = index != -1;
+    final bool oldIsLiked =
+        currentlyInList ? currentItems[index].isLiked : true;
+    final bool newIsLiked = !oldIsLiked;
+
+    final updatedItems = List<Content>.from(currentItems);
+
+    if (currentlyInList) {
+      updatedItems[index] = content.copyWith(isLiked: newIsLiked);
+    }
+
+    // Optimistic update
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.toggleLike(content.id, newIsLiked);
+    } catch (e) {
+      await refresh();
+      rethrow;
+    }
+  }
+
   Future<void> hideContent(Content content, HiddenReason reason) async {
     final currentState = state.value;
     if (currentState == null) return;
