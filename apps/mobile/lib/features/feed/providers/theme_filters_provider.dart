@@ -5,23 +5,23 @@ import 'personalized_filters_provider.dart';
 
 /// Mapping des thèmes vers leurs emojis et labels FR.
 const _themeMetadata = <String, ({String label, String emoji})>{
-  'tech': (label: 'Tech', emoji: '💻'),
+  'tech': (label: 'Technologie', emoji: '💻'),
   'science': (label: 'Science', emoji: '🔬'),
   'culture': (label: 'Culture', emoji: '🎨'),
   'society': (label: 'Société', emoji: '👥'),
-  'international': (label: 'Géopo', emoji: '🌍'),
-  'economy': (label: 'Éco', emoji: '💰'),
+  'international': (label: 'Géopolitique', emoji: '🌍'),
+  'economy': (label: 'Économie', emoji: '💰'),
   'politics': (label: 'Politique', emoji: '🏛️'),
   'environment': (label: 'Environnement', emoji: '🌿'),
   'health': (label: 'Santé', emoji: '🏥'),
-  'sports': (label: 'Sport', emoji: '⚽'),
+  'sports': (label: 'Sports', emoji: '⚽'),
   'education': (label: 'Éducation', emoji: '📚'),
   'business': (label: 'Business', emoji: '💼'),
   'entertainment': (label: 'Divertissement', emoji: '🎬'),
-  'philosophy': (label: 'Philo', emoji: '🤔'),
+  'philosophy': (label: 'Philosophie', emoji: '🤔'),
   'history': (label: 'Histoire', emoji: '📜'),
-  'crypto': (label: 'Crypto', emoji: '₿'),
-  'ai': (label: 'IA', emoji: '🤖'),
+  'crypto': (label: 'Cryptomonnaies', emoji: '₿'),
+  'ai': (label: 'Intelligence Artificielle', emoji: '🤖'),
 };
 
 /// Provider qui récupère les thèmes de l'utilisateur depuis l'API et
