@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../config/theme.dart';
 import '../models/digest_mode.dart';
 
-/// Tab selector horizontal pour les 4 modes du digest.
+/// Sélecteur segmenté premium pour les 3 modes du digest.
 ///
-/// Chaque pill affiche icône + label avec la couleur du mode.
-/// Le tap change immédiatement la sélection visuelle et déclenche le callback.
-class DigestModeTabSelector extends StatelessWidget {
+/// Un vrai segmented control avec un indicateur animé qui glisse
+/// d'un onglet à l'autre. Fond semi-transparent, mode sélectionné
+/// mis en évidence avec couleur, bordure lumineuse et ombre.
+/// Icônes only — le label en dessous fournit le contexte.
+class DigestModeSegmentedControl extends StatelessWidget {
   final DigestMode selectedMode;
   final ValueChanged<DigestMode> onModeChanged;
   final bool isRegenerating;
 
-  const DigestModeTabSelector({
+  const DigestModeSegmentedControl({
     super.key,
     required this.selectedMode,
     required this.onModeChanged,
@@ -22,99 +23,97 @@ class DigestModeTabSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
+    final selectedIndex = DigestMode.values.indexOf(selectedMode);
+    final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space4,
-        vertical: FacteurSpacing.space2,
-      ),
-      child: Row(
-        children: DigestMode.values.map((mode) {
-          final isSelected = mode == selectedMode;
-          final modeColor = mode.effectiveColor(colors.primary);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Taille de chaque segment : la largeur totale divisée en 3
+        final totalWidth = constraints.maxWidth;
+        final segmentWidth = totalWidth / DigestMode.values.length;
 
-          return Padding(
-            padding: const EdgeInsets.only(right: FacteurSpacing.space2),
-            child: _ModePill(
-              mode: mode,
-              isSelected: isSelected,
-              modeColor: modeColor,
-              textColor: colors.textTertiary,
-              onTap: isRegenerating
-                  ? null
-                  : () {
-                      HapticFeedback.lightImpact();
-                      onModeChanged(mode);
-                    },
+        return Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.08),
+              width: 1,
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-class _ModePill extends StatelessWidget {
-  final DigestMode mode;
-  final bool isSelected;
-  final Color modeColor;
-  final Color textColor;
-  final VoidCallback? onTap;
-
-  const _ModePill({
-    required this.mode,
-    required this.isSelected,
-    required this.modeColor,
-    required this.textColor,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 8,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? modeColor.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(FacteurRadius.pill),
-          border: Border.all(
-            color: isSelected
-                ? modeColor.withValues(alpha: 0.6)
-                : Colors.white.withValues(alpha: 0.08),
-            width: 1.0,
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              mode.icon,
-              size: 16,
-              color: isSelected ? modeColor : textColor,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              mode.label,
-              style: TextStyle(
-                color: isSelected ? modeColor : textColor,
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                fontFamily: 'DM Sans',
+          child: Stack(
+            children: [
+              // Indicateur animé (slider) qui glisse entre les segments
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                left: selectedIndex * segmentWidth + 3,
+                top: 3,
+                bottom: 3,
+                width: segmentWidth - 6,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    color: modeColor.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: modeColor.withValues(alpha: 0.45),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: modeColor.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        spreadRadius: -2,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+              // Les segments (icônes) par-dessus
+              Row(
+                children: DigestMode.values.map((mode) {
+                  final isSelected = mode == selectedMode;
+
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: isRegenerating
+                          ? null
+                          : () {
+                              if (mode != selectedMode) {
+                                HapticFeedback.lightImpact();
+                                onModeChanged(mode);
+                              }
+                            },
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(fontSize: isSelected ? 20 : 18),
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: isSelected ? 1.0 : 0.45,
+                            child: Icon(
+                              mode.icon,
+                              size: isSelected ? 22 : 19,
+                              color: isSelected
+                                  ? mode.effectiveColor(
+                                      const Color(0xFFC0392B))
+                                  : Colors.white.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

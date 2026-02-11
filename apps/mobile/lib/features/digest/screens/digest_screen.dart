@@ -190,7 +190,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     });
 
     // Background color adapts to the current digest mode
-    final modeBackgroundColor = Theme.of(context).brightness == Brightness.dark
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final modeBackgroundColor = isDark
         ? modeState.mode.backgroundColor
         : colors.backgroundPrimary;
 
@@ -198,9 +199,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       children: [
         // Animated background layer for mode-based color shift
         AnimatedContainer(
-          duration: const Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 600),
           curve: Curves.easeOutCubic,
-          color: modeBackgroundColor,
+          decoration: BoxDecoration(
+            gradient: isDark
+                ? LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      modeBackgroundColor,
+                      Color.lerp(modeBackgroundColor, const Color(0xFF080808), 0.6)!,
+                    ],
+                  )
+                : null,
+            color: isDark ? null : modeBackgroundColor,
+          ),
         ),
         Scaffold(
           backgroundColor: Colors.transparent,
@@ -372,21 +385,37 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           return _buildEmptyState(colors);
                         }
 
-                        return AnimatedOpacity(
-                          opacity: modeState.isRegenerating ? 0.5 : 1.0,
-                          duration: const Duration(milliseconds: 200),
-                          child: DigestBriefingSection(
-                            items: digest.items,
-                            completionThreshold: digest.completionThreshold,
-                            onItemTap: _openArticle,
-                            onSave: _handleSave,
-                            onNotInterested: _handleNotInterested,
-                            mode: modeState.mode,
-                            isRegenerating: modeState.isRegenerating,
-                            onModeChanged: (mode) {
-                              ref.read(digestModeProvider.notifier).setMode(mode);
-                            },
-                          ),
+                        return Stack(
+                          children: [
+                            // Articles avec fade out/in animé pendant la régénération
+                            AnimatedOpacity(
+                              opacity: modeState.isRegenerating ? 0.15 : 1.0,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOut,
+                              child: IgnorePointer(
+                                ignoring: modeState.isRegenerating,
+                                child: DigestBriefingSection(
+                                  items: digest.items,
+                                  completionThreshold: digest.completionThreshold,
+                                  onItemTap: _openArticle,
+                                  onSave: _handleSave,
+                                  onNotInterested: _handleNotInterested,
+                                  mode: modeState.mode,
+                                  isRegenerating: modeState.isRegenerating,
+                                  onModeChanged: (mode) {
+                                    ref.read(digestModeProvider.notifier).setMode(mode);
+                                  },
+                                ),
+                              ),
+                            ),
+                            // Overlay de régénération avec shimmer
+                            if (modeState.isRegenerating)
+                              Positioned.fill(
+                                child: _RegenerationOverlay(
+                                  modeColor: modeState.mode.effectiveColor(colors.primary),
+                                ),
+                              ),
+                          ],
                         );
                       },
                       loading: () => _buildLoadingState(colors),
@@ -539,5 +568,93 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       default:
         return SourceType.article;
     }
+  }
+}
+
+/// Overlay de régénération avec animation de shimmer pulsé.
+/// Affiché par-dessus les articles pendant que le backend régénère le digest.
+class _RegenerationOverlay extends StatefulWidget {
+  final Color modeColor;
+
+  const _RegenerationOverlay({required this.modeColor});
+
+  @override
+  State<_RegenerationOverlay> createState() => _RegenerationOverlayState();
+}
+
+class _RegenerationOverlayState extends State<_RegenerationOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, child) {
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 120),
+            // Icône animée avec pulse glow
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: widget.modeColor.withValues(alpha: 0.12),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.modeColor.withValues(
+                      alpha: _pulseAnimation.value * 0.3,
+                    ),
+                    blurRadius: 24,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: widget.modeColor.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Recomposition en cours...',
+              style: TextStyle(
+                color: widget.modeColor.withValues(alpha: 0.8),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'DM Sans',
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

@@ -13,30 +13,39 @@ enum DigestMode {
     label: 'Pour vous',
     subtitle: 'Votre sélection personnalisée',
     emoji: '☀️',
-    color: Color(0xFFCB9B6A),
-    gradientStart: Color(0xFF1C1814),
-    gradientEnd: Color(0xFF262018),
-    backgroundColor: Color(0xFF181410),
+    // Tons chauds ambrés/dorés — "coucher de soleil éditorial"
+    color: Color(0xFFD4944C),
+    glowColor: Color(0xFFD4944C),
+    gradientStart: Color(0xFF261C0E),
+    gradientEnd: Color(0xFF1A1408),
+    backgroundColor: Color(0xFF1A150C),
+    cardGlowColor: Color(0x30D4944C),
   ),
   serein(
     key: 'serein',
     label: 'Serein',
     subtitle: 'Sans politique ni infos anxiogènes',
     emoji: '🌿',
-    color: Color(0xFF3D8B6E),
-    gradientStart: Color(0xFF141C18),
-    gradientEnd: Color(0xFF1A2620),
-    backgroundColor: Color(0xFF0E1610),
+    // Tons verts profonds, forêt — "nature apaisante"
+    color: Color(0xFF4CAF7D),
+    glowColor: Color(0xFF4CAF7D),
+    gradientStart: Color(0xFF0E2218),
+    gradientEnd: Color(0xFF0A1A10),
+    backgroundColor: Color(0xFF0C1A10),
+    cardGlowColor: Color(0x304CAF7D),
   ),
   perspective(
     key: 'perspective',
     label: 'Changer de bord',
     subtitle: "Découvrir l'autre bord politique",
     emoji: '🧭',
-    color: Color(0xFF5A7BA8),
-    gradientStart: Color(0xFF14161E),
-    gradientEnd: Color(0xFF1A1E2A),
-    backgroundColor: Color(0xFF0E1018),
+    // Tons bleu nuit/indigo — "horizon, ouverture"
+    color: Color(0xFF6B8FBF),
+    glowColor: Color(0xFF6B8FBF),
+    gradientStart: Color(0xFF0E1526),
+    gradientEnd: Color(0xFF0A101E),
+    backgroundColor: Color(0xFF0C1220),
+    cardGlowColor: Color(0x306B8FBF),
   );
 
   const DigestMode({
@@ -47,6 +56,8 @@ enum DigestMode {
     required this.gradientStart,
     required this.gradientEnd,
     required this.backgroundColor,
+    required this.glowColor,
+    required this.cardGlowColor,
   });
 
   /// Clé API (stockée en user_preferences)
@@ -63,6 +74,12 @@ enum DigestMode {
 
   /// Couleur du mode (null = utilise primary/terracotta)
   final Color? color;
+
+  /// Couleur de glow/halo autour de la carte et du sélecteur
+  final Color glowColor;
+
+  /// Couleur de glow sur les bords de la carte
+  final Color cardGlowColor;
 
   /// Couleurs du gradient du container digest (dark mode)
   final Color gradientStart;
@@ -82,7 +99,7 @@ enum DigestMode {
       case DigestMode.serein:
         return PhosphorIcons.leaf(PhosphorIconsStyle.fill);
       case DigestMode.perspective:
-        return PhosphorIcons.userSwitch(PhosphorIconsStyle.fill);
+        return PhosphorIcons.compass(PhosphorIconsStyle.fill);
     }
   }
 

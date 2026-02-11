@@ -7,14 +7,15 @@ import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
+import 'digest_mode_tab_selector.dart';
 import 'digest_personalization_sheet.dart';
 
 /// Digest Briefing Section with premium design for 7 articles.
-/// Container adapts its gradient, border color, and subtitle
+/// Container adapts its gradient, border color, glow, and subtitle
 /// based on the active DigestMode.
 ///
-/// Mode badges (emoji) are positioned top-right of the header,
-/// progress counter is near the title on the left.
+/// Features a segmented control selector above the header,
+/// stronger mode-adaptive gradients, and card glow effects.
 class DigestBriefingSection extends StatelessWidget {
   final List<DigestItem> items;
   final int completionThreshold;
@@ -53,149 +54,179 @@ class DigestBriefingSection extends StatelessWidget {
 
     // Mode-adaptive colors for container
     final modeColor = mode.effectiveColor(colors.primary);
-    final containerBgColors = isDark
-        ? [mode.gradientStart, mode.gradientEnd]
-        : [colors.backgroundSecondary, colors.backgroundPrimary];
 
-    final headerTextColor = isDark ? Colors.white : colors.textPrimary;
-    final subheaderTextColor =
-        isDark ? Colors.white.withValues(alpha: 0.6) : colors.textSecondary;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
-      margin: const EdgeInsets.only(top: 16, bottom: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: containerBgColors,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: isDark
-              ? modeColor.withValues(alpha: 0.3)
-              : modeColor.withValues(alpha: 0.15),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 8),
+    return Column(
+      children: [
+        // Segmented control selector above the card
+        if (onModeChanged != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: DigestModeSegmentedControl(
+                    selectedMode: mode,
+                    isRegenerating: isRegenerating,
+                    onModeChanged: (newMode) {
+                      if (onModeChanged != null) {
+                        onModeChanged!(newMode);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Mode subtitle — lisible, bonne taille, bonne opacité
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: Text(
+                    mode.subtitle,
+                    key: ValueKey(mode.key),
+                    style: TextStyle(
+                      color: modeColor.withValues(alpha: 0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'DM Sans',
+                      letterSpacing: 0.1,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row: title + progress (left) | mode emoji badges (right)
-          Row(
+
+        // Main card container with mode-adaptive gradient and glow
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: isDark
+                  ? [
+                      mode.gradientStart,
+                      mode.gradientEnd,
+                      mode.backgroundColor.withValues(alpha: 0.0),
+                    ]
+                  : [
+                      colors.backgroundSecondary,
+                      colors.backgroundPrimary,
+                      colors.backgroundPrimary.withValues(alpha: 0.0),
+                    ],
+              stops: const [0.0, 0.7, 1.0],
+            ),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+              bottomLeft: Radius.circular(8),
+              bottomRight: Radius.circular(8),
+            ),
+            border: Border.all(
+              color: isDark
+                  ? modeColor.withValues(alpha: 0.25)
+                  : modeColor.withValues(alpha: 0.12),
+              width: 1,
+            ),
+            boxShadow: isDark
+                ? [
+                    // Glow effect dans la couleur du mode
+                    BoxShadow(
+                      color: mode.cardGlowColor,
+                      blurRadius: 30,
+                      spreadRadius: -5,
+                      offset: const Offset(0, -4),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title + progress on the left
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title row with inline progress
-                    Row(
+              // Header: title + progress (left) | reading time (right)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Title + progress
+                  Expanded(
+                    child: Row(
                       children: [
                         Text(
-                          "L'Essentiel",
+                          "L'Essentiel du jour",
                           style: Theme.of(context)
                               .textTheme
                               .displaySmall
                               ?.copyWith(
-                                fontSize: 22,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -0.5,
-                                color: headerTextColor,
+                                color: isDark
+                                    ? Colors.white
+                                    : colors.textPrimary,
                               ),
                         ),
                         const SizedBox(width: 10),
                         _buildSegmentedProgressBar(colors),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(
-                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                          size: 14,
-                          color: subheaderTextColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$totalMinutes min de lecture',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: subheaderTextColor,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // Emoji mode badges + subtitle on the right
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Emoji badges row
+                  ),
+                  // Reading time
                   Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: DigestMode.values.map((m) => _ModeBadge(
-                          mode: m,
-                          isSelected: m == mode,
-                          primaryColor: colors.primary,
-                          dimColor: colors.textTertiary,
-                          onTap: isRegenerating || onModeChanged == null
-                              ? null
-                              : () {
-                                  HapticFeedback.lightImpact();
-                                  onModeChanged!(m);
-                                },
-                        )).toList(),
-                  ),
-                  // Mode subtitle aligned under badges
-                  const SizedBox(height: 6),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: Text(
-                      mode.subtitle,
-                      key: ValueKey(mode.key),
-                      style: TextStyle(
-                        color: modeColor.withValues(alpha: 0.7),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        fontStyle: FontStyle.italic,
-                        fontFamily: 'DM Sans',
+                    children: [
+                      Icon(
+                        PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                        size: 14,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : colors.textSecondary,
                       ),
-                      textAlign: TextAlign.right,
-                    ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$totalMinutes min',
+                        style:
+                            Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.5)
+                                      : colors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                      ),
+                    ],
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // List of articles
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: items.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 7),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  return _buildRankedCard(context, item, index + 1, isDark);
+                },
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          // List of articles
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: items.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 7),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return _buildRankedCard(context, item, index + 1, isDark);
-            },
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -397,69 +428,6 @@ class DigestBriefingSection extends StatelessWidget {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => DigestPersonalizationSheet(item: item),
-    );
-  }
-}
-
-/// Emoji badge for a digest mode, displayed top-right of the header.
-/// Premium design with subtle glow when selected.
-class _ModeBadge extends StatelessWidget {
-  final DigestMode mode;
-  final bool isSelected;
-  final Color primaryColor;
-  final Color dimColor;
-  final VoidCallback? onTap;
-
-  const _ModeBadge({
-    required this.mode,
-    required this.isSelected,
-    required this.primaryColor,
-    required this.dimColor,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final modeColor = mode.effectiveColor(primaryColor);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.only(left: 6),
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? modeColor.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? modeColor.withValues(alpha: 0.5)
-                : dimColor.withValues(alpha: 0.15),
-            width: isSelected ? 1.5 : 1.0,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: modeColor.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    spreadRadius: 0,
-                  ),
-                ]
-              : null,
-        ),
-        child: Center(
-          child: Text(
-            mode.emoji,
-            style: TextStyle(
-              fontSize: isSelected ? 18 : 16,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
