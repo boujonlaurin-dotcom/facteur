@@ -3,12 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../models/digest_mode.dart';
 
-/// Sélecteur segmenté premium pour les 3 modes du digest.
+/// Compact iOS-style segmented control for the 3 digest modes.
 ///
-/// Un vrai segmented control avec un indicateur animé qui glisse
-/// d'un onglet à l'autre. Fond semi-transparent, mode sélectionné
-/// mis en évidence avec couleur, bordure lumineuse et ombre.
-/// Icônes only — le label en dessous fournit le contexte.
+/// Dark pill container with a lighter sliding indicator behind the
+/// selected segment. Icons only. Designed to fit in the top-right
+/// of the card header (~130×36px).
 class DigestModeSegmentedControl extends StatelessWidget {
   final DigestMode selectedMode;
   final ValueChanged<DigestMode> onModeChanged;
@@ -21,99 +20,96 @@ class DigestModeSegmentedControl extends StatelessWidget {
     this.isRegenerating = false,
   });
 
+  static const double _width = 132;
+  static const double _height = 36;
+  static const double _padding = 3;
+  static const int _count = 3; // DigestMode.values.length
+  static const double _segmentWidth = (_width - _padding * 2) / _count;
+
   @override
   Widget build(BuildContext context) {
     final selectedIndex = DigestMode.values.indexOf(selectedMode);
     final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Taille de chaque segment : la largeur totale divisée en 3
-        final totalWidth = constraints.maxWidth;
-        final segmentWidth = totalWidth / DigestMode.values.length;
-
-        return Container(
-          height: 44,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-              width: 1,
-            ),
-          ),
-          child: Stack(
-            children: [
-              // Indicateur animé (slider) qui glisse entre les segments
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
+    return SizedBox(
+      width: _width,
+      height: _height,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Stack(
+          children: [
+            // Sliding indicator
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              left: _padding + selectedIndex * _segmentWidth,
+              top: _padding,
+              bottom: _padding,
+              width: _segmentWidth,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutCubic,
-                left: selectedIndex * segmentWidth + 3,
-                top: 3,
-                bottom: 3,
-                width: segmentWidth - 6,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutCubic,
-                  decoration: BoxDecoration(
-                    color: modeColor.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(
-                      color: modeColor.withValues(alpha: 0.45),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: modeColor.withValues(alpha: 0.25),
-                        blurRadius: 12,
-                        spreadRadius: -2,
-                      ),
-                    ],
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: modeColor.withValues(alpha: 0.30),
+                    width: 1,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: modeColor.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      spreadRadius: -1,
+                    ),
+                  ],
                 ),
               ),
-              // Les segments (icônes) par-dessus
-              Row(
-                children: DigestMode.values.map((mode) {
+            ),
+            // Icon segments
+            Row(
+              children: [
+                SizedBox(width: _padding),
+                ...DigestMode.values.map((mode) {
                   final isSelected = mode == selectedMode;
-
-                  return Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: isRegenerating
-                          ? null
-                          : () {
-                              if (mode != selectedMode) {
-                                HapticFeedback.lightImpact();
-                                onModeChanged(mode);
-                              }
-                            },
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: isRegenerating
+                        ? null
+                        : () {
+                            if (mode != selectedMode) {
+                              HapticFeedback.lightImpact();
+                              onModeChanged(mode);
+                            }
+                          },
+                    child: SizedBox(
+                      width: _segmentWidth,
+                      height: _height,
                       child: Center(
-                        child: AnimatedDefaultTextStyle(
+                        child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 200),
-                          style: TextStyle(fontSize: isSelected ? 20 : 18),
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 200),
-                            opacity: isSelected ? 1.0 : 0.45,
-                            child: Icon(
-                              mode.icon,
-                              size: isSelected ? 22 : 19,
-                              color: isSelected
-                                  ? mode.effectiveColor(
-                                      const Color(0xFFC0392B))
-                                  : Colors.white.withValues(alpha: 0.7),
-                            ),
+                          child: Icon(
+                            mode.icon,
+                            key: ValueKey('${mode.key}_$isSelected'),
+                            size: isSelected ? 19 : 17,
+                            color: isSelected
+                                ? mode.effectiveColor(const Color(0xFFC0392B))
+                                : Colors.white.withValues(alpha: 0.35),
                           ),
                         ),
                       ),
                     ),
                   );
-                }).toList(),
-              ),
-            ],
-          ),
-        );
-      },
+                }),
+                SizedBox(width: _padding),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
