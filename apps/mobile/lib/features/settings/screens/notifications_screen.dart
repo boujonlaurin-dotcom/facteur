@@ -55,18 +55,15 @@ class NotificationsScreen extends ConsumerWidget {
                     indent: FacteurSpacing.space4,
                     endIndent: FacteurSpacing.space4,
                   ),
-                  // Email Digest
+                  // Email Digest (disabled for now - feature not implemented)
                   _buildToggleTile(
                     context,
                     icon: Icons.email_outlined,
                     title: 'Résumé par email',
                     subtitle: 'Newsletter hebdomadaire avec vos highlights',
                     value: settings.emailDigestEnabled,
-                    onChanged: (value) {
-                      ref
-                          .read(notificationsSettingsProvider.notifier)
-                          .setEmailDigestEnabled(value);
-                    },
+                    onChanged: null,
+                    enabled: false,
                   ),
                 ],
               ),
@@ -100,42 +97,47 @@ class NotificationsScreen extends ConsumerWidget {
     required String title,
     required String subtitle,
     required bool value,
-    required ValueChanged<bool> onChanged,
+    required ValueChanged<bool>? onChanged,
+    bool enabled = true,
   }) {
     final colors = context.facteurColors;
+    final opacity = enabled ? 1.0 : 0.5;
 
-    return Padding(
-      padding: const EdgeInsets.all(FacteurSpacing.space4),
-      child: Row(
-        children: [
-          Icon(icon, color: colors.primary, size: 24),
-          const SizedBox(width: FacteurSpacing.space4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
-              ],
+    return Opacity(
+      opacity: opacity,
+      child: Padding(
+        padding: const EdgeInsets.all(FacteurSpacing.space4),
+        child: Row(
+          children: [
+            Icon(icon, color: colors.primary, size: 24),
+            const SizedBox(width: FacteurSpacing.space4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: colors.primary,
-          ),
-        ],
+            Switch.adaptive(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+              activeColor: colors.primary,
+            ),
+          ],
+        ),
       ),
     );
   }
