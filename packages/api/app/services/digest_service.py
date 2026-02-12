@@ -368,24 +368,47 @@ class DigestService:
             status.is_hidden = False
             # Increment regular streak via StreakService
             await self.streak_service.increment_consumption(str(user_id))
-            
+
         elif action == DigestAction.SAVE:
             status.is_saved = True
             status.saved_at = datetime.utcnow()
             status.is_hidden = False
-            
+
+        elif action == DigestAction.LIKE:
+            status.is_liked = True
+            status.liked_at = datetime.utcnow()
+            # Reinforce subtopic weights via ContentService
+            from app.services.content_service import ContentService
+            content_service = ContentService(self.session)
+            from app.services.recommendation.scoring_config import ScoringWeights
+            await content_service._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
+            )
+
+        elif action == DigestAction.UNLIKE:
+            status.is_liked = False
+            status.liked_at = None
+            # Reverse subtopic weight adjustment
+            from app.services.content_service import ContentService
+            content_service = ContentService(self.session)
+            from app.services.recommendation.scoring_config import ScoringWeights
+            await content_service._adjust_subtopic_weights(
+                user_id, content_id, -ScoringWeights.LIKE_TOPIC_BOOST
+            )
+
         elif action == DigestAction.NOT_INTERESTED:
             status.is_hidden = True
             status.hidden_reason = "not_interested"
             # Trigger personalization mute
             await self._trigger_personalization_mute(user_id, content_id)
-            
+
         elif action == DigestAction.UNDO:
             status.status = ContentStatus.UNSEEN
             status.is_saved = False
+            status.is_liked = False
             status.is_hidden = False
             status.hidden_reason = None
-            
+
         else:
             raise ValueError(f"Unknown action: {action}")
         
@@ -565,6 +588,14 @@ class DigestService:
             return "Source suivie"
         elif "Source personnalisée" in top.label:
             return "Ta source personnalisée"
+        elif "Renforcé par vos j'aime" in top.label:
+            topics = [
+                parts[1] for b in positive
+                if "Renforcé" in b.label
+                for parts in [b.label.split(": ", 1)]
+                if len(parts) > 1
+            ][:2]
+            return f"Renforcé par vos j'aime : {', '.join(topics)}" if topics else "Renforcé par vos j'aime"
         elif "Sous-thème" in top.label:
             topics = [
                 parts[1] for b in positive
@@ -638,7 +669,7 @@ class DigestService:
             # Get action state from pre-fetched map
             action_state = action_states_map.get(
                 content_id,
-                {"is_read": False, "is_saved": False, "is_dismissed": False}
+                {"is_read": False, "is_saved": False, "is_liked": False, "is_dismissed": False}
             )
             
             # Rebuild breakdown from stored data if available
@@ -685,6 +716,7 @@ class DigestService:
                 recommendation_reason=recommendation_reason,
                 is_read=action_state["is_read"],
                 is_saved=action_state["is_saved"],
+                is_liked=action_state["is_liked"],
                 is_dismissed=action_state["is_dismissed"]
             ))
         
@@ -717,11 +749,12 @@ class DigestService:
         )
         
         if not status:
-            return {"is_read": False, "is_saved": False, "is_dismissed": False}
-        
+            return {"is_read": False, "is_saved": False, "is_liked": False, "is_dismissed": False}
+
         return {
             "is_read": status.status == ContentStatus.CONSUMED,
             "is_saved": status.is_saved,
+            "is_liked": status.is_liked,
             "is_dismissed": status.is_hidden
         }
     
@@ -751,6 +784,7 @@ class DigestService:
             status.content_id: {
                 "is_read": status.status == ContentStatus.CONSUMED,
                 "is_saved": status.is_saved,
+                "is_liked": status.is_liked,
                 "is_dismissed": status.is_hidden
             }
             for status in statuses

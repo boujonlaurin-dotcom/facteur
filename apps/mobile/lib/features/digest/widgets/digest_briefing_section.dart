@@ -22,6 +22,7 @@ class DigestBriefingSection extends StatefulWidget {
   final int completionThreshold;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
+  final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onNotInterested;
   final DigestMode mode;
   final bool isRegenerating;
@@ -33,6 +34,7 @@ class DigestBriefingSection extends StatefulWidget {
     this.completionThreshold = 5,
     required this.onItemTap,
     this.onSave,
+    this.onLike,
     this.onNotInterested,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
@@ -367,6 +369,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             child: FeedCard(
               content: _convertToContent(item),
               onTap: () => widget.onItemTap(item),
+              onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
+              isLiked: item.isLiked,
               onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
               onNotInterested: widget.onNotInterested != null
                   ? () => widget.onNotInterested!(item)

@@ -435,6 +435,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           content: content,
                                           onTap: () =>
                                               _showArticleModal(content),
+                                          onLike: () {
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .toggleLike(content);
+                                          },
+                                          isLiked: content.isLiked,
+                                          onSave: () {
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .toggleSave(content);
+                                          },
+                                          isSaved: content.isSaved,
                                           onPersonalize: () {
                                             _showPersonalizationSheet(
                                                 context, content);

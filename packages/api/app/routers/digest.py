@@ -164,6 +164,8 @@ async def apply_digest_action(
         messages = {
             DigestAction.READ: "Article marqué comme lu",
             DigestAction.SAVE: "Article sauvegardé",
+            DigestAction.LIKE: "Article aimé",
+            DigestAction.UNLIKE: "Like retiré",
             DigestAction.NOT_INTERESTED: "Article masqué et source ignorée",
             DigestAction.UNDO: "Action annulée"
         }

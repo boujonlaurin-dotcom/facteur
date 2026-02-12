@@ -77,10 +77,12 @@ class RecommendationService:
                  custom_source_ids.add(row.source_id)
         
         user_subtopics = set()
-        subtopics_res = await self.session.scalars(
-            select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
-        )
-        user_subtopics = set(subtopics_res.all())
+        user_subtopic_weights: dict[str, float] = {}
+        subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
+        subtopics_rows = (await self.session.scalars(subtopics_stmt)).all()
+        for row in subtopics_rows:
+            user_subtopics.add(row.topic_slug)
+            user_subtopic_weights[row.topic_slug] = row.weight
         
         personalization = await self.session.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_id)
@@ -175,6 +177,7 @@ class RecommendationService:
             user_prefs=user_prefs,
             now=now,
             user_subtopics=user_subtopics,
+            user_subtopic_weights=user_subtopic_weights,
             # Story 4.7
             muted_sources=muted_sources,
             muted_themes=muted_themes,
@@ -388,10 +391,13 @@ class RecommendationService:
                                 label = "À la une"
                         elif layer == 'article_topic':
                             try:
-                                raw_topics = details.split(': ')[1].replace(" (précis)", "")
-                                topic_slugs = [t.strip() for t in raw_topics.split(',')]
+                                raw_part = details.split(': ')[1].split(' [')[0].replace(" (précis)", "")
+                                topic_slugs = [t.strip() for t in raw_part.split(',')]
                                 topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
-                                label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                                if "[liked:" in details:
+                                    label = f"Renforcé par vos j'aime : {', '.join(topic_labels)}"
+                                else:
+                                    label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
                             except Exception:
                                 label = "Vos centres d'intérêt"
                         elif layer == 'static_prefs':
@@ -438,6 +444,7 @@ class RecommendationService:
                 st = status_map.get(content.id)
                 # Attach temporary attributes for Pydantic serialization
                 content.is_saved = st.is_saved if st else False
+                content.is_liked = st.is_liked if st else False
                 content.is_hidden = st.is_hidden if st else False
                 content.hidden_reason = st.hidden_reason if st else None
                 content.status = st.status if st else ContentStatus.UNSEEN
