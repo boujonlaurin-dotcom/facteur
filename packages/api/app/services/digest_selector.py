@@ -80,6 +80,7 @@ class DigestContext:
     custom_source_ids: Set[UUID]
     user_prefs: Dict[str, Any]
     user_subtopics: Set[str]
+    user_subtopic_weights: Dict[str, float]
     muted_sources: Set[UUID]
     muted_themes: Set[str]
     muted_topics: Set[str]
@@ -285,10 +286,12 @@ class DigestSelector:
             if us.is_custom:
                 custom_source_ids.add(us.source_id)
         
-        # Récupérer les sous-thèmes
-        subtopics_stmt = select(UserSubtopic.topic_slug).where(UserSubtopic.user_id == user_id)
+        # Récupérer les sous-thèmes et poids
+        subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
         subtopics_result = await self.session.execute(subtopics_stmt)
-        user_subtopics = set(subtopics_result.scalars().all())
+        subtopic_rows = subtopics_result.scalars().all()
+        user_subtopics = {row.topic_slug for row in subtopic_rows}
+        user_subtopic_weights = {row.topic_slug: row.weight for row in subtopic_rows}
         
         # Construire les sets d'intérêts et poids
         user_interests = set()
@@ -335,6 +338,7 @@ class DigestSelector:
             custom_source_ids=custom_source_ids,
             user_prefs=user_prefs,
             user_subtopics=user_subtopics,
+            user_subtopic_weights=user_subtopic_weights,
             muted_sources=muted_sources,
             muted_themes=muted_themes,
             muted_topics=muted_topics,
@@ -570,6 +574,7 @@ class DigestSelector:
             user_prefs=context.user_prefs,
             now=datetime.datetime.now(datetime.timezone.utc),
             user_subtopics=context.user_subtopics,
+            user_subtopic_weights=context.user_subtopic_weights,
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
@@ -685,10 +690,17 @@ class DigestSelector:
                 if content.topics:
                     matched_topics = 0
                     for topic in content.topics:
-                        if topic.lower() in context.user_subtopics and matched_topics < 2:
+                        topic_lower = topic.lower()
+                        if topic_lower in context.user_subtopics and matched_topics < 2:
+                            w = context.user_subtopic_weights.get(topic_lower, 1.0)
+                            points = ScoringWeights.TOPIC_MATCH * w
+                            if w > 1.0:
+                                label = f"Renforcé par vos j'aime : {topic}"
+                            else:
+                                label = f"Sous-thème : {topic}"
                             breakdown.append(DigestScoreBreakdown(
-                                label=f"Sous-thème : {topic}",
-                                points=ScoringWeights.TOPIC_MATCH,
+                                label=label,
+                                points=points,
                                 is_positive=True
                             ))
                             matched_topics += 1

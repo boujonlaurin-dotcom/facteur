@@ -130,6 +130,14 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
+  void _handleLike(DigestItem item) {
+    HapticFeedback.mediumImpact();
+    ref.read(digestProvider.notifier).applyAction(
+          item.contentId,
+          item.isLiked ? 'unlike' : 'like',
+        );
+  }
+
   void _handleSave(DigestItem item) {
     HapticFeedback.lightImpact();
     ref.read(digestProvider.notifier).applyAction(
@@ -398,6 +406,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   items: digest.items,
                                   completionThreshold: digest.completionThreshold,
                                   onItemTap: _openArticle,
+                                  onLike: _handleLike,
                                   onSave: _handleSave,
                                   onNotInterested: _handleNotInterested,
                                   mode: modeState.mode,

@@ -127,6 +127,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                 child: FeedCard(
                                   content: content,
                                   isSaved: true,
+                                  isLiked: content.isLiked,
                                   onTap: () async {
                                     final uri = Uri.parse(content.url);
                                     if (await canLaunchUrl(uri)) {
@@ -147,8 +148,6 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                         .read(savedFeedProvider.notifier)
                                         .toggleSave(content);
                                   },
-                                  onPersonalize:
-                                      () {}, // Can be implemented if needed
                                 ),
                               );
                             },
