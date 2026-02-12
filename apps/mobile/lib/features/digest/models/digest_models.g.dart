@@ -79,6 +79,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
       reason: json['reason'] as String? ?? '',
       isRead: json['is_read'] as bool? ?? false,
       isSaved: json['is_saved'] as bool? ?? false,
+      isLiked: json['is_liked'] as bool? ?? false,
       isDismissed: json['is_dismissed'] as bool? ?? false,
       recommendationReason: json['recommendation_reason'] == null
           ? null
@@ -101,6 +102,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'reason': instance.reason,
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
+      'is_liked': instance.isLiked,
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
     };

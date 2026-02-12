@@ -68,6 +68,7 @@ class DigestItem with _$DigestItem {
     @Default('') String reason,
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
+    @JsonKey(name: 'is_liked') @Default(false) bool isLiked,
     @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,

@@ -157,7 +157,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     state = AsyncData(digest);
   }
 
-  /// Apply an action to a digest item (read, save, not_interested, undo)
+  /// Apply an action to a digest item (like, unlike, read, save, not_interested, undo)
   Future<void> applyAction(String contentId, String action) async {
     final currentDigest = state.value;
     if (currentDigest == null) return;
@@ -166,6 +166,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final updatedItems = currentDigest.items.map((item) {
       if (item.contentId == contentId) {
         switch (action) {
+          case 'like':
+            return item.copyWith(isLiked: true);
+          case 'unlike':
+            return item.copyWith(isLiked: false);
           case 'read':
             return item.copyWith(isRead: true, isDismissed: false);
           case 'save':
@@ -176,7 +180,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
             return item.copyWith(isDismissed: true, isRead: false);
           case 'undo':
             return item.copyWith(
-                isRead: false, isSaved: false, isDismissed: false);
+                isRead: false, isSaved: false, isLiked: false, isDismissed: false);
           default:
             return item;
         }
@@ -302,6 +306,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     // Map UI action names to analytics action names
     final String analyticsAction;
     switch (action) {
+      case 'like':
+        analyticsAction = 'like';
+      case 'unlike':
+        // unlike is not a tracked interaction event
+        return;
       case 'read':
         analyticsAction = 'read';
       case 'save':
@@ -338,6 +347,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// Trigger haptic feedback based on action type
   Future<void> _triggerHaptic(String action) async {
     switch (action) {
+      case 'like':
+        await HapticFeedback.mediumImpact();
+      case 'unlike':
+        await HapticFeedback.lightImpact();
       case 'read':
         await HapticFeedback.mediumImpact();
       case 'save':
@@ -356,6 +369,12 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// Show notification for successful action
   void _showActionNotification(String action) {
     switch (action) {
+      case 'like':
+        // Silent — visual toggle is sufficient feedback
+        break;
+      case 'unlike':
+        // Silent — visual toggle is sufficient feedback
+        break;
       case 'read':
         // Silent tracking - no notification needed for automatic read
         break;
@@ -383,7 +402,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   /// Update a specific item's state locally (for optimistic updates)
   void updateItemState(String contentId,
-      {bool? isRead, bool? isSaved, bool? isDismissed}) {
+      {bool? isRead, bool? isSaved, bool? isLiked, bool? isDismissed}) {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
@@ -392,6 +411,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         return item.copyWith(
           isRead: isRead ?? item.isRead,
           isSaved: isSaved ?? item.isSaved,
+          isLiked: isLiked ?? item.isLiked,
           isDismissed: isDismissed ?? item.isDismissed,
         );
       }

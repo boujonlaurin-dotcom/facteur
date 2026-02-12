@@ -54,6 +54,7 @@ class ContentService:
             "source": content.source,
             "status": user_status.status if user_status else ContentStatus.UNSEEN,
             "is_saved": user_status.is_saved if user_status else False,
+            "is_liked": user_status.is_liked if user_status else False,
             "is_hidden": user_status.is_hidden if user_status else False,
             "hidden_reason": user_status.hidden_reason if user_status else None,
             "time_spent_seconds": user_status.time_spent_seconds if user_status else 0,
@@ -174,22 +175,86 @@ class ContentService:
             )
             self.session.add(new_interest)
 
-    async def set_save_status(
-        self, user_id: UUID, content_id: UUID, is_saved: bool
+    async def _adjust_subtopic_weights(
+        self, user_id: UUID, content_id: UUID, delta: float
+    ) -> None:
+        """
+        Ajuste les poids des sous-thèmes utilisateur en fonction d'un signal explicite.
+        Réutilisé par like (+0.15) et bookmark (+0.05).
+        """
+        from app.models.content import Content
+        from app.models.user import UserSubtopic
+        from sqlalchemy.orm import selectinload
+
+        content = await self.session.get(
+            Content,
+            content_id,
+            options=[selectinload(Content.source)],
+        )
+
+        if not content or not content.topics:
+            return
+
+        for topic_slug in content.topics:
+            stmt = select(UserSubtopic).where(
+                UserSubtopic.user_id == user_id,
+                UserSubtopic.topic_slug == topic_slug,
+            )
+            subtopic = await self.session.scalar(stmt)
+
+            if subtopic:
+                new_weight = subtopic.weight + delta
+                subtopic.weight = max(0.1, min(new_weight, 3.0))
+            elif delta > 0:
+                new_subtopic = UserSubtopic(
+                    user_id=user_id,
+                    topic_slug=topic_slug,
+                    weight=1.0 + delta,
+                )
+                self.session.add(new_subtopic)
+
+        # Also adjust interest weight for source theme
+        if content.source and content.source.theme:
+            from app.models.user import UserInterest
+            from app.services.recommendation.scoring_config import ScoringWeights
+
+            theme_slug = content.source.theme
+            stmt = select(UserInterest).where(
+                UserInterest.user_id == user_id,
+                UserInterest.interest_slug == theme_slug,
+            )
+            interest = await self.session.scalar(stmt)
+            learning_rate = ScoringWeights.LIKE_INTEREST_RATE
+
+            if interest:
+                new_weight = interest.weight + (learning_rate * (1.0 if delta > 0 else -1.0))
+                interest.weight = max(0.1, min(new_weight, 3.0))
+            elif delta > 0:
+                new_interest = UserInterest(
+                    user_id=user_id,
+                    interest_slug=theme_slug,
+                    weight=1.0 + learning_rate,
+                )
+                self.session.add(new_interest)
+
+    async def set_like_status(
+        self, user_id: UUID, content_id: UUID, is_liked: bool
     ) -> UserContentStatus:
-        """Met à jour l'état de sauvegarde d'un contenu."""
+        """Met à jour l'état de like d'un contenu."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
         now = datetime.utcnow()
-        
-        values = {
+
+        values: dict = {
             "user_id": user_id,
             "content_id": content_id,
-            "is_saved": is_saved,
+            "is_liked": is_liked,
             "updated_at": now,
         }
-        
-        if is_saved:
-            values["saved_at"] = now
-        
+
+        if is_liked:
+            values["liked_at"] = now
+
         stmt = (
             insert(UserContentStatus)
             .values(**values)
@@ -199,9 +264,54 @@ class ContentService:
             )
             .returning(UserContentStatus)
         )
-        
+
         result = await self.session.scalars(stmt)
-        return result.one()
+        status = result.one()
+
+        # Adjust subtopic weights
+        delta = ScoringWeights.LIKE_TOPIC_BOOST if is_liked else -ScoringWeights.LIKE_TOPIC_BOOST
+        await self._adjust_subtopic_weights(user_id, content_id, delta)
+
+        return status
+
+    async def set_save_status(
+        self, user_id: UUID, content_id: UUID, is_saved: bool
+    ) -> UserContentStatus:
+        """Met à jour l'état de sauvegarde d'un contenu."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        now = datetime.utcnow()
+
+        values: dict = {
+            "user_id": user_id,
+            "content_id": content_id,
+            "is_saved": is_saved,
+            "updated_at": now,
+        }
+
+        if is_saved:
+            values["saved_at"] = now
+
+        stmt = (
+            insert(UserContentStatus)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_=values,
+            )
+            .returning(UserContentStatus)
+        )
+
+        result = await self.session.scalars(stmt)
+        status = result.one()
+
+        # Reinforce subtopic weights on bookmark
+        if is_saved:
+            await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
+
+        return status
 
     async def set_hide_status(
         self, user_id: UUID, content_id: UUID, is_hidden: bool, reason: HiddenReason = None

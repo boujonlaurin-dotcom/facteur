@@ -664,6 +664,8 @@ mixin _$DigestItem {
   bool get isRead => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_saved')
   bool get isSaved => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_liked')
+  bool get isLiked => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed => throw _privateConstructorUsedError;
   @JsonKey(name: 'recommendation_reason')
@@ -700,6 +702,7 @@ abstract class $DigestItemCopyWith<$Res> {
       String reason,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason});
@@ -734,6 +737,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? reason = null,
     Object? isRead = null,
     Object? isSaved = null,
+    Object? isLiked = null,
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
   }) {
@@ -789,6 +793,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
       isSaved: null == isSaved
           ? _value.isSaved
           : isSaved // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
               as bool,
       isDismissed: null == isDismissed
           ? _value.isDismissed
@@ -853,6 +861,7 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       String reason,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason});
@@ -887,6 +896,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? reason = null,
     Object? isRead = null,
     Object? isSaved = null,
+    Object? isLiked = null,
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
   }) {
@@ -943,6 +953,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.isSaved
           : isSaved // ignore: cast_nullable_to_non_nullable
               as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
+              as bool,
       isDismissed: null == isDismissed
           ? _value.isDismissed
           : isDismissed // ignore: cast_nullable_to_non_nullable
@@ -976,6 +990,7 @@ class _$DigestItemImpl implements _DigestItem {
       this.reason = '',
       @JsonKey(name: 'is_read') this.isRead = false,
       @JsonKey(name: 'is_saved') this.isSaved = false,
+      @JsonKey(name: 'is_liked') this.isLiked = false,
       @JsonKey(name: 'is_dismissed') this.isDismissed = false,
       @JsonKey(name: 'recommendation_reason') this.recommendationReason});
 
@@ -1023,6 +1038,9 @@ class _$DigestItemImpl implements _DigestItem {
   @JsonKey(name: 'is_saved')
   final bool isSaved;
   @override
+  @JsonKey(name: 'is_liked')
+  final bool isLiked;
+  @override
   @JsonKey(name: 'is_dismissed')
   final bool isDismissed;
   @override
@@ -1031,7 +1049,7 @@ class _$DigestItemImpl implements _DigestItem {
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isRead: $isRead, isSaved: $isSaved, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
   }
 
   @override
@@ -1058,6 +1076,7 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.reason, reason) || other.reason == reason) &&
             (identical(other.isRead, isRead) || other.isRead == isRead) &&
             (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
+            (identical(other.isLiked, isLiked) || other.isLiked == isLiked) &&
             (identical(other.isDismissed, isDismissed) ||
                 other.isDismissed == isDismissed) &&
             (identical(other.recommendationReason, recommendationReason) ||
@@ -1081,6 +1100,7 @@ class _$DigestItemImpl implements _DigestItem {
       reason,
       isRead,
       isSaved,
+      isLiked,
       isDismissed,
       recommendationReason);
 
@@ -1117,6 +1137,7 @@ abstract class _DigestItem implements DigestItem {
           final String reason,
           @JsonKey(name: 'is_read') final bool isRead,
           @JsonKey(name: 'is_saved') final bool isSaved,
+          @JsonKey(name: 'is_liked') final bool isLiked,
           @JsonKey(name: 'is_dismissed') final bool isDismissed,
           @JsonKey(name: 'recommendation_reason')
           final DigestRecommendationReason? recommendationReason}) =
@@ -1161,6 +1182,9 @@ abstract class _DigestItem implements DigestItem {
   @override
   @JsonKey(name: 'is_saved')
   bool get isSaved;
+  @override
+  @JsonKey(name: 'is_liked')
+  bool get isLiked;
   @override
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed;

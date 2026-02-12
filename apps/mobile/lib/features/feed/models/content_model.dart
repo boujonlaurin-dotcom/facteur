@@ -80,6 +80,7 @@ class Content {
   final Source source;
   final ContentStatus status;
   final bool isSaved;
+  final bool isLiked;
   final bool isHidden;
   final RecommendationReason? recommendationReason;
 
@@ -97,6 +98,7 @@ class Content {
     required this.source,
     this.status = ContentStatus.unseen,
     this.isSaved = false,
+    this.isLiked = false,
     this.isHidden = false,
     this.recommendationReason,
   });
@@ -129,6 +131,7 @@ class Content {
           orElse: () => ContentStatus.unseen,
         ),
         isSaved: (json['is_saved'] as bool?) ?? false,
+        isLiked: (json['is_liked'] as bool?) ?? false,
         isHidden: (json['is_hidden'] as bool?) ?? false,
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)
@@ -163,6 +166,7 @@ class Content {
     Source? source,
     ContentStatus? status,
     bool? isSaved,
+    bool? isLiked,
     bool? isHidden,
     RecommendationReason? recommendationReason,
   }) {
@@ -180,6 +184,7 @@ class Content {
       source: source ?? this.source,
       status: status ?? this.status,
       isSaved: isSaved ?? this.isSaved,
+      isLiked: isLiked ?? this.isLiked,
       isHidden: isHidden ?? this.isHidden,
       recommendationReason: recommendationReason ?? this.recommendationReason,
     );
