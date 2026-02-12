@@ -30,6 +30,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedIndex = DigestMode.values.indexOf(selectedMode);
     final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Teintes adaptées au fond du container digest :
     // dark mode → fond sombre, teintes blanches
@@ -66,12 +67,12 @@ class DigestModeSegmentedControl extends StatelessWidget {
                       : Colors.white.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(17),
                   border: Border.all(
-                    color: modeColor.withValues(alpha: 0.30),
+                    color: modeColor.withValues(alpha: isDark ? 0.30 : 0.45),
                     width: 1,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: modeColor.withValues(alpha: 0.15),
+                      color: modeColor.withValues(alpha: isDark ? 0.15 : 0.20),
                       blurRadius: 8,
                       spreadRadius: -1,
                     ),
