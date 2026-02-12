@@ -71,6 +71,7 @@ class DigestItem(BaseModel):
     # User action tracking (default: no action yet)
     is_read: bool = False
     is_saved: bool = False
+    is_liked: bool = False
     is_dismissed: bool = False
     
     class Config:
@@ -104,9 +105,11 @@ class DigestResponse(BaseModel):
 
 class DigestAction(str, Enum):
     """Possible actions a user can take on a digest item."""
-    
+
     READ = "read"  # User has read/consumed the article
     SAVE = "save"  # User wants to save/bookmark
+    LIKE = "like"  # User likes this article (positive signal)
+    UNLIKE = "unlike"  # User removes like
     NOT_INTERESTED = "not_interested"  # User is not interested (triggers personalization mute)
     UNDO = "undo"  # Reset action
 

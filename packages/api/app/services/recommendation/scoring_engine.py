@@ -21,6 +21,7 @@ class ScoringContext:
         user_prefs: Dict[str, Any],
         now: datetime.datetime,
         user_subtopics: Set[str] = None,
+        user_subtopic_weights: Dict[str, float] = None,
         # Story 4.7: Personalization
         muted_sources: Set[UUID] = None,
         muted_themes: Set[str] = None,
@@ -35,7 +36,8 @@ class ScoringContext:
         self.user_prefs = user_prefs
         self.now = now
         self.user_subtopics = user_subtopics or set()
-        
+        self.user_subtopic_weights = user_subtopic_weights or {}
+
         # Story 4.7: Personalization malus
         self.muted_sources = muted_sources or set()
         self.muted_themes = muted_themes or set()

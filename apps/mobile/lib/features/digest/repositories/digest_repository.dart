@@ -96,12 +96,12 @@ class DigestRepository {
     }
   }
 
-  /// Apply an action (read, save, not_interested, undo, unsave) to a digest item
+  /// Apply an action (read, save, like, unlike, not_interested, undo, unsave) to a digest item
   Future<void> applyAction({
     required String digestId,
     required String contentId,
     required String
-        action, // 'read', 'save', 'not_interested', 'undo', 'unsave'
+        action, // 'read', 'save', 'like', 'unlike', 'not_interested', 'undo', 'unsave'
   }) async {
     try {
       // Handle unsave as save with is_saved=false for API compatibility
