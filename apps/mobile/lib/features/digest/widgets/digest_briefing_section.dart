@@ -102,30 +102,38 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       curve: Curves.easeOutCubic,
       builder: (context, animatedBaseColor, child) {
         final baseColor = animatedBaseColor ?? gradStart;
+        final blendedEnd = Color.lerp(baseColor, gradEnd, 0.7)!;
+
+        // En light mode : gradient semi-transparent pour laisser le fond
+        // crème transparaître. Plus léger en haut, plus teinté en bas.
+        final topColor = isDark
+            ? baseColor
+            : baseColor.withValues(alpha: 0.35);
+        final bottomColor = isDark
+            ? blendedEnd
+            : blendedEnd.withValues(alpha: 0.55);
+
         return Container(
           margin: const EdgeInsets.only(top: 16, bottom: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                baseColor,
-                Color.lerp(baseColor, gradEnd, 0.7)!,
-              ],
+              colors: [topColor, bottomColor],
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: isDark
                   ? Colors.white.withValues(alpha: 0.08)
-                  : Colors.black.withValues(alpha: 0.08),
+                  : baseColor.withValues(alpha: 0.25),
               width: 1,
             ),
             boxShadow: [
               BoxShadow(
-                // Ombre plus forte en light mode pour ressortir du fond crème
-                color:
-                    Colors.black.withValues(alpha: isDark ? 0.25 : 0.30),
-                blurRadius: 20,
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.25)
+                    : baseColor.withValues(alpha: 0.15),
+                blurRadius: isDark ? 20 : 12,
                 offset: const Offset(0, 8),
               ),
             ],
