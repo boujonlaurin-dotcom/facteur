@@ -373,6 +373,13 @@ class DigestService:
             status.is_saved = True
             status.saved_at = datetime.utcnow()
             status.is_hidden = False
+            # Reinforce subtopic weights on bookmark
+            from app.services.content_service import ContentService
+            content_service = ContentService(self.session)
+            from app.services.recommendation.scoring_config import ScoringWeights
+            await content_service._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
 
         elif action == DigestAction.LIKE:
             status.is_liked = True
