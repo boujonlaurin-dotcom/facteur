@@ -82,10 +82,17 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     });
     final totalMinutes = (totalSeconds / 60).ceil();
 
-    // La carte digest utilise toujours les gradients sombres, quel que soit
-    // le thème. C'est un élément premium "héros" à fond foncé permanent.
-    final gradStart = widget.mode.gradientStart;
-    final gradEnd = widget.mode.gradientEnd;
+    // Gradient adapté au thème : dark → gradients sombres, light → gradients clairs.
+    final gradStart =
+        isDark ? widget.mode.gradientStart : widget.mode.lightGradientStart;
+    final gradEnd =
+        isDark ? widget.mode.gradientEnd : widget.mode.lightGradientEnd;
+
+    // Couleurs internes : texte et icônes s'adaptent au fond du container.
+    final textPrimary =
+        isDark ? Colors.white : const Color(0xFF2C1E10);
+    final textSecondary =
+        isDark ? Colors.white.withValues(alpha: 0.5) : const Color(0xFF5C4A38);
 
     // TweenAnimationBuilder for smooth gradient transitions between modes.
     // Only `end` is set so changes animate from current value → new.
@@ -108,7 +115,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
               width: 1,
             ),
             boxShadow: [
@@ -146,14 +155,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                                       fontSize: 20,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: -0.5,
-                                      color: Colors.white,
+                                      color: textPrimary,
                                     ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             const SizedBox(width: 10),
-                            _buildSegmentedProgressBar(colors),
+                            _buildSegmentedProgressBar(colors, isDark),
                           ],
                         ),
                         const SizedBox(height: 6),
@@ -163,7 +172,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                               PhosphorIcons.clock(
                                   PhosphorIconsStyle.regular),
                               size: 14,
-                              color: Colors.white.withValues(alpha: 0.5),
+                              color: textSecondary,
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -172,8 +181,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                                   .textTheme
                                   .bodySmall
                                   ?.copyWith(
-                                    color: Colors.white
-                                        .withValues(alpha: 0.5),
+                                    color: textSecondary,
                                     fontWeight: FontWeight.w500,
                                   ),
                             ),
@@ -240,7 +248,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     );
   }
 
-  Widget _buildSegmentedProgressBar(FacteurColors colors) {
+  Widget _buildSegmentedProgressBar(
+      FacteurColors colors, bool isDark) {
     final processedCount = widget.items
         .where((item) => item.isRead || item.isDismissed || item.isSaved)
         .length;
@@ -275,7 +284,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               decoration: BoxDecoration(
                 color: isFilled
                     ? (isDone ? colors.success : colors.primary)
-                    : Colors.white.withValues(alpha: 0.15),
+                    : isDark
+                        ? Colors.white.withValues(alpha: 0.15)
+                        : Colors.black.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(2),
               ),
             );
@@ -288,9 +299,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   Widget _buildRankedCard(
       BuildContext context, DigestItem item, int rank) {
     final colors = context.facteurColors;
-    // La carte est toujours sur fond sombre → couleurs claires
-    const labelColor = Color(0x80FFFFFF); // white 50%
-    const dotColor = Color(0x33FFFFFF); // white 20%
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Couleurs de label adaptées au fond du container
+    final labelColor = isDark
+        ? const Color(0x80FFFFFF) // white 50%
+        : const Color(0x802C1E10); // dark brown 50%
+    final dotColor = isDark
+        ? const Color(0x33FFFFFF) // white 20%
+        : const Color(0x332C1E10); // dark brown 20%
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
