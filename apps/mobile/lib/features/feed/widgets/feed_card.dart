@@ -262,32 +262,18 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                          // Personalize button (for Feed)
+                          // Info button (personalization)
                           if (onPersonalize != null)
                             InkWell(
                               onTap: onPersonalize,
                               borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 4),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      PhosphorIcons.question(
-                                          PhosphorIconsStyle.regular),
-                                      size: 14,
-                                      color: colors.textTertiary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Personnalisation',
-                                      style: textTheme.labelSmall?.copyWith(
-                                        color: colors.textTertiary,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  PhosphorIcons.info(
+                                      PhosphorIconsStyle.regular),
+                                  size: 20,
+                                  color: colors.textSecondary,
                                 ),
                               ),
                             ),

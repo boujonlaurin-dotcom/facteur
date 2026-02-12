@@ -401,6 +401,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         logoUrl: item.source?.logoUrl,
         theme: item.source?.theme,
       ),
+      isLiked: item.isLiked,
+      isSaved: item.isSaved,
     );
   }
 

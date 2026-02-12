@@ -447,6 +447,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                 .toggleSave(content);
                                           },
                                           isSaved: content.isSaved,
+                                          onNotInterested: () {
+                                            ref
+                                                .read(feedProvider.notifier)
+                                                .hideContent(
+                                                    content,
+                                                    HiddenReason.source);
+                                          },
                                           onPersonalize: () {
                                             _showPersonalizationSheet(
                                                 context, content);
