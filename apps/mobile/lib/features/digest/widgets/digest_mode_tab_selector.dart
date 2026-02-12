@@ -5,9 +5,9 @@ import '../models/digest_mode.dart';
 
 /// Compact iOS-style segmented control for the 3 digest modes.
 ///
-/// Dark pill container with a lighter sliding indicator behind the
-/// selected segment. Icons only. Designed to fit in the top-right
-/// of the card header (~130×36px).
+/// Pill container with a sliding indicator behind the selected segment.
+/// Icons only. Adapts to the card background (dark in dark mode, coloré en light).
+/// Designed to fit in the top-right of the card header (~130×36px).
 class DigestModeSegmentedControl extends StatelessWidget {
   final DigestMode selectedMode;
   final ValueChanged<DigestMode> onModeChanged;
@@ -31,14 +31,20 @@ class DigestModeSegmentedControl extends StatelessWidget {
     final selectedIndex = DigestMode.values.indexOf(selectedMode);
     final modeColor = selectedMode.effectiveColor(const Color(0xFFC0392B));
 
-    // Le sélecteur est toujours sur fond sombre (carte digest always-dark)
-    // → toujours utiliser les teintes blanches, sans brancher sur isDark.
+    // Teintes adaptées au fond du container digest :
+    // dark mode → fond sombre, teintes blanches
+    // light mode → fond coloré clair, teintes sombres pour le contraste
+    final overlayColor = isDark ? Colors.white : Colors.black;
+    final unselectedColor = isDark
+        ? Colors.white.withValues(alpha: 0.55)
+        : const Color(0xFF3D2E1E).withValues(alpha: 0.50);
+
     return SizedBox(
       width: _width,
       height: _height,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.14),
+          color: overlayColor.withValues(alpha: isDark ? 0.14 : 0.10),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Stack(
@@ -55,7 +61,9 @@ class DigestModeSegmentedControl extends StatelessWidget {
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutCubic,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.20),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.20)
+                      : Colors.white.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(17),
                   border: Border.all(
                     color: modeColor.withValues(alpha: 0.30),
@@ -99,7 +107,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
                             size: isSelected ? 19 : 17,
                             color: isSelected
                                 ? mode.effectiveColor(const Color(0xFFC0392B))
-                                : Colors.white.withValues(alpha: 0.55),
+                                : unselectedColor,
                           ),
                         ),
                       ),
