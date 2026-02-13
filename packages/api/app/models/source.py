@@ -69,7 +69,9 @@ class Source(Base):
     score_rigor: Mapped[Optional[float]] = mapped_column(nullable=True)
     score_ux: Mapped[Optional[float]] = mapped_column(nullable=True)
     granular_topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
-    
+    # Thèmes secondaires pour les sources généralistes (Phase 1 diversité feed)
+    secondary_themes: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+
     # Daily Briefing (Story 4.4) - URL du feed "À la Une" pour les sources de référence
     une_feed_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

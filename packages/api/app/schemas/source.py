@@ -26,6 +26,7 @@ class SourceResponse(BaseModel):
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"
     bias_origin: str = "unknown"
+    secondary_themes: Optional[list[str]] = None
     score_independence: Optional[float] = None
     score_rigor: Optional[float] = None
     score_ux: Optional[float] = None
