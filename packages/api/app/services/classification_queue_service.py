@@ -75,6 +75,8 @@ class ClassificationQueueService:
     async def mark_completed(self, queue_id: UUID, topics: List[str]) -> None:
         """Marque un élément comme complété et met à jour les topics du contenu."""
         from app.services.ml.topic_theme_mapper import infer_theme_from_topics
+        import structlog
+        logger = structlog.get_logger()
 
         item = await self.session.get(ClassificationQueue, queue_id)
         if item:
@@ -86,7 +88,11 @@ class ClassificationQueueService:
             content = await self.session.get(Content, item.content_id)
             if content:
                 content.topics = topics
-                content.theme = infer_theme_from_topics(topics)
+                try:
+                    content.theme = infer_theme_from_topics(topics)
+                except (AttributeError, Exception) as e:
+                    # Column may not exist yet during rolling deployment
+                    logger.warning("theme_column_missing", error=str(e), content_id=str(content.id))
 
             await self.session.commit()
     
@@ -118,7 +124,11 @@ class ClassificationQueueService:
             content = await self.session.get(Content, item.content_id)
             if content:
                 content.topics = topics
-                content.theme = infer_theme_from_topics(topics)
+                try:
+                    content.theme = infer_theme_from_topics(topics)
+                except (AttributeError, Exception) as e:
+                    # Column may not exist yet during rolling deployment
+                    logger.warning("theme_column_missing", error=str(e), content_id=str(content.id))
                 # Store entities as JSON strings in the array
                 if entities:
                     import json

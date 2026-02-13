@@ -53,15 +53,23 @@ async def backfill_themes(batch_size: int = 500, limit: int = 0) -> None:
         effective_limit = limit if limit > 0 else total
         processed = 0
         themed = 0
+        last_id = None
 
         while processed < effective_limit:
             current_batch = min(batch_size, effective_limit - processed)
 
+            # Keyset pagination : ORDER BY id + WHERE id > last_id
+            # Garantit que chaque article est visité exactement une fois,
+            # même si infer_theme_from_topics retourne None (topic inconnu).
             query = (
                 select(Content)
                 .where(Content.topics.isnot(None), Content.theme.is_(None))
+                .order_by(Content.id)
                 .limit(current_batch)
             )
+            if last_id is not None:
+                query = query.where(Content.id > last_id)
+
             result = await session.execute(query)
             articles = result.scalars().all()
 
@@ -76,6 +84,7 @@ async def backfill_themes(batch_size: int = 500, limit: int = 0) -> None:
 
             await session.commit()
             processed += len(articles)
+            last_id = articles[-1].id
             print(f"  Processed {processed}/{effective_limit} (themed: {themed})")
 
         print(f"\nBackfill complete: {themed}/{processed} articles got a theme")
