@@ -76,15 +76,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             logger.warning("lifespan_startup_checks_skipped", reason="skip_startup_checks=True")
         
     except Exception as e:
-        logger.error("lifespan_startup_failed", error=str(e))
-        # Pour les migrations, on veut CRASH explicitement
-        if "Pending migrations detected" in str(e) or "Could not load Alembic" in str(e):
-             logger.critical("lifespan_aborting_startup_due_to_db_state")
-             sys.exit(1)
-        
-        # Pour le reste (connexion DB temporaire), on peut tolérer (optionnel)
-        # Mais ici on laisse couler pour l'instant comme avant
-        
+        logger.critical("lifespan_startup_failed_and_aborting", error=str(e), exc_info=True)
+        # Any exception during DB init or migration check is critical and should prevent startup.
+        sys.exit(1)
     logger.info("lifespan_starting_scheduler")
     start_scheduler()
     logger.info("lifespan_startup_complete")
