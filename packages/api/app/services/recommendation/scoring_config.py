@@ -102,6 +102,21 @@ class ScoringWeights:
     # plutôt que domination d'une seule.
     DIGEST_DIVERSITY_DIVISOR = 2
 
+    # --- DIGEST TRENDING/IMPORTANCE (Pour vous hybride) ---
+
+    # Bonus pour article trending (couvert par ≥3 sources distinctes).
+    # Calibré pour rivaliser avec un article personnalisé moyen (~150 pts)
+    # sans dominer un personnalisé fort (~250 pts).
+    DIGEST_TRENDING_BONUS = 45.0
+
+    # Bonus pour article provenant d'un feed "À la Une" (importance éditoriale).
+    # Inférieur au trending car signal d'1 seule source vs cross-source.
+    DIGEST_UNE_BONUS = 35.0
+
+    # Fraction cible du digest réservée aux articles trending/importants.
+    # 0.5 = ceil(7 * 0.5) = 4 slots max pour trending.
+    DIGEST_TRENDING_TARGET_RATIO = 0.5
+
     # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
 
     # Delta applied to user_subtopics.weight when liking/unliking content.
