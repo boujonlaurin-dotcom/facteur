@@ -211,6 +211,7 @@ class DigestSelector:
             logger.info("digest_selector_candidates_fetched", user_id=str(user_id), count=len(candidates), duration_ms=round(candidates_time * 1000, 2))
 
             # 3-4. Scoring + sélection (deux passes pour pour_vous, single-pass pour les autres)
+            scoring_time, diversity_time = 0.0, 0.0
             if trending_context and (mode == "pour_vous" or mode == DigestMode.POUR_VOUS):
                 step_start = time.time()
                 selected = await self._two_pass_selection(
