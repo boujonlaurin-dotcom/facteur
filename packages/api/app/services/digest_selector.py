@@ -18,9 +18,11 @@ Fallback:
 Réutilise l'infrastructure de scoring existante sans modification.
 """
 
+import asyncio
 import datetime
 import time
 from dataclasses import dataclass
+from math import ceil
 from typing import Any, List, Set, Tuple, Optional, Dict
 from uuid import UUID
 from collections import defaultdict
@@ -34,6 +36,7 @@ from app.models.content import Content, UserContentStatus
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserInterest, UserSubtopic
 from app.models.enums import ContentStatus, DigestMode, BiasStance
+from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.recommendation_service import RecommendationService
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -87,6 +90,18 @@ class DigestContext:
     user_bias_stance: Optional[BiasStance] = None
 
 
+@dataclass
+class GlobalTrendingContext:
+    """Contexte global trending, calculé 1x par batch.
+
+    Contient les IDs des contenus objectivement importants
+    (trending cross-source et "À la une" éditorial).
+    """
+    trending_content_ids: Set[UUID]
+    une_content_ids: Set[UUID]
+    computed_at: datetime.datetime
+
+
 class DiversityConstraints:
     """Configuration des contraintes de diversité."""
     MAX_PER_SOURCE = 1
@@ -111,6 +126,7 @@ class DigestSelector:
         self.session = session
         self.rec_service = RecommendationService(session)
         self.constraints = DiversityConstraints()
+        self.importance_detector = ImportanceDetector()
         
     async def select_for_user(
         self,
@@ -119,6 +135,7 @@ class DigestSelector:
         hours_lookback: int = 168,
         mode: str = "pour_vous",
         focus_theme: Optional[str] = None,
+        global_trending_context: Optional[GlobalTrendingContext] = None,
     ) -> List[DigestItem]:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
@@ -128,6 +145,7 @@ class DigestSelector:
             hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
             mode: Mode de digest (pour_vous, serein, perspective, theme_focus)
             focus_theme: Slug du thème pour le mode theme_focus
+            global_trending_context: Contexte trending pré-calculé (batch) ou None (on-demand)
 
         Returns:
             Liste de DigestItem ordonnée par rank (1 à limit)
@@ -150,7 +168,30 @@ class DigestSelector:
                 return []
             
             logger.info("digest_selector_context_built", user_id=str(user_id), duration_ms=round(context_time * 1000, 2))
-            
+
+            # 1.5 Build or use global trending context (pour_vous only)
+            trending_context = None
+            if mode == "pour_vous" or mode == DigestMode.POUR_VOUS:
+                if global_trending_context is not None:
+                    trending_context = global_trending_context
+                    logger.info(
+                        "digest_using_precomputed_trending_context",
+                        user_id=str(user_id),
+                        trending_count=len(global_trending_context.trending_content_ids),
+                        une_count=len(global_trending_context.une_content_ids),
+                    )
+                else:
+                    step_start = time.time()
+                    trending_context = await self._build_global_trending_context()
+                    trending_time = time.time() - step_start
+                    logger.info(
+                        "digest_trending_context_computed_ondemand",
+                        user_id=str(user_id),
+                        trending_count=len(trending_context.trending_content_ids),
+                        une_count=len(trending_context.une_content_ids),
+                        duration_ms=round(trending_time * 1000, 2),
+                    )
+
             # 2. Récupérer les candidats
             step_start = time.time()
             candidates = await self._get_candidates(
@@ -162,48 +203,64 @@ class DigestSelector:
                 focus_theme=focus_theme,
             )
             candidates_time = time.time() - step_start
-            
+
             if not candidates:
                 logger.warning("digest_selection_no_candidates", user_id=str(user_id), duration_ms=round(candidates_time * 1000, 2))
                 return []
-            
+
             logger.info("digest_selector_candidates_fetched", user_id=str(user_id), count=len(candidates), duration_ms=round(candidates_time * 1000, 2))
-            
-            # 3. Scorer les candidats
-            step_start = time.time()
-            scored_candidates_with_breakdown = await self._score_candidates(candidates, context, mode=mode)
-            scoring_time = time.time() - step_start
-            
-            # DEBUG: Compter les scores nuls vs non-nuls
-            non_zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s > 0]
-            zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s == 0]
-            
-            logger.info(
-                "digest_selector_scoring_done",
-                user_id=str(user_id),
-                count=len(scored_candidates_with_breakdown),
-                non_zero_count=len(non_zero_scores),
-                zero_count=len(zero_scores),
-                max_score=round(max((s for _, s, _ in scored_candidates_with_breakdown), default=0), 2),
-                duration_ms=round(scoring_time * 1000, 2)
-            )
-            
-            # 4. Sélectionner avec contraintes de diversité
-            step_start = time.time()
-            selected = self._select_with_diversity(
-                scored_candidates=scored_candidates_with_breakdown,
-                target_count=limit,
-                mode=mode,
-            )
-            diversity_time = time.time() - step_start
-            
-            logger.info(
-                "digest_diversity_selection_result",
-                user_id=str(user_id),
-                selected_count=len(selected),
-                target_count=limit,
-                had_candidates=len(scored_candidates_with_breakdown) > 0
-            )
+
+            # 3-4. Scoring + sélection (deux passes pour pour_vous, single-pass pour les autres)
+            if trending_context and (mode == "pour_vous" or mode == DigestMode.POUR_VOUS):
+                step_start = time.time()
+                selected = await self._two_pass_selection(
+                    candidates=candidates,
+                    context=context,
+                    trending_context=trending_context,
+                    target_count=limit,
+                )
+                twopass_time = time.time() - step_start
+                logger.info(
+                    "digest_two_pass_selection_done",
+                    user_id=str(user_id),
+                    selected_count=len(selected),
+                    target_count=limit,
+                    duration_ms=round(twopass_time * 1000, 2),
+                )
+            else:
+                # Single-pass pour serein, perspective, theme_focus (inchangé)
+                step_start = time.time()
+                scored_candidates_with_breakdown = await self._score_candidates(candidates, context, mode=mode)
+                scoring_time = time.time() - step_start
+
+                non_zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s > 0]
+                zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s == 0]
+
+                logger.info(
+                    "digest_selector_scoring_done",
+                    user_id=str(user_id),
+                    count=len(scored_candidates_with_breakdown),
+                    non_zero_count=len(non_zero_scores),
+                    zero_count=len(zero_scores),
+                    max_score=round(max((s for _, s, _ in scored_candidates_with_breakdown), default=0), 2),
+                    duration_ms=round(scoring_time * 1000, 2),
+                )
+
+                step_start = time.time()
+                selected = self._select_with_diversity(
+                    scored_candidates=scored_candidates_with_breakdown,
+                    target_count=limit,
+                    mode=mode,
+                )
+                diversity_time = time.time() - step_start
+
+                logger.info(
+                    "digest_diversity_selection_result",
+                    user_id=str(user_id),
+                    selected_count=len(selected),
+                    target_count=limit,
+                    had_candidates=len(scored_candidates_with_breakdown) > 0,
+                )
             
             # 5. Construire les résultats
             digest_items = []
@@ -800,6 +857,8 @@ class DigestSelector:
         scored_candidates: List[Tuple[Content, float, List[DigestScoreBreakdown]]],
         target_count: int,
         mode: str = "pour_vous",
+        initial_source_counts: Optional[Dict[UUID, int]] = None,
+        initial_theme_counts: Optional[Dict[str, int]] = None,
     ) -> List[Tuple[Content, float, str, List[DigestScoreBreakdown]]]:
         """Sélectionne les articles avec contraintes de diversité.
 
@@ -809,23 +868,9 @@ class DigestSelector:
         - Minimum 3 sources différentes
         - Diversité revue de presse: score ÷ 2 dès le 2ème article d'une même source
 
-        Algorithme:
-        1. Compter les sources distinctes dans le pool candidat
-        2. Si < TARGET_DIGEST_SIZE sources → relax MAX_PER_SOURCE à 2
-        3. Parcourir les candidats par ordre de score
-        4. Pour chaque candidat, appliquer la pénalité ÷2 si source déjà présente
-        5. Vérifier les contraintes avec les scores pondérés
-        6. Si contraintes respectées, ajouter à la sélection
-        7. S'arrêter quand on atteint target_count
-
-        Rationale de la pénalité ÷2:
-        Les articles du top digest scorent typiquement entre 150 et 260 pts.
-        Une pénalité fixe (-10, -30) est insuffisante pour empêcher les doublons
-        à ces niveaux. Le ÷2 garantit qu'un doublon à 220 pts (→ 110 pts) sera
-        systématiquement dépassé par un article d'une autre source à 150 pts.
-        Cela crée l'effet "revue de presse" souhaité (pluralité des sources).
-        Un doublon peut quand même passer si son score ÷2 reste supérieur aux
-        alternatives — c'est voulu, l'article est alors vraiment exceptionnel.
+        Args:
+            initial_source_counts: Compteurs source pré-existants (pour continuité entre passes)
+            initial_theme_counts: Compteurs thème pré-existants (pour continuité entre passes)
 
         Returns:
             Liste de tuples (Content, score, reason, breakdown)
@@ -852,8 +897,8 @@ class DigestSelector:
             )
 
         selected = []
-        source_counts = defaultdict(int)
-        theme_counts = defaultdict(int)
+        source_counts: Dict[UUID, int] = defaultdict(int, initial_source_counts or {})
+        theme_counts: Dict[str, int] = defaultdict(int, initial_theme_counts or {})
 
         for content, score, breakdown in scored_candidates:
             if len(selected) >= target_count:
@@ -940,9 +985,17 @@ class DigestSelector:
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
 
-        Priorité : sous-thème > thème > source suivie > fallback.
+        Priorité : trending/une > sous-thème > thème > source suivie > fallback.
         Le détail des scores reste dans le breakdown (personalization sheet).
         """
+        # 0. Trending ou À la une (prioritaire)
+        if breakdown:
+            for b in breakdown:
+                if b.label == "Sujet du jour":
+                    return "Sujet du jour"
+                if b.label == "À la une":
+                    return "À la une"
+
         # 1. Sous-thème matché (le plus précis) — ex: "Thème : AI"
         if breakdown:
             for b in breakdown:
@@ -968,3 +1021,209 @@ class DigestSelector:
 
         # 4. Fallback
         return "Sélectionné pour vous"
+
+    async def _two_pass_selection(
+        self,
+        candidates: list[Content],
+        context: DigestContext,
+        trending_context: GlobalTrendingContext,
+        target_count: int,
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
+        """Sélection hybride en 2 passes : trending + personnalisé.
+
+        Pass 1 : Sélectionner les articles trending/une pertinents pour l'utilisateur
+                 (max ~half of target_count).
+        Pass 2 : Compléter avec les meilleurs articles personnalisés (algorithme existant),
+                 en excluant les articles de Pass 1.
+
+        Les contraintes de diversité (max 1/source, max 2/theme) s'appliquent globalement.
+        """
+        trending_target = ceil(target_count * ScoringWeights.DIGEST_TRENDING_TARGET_RATIO)
+
+        # Partitionner les candidats en trending pertinent vs personnalisé
+        trending_candidates: list[Content] = []
+        personalized_candidates: list[Content] = []
+
+        all_important_ids = trending_context.trending_content_ids | trending_context.une_content_ids
+
+        for content in candidates:
+            if content.id in all_important_ids:
+                # Vérifier la pertinence pour l'utilisateur
+                source_theme = content.source.theme if content.source else None
+                content_theme = getattr(content, 'theme', None)
+                secondary_themes = getattr(content.source, 'secondary_themes', None) or []
+
+                is_relevant = (
+                    content.source_id in context.followed_source_ids
+                    or (content_theme and content_theme in context.user_interests)
+                    or (source_theme and source_theme in context.user_interests)
+                    or bool(set(secondary_themes) & context.user_interests)
+                )
+
+                if is_relevant:
+                    trending_candidates.append(content)
+                else:
+                    personalized_candidates.append(content)
+            else:
+                personalized_candidates.append(content)
+
+        logger.info(
+            "digest_two_pass_pools",
+            trending_relevant=len(trending_candidates),
+            personalized=len(personalized_candidates),
+            trending_target=trending_target,
+        )
+
+        # === PASSE 1 : Score et sélection trending ===
+        _4t = list[tuple[Content, float, str, list[DigestScoreBreakdown]]]
+        pass1_selected: _4t = []
+        if trending_candidates:
+            scored_trending = await self._score_candidates(
+                trending_candidates, context, mode="pour_vous",
+            )
+
+            # Ajouter les bonus trending/une
+            _3t = list[tuple[Content, float, list[DigestScoreBreakdown]]]
+            boosted_trending: _3t = []
+            for content, score, breakdown in scored_trending:
+                bonus = 0.0
+                bd_copy = list(breakdown)
+
+                if content.id in trending_context.trending_content_ids:
+                    bonus += ScoringWeights.DIGEST_TRENDING_BONUS
+                    bd_copy.append(DigestScoreBreakdown(
+                        label="Sujet du jour",
+                        points=ScoringWeights.DIGEST_TRENDING_BONUS,
+                        is_positive=True,
+                    ))
+
+                if content.id in trending_context.une_content_ids:
+                    bonus += ScoringWeights.DIGEST_UNE_BONUS
+                    bd_copy.append(DigestScoreBreakdown(
+                        label="À la une",
+                        points=ScoringWeights.DIGEST_UNE_BONUS,
+                        is_positive=True,
+                    ))
+
+                boosted_trending.append((content, score + bonus, bd_copy))
+
+            # Trier par score boosté décroissant
+            boosted_trending.sort(key=lambda x: x[1], reverse=True)
+
+            # Sélectionner avec diversité (max trending_target)
+            pass1_selected = self._select_with_diversity(
+                scored_candidates=boosted_trending,
+                target_count=trending_target,
+                mode="pour_vous",
+            )
+
+        logger.info("digest_pass1_result", count=len(pass1_selected))
+
+        # === PASSE 2 : Compléter avec personnalisé ===
+        remaining_count = target_count - len(pass1_selected)
+        pass2_selected: _4t = []
+
+        if remaining_count > 0 and personalized_candidates:
+            scored_personalized = await self._score_candidates(
+                personalized_candidates, context, mode="pour_vous",
+            )
+
+            # Construire les compteurs existants depuis pass 1 pour continuité diversité
+            pass1_source_counts: Dict[UUID, int] = defaultdict(int)
+            pass1_theme_counts: Dict[str, int] = defaultdict(int)
+            for content, _, _, _ in pass1_selected:
+                pass1_source_counts[content.source_id] += 1
+                theme = getattr(content, 'theme', None)
+                if not theme and content.source:
+                    theme = content.source.theme
+                if theme:
+                    pass1_theme_counts[theme] += 1
+
+            pass2_selected = self._select_with_diversity(
+                scored_candidates=scored_personalized,
+                target_count=remaining_count,
+                mode="pour_vous",
+                initial_source_counts=dict(pass1_source_counts),
+                initial_theme_counts=dict(pass1_theme_counts),
+            )
+
+        logger.info("digest_pass2_result", count=len(pass2_selected))
+
+        return pass1_selected + pass2_selected
+
+    async def _build_global_trending_context(self) -> GlobalTrendingContext:
+        """Construit le contexte trending global (toutes sources, 24h).
+
+        Coûteux : fetch tous les contenus récents + parse les flux une.
+        Doit être appelé 1x par batch, ou avec cache court pour on-demand.
+        """
+        # 1. Fetch contenus des dernières 24h (toutes sources actives)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        since = now - datetime.timedelta(hours=24)
+        stmt = (
+            select(Content)
+            .join(Content.source)
+            .options(selectinload(Content.source))
+            .where(
+                Content.published_at >= since,
+                Source.is_active == True,  # noqa: E712
+            )
+        )
+        result = await self.session.execute(stmt)
+        recent_contents = list(result.scalars().all())
+
+        # 2. Détecter les clusters trending
+        trending_ids = self.importance_detector.detect_trending_clusters(
+            recent_contents,
+        )
+
+        # 3. Fetch GUIDs "À la une" et identifier les contenus une
+        une_guids = await self._fetch_une_guids()
+        une_ids = self.importance_detector.identify_une_contents(
+            recent_contents, une_guids,
+        )
+
+        logger.info(
+            "global_trending_context_built",
+            recent_contents=len(recent_contents),
+            trending_count=len(trending_ids),
+            une_count=len(une_ids),
+        )
+
+        return GlobalTrendingContext(
+            trending_content_ids=trending_ids,
+            une_content_ids=une_ids,
+            computed_at=now,
+        )
+
+    async def _fetch_une_guids(self) -> Set[str]:
+        """Récupère les GUIDs des articles 'À la Une'."""
+        import feedparser as fp
+
+        stmt = select(Source).where(Source.une_feed_url.is_not(None))
+        result = await self.session.execute(stmt)
+        sources = result.scalars().all()
+
+        if not sources:
+            return set()
+
+        une_guids: Set[str] = set()
+
+        async def parse_feed(url: str) -> list[str]:
+            try:
+                loop = asyncio.get_event_loop()
+                feed = await loop.run_in_executor(None, fp.parse, url)
+                return [
+                    entry.id if hasattr(entry, 'id') else entry.link
+                    for entry in feed.entries[:5]
+                ]
+            except Exception as e:
+                logger.warning("une_feed_parse_failed", url=url, error=str(e))
+                return []
+
+        tasks = [parse_feed(source.une_feed_url) for source in sources]
+        results = await asyncio.gather(*tasks)
+        for guids in results:
+            une_guids.update(guids)
+
+        return une_guids
