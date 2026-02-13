@@ -62,23 +62,29 @@ settings = get_settings()
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Gère le cycle de vie de l'application (startup/shutdown)."""
     # Startup
-    logger.info("lifespan_initializing_db")
-    try:
-        await init_db()
-        logger.info("lifespan_db_initialized")
-        
-        # 🛡️ STARTUP CHECK: DATABASE MIGRATIONS
-        # Must crash if DB is not up to date to avoid silent failures
-        if not settings.skip_startup_checks:
-            from app.checks import check_migrations_up_to_date
-            await check_migrations_up_to_date()
-        else:
-            logger.warning("lifespan_startup_checks_skipped", reason="skip_startup_checks=True")
-        
-    except Exception as e:
-        logger.critical("lifespan_startup_failed_and_aborting", error=str(e), exc_info=True)
-        # Any exception during DB init or migration check is critical and should prevent startup.
-        sys.exit(1)
+    # Only run DB checks when DATABASE_URL is explicitly provided (production/staging).
+    # During Docker build or CI, no database is available and we must not crash.
+    _has_explicit_db = bool(os.environ.get("DATABASE_URL"))
+    logger.info("lifespan_initializing_db", has_explicit_db=_has_explicit_db)
+    if _has_explicit_db:
+        try:
+            await init_db()
+            logger.info("lifespan_db_initialized")
+
+            # 🛡️ STARTUP CHECK: DATABASE MIGRATIONS
+            # Must crash if DB is not up to date to avoid silent failures
+            if not settings.skip_startup_checks:
+                from app.checks import check_migrations_up_to_date
+                await check_migrations_up_to_date()
+            else:
+                logger.warning("lifespan_startup_checks_skipped", reason="skip_startup_checks=True")
+
+        except Exception as e:
+            logger.critical("lifespan_startup_failed_and_aborting", error=str(e), exc_info=True)
+            # Any exception during DB init or migration check is critical and should prevent startup.
+            sys.exit(1)
+    else:
+        logger.warning("lifespan_db_checks_skipped", reason="DATABASE_URL not set in environment")
     logger.info("lifespan_starting_scheduler")
     start_scheduler()
     logger.info("lifespan_startup_complete")
