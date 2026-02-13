@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "remote",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve",
+      "enabled": true,
+      "description": "Supabase MCP for database and auth management"
+    },
+    "railway": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@railway/railway-mcp"],
+      "enabled": true,
+      "description": "Railway MCP for project and deployment management"
+    }
+  }
+}
