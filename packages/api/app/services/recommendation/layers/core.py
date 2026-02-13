@@ -20,20 +20,43 @@ class CoreLayer(BaseScoringLayer):
 
     def score(self, content: Content, context: ScoringContext) -> float:
         score = 0.0
-        
-        # 1. Theme Match (Single Taxonomy)
-        # Both source.theme and user_interests are guaranteed to be normalized slugs
-        # Data alignment: sources_master.csv uses slugs (tech, society, etc.)
-        if content.source and content.source.theme:
-            # Direct comparison - no normalization needed (data is pre-aligned)
+
+        # 1. Theme Match (3-tier: content.theme > source.theme > source.secondary_themes)
+        # All themes and user_interests are normalized slugs (tech, society, etc.)
+        theme_matched = False
+
+        # Tier 1: Article-level theme (ML-inferred, most precise)
+        if hasattr(content, 'theme') and content.theme:
+            if content.theme in context.user_interests:
+                score += ScoringWeights.THEME_MATCH
+                context.add_reason(
+                    content.id, self.name, ScoringWeights.THEME_MATCH,
+                    f"Thème article: {content.theme}"
+                )
+                theme_matched = True
+
+        # Tier 2: Source primary theme
+        if not theme_matched and content.source and content.source.theme:
             if content.source.theme in context.user_interests:
                 score += ScoringWeights.THEME_MATCH
                 context.add_reason(
-                    content.id,
-                    self.name,
-                    ScoringWeights.THEME_MATCH,
+                    content.id, self.name, ScoringWeights.THEME_MATCH,
                     f"Thème: {content.source.theme}"
                 )
+                theme_matched = True
+
+        # Tier 3: Source secondary themes (bonus réduit à 70% du principal)
+        if not theme_matched and content.source and getattr(content.source, 'secondary_themes', None):
+            matched_secondary = set(content.source.secondary_themes) & context.user_interests
+            if matched_secondary:
+                secondary_bonus = ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+                matched_theme = sorted(matched_secondary)[0]
+                score += secondary_bonus
+                context.add_reason(
+                    content.id, self.name, secondary_bonus,
+                    f"Thème secondaire: {matched_theme}"
+                )
+                theme_matched = True
         
         # 2. Source Affinity
         if content.source_id in context.followed_source_ids:
