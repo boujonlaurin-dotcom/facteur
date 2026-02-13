@@ -221,6 +221,7 @@ class DigestSelector:
                     target_count=limit,
                 )
                 twopass_time = time.time() - step_start
+                scoring_time = twopass_time  # Use twopass_time for final logging
                 logger.info(
                     "digest_two_pass_selection_done",
                     user_id=str(user_id),
