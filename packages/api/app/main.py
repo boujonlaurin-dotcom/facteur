@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup
     logger.info("lifespan_initializing_db")
     try:
-        # await init_db()
-        logger.info("lifespan_db_initialization_skipped_for_debug")
+        await init_db()
+        logger.info("lifespan_db_initialized")
         
         # 🛡️ STARTUP CHECK: DATABASE MIGRATIONS
         # Must crash if DB is not up to date to avoid silent failures
