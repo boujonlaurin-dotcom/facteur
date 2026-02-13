@@ -2,6 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import pool
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
@@ -71,6 +72,11 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
+        # SET LOCAL within the transaction — guaranteed to work with PgBouncer/Supavisor
+        # because the same backend connection is used for the entire transaction.
+        # The connection-level "options" parameter may be ignored by Supavisor.
+        connection.execute(text("SET LOCAL statement_timeout = '0'"))
+        connection.execute(text("SET LOCAL lock_timeout = '120s'"))
         context.run_migrations()
 
 
