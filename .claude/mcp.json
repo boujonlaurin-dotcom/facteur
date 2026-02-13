@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "supabase": {
+      "type": "remote",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve",
+      "enabled": true
+    },
+    "railway": {
+      "type": "remote",
+      "url": "https://mcp.railway.app",
+      "enabled": true
+    }
+  }
+}
