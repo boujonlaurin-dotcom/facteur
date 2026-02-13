@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -10,7 +11,6 @@ from alembic import context
 
 # Load environment variables from .env
 import os
-from urllib.parse import urlparse
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -30,10 +30,15 @@ database_url = os.getenv("DATABASE_URL")
 _migration_override = os.getenv("MIGRATION_DATABASE_URL")
 if _migration_override:
     database_url = _migration_override
-    print(f"[alembic] Using MIGRATION_DATABASE_URL for migrations")
+    print("[alembic] Using MIGRATION_DATABASE_URL for migrations", flush=True)
 elif database_url and ":6543" in database_url:
     database_url = database_url.replace(":6543", ":5432")
-    print(f"[alembic] Switched Supabase pooler from transaction mode (:6543) to session mode (:5432)")
+    print("[alembic] Switched Supabase pooler from transaction mode (:6543) to session mode (:5432)", flush=True)
+
+# Log the migration target URL (masked) for debugging Railway deployments
+if database_url:
+    _masked = database_url.split("@")[-1] if "@" in database_url else "***"
+    print(f"[alembic] Migration target: {_masked}", flush=True)
 
 # Convert postgresql:// or postgres:// to postgresql+psycopg:// for async engine
 if database_url:
@@ -45,10 +50,10 @@ if database_url:
         database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 # Connection args for migrations - critical for Supabase PgBouncer compatibility
-# These options are passed to PostgreSQL at connection time, bypassing PgBouncer's
-# session-level timeout limitations
 MIGRATION_CONNECT_ARGS = {
     "prepare_threshold": None,  # Disable prepared statements (required for PgBouncer transaction mode)
+    # 30s TCP connect timeout — prevents infinite hang if session-mode port is unreachable
+    "connect_timeout": 30,
     # Pass timeout options directly to PostgreSQL server via connection options
     # 10 min statement timeout, 2 min lock timeout
     "options": "-c statement_timeout=600000 -c lock_timeout=120000",
@@ -85,13 +90,14 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
+    print("[alembic] Connected, running migrations...", flush=True)
     with context.begin_transaction():
         # SET LOCAL within the transaction — guaranteed to work with PgBouncer/Supavisor
         # because the same backend connection is used for the entire transaction.
-        # The connection-level "options" parameter may be ignored by Supavisor.
         connection.execute(text("SET LOCAL statement_timeout = '0'"))
         connection.execute(text("SET LOCAL lock_timeout = '120s'"))
         context.run_migrations()
+    print("[alembic] Migrations completed successfully", flush=True)
 
 
 async def run_async_migrations() -> None:
