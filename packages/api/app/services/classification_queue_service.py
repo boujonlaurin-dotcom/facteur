@@ -74,17 +74,20 @@ class ClassificationQueueService:
 
     async def mark_completed(self, queue_id: UUID, topics: List[str]) -> None:
         """Marque un élément comme complété et met à jour les topics du contenu."""
+        from app.services.ml.topic_theme_mapper import infer_theme_from_topics
+
         item = await self.session.get(ClassificationQueue, queue_id)
         if item:
             item.status = 'completed'
             item.processed_at = datetime.utcnow()
             item.updated_at = datetime.utcnow()
-            
-            # Mettre à jour le contenu avec les topics classifiés
+
+            # Mettre à jour le contenu avec topics + thème inféré
             content = await self.session.get(Content, item.content_id)
             if content:
                 content.topics = topics
-            
+                content.theme = infer_theme_from_topics(topics)
+
             await self.session.commit()
     
     async def mark_completed_with_entities(
@@ -109,10 +112,13 @@ class ClassificationQueueService:
             item.processed_at = datetime.utcnow()
             item.updated_at = datetime.utcnow()
             
-            # Mettre à jour le contenu avec topics et entités
+            # Mettre à jour le contenu avec topics, thème inféré et entités
+            from app.services.ml.topic_theme_mapper import infer_theme_from_topics
+
             content = await self.session.get(Content, item.content_id)
             if content:
                 content.topics = topics
+                content.theme = infer_theme_from_topics(topics)
                 # Store entities as JSON strings in the array
                 if entities:
                     import json

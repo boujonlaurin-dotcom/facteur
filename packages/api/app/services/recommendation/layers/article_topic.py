@@ -53,14 +53,28 @@ class ArticleTopicLayer(BaseScoringLayer):
             if w > 1.0:
                 boosted_topics.append(topic)
 
-        # Bonus de précision : si le thème source est AUSSI dans les intérêts utilisateur
+        # Bonus de précision : si le thème (article ou source) est dans les intérêts
         has_theme_match = False
-        if content.source and content.source.theme:
-            source_theme = content.source.theme.lower().strip()
-            user_interests = {s.lower().strip() for s in context.user_interests}
-            if source_theme in user_interests:
-                score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
+        user_interests_lower = {s.lower().strip() for s in context.user_interests}
+
+        # Tier 1: content.theme (ML-inferred, most precise)
+        if hasattr(content, 'theme') and content.theme:
+            if content.theme.lower().strip() in user_interests_lower:
                 has_theme_match = True
+
+        # Tier 2: source.theme (primary)
+        if not has_theme_match and content.source and content.source.theme:
+            if content.source.theme.lower().strip() in user_interests_lower:
+                has_theme_match = True
+
+        # Tier 3: source.secondary_themes
+        if not has_theme_match and content.source and getattr(content.source, 'secondary_themes', None):
+            secondary_set = {t.lower().strip() for t in content.source.secondary_themes}
+            if secondary_set & user_interests_lower:
+                has_theme_match = True
+
+        if has_theme_match:
+            score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
 
         # Add reason for transparency/explainability
         detail = f"Topic match: {', '.join(matched_list)}"
