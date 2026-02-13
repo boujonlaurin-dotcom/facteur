@@ -21,6 +21,20 @@ config = context.config
 # Get DATABASE_URL from .env and convert for async psycopg
 database_url = os.getenv("DATABASE_URL")
 
+# For migrations, use MIGRATION_DATABASE_URL if explicitly set.
+# Otherwise, auto-switch Supabase pooler from transaction mode (port 6543)
+# to session mode (port 5432). Transaction-mode pooling breaks DDL because
+# the pooler can reassign server connections between statements, preventing
+# ALTER TABLE from acquiring ACCESS EXCLUSIVE locks. Session mode dedicates
+# a server connection for the entire session, allowing DDL to work correctly.
+_migration_override = os.getenv("MIGRATION_DATABASE_URL")
+if _migration_override:
+    database_url = _migration_override
+    print(f"[alembic] Using MIGRATION_DATABASE_URL for migrations")
+elif database_url and ":6543" in database_url:
+    database_url = database_url.replace(":6543", ":5432")
+    print(f"[alembic] Switched Supabase pooler from transaction mode (:6543) to session mode (:5432)")
+
 # Convert postgresql:// or postgres:// to postgresql+psycopg:// for async engine
 if database_url:
     if "+asyncpg" in database_url:
