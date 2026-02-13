@@ -95,8 +95,8 @@ echo -e "🔍 [Step 5] Verifying Recommendation Weights..."
 python3 - <<EOF
 from app.services.recommendation.scoring_config import ScoringWeights
 def check():
-    if hasattr(ScoringWeights, 'CUSTOM_SOURCE_BONUS') and ScoringWeights.CUSTOM_SOURCE_BONUS == 10:
-        print("✅ CUSTOM_SOURCE_BONUS is defined as +10")
+    if hasattr(ScoringWeights, 'CUSTOM_SOURCE_BONUS') and ScoringWeights.CUSTOM_SOURCE_BONUS == 12:
+        print("✅ CUSTOM_SOURCE_BONUS is defined as +12 (Phase 2 rebalance)")
     else:
         print("❌ CUSTOM_SOURCE_BONUS is missing or incorrect")
         exit(1)

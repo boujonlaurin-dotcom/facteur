@@ -37,17 +37,22 @@ class PersonalizationLayer(BaseScoringLayer):
                 )
         
         # 2. Thème muté → malus modéré
+        # Priorité au thème article ML (plus précis que le thème source)
         if hasattr(context, 'muted_themes') and context.muted_themes:
-            if content.source and content.source.theme:
-                theme_slug = content.source.theme.lower().strip()
-                if theme_slug in context.muted_themes:
-                    score += self.MUTED_THEME_MALUS
-                    context.add_reason(
-                        content.id, 
-                        self.name, 
-                        self.MUTED_THEME_MALUS, 
-                        f"Tu vois moins de {theme_slug}"
-                    )
+            effective_theme = None
+            if hasattr(content, 'theme') and content.theme:
+                effective_theme = content.theme.lower().strip()
+            elif content.source and content.source.theme:
+                effective_theme = content.source.theme.lower().strip()
+
+            if effective_theme and effective_theme in context.muted_themes:
+                score += self.MUTED_THEME_MALUS
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    self.MUTED_THEME_MALUS,
+                    f"Tu vois moins de {effective_theme}"
+                )
         
         # 3. Topics mutés → malus ciblé (cumulatif si plusieurs matches)
         if hasattr(context, 'muted_topics') and context.muted_topics:

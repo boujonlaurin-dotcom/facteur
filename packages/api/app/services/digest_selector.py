@@ -493,9 +493,14 @@ class DigestSelector:
                     fallback_query = apply_theme_focus_filter(fallback_query, focus_theme)
 
                 # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
+                # Inclut les sources dont les secondary_themes matchent aussi
                 if context.user_interests and current_lookback == hours_lookback:
+                    interests_list = list(context.user_interests)
                     fallback_query = fallback_query.where(
-                        Source.theme.in_(list(context.user_interests))
+                        or_(
+                            Source.theme.in_(interests_list),
+                            Source.secondary_themes.overlap(interests_list)
+                        )
                     )
                 
                 result = await self.session.execute(fallback_query)
@@ -662,13 +667,33 @@ class DigestSelector:
                 final_score = base_score + recency_bonus + perspective_bonus
 
                 # Capture CoreLayer contributions
-                # Theme match
-                if content.source and content.source.theme in context.user_interests:
+                # Theme match (3-tier: content.theme > source.theme > secondary)
+                _theme_breakdown_added = False
+                if hasattr(content, 'theme') and content.theme and content.theme in context.user_interests:
+                    breakdown.append(DigestScoreBreakdown(
+                        label=f"Thème article : {content.theme}",
+                        points=ScoringWeights.THEME_MATCH,
+                        is_positive=True
+                    ))
+                    _theme_breakdown_added = True
+                elif content.source and content.source.theme in context.user_interests:
                     breakdown.append(DigestScoreBreakdown(
                         label=f"Thème matché : {content.source.theme}",
                         points=ScoringWeights.THEME_MATCH,
                         is_positive=True
                     ))
+                    _theme_breakdown_added = True
+                elif content.source and getattr(content.source, 'secondary_themes', None):
+                    matched_sec = set(content.source.secondary_themes) & context.user_interests
+                    if matched_sec:
+                        sec_theme = sorted(matched_sec)[0]
+                        sec_pts = ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+                        breakdown.append(DigestScoreBreakdown(
+                            label=f"Thème secondaire : {sec_theme}",
+                            points=sec_pts,
+                            is_positive=True
+                        ))
+                        _theme_breakdown_added = True
                 
                 # Source followed
                 if content.source_id in context.followed_source_ids:
@@ -835,7 +860,12 @@ class DigestSelector:
                 break
 
             source_id = content.source_id
-            theme = content.source.theme if content.source else None
+            # Utiliser content.theme ML si disponible, sinon source.theme
+            theme = None
+            if hasattr(content, 'theme') and content.theme:
+                theme = content.theme
+            elif content.source:
+                theme = content.source.theme
 
             # Vérifier contraintes hard (max par source / thème)
             if source_counts[source_id] >= effective_max_per_source:
@@ -920,8 +950,12 @@ class DigestSelector:
                     topic = b.label.removeprefix("Sous-thème : ")
                     return f"Thème : {topic}"
 
-        # 2. Thème de la source — ex: "Thème : Environnement"
-        theme = content.source.theme if content.source else None
+        # 2. Thème article ML ou thème source — ex: "Thème : Environnement"
+        theme = None
+        if hasattr(content, 'theme') and content.theme:
+            theme = content.theme
+        elif content.source:
+            theme = content.source.theme
         if theme:
             label = self._THEME_LABELS.get(theme.lower(), theme.capitalize())
             return f"Thème : {label}"
