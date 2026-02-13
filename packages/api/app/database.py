@@ -10,10 +10,19 @@ from app.config import get_settings
 settings = get_settings()
 
 # Engine async
-# Diagnostic: Print engine target
+# Diagnostic: Print engine target with port info for troubleshooting
 import structlog
+from urllib.parse import urlparse
+
 logger = structlog.get_logger()
-logger.info("engine_initializing", target=settings.database_url.split('@')[-1] if settings.database_url else 'NONE')
+_db_parsed = urlparse(settings.database_url) if settings.database_url else None
+logger.info(
+    "engine_initializing",
+    host=_db_parsed.hostname if _db_parsed else 'NONE',
+    port=_db_parsed.port if _db_parsed else 'NONE',
+    database=_db_parsed.path.lstrip('/') if _db_parsed else 'NONE',
+    driver=settings.database_url.split('://')[0] if settings.database_url else 'NONE',
+)
 
 # Determine pool configuration based on environment
 # Railway/Supabase: Use QueuePool with pre_ping for connection resilience
@@ -46,6 +55,7 @@ if _use_queue_pool:
         # Connect args for PgBouncer compatibility
         connect_args={
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
+            "connect_timeout": 10,  # Fail fast if DB host/port unreachable (prevents indefinite hang)
         },
     )
 else:
@@ -79,34 +89,43 @@ class Base(DeclarativeBase):
     pass
 
 
-import sys
-
 async def init_db() -> None:
     """Initialise la connexion à la base de données."""
-    # Log connection target (safely)
+    # Log connection target (safely) with port info
     target_url = engine.url.render_as_string(hide_password=True)
-    logger.info("db_connection_check", target=target_url)
-    
+    db_host = engine.url.host
+    db_port = engine.url.port
+    logger.info("db_connection_check", target=target_url, host=db_host, port=db_port)
+
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
     try:
         import socket
-        from urllib.parse import urlparse
-        
+
         # Diagnostic DNS préventif
         try:
-            db_host = engine.url.host
             if db_host:
-                socket.gethostbyname(db_host)
+                resolved_ip = socket.gethostbyname(db_host)
+                logger.info("db_dns_resolved", host=db_host, ip=resolved_ip)
         except socket.gaierror:
-            logger.error("dns_error", host=db_host, hint="Check your DATABASE_URL on Railway.")
-        
+            logger.error("db_dns_error", host=db_host, port=db_port, hint="Check your DATABASE_URL on Railway.")
+
+        # Diagnostic TCP préventif — vérifier que le port est joignable
+        try:
+            if db_host and db_port:
+                sock = socket.create_connection((db_host, db_port), timeout=5)
+                sock.close()
+                logger.info("db_tcp_reachable", host=db_host, port=db_port)
+        except (socket.timeout, ConnectionRefusedError, OSError) as tcp_err:
+            logger.error("db_tcp_unreachable", host=db_host, port=db_port, error=str(tcp_err),
+                         hint="Port might be wrong. Supabase uses 6543 (transaction) or 5432 (session).")
+
         async with engine.begin() as conn:
             # Test connection
             await conn.execute(text("SELECT 1"))
-        logger.info("db_connection_successful")
+        logger.info("db_connection_successful", host=db_host, port=db_port)
     except Exception as e:
-        logger.error("db_connection_failed", error=str(e), target=target_url)
+        logger.error("db_connection_failed", error=str(e), host=db_host, port=db_port, target=target_url)
         raise
 
 
