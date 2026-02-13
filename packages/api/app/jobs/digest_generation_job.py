@@ -27,7 +27,11 @@ from sqlalchemy.dialects.postgresql import insert
 from app.database import async_session_maker
 from app.models.user import UserProfile
 from app.models.daily_digest import DailyDigest
-from app.services.digest_selector import DigestSelector, DigestItem, DiversityConstraints
+from app.services.digest_selector import (
+    DigestSelector,
+    DiversityConstraints,
+    GlobalTrendingContext,
+)
 
 logger = structlog.get_logger()
 
@@ -93,11 +97,25 @@ class DigestGenerationJob:
                 count=len(user_ids),
                 target_date=str(target_date)
             )
-            
+
+            # 1.5 Build global trending context ONCE for the entire batch
+            global_trending_context: Optional[GlobalTrendingContext] = None
+            try:
+                selector = DigestSelector(session)
+                global_trending_context = await selector._build_global_trending_context()
+                logger.info(
+                    "digest_generation_global_context_built",
+                    trending_count=len(global_trending_context.trending_content_ids),
+                    une_count=len(global_trending_context.une_content_ids),
+                )
+            except Exception as e:
+                logger.error("digest_generation_global_context_failed", error=str(e))
+                # Graceful degradation: continue without trending
+
             # 2. Traiter par batches pour limiter la charge mémoire
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i:i + self.batch_size]
-                await self._process_batch(session, batch, target_date)
+                await self._process_batch(session, batch, target_date, global_trending_context)
                 
                 # Commit après chaque batch
                 await session.commit()
@@ -149,18 +167,19 @@ class DigestGenerationJob:
         self,
         session: AsyncSession,
         user_ids: List[UUID],
-        target_date: datetime.date
+        target_date: datetime.date,
+        global_trending_context: Optional[GlobalTrendingContext] = None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
-        
+
         Utilise un semaphore pour limiter le nombre de digests générés
         simultanément et éviter de surcharger la base de données.
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
-        
+
         async def process_with_limit(user_id: UUID) -> None:
             async with semaphore:
-                await self._generate_digest_for_user(session, user_id, target_date)
+                await self._generate_digest_for_user(session, user_id, target_date, global_trending_context)
         
         # Créer les tâches
         tasks = [process_with_limit(uid) for uid in user_ids]
@@ -172,14 +191,16 @@ class DigestGenerationJob:
         self,
         session: AsyncSession,
         user_id: UUID,
-        target_date: datetime.date
+        target_date: datetime.date,
+        global_trending_context: Optional[GlobalTrendingContext] = None,
     ) -> None:
         """Génère le digest pour un utilisateur spécifique.
-        
+
         Args:
             session: Session SQLAlchemy
             user_id: ID de l'utilisateur
             target_date: Date du digest
+            global_trending_context: Contexte trending pré-calculé
         """
         self.stats["processed"] += 1
         
@@ -229,6 +250,7 @@ class DigestGenerationJob:
                 hours_lookback=self.hours_lookback,
                 mode=digest_mode,
                 focus_theme=focus_theme,
+                global_trending_context=global_trending_context,
             )
             
             if not digest_items:
