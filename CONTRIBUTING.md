@@ -24,28 +24,49 @@ Avant de commencer, assurez-vous d'avoir installé les outils suivants :
 
 ---
 
-## 🧙‍♂️ 2. Configuration Spéciale : Antigravity (IA)
+## 🤖 2. Guide pour Agents AI (Claude Code, Antigravity, etc.)
 
-### Fix "Terminal Blindness"
-Si vous développez avec les agents **Antigravity**, vous devez configurer votre shell pour éviter le problème de sorties de terminal vides.
-Ajoutez ce bloc **tout en haut** de votre fichier `~/.zshrc` (ou `~/.bashrc`) :
+### Quel Fichier Lire en Premier?
+
+Le projet utilise une **architecture à 2 niveaux** pour guider les agents selon la complexité de la tâche:
+
+| Type de Tâche | Fichier de Départ | Exemples |
+|--------------|-------------------|----------|
+| **Ajustement simple** (<10 lignes) | **[QUICK_START.md](QUICK_START.md)** | Label bouton, typo, condition if manquante |
+| **Feature complète** | **[CLAUDE.md](CLAUDE.md)** | Nouvelle fonctionnalité, nouveau endpoint, refactoring |
+| **Bug complexe** | **[CLAUDE.md](CLAUDE.md)** | Auth broken, routing broken, DB fail |
+| **Zone à risque** (Auth/Router/DB/Infra) | **[CLAUDE.md](CLAUDE.md)** | Migrations, modifications Auth, Router |
+| **Maintenance** | **[CLAUDE.md](CLAUDE.md)** | Refactoring, migration, tech debt |
+
+**Règle d'or**: En cas de doute → Lis **[CLAUDE.md](CLAUDE.md)**.
+
+### Méthode BMAD (Obligatoire)
+
+Le projet utilise la **méthode BMAD** pour structurer le développement.
+
+**Ressources**:
+- Framework BMAD: [.bmad-core/](file:///.bmad-core/)
+- Agents BMAD: [.bmad-core/agents/](file:///.bmad-core/agents/) (@dev, @pm, @po, @architect, @qa)
+- Guide utilisateur: [.bmad-core/user-guide.md](file:///.bmad-core/user-guide.md)
+
+**Cycle M.A.D.A** (Measure → Analyze → Decide → Act):
+1. **Measure**: Analyse complète, classification (Feature/Bug/Maintenance), création Story/Bug Doc
+2. **Decide**: Plan d'implémentation, validation user, **STOP** avant code
+3. **Act**: Implémentation atomique, mise à jour Story/Bug Doc
+4. **Verify**: Script de vérification QA, one-liner proof
+
+**Détails complets**: Voir [CLAUDE.md](CLAUDE.md) section "Cycle M.A.D.A"
+
+### Configuration Shell (Antigravity - Optionnel)
+
+Si vous utilisez **Antigravity**, configurez votre shell pour éviter le problème de "terminal blindness":
 
 ```bash
-# --- Fix Antigravity Terminal Blindness ---
+# Ajoutez en haut de ~/.zshrc ou ~/.bashrc
 if [[ -n "$ANTIGRAVITY" ]] || [[ -n "$AGENTIC" ]] || [[ "$TERM" == "dumb" ]]; then
     return
 fi
-# --- End Fix ---
 ```
-
-### Méthode BMAD (Obligatoire)
-Le projet utilise la **méthode BMAD** pour structurer le développement. Pour contribuer, vous devez utiliser l'agent BMAD.
-
-0. **Téléchargement du framework** : https://github.com/bmad-code-org/BMAD-METHOD
-1. **Activation** : Chargez le workflow BMAD au début de votre session avec l'agent :
-   - Utilisez la commande `/start-bmad` (ou chargez manuellement le fichier [start-bmad.md](file:///.agent/workflows/start-bmad.md)).
-2. **Prompt System** : Assurez-vous que votre agent utilise les directives définies dans [.bmad-core/agents/bmad-master.md](file:///.bmad-core/agents/bmad-master.md) pour maintenir la cohérence du projet.
-3. **M.A.D.A** : Suivez rigoureusement la boucle **Measure, Analyze, Decide, Act** détaillée dans le workflow.
 
 
 ---

@@ -1,0 +1,487 @@
+# Safety Protocols - Danger Zones
+
+**Zones à risque élevé avec vérification obligatoire double.**
+
+---
+
+## 🔴 Worktree Isolation (OBLIGATOIRE)
+
+### Pourquoi
+
+**Problème**: Agents parallèles qui travaillent sur le même repo → conflits Git, perte de travail, état incohérent.
+
+**Solution**: Un agent = un worktree = une branche isolée.
+
+### Procédure (Exécuter EN PREMIER)
+
+```bash
+# 1. Retour sur main, sync avec remote
+cd /Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur
+git checkout main && git pull origin main
+
+# 2. Créer branche dédiée
+git checkout -b <agent>-<tache>
+# Exemples:
+#   - dev-digest-share-button
+#   - fix-auth-token-refresh
+#   - maintenance-migrate-sqlalchemy
+
+# 3. Créer worktree isolé
+git worktree add ../<agent>-<tache> <agent>-<tache>
+
+# 4. Naviguer dans le worktree
+cd ../<agent>-<tache>
+
+# 5. Vérifier l'isolation
+git status  # Doit afficher la branche dédiée
+pwd         # Doit être dans le worktree isolé
+```
+
+### Règles Critiques
+
+1. **Chemins absolus uniquement**: `read $(pwd)/src/file.py`, jamais de relatif
+2. **Isolation totale**: Un agent ne doit JAMAIS modifier le repo principal
+3. **Nettoyage post-merge**:
+   ```bash
+   cd /Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur
+   git worktree remove ../<agent>-<tache>
+   git branch -d <agent>-<tache>  # Si mergée
+   ```
+
+### Vérification Rapide
+
+```bash
+# Liste des worktrees actifs
+git worktree list
+
+# Si oubli de cleanup:
+git worktree prune
+```
+
+---
+
+## 🔴 Auth / Security
+
+### Danger
+
+**Impact**: 403 généralisé (app inutilisable) OU accès libre non-autorisé (faille sécurité).
+
+### Zones à Risque
+
+| Fichier | Risque | Vérification |
+|---------|--------|--------------|
+| `packages/api/app/dependencies.py` | JWT validation cassée → 403 everywhere | Test `curl` route protégée |
+| `apps/mobile/lib/core/auth/auth_state.dart` | State machine fragile → loops infinis | Test 4 states (logged out, unconfirmed, confirmed, expired) |
+| `packages/api/app/config.py` | `SUPABASE_JWT_SECRET` mismatch → tokens invalides | Vérifie cohérence mobile ↔ backend |
+
+### Protocole de Vérification OBLIGATOIRE
+
+**AVANT modification**:
+
+1. **Lire documentation**:
+   - [Retrospective Auth Bugs](../retrospective-auth-bugs.md)
+   - [Handoff Auth Debug](../handoff_debug_auth.md)
+
+2. **Comprendre le flux complet**:
+   ```
+   Mobile Login (Supabase.auth)
+     → JWT Token stocké (Hive)
+       → API calls (Authorization: Bearer <token>)
+         → dependencies.get_current_user_id() validation
+           → DB query avec user_id filtré
+   ```
+
+3. **Test manuel BEFORE**:
+   ```bash
+   # Route protégée (doit retourner 200)
+   curl -H "Authorization: Bearer $TOKEN" \
+        http://localhost:8080/api/users/me
+
+   # Route protégée sans token (doit retourner 401)
+   curl http://localhost:8080/api/users/me
+   ```
+
+**APRÈS modification**:
+
+4. **Test manuel AFTER** (mêmes commandes)
+
+5. **Test des 4 états d'auth mobile**:
+   - [ ] User logged out → Redirect login
+   - [ ] User logged in, email unconfirmed → Confirmation screen
+   - [ ] User logged in, email confirmed → Home screen
+   - [ ] Token expired → Auto-refresh OU redirect login
+
+6. **Créer script de vérification**:
+   ```bash
+   # Exemple: docs/qa/scripts/verify_auth_fix.sh
+   #!/bin/bash
+   TOKEN=$(get_test_token)
+
+   # Protected route
+   status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            http://localhost:8080/api/users/me)
+
+   if [ "$status" -eq 200 ]; then
+     echo "✅ Auth OK"
+   else
+     echo "❌ Auth FAIL (status: $status)"
+     exit 1
+   fi
+   ```
+
+### Gardes-Fous Spécifiques
+
+**Email Confirmation (Stale Token Bug)**:
+
+```python
+# ❌ DANGER: Ne fais JAMAIS ça
+def is_email_confirmed(token: str) -> bool:
+    payload = decode_jwt(token)
+    return payload.get("email_confirmed_at") is not None
+
+# ✅ CORRECT: Toujours vérifier côté serveur
+async def is_email_confirmed(user_id: UUID, db: AsyncSession) -> bool:
+    result = await db.execute(
+        select(auth.users).where(auth.users.c.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    return user.email_confirmed_at is not None
+```
+
+**Raison**: Le JWT peut contenir `email_confirmed_at=null` si généré avant confirmation. Toujours faire une query fraîche.
+
+---
+
+## 🔴 Router / Core Mobile
+
+### Danger
+
+**Impact**: App inutilisable (White Screen of Death), boucles de redirection infinies, navigation cassée.
+
+### Zones à Risque
+
+| Fichier | Risque | Vérification |
+|---------|--------|--------------|
+| `apps/mobile/lib/config/routes.dart` | Redirect loops, guards cassés | Test tous les flows |
+| `apps/mobile/lib/core/auth/auth_state.dart` | State machine race conditions | Test async state changes |
+| `apps/mobile/lib/shared/navigation/` | Navigation helpers cassés | Test deep links |
+
+### Protocole de Vérification OBLIGATOIRE
+
+**AVANT modification**:
+
+1. **Mapper tous les paths actuels**:
+   ```dart
+   // Liste tous les GoRoute dans routes.dart
+   // Note: shell routes, redirects, guards
+   ```
+
+2. **Documenter le flow actuel**:
+   ```
+   Splash → authStateProvider listen
+     → IF logged out → Login
+     → IF unconfirmed → Confirmation
+     → IF confirmed → Shell (Digest/Feed/Sources/Settings)
+   ```
+
+**APRÈS modification**:
+
+3. **Test exhaustif des flows** (mobile simulator):
+   - [ ] First launch (logged out) → Login screen
+   - [ ] Login success (unconfirmed) → Confirmation screen
+   - [ ] Confirm email → Redirect to Digest
+   - [ ] Logout → Clear state, redirect Login
+   - [ ] Deep link (logged in) → Navigate to target
+   - [ ] Deep link (logged out) → Redirect login, navigate after
+
+4. **Test edge cases**:
+   - [ ] Refresh page → State preserved
+   - [ ] Back button → Correct navigation stack
+   - [ ] Token expired → Auto-refresh OU logout
+
+5. **Créer script de vérification** (si possible):
+   ```bash
+   # Exemple: docs/qa/scripts/verify_routing.sh
+   # Note: Flutter widget tests recommandés ici
+   cd apps/mobile
+   flutter test test/features/auth/routing_test.dart
+   ```
+
+### Gardes-Fous Spécifiques
+
+**Shell Route Guard**:
+
+```dart
+// ❌ DANGER: Guard qui ne gère pas les async state changes
+redirect: (context, state) {
+  final isAuthenticated = ref.read(authStateProvider).isAuthenticated;
+  if (!isAuthenticated) return '/login';
+  return null;
+}
+
+// ✅ CORRECT: Gestion des états intermédiaires
+redirect: (context, state) async {
+  final authState = await ref.read(authStateProvider.future);
+
+  if (authState.isLoading) return null; // Attendre
+  if (!authState.isAuthenticated) return '/login';
+  if (!authState.isEmailConfirmed) return '/confirm';
+
+  return null; // OK
+}
+```
+
+---
+
+## 🔴 Infra / Database
+
+### Danger
+
+**Impact**: Crash déploiement, data loss, corruption de schéma, rollback impossible.
+
+### Zones à Risque
+
+| Fichier | Risque | Vérification |
+|---------|--------|--------------|
+| `packages/api/alembic/versions/*.py` | Migration fail en prod, lock timeout | Test sur copie DB prod |
+| `packages/api/app/models/*.py` | Breaking changes schéma | Check CASCADE, FK contraints |
+| `packages/api/Dockerfile` | Missing dependencies, build fail | `docker build` local |
+| `packages/api/app/config.py` | Env vars manquantes → crash startup | Check all `os.getenv()` |
+
+### Protocole de Vérification OBLIGATOIRE
+
+#### Alembic Migrations
+
+**AVANT création**:
+
+1. **Lire documentation**:
+   - [Maintenance Railway Migrations](../maintenance/maintenance-railway-migrations-lock-jan25.md)
+   - [Architecture - Database](../architecture.md#database)
+
+2. **Vérifier l'état actuel**:
+   ```bash
+   cd packages/api && source venv/bin/activate
+   alembic current  # Quelle révision?
+   alembic history  # Historique complet
+   ```
+
+3. **Créer migration**:
+   ```bash
+   alembic revision --autogenerate -m "description précise"
+   ```
+
+4. **REVIEW manuel de la migration**:
+   - [ ] Pas de `DROP TABLE` sans sauvegarder data
+   - [ ] `ALTER TABLE` avec `DEFAULT` si NOT NULL ajouté
+   - [ ] Index créés si FK ajoutée
+   - [ ] Pas de lock timeout risk (cf. Supabase pooler)
+
+**APRÈS création, AVANT deploy**:
+
+5. **Test sur DB locale**:
+   ```bash
+   alembic upgrade head
+   # Vérifier schéma: psql ou DBeaver
+   alembic downgrade -1  # Test rollback
+   alembic upgrade head  # Re-apply
+   ```
+
+6. **Test sur copie DB prod** (si dispo):
+   ```bash
+   # Dump prod DB (sans data si volumineuse)
+   pg_dump --schema-only prod_db > schema.sql
+
+   # Restore sur DB test
+   psql test_db < schema.sql
+
+   # Apply migration
+   DATABASE_URL=postgresql://test alembic upgrade head
+   ```
+
+7. **Plan de rollback prêt**:
+   ```bash
+   # En cas de fail en prod
+   alembic downgrade -1
+   # OU si migration destructive, restaurer backup
+   ```
+
+8. **Fenêtre de maintenance** (si destructive):
+   - [ ] Notifier users
+   - [ ] Downtime planifié (ex: 3am)
+   - [ ] Rollback plan communiqué
+
+**APRÈS deploy**:
+
+9. **Vérifier logs Railway**:
+   ```
+   [lifespan] Running pending migrations...
+   [lifespan] INFO  [alembic.runtime.migration] Running upgrade abc123 -> def456
+   [lifespan] Migrations completed successfully
+   ```
+
+10. **Test health check**:
+    ```bash
+    curl https://facteur-production.up.railway.app/api/health/ready
+    ```
+
+### Gardes-Fous Spécifiques
+
+**Supabase PgBouncer Lock Timeout**:
+
+```python
+# ❌ DANGER: Migration qui lock table trop longtemps
+def upgrade():
+    op.add_column('contents', sa.Column('embedding', sa.ARRAY(sa.Float)))
+    # Sur grosse table → timeout lock (PgBouncer transaction mode)
+
+# ✅ CORRECT: Migration avec lock timeout handling
+def upgrade():
+    # Utiliser autocommit_block pour éviter transaction lock
+    from alembic import op
+    from sqlalchemy import text
+
+    connection = op.get_bind()
+
+    # Set lock timeout avant modif
+    connection.execute(text("SET lock_timeout = '5s'"))
+
+    try:
+        op.add_column('contents', sa.Column('embedding', sa.ARRAY(sa.Float)))
+    except Exception as e:
+        # Gérer timeout, retry avec batch
+        pass
+```
+
+**Breaking Changes Model**:
+
+```python
+# ❌ DANGER: Supprimer colonne sans migration
+class Content(Base):
+    # OLD: content_html: Mapped[str]
+    # Supprimer directement → crash prod
+
+# ✅ CORRECT: Migration en 2 étapes
+# 1. Rendre nullable (deploy 1)
+class Content(Base):
+    content_html: Mapped[str | None]  # Nullable
+
+# 2. Supprimer colonne après vérif (deploy 2)
+# alembic revision: DROP COLUMN content_html
+```
+
+---
+
+## 🔴 Docker / Deployment
+
+### Danger
+
+**Impact**: Build fail, missing dependencies, runtime crash, rollback impossible.
+
+### Zones à Risque
+
+| Fichier | Risque | Vérification |
+|---------|--------|--------------|
+| `packages/api/Dockerfile` | Missing COPY, dependencies | `docker build` local |
+| `packages/api/requirements.txt` | Version conflicts, Python 3.13+ | `pip install -r requirements.txt` |
+| `packages/api/app/main.py` | Startup crash (lifespan events) | Test local + Railway logs |
+
+### Protocole de Vérification OBLIGATOIRE
+
+**AVANT modification Dockerfile**:
+
+1. **Build local**:
+   ```bash
+   cd packages/api
+   docker build -t facteur-api:test .
+   ```
+
+2. **Vérifier layers**:
+   - [ ] Base image: `python:3.12-slim` (PAS 3.13+)
+   - [ ] `COPY requirements.txt` AVANT `RUN pip install`
+   - [ ] `COPY app/` copie tous modules nécessaires
+   - [ ] `COPY scripts/` si scripts référencés
+   - [ ] User non-root: `appuser`
+
+3. **Test run local**:
+   ```bash
+   docker run -p 8080:8080 \
+     -e DATABASE_URL=$DATABASE_URL \
+     -e SUPABASE_URL=$SUPABASE_URL \
+     -e SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY \
+     -e SUPABASE_JWT_SECRET=$SUPABASE_JWT_SECRET \
+     facteur-api:test
+   ```
+
+4. **Health check**:
+   ```bash
+   curl http://localhost:8080/api/health
+   ```
+
+**APRÈS deploy Railway**:
+
+5. **Vérifier logs démarrage**:
+   ```
+   [railway] Building image...
+   [railway] Pushing to registry...
+   [railway] Starting container...
+   [lifespan] Starting application...
+   [lifespan] Running pending migrations...
+   [lifespan] Migrations completed successfully
+   [uvicorn] Application startup complete
+   ```
+
+6. **Test health check prod**:
+   ```bash
+   curl https://facteur-production.up.railway.app/api/health/ready
+   ```
+
+### Gardes-Fous Spécifiques
+
+**Missing COPY in Dockerfile**:
+
+```dockerfile
+# ❌ DANGER: Ajouter import mais oublier COPY
+# app/services/new_service.py créé
+# Mais Dockerfile n'a pas COPY app/services/new_service.py
+# → ImportError en prod
+
+# ✅ CORRECT: COPY complet
+COPY app/ /app/app/
+COPY scripts/ /app/scripts/
+# Vérifie que tous modules sont copiés
+```
+
+**Python Version Lock**:
+
+```dockerfile
+# ❌ DANGER: Python 3.13+ casse pydantic-core
+FROM python:3.13-slim
+
+# ✅ CORRECT: Lock sur 3.12
+FROM python:3.12-slim
+```
+
+---
+
+## 📋 Quick Safety Checklist
+
+**Avant TOUTE modification code**:
+
+- [ ] **Worktree isolé créé** (`git worktree list` pour vérifier)
+- [ ] **Zone à risque identifiée** (Auth/Router/DB/Infra?)
+- [ ] **Docs de sécurité lues** (cf. sections ci-dessus)
+- [ ] **Plan de rollback prêt** (`git restore` ou `alembic downgrade`)
+- [ ] **Tests manuels BEFORE** (état actuel documenté)
+
+**Après modification code**:
+
+- [ ] **Tests manuels AFTER** (comparaison BEFORE/AFTER)
+- [ ] **Script de vérification créé** (`docs/qa/scripts/verify_*.sh`)
+- [ ] **Logs vérifiés** (si deployment)
+- [ ] **Documentation MAJ** (si structure change)
+- [ ] **Cleanup worktree** (après merge)
+
+---
+
+*Dernière MAJ: 2026-02-14*
