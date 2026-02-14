@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../models/digest_models.dart';
@@ -213,6 +214,27 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             },
             colors: colors,
           ),
+
+        // Mute topic actions (topics ML granulaires, max 2)
+        for (final topicSlug in item.topics.take(2))
+          if (_getThemeLabel(theme ?? '').toLowerCase() !=
+              getTopicLabel(topicSlug).toLowerCase())
+            _buildActionOption(
+              context,
+              icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+              label: 'Moins sur "${getTopicLabel(topicSlug)}"',
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await ref.read(feedProvider.notifier).muteTopic(topicSlug);
+                  NotificationService.showInfo('Sujet masqué');
+                } catch (e) {
+                  NotificationService.showError(
+                      'Impossible de masquer le sujet');
+                }
+              },
+              colors: colors,
+            ),
       ],
     );
   }
