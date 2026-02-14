@@ -1,0 +1,501 @@
+# Tech Guardrails - Battle-Tested Patterns
+
+**Issus de sessions de debugging réelles. Ces patterns ont causé des bugs en production. Ne pas ignorer.**
+
+---
+
+## 🐍 Python / FastAPI
+
+### Garde-Fou 1: Type Hints (Python 3.12)
+
+**Problème**: `PydanticUserError: 'List' is not a valid type hint`
+
+**Cause**: Python 3.9+ supporte `list[]` natif, mais `List` de `typing` crée des conflits avec Pydantic v2.
+
+```python
+# ❌ DANGER
+from typing import List, Dict, Optional
+
+class UserResponse(BaseModel):
+    interests: List[str]  # PydanticUserError en Python 3.12+
+    metadata: Dict[str, str]
+    bio: Optional[str]
+
+# ✅ CORRECT
+from typing import Optional  # OK pour Optional
+
+class UserResponse(BaseModel):
+    interests: list[str]  # Utilise list[] natif Python 3.9+
+    metadata: dict[str, str]
+    bio: str | None  # Ou utilise union type Python 3.10+
+```
+
+**Règle**: **Utilise impérativement `list[]`, `dict[]`, `set[]`, `tuple[]`** (Python 3.9+ builtins). Seul `Optional[]` de `typing` est OK si tu préfères à `| None`.
+
+**Fichiers concernés**:
+- Tous schemas: `packages/api/app/schemas/*.py`
+- Tous models: `packages/api/app/models/*.py`
+- Type hints partout
+
+**Vérification**:
+```bash
+cd packages/api && source venv/bin/activate
+python -c "from app.schemas.user import UserResponse; print('OK')"
+# Si erreur → cherche List/Dict/Set dans les imports
+```
+
+---
+
+### Garde-Fou 2: Async/Await Partout
+
+**Problème**: Blocking I/O dans async context → performance dégradée, timeouts.
+
+**Cause**: Mélange sync/async code dans FastAPI/SQLAlchemy.
+
+```python
+# ❌ DANGER
+@router.get("/users/{user_id}")
+def get_user(user_id: UUID, db: Session):  # Session sync
+    user = db.query(User).filter(User.id == user_id).first()
+    return user
+
+# ✅ CORRECT
+@router.get("/users/{user_id}")
+async def get_user(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db)  # AsyncSession
+):
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    return user
+```
+
+**Règle**: **Tout I/O doit être async** (DB, HTTP, file I/O).
+
+**Exceptions**:
+- CPU-bound tasks: Use `run_in_executor()` pour offload à thread pool
+  ```python
+  loop = asyncio.get_event_loop()
+  result = await loop.run_in_executor(None, cpu_intensive_function, args)
+  ```
+
+**Vérification**:
+```bash
+# Recherche appels sync dans code async
+cd packages/api
+rg "def (get_|post_|put_|delete_)" app/routers/  # Doit trouver "async def"
+```
+
+---
+
+### Garde-Fou 3: Structlog Partout (Pas de `print()`)
+
+**Problème**: `print()` en production → logs non-structurés, difficiles à filtrer/analyser dans Sentry.
+
+**Cause**: Debug rapide avec `print()`, jamais nettoyé.
+
+```python
+# ❌ DANGER
+def sync_feed(source_id: int):
+    print(f"Syncing source {source_id}")  # Non-structuré
+    # ...
+    print(f"Synced {len(articles)} articles")
+
+# ✅ CORRECT
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+async def sync_feed(source_id: int):
+    logger.info("sync_started", source_id=source_id)
+    # ...
+    logger.info("sync_completed", source_id=source_id, article_count=len(articles))
+```
+
+**Règle**: **Jamais `print()` en code production.** Utilise `structlog` avec key-value pairs.
+
+**Fichiers avec `print()` restants** (tech debt):
+- `packages/api/app/routers/feed.py`
+- `packages/api/app/dependencies.py`
+
+**TODO**: Remplacer par structlog.
+
+**Vérification**:
+```bash
+cd packages/api
+rg "print\(" app/  # Doit retourner 0 (ou seulement tech debt connu)
+```
+
+---
+
+## 🔐 Supabase Auth
+
+### Garde-Fou 4: Stale Token (Email Confirmation)
+
+**Problème**: JWT token contient `email_confirmed_at=null` même après confirmation → user bloqué sur écran confirmation.
+
+**Cause**: Token généré AVANT confirmation email, jamais rafraîchi.
+
+```python
+# ❌ DANGER: Ne fais JAMAIS confiance au JWT seul
+from jose import jwt
+
+def is_email_confirmed(token: str) -> bool:
+    payload = jwt.decode(token, SECRET, algorithms=["RS256"])
+    return payload.get("email_confirmed_at") is not None
+    # Bug: payload peut être stale (généré avant confirmation)
+
+# ✅ CORRECT: Query Supabase auth.users en temps réel
+from supabase import Client
+
+async def is_email_confirmed(user_id: UUID, supabase: Client) -> bool:
+    response = supabase.auth.admin.get_user_by_id(str(user_id))
+    return response.user.email_confirmed_at is not None
+```
+
+**Règle**: **Pour comptes email, toujours vérifier `auth.users` côté serveur.** Ne jamais faire confiance au JWT seul pour `email_confirmed_at`.
+
+**Alternative mobile**: Forcer refresh session après confirmation.
+
+```dart
+// ✅ CORRECT (mobile)
+Future<void> confirmEmail(String token) async {
+  await supabase.auth.verifyOTP(token: token, type: OtpType.email);
+
+  // Force refresh session pour obtenir JWT à jour
+  await supabase.auth.refreshSession();
+
+  // Maintenant authStateProvider.isEmailConfirmed sera correct
+}
+```
+
+**Fichiers concernés**:
+- `packages/api/app/dependencies.py` (JWT validation)
+- `apps/mobile/lib/core/auth/auth_state.dart`
+
+**Vérification**:
+```bash
+# Test: User confirme email → doit être redirected to home (pas bloqué)
+# Manual test requis (Flutter simulator)
+```
+
+---
+
+### Garde-Fou 5: JWT Secret Mismatch
+
+**Problème**: Mobile et Backend utilisent des `SUPABASE_JWT_SECRET` différents → 403 sur tous endpoints.
+
+**Cause**: Env vars mal configurées, copié/collé entre projets.
+
+```bash
+# ❌ DANGER: Secrets différents
+# Mobile .env
+SUPABASE_JWT_SECRET=secret_from_project_A
+
+# Backend .env
+SUPABASE_JWT_SECRET=secret_from_project_B
+
+# Résultat: JWT signé avec secret_A, validé avec secret_B → FAIL
+
+# ✅ CORRECT: Même secret partout
+# Supabase Dashboard → Settings → API → JWT Secret
+# Copie EXACTEMENT le même dans mobile ET backend
+```
+
+**Règle**: **Vérifie cohérence `SUPABASE_JWT_SECRET`** entre mobile et backend.
+
+**Vérification**:
+```bash
+# Backend
+cd packages/api && source venv/bin/activate
+python -c "from app.config import settings; print(settings.SUPABASE_JWT_SECRET[:10])"
+
+# Mobile (check build args)
+cd apps/mobile
+flutter run --dart-define=SUPABASE_JWT_SECRET=$SUPABASE_JWT_SECRET
+# Vérifie que $SUPABASE_JWT_SECRET matche backend
+```
+
+---
+
+## 🗄️ Database / SQLAlchemy
+
+### Garde-Fou 6: Foreign Key Confusion
+
+**Problème**: Confusion entre `user_profiles.id` (PK) et `user_profiles.user_id` (FK vers `auth.users`) → mauvais joins, data mixée.
+
+**Cause**: Inconsistency dans le modèle de données.
+
+```python
+# ❌ DANGER: Quelle FK utiliser?
+class DailyDigest(Base):
+    user_id: Mapped[UUID]  # FK vers auth.users.id ou user_profiles.id?
+
+# Réponse dépend du modèle:
+# - Certaines tables FK vers auth.users.id directement
+# - D'autres FK vers user_profiles.id
+
+# ✅ CORRECT: TOUJOURS vérifier le schéma
+# Utilise DBeaver ou psql pour voir les contraintes FK
+
+# Exemple: daily_digest
+SELECT
+    conname AS constraint_name,
+    conrelid::regclass AS table_name,
+    a.attname AS column_name,
+    confrelid::regclass AS referenced_table
+FROM pg_constraint c
+JOIN pg_attribute a ON a.attnum = ANY(c.conkey) AND a.attrelid = c.conrelid
+WHERE contype = 'f' AND conrelid::regclass::text = 'daily_digest';
+
+# Si référence auth.users → utilise user_id directement
+# Si référence user_profiles → utilise profile_id
+```
+
+**Règle**: **Avant tout join, vérifie quelle FK utilise la table** (`auth.users.id` ou `user_profiles.id`).
+
+**Fichiers à risque**:
+- `packages/api/app/models/daily_digest.py`
+- `packages/api/app/models/user_content_status.py`
+- `packages/api/app/models/user_personalization.py`
+
+**Vérification**:
+```sql
+-- Dans psql ou DBeaver
+\d+ daily_digest  -- Voir FK constraints
+```
+
+---
+
+### Garde-Fou 7: Migration Lock Timeout (Supabase PgBouncer)
+
+**Problème**: Migration timeout sur grosse table → deploy fail, rollback manuel.
+
+**Cause**: Supabase pooler en mode "transaction", migrations Alembic lock tables, timeout après 60s.
+
+```python
+# ❌ DANGER: ALTER TABLE sur grosse table
+def upgrade():
+    op.add_column('contents', sa.Column('new_field', sa.String))
+    # contents table a 50k+ rows → lock timeout
+
+# ✅ CORRECT: Migration avec lock timeout handling
+def upgrade():
+    from alembic import op
+    from sqlalchemy import text
+
+    connection = op.get_bind()
+
+    # Set lock timeout
+    connection.execute(text("SET lock_timeout = '10s'"))
+
+    # Si grosse table, ajoute colonne nullable PUIS peuple en batches
+    op.add_column('contents', sa.Column('new_field', sa.String, nullable=True))
+
+    # Peuplement en batches (pas dans migration, mais dans script séparé)
+    # Ou utilise background task
+```
+
+**Règle**: **Pour migrations sur tables volumineuses** (`contents`, `user_content_status`), utilise:
+1. Lock timeout handling
+2. Colonnes nullable si possible
+3. Batches pour data migration
+
+**Fichiers concernés**:
+- `packages/api/alembic/versions/*.py`
+
+**Vérification**:
+```bash
+# Test migration sur copie DB prod
+DATABASE_URL=postgresql://test alembic upgrade head
+# Si timeout → refactor migration
+```
+
+---
+
+## 📱 Mobile / Flutter
+
+### Garde-Fou 8: API Client Timeout Workaround
+
+**Problème**: Mobile timeout sur API calls immédiatement après login → 100ms delay workaround.
+
+**Cause**: Supabase auth state pas ready quand API calls fire.
+
+```dart
+// ❌ DANGER: Supprimer le delay sans fix du root cause
+Future<void> login() async {
+  await supabase.auth.signInWithPassword(email: email, password: password);
+  // Appel API immédiat → token pas encore propagé dans Dio interceptor
+  final digest = await digestRepository.fetchTodayDigest(); // FAIL
+}
+
+// ✅ CORRECT: Keep workaround jusqu'à fix state machine
+Future<void> login() async {
+  await supabase.auth.signInWithPassword(email: email, password: password);
+
+  // Workaround: attendre 100ms pour propagation auth state
+  await Future.delayed(Duration(milliseconds: 100));
+
+  // Maintenant OK
+  final digest = await digestRepository.fetchTodayDigest();
+}
+```
+
+**Règle**: **Keep le 100ms delay workaround** jusqu'à refactor complet de `auth_state.dart` avec state machine propre.
+
+**Fichiers concernés**:
+- `apps/mobile/lib/core/auth/auth_state.dart`
+- `apps/mobile/lib/features/auth/screens/login_screen.dart`
+
+**TODO**: Refactor auth state machine pour éliminer race condition.
+
+---
+
+### Garde-Fou 9: Build Runner Après Freezed/Riverpod
+
+**Problème**: Freezed/Riverpod code generation pas run → compile errors.
+
+**Cause**: Oubli de `build_runner` après modif models.
+
+```bash
+# ❌ DANGER: Modifier model sans build_runner
+# apps/mobile/lib/models/digest.dart modifié
+# → compile error: "DigestModel.fromJson not found"
+
+# ✅ CORRECT: TOUJOURS run build_runner après modif
+cd apps/mobile
+dart run build_runner build --delete-conflicting-outputs
+```
+
+**Règle**: **Après TOUTE modif Freezed/Riverpod**, run `build_runner`.
+
+**Fichiers concernés**:
+- Tous `*.freezed.dart` (models)
+- Tous `*.g.dart` (providers)
+
+**Vérification**:
+```bash
+cd apps/mobile
+flutter analyze  # Doit retourner 0 errors
+```
+
+---
+
+## 🧪 Testing / QA
+
+### Garde-Fou 10: Self-Sufficient Verification Scripts
+
+**Problème**: Script de vérification assume venv activé, cwd correct → fail quand run manuellement.
+
+**Cause**: Scripts écrits pour usage agent, pas user.
+
+```bash
+# ❌ DANGER: Script dépend de l'environnement
+#!/bin/bash
+pytest tests/test_digest.py  # Assume venv activé, cwd = packages/api
+
+# ✅ CORRECT: Script self-sufficient
+#!/bin/bash
+set -e
+
+# Navigate to script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Navigate to API directory
+cd "$PROJECT_ROOT/packages/api"
+
+# Activate venv
+if [ ! -d "venv" ]; then
+  echo "❌ Virtual environment not found. Run: python3 -m venv venv && pip install -r requirements.txt"
+  exit 1
+fi
+
+source venv/bin/activate
+
+# Run tests
+pytest tests/test_digest.py
+
+echo "✅ Digest tests passed"
+```
+
+**Règle**: **Tous scripts dans `docs/qa/scripts/`** doivent être self-sufficient:
+1. Gestion du `cd` (chemins absolus)
+2. Activation venv si nécessaire
+3. Vérification des dépendances
+4. Messages d'erreur clairs
+
+**Vérification**:
+```bash
+# Test: Run script depuis n'importe où
+cd /tmp
+/Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur/docs/qa/scripts/verify_digest.sh
+# Doit fonctionner sans erreur
+```
+
+---
+
+## 🚀 Deployment / Railway
+
+### Garde-Fou 11: Health Check vs Readiness
+
+**Problème**: Health check simple `/api/health` retourne 200 même si DB down → Railway pense app healthy, route trafic.
+
+**Cause**: Liveness vs Readiness distinction pas claire.
+
+```python
+# ❌ DANGER: Health check qui ne vérifie rien
+@router.get("/health")
+async def health():
+    return {"status": "ok"}  # Toujours 200, même si DB down
+
+# ✅ CORRECT: Deux endpoints
+@router.get("/health")
+async def liveness():
+    """Liveness probe: App running?"""
+    return {"status": "ok"}
+
+@router.get("/health/ready")
+async def readiness(db: AsyncSession = Depends(get_db)):
+    """Readiness probe: App ready to serve traffic?"""
+    try:
+        # Check DB connectivity
+        await db.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+```
+
+**Règle**: **Utilise `/health/ready` pour Railway health checks** (vérifie DB).
+
+**Configuration Railway**:
+```json
+{
+  "healthcheck": {
+    "path": "/api/health/ready",
+    "interval": 30,
+    "timeout": 10
+  }
+}
+```
+
+---
+
+## 📋 Quick Guardrails Checklist
+
+**Avant commit**:
+
+- [ ] **Python type hints**: `list[]` pas `List[]`
+- [ ] **Async partout**: Tous I/O avec `async`/`await`
+- [ ] **Structlog**: Pas de `print()` restant
+- [ ] **Auth secrets**: `SUPABASE_JWT_SECRET` cohérent mobile ↔ backend
+- [ ] **Freezed/Riverpod**: `build_runner` run après modif models
+- [ ] **Migrations**: Lock timeout handling si grosse table
+- [ ] **Scripts QA**: Self-sufficient (chemins absolus, venv handling)
+
+---
+
+*Dernière MAJ: 2026-02-14*
+*Sources: Retrospectives, handoffs, maintenance docs*
