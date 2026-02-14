@@ -36,6 +36,7 @@ class HiddenReason(str, Enum):
 
     SOURCE = "source"
     TOPIC = "topic"
+    CONTENT_TYPE = "content_type"
 
 
 class BiasStance(str, Enum):
