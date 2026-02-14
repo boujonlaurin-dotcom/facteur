@@ -176,6 +176,29 @@ class PersonalizationSheet extends ConsumerWidget {
               colors: colors,
             ),
 
+          // Mute content type
+          if (content.contentType != ContentType.article)
+            _buildActionOption(
+              context,
+              icon: PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+              label:
+                  'Moins ${_getContentTypeLabel(content.contentType)}',
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await ref
+                      .read(feedProvider.notifier)
+                      .muteContentType(
+                          _getContentTypeSlug(content.contentType));
+                  NotificationService.showInfo('Type de contenu masqué');
+                } catch (e) {
+                  NotificationService.showError(
+                      'Impossible de masquer ce type de contenu');
+                }
+              },
+              colors: colors,
+            ),
+
           const SizedBox(height: 8),
         ],
       ),
@@ -226,6 +249,33 @@ class PersonalizationSheet extends ConsumerWidget {
       'economy': 'Économie',
     };
     return translations[slug.toLowerCase()] ?? slug;
+  }
+
+  String _getContentTypeLabel(ContentType type) {
+    switch (type) {
+      case ContentType.audio:
+        return 'de podcasts';
+      case ContentType.youtube:
+        return 'de vidéos YouTube';
+      case ContentType.video:
+        return 'de vidéos';
+      case ContentType.article:
+        return "d'articles";
+    }
+  }
+
+  /// Maps Dart ContentType to backend content_type slug
+  String _getContentTypeSlug(ContentType type) {
+    switch (type) {
+      case ContentType.audio:
+        return 'podcast';
+      case ContentType.youtube:
+        return 'youtube';
+      case ContentType.video:
+        return 'youtube';
+      case ContentType.article:
+        return 'article';
+    }
   }
 
   String _normalize(String input) {

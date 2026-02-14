@@ -287,6 +287,25 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  Future<void> muteContentType(String contentType) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove of all content matching this content type
+    final updatedItems = currentState.items
+        .where((c) => c.contentType.name != contentType)
+        .toList();
+
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteContentType(contentType);
+    } catch (e) {
+      print('FeedNotifier: muteContentType failed for $contentType: $e');
+    }
+  }
+
   /// Check if content is currently being consumed (animating out)
   bool isContentConsumed(String contentId) {
     return _consumedContentIds.contains(contentId);
