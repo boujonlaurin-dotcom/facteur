@@ -87,9 +87,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.warning("lifespan_db_checks_skipped", reason="DATABASE_URL not set in environment")
     logger.info("lifespan_starting_scheduler")
     start_scheduler()
+
+    # Démarrage conditionnel du worker de classification ML
+    ml_worker = None
+    if settings.ml_enabled:
+        from app.workers.classification_worker import get_worker
+        ml_worker = get_worker()
+        await ml_worker.start()
+        logger.info("lifespan_ml_worker_started")
+    else:
+        logger.info("lifespan_ml_worker_skipped", reason="ML_ENABLED=false")
+
     logger.info("lifespan_startup_complete")
     yield
     # Shutdown
+    if ml_worker:
+        await ml_worker.stop()
+        logger.info("lifespan_ml_worker_stopped")
     stop_scheduler()
     await close_db()
 
