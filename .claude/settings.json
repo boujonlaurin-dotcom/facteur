@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "sentry": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp-servers/sentry/server.py"],
+      "env": {
+        "SENTRY_AUTH_TOKEN": "${SENTRY_AUTH_TOKEN}",
+        "SENTRY_ORG": "${SENTRY_ORG}",
+        "SENTRY_PROJECT": "${SENTRY_PROJECT}"
+      }
+    },
+    "railway": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp-servers/railway/server.py"],
+      "env": {
+        "RAILWAY_API_TOKEN": "${RAILWAY_API_TOKEN}",
+        "RAILWAY_PROJECT_ID": "${RAILWAY_PROJECT_ID}",
+        "RAILWAY_SERVICE_ID": "${RAILWAY_SERVICE_ID}"
+      }
+    }
+  }
+}
