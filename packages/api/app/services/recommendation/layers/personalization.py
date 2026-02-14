@@ -10,11 +10,13 @@ class PersonalizationLayer(BaseScoringLayer):
     
     Poids :
     - Source mutée : -80 pts (fort impact, l'utilisateur veut clairement moins voir)
+    - Type de contenu muté : -50 pts (filtre large sur le format)
     - Thème muté : -40 pts (impact modéré, peut encore apparaître si autres facteurs forts)
     - Topic muté : -30 pts (impact ciblé par sous-thème)
     """
-    
+
     MUTED_SOURCE_MALUS = -80.0
+    MUTED_CONTENT_TYPE_MALUS = -50.0
     MUTED_THEME_MALUS = -40.0
     MUTED_TOPIC_MALUS = -30.0
     
@@ -54,7 +56,20 @@ class PersonalizationLayer(BaseScoringLayer):
                     f"Tu vois moins de {effective_theme}"
                 )
         
-        # 3. Topics mutés → malus ciblé (cumulatif si plusieurs matches)
+        # 3. Type de contenu muté → malus large sur le format
+        if hasattr(context, 'muted_content_types') and context.muted_content_types:
+            ct = content.content_type
+            if ct and ct in context.muted_content_types:
+                score += self.MUTED_CONTENT_TYPE_MALUS
+                ct_label = {"article": "les articles", "podcast": "les podcasts", "youtube": "les vidéos YouTube"}.get(ct, ct)
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    self.MUTED_CONTENT_TYPE_MALUS,
+                    f"Tu vois moins de ce format ({ct_label})"
+                )
+
+        # 4. Topics mutés → malus ciblé (cumulatif si plusieurs matches)
         if hasattr(context, 'muted_topics') and context.muted_topics:
             if content.topics:
                 content_topics = {t.lower().strip() for t in content.topics if t}

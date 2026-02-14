@@ -26,6 +26,7 @@ class ScoringContext:
         muted_sources: Set[UUID] = None,
         muted_themes: Set[str] = None,
         muted_topics: Set[str] = None,
+        muted_content_types: Set[str] = None,
         custom_source_ids: Set[UUID] = None
     ):
         self.user_profile = user_profile
@@ -42,6 +43,7 @@ class ScoringContext:
         self.muted_sources = muted_sources or set()
         self.muted_themes = muted_themes or set()
         self.muted_topics = muted_topics or set()
+        self.muted_content_types = muted_content_types or set()
         
         # Diagnostics pour explicabilité
         self.reasons: Dict[UUID, Dict[str, Any]] = {}

@@ -147,6 +147,7 @@ class RecommendationService:
         muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
         muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
         muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
+        muted_content_types = set(t.lower() for t in personalization.muted_content_types) if personalization and personalization.muted_content_types else set()
 
         candidates = await self._get_candidates(
             user_id,
@@ -158,6 +159,7 @@ class RecommendationService:
             muted_sources=muted_sources,
             muted_themes=muted_themes,
             muted_topics=muted_topics,
+            muted_content_types=muted_content_types,
             # Story 10.20 : Exclude today's digest articles from feed
             digest_content_ids=digest_content_ids,
             # Story 11 : Feed par thème
@@ -182,6 +184,7 @@ class RecommendationService:
             muted_sources=muted_sources,
             muted_themes=muted_themes,
             muted_topics=muted_topics,
+            muted_content_types=muted_content_types,
             custom_source_ids=custom_source_ids
         )
         
@@ -451,7 +454,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -537,10 +540,14 @@ class RecommendationService:
                  )
              )
         
-        # Apply content_type filter if provided
+        # Apply content_type filter if provided (positive filter)
         if content_type:
              query = query.where(Content.content_type == content_type)
-        
+
+        # Apply muted content types filter (negative filter from personalization)
+        if muted_content_types:
+             query = query.where(Content.content_type.notin_(list(muted_content_types)))
+
         # Apply Mode Logic
         if mode:
             if mode == FeedFilterMode.INSPIRATION:
