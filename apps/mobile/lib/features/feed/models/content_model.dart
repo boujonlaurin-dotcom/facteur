@@ -1,3 +1,4 @@
+import '../../../config/topic_labels.dart';
 import '../../sources/models/source_model.dart';
 
 enum ContentType {
@@ -82,6 +83,7 @@ class Content {
   final bool isSaved;
   final bool isLiked;
   final bool isHidden;
+  final List<String> topics;
   final RecommendationReason? recommendationReason;
 
   Content({
@@ -100,6 +102,7 @@ class Content {
     this.isSaved = false,
     this.isLiked = false,
     this.isHidden = false,
+    this.topics = const [],
     this.recommendationReason,
   });
 
@@ -133,6 +136,10 @@ class Content {
         isSaved: (json['is_saved'] as bool?) ?? false,
         isLiked: (json['is_liked'] as bool?) ?? false,
         isHidden: (json['is_hidden'] as bool?) ?? false,
+        topics: (json['topics'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+            const [],
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)
             : null,
@@ -168,6 +175,7 @@ class Content {
     bool? isSaved,
     bool? isLiked,
     bool? isHidden,
+    List<String>? topics,
     RecommendationReason? recommendationReason,
   }) {
     return Content(
@@ -186,6 +194,7 @@ class Content {
       isSaved: isSaved ?? this.isSaved,
       isLiked: isLiked ?? this.isLiked,
       isHidden: isHidden ?? this.isHidden,
+      topics: topics ?? this.topics,
       recommendationReason: recommendationReason ?? this.recommendationReason,
     );
   }
@@ -212,8 +221,11 @@ class Content {
 
   /// Story 8.0: Get the topic used for progression (granularity layer)
   String? get progressionTopic {
-    // V0: Use source theme as the topic
-    // Future: Use specific tags or categories
+    // Priorité : topics ML granulaires > thème source
+    if (topics.isNotEmpty) {
+      return getTopicLabel(topics.first);
+    }
+    // Fallback : thème source (comportement pré-ML)
     if (source.theme != null && source.theme!.isNotEmpty) {
       return source.getThemeLabel();
     }
