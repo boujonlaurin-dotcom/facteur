@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
+import '../../../core/auth/auth_state.dart';
+import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
 import '../../../features/sources/providers/sources_providers.dart';
 import 'onboarding_provider.dart';
@@ -68,39 +71,44 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
   }
 
   /// Sauvegarde les réponses d'onboarding via l'API
+  /// Retry automatique après refresh de session en cas d'erreur auth (403/401)
   Future<void> _saveOnboarding() async {
     final answers = _ref.read(onboardingProvider).answers;
     final userService = _ref.read(userApiServiceProvider);
 
-    // Logger le début de la sauvegarde
-    // ignore: avoid_print
-    print('Début sauvegarde onboarding...');
+    debugPrint('Début sauvegarde onboarding...');
 
-    // Appel API avec le service
-    final result = await userService.saveOnboarding(answers);
+    // Premier essai
+    var result = await userService.saveOnboarding(answers);
+
+    // Si erreur d'auth (JWT stale après confirmation email), refresh session et réessayer
+    if (!result.success && result.errorType == ErrorType.auth) {
+      debugPrint('Onboarding: erreur auth, tentative de refresh session...');
+      try {
+        await _ref.read(authStateProvider.notifier).refreshUser();
+        // Petit délai pour laisser le token se propager
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        debugPrint('Onboarding: session rafraîchie, retry API...');
+        result = await userService.saveOnboarding(answers);
+      } catch (e) {
+        debugPrint('Onboarding: échec refresh session: $e');
+        // On continue avec le résultat original
+      }
+    }
 
     if (result.success) {
-      // Succès : sauvegarder le profil localement
       await _saveProfileLocally(result.profile!);
-
-      // Marquer les sources sélectionnées comme "de confiance"
       await _trustSelectedSources(answers.preferredSources);
-
-      // Effacer les réponses temporaires d'onboarding
       await _ref.read(onboardingProvider.notifier).clearSavedData();
 
-      // Logger le succès
-      // ignore: avoid_print
-      print(
+      debugPrint(
         'Onboarding sauvegardé avec succès ! '
         'Profil: ${result.profile!.id}, '
         'Intérêts: ${result.interestsCreated}, '
         'Préférences: ${result.preferencesCreated}',
       );
     } else {
-      // Erreur retournée par l'API
-      // ignore: avoid_print
-      print('Erreur sauvegarde onboarding: ${result.errorMessage}');
+      debugPrint('Erreur sauvegarde onboarding: ${result.errorMessage}');
       throw Exception(result.friendlyErrorMessage);
     }
   }
@@ -113,12 +121,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', false); // Synchronisé avec succès
 
-      // ignore: avoid_print
-      print('Profil sauvegardé localement');
+      debugPrint('Profil sauvegardé localement');
     } catch (e) {
-      // Ignorer les erreurs de cache local
-      // ignore: avoid_print
-      print('Erreur sauvegarde locale (non-bloquant): $e');
+      debugPrint('Erreur sauvegarde locale (non-bloquant): $e');
     }
   }
 
@@ -131,12 +136,9 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     for (final sourceId in sourceIds) {
       try {
         await repository.trustSource(sourceId);
-        // ignore: avoid_print
-        print('Source $sourceId marquée comme de confiance');
+        debugPrint('Source $sourceId marquée comme de confiance');
       } catch (e) {
-        // Non-bloquant: continuer même si une source échoue
-        // ignore: avoid_print
-        print('Erreur trust source $sourceId: $e');
+        debugPrint('Erreur trust source $sourceId: $e');
       }
     }
   }
@@ -156,8 +158,7 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 
     state = const ConclusionSuccess();
 
-    // ignore: avoid_print
-    print('Mode dégradé activé : onboarding complété localement uniquement');
+    debugPrint('Mode dégradé activé : onboarding complété localement uniquement');
   }
 
   /// Sauvegarde en mode dégradé (local uniquement)
@@ -166,18 +167,13 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
       final answers = _ref.read(onboardingProvider).answers;
       final box = await Hive.openBox('user_profile');
 
-      // Marquer comme complété localement
       await box.put('onboarding_completed', true);
       await box.put('pending_sync', true); // Flag pour sync future
-
-      // Sauvegarder les réponses pour sync future
       await box.put('answers_backup', answers.toJson());
 
-      // ignore: avoid_print
-      print('Mode dégradé : données sauvegardées localement pour sync future');
+      debugPrint('Mode dégradé : données sauvegardées localement pour sync future');
     } catch (e) {
-      // ignore: avoid_print
-      print('Erreur sauvegarde locale mode dégradé: $e');
+      debugPrint('Erreur sauvegarde locale mode dégradé: $e');
     }
   }
 
