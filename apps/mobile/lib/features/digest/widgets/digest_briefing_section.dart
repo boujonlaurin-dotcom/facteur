@@ -399,6 +399,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               onNotInterested: widget.onNotInterested != null
                   ? () => widget.onNotInterested!(item)
                   : null,
+              onPersonalize: () => _showReasoningSheet(context, item),
               isSaved: item.isSaved,
             ),
           ),

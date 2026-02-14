@@ -87,6 +87,7 @@ class DigestContext:
     muted_sources: Set[UUID]
     muted_themes: Set[str]
     muted_topics: Set[str]
+    muted_content_types: Set[str]
     user_bias_stance: Optional[BiasStance] = None
 
 
@@ -374,7 +375,8 @@ class DigestSelector:
         muted_sources = set()
         muted_themes = set()
         muted_topics = set()
-        
+        muted_content_types = set()
+
         if personalization:
             if personalization.muted_sources:
                 muted_sources = set(s for s in personalization.muted_sources if s is not None)
@@ -382,7 +384,9 @@ class DigestSelector:
                 muted_themes = set(t.lower() for t in personalization.muted_themes if t)
             if personalization.muted_topics:
                 muted_topics = set(t.lower() for t in personalization.muted_topics if t)
-        
+            if personalization.muted_content_types:
+                muted_content_types = set(t.lower() for t in personalization.muted_content_types if t)
+
         # Calculer le biais utilisateur si mode perspective
         user_bias_stance = None
         if mode == DigestMode.PERSPECTIVE:
@@ -401,6 +405,7 @@ class DigestSelector:
             muted_sources=muted_sources,
             muted_themes=muted_themes,
             muted_topics=muted_topics,
+            muted_content_types=muted_content_types,
             user_bias_stance=user_bias_stance,
         )
     
@@ -464,6 +469,12 @@ class DigestSelector:
                         Content.topics.is_(None),
                         ~Content.topics.overlap(list(context.muted_topics))
                     )
+                )
+
+            # Filtrage des types de contenu mutés
+            if context.muted_content_types:
+                user_sources_query = user_sources_query.where(
+                    Content.content_type.notin_(list(context.muted_content_types))
                 )
 
             # Appliquer les filtres de mode sur les sources utilisateur
@@ -543,6 +554,12 @@ class DigestSelector:
                             Content.topics.is_(None),
                             ~Content.topics.overlap(list(context.muted_topics))
                         )
+                    )
+
+                # Filtrage des types de contenu mutés
+                if context.muted_content_types:
+                    fallback_query = fallback_query.where(
+                        Content.content_type.notin_(list(context.muted_content_types))
                     )
 
                 # Appliquer les filtres de mode sur le fallback aussi
@@ -642,6 +659,7 @@ class DigestSelector:
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
+            muted_content_types=context.muted_content_types,
             custom_source_ids=context.custom_source_ids
         )
         

@@ -36,10 +36,15 @@ class MuteTopicRequest(BaseModel):
     topic: str  # e.g., "crypto"
 
 
+class MuteContentTypeRequest(BaseModel):
+    content_type: str  # e.g., "podcast", "youtube", "article"
+
+
 class PersonalizationResponse(BaseModel):
     muted_sources: List[UUID] = []
     muted_themes: List[str] = []
     muted_topics: List[str] = []
+    muted_content_types: List[str] = []
 
 
 # --- Endpoints ---
@@ -62,7 +67,8 @@ async def get_personalization(
     return PersonalizationResponse(
         muted_sources=result.muted_sources or [],
         muted_themes=result.muted_themes or [],
-        muted_topics=result.muted_topics or []
+        muted_topics=result.muted_topics or [],
+        muted_content_types=result.muted_content_types or []
     )
 
 
@@ -186,6 +192,48 @@ async def mute_topic(
         logger.error("mute_topic_error", error=str(e), user_id=str(user_uuid), topic=topic_slug)
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Erreur lors du masquage du topic: {str(e)}")
+
+
+@router.post("/mute-content-type")
+async def mute_content_type(
+    request: MuteContentTypeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Ajoute un type de contenu à la liste des types mutés."""
+    user_uuid = UUID(current_user_id)
+    ct_slug = request.content_type.lower().strip()
+
+    # Valider que le type de contenu est valide
+    valid_types = {"article", "podcast", "youtube"}
+    if ct_slug not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Type de contenu invalide: '{ct_slug}'. Valeurs acceptées: {', '.join(valid_types)}")
+
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.commit()
+
+    try:
+        stmt = pg_insert(UserPersonalization).values(
+            user_id=user_uuid,
+            muted_content_types=[ct_slug]
+        ).on_conflict_do_update(
+            index_elements=['user_id'],
+            set_={
+                'muted_content_types': func.coalesce(UserPersonalization.muted_content_types, text("'{}'::text[]")).op('||')([ct_slug]),
+                'updated_at': func.now()
+            }
+        )
+
+        await db.execute(stmt)
+        await db.commit()
+
+        return {"message": f"Type de contenu '{ct_slug}' muté avec succès"}
+
+    except Exception as e:
+        logger.error("mute_content_type_error", error=str(e), user_id=str(user_uuid), content_type=ct_slug)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du masquage du type de contenu: {str(e)}")
 
 
 @router.delete("/unmute-source/{source_id}")
