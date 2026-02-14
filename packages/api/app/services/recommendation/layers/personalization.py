@@ -59,9 +59,9 @@ class PersonalizationLayer(BaseScoringLayer):
         # 3. Type de contenu muté → malus large sur le format
         if hasattr(context, 'muted_content_types') and context.muted_content_types:
             ct = content.content_type
-            if ct and ct.value in context.muted_content_types:
+            if ct and ct in context.muted_content_types:
                 score += self.MUTED_CONTENT_TYPE_MALUS
-                ct_label = {"article": "les articles", "podcast": "les podcasts", "youtube": "les vidéos YouTube"}.get(ct.value, ct.value)
+                ct_label = {"article": "les articles", "podcast": "les podcasts", "youtube": "les vidéos YouTube"}.get(ct, ct)
                 context.add_reason(
                     content.id,
                     self.name,
