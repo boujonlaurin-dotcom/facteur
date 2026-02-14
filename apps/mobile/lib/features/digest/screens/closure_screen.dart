@@ -205,10 +205,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
     _navigateToFeed();
   }
 
-  void _onClosePressed() {
-    _navigateToFeed();
-  }
-
   @override
   void dispose() {
     _headlineController.dispose();
@@ -329,19 +325,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                           color: colors.textSecondary,
                         ),
                         textAlign: TextAlign.center,
-                      ),
-
-                      const SizedBox(height: FacteurSpacing.space3),
-
-                      // Text button: Close
-                      TextButton(
-                        onPressed: _onClosePressed,
-                        child: Text(
-                          'Fermer',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        ),
                       ),
                     ],
                   ),
