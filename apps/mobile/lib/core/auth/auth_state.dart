@@ -281,10 +281,15 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
+      // Deep link pour native, URL web pour Flutter web
+      final redirectUrl = kIsWeb
+          ? '${Uri.base.origin}/email-confirmation'
+          : 'io.supabase.facteur://login-callback';
+
       await _supabase.auth.signUp(
         email: email,
         password: password,
-        emailRedirectTo: 'io.supabase.facteur://login-callback',
+        emailRedirectTo: redirectUrl,
         data: {
           'first_name': firstName,
           'last_name': lastName,

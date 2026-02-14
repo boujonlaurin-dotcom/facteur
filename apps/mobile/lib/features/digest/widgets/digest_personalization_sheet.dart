@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
 import '../models/digest_models.dart';
 
@@ -326,6 +327,33 @@ class DigestPersonalizationSheet extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _getContentTypeLabel(ContentType type) {
+    switch (type) {
+      case ContentType.audio:
+        return 'de podcasts';
+      case ContentType.youtube:
+        return 'de vidéos YouTube';
+      case ContentType.video:
+        return 'de vidéos';
+      case ContentType.article:
+        return "d'articles";
+    }
+  }
+
+  /// Maps Dart ContentType to backend content_type slug
+  String _getContentTypeSlug(ContentType type) {
+    switch (type) {
+      case ContentType.audio:
+        return 'podcast';
+      case ContentType.youtube:
+        return 'youtube';
+      case ContentType.video:
+        return 'youtube';
+      case ContentType.article:
+        return 'article';
+    }
   }
 
   String _getThemeLabel(String slug) {

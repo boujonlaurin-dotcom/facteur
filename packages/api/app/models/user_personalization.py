@@ -40,11 +40,18 @@ class UserPersonalization(Base):
     
     # Topics granulaires mutés (slugs comme "ai", "crypto")
     muted_topics: Mapped[list[str]] = mapped_column(
-        ARRAY(Text), 
+        ARRAY(Text),
         default=list,
         server_default="{}"
     )
-    
+
+    # Types de contenu mutés (slugs comme "article", "podcast", "youtube")
+    muted_content_types: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        default=list,
+        server_default="{}"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

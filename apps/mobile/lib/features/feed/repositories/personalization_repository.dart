@@ -63,6 +63,21 @@ class PersonalizationRepository {
     }
   }
 
+  Future<void> muteContentType(String contentType) async {
+    try {
+      await _apiClient.post(
+        'users/personalization/mute-content-type',
+        body: {'content_type': contentType},
+      );
+    } on DioException catch (e) {
+      print('PersonalizationRepository.muteContentType failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   Body sent: {content_type: $contentType}');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
+
   Future<void> unmuteSource(String sourceId) async {
     try {
       await _apiClient.delete('users/personalization/unmute-source/$sourceId');
