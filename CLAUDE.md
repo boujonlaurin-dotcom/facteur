@@ -586,5 +586,76 @@ Authenticate: `Claude mcp auth supabase`
 
 ---
 
-*Last updated: 2026-02-07*
+## Observability Tools (MCP Servers)
+
+The agent has access to production observability via MCP servers. These are **read-only** tools — no write access to any production system.
+
+### Available MCP Servers
+
+| Server | Purpose | Config Location |
+|--------|---------|-----------------|
+| **sentry** | Error tracking, stacktraces, issue search | `mcp-servers/sentry/server.py` |
+| **railway** | Deployment logs, build logs, service status | `mcp-servers/railway/server.py` |
+| **supabase** | DB introspection (remote MCP, see above) | Supabase-hosted |
+
+### MCP Configuration
+
+MCP servers are declared in `.claude/settings.json`. They require environment variables set on the host machine (never committed).
+
+### Sentry MCP Tools
+
+| Tool | Purpose | Example Usage |
+|------|---------|---------------|
+| `list_issues` | Unresolved errors with filters | `list_issues(query="is:unresolved", time_range="24h")` |
+| `get_issue_events` | Stacktraces for a specific issue | `get_issue_events(issue_id="123456", limit=5)` |
+| `get_event_context` | Tags, breadcrumbs, request data | `get_event_context(event_id="abc123")` |
+| `search_errors` | Search by keyword (wraps list_issues) | `search_errors(search_term="UndefinedColumn")` |
+
+### Railway MCP Tools
+
+| Tool | Purpose | Example Usage |
+|------|---------|---------------|
+| `get_latest_deployments` | Recent deployments with status | `get_latest_deployments(limit=5)` |
+| `get_deployment_logs` | Runtime logs of a deployment | `get_deployment_logs(deployment_id="xxx")` |
+| `get_build_logs` | Docker build logs | `get_build_logs(deployment_id="xxx")` |
+| `get_service_status` | Quick service health check | `get_service_status()` |
+
+### Required Environment Variables
+
+```bash
+# Sentry (scope: project:read, event:read)
+SENTRY_AUTH_TOKEN=sntrys_...
+SENTRY_ORG=your-org-slug
+SENTRY_PROJECT=facteur
+
+# Railway (scope: read-only)
+RAILWAY_API_TOKEN=...
+RAILWAY_PROJECT_ID=...
+RAILWAY_SERVICE_ID=...   # Optional, for filtering deployments
+```
+
+### Sentry Backend Integration
+
+Sentry is initialized in `packages/api/app/main.py` with:
+- **FastAPI + Starlette + SQLAlchemy integrations** — automatic exception capture
+- **structlog breadcrumbs** — via `LoggingIntegration` (INFO+ as breadcrumbs, ERROR+ as events)
+- **User context** — `sentry_sdk.set_user({"id": user_id})` set in `dependencies.py` on each authenticated request
+- **Tags** — `alembic_head` (code migration revision), `railway_service`, `environment`
+- **Release** — `RAILWAY_GIT_COMMIT_SHA` for deployment correlation
+- **Startup crash capture** — `sentry_sdk.flush(timeout=5)` called before `sys.exit(1)` so startup failures are never lost
+
+### Diagnostic Workflow for Agents
+
+When debugging a production issue:
+
+1. **Check recent errors**: `list_issues(query="is:unresolved", time_range="24h")`
+2. **Get stacktrace**: `get_issue_events(issue_id="<id>")` for the relevant issue
+3. **Get context**: `get_event_context(event_id="<id>")` for breadcrumbs and request data
+4. **Check deploy status**: `get_latest_deployments()` to see if a recent deploy caused the issue
+5. **Read startup logs**: `get_deployment_logs(deployment_id="<id>")` to check for migration errors
+6. **Verify DB schema**: Use Supabase MCP for `SELECT column_name FROM information_schema.columns WHERE table_name = $1`
+
+---
+
+*Last updated: 2026-02-14*
 *Maintained by: Human (Laurin) + AI agents collaboratively*

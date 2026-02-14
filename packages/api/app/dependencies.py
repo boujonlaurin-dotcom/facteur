@@ -2,6 +2,7 @@
 
 import asyncio
 import httpx
+import sentry_sdk
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -174,6 +175,9 @@ async def get_current_user_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: missing user_id",
             )
+
+        # Enrichir le scope Sentry avec l'utilisateur courant
+        sentry_sdk.set_user({"id": str(user_id)})
 
         # Vérifier si l'email est confirmé
         # Supabase inclut email_confirmed_at dans le payload si l'email est validé

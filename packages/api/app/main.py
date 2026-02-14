@@ -9,9 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import os
 import sys
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+import logging
 
 
-# DEBUG STARTUP
+# Structlog configuration
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
@@ -24,7 +30,7 @@ structlog.configure(
 logger = structlog.get_logger()
 
 db_url = os.environ.get('DATABASE_URL')
-logger.info("backend_starting", 
+logger.info("backend_starting",
     railway_env=os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'unknown'),
     port=os.environ.get('PORT', 'NOT_SET'),
     railway_service=os.environ.get('RAILWAY_SERVICE_NAME', 'unknown'),
@@ -58,6 +64,49 @@ from app.workers.scheduler import start_scheduler, stop_scheduler
 # Configuration
 settings = get_settings()
 
+
+def _get_alembic_head() -> str:
+    """Retourne la révision Alembic HEAD depuis le code (ou 'unknown')."""
+    try:
+        from alembic.config import Config
+        from alembic import script
+        alembic_ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
+        cfg = Config(alembic_ini)
+        script_dir = script.ScriptDirectory.from_config(cfg)
+        heads = script_dir.get_heads()
+        return heads[0] if heads else "no-heads"
+    except Exception:
+        return "unknown"
+
+
+# --- Sentry Initialization ---
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        release=os.environ.get("RAILWAY_GIT_COMMIT_SHA", "dev"),
+        traces_sample_rate=0.1 if settings.is_production else 1.0,
+        profiles_sample_rate=0.1 if settings.is_production else 0.0,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            StarletteIntegration(transaction_style="endpoint"),
+            SqlalchemyIntegration(),
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        send_default_pii=False,
+    )
+    sentry_sdk.set_tag("alembic_head", _get_alembic_head())
+    sentry_sdk.set_tag("railway_service", os.environ.get("RAILWAY_SERVICE_NAME", "unknown"))
+    logger.info("sentry_initialized",
+        environment=settings.environment,
+        release=os.environ.get("RAILWAY_GIT_COMMIT_SHA", "dev")[:7],
+    )
+else:
+    logger.info("sentry_disabled", reason="SENTRY_DSN not set")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Gère le cycle de vie de l'application (startup/shutdown)."""
@@ -81,7 +130,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         except Exception as e:
             logger.critical("lifespan_startup_failed_and_aborting", error=str(e), exc_info=True)
-            # Any exception during DB init or migration check is critical and should prevent startup.
+            # Capture to Sentry and flush BEFORE sys.exit(1) — otherwise the event is lost
+            sentry_sdk.capture_exception(e)
+            sentry_sdk.flush(timeout=5)
             sys.exit(1)
     else:
         logger.warning("lifespan_db_checks_skipped", reason="DATABASE_URL not set in environment")
@@ -133,12 +184,21 @@ app.include_router(personalization.router, prefix="/api/users/personalization", 
     
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Log all uncaught exceptions."""
-    logger.error("uncaught_exception", 
-                 path=request.url.path, 
-                 method=request.method, 
+    """Log all uncaught exceptions and forward to Sentry."""
+    logger.error("uncaught_exception",
+                 path=request.url.path,
+                 method=request.method,
                  error=str(exc),
                  exc_info=True)
+    # Sentry captures this automatically via FastApiIntegration,
+    # but we set extra context for clarity
+    with sentry_sdk.push_scope() as scope:
+        scope.set_context("request", {
+            "path": request.url.path,
+            "method": request.method,
+            "query": str(request.query_params),
+        })
+        sentry_sdk.capture_exception(exc)
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=500,
