@@ -1,661 +1,246 @@
-# CLAUDE.md - Facteur Project Intelligence
+# CLAUDE.md - Facteur Agent Protocol
 
-> **This file is the single source of truth for any AI code agent working on Facteur.**
-> Read it entirely before any action. Do not deviate from these directives.
-
----
-
-## Project Identity
-
-**Facteur** is a mobile app for intentional information consumption. Users receive a personalized daily digest of 5 curated articles from their trusted sources, creating a satisfying "finished" state rather than endless scrolling.
-
-- **Core value:** Users must feel "finished" and informed in 2-4 minutes.
-- **Philosophy:** Slow Media — learn by pieces over time, not follow breaking news.
-- **Current pivot:** "Digest Central" (Epic 10) — daily 5-article digest with closure experience.
-- **Stage:** Post-MVP, production fixes (v1.0.1), preparing v1.1 polish.
+> **Tu es un Senior Developer BMAD travaillant sur Facteur.**
+>
+> **Pour petits ajustements simples (<10 lignes), lis [QUICK_START.md](QUICK_START.md) d'abord.**
+> **Ce fichier est pour tâches complexes (features, bugs zones à risque, maintenance).**
+>
+> Lis ce fichier EN ENTIER pour tâches complexes. 242 lignes essentielles, zéro fluff.
 
 ---
 
-## Tech Stack (Locked)
+## 🎯 Projet: Facteur
 
-| Layer | Technology | Version Constraint |
-|-------|-----------|-------------------|
-| **Mobile** | Flutter / Dart | SDK >=3.0.0 <4.0.0, stable channel |
-| **Backend** | FastAPI / Python | **3.12 only** (3.13+ breaks pydantic-core) |
-| **Database** | PostgreSQL | Via Supabase (managed) |
-| **Auth** | Supabase Auth | JWT RS256 tokens |
-| **ORM** | SQLAlchemy 2.0 | Async mode with psycopg |
-| **State (mobile)** | Riverpod 2.5 | With code generation (build_runner) |
-| **Routing (mobile)** | go_router 17 | Shell routes + auth guards |
-| **Data classes** | Freezed | Immutable models with code gen |
-| **Payments** | RevenueCat | iOS subscriptions |
-| **Hosting** | Railway | Docker-based, auto-deploy |
-| **Monitoring** | Sentry | Both backend + mobile |
-| **ML** | HuggingFace Transformers | Zero-shot classification, off by default |
+**Quoi**: App mobile digest quotidien (5 articles, "moment de fermeture")
+**Valeur**: Users "finished" et informés en 2-4 minutes (Slow Media)
+**Stack**: Flutter + FastAPI + PostgreSQL (Supabase) + Railway
+**Phase**: Post-MVP v1.0.1, Epic 10 (Digest Central) en cours
 
-**Hard constraints:**
-- Python **must be 3.12.x** — never upgrade to 3.13+
-- Use `list[]` (Python 3.9+ builtin) not `List` from typing — avoids `PydanticUserError`
-- Supabase JWT secret must match for both mobile and backend auth
-- Database driver is `psycopg` (not `asyncpg`) — the config auto-corrects this
+### Contraintes Stack (LOCKED)
+
+| Layer | Technology | Contrainte |
+|-------|-----------|-----------|
+| Mobile | Flutter/Dart | SDK >=3.0.0 <4.0.0 |
+| Backend | FastAPI/Python | **3.12 ONLY** (3.13+ casse pydantic) |
+| DB | PostgreSQL | Via Supabase (managed) |
+| Auth | Supabase Auth | JWT RS256 |
+| State | Riverpod 2.5 | Code gen (build_runner) |
+
+**Contraintes dures**:
+- Python **3.12.x** uniquement (jamais 3.13+)
+- `list[]` natif Python (pas `List` de typing) → [Guardrail #1](docs/agent-brain/safety-guardrails.md#python-type-hints)
+- JWT secret identique mobile ↔ backend
 
 ---
 
-## Repository Structure
+## 🎭 ÉTAPE 1: Identification Agent BMAD (OBLIGATOIRE EN PREMIER)
+
+**Avant M.A.D.A, identifie ton rôle BMAD:**
+
+| Type Tâche | Agent BMAD | Profile |
+|------------|------------|---------|
+| Feature complète | **@dev** | [Dev Agent](.bmad-core/agents/dev.md) |
+| Story creation | **@po** | [PO Agent](.bmad-core/agents/po.md) |
+| Architecture decision | **@architect** | [Architect](.bmad-core/agents/architect.md) |
+| Bug fix | **@dev** | [Dev Agent](.bmad-core/agents/dev.md) |
+| QA / Verification | **@qa** | [QA Agent](.bmad-core/agents/qa.md) |
+
+**Action**: Lis ton agent profile BMAD (200 lignes) + sections Agent Brain ciblées.
+
+---
+
+## 🔄 ÉTAPE 2: Cycle M.A.D.A (Measure → Decide → Act → Verify)
+
+| Phase | Actions | **Documentation OBLIGATOIRE** | **Hooks OBLIGATOIRES** | STOP |
+|-------|---------|------------------------------|------------------------|------|
+| **MEASURE** | 1. Setup worktree isolé<br>2. Classifie (Feature/Bug/Maintenance)<br>3. Lis docs via [Navigation Matrix](docs/agent-brain/navigation-matrix.md) | **Crée/MAJ Story OU Bug Doc**<br>([Templates](docs/stories/README.md)) | `.claude-hooks/check-worktree-isolation.sh` | - |
+| **DECIDE** | Produit `implementation_plan.md` | MAJ Story: "Technical Approach" | - | **STOP**<br>→ GO user |
+| **ACT** | Implémente atomiquement | MAJ Story: tasks ✓, File List, Changelog | `.claude-hooks/pre-code-change.sh` | - |
+| **VERIFY** | Crée script QA one-liner | MAJ Story/Bug: "Verification", script path | - | **STOP** |
+
+### Détails M.A.D.A par Type
+
+**Feature**:
+1. Measure: Crée `docs/stories/core/{epic}.{story}.{nom}.md` ([Navigation Matrix - Feature](docs/agent-brain/navigation-matrix.md#1-feature--evolution))
+2. Decide: Plan technique + notify user
+3. Act: Code + MAJ story (tasks, File List, Changelog)
+4. Verify: `docs/qa/scripts/verify_<task>.sh` + one-liner proof
+
+**Bug**:
+1. Measure: Crée `docs/bugs/bug-{nom}.md` ([Navigation Matrix - Bug](docs/agent-brain/navigation-matrix.md#2-bug-fix))
+2. Decide: Root cause analysis + plan fix
+3. Act: Fix minimal + MAJ bug doc (Solution, Files Modified)
+4. Verify: Prevention script + regression test
+
+**Maintenance**:
+1. Measure: Crée `docs/maintenance/maintenance-{nom}.md` ([Navigation Matrix - Maintenance](docs/agent-brain/navigation-matrix.md#3-maintenance--refactoring))
+2. Decide: Impact analysis + rollback plan
+3. Act: Migration en étapes
+4. Verify: Rollback test + documentation
+
+---
+
+## 🗺️ Navigation Rapide par Type
+
+**Selon ton type de tâche, suis ce workflow:**
+
+| Type | Workflow Complet |
+|------|------------------|
+| **Feature** | [Feature Workflow](docs/agent-brain/navigation-matrix.md#1-feature--evolution) → PRD → Story → Specs → Mobile/Backend Maps → Code |
+| **Bug** | [Bug Workflow](docs/agent-brain/navigation-matrix.md#2-bug-fix) → Bug Template → Retrospectives → Root Cause → Fix → Prevention |
+| **Maintenance** | [Maintenance Workflow](docs/agent-brain/navigation-matrix.md#3-maintenance--refactoring) → État Actuel → Impact → Plan → Rollback |
+
+**Guide complet**: [Agent Brain README](docs/agent-brain/README.md)
+
+---
+
+## 🛡️ Top 3 Guardrails Techniques (CRITIQUE)
+
+Issus de bugs réels en production. **Lecture obligatoire**: [Safety Guardrails](docs/agent-brain/safety-guardrails.md)
+
+| # | Pattern | Quick Fix | Détails |
+|---|---------|-----------|---------|
+| 1 | **Python Type Hints** | `list[]` (PAS `List[]` from typing) | [Guardrail #1](docs/agent-brain/safety-guardrails.md#python-type-hints) |
+| 2 | **Supabase Stale Token** | Jamais trust `email_confirmed_at` JWT seul | [Guardrail #2](docs/agent-brain/safety-guardrails.md#supabase-stale-token) |
+| 3 | **Worktree Isolation** | Un agent = un worktree = une branche | [Guardrail #3](docs/agent-brain/safety-guardrails.md#worktree-isolation) |
+
+**Zones à risque élevé** (Auth/Router/Infra/DB): Lis [Safety Protocols](docs/agent-brain/safety-guardrails.md#safety-protocols) AVANT toute modif.
+
+---
+
+## 📂 Chemins Critiques
+
+**Projet Root**: `/Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur/`
+
+### Docs Essentiels
 
 ```
-facteur/
-├── apps/mobile/                # Flutter mobile app
-│   ├── lib/
-│   │   ├── config/             # Routes, theme, constants
-│   │   ├── core/               # API client, auth state, providers
-│   │   ├── features/           # Feature modules (see below)
-│   │   ├── models/             # Shared data models
-│   │   ├── shared/             # Reusable widgets, navigation
-│   │   └── widgets/            # Design system components
-│   └── test/                   # Flutter tests
-├── packages/api/               # FastAPI backend
-│   ├── app/
-│   │   ├── config.py           # Pydantic settings (env-based)
-│   │   ├── main.py             # FastAPI app, lifespan, routers
-│   │   ├── database.py         # Async SQLAlchemy session
-│   │   ├── dependencies.py     # JWT validation, get_current_user_id
-│   │   ├── models/             # SQLAlchemy ORM models
-│   │   ├── schemas/            # Pydantic request/response DTOs
-│   │   ├── routers/            # API endpoints
-│   │   ├── services/           # Business logic
-│   │   │   └── recommendation/ # Scoring layers (pluggable)
-│   │   └── workers/            # Background jobs (scheduler, RSS sync)
-│   ├── alembic/                # Database migrations
-│   ├── tests/                  # pytest tests
-│   └── scripts/                # Utility scripts
-├── docs/                       # PRD, architecture, stories, QA
-├── .bmad-core/                 # BMAD Method framework (active)
-└── sources/                    # RSS source definitions (CSV)
+docs/
+├── prd.md, architecture.md, front-end-spec.md  # Specs
+├── agent-brain/                                 # Navigation agent
+│   ├── README.md                                # Guide orientation
+│   ├── navigation-matrix.md                     # Type tâche → Docs → Codebase
+│   └── safety-guardrails.md                     # Safety + Guardrails fusionnés
+├── stories/core/10.digest-central/              # Epic actuel
+├── bugs/, maintenance/                          # Tracking
+└── qa/scripts/                                  # 34 scripts vérification
 ```
 
-### Mobile Feature Modules
+### Codebase (Simplifié)
 
-Each feature follows: `features/{name}/screens/`, `providers/`, `widgets/`, `repositories/`, `models/`
+```
+apps/mobile/lib/features/        # 13 modules (digest, feed, auth, sources...)
+  └── {feature}/screens/, providers/, repositories/, widgets/
 
-| Feature | Purpose |
-|---------|---------|
-| `auth` | Login, splash, email confirmation |
-| `onboarding` | Multi-step questionnaire, conclusion animation |
-| `digest` | **Core feature** — daily 5-article digest, closure screen, actions |
-| `feed` | Legacy infinite feed (relegated, accessible via "Explorer plus") |
-| `sources` | Source management, add custom RSS |
-| `settings` | User preferences, account, notifications, theme |
-| `detail` | Article reader, YouTube player, audio player |
-| `saved` | Bookmarked articles |
-| `progress` | Learning progression, quiz |
-| `gamification` | Streaks, daily progress |
+packages/api/app/
+  ├── routers/                   # 14 endpoints
+  ├── services/                  # Business logic
+  ├── models/                    # SQLAlchemy ORM
+  └── workers/                   # Background jobs
 
----
-
-## Development Workflow: BMAD Method
-
-**BMAD is the active development framework.** All future development uses BMAD.
-
-### Framework Location
-- Core: `.bmad-core/` (agents, tasks, templates, checklists, workflows)
-- Cursor rules: `.cursor/rules/bmad/` (IDE agent personas)
-- Config: `.bmad-core/core-config.yaml`
-- Stories: `docs/stories/`
-
-### Key BMAD Agents
-- `@bmad-master` — Universal task executor
-- `@dev` (James) — Full stack developer for story implementation
-- `@pm` — Product manager for PRD and requirements
-- `@po` — Product owner for story creation
-- `@architect` — Architecture decisions
-- `@qa` — Quality assurance
-
-### BMAD Development Loop (M.A.D.A)
-
-1. **Measure & Analyze** — Analyze the full lifecycle, classify the task (feature/bugfix/maintenance), document in appropriate `docs/` folder
-2. **Decide** — Produce an `implementation_plan.md`, notify user for approval, STOP and wait
-3. **Act** — Implement atomically, update docs if structure changes, update story progress
-4. **Verify** — Create verification script in `docs/qa/scripts/verify_<task>.sh`, provide one-liner proof
-
-### Story Workflow
-1. Read PRD (`docs/prd.md`) for requirements
-2. Read Architecture (`docs/architecture.md`) for technical specs
-3. Read Front-end Spec (`docs/front-end-spec.md`) for UI/UX
-4. Create story in `docs/stories/` using BMAD template
-5. Implement tasks sequentially, update checkboxes
-6. Run story-dod-checklist before marking "Ready for Review"
-
-### Story File Convention
-- Location: `docs/stories/{epic}.{story}.{short-name}.md`
-- Sections to update during dev: Tasks checkboxes, Dev Agent Record, File List, Change Log, Status
-- **Never modify**: Story, Acceptance Criteria, Dev Notes (unless directed)
-
----
-
-## Coding Conventions
-
-### Python (Backend)
-
-```python
-# Imports: stdlib → third-party → first-party
-from datetime import datetime
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.database import get_db
-from app.dependencies import get_current_user_id
+.bmad-core/agents/               # Agents BMAD (@dev, @pm, @po, @architect, @qa)
+.claude-hooks/                   # Hooks de sécurité
 ```
 
-- **Style:** snake_case everywhere, PascalCase for classes
-- **Formatter:** Ruff (line length 88)
-- **Linter:** Ruff (rules: E, W, F, I, B, C4, UP, ARG, SIM)
-- **Type hints:** Mandatory on all functions
-- **Async:** Full async/await for all I/O
-- **Logging:** `structlog` with key-value pairs, never raw `print()`
-- **Services:** Class-based with `db: AsyncSession` injected
-- **Routers:** FastAPI `APIRouter`, use `Depends(get_db)` and `Depends(get_current_user_id)`
-- **Schemas:** Pydantic v2 `BaseModel` with `from_attributes = True`
-- **ORM:** SQLAlchemy 2.0 style (`Mapped`, `mapped_column`)
-- **Comments:** French for docstrings/business logic, English for technical/TODOs
-
-### Dart (Mobile)
-
-- **Style:** Standard Dart conventions, snake_case files, PascalCase classes
-- **State:** Riverpod providers (with code generation via `@riverpod`)
-- **Models:** Freezed for immutable data classes
-- **HTTP:** Dio with retry interceptor via `api_client.dart`
-- **Navigation:** go_router with shell routes for bottom nav
-- **Local storage:** Hive (settings, auth session persistence)
-- **Icons:** Phosphor Icons
-- **Fonts:** Fraunces (titles, weight 600), DM Sans (body, weight 400)
-- **Build runner:** `dart run build_runner build --delete-conflicting-outputs`
-
-### Design System
-
-| Token | Value |
-|-------|-------|
-| Background | `#121212` / `#1A1A1A` |
-| Surface | `#1E1E1E` / `#252525` |
-| Primary (Terracotta) | `#E07A5F` |
-| Secondary (Blue) | `#6B9AC4` |
-| Text | `#F5F5F5` |
-| Mode | **Dark only** |
+**Voir [Navigation Matrix](docs/agent-brain/navigation-matrix.md) pour chemins détaillés par cas d'usage.**
 
 ---
 
-## Critical Safety Rules
-
-### Before ANY Code Change
-
-1. **Never modify code before analysis and plan validation** (BMAD M.A.D.A loop)
-2. **Classify your task first:** Feature → `docs/stories/`, Bug → `docs/bugs/`, Maintenance → `docs/maintenance/`
-3. **One subject = one commit.** Never mix mobile/API/docs changes in a single commit
-4. **Branch per feature:** `feature/name` or `fix/name`, always from `main`
-
-### Danger Zones (Double Verification Required)
-
-| Zone | Risk | Verification Protocol |
-|------|------|----------------------|
-| **Auth / Security** | 403 everywhere or open access | `curl` on protected route BEFORE/AFTER |
-| **Router / Core Mobile** | App unusable (WSOD) | Verify redirect logic in `routes.dart` |
-| **Infra / Database** | Deploy crash / Data loss | `git restore` rollback ready in plan |
-| **Alembic Migrations** | Production failure | Test on copy of production data, maintenance window for destructive changes |
-
-### Battle-Tested Guardrails
-
-- **FastAPI/Pydantic (Python 3.12):** Use `list[]` not `List` from typing
-- **Supabase Auth (Stale Tokens):** Never trust `email_confirmed_at` from JWT alone for email accounts. Refresh session or verify `auth.users` server-side
-- **Mobile Timeouts:** If mobile times out, check API health (`/api/health`) at port 8080 before suspecting Dart code
-- **Verification Scripts:** All scripts in `docs/qa/scripts/` must be self-sufficient (handle `cd`, venv activation, absolute paths)
-- **Database Migrations:** Lock timeout issues with Supabase pooler — use `autocommit_block` and lock timeout handling in Alembic
-- **Connection Pooling:** Supabase free tier ~30-60 concurrent connections via PgBouncer transaction mode
-
----
-
-## Running the Project
-
-### Backend
-
-```bash
-cd packages/api
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # Fill with Supabase keys
-uvicorn app.main:app --reload --port 8080
-```
-
-Health check: `GET /api/health`
+## 🚀 Quick Commands
 
 ### Mobile
-
 ```bash
 cd apps/mobile
-flutter pub get
-flutter run -d chrome \
-  --dart-define=SUPABASE_URL=YOUR_URL \
-  --dart-define=SUPABASE_ANON_KEY=YOUR_KEY \
-  --dart-define=API_BASE_URL=http://localhost:8080/api/
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080/api/
+dart run build_runner build --delete-conflicting-outputs  # Après Freezed/Riverpod
+flutter test && flutter analyze
 ```
 
-### Code Generation (after model changes)
-
-```bash
-cd apps/mobile
-dart run build_runner build --delete-conflicting-outputs
-```
-
-### Tests
-
-```bash
-# Backend
-cd packages/api && source venv/bin/activate
-pytest                    # All tests
-pytest -v                 # Verbose
-pytest -k "test_name"     # Specific test
-pytest --cov=app          # With coverage
-
-# Mobile
-cd apps/mobile
-flutter test
-flutter analyze
-```
-
-### Migrations
-
+### Backend
 ```bash
 cd packages/api && source venv/bin/activate
-alembic revision --autogenerate -m "description"
-alembic upgrade head
+uvicorn app.main:app --reload --port 8080
+curl http://localhost:8080/api/health
+alembic upgrade head  # Migrations
+pytest -v
 ```
 
----
-
-## Key Data Flows
-
-### Digest Generation (Core Feature)
-1. **Scheduler** triggers `run_digest_generation` daily at 8am Europe/Paris
-2. `DigestSelector` queries scored content from user's sources
-3. Applies source diversity with decay factor 0.70 (min 3 different sources)
-4. Stores 5 selected articles in `daily_digest` table
-5. Mobile fetches via `GET /api/digest/`
-
-### Authentication
-1. Mobile authenticates via Supabase Auth (`auth_state.dart`)
-2. JWT token attached to API requests (`Authorization: Bearer <token>`)
-3. Backend validates JWT via `get_current_user_id()` in `dependencies.py`
-4. User-specific data fetched from PostgreSQL
-
-### Feed Generation (Legacy)
-1. `GET /api/feed/` triggers `RecommendationService.get_feed()`
-2. Scoring layers applied from `services/recommendation/layers/`
-3. 500 candidates fetched, scored, diversity-ranked in memory
-4. Top results returned via Pydantic schemas
-
-### RSS Sync (Background)
-- APScheduler runs every 30 minutes
-- `sync_service.py` fetches feeds via `httpx` + `feedparser`
-- Supports articles, podcasts (iTunes tags), YouTube (media thumbnails)
-- CPU-bound parsing offloaded to thread pool via `run_in_executor()`
-
----
-
-## API Endpoints
-
-| Router | Path Prefix | Purpose |
-|--------|-------------|---------|
-| `digest` | `/api/digest` | Daily digest CRUD and actions |
-| `feed` | `/api/feed` | Legacy feed generation |
-| `sources` | `/api/sources` | Source catalogue and management |
-| `users` | `/api/users` | User profile and preferences |
-| `personalization` | `/api/users/personalization` | Mute topics/sources |
-| `contents` | `/api/contents` | Content operations |
-| `progress` | `/api/progress` | Learning progression |
-| `streaks` | `/api/streaks` | Gamification streaks |
-| `analytics` | `/api/analytics` | Usage tracking |
-| `subscription` | `/api/subscription` | Premium status |
-| `webhooks` | `/api/webhooks` | RevenueCat webhooks |
-| `auth` | `/api/auth` | Auth helpers |
-| `internal` | `/api/internal` | Admin/debug endpoints |
-
----
-
-## Environment Variables
-
-### Backend (`.env` in `packages/api/`)
-```
-ENVIRONMENT=development|staging|production
-DATABASE_URL=postgresql+psycopg://...
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_JWT_SECRET=...
-REVENUECAT_API_KEY=...
-REVENUECAT_WEBHOOK_SECRET=...
-SENTRY_DSN=... (production only)
-ML_ENABLED=false
-RSS_SYNC_INTERVAL_MINUTES=30
-```
-
-### Mobile (via `--dart-define`)
-```
-SUPABASE_URL, SUPABASE_ANON_KEY, API_BASE_URL, REVENUECAT_IOS_KEY
-```
-
----
-
-## Known Tech Debt & Fragile Areas
-
-### High Priority
-- **Alembic migrations:** Multiple heads, lock timeouts with Supabase pooler, `FACTEUR_MIGRATION_IN_PROGRESS` bypass flag exists
-- **Auth state management:** Complex state machine in `auth_state.dart` with `forceUnconfirmed`, race conditions, timeout handling — multiple past bug fixes
-- **Debug `print()` in production code:** `feed.py`, `dependencies.py` — should use `structlog`
-
-### Medium Priority
-- **Large service files:** `recommendation_service.py` (596 lines), `sync_service.py` (419 lines) — split into focused classes
-- **Missing rate limiting:** No rate limiting on API endpoints
-- **Sequential DB queries in feed generation:** 4 separate queries in `get_feed()` — use `asyncio.gather()` or cache
-- **No Redis cache:** Backend uses only SQLAlchemy session cache
-
-### Low Priority
-- **NER service disabled:** Migration fails on large `contents` table (Supabase free tier timeout)
-- **TODOs scattered:** `content_count=0` stub, reading time calculation, YouTube handle resolution
-- **No E2E tests:** Widget tests exist but no full user journey tests
-
----
-
-## Codebase Hygiene
-
-- **Never commit:** `analysis_*.txt`, `*.lock` (except pubspec.lock), logs, outputs, `.env` files
-- **Always commit:** Assets referenced by code, migration files
-- **Git workflow:** Branch per feature, descriptive names (`feature/`, `fix/`)
-- **`.gitignore`:** Keep updated — local artifacts, IDE files, build outputs
-- **Release gate:** Run `docs/qa/scripts/verify_release.sh` before any deployment
-- **Bypass documentation:** If any bypass is active, document status in `docs/maintenance/`
-- **Removed legacy dirs:** `.planning/` (GSD) and `.agent/` were removed during codebase cleanup — history preserved in git
-
----
-
-## CI/CD
-
-### GitHub Actions Workflows
-- `build-docker.yml` — Build + test Docker image on push to `packages/api/`
-- `build-web.yml` — Build Flutter web
-- `build-apk.yml` — Build Android APK
-- `qa-bmad.yml` — QA automation
-
-### Railway Deployment
-- Docker image: `python:3.12-slim` base, non-root user (`appuser`)
-- Auto-migrations run before server start
-- Health check: `GET /api/health`
-- Uvicorn with `--proxy-headers` for Railway reverse proxy
-
----
-
-## External Services
-
-| Service | Purpose | SDK/Integration |
-|---------|---------|-----------------|
-| **Supabase** | Auth + PostgreSQL | `supabase_flutter`, `python-jose` |
-| **RevenueCat** | Subscriptions | `purchases_flutter`, webhook at `/api/webhooks/revenuecat` |
-| **HuggingFace** | ML classification | `transformers` + `torch`, model: `MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7` |
-| **Sentry** | Error tracking | `sentry_flutter`, `sentry-sdk[fastapi]` |
-| **Railway** | Hosting | Docker deploy, `railway.json` |
-
----
-
-## Database Models (ORM Reference)
-
-Understanding the data model is critical for any backend work.
-
-### Core Models (`packages/api/app/models/`)
-
-| Model | Table | Purpose | Key Fields |
-|-------|-------|---------|------------|
-| `UserProfile` | `user_profiles` | User identity & prefs | `user_id` (UUID, FK auth.users), `display_name`, `age_range` |
-| `UserPreference` | `user_preferences` | Key-value user settings | `profile_id`, `key`, `value` |
-| `UserInterest` | `user_interests` | Topics the user follows | `profile_id`, `interest_slug` |
-| `UserStreak` | `user_streaks` | Gamification streaks | `user_id`, `current_streak`, `last_closure_date` |
-| `Source` | `sources` | RSS source catalogue | `name`, `feed_url`, `type`, `theme`, `bias`, `reliability` |
-| `UserSource` | `user_sources` | User ↔ Source junction | `user_id`, `source_id` (unique together) |
-| `Content` | `contents` | Synced articles/podcasts/videos | `source_id`, `title`, `url`, `guid`, `published_at`, `topics` |
-| `UserContentStatus` | `user_content_status` | Per-user content state | `user_id`, `content_id`, `status` (unseen/seen/consumed) |
-| `DailyDigest` | `daily_digest` | Daily 5-article selection | `user_id`, `content_id`, `date`, `position`, `action` |
-| `DigestCompletion` | `digest_completions` | Digest closure tracking | `user_id`, `date`, `completed_at` |
-| `UserPersonalization` | `user_personalization` | Muted topics/sources | `user_id`, `entity_type`, `entity_value`, `hidden_reason` |
-| `DailyTop3` | `daily_top3` | Legacy daily briefing | `user_id`, `content_ids`, `generated_at` |
-
-### Enums (`packages/api/app/models/enums.py`)
-
-| Enum | Values | Used In |
-|------|--------|---------|
-| `SourceType` | `article`, `podcast`, `youtube` | Source.type |
-| `ContentType` | `article`, `podcast`, `youtube` | Content.content_type |
-| `ContentStatus` | `unseen`, `seen`, `consumed` | UserContentStatus.status |
-| `BiasStance` | `left`, `center-left`, `center`, `center-right`, `right`, `alternative`, `specialized`, `unknown` | Source.bias |
-| `ReliabilityScore` | `low`, `medium`, `mixed`, `high`, `unknown` | Source.reliability |
-| `HiddenReason` | `source`, `topic` | UserPersonalization |
-
-### Relationship Patterns
-
-```
-UserProfile ─┬─ has many ── UserPreference
-             ├─ has many ── UserInterest
-             └─ has many ── UserSource ── belongs to ── Source
-                                                          └── has many ── Content
-
-User (auth.users UUID) ─┬─ has many ── DailyDigest
-                         ├─ has many ── DigestCompletion
-                         ├─ has many ── UserContentStatus
-                         ├─ has one ── UserStreak
-                         └─ has many ── UserPersonalization
-```
-
-**Important FK note:** `user_profiles.user_id` references Supabase `auth.users.id`. Some tables reference `user_id` directly (pointing to auth), others reference `profile_id` (pointing to `user_profiles.id`). This inconsistency has caused bugs — always check which FK a table uses.
-
----
-
-## Where to Add New Code
-
-### New Feature (Mobile)
-- Screen: `apps/mobile/lib/features/{feature}/screens/{feature}_screen.dart`
-- Provider: `apps/mobile/lib/features/{feature}/providers/{feature}_provider.dart`
-- Repository: `apps/mobile/lib/features/{feature}/repositories/{feature}_repository.dart`
-- Widget: `apps/mobile/lib/features/{feature}/widgets/{widget_name}.dart`
-- Model: `apps/mobile/lib/features/{feature}/models/{model}.dart` (feature-specific) or `apps/mobile/lib/models/` (shared)
-- Test: `apps/mobile/test/features/{feature}/`
-- **After adding Freezed/Riverpod models:** Run `dart run build_runner build --delete-conflicting-outputs`
-
-### New API Endpoint
-- Router: `packages/api/app/routers/{domain}.py` — then register in `main.py` with `app.include_router()`
-- Service: `packages/api/app/services/{domain}_service.py`
-- Model: `packages/api/app/models/{entity}.py` — then export in `models/__init__.py`
-- Schema: `packages/api/app/schemas/{domain}.py`
-- Migration: `alembic revision --autogenerate -m "description"` then `alembic upgrade head`
-- Test: `packages/api/tests/test_{domain}.py`
-
-### New Scoring Layer (Recommendation)
-- Implementation: `packages/api/app/services/recommendation/layers/{name}.py`
-- Registration: Add to scoring config in `packages/api/app/services/recommendation/scoring_config.py`
-
----
-
-## Infrastructure Guidelines
-
-### Docker Build Completeness
-Before adding `import X` or referencing a script, verify it's copied in the Dockerfile (`packages/api/Dockerfile`).
-- New Python imports → File is in `COPY app/`
-- New scripts → Added to `COPY scripts/`
-- New config files → Explicitly copied
-
-### Graceful Startup Degradation
-| Scenario | Action |
-|----------|--------|
-| Config file missing | Log warning, continue |
-| DB slow/unreachable | Log warning, continue |
-| Schema mismatch | **Crash** (data integrity) |
-| Pending migrations | **Crash** (sys.exit(1) in lifespan) |
-
-### Database Connection Configuration
-- **Railway/Supabase:** `AsyncAdaptedQueuePool` with `pool_pre_ping=True`, `pool_size=2`, `max_overflow=3`, `pool_recycle=180`
-- **Local dev:** `NullPool` for simplicity
-- **PgBouncer:** `prepare_threshold=None` required (disable prepared statements for transaction mode)
-- **SSL:** Auto-appended `?sslmode=require` by config validator
-
----
-
-## Resolved Bugs (Patterns to Avoid)
-
-These bugs were fixed but represent recurring risk patterns:
-
-| Bug Pattern | Root Cause | Prevention |
-|-------------|-----------|------------|
-| **Theme/slug mismatch** | French labels vs normalized slugs in comparisons | Always normalize before comparing |
-| **UnboundLocalError in feed** | Variables used before definition after refactor | Run linter before commit |
-| **Logger not imported** | `logger` used but `structlog` not imported in module | Always import structlog at module level |
-| **FK violation on personalization** | Confusion between `user_profiles.id` vs `user_profiles.user_id` | Document which FK each table uses |
-| **Auth race conditions** | Multiple async state changes during confirmation flow | Test both confirmed and unconfirmed users |
-| **API client 100ms delay workaround** | Supabase auth state not ready when API calls fire | Keep workaround until proper state machine |
-
----
-
-## Production URLs & Monitoring
-
-| Service | URL | Notes |
-|---------|-----|-------|
-| **API (Railway)** | `https://facteur-production.up.railway.app/api/` | Auto-deployed from main |
-| **Health check** | `GET /api/health` | Liveness probe (no DB check) |
-| **Readiness check** | `GET /api/health/ready` | Full probe with DB connectivity |
-| **Supabase Dashboard** | `https://supabase.com/dashboard/project/ykuadtelnzavrqzbfdve` | Auth, DB, logs |
-| **Sentry** | Via `SENTRY_DSN` env var | Production error tracking |
-
----
-
-## Decision Log
-
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-01 | Pivot to Digest-First | Infinite feed created decision fatigue; 5 articles = "finished" state |
-| 2026-01 | Keep feed as "Explorer plus" | Safety valve; no breaking changes if digest doesn't resonate |
-| 2026-02 | Decay factor 0.70 for diversity | Match existing feed algorithm for consistency |
-| 2026-02 | Min 3 sources in digest | Ensure meaningful diversity in 5 articles |
-| 2026-02 | 8am Europe/Paris digest generation | Match Top 3 schedule, user expectation |
-| 2026-02 | BMAD as sole dev framework | Replacing GSD; BMAD provides complete agent workflow |
-
----
-
-## For Agents: Quick Start Checklist
-
-When starting a new task:
-
-1. **Read this file completely**
-2. **Identify task type:** Feature / Bug / Maintenance
-3. **Check current state:** Review `docs/stories/` and this file for project position
-4. **Read relevant docs:**
-   - PRD: `docs/prd.md`
-   - Architecture: `docs/architecture.md`
-   - Front-end spec: `docs/front-end-spec.md`
-5. **Follow BMAD M.A.D.A:** Measure → Decide → Act → Verify
-6. **Never modify code before plan approval**
-7. **Create/update story in `docs/stories/`**
-8. **Verify with one-liner proof before marking done**
-9. **Update this file if you make structural or stack changes**
-
----
-
-## Supabase MCP Configuration
-
-For agents with Supabase MCP access:
-
-```json
-{
-  "mcp": {
-    "supabase": {
-      "type": "remote",
-      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve",
-      "enabled": true
-    }
-  }
-}
-```
-
-Authenticate: `Claude mcp auth supabase`
-
----
-
-## Observability Tools (MCP Servers)
-
-The agent has access to production observability via MCP servers. These are **read-only** tools — no write access to any production system.
-
-### Available MCP Servers
-
-| Server | Purpose | Config Location |
-|--------|---------|-----------------|
-| **sentry** | Error tracking, stacktraces, issue search | `mcp-servers/sentry/server.py` |
-| **railway** | Deployment logs, build logs, service status | `mcp-servers/railway/server.py` |
-| **supabase** | DB introspection (remote MCP, see above) | Supabase-hosted |
-
-### MCP Configuration
-
-MCP servers are declared in `.claude/settings.json`. They require environment variables set on the host machine (never committed).
-
-### Sentry MCP Tools
-
-| Tool | Purpose | Example Usage |
-|------|---------|---------------|
-| `list_issues` | Unresolved errors with filters | `list_issues(query="is:unresolved", time_range="24h")` |
-| `get_issue_events` | Stacktraces for a specific issue | `get_issue_events(issue_id="123456", limit=5)` |
-| `get_event_context` | Tags, breadcrumbs, request data | `get_event_context(event_id="abc123")` |
-| `search_errors` | Search by keyword (wraps list_issues) | `search_errors(search_term="UndefinedColumn")` |
-
-### Railway MCP Tools
-
-| Tool | Purpose | Example Usage |
-|------|---------|---------------|
-| `get_latest_deployments` | Recent deployments with status | `get_latest_deployments(limit=5)` |
-| `get_deployment_logs` | Runtime logs of a deployment | `get_deployment_logs(deployment_id="xxx")` |
-| `get_build_logs` | Docker build logs | `get_build_logs(deployment_id="xxx")` |
-| `get_service_status` | Quick service health check | `get_service_status()` |
-
-### Required Environment Variables
-
+### Worktree (OBLIGATOIRE)
 ```bash
-# Sentry (scope: project:read, event:read)
-SENTRY_AUTH_TOKEN=sntrys_...
-SENTRY_ORG=your-org-slug
-SENTRY_PROJECT=facteur
+cd /Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur
+git checkout main && git pull origin main
+git checkout -b <agent>-<tache>  # Ex: dev-digest-share-button
+git worktree add ../<agent>-<tache> <agent>-<tache>
+cd ../<agent>-<tache>
 
-# Railway (scope: read-only)
-RAILWAY_API_TOKEN=...
-RAILWAY_PROJECT_ID=...
-RAILWAY_SERVICE_ID=...   # Optional, for filtering deployments
+# Vérif isolation
+./.claude-hooks/check-worktree-isolation.sh
+
+# Après merge
+cd /Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur
+git worktree remove ../<agent>-<tache>
 ```
-
-### Sentry Backend Integration
-
-Sentry is initialized in `packages/api/app/main.py` with:
-- **FastAPI + Starlette + SQLAlchemy integrations** — automatic exception capture
-- **structlog breadcrumbs** — via `LoggingIntegration` (INFO+ as breadcrumbs, ERROR+ as events)
-- **User context** — `sentry_sdk.set_user({"id": user_id})` set in `dependencies.py` on each authenticated request
-- **Tags** — `alembic_head` (code migration revision), `railway_service`, `environment`
-- **Release** — `RAILWAY_GIT_COMMIT_SHA` for deployment correlation
-- **Startup crash capture** — `sentry_sdk.flush(timeout=5)` called before `sys.exit(1)` so startup failures are never lost
-
-### Diagnostic Workflow for Agents
-
-When debugging a production issue:
-
-1. **Check recent errors**: `list_issues(query="is:unresolved", time_range="24h")`
-2. **Get stacktrace**: `get_issue_events(issue_id="<id>")` for the relevant issue
-3. **Get context**: `get_event_context(event_id="<id>")` for breadcrumbs and request data
-4. **Check deploy status**: `get_latest_deployments()` to see if a recent deploy caused the issue
-5. **Read startup logs**: `get_deployment_logs(deployment_id="<id>")` to check for migration errors
-6. **Verify DB schema**: Use Supabase MCP for `SELECT column_name FROM information_schema.columns WHERE table_name = $1`
 
 ---
 
-*Last updated: 2026-02-14*
-*Maintained by: Human (Laurin) + AI agents collaboratively*
+## 🧼 Hygiène Codebase (Règles d'Or)
+
+- **Git**: Un sujet = un commit. Branche dédiée. Pas de mélange mobile/API/docs.
+- **Artifacts**: Jamais commit `analysis_*.txt`, `*.lock` (sauf pubspec.lock), logs → `.gitignore`
+- **Hooks**: Exécute hooks AVANT actions ([Hooks README](.claude-hooks/README.md))
+- **Release**: `docs/qa/scripts/verify_release.sh` avant déploiement
+- **Bypass actif**: Documente dans `docs/maintenance/`
+
+---
+
+## 📋 Checklist Agent (Quick Start)
+
+**Avant de commencer**:
+
+1. [ ] **Agent BMAD identifié** (@dev, @pm, @po, @architect, @qa)
+2. [ ] **Agent profile BMAD lu** (`.bmad-core/agents/{agent}.md`)
+3. [ ] **Worktree isolé créé** (`.claude-hooks/check-worktree-isolation.sh`)
+4. [ ] **Type identifié** (Feature / Bug / Maintenance)
+5. [ ] **Navigation Matrix lue** → Workflow identifié
+6. [ ] **Story/Bug Doc créée/MAJ** (OBLIGATOIRE avant code)
+
+**Pendant M.A.D.A**:
+
+7. [ ] **Plan rédigé** (`implementation_plan.md`)
+8. [ ] **User notifié** → **STOP** → Attente GO
+9. [ ] **Pre-code-change hook** (`.claude-hooks/pre-code-change.sh`)
+10. [ ] **Safety Guardrails vérifiés** (si zone à risque)
+11. [ ] **Story/Bug MAJ** (tasks ✓, File List, Changelog)
+12. [ ] **Script vérification** (`docs/qa/scripts/verify_<task>.sh`)
+13. [ ] **Cleanup worktree** (après merge)
+
+---
+
+## 🔗 Références Complètes
+
+**Documentation complète** (ne lis que si besoin ciblé):
+- [Agent Brain README](docs/agent-brain/README.md) - Guide orientation
+- [Navigation Matrix](docs/agent-brain/navigation-matrix.md) - Workflows détaillés
+- [Safety Guardrails](docs/agent-brain/safety-guardrails.md) - Tous guardrails + safety protocols
+- [PRD](docs/prd.md) - Product requirements
+- [Architecture](docs/architecture.md) - Specs techniques complètes
+- [Front-end Spec](docs/front-end-spec.md) - UI/UX design system
+- [BMAD User Guide](.bmad-core/user-guide.md) - Méthodologie complète
+
+**BMAD Agents** (`.bmad-core/agents/`):
+- `dev.md` - Full-stack developer
+- `pm.md` - Product manager
+- `po.md` - Product owner
+- `architect.md` - Architecture decisions
+- `qa.md` - Quality assurance
+
+**Hooks** (`.claude-hooks/`):
+- `check-worktree-isolation.sh` - Vérifie worktree (EN PREMIER)
+- `pre-code-change.sh` - Vérifie Story/Bug Doc (AVANT code)
+
+---
+
+*Dernière MAJ: 2026-02-14*
+*Mainteneurs: Human (Laurin) + AI agents collaborativement*
+*Ancien CLAUDE.md (590 lignes): [docs/CLAUDE.md.backup-2026-02-14](docs/CLAUDE.md.backup-2026-02-14)*
+*Cursor legacy: [docs/archive/cursor-legacy-2026-02-14](docs/archive/cursor-legacy-2026-02-14)*
