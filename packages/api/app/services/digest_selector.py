@@ -484,10 +484,10 @@ class DigestSelector:
                     Content.content_type.notin_(list(context.muted_content_types))
                 )
 
-            # Filtrage des articles payants
+            # Filtrage des articles payants (is_not(True) handles NULL rows)
             if context.hide_paid_content:
                 user_sources_query = user_sources_query.where(
-                    Content.is_paid == False
+                    Content.is_paid.is_not(True)
                 )
 
             # Appliquer les filtres de mode sur les sources utilisateur
@@ -575,10 +575,10 @@ class DigestSelector:
                         Content.content_type.notin_(list(context.muted_content_types))
                     )
 
-                # Filtrage des articles payants (fallback)
+                # Filtrage des articles payants (fallback, is_not(True) handles NULL rows)
                 if context.hide_paid_content:
                     fallback_query = fallback_query.where(
-                        Content.is_paid == False
+                        Content.is_paid.is_not(True)
                     )
 
                 # Appliquer les filtres de mode sur le fallback aussi

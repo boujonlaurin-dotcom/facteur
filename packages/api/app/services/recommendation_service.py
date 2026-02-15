@@ -555,9 +555,9 @@ class RecommendationService:
         if muted_content_types:
              query = query.where(Content.content_type.notin_(list(muted_content_types)))
 
-        # Apply paywall filter
+        # Apply paywall filter (is_not(True) handles NULL rows)
         if hide_paid_content:
-            query = query.where(Content.is_paid == False)
+            query = query.where(Content.is_paid.is_not(True))
 
         # Apply Mode Logic
         if mode:
