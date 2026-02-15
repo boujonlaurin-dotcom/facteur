@@ -72,6 +72,7 @@ Future<void> main() async {
     PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
     await pushNotificationService.init();
     await pushNotificationService.requestPermission();
+    await pushNotificationService.requestExactAlarmPermission();
 
     // Vérifier si les notifications sont activées dans Hive avant de planifier
     final settingsBox = Hive.box<dynamic>('settings');
