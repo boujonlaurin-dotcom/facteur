@@ -58,6 +58,7 @@ class DigestItem(BaseModel):
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: Optional[int] = None
     published_at: datetime
+    is_paid: bool = False
 
     # Source info
     source: SourceMini

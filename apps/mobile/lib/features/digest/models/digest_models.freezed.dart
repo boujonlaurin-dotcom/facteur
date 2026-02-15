@@ -661,6 +661,8 @@ mixin _$DigestItem {
   SourceMini? get source => throw _privateConstructorUsedError;
   int get rank => throw _privateConstructorUsedError;
   String get reason => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_paid')
+  bool get isPaid => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_read')
   bool get isRead => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_saved')
@@ -702,6 +704,7 @@ abstract class $DigestItemCopyWith<$Res> {
       SourceMini? source,
       int rank,
       String reason,
+      @JsonKey(name: 'is_paid') bool isPaid,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
       @JsonKey(name: 'is_liked') bool isLiked,
@@ -738,6 +741,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
+    Object? isPaid = null,
     Object? isRead = null,
     Object? isSaved = null,
     Object? isLiked = null,
@@ -793,6 +797,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.reason
           : reason // ignore: cast_nullable_to_non_nullable
               as String,
+      isPaid: null == isPaid
+          ? _value.isPaid
+          : isPaid // ignore: cast_nullable_to_non_nullable
+              as bool,
       isRead: null == isRead
           ? _value.isRead
           : isRead // ignore: cast_nullable_to_non_nullable
@@ -867,6 +875,7 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       SourceMini? source,
       int rank,
       String reason,
+      @JsonKey(name: 'is_paid') bool isPaid,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
       @JsonKey(name: 'is_liked') bool isLiked,
@@ -903,6 +912,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
+    Object? isPaid = null,
     Object? isRead = null,
     Object? isSaved = null,
     Object? isLiked = null,
@@ -931,7 +941,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           : description // ignore: cast_nullable_to_non_nullable
               as String?,
       topics: null == topics
-          ? _value.topics
+          ? _value._topics
           : topics // ignore: cast_nullable_to_non_nullable
               as List<String>,
       contentType: null == contentType
@@ -958,6 +968,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.reason
           : reason // ignore: cast_nullable_to_non_nullable
               as String,
+      isPaid: null == isPaid
+          ? _value.isPaid
+          : isPaid // ignore: cast_nullable_to_non_nullable
+              as bool,
       isRead: null == isRead
           ? _value.isRead
           : isRead // ignore: cast_nullable_to_non_nullable
@@ -1002,6 +1016,7 @@ class _$DigestItemImpl implements _DigestItem {
       this.source,
       this.rank = 0,
       this.reason = '',
+      @JsonKey(name: 'is_paid') this.isPaid = false,
       @JsonKey(name: 'is_read') this.isRead = false,
       @JsonKey(name: 'is_saved') this.isSaved = false,
       @JsonKey(name: 'is_liked') this.isLiked = false,
@@ -1028,6 +1043,7 @@ class _$DigestItemImpl implements _DigestItem {
   final String? description;
   final List<String> _topics;
   @override
+  @JsonKey()
   List<String> get topics {
     if (_topics is EqualUnmodifiableListView) return _topics;
     // ignore: implicit_dynamic_type
@@ -1055,6 +1071,9 @@ class _$DigestItemImpl implements _DigestItem {
   @JsonKey()
   final String reason;
   @override
+  @JsonKey(name: 'is_paid')
+  final bool isPaid;
+  @override
   @JsonKey(name: 'is_read')
   final bool isRead;
   @override
@@ -1072,7 +1091,7 @@ class _$DigestItemImpl implements _DigestItem {
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
   }
 
   @override
@@ -1088,8 +1107,7 @@ class _$DigestItemImpl implements _DigestItem {
                 other.thumbnailUrl == thumbnailUrl) &&
             (identical(other.description, description) ||
                 other.description == description) &&
-            const DeepCollectionEquality()
-                .equals(other._topics, _topics) &&
+            const DeepCollectionEquality().equals(other._topics, _topics) &&
             (identical(other.contentType, contentType) ||
                 other.contentType == contentType) &&
             (identical(other.durationSeconds, durationSeconds) ||
@@ -1099,6 +1117,7 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.source, source) || other.source == source) &&
             (identical(other.rank, rank) || other.rank == rank) &&
             (identical(other.reason, reason) || other.reason == reason) &&
+            (identical(other.isPaid, isPaid) || other.isPaid == isPaid) &&
             (identical(other.isRead, isRead) || other.isRead == isRead) &&
             (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
             (identical(other.isLiked, isLiked) || other.isLiked == isLiked) &&
@@ -1124,6 +1143,7 @@ class _$DigestItemImpl implements _DigestItem {
       source,
       rank,
       reason,
+      isPaid,
       isRead,
       isSaved,
       isLiked,
@@ -1162,6 +1182,7 @@ abstract class _DigestItem implements DigestItem {
           final SourceMini? source,
           final int rank,
           final String reason,
+          @JsonKey(name: 'is_paid') final bool isPaid,
           @JsonKey(name: 'is_read') final bool isRead,
           @JsonKey(name: 'is_saved') final bool isSaved,
           @JsonKey(name: 'is_liked') final bool isLiked,
@@ -1206,6 +1227,9 @@ abstract class _DigestItem implements DigestItem {
   @override
   String get reason;
   @override
+  @JsonKey(name: 'is_paid')
+  bool get isPaid;
+  @override
   @JsonKey(name: 'is_read')
   bool get isRead;
   @override
@@ -1240,6 +1264,7 @@ mixin _$DigestResponse {
   DateTime get targetDate => throw _privateConstructorUsedError;
   @JsonKey(name: 'generated_at')
   DateTime get generatedAt => throw _privateConstructorUsedError;
+  @JsonKey(defaultValue: 'pour_vous')
   String get mode => throw _privateConstructorUsedError;
   List<DigestItem> get items => throw _privateConstructorUsedError;
   @JsonKey(name: 'completion_threshold')
@@ -1266,7 +1291,7 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'user_id') String userId,
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
-      String mode,
+      @JsonKey(defaultValue: 'pour_vous') String mode,
       List<DigestItem> items,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
@@ -1350,7 +1375,7 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'user_id') String userId,
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
-      String mode,
+      @JsonKey(defaultValue: 'pour_vous') String mode,
       List<DigestItem> items,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
@@ -1450,7 +1475,7 @@ class _$DigestResponseImpl implements _DigestResponse {
   @JsonKey(name: 'generated_at')
   final DateTime generatedAt;
   @override
-  @JsonKey()
+  @JsonKey(defaultValue: 'pour_vous')
   final String mode;
   final List<DigestItem> _items;
   @override
@@ -1533,7 +1558,7 @@ abstract class _DigestResponse implements DigestResponse {
           @JsonKey(name: 'user_id') required final String userId,
           @JsonKey(name: 'target_date') required final DateTime targetDate,
           @JsonKey(name: 'generated_at') required final DateTime generatedAt,
-          final String mode,
+          @JsonKey(defaultValue: 'pour_vous') final String mode,
           final List<DigestItem> items,
           @JsonKey(name: 'completion_threshold') final int completionThreshold,
           @JsonKey(name: 'is_completed') final bool isCompleted,
@@ -1556,6 +1581,7 @@ abstract class _DigestResponse implements DigestResponse {
   @JsonKey(name: 'generated_at')
   DateTime get generatedAt;
   @override
+  @JsonKey(defaultValue: 'pour_vous')
   String get mode;
   @override
   List<DigestItem> get items;

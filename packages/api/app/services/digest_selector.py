@@ -88,6 +88,7 @@ class DigestContext:
     muted_themes: Set[str]
     muted_topics: Set[str]
     muted_content_types: Set[str]
+    hide_paid_content: bool = True
     user_bias_stance: Optional[BiasStance] = None
 
 
@@ -387,6 +388,11 @@ class DigestSelector:
             if personalization.muted_content_types:
                 muted_content_types = set(t.lower() for t in personalization.muted_content_types if t)
 
+        # Paywall filter preference
+        hide_paid_content = True  # Default: hide paid articles
+        if personalization and personalization.hide_paid_content is not None:
+            hide_paid_content = personalization.hide_paid_content
+
         # Calculer le biais utilisateur si mode perspective
         user_bias_stance = None
         if mode == DigestMode.PERSPECTIVE:
@@ -406,6 +412,7 @@ class DigestSelector:
             muted_themes=muted_themes,
             muted_topics=muted_topics,
             muted_content_types=muted_content_types,
+            hide_paid_content=hide_paid_content,
             user_bias_stance=user_bias_stance,
         )
     
@@ -475,6 +482,12 @@ class DigestSelector:
             if context.muted_content_types:
                 user_sources_query = user_sources_query.where(
                     Content.content_type.notin_(list(context.muted_content_types))
+                )
+
+            # Filtrage des articles payants
+            if context.hide_paid_content:
+                user_sources_query = user_sources_query.where(
+                    Content.is_paid == False
                 )
 
             # Appliquer les filtres de mode sur les sources utilisateur
@@ -560,6 +573,12 @@ class DigestSelector:
                 if context.muted_content_types:
                     fallback_query = fallback_query.where(
                         Content.content_type.notin_(list(context.muted_content_types))
+                    )
+
+                # Filtrage des articles payants (fallback)
+                if context.hide_paid_content:
+                    fallback_query = fallback_query.where(
+                        Content.is_paid == False
                     )
 
                 # Appliquer les filtres de mode sur le fallback aussi

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy import Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Text
@@ -50,6 +50,11 @@ class UserPersonalization(Base):
         ARRAY(Text),
         default=list,
         server_default="{}"
+    )
+
+    # Paywall filter: hide paid articles by default
+    hide_paid_content: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true"
     )
 
     created_at: Mapped[datetime] = mapped_column(

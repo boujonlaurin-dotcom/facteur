@@ -62,6 +62,7 @@ class ContentResponse(BaseModel):
     hidden_reason: Optional[str] = None
     description: Optional[str] = None
     topics: list[str] | None = None  # Topics ML granulaires (slugs), NULL si non classifié
+    is_paid: bool = False  # Paywall detection
     recommendation_reason: Optional[RecommendationReason] = None
 
     @field_serializer('topics', when_used='always')

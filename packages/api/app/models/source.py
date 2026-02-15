@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -74,6 +74,9 @@ class Source(Base):
 
     # Daily Briefing (Story 4.4) - URL du feed "À la Une" pour les sources de référence
     une_feed_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Paywall detection config (per-source patterns)
+    paywall_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relations
     contents: Mapped[list["Content"]] = relationship(

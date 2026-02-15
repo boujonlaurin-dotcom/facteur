@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/theme_provider.dart';
+import '../providers/paid_content_provider.dart';
 import '../../digest/providers/digest_mode_provider.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 
@@ -94,6 +95,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         subtitle: 'Gérer vos préférences',
                         onTap: () {
                           context.pushNamed(RouteNames.sources);
+                        },
+                      ),
+                      _buildToggleTile(
+                        context,
+                        icon: PhosphorIcons.lock(PhosphorIconsStyle.regular),
+                        title: 'Masquer les articles payants',
+                        subtitle: 'Filtrer les contenus réservés aux abonnés',
+                        value: ref.watch(hidePaidContentProvider),
+                        onChanged: (value) {
+                          ref
+                              .read(hidePaidContentProvider.notifier)
+                              .toggle(value);
                         },
                       ),
                     ],
@@ -261,6 +274,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildToggleTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Row(
+        children: [
+          Icon(icon, color: colors.primary, size: 24),
+          const SizedBox(width: FacteurSpacing.space4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeColor: colors.primary,
+          ),
+        ],
       ),
     );
   }

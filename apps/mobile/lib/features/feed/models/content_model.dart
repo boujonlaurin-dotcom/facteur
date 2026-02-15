@@ -83,6 +83,7 @@ class Content {
   final bool isSaved;
   final bool isLiked;
   final bool isHidden;
+  final bool isPaid;
   final List<String> topics;
   final RecommendationReason? recommendationReason;
 
@@ -102,6 +103,7 @@ class Content {
     this.isSaved = false,
     this.isLiked = false,
     this.isHidden = false,
+    this.isPaid = false,
     this.topics = const [],
     this.recommendationReason,
   });
@@ -136,6 +138,7 @@ class Content {
         isSaved: (json['is_saved'] as bool?) ?? false,
         isLiked: (json['is_liked'] as bool?) ?? false,
         isHidden: (json['is_hidden'] as bool?) ?? false,
+        isPaid: (json['is_paid'] as bool?) ?? false,
         topics: (json['topics'] as List<dynamic>?)
             ?.map((e) => e.toString())
             .toList() ??
@@ -175,6 +178,7 @@ class Content {
     bool? isSaved,
     bool? isLiked,
     bool? isHidden,
+    bool? isPaid,
     List<String>? topics,
     RecommendationReason? recommendationReason,
   }) {
@@ -194,6 +198,7 @@ class Content {
       isSaved: isSaved ?? this.isSaved,
       isLiked: isLiked ?? this.isLiked,
       isHidden: isHidden ?? this.isHidden,
+      isPaid: isPaid ?? this.isPaid,
       topics: topics ?? this.topics,
       recommendationReason: recommendationReason ?? this.recommendationReason,
     );

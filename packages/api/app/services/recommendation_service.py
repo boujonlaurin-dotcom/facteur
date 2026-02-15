@@ -149,6 +149,11 @@ class RecommendationService:
         muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
         muted_content_types = set(t.lower() for t in personalization.muted_content_types) if personalization and personalization.muted_content_types else set()
 
+        # Paywall filter preference
+        hide_paid_content = True  # Default: hide paid articles
+        if personalization and personalization.hide_paid_content is not None:
+            hide_paid_content = personalization.hide_paid_content
+
         candidates = await self._get_candidates(
             user_id,
             limit_candidates=500,
@@ -164,6 +169,8 @@ class RecommendationService:
             digest_content_ids=digest_content_ids,
             # Story 11 : Feed par thème
             theme=theme,
+            # Paywall filter
+            hide_paid_content=hide_paid_content,
         )
         
         # 3. Score Candidates using ScoringEngine
@@ -454,7 +461,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None, hide_paid_content: bool = True) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -547,6 +554,10 @@ class RecommendationService:
         # Apply muted content types filter (negative filter from personalization)
         if muted_content_types:
              query = query.where(Content.content_type.notin_(list(muted_content_types)))
+
+        # Apply paywall filter
+        if hide_paid_content:
+            query = query.where(Content.is_paid == False)
 
         # Apply Mode Logic
         if mode:
