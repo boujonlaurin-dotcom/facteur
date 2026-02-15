@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_serializer
 
 from app.models.enums import BiasOrigin, BiasStance, ContentStatus, ContentType, HiddenReason, ReliabilityScore
 
@@ -61,14 +61,13 @@ class ContentResponse(BaseModel):
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
     description: Optional[str] = None
-    topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
+    topics: list[str] | None = None  # Topics ML granulaires (slugs), NULL si non classifié
     recommendation_reason: Optional[RecommendationReason] = None
 
-    @field_validator('topics', mode='before')
-    @classmethod
-    def coerce_topics(cls, v: object) -> list[str]:
-        """ORM topics peut être NULL en base → toujours retourner une liste."""
-        return v if v is not None else []
+    @field_serializer('topics', when_used='always')
+    def serialize_topics(self, value: list[str] | None) -> list[str]:
+        """ORM topics peut être NULL en base → toujours retourner une liste lors de la sérialisation."""
+        return value if value is not None else []
 
     class Config:
         from_attributes = True
