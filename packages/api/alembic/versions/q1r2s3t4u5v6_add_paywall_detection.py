@@ -54,14 +54,10 @@ def upgrade() -> None:
     print("[migration] Starting q1r2s3t4u5v6: add paywall detection...", flush=True)
 
     # 1. sources.paywall_config - per-source paywall detection patterns
+    # NULL means "use DEFAULT_PAYWALL_CONFIG" in PaywallDetector
     _execute_with_retry(
         "ALTER TABLE sources "
-        "ADD COLUMN IF NOT EXISTS paywall_config JSONB "
-        "DEFAULT ''{"
-        "\"keywords\":[],"
-        "\"url_patterns\":[],"
-        "\"min_content_length\":null"
-        "}''::jsonb"
+        "ADD COLUMN IF NOT EXISTS paywall_config JSONB DEFAULT NULL"
     )
 
     # 2. contents.is_paid - whether article is behind a paywall
