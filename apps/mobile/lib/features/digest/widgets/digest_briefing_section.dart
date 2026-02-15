@@ -321,20 +321,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // Info button for algorithm transparency
-              if (item.recommendationReason != null)
-                InkWell(
-                  onTap: () => _showReasoningSheet(context, item),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      PhosphorIcons.info(PhosphorIconsStyle.regular),
-                      size: 16,
-                      color: colors.primary,
-                    ),
-                  ),
-                ),
               if (item.isRead)
                 Icon(
                   PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
@@ -364,7 +350,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               onNotInterested: widget.onNotInterested != null
                   ? () => widget.onNotInterested!(item)
                   : null,
-              onPersonalize: () => _showReasoningSheet(context, item),
               isSaved: item.isSaved,
             ),
           ),

@@ -228,8 +228,6 @@ class BriefingSection extends StatelessWidget {
           child: FeedCard(
             content: item.content,
             onTap: () => onItemTap(item),
-            onPersonalize:
-                onPersonalize != null ? () => onPersonalize!(item) : null,
           ),
         ),
       ],

@@ -9,7 +9,6 @@ import 'package:timeago/timeago.dart' as timeago;
 class FeedCard extends StatelessWidget {
   final Content content;
   final VoidCallback? onTap;
-  final VoidCallback? onPersonalize;
   final VoidCallback? onSave;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
@@ -20,7 +19,6 @@ class FeedCard extends StatelessWidget {
     super.key,
     required this.content,
     this.onTap,
-    this.onPersonalize,
     this.onSave,
     this.onLike,
     this.onNotInterested,
@@ -262,21 +260,6 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                          // Info button (personalization)
-                          if (onPersonalize != null)
-                            InkWell(
-                              onTap: onPersonalize,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                child: Icon(
-                                  PhosphorIcons.info(
-                                      PhosphorIconsStyle.regular),
-                                  size: 20,
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ],

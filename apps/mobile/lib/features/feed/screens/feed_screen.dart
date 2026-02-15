@@ -18,8 +18,8 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
-import '../widgets/personalization_sheet.dart';
 import '../widgets/personalization_nudge.dart';
+import '../widgets/personalization_sheet.dart';
 import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
@@ -180,7 +180,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     return ref.read(feedProvider.notifier).refresh();
   }
 
-  void _showPersonalizationSheet(BuildContext context, Content content) {
+  void _showPersonalizationSheet(Content content) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -238,9 +238,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       profile.displayName!.isNotEmpty) {
                                     displayName = profile.displayName!;
                                   } else if (authUser?.userMetadata != null &&
-                                      authUser!.userMetadata!['first_name'] != null &&
-                                      (authUser.userMetadata!['first_name'] as String).isNotEmpty) {
-                                    final firstName = authUser.userMetadata!['first_name'] as String;
+                                      authUser!.userMetadata!['first_name'] !=
+                                          null &&
+                                      (authUser.userMetadata!['first_name']
+                                              as String)
+                                          .isNotEmpty) {
+                                    final firstName = authUser
+                                        .userMetadata!['first_name'] as String;
                                     displayName = firstName[0].toUpperCase() +
                                         firstName.substring(1).toLowerCase();
                                   } else if (authUser?.email != null) {
@@ -453,17 +457,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                 .toggleSave(content);
                                           },
                                           isSaved: content.isSaved,
-                                          onNotInterested: () {
-                                            ref
-                                                .read(feedProvider.notifier)
-                                                .hideContent(
-                                                    content,
-                                                    HiddenReason.source);
-                                          },
-                                          onPersonalize: () {
-                                            _showPersonalizationSheet(
-                                                context, content);
-                                          },
+                                          onNotInterested: () =>
+                                              _showPersonalizationSheet(content),
                                         ),
                                       ),
                                       if (progressionTopic != null) ...[
