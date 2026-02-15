@@ -41,8 +41,8 @@ final themeFiltersProvider =
         final meta = _themeMetadata[slug];
         final label = meta != null ? meta.label : slug;
         final description = meta != null
-            ? 'Contenus ${meta.label} de vos sources'
-            : 'Contenus $slug de vos sources';
+            ? 'Tous les contenus ${meta.label}'
+            : 'Tous les contenus $slug';
 
         return FilterConfig(
           key: slug,

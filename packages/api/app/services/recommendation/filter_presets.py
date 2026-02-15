@@ -49,11 +49,22 @@ def apply_serein_filter(query):
 
 
 def apply_theme_focus_filter(query, theme_slug: str):
-    """Filtre SQL pour 100% d'un thème spécifique.
+    """Filtre hybride pour un thème spécifique.
+
+    Match sur 3 couches :
+    1. Source.theme (thème principal de la source)
+    2. Source.secondary_themes (thèmes secondaires des sources généralistes)
+    3. Content.theme (thème ML inféré par article, fallback)
 
     Utilisé par le mode THEME_FOCUS (digest) et le filtre thème (feed).
     """
-    return query.where(Source.theme == theme_slug)
+    return query.where(
+        or_(
+            Source.theme == theme_slug,
+            Source.secondary_themes.any(theme_slug),
+            Content.theme == theme_slug,
+        )
+    )
 
 
 def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:

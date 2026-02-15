@@ -518,13 +518,14 @@ class RecommendationService:
             followed_source_ids=[str(s) for s in list(followed_source_ids)[:10]] if followed_source_ids else []
         )
 
-        # Base filter: Only show content from user's followed sources
-        # Fallback to curated sources only if user has no followed sources
-        if followed_source_ids:
-            # User has followed sources - only show content from these sources
+        # Base source filter
+        # When theme filter is active: show all curated sources (broader discovery)
+        # Otherwise: restrict to user's followed sources (personalized feed)
+        if theme:
+            query = query.where(Source.is_curated == True)
+        elif followed_source_ids:
             query = query.where(Source.id.in_(list(followed_source_ids)))
         else:
-            # User hasn't followed any sources yet - fallback to curated sources
             query = query.where(Source.is_curated == True)
         
         # Apply Personalization Filters (Mutes)
