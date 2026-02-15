@@ -308,6 +308,8 @@ erDiagram
         uuid user_id FK
         uuid content_id FK
         string status
+        bool is_liked
+        timestamp liked_at
         timestamp seen_at
         int time_spent_seconds
         timestamp created_at
@@ -450,6 +452,15 @@ erDiagram
 | `consumed` | Consommé (seuil atteint) |
 | `saved` | Ajouté aux Progressions (anciennement "À consulter") |
 | `hidden` | Masqué ("pas intéressé") |
+
+**Flags orthogonaux** (indépendants du statut) :
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `is_liked` | bool | Article aimé. Booste les `user_subtopics.weight` des topics associés (+0.15) |
+| `liked_at` | timestamp | Date du like |
+
+> **Note (Story 4.1f)** : `is_liked` est un flag séparé du `status` — un article peut être `consumed` ET `liked`. Le like influence le scoring futur via les poids des subtopics.
 
 #### User Subscriptions
 **Purpose:** État de l'abonnement premium
@@ -979,8 +990,10 @@ servers:
 | `GET` | `/contents/{id}` | Détail d'un contenu |
 | `POST` | `/contents/{id}/seen` | Marquer comme vu |
 | `POST` | `/contents/{id}/consumed` | Marquer comme consommé |
-| `POST` | `/contents/{id}/save` | Ajouter aux Progressions ("À lire") |
+| `POST` | `/contents/{id}/save` | Ajouter aux Progressions ("À lire") + boost subtopic +0.05 |
 | `DELETE` | `/contents/{id}/save` | Retirer des Progressions |
+| `POST` | `/contents/{id}/like` | Aimer un article + boost subtopic +0.15 (Story 4.1f) |
+| `DELETE` | `/contents/{id}/like` | Retirer le like, reverse subtopic -0.15 (Story 4.1f) |
 | `POST` | `/contents/{id}/hide` | Masquer ("pas intéressé") |
 
 ### 8.6 Progress Endpoints
@@ -1076,12 +1089,34 @@ L'algorithme de recommandation utilise un **scoring pondéré** basé sur les pr
 ### 9.2 Score Formula
 
 ```
-score = (theme_score * 0.35) + 
-        (freshness_score * 0.25) + 
-        (format_score * 0.20) + 
-        (source_score * 0.15) + 
+score = (theme_score * 0.35) +
+        (freshness_score * 0.25) +
+        (format_score * 0.20) +
+        (source_score * 0.15) +
         (random_factor * 0.05)
 ```
+
+#### 9.2.1 Like & Bookmark Feedback Loop (Story 4.1f)
+
+Le scoring des topics est **pondéré par les signaux utilisateur** :
+
+```
+// ArticleTopicLayer : scoring par topic
+topic_score = TOPIC_MATCH * user_subtopic_weight
+// TOPIC_MATCH = 6 points, weight in [0.1, 3.0]
+// Résultat : 0.6 à 18 pts par topic match
+```
+
+Les poids `user_subtopics.weight` sont ajustés par les interactions :
+
+| Action | Delta | Cap | Floor |
+|--------|-------|-----|-------|
+| Like (+) | +0.15 | 3.0 | - |
+| Unlike (-) | -0.15 | - | 0.1 |
+| Save (bookmark) | +0.05 | 3.0 | - |
+| Nouveau subtopic | 1.0 + delta | - | - |
+
+Quand `weight > 1.0`, l'explication affiche "Renforcé par vos j'aime".
 
 ### 9.3 Score Components
 
