@@ -23,7 +23,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _execute_with_retry(sql: str, retries: int = 5, sleep_seconds: int = 5, lock_timeout: str = '5s') -> None:
+def _execute_with_retry(sql: str, retries: int = 5, sleep_seconds: int = 5, lock_timeout: str = '30s') -> None:
     """Retry DDL when blocked by lock/statement timeouts (PgBouncer-safe)."""
     escaped_sql = sql.replace("'", "''")
 
