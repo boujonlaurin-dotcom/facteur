@@ -4,8 +4,8 @@
 # Framework
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
-pydantic==2.6.1
-pydantic-settings==2.1.0
+pydantic==2.7.4
+pydantic-settings==2.3.4
 
 # Database
 sqlalchemy[asyncio]==2.0.25
