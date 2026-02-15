@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../providers/saved_feed_provider.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../../core/ui/notification_service.dart';
@@ -112,25 +113,33 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                               }
 
                               final content = contents[index];
+                              openArticle() async {
+                                final uri = Uri.parse(content.url);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.inAppWebView,
+                                  );
+                                } else {
+                                  NotificationService.showError(
+                                    'Impossible d\'ouvrir le lien : ${content.url}',
+                                  );
+                                }
+                              }
+
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: FeedCard(
                                   content: content,
                                   isSaved: true,
                                   isLiked: content.isLiked,
-                                  onTap: () async {
-                                    final uri = Uri.parse(content.url);
-                                    if (await canLaunchUrl(uri)) {
-                                      await launchUrl(
-                                        uri,
-                                        mode: LaunchMode.inAppWebView,
-                                      );
-                                    } else {
-                                      NotificationService.showError(
-                                        'Impossible d\'ouvrir le lien : ${content.url}',
-                                      );
-                                    }
-                                  },
+                                  onTap: openArticle,
+                                  onLongPress: () =>
+                                      ArticlePreviewModal.show(
+                                    context,
+                                    content,
+                                    openArticle,
+                                  ),
                                   onSave: () async {
                                     // Remove from saved (unbookmark)
                                     if (!mounted) return;
