@@ -46,25 +46,15 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
     final feedAsync = ref.watch(savedFeedProvider);
     final colors = context.facteurColors;
 
-    return Material(
-      color: colors.backgroundPrimary,
-      child: Column(
-        children: [
-          AppBar(
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back, color: colors.textPrimary),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            title: Text(
-              'Mes sauvegardes',
-              style: Theme.of(context).textTheme.displaySmall,
-            ),
-            centerTitle: false,
-            backgroundColor: colors.backgroundPrimary,
-            elevation: 0,
-          ),
-          Expanded(
-            child: RefreshIndicator(
+    return Scaffold(
+      backgroundColor: colors.backgroundPrimary,
+      appBar: AppBar(
+        title: const Text('Mes sauvegardes'),
+        backgroundColor: colors.backgroundPrimary,
+        elevation: 0,
+        titleTextStyle: Theme.of(context).textTheme.displaySmall,
+      ),
+      body: RefreshIndicator(
               onRefresh: _refresh,
               color: colors.primary,
               child: feedAsync.when(
@@ -163,9 +153,6 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                 error: (err, stack) => Center(child: Text('Erreur: $err')),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -237,6 +237,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   if (profile.displayName != null &&
                                       profile.displayName!.isNotEmpty) {
                                     displayName = profile.displayName!;
+                                  } else if (authUser?.userMetadata != null &&
+                                      authUser!.userMetadata!['first_name'] != null &&
+                                      (authUser.userMetadata!['first_name'] as String).isNotEmpty) {
+                                    final firstName = authUser.userMetadata!['first_name'] as String;
+                                    displayName = firstName[0].toUpperCase() +
+                                        firstName.substring(1).toLowerCase();
                                   } else if (authUser?.email != null) {
                                     final part = authUser!.email!.split('@')[0];
                                     final subParts = part.contains('.')
