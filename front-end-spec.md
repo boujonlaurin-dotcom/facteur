@@ -477,38 +477,54 @@ flowchart TD
 **Interaction Notes :**
 - Pull-to-refresh depuis le haut
 - Tap card → Écran détail
-- Tap 🔖 → Toggle sauvegarde (feedback haptic)
-- Long press card → Menu contextuel
+- Tap ❤️ → Toggle like (feedback haptic, boost subtopic +0.15)
+- Tap 🔖 → Toggle sauvegarde (feedback haptic, boost subtopic +0.05)
+- Tap 👁️ → Masquer article ("Voir moins")
+- Tap ℹ️ → Ouvrir bottom sheet personnalisation
+- Long press card (digest) → Afficher scoring breakdown
 
 ---
 
 #### Écran 2 : Card Contenu (Composant)
 
-**Purpose :** Aperçu d'un contenu dans le feed
+**Purpose :** Aperçu d'un contenu dans le feed et le digest
 
 ```
 ┌─────────────────────────────────────────┐
-│ ┌──────────┐                            │
-│ │          │  Source Name          ···  │  ← Source + menu
-│ │  IMAGE   │                            │
-│ │ THUMBNAIL│  Titre du contenu sur      │  ← Titre (2 lignes max)
-│ │          │  deux lignes maximum       │
-│ │          │                            │
-│ └──────────┘  📄 8 min · Il y a 2h  🔖  │  ← Métadonnées + bookmark
+│ ┌─────────────────────────────────────┐ │
+│ │          IMAGE THUMBNAIL            │ │  ← Image 16:9
+│ └─────────────────────────────────────┘ │
+│  Titre du contenu sur deux lignes max   │  ← Titre (3 lignes max)
+│  📄 8 min                               │  ← Type + durée
+├─────────────────────────────────────────┤
+│  🔵 Source · 2h    ❤️  🔖  👁️  ℹ️       │  ← Footer: Source + Actions
 └─────────────────────────────────────────┘
+```
+
+**Footer Action Bar** (Story 4.1f) — 4 boutons compacts alignés à droite :
+
+| Icône | Action | État actif | Couleur active |
+|-------|--------|------------|----------------|
+| ❤️ `PhosphorIcons.heart` | Like / Unlike | `isLiked` → fill | Terracotta `#E07A5F` |
+| 🔖 `PhosphorIcons.bookmark` | Save / Unsave | `isSaved` → fill | Terracotta `#E07A5F` |
+| 👁️ `PhosphorIcons.eyeSlash` | Voir moins | - | `textSecondary` |
+| ℹ️ `PhosphorIcons.info` | Ouvrir personnalisation | - | `textSecondary` |
+
+> **Note :** Le bouton ℹ️ ouvre un `ModalBottomSheet` (personnalisation dans le feed, scoring breakdown dans le digest). L'ancien bouton texte "Personnalisation" a été remplacé par cette icône compacte.
 
 Variante "Lu" :
+```
 ┌─────────────────────────────────────────┐
-│ ┌──────────┐                            │
-│ │    ✓     │  Source Name          ···  │  ← Overlay "Lu"
-│ │  IMAGE   │  Titre du contenu...       │
-│ │ (opacity │                            │
-│ │   0.6)   │  📄 8 min · Lu         🔖  │
-│ └──────────┘                            │
+│ ┌─────────────────────────────────────┐ │
+│ │     IMAGE (opacity 0.6)      [✓ Lu]│ │  ← Badge "Lu" en haut à droite
+│ └─────────────────────────────────────┘ │
+│  Titre du contenu...                    │
+├─────────────────────────────────────────┤
+│  🔵 Source · Lu      ❤️  🔖  👁️  ℹ️    │
 └─────────────────────────────────────────┘
 ```
 
-**Variants :** Default (non lu), Read (lu), Saved (sauvegardé)
+**Variants :** Default (non lu), Read (lu), Saved (sauvegardé), Liked (aimé)
 
 **States :** Normal, Pressed (scale 0.98), Loading (skeleton)
 
