@@ -2,6 +2,6 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/ic_launcher_background"/>
   <foreground>
-    <inset android:drawable="@mipmap/launcher_icon" android:inset="18%" />
+    <inset android:drawable="@mipmap/launcher_icon" android:inset="25%" />
   </foreground>
 </adaptive-icon>
