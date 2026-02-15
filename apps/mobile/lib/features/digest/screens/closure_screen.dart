@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -325,6 +327,44 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                           color: colors.textSecondary,
                         ),
                         textAlign: TextAlign.center,
+                      ),
+
+                      const SizedBox(height: FacteurSpacing.space2),
+
+                      // Feedback CTA
+                      GestureDetector(
+                        onTap: () async {
+                          final uri =
+                              Uri.parse(ExternalLinks.feedbackFormUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          }
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              PhosphorIcons.chatCircleDots(
+                                  PhosphorIconsStyle.regular),
+                              size: 16,
+                              color: colors.textSecondary,
+                            ),
+                            const SizedBox(width: FacteurSpacing.space1),
+                            Text(
+                              'Un avis ? Dites-nous tout',
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colors.textSecondary,
+                                decoration: TextDecoration.underline,
+                                decorationColor: colors.textSecondary
+                                    .withValues(alpha: 0.4),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

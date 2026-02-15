@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 
 import '../../../config/theme.dart';
@@ -62,6 +64,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: FacteurSpacing.space4),
+                  // Feedback CTA — prominent, top of settings
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: Material(
+                      color: colors.info.withValues(alpha: 0.1),
+                      borderRadius:
+                          BorderRadius.circular(FacteurRadius.large),
+                      child: InkWell(
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.large),
+                        onTap: () async {
+                          final uri =
+                              Uri.parse(ExternalLinks.feedbackFormUrl);
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          }
+                        },
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.all(FacteurSpacing.space4),
+                          child: Row(
+                            children: [
+                              Icon(
+                                PhosphorIcons.chatCircleDots(
+                                    PhosphorIconsStyle.regular),
+                                color: colors.info,
+                                size: 24,
+                              ),
+                              const SizedBox(width: FacteurSpacing.space4),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Donner mon avis',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                            color: colors.info,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Aidez-nous à améliorer Facteur',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: colors.info
+                                                .withValues(alpha: 0.7),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                PhosphorIcons.arrowSquareOut(
+                                    PhosphorIconsStyle.regular),
+                                color: colors.info.withValues(alpha: 0.6),
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: FacteurSpacing.space6),
                   // Profil Section
                   _buildSection(
                     context,

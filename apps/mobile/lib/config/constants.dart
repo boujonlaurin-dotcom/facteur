@@ -211,3 +211,12 @@ class FeedConstants {
     'Gaza',
   ];
 }
+
+/// Liens externes
+class ExternalLinks {
+  ExternalLinks._();
+
+  /// URL du formulaire de feedback (Notion)
+  static const String feedbackFormUrl =
+      'https://sopht.notion.site/3ba67e485f214716b9b830d145beabc3?pvs=105';
+}
