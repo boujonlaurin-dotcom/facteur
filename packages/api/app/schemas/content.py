@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.enums import BiasOrigin, BiasStance, ContentStatus, ContentType, HiddenReason, ReliabilityScore
 
@@ -63,6 +63,12 @@ class ContentResponse(BaseModel):
     description: Optional[str] = None
     topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
     recommendation_reason: Optional[RecommendationReason] = None
+
+    @field_validator('topics', mode='before')
+    @classmethod
+    def coerce_topics(cls, v: object) -> list[str]:
+        """ORM topics peut être NULL en base → toujours retourner une liste."""
+        return v if v is not None else []
 
     class Config:
         from_attributes = True
