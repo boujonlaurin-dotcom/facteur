@@ -705,6 +705,33 @@ Variante "Lu" :
 | **Streak Badge** | 🔥 X jours |
 | **Circular Progress** | Chargements |
 
+#### Digest Mode Selector
+
+| Component | Usage |
+|-----------|-------|
+| **DigestModeSegmentedControl** | Sélecteur de mode compact iOS-style (3 modes) dans le header de la carte digest |
+| **DigestBriefingSection** | Container principal du digest avec gradient adaptatif selon le mode |
+
+**Modes disponibles (3) :**
+
+| Mode | Icône Phosphor | Couleur | Gradient Card (dark) | Background (dark) | Sous-titre |
+|------|---------------|---------|---------------------|-------------------|------------|
+| Pour vous | `sunDim` (fill) | `#D4944C` (ambre doré) | `#261C0E → #1A1408` | `#1A150C` | "Votre sélection personnalisée" |
+| Serein | `flowerLotus` (fill) | `#4CAF7D` (jade/forêt) | `#0E2218 → #0A1A10` | `#0C1A10` | "Sans politique ni infos anxiogènes" |
+| Perspective | `detective` (fill) | `#6B8FBF` (bleu acier) | `#0E1526 → #0A101E` | `#0C1220` | "Découvrir l'autre bord politique" |
+
+**Comportement :**
+- Sliding indicator animé (AnimatedPositioned 250ms, easeOutCubic)
+- Bordure + glow couleur du mode sur segment sélectionné
+- Le container digest anime son gradient via TweenAnimationBuilder (500ms)
+- Sous-titre contextuel apparaît 4s après changement, puis disparaît
+- Pendant régénération : articles en opacité 0.15 + overlay pulsing glow
+
+**Fichiers source :**
+- `apps/mobile/lib/features/digest/models/digest_mode.dart`
+- `apps/mobile/lib/features/digest/widgets/digest_mode_tab_selector.dart`
+- `apps/mobile/lib/features/digest/widgets/digest_briefing_section.dart`
+
 ---
 
 ## 6. Branding & Style Guide
