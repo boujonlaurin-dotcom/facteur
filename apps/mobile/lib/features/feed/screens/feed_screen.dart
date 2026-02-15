@@ -24,6 +24,7 @@ import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
@@ -445,6 +446,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           content: content,
                                           onTap: () =>
                                               _showArticleModal(content),
+                                          onLongPress: () =>
+                                              ArticlePreviewModal.show(
+                                            context,
+                                            content,
+                                            () => _showArticleModal(content),
+                                          ),
                                           onLike: () {
                                             ref
                                                 .read(feedProvider.notifier)

@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
 import 'digest_mode_tab_selector.dart';
-import 'digest_personalization_sheet.dart';
 
 /// Digest Briefing Section with premium design.
 /// Container smoothly animates its background color, border, and glow
@@ -330,28 +329,24 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             ],
           ),
         ),
-        // The card with save/not interested actions and long-press for reasoning
-        GestureDetector(
-          onLongPress: item.recommendationReason != null
-              ? () {
-                  HapticFeedback.mediumImpact();
-                  _showReasoningSheet(context, item);
-                }
-              : null,
-          behavior: HitTestBehavior.translucent,
-          child: Opacity(
-            opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
-            child: FeedCard(
-              content: _convertToContent(item),
-              onTap: () => widget.onItemTap(item),
-              onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
-              isLiked: item.isLiked,
-              onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
-              onNotInterested: widget.onNotInterested != null
-                  ? () => widget.onNotInterested!(item)
-                  : null,
-              isSaved: item.isSaved,
+        // The card with save/not interested actions and long-press for preview
+        Opacity(
+          opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
+          child: FeedCard(
+            content: _convertToContent(item),
+            onTap: () => widget.onItemTap(item),
+            onLongPress: () => ArticlePreviewModal.show(
+              context,
+              _convertToContent(item),
+              () => widget.onItemTap(item),
             ),
+            onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
+            isLiked: item.isLiked,
+            onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
+            onNotInterested: widget.onNotInterested != null
+                ? () => widget.onNotInterested!(item)
+                : null,
+            isSaved: item.isSaved,
           ),
         ),
       ],
@@ -409,13 +404,4 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     return r.trim().toUpperCase();
   }
 
-  /// Show the personalization sheet with scoring breakdown
-  void _showReasoningSheet(BuildContext context, DigestItem item) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => DigestPersonalizationSheet(item: item),
-    );
-  }
 }

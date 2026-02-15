@@ -5,6 +5,7 @@ import 'package:facteur/config/theme.dart';
 class FacteurCard extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final ScrollPhysics?
       scrollPhysics; // For cases where we might want to pass physics down
   final Color? backgroundColor;
@@ -15,6 +16,7 @@ class FacteurCard extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
+    this.onLongPress,
     this.scrollPhysics,
     this.backgroundColor,
     this.padding,
@@ -89,7 +91,7 @@ class _FacteurCardState extends State<FacteurCard>
       child: widget.child,
     );
 
-    if (widget.onTap == null) {
+    if (widget.onTap == null && widget.onLongPress == null) {
       return cardContent;
     }
 
@@ -97,11 +99,18 @@ class _FacteurCardState extends State<FacteurCard>
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
       onTapCancel: _onTapCancel,
-      onTap: () async {
-        // Haptic Feedback "Opening Envelope" feel
-        await HapticFeedback.mediumImpact();
-        widget.onTap?.call();
-      },
+      onTap: widget.onTap != null
+          ? () async {
+              await HapticFeedback.mediumImpact();
+              widget.onTap?.call();
+            }
+          : null,
+      onLongPress: widget.onLongPress != null
+          ? () async {
+              await HapticFeedback.mediumImpact();
+              widget.onLongPress?.call();
+            }
+          : null,
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: cardContent,
