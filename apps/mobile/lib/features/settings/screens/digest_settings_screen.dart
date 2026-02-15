@@ -76,7 +76,7 @@ class DigestSettingsScreen extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     'Ton essentiel est généré chaque matin à 8h avec ce mode. '
-                    'Tu peux aussi changer de mode directement depuis le digest.',
+                    'Le changement sera appliqué dès demain.',
                     style: TextStyle(
                       color: colors.textTertiary,
                       fontSize: 13,

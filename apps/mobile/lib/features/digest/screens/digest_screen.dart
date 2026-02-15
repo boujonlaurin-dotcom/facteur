@@ -180,26 +180,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       });
     });
 
-    // Afficher un message si le changement de mode échoue
-    ref.listen(digestModeProvider, (previous, next) {
-      if (next.errorMessage != null && previous?.errorMessage != next.errorMessage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.errorMessage!),
-            backgroundColor: colors.error,
-            duration: const Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-        // Effacer le message après affichage
-        ref.read(digestModeProvider.notifier).clearError();
-      }
-    });
-
     // Listen to scroll to top trigger
     ref.listen(digestScrollTriggerProvider, (_, __) => _scrollToTop());
 
@@ -404,15 +384,14 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 ignoring: modeState.isRegenerating,
                                 child: DigestBriefingSection(
                                   items: digest.items,
-                                  completionThreshold: digest.completionThreshold,
                                   onItemTap: _openArticle,
                                   onLike: _handleLike,
                                   onSave: _handleSave,
                                   onNotInterested: _handleNotInterested,
                                   mode: modeState.mode,
                                   isRegenerating: modeState.isRegenerating,
-                                  onModeChanged: (mode) {
-                                    ref.read(digestModeProvider.notifier).setMode(mode);
+                                  onTapModeSelector: () {
+                                    context.push(RoutePaths.digestSettings);
                                   },
                                 ),
                               ),

@@ -291,7 +291,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final digest = state.value;
     if (digest == null || digest.isCompleted) return;
 
-    if (processedCount >= digest.completionThreshold) {
+    if (processedCount >= digest.items.length) {
       completeDigest();
     }
   }

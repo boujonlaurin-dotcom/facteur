@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -19,26 +17,26 @@ import 'digest_personalization_sheet.dart';
 /// Compact iOS-style segmented control sits top-right in the header.
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
-  final int completionThreshold;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onNotInterested;
   final DigestMode mode;
   final bool isRegenerating;
-  final ValueChanged<DigestMode>? onModeChanged;
+
+  /// Called when the user taps the disabled mode selector (navigate to settings).
+  final VoidCallback? onTapModeSelector;
 
   const DigestBriefingSection({
     super.key,
     required this.items,
-    this.completionThreshold = 5,
     required this.onItemTap,
     this.onSave,
     this.onLike,
     this.onNotInterested,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
-    this.onModeChanged,
+    this.onTapModeSelector,
   });
 
   @override
@@ -46,28 +44,6 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
-  /// Le sous-titre n'apparaît qu'après un changement de mode, puis disparaît après 4s.
-  bool _showSubtitle = false;
-  Timer? _subtitleTimer;
-
-  @override
-  void didUpdateWidget(DigestBriefingSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.mode != widget.mode) {
-      _subtitleTimer?.cancel();
-      setState(() => _showSubtitle = true);
-      _subtitleTimer = Timer(const Duration(seconds: 4), () {
-        if (mounted) setState(() => _showSubtitle = false);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _subtitleTimer?.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.items.isEmpty) return const SizedBox.shrink();
@@ -198,44 +174,36 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                       ],
                     ),
                   ),
-                  // Right: segmented control + subtitle (apparaît puis disparaît)
+                  // Right: segmented control (disabled) + CTA label
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (widget.onModeChanged != null)
-                        DigestModeSegmentedControl(
-                          selectedMode: widget.mode,
-                          isRegenerating: widget.isRegenerating,
-                          onModeChanged: (newMode) {
-                            widget.onModeChanged!(newMode);
-                          },
-                        ),
-                      const SizedBox(height: 6),
-                      // Sous-titre visible uniquement après changement de mode
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: _showSubtitle
-                            ? Text(
-                                widget.mode.subtitle,
-                                key: ValueKey(widget.mode.key),
-                                style: TextStyle(
-                                  color: modeColor.withValues(alpha: 0.85),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  fontFamily: 'DM Sans',
-                                  letterSpacing: 0.1,
-                                ),
-                                textAlign: TextAlign.right,
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey('empty_subtitle'),
-                              ),
+                      DigestModeSegmentedControl(
+                        selectedMode: widget.mode,
+                        disabled: true,
+                        onTapDisabled: widget.onTapModeSelector,
                       ),
+                      if (widget.onTapModeSelector != null) ...[
+                        const SizedBox(height: 4),
+                        GestureDetector(
+                          onTap: widget.onTapModeSelector,
+                          child: Text(
+                            'Modifier',
+                            style: TextStyle(
+                              color: modeColor.withValues(alpha: 0.75),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'DM Sans',
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
               // List of articles
               ListView.separated(
@@ -261,14 +229,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final processedCount = widget.items
         .where((item) => item.isRead || item.isDismissed || item.isSaved)
         .length;
-    final isDone = processedCount >= widget.completionThreshold;
     final totalCount = widget.items.length;
+    final isDone = processedCount >= totalCount;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '$processedCount/${widget.completionThreshold}',
+          '$processedCount/$totalCount',
           style: TextStyle(
             color: isDone ? colors.success : colors.primary,
             fontWeight: FontWeight.bold,
@@ -280,14 +248,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           mainAxisSize: MainAxisSize.min,
           children: List.generate(totalCount, (index) {
             final isFilled = index < processedCount;
-            final isThresholdBoundary =
-                widget.completionThreshold < totalCount &&
-                    index == widget.completionThreshold - 1;
             return Container(
               width: 8,
               height: 4,
               margin: EdgeInsets.only(
-                right: isThresholdBoundary ? 6 : 2,
+                right: index < totalCount - 1 ? 2 : 0,
               ),
               decoration: BoxDecoration(
                 color: isFilled
