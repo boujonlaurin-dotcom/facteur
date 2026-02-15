@@ -337,19 +337,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       body: Stack(
         children: [
           // 1. Content Layer (Full screen, scrolled)
-          Positioned.fill(
-            child: useInAppReading
-                // In-App Content (kept below header, no overlap)
-                ? Padding(
-                    padding: const EdgeInsets.only(
-                        top: 80), // Header height estimate
-                    child: _buildInAppContent(context, content),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.only(top: 80),
-                    child: _buildWebViewFallback(content),
-                  ),
-          ),
+          // Header height = SafeArea top + vertical padding (16*2) + content (~40)
+          Builder(builder: (context) {
+            final topInset = MediaQuery.of(context).padding.top;
+            final headerHeight = topInset + 72;
+            return Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.only(top: headerHeight),
+                child: useInAppReading
+                    ? _buildInAppContent(context, content)
+                    : _buildWebViewFallback(content),
+              ),
+            );
+          }),
 
           // 2. Header Layer (Overlay)
           Positioned(
