@@ -11,11 +11,17 @@ class HidePaidContent extends _$HidePaidContent {
 
   @override
   bool build() {
+    if (!Hive.isBoxOpen(_boxName)) {
+      throw StateError('Settings box "$_boxName" is not open.');
+    }
     final box = Hive.box(_boxName);
     return box.get(_key, defaultValue: true) as bool;
   }
 
   Future<void> toggle(bool value) async {
+    if (!Hive.isBoxOpen(_boxName)) {
+      throw StateError('Settings box "$_boxName" is not open.');
+    }
     state = value;
     final box = Hive.box(_boxName);
     await box.put(_key, value);
