@@ -32,7 +32,7 @@ CREATE INDEX ix_contents_entities ON contents USING gin (entities);
 
 ---
 
-## ✅ État Actuel
+## ✅ État Actuel (MAJ 2026-02-15)
 
 ### Code Préservé
 Tout le code NER reste en place et fonctionnel :
@@ -40,12 +40,17 @@ Tout le code NER reste en place et fonctionnel :
 | Fichier | Status | Note |
 |---------|--------|------|
 | `ner_service.py` | ✅ | Service spaCy complet, testé |
-| `classification_worker.py` | ✅ | Intégration prête |
+| `classification_worker.py` | ✅ | Intégration prête, fix lazy-loading async appliqué (`4018058`) |
 | `classification_queue_service.py` | ✅ | Méthode `mark_completed_with_entities` avec try/catch |
-| Migration `p1q2r3s4t5u6` | ⚠️ | Non appliquée, prête pour plus tard |
-| Modèle `Content.entities` | ✅ | Défini mais colonne DB absente |
+| Migration `p1q2r3s4t5u6` | ⚠️ | **No-op** (pass), prête pour réactivation |
+| Modèle `Content.entities` | ⚠️ | **Commenté** (ligne 67), colonne DB absente |
 
-### Ce qui fonctionne
+### Ce qui fonctionne en production
+- **NER extraction**: ✅ fonctionne (entités extraites dans les logs: Giorgia Meloni, TF1, etc.)
+- **Persistance entities**: ❌ colonne absente, entités ignorées silencieusement
+- **Topics classification**: ⚠️ mDeBERTa échoue (numpy manquant), fallback `source.granular_topics`
+- **Worker processing**: ✅ batches de 10 toutes les ~60s, items complètent
+
 ```bash
 # Test local one-liner - FONCTIONNE
 bash docs/qa/scripts/test_ner_one_liner.sh
@@ -81,32 +86,43 @@ except Exception as e:
 
 ### Quand réactiver ?
 **Critères:**
-1. **Upgrade Supabase** vers un tier payant (20$/mois)
+1. **Upgrade Supabase** vers un tier payant (25$/mois)
 2. **OU** Migration vers un autre hébergeur PostgreSQL (Railway, Neon, etc.)
-3. **OU** Réduction significative de la table `contents`
+3. **OU** Application manuelle du DDL via Supabase Dashboard SQL Editor
 
 ### Étapes de réactivation
-1. **Appliquer la migration:**
-   ```bash
-   cd packages/api
-   alembic upgrade p1q2r3s4t5u6
-   ```
 
-2. **Vérifier la colonne:**
-   ```sql
-   SELECT column_name 
-   FROM information_schema.columns 
-   WHERE table_name = 'contents' AND column_name = 'entities';
-   ```
+**Étape 1 — Créer la colonne en DB** (via Supabase Dashboard > SQL Editor):
+```sql
+-- Ajout colonne (rapide, ~1s même sur grosse table)
+ALTER TABLE contents ADD COLUMN IF NOT EXISTS entities TEXT[];
 
-3. **Tester l'intégration E2E:**
-   ```bash
-   bash docs/qa/scripts/verify_us4_ner.sh
-   ```
+-- Index GIN en mode non-bloquant
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_contents_entities
+ON contents USING gin (entities);
+```
 
-4. **Monitorer les logs:**
-   - Vérifier que `entities_column_missing` n'apparaît plus
-   - Confirmer que les entités sont bien stockées
+**Étape 2 — Vérifier la colonne:**
+```sql
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'contents' AND column_name = 'entities';
+```
+
+**Étape 3 — Réactiver dans le code:**
+1. Dé-commenter `entities` dans `packages/api/app/models/content.py` ligne 67
+2. Restaurer le DDL dans la migration `p1q2r3s4t5u6` (remplacer `pass` par le vrai upgrade)
+3. Commit + push + deploy
+
+**Étape 4 — Tester l'intégration E2E:**
+```bash
+bash docs/qa/scripts/verify_us4_ner.sh
+```
+
+**Étape 5 — Monitorer les logs:**
+- Vérifier que `entities_column_missing` n'apparaît plus
+- Confirmer que les entités sont bien stockées
+- Vérifier un article en DB: `SELECT entities FROM contents WHERE entities IS NOT NULL LIMIT 5;`
 
 ---
 
@@ -170,5 +186,6 @@ CREATE INDEX CONCURRENTLY idx_contents_entities ON contents USING gin (entities)
 
 ---
 
-**Status:** NER désactivé temporairement, code conservé pour réactivation future  
-**Dernière mise à jour:** 2026-01-31
+**Status:** NER désactivé temporairement, code conservé pour réactivation future
+**Bug doc associé:** `docs/bugs/bug-ml-pipeline-topics-ner.md`
+**Dernière mise à jour:** 2026-02-15

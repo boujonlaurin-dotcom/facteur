@@ -64,7 +64,7 @@ class Content(Base):
     # Slug normalisé dérivé du top topic classifié (tech, society, etc.)
     theme: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     # Story 4.2-US-4: Named Entity Recognition
-    entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Paywall detection: whether article is behind a paywall
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(

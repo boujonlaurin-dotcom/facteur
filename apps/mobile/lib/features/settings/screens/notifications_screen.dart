@@ -2,14 +2,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../providers/notifications_settings_provider.dart';
 
 /// Écran de gestion des préférences de notifications
-class NotificationsScreen extends ConsumerWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  Map<String, dynamic>? _diagnostics;
+  bool _loadingDiagnostics = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDiagnostics();
+  }
+
+  Future<void> _loadDiagnostics() async {
+    setState(() => _loadingDiagnostics = true);
+    try {
+      final diag = await PushNotificationService().getDiagnostics();
+      if (mounted) {
+        setState(() {
+          _diagnostics = diag;
+          _loadingDiagnostics = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingDiagnostics = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final settings = ref.watch(notificationsSettingsProvider);
 
@@ -85,8 +118,136 @@ class NotificationsScreen extends ConsumerWidget {
                     ),
               ),
             ),
+
+            const SizedBox(height: FacteurSpacing.space6),
+
+            // Section Diagnostic
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space2,
+              ),
+              child: Text(
+                'Diagnostic',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ),
+
+            const SizedBox(height: FacteurSpacing.space2),
+
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+                border: Border.all(color: colors.surfaceElevated),
+              ),
+              child: _loadingDiagnostics
+                  ? const Padding(
+                      padding: EdgeInsets.all(FacteurSpacing.space4),
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Notifications autorisées',
+                          value: _diagnostics?['notificationsEnabled'] == true,
+                        ),
+                        Divider(
+                          height: 1,
+                          color: colors.surfaceElevated,
+                          indent: FacteurSpacing.space4,
+                          endIndent: FacteurSpacing.space4,
+                        ),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Alarmes exactes',
+                          value: _diagnostics?['exactAlarmsGranted'] == true,
+                        ),
+                        Divider(
+                          height: 1,
+                          color: colors.surfaceElevated,
+                          indent: FacteurSpacing.space4,
+                          endIndent: FacteurSpacing.space4,
+                        ),
+                        _buildDiagnosticRow(
+                          context,
+                          label: 'Notification planifiée',
+                          value: _diagnostics?['digestScheduled'] == true,
+                        ),
+                      ],
+                    ),
+            ),
+
+            const SizedBox(height: FacteurSpacing.space4),
+
+            // Bouton test notification
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await PushNotificationService().sendTestNotification();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Notification test envoyée'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.send_outlined, size: 18),
+                label: const Text('Envoyer une notification test'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.primary,
+                  side: BorderSide(color: colors.primary),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: FacteurSpacing.space3,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(FacteurRadius.large),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticRow(
+    BuildContext context, {
+    required String label,
+    required bool value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space3,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          Icon(
+            value ? Icons.check_circle : Icons.cancel,
+            color: value ? Colors.green : Colors.red,
+            size: 20,
+          ),
+        ],
       ),
     );
   }

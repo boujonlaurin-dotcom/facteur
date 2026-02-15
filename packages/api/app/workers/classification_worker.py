@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.database import Base
 from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
+from app.models.source import Source
 from app.services.classification_queue_service import ClassificationQueueService
 from app.services.ml.classification_service import get_classification_service
 from app.services.ml.ner_service import get_ner_service
@@ -156,25 +157,34 @@ class ClassificationWorker:
     
     async def _classify_item(self, session: AsyncSession, item: ClassificationQueue):
         """Classify a single content item using ML (topics + NER).
-        
+
         Extracts both topics (mDeBERTa) and entities (spaCy NER) from the content.
+        Uses explicit async loads to avoid lazy-loading MissingGreenlet errors.
         """
-        content = item.content
+        # Explicit async load (item.content would trigger sync lazy-load → MissingGreenlet)
+        content = await session.get(Content, item.content_id)
         if not content:
             service = ClassificationQueueService(session)
             await service.mark_completed_with_entities(item.id, [], [])
             return
-        
+
+        # Pre-load source for fallback topics (same lazy-loading issue)
+        source = await session.get(Source, content.source_id) if content.source_id else None
+
         # Get topics and entities
-        topics, entities = await self._extract_topics_and_entities(content)
-        
+        topics, entities = await self._extract_topics_and_entities(content, source)
+
         # Mark as completed with both topics and entities
         service = ClassificationQueueService(session)
         await service.mark_completed_with_entities(item.id, topics, entities)
     
-    async def _extract_topics_and_entities(self, content: Content) -> Tuple[List[str], List[dict]]:
+    async def _extract_topics_and_entities(self, content: Content, source=None) -> Tuple[List[str], List[dict]]:
         """Extract both topics and entities from content.
-        
+
+        Args:
+            content: The content to classify
+            source: Pre-loaded source (to avoid async lazy-loading)
+
         Returns:
             Tuple of (topics, entities) where:
             - topics: List of topic strings
@@ -182,7 +192,7 @@ class ClassificationWorker:
         """
         topics = []
         entities = []
-        
+
         # 1. Topic classification (mDeBERTa)
         classifier = self._get_classifier()
         if classifier and classifier.is_ready():
@@ -195,10 +205,10 @@ class ClassificationWorker:
                 import structlog
                 logger = structlog.get_logger()
                 logger.warning("classification_failed", error=str(e), content_id=str(content.id))
-        
+
         # Fallback to source topics if classification fails
-        if not topics and content.source:
-            topics = content.source.granular_topics or []
+        if not topics and source:
+            topics = source.granular_topics or []
         
         # 2. Entity extraction (spaCy NER)
         ner = self._get_ner()
