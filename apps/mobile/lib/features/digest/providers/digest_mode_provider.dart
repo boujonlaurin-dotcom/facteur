@@ -72,44 +72,23 @@ class DigestModeNotifier extends StateNotifier<DigestModeState> {
     }
   }
 
-  /// Change le mode du digest.
+  /// Change le mode du digest pour demain.
   ///
-  /// 1. Met à jour l'UI immédiatement (couleur, gradient, sous-titre)
-  /// 2. Sauvegarde la préférence pour demain
-  /// 3. Régénère le digest avec le nouveau mode
+  /// 1. Met à jour l'UI immédiatement (sélection dans les settings)
+  /// 2. Sauvegarde la préférence pour le prochain digest
+  /// Le digest du jour n'est pas régénéré.
   Future<void> setMode(DigestMode newMode) async {
     if (newMode == state.mode) return;
 
-    final previousMode = state.mode;
-
     // 1. UI immédiate
-    state = DigestModeState(
-      mode: newMode,
-      isRegenerating: true,
-    );
+    state = DigestModeState(mode: newMode);
 
+    // 2. Sauvegarder la préférence pour demain
     try {
       final repository = _ref.read(digestRepositoryProvider);
-
-      // 2. Sauvegarder la préférence pour demain (fire & forget)
-      repository.updatePreference(key: 'digest_mode', value: newMode.key);
-
-      // 3. Régénérer le digest avec le nouveau mode
-      final newDigest = await repository.regenerateWithMode(
-        mode: newMode.key,
-      );
-
-      // Mettre à jour le digestProvider avec la nouvelle réponse
-      _ref.read(digestProvider.notifier).updateFromResponse(newDigest);
-
-      state = DigestModeState(mode: newMode);
+      await repository.updatePreference(key: 'digest_mode', value: newMode.key);
     } catch (e) {
-      // Rollback au mode précédent + message d'erreur
-      state = DigestModeState(
-        mode: previousMode,
-        errorMessage:
-            'Ce mode sera appliqué demain. Le digest du jour ne peut pas être recalculé.',
-      );
+      // Silently fail — preference will be retried next time
     }
   }
 }
