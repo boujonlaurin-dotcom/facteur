@@ -51,17 +51,27 @@ def apply_serein_filter(query):
 def apply_theme_focus_filter(query, theme_slug: str):
     """Filtre hybride pour un thème spécifique.
 
-    Match sur 3 couches :
-    1. Source.theme (thème principal de la source)
-    2. Source.secondary_themes (thèmes secondaires des sources généralistes)
-    3. Content.theme (thème ML inféré par article, fallback)
+    Optimisé : résout le matching source-level via subquery sur la petite
+    table sources (~100 rows), puis utilise deux chemins indexés sur contents
+    via BitmapOr :
+      1. Content.source_id IN (source IDs matchant le thème) → ix_contents_source_id
+      2. Content.theme = theme_slug → ix_contents_theme_published
 
     Utilisé par le mode THEME_FOCUS (digest) et le filtre thème (feed).
     """
-    return query.where(
+    # Subquery : source IDs dont le thème principal ou secondaire matche
+    theme_source_ids_subq = select(Source.id).where(
         or_(
             Source.theme == theme_slug,
             Source.secondary_themes.any(theme_slug),
+        )
+    )
+    # Deux chemins indexés sur la même table (contents) :
+    # 1. Articles de sources matchant le thème (via ix_contents_source_id)
+    # 2. Articles classifiés ML dans ce thème (via ix_contents_theme_published)
+    return query.where(
+        or_(
+            Content.source_id.in_(theme_source_ids_subq),
             Content.theme == theme_slug,
         )
     )
