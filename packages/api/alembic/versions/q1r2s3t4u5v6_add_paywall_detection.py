@@ -23,7 +23,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5) -> None:
+def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5, lock_timeout: str = '5s') -> None:
     """Retry DDL when blocked by lock/statement timeouts (PgBouncer-safe)."""
     escaped_sql = sql.replace("'", "''")
 
@@ -32,7 +32,7 @@ def _execute_with_retry(sql: str, retries: int = 30, sleep_seconds: int = 5) -> 
             with context.get_context().autocommit_block():
                 op.execute(
                     f"DO $mig$ BEGIN "
-                    f"PERFORM set_config('lock_timeout', '5s', true); "
+                    f"PERFORM set_config('lock_timeout', '{lock_timeout}', true); "
                     f"PERFORM set_config('statement_timeout', '0', true); "
                     f"EXECUTE '{escaped_sql}'; "
                     f"END $mig$;"
@@ -61,9 +61,12 @@ def upgrade() -> None:
     )
 
     # 2. contents.is_paid - whether article is behind a paywall
+    # contents is the busiest table — use longer lock_timeout to acquire
+    # ACCESS EXCLUSIVE lock between active queries
     _execute_with_retry(
         "ALTER TABLE contents "
-        "ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT false"
+        "ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT false",
+        lock_timeout='30s'
     )
 
     # 3. user_personalization.hide_paid_content - user toggle
