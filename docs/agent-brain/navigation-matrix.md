@@ -140,6 +140,8 @@ features/{nom}/
 | | Service | `services/digest_service.py`, `services/digest_selector.py` |
 | | Model | `models/daily_digest.py`, `models/digest_completion.py` |
 | | Schema | `schemas/digest.py` |
+| | Modes | `services/recommendation/filter_presets.py` (partagé feed↔digest) |
+| | Job batch | `jobs/digest_generation_job.py` (génération quotidienne 8h) |
 | **Feed (Legacy)** | Router | `routers/feed.py` |
 | | Service | `services/recommendation_service.py` |
 | | Scoring | `services/recommendation/layers/*.py` |
@@ -157,7 +159,7 @@ features/{nom}/
 | Job | Scheduler | Worker |
 |-----|-----------|--------|
 | **RSS Sync** | `workers/scheduler.py` (30min) | `workers/rss_sync.py` |
-| **Digest Generation** | `workers/scheduler.py` (8am) | `services/digest_selector.py` |
+| **Digest Generation** | `workers/scheduler.py` (8am) | `jobs/digest_generation_job.py` → `services/digest_selector.py` |
 | **Top 3 Daily** | `workers/top3_job.py` (8am) | `services/briefing/top3_selector.py` |
 | **ML Classification** | `workers/classification_worker.py` | `services/ml/classification_service.py` |
 
@@ -214,28 +216,51 @@ features/{nom}/
    └─ Query DB avec user_id filtré
 ```
 
-#### 3. Flux Digest Quotidien
+#### 3. Flux Digest Quotidien (Epic 10 + 11)
 
-**Scheduler → Scoring → Diversité → Stockage → Mobile Fetch**
+**Scheduler → Mode Selection → Scoring → Diversité → Stockage → Mobile Fetch**
 
 ```
 1. Trigger (8am Europe/Paris)
-   └─ workers/scheduler.py → run_digest_generation()
+   └─ workers/scheduler.py → jobs/digest_generation_job.py
+   └─ DigestGenerationJob.run(target_date)
 
-2. Scoring & Selection
-   └─ services/digest_selector.py
-   └─ Récupère contenus scorés (last 7 days)
-   └─ Applique diversité sources (decay 0.70, min 3 sources)
-   └─ Sélectionne top 5 articles
+2. Mode Selection (par utilisateur)
+   └─ Lit user_preferences: key='digest_mode' → mode (pour_vous, serein, perspective, theme_focus)
+   └─ Si mode=theme_focus → lit aussi key='digest_focus_theme' → ex: "tech"
 
-3. Stockage
-   └─ models/daily_digest.py → Insert 5 rows (user_id, content_id, date, position)
+3. Candidate Fetching + Mode Filters
+   └─ services/digest_selector.py → _get_candidates()
+   └─ Sources suivies + fallback curated (7 jours)
+   └─ Si mode=serein: apply_serein_filter() (exclut thèmes anxiogènes + keywords)
+   └─ Si mode=theme_focus: apply_theme_focus_filter() (WHERE source.theme=:theme)
 
-4. Mobile Fetch
-   └─ features/digest/repositories/digest_repository.dart → fetchTodayDigest()
-   └─ GET /api/digest/ → Return DigestResponse
-   └─ features/digest/providers/digest_provider.dart → Cache state
-   └─ features/digest/screens/digest_screen.dart → Display
+4. Scoring
+   └─ services/digest_selector.py → _score_candidates()
+   └─ ScoringEngine (CoreLayer + StaticPref + Behavioral + Quality + ArticleTopic)
+   └─ + Bonus fraîcheur hiérarchisé (sources suivies favorisées)
+   └─ Si mode=perspective: +80 pts pour articles de biais opposé
+
+5. Diversité
+   └─ max 1 article/source, max 2 articles/thème, min 3 sources distinctes
+   └─ Si mode=theme_focus: max_per_theme relaxé
+
+6. Stockage
+   └─ models/daily_digest.py → INSERT daily_digest (user_id, target_date, items JSONB, mode)
+
+7. Mobile Fetch
+   └─ GET /api/digest → DigestResponse (7 items + mode + breakdown)
+   └─ features/digest/screens/digest_screen.dart → Tab Selector + Container adaptatif
+```
+
+**Changement de mode on-demand (Epic 11) :**
+```
+1. User tap tab "Serein" dans le digest
+   └─ PUT /api/users/preferences {key: "digest_mode", value: "serein"}
+   └─ POST /api/digest/generate?mode=serein&force=true
+2. Backend régénère 7 articles avec apply_serein_filter()
+3. Mobile reçoit DigestResponse {mode: "serein", items: [...]}
+4. UI: container passe en vert, emoji 🧘, articles rechargés
 ```
 
 #### 4. Flux Feed Generation (Legacy)
@@ -342,4 +367,4 @@ git worktree remove ../dev-feature-x
 
 ---
 
-*Dernière MAJ: 2026-02-14*
+*Dernière MAJ: 2026-02-15*

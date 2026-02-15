@@ -24,6 +24,7 @@
 | 21/01/2026 | 2.0 | Implémentation du Score Breakdown (Transparence totale) | Antigravity |
 | 22/01/2026 | 2.1 | **INCIDENT FIX**: Sync RSS asynchrone (Non-blocking Executor) | Antigravity |
 | 24/01/2026 | 2.2 | Onboarding Section 3 : Mapping Thèmes → Sources pour pré-sélection (Story 2.7) | Antigravity |
+| 15/02/2026 | 2.3 | Epic 10 (Digest Central) : Modèles, Endpoints, Workflows, DigestSelector, Modes | Claude Agent |
 
 ---
 
@@ -201,11 +202,13 @@ graph TB
 erDiagram
     USERS ||--o{ USER_TOPIC_PROGRESS : has
     USERS ||--o{ USER_SUBTOPICS : has_preferred
+    USERS ||--o{ DAILY_DIGEST : receives
+    USERS ||--o{ DIGEST_COMPLETIONS : completes
     USER_TOPIC_PROGRESS }|--o{ TOPIC_QUIZZES : validates_level
-    
+
     SOURCES ||--o{ CONTENTS : publishes
     SOURCES ||--o{ USER_SOURCES : subscribed_by
-    
+
     CONTENTS ||--o{ USER_CONTENT_STATUS : status_of
     CONTENTS ||--o{ TOPIC_QUIZZES : referenced_in
     
@@ -346,6 +349,30 @@ erDiagram
         float weight
         timestamp created_at
     }
+
+    DAILY_DIGEST {
+        uuid id PK
+        uuid user_id FK
+        date target_date
+        jsonb items
+        string mode
+        string focus_theme
+        timestamp generated_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    DIGEST_COMPLETIONS {
+        uuid id PK
+        uuid user_id FK
+        date target_date
+        int articles_read
+        int articles_saved
+        int articles_dismissed
+        int closure_time_seconds
+        timestamp completed_at
+        timestamp created_at
+    }
 ```
 
 ### 4.2 Model Details
@@ -384,6 +411,8 @@ erDiagram
 | `opinion_style` | "assertive", "nuanced" |
 | `content_freshness` | "recent", "evergreen" |
 | `format_length` | "short", "long", "mixed" |
+| `digest_mode` | "pour_vous", "serein", "perspective", "theme_focus" |
+| `digest_focus_theme` | slug de thème (ex: "tech", "science") — si mode=theme_focus |
 
 #### User Interests
 **Purpose:** Centres d'intérêt avec pondération
@@ -470,6 +499,45 @@ erDiagram
 | `longest_streak` | int | Record personnel |
 | `weekly_count` | int | Contenus consommés cette semaine |
 | `week_start` | date | Début de la semaine en cours |
+
+#### Daily Digest (Epic 10)
+**Purpose:** Digest quotidien de 7 articles sélectionnés pour un utilisateur
+
+| Attribut | Type | Description |
+|----------|------|-------------|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK vers auth.users |
+| `target_date` | date | Date du digest (un seul par user+date) |
+| `items` | JSONB | Array de 7 articles `[{content_id, rank, reason, source_name, score, breakdown}]` |
+| `mode` | string | Preset utilisé : `pour_vous`, `serein`, `perspective`, `theme_focus` |
+| `focus_theme` | string | Thème ciblé si mode=theme_focus (ex: "tech") |
+| `generated_at` | timestamp | Date/heure de génération |
+
+**Contraintes :** Unique (user_id, target_date). Index sur user_id, target_date, generated_at.
+
+#### Digest Completions (Epic 10)
+**Purpose:** Enregistre la "fermeture" du digest (moment de closure)
+
+| Attribut | Type | Description |
+|----------|------|-------------|
+| `id` | UUID | PK |
+| `user_id` | UUID | FK vers auth.users |
+| `target_date` | date | Date du digest complété |
+| `articles_read` | int | Nombre d'articles lus |
+| `articles_saved` | int | Nombre d'articles sauvegardés |
+| `articles_dismissed` | int | Nombre d'articles masqués |
+| `closure_time_seconds` | int | Temps total passé (optionnel) |
+| `completed_at` | timestamp | Moment de la closure |
+
+#### Digest Modes (Epic 11)
+**Purpose:** 4 presets de personnalisation du digest quotidien
+
+| Mode | Enum Value | Comportement Backend |
+|------|-----------|---------------------|
+| Pour vous | `pour_vous` | Algorithme standard (thèmes + sources suivies) |
+| Serein | `serein` | Exclut thèmes anxiogènes (`society`, `international`, `economy`, `politics`) + keywords négatifs |
+| Changer de bord | `perspective` | Boost soft scoring (+80 pts) pour articles de sources à biais éditorial opposé |
+| Focus thématique | `theme_focus` | Filtre SQL `WHERE source.theme = :focus_theme` + relaxe max_per_theme |
 
 #### User Topic Progress
 **Purpose:** Progression gamifiée par sous-thème (Duolingo de l'info)
@@ -854,6 +922,61 @@ sequenceDiagram
     App-->>User: Affiche Résultat + Animation
 ```
 
+### 7.6 Workflow : Digest Quotidien (Epic 10)
+
+```mermaid
+sequenceDiagram
+    participant Scheduler as APScheduler (8am)
+    participant Job as DigestGenerationJob
+    participant Selector as DigestSelector
+    participant DB as PostgreSQL
+    participant App as Flutter App
+
+    Note over Scheduler: Déclenchement quotidien à 8h Europe/Paris
+
+    Scheduler->>Job: run_digest_generation(target_date)
+    Job->>DB: SELECT active user_profiles
+    DB-->>Job: Liste user_ids
+
+    loop Pour chaque batch d'utilisateurs (concurrence limitée)
+        Job->>DB: SELECT user_preferences WHERE key='digest_mode'
+        DB-->>Job: mode (pour_vous, serein, perspective, theme_focus)
+
+        Job->>Selector: select_for_user(user_id, mode, focus_theme)
+
+        Selector->>DB: SELECT contents (sources suivies, 7 jours)
+        Note over Selector: Applique filtres mode (serein: exclut thèmes anxiogènes, theme_focus: filtre thème)
+        DB-->>Selector: Candidats
+
+        Selector->>Selector: Score (ScoringEngine + bonus fraîcheur + boost perspective si mode=perspective)
+        Selector->>Selector: Diversité (max 1/source, max 2/thème, min 3 sources)
+        Selector-->>Job: 7 DigestItems
+
+        Job->>DB: INSERT daily_digest (user_id, target_date, items, mode)
+    end
+
+    Note over App: L'utilisateur ouvre l'app
+
+    App->>App: GET /api/digest
+    App->>DB: SELECT daily_digest WHERE user_id AND target_date=today
+    DB-->>App: DigestResponse (7 items + mode + actions)
+```
+
+**Modes de digest (Epic 11) :**
+
+| Mode | Filtre SQL | Scoring | Diversité |
+|------|-----------|---------|-----------|
+| `pour_vous` | Aucun (standard) | ScoringEngine standard | max 1/source, max 2/thème |
+| `serein` | `apply_serein_filter()` (exclut thèmes + keywords) | Standard | Standard |
+| `perspective` | Aucun | +80 pts biais opposé | Standard |
+| `theme_focus` | `WHERE source.theme = :theme` | Standard | max_per_theme relaxé à 7 |
+
+**Changement de mode en temps réel :**
+1. User tap un tab → `PUT /users/preferences {digest_mode: "serein"}`
+2. → `POST /digest/generate?mode=serein&force=true`
+3. → Backend régénère avec le nouveau mode
+4. → UI met à jour le container (couleur, gradient, emoji) + les articles
+
 ### 7.4 Workflow : Synchronisation RSS
 
 ```mermaid
@@ -1065,6 +1188,93 @@ servers:
 |--------|----------|-------------|
 | `POST` | `/webhooks/revenuecat` | Webhooks RevenueCat |
 
+### 8.10 Digest Endpoints (Epic 10)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/digest` | Récupérer le digest du jour (génère si absent) |
+| `POST` | `/digest/generate` | Générer un digest on-demand |
+| `POST` | `/digest/{digest_id}/action` | Appliquer une action sur un article du digest |
+| `POST` | `/digest/{digest_id}/complete` | Enregistrer la closure du digest |
+
+**Query Parameters (POST /digest/generate) :**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `target_date` | date | today | Date du digest |
+| `force` | bool | false | Régénérer même si existant |
+| `mode` | string | null | Mode de génération (pour_vous, serein, perspective, theme_focus) |
+| `focus_theme` | string | null | Slug thème si mode=theme_focus |
+
+**POST /digest/{digest_id}/action Request :**
+```json
+{
+  "content_id": "uuid",
+  "action": "read"
+}
+```
+
+**Actions disponibles :** `read`, `save`, `like`, `unlike`, `not_interested`, `undo`
+
+**GET /digest Response Example :**
+```json
+{
+  "digest_id": "uuid",
+  "user_id": "uuid",
+  "target_date": "2026-02-15",
+  "generated_at": "2026-02-15T07:00:00Z",
+  "mode": "serein",
+  "items": [
+    {
+      "content_id": "uuid",
+      "title": "Les bénéfices de la méditation sur le cerveau",
+      "url": "https://...",
+      "source": {"id": "uuid", "name": "Science & Vie", "theme": "science"},
+      "rank": 1,
+      "reason": "Thème : Sciences",
+      "recommendation_reason": {
+        "label": "Vos intérêts : Sciences",
+        "score_total": 85.0,
+        "breakdown": [
+          {"label": "Source de confiance", "points": 50.0, "is_positive": true},
+          {"label": "Thème : Sciences", "points": 35.0, "is_positive": true}
+        ]
+      },
+      "is_read": false,
+      "is_saved": false,
+      "is_liked": false,
+      "is_dismissed": false
+    }
+  ],
+  "completion_threshold": 5,
+  "is_completed": false
+}
+```
+
+### 8.11 User Preferences Endpoints (Epic 11)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `PUT` | `/users/preferences` | Upsert une préférence clé-valeur |
+| `GET` | `/users/top-themes` | Thèmes utilisateur triés par poids décroissant |
+
+**PUT /users/preferences Request :**
+```json
+{
+  "key": "digest_mode",
+  "value": "serein"
+}
+```
+
+**GET /users/top-themes Response :**
+```json
+[
+  {"interest_slug": "tech", "weight": 2.5},
+  {"interest_slug": "science", "weight": 1.8},
+  {"interest_slug": "culture", "weight": 1.0}
+]
+```
+
 ---
 
 ## 9. Recommendation Algorithm
@@ -1175,14 +1385,23 @@ Avant le scoring, les contenus sont filtrés selon le contexte (User + Mode) :
    - Exclure les contenus trop vieux (>30 jours).
    - Inclure uniquement les sources suivies par l'utilisateur OU les sources curées.
 
-2. **Filtres de Mode (Intent-based) :**
+2. **Filtres de Mode Feed (Intent-based, legacy) :**
 
    - **Mode "Sérénité" (INSPIRATION)** :
      - Exclusion des thèmes "Hard News" (`society`, `international`, `economy`, `politics`).
+     - Exclusion par keywords anxiogènes (titre + description).
+     - **Note :** les slugs originaux (`society_climate`, `geopolitics`) étaient incorrects → corrigés en `society`, `international` via `filter_presets.py`.
    - **Mode "Grand Format" (DEEP_DIVE)** :
      - Durée > 10 min (vidéos/podcasts) ou description longue (articles).
    - **Mode "Angle Mort" (PERSPECTIVES)** :
      - Sources avec un biais opposé au biais calculé de l'utilisateur.
+
+3. **Filtres de Mode Digest (Epic 11, partagés via `filter_presets.py`) :**
+
+   - **`pour_vous`** : Aucun filtre additionnel, scoring standard.
+   - **`serein`** : `apply_serein_filter()` — même logique que INSPIRATION mais avec les bons slugs.
+   - **`perspective`** : Pas de filtre SQL, boost soft +80 pts pour biais opposé dans `_score_candidates()`.
+   - **`theme_focus`** : `apply_theme_focus_filter(query, theme_slug)` — `WHERE source.theme = :theme`.
 
 ### 9.5 Diversification
 
