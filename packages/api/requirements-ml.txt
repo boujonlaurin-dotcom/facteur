@@ -1,4 +1,5 @@
 # Optional ML dependencies (enable only if ML_ENABLED=true)
+numpy>=1.26.0,<2.0
 transformers==4.38.2
 torch==2.2.0
 spacy==3.8.11
