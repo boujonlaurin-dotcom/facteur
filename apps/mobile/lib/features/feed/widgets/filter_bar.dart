@@ -45,6 +45,7 @@ class FilterBar extends StatefulWidget {
 class _FilterBarState extends State<FilterBar> {
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _keys = {
+    'recent': GlobalKey(),
     'inspiration': GlobalKey(),
     'perspectives': GlobalKey(),
     'deep_dive': GlobalKey(),
