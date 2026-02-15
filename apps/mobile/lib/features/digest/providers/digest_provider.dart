@@ -333,7 +333,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
             surface: 'digest',
             contentId: item.contentId,
             sourceId: item.source?.id ?? '',
-            topics: const [], // Topics not available on DigestItem model
+            topics: item.topics,
             position: position,
             timeSpentSeconds: 0,
           );

@@ -61,6 +61,7 @@ class ContentResponse(BaseModel):
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
     description: Optional[str] = None
+    topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
     recommendation_reason: Optional[RecommendationReason] = None
 
     class Config:

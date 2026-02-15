@@ -714,6 +714,7 @@ class DigestService:
                 url=content.url,
                 thumbnail_url=content.thumbnail_url,
                 description=content.description,
+                topics=content.topics or [],
                 content_type=content.content_type,
                 duration_seconds=content.duration_seconds,
                 published_at=content.published_at,
