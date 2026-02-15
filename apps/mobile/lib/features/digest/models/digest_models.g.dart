@@ -81,6 +81,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
       rank: (json['rank'] as num?)?.toInt() ?? 0,
       reason: json['reason'] as String? ?? '',
+      isPaid: json['is_paid'] as bool? ?? false,
       isRead: json['is_read'] as bool? ?? false,
       isSaved: json['is_saved'] as bool? ?? false,
       isLiked: json['is_liked'] as bool? ?? false,
@@ -105,6 +106,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'source': instance.source,
       'rank': instance.rank,
       'reason': instance.reason,
+      'is_paid': instance.isPaid,
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
       'is_liked': instance.isLiked,
@@ -123,8 +125,7 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      completionThreshold:
-          (json['completion_threshold'] as num?)?.toInt() ?? 5,
+      completionThreshold: (json['completion_threshold'] as num?)?.toInt() ?? 5,
       isCompleted: json['is_completed'] as bool? ?? false,
       completedAt: json['completed_at'] == null
           ? null

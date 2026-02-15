@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -65,6 +65,8 @@ class Content(Base):
     theme: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     # Story 4.2-US-4: Named Entity Recognition
     # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    # Paywall detection: whether article is behind a paywall
+    is_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

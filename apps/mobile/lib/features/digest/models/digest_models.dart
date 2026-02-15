@@ -67,6 +67,7 @@ class DigestItem with _$DigestItem {
     SourceMini? source,
     @Default(0) int rank,
     @Default('') String reason,
+    @JsonKey(name: 'is_paid') @Default(false) bool isPaid,
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
     @JsonKey(name: 'is_liked') @Default(false) bool isLiked,

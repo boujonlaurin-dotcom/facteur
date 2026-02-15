@@ -78,6 +78,21 @@ class PersonalizationRepository {
     }
   }
 
+  Future<void> togglePaidContent(bool hidePaid) async {
+    try {
+      await _apiClient.post(
+        'users/personalization/toggle-paid-content',
+        body: {'hide_paid': hidePaid},
+      );
+    } on DioException catch (e) {
+      print('PersonalizationRepository.togglePaidContent failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   Body sent: {hide_paid: $hidePaid}');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
+
   Future<void> unmuteSource(String sourceId) async {
     try {
       await _apiClient.delete('users/personalization/unmute-source/$sourceId');

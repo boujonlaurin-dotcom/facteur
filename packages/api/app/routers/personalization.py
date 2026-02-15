@@ -40,11 +40,16 @@ class MuteContentTypeRequest(BaseModel):
     content_type: str  # e.g., "podcast", "youtube", "article"
 
 
+class TogglePaidContentRequest(BaseModel):
+    hide_paid: bool
+
+
 class PersonalizationResponse(BaseModel):
     muted_sources: List[UUID] = []
     muted_themes: List[str] = []
     muted_topics: List[str] = []
     muted_content_types: List[str] = []
+    hide_paid_content: bool = True
 
 
 # --- Endpoints ---
@@ -63,12 +68,13 @@ async def get_personalization(
     
     if not result:
         return PersonalizationResponse()
-    
+
     return PersonalizationResponse(
         muted_sources=result.muted_sources or [],
         muted_themes=result.muted_themes or [],
         muted_topics=result.muted_topics or [],
-        muted_content_types=result.muted_content_types or []
+        muted_content_types=result.muted_content_types or [],
+        hide_paid_content=result.hide_paid_content if result.hide_paid_content is not None else True
     )
 
 
@@ -258,3 +264,42 @@ async def unmute_source(
         await db.commit()
     
     return {"message": "Source démuée avec succès", "source_id": str(source_id)}
+
+
+@router.post("/toggle-paid-content")
+async def toggle_paid_content(
+    request: TogglePaidContentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Active/désactive le masquage des articles payants."""
+    user_uuid = UUID(current_user_id)
+
+    user_service = UserService(db)
+    await user_service.get_or_create_profile(current_user_id)
+    await db.commit()
+
+    try:
+        stmt = pg_insert(UserPersonalization).values(
+            user_id=user_uuid,
+            hide_paid_content=request.hide_paid
+        ).on_conflict_do_update(
+            index_elements=['user_id'],
+            set_={
+                'hide_paid_content': request.hide_paid,
+                'updated_at': func.now()
+            }
+        )
+
+        await db.execute(stmt)
+        await db.commit()
+
+        return {
+            "message": f"Filtrage articles payants {'activé' if request.hide_paid else 'désactivé'}",
+            "hide_paid_content": request.hide_paid
+        }
+
+    except Exception as e:
+        logger.error("toggle_paid_content_error", error=str(e), user_id=str(user_uuid))
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur lors du changement de préférence: {str(e)}")

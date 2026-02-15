@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.source import Source
+from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
 
@@ -119,9 +120,18 @@ class SyncService:
             # 3. Process entries
             # On prend les 20 plus récents pour éviter de tout reparser à chaque fois
             # si le flux est énorme
-            for entry in feed.entries[:50]: 
+            for entry in feed.entries[:50]:
                 content_data = self._parse_entry(entry, source)
                 if content_data:
+                    # Paywall detection: enrich with is_paid flag
+                    content_data["is_paid"] = detect_paywall(
+                        title=content_data.get("title", ""),
+                        description=content_data.get("description"),
+                        url=content_data.get("url", ""),
+                        html_content=content_data.get("html_content"),
+                        source_id=str(source.id),
+                        paywall_config=getattr(source, "paywall_config", None),
+                    )
                     is_new = await self._save_content(content_data)
                     if is_new:
                         new_contents_count += 1
@@ -381,6 +391,7 @@ class SyncService:
             duration_seconds=data["duration_seconds"],
             html_content=data.get("html_content"),  # Story 5.2
             audio_url=data.get("audio_url"),        # Story 5.2
+            is_paid=data.get("is_paid", False),     # Paywall detection
             created_at=datetime.datetime.utcnow()
         )
         
