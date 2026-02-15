@@ -1,6 +1,7 @@
 """Worker asynchrone pour la classification ML des contenus."""
 
 import asyncio
+from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
 
@@ -76,9 +77,33 @@ class ClassificationWorker:
         """Start the worker in the background."""
         if self.running:
             return
-        
+
+        await self._recover_stuck_items()
+
         self.running = True
         self._task = asyncio.create_task(self._run_loop())
+
+    async def _recover_stuck_items(self):
+        """Reset items stuck in 'processing' state from previous crash/restart."""
+        import structlog
+        from sqlalchemy import update
+
+        logger = structlog.get_logger()
+
+        try:
+            async with self.session_maker() as session:
+                result = await session.execute(
+                    update(ClassificationQueue)
+                    .where(ClassificationQueue.status == 'processing')
+                    .values(status='pending', updated_at=datetime.utcnow())
+                )
+                count = result.rowcount
+                await session.commit()
+
+                if count > 0:
+                    logger.info("classification_worker.recovered_stuck_items", count=count)
+        except Exception as e:
+            logger.error("classification_worker.recovery_failed", error=str(e))
     
     async def stop(self):
         """Stop the worker gracefully."""
@@ -116,7 +141,11 @@ class ClassificationWorker:
             
             if not items:
                 return
-            
+
+            import structlog
+            logger = structlog.get_logger()
+            logger.info("classification_worker.processing_batch", count=len(items))
+
             # Process each item
             for item in items:
                 try:

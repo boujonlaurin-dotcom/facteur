@@ -10,6 +10,13 @@ RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 # ML dependencies (classification par topics, activé via ML_ENABLED env var)
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements-ml.txt
 
+# Pre-download ML models at build time (avoids slow/flaky runtime downloads)
+# 1. spaCy French NER model (~50MB)
+RUN python -m spacy download fr_core_news_md
+# 2. mDeBERTa zero-shot classification model (~1.7GB, cached in /app/models)
+ENV HF_HOME=/app/models
+RUN python -c "from transformers import pipeline; pipeline('zero-shot-classification', model='MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7')"
+
 # Copy application AND required configs/scripts
 COPY app/ app/
 COPY alembic.ini .
