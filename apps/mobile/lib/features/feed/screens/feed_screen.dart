@@ -304,11 +304,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           final notifier = ref.read(feedProvider.notifier);
 
                           return FilterBar(
-                            selectedFilter: notifier.selectedTheme,
+                            selectedFilter: notifier.selectedFilter == 'recent'
+                                ? 'recent'
+                                : notifier.selectedTheme,
                             userBias: ref.watch(userBiasProvider).valueOrNull,
                             availableFilters: themeFilters,
                             onFilterChanged: (String? filter) {
-                              notifier.setTheme(filter);
+                              if (filter == 'recent') {
+                                notifier.setFilter('recent');
+                              } else {
+                                notifier.setTheme(filter);
+                              }
                             },
                           );
                         }),

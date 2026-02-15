@@ -75,6 +75,7 @@ class BiasOrigin(str, Enum):
 class FeedFilterMode(str, Enum):
     """Mode de filtrage du feed (Intent-based)."""
 
+    RECENT = "recent"
     INSPIRATION = "inspiration"
     PERSPECTIVES = "perspectives"
     DEEP_DIVE = "deep_dive"

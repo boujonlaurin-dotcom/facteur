@@ -172,7 +172,28 @@ class RecommendationService:
             # Paywall filter
             hide_paid_content=hide_paid_content,
         )
-        
+
+        # RECENT mode: skip scoring, return pure chronological order
+        # Candidates are already sorted by published_at DESC from _get_candidates
+        if mode == FeedFilterMode.RECENT:
+            paginated = candidates[offset:offset + limit]
+            content_ids = [c.id for c in paginated]
+            if content_ids:
+                stmt = select(UserContentStatus).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id.in_(content_ids)
+                )
+                statuses = await self.session.scalars(stmt)
+                status_map = {s.content_id: s for s in statuses}
+                for content in paginated:
+                    st = status_map.get(content.id)
+                    content.is_saved = st.is_saved if st else False
+                    content.is_liked = st.is_liked if st else False
+                    content.is_hidden = st.is_hidden if st else False
+                    content.hidden_reason = st.hidden_reason if st else None
+                    content.status = st.status if st else ContentStatus.UNSEEN
+            return paginated
+
         # 3. Score Candidates using ScoringEngine
         scored_candidates = []
         now = datetime.datetime.now(datetime.timezone.utc)

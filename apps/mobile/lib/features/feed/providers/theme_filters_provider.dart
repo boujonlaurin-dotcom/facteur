@@ -36,7 +36,7 @@ final themeFiltersProvider =
     if (response.statusCode == 200 && response.data != null) {
       final themes = response.data as List<dynamic>;
 
-      return themes.map<FilterConfig>((t) {
+      final themeFilters = themes.map<FilterConfig>((t) {
         final slug = t['interest_slug'] as String;
         final meta = _themeMetadata[slug];
         final label = meta != null ? meta.label : slug;
@@ -50,10 +50,26 @@ final themeFiltersProvider =
           description: description,
         );
       }).toList();
+
+      // "Derniers articles" toujours en 1ère position
+      const recentFilter = FilterConfig(
+        key: 'recent',
+        label: 'Derniers articles',
+        description: 'Articles récents de vos sources, sans algo',
+      );
+
+      return [recentFilter, ...themeFilters];
     }
   } catch (_) {
     // Fallback silencieux — pas de thèmes affichés si l'API échoue
   }
 
-  return [];
+  // Même en cas d'erreur API, afficher le filtre "Derniers articles"
+  return const [
+    FilterConfig(
+      key: 'recent',
+      label: 'Derniers articles',
+      description: 'Articles récents de vos sources, sans algo',
+    ),
+  ];
 });
