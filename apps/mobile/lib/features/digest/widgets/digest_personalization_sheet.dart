@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
@@ -215,27 +216,26 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             colors: colors,
           ),
 
-        // Mute content type action
-        if (item.contentType != ContentType.article)
-          _buildActionOption(
-            context,
-            icon: PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-            label: 'Moins ${_getContentTypeLabel(item.contentType)}',
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await ref
-                    .read(feedProvider.notifier)
-                    .muteContentType(
-                        _getContentTypeSlug(item.contentType));
-                NotificationService.showInfo('Type de contenu masqué');
-              } catch (e) {
-                NotificationService.showError(
-                    'Impossible de masquer ce type de contenu');
-              }
-            },
-            colors: colors,
-          ),
+        // Mute topic actions (topics ML granulaires, max 2)
+        for (final topicSlug in item.topics.take(2))
+          if (_getThemeLabel(theme ?? '').toLowerCase() !=
+              getTopicLabel(topicSlug).toLowerCase())
+            _buildActionOption(
+              context,
+              icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+              label: 'Moins sur "${getTopicLabel(topicSlug)}"',
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await ref.read(feedProvider.notifier).muteTopic(topicSlug);
+                  NotificationService.showInfo('Sujet masqué');
+                } catch (e) {
+                  NotificationService.showError(
+                      'Impossible de masquer le sujet');
+                }
+              },
+              colors: colors,
+            ),
       ],
     );
   }

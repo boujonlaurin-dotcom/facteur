@@ -54,6 +54,7 @@ class DigestItem(BaseModel):
     url: str
     thumbnail_url: Optional[str] = None
     description: Optional[str] = None
+    topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: Optional[int] = None
     published_at: datetime
