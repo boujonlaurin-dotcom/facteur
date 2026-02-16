@@ -9,6 +9,7 @@ import pytz
 from app.config import get_settings
 from app.workers.rss_sync import sync_all_sources
 from app.workers.top3_job import generate_daily_top3_job
+from app.workers.storage_cleanup import cleanup_old_articles
 from app.jobs.digest_generation_job import run_digest_generation
 
 logger = structlog.get_logger()
@@ -47,6 +48,15 @@ def start_scheduler() -> None:
         trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
         id="daily_digest",
         name="Daily Digest Generation",
+        replace_existing=True,
+    )
+
+    # Job Storage Cleanup Quotidien (3h00 Paris - heure creuse)
+    scheduler.add_job(
+        cleanup_old_articles,
+        trigger=CronTrigger(hour=3, minute=0, timezone=pytz.timezone("Europe/Paris")),
+        id="storage_cleanup",
+        name="Storage Cleanup",
         replace_existing=True,
     )
 
