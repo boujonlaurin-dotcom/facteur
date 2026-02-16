@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../config/theme.dart';
 import '../../../../shared/widgets/buttons/primary_button.dart';
+import '../../../../widgets/design/facteur_image.dart';
 
 class SourcePreviewCard extends StatelessWidget {
   final Map<String, dynamic> data;
@@ -59,9 +60,14 @@ class SourcePreviewCard extends StatelessWidget {
                   height: 48,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    image: DecorationImage(
-                      image: NetworkImage(logoUrl),
-                      fit: BoxFit.cover,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: FacteurImage(
+                    imageUrl: logoUrl,
+                    fit: BoxFit.cover,
+                    errorWidget: (context) => Container(
+                      color: colors.backgroundSecondary,
+                      child: Icon(icon, color: colors.primary),
                     ),
                   ),
                 )

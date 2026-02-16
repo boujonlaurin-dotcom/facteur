@@ -1,7 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
+import 'package:facteur/widgets/design/facteur_image.dart';
+import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -54,36 +55,11 @@ class FeedCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. Image (Header)
-                if (content.thumbnailUrl != null &&
-                    content.thumbnailUrl!.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(FacteurRadius.small)),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: CachedNetworkImage(
-                        imageUrl: content.thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: colors.backgroundSecondary,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colors.primary.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: colors.backgroundSecondary,
-                          child: Icon(
-                            PhosphorIcons.imageBroken(
-                                PhosphorIconsStyle.duotone),
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                FacteurThumbnail(
+                  imageUrl: content.thumbnailUrl,
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(FacteurRadius.small)),
+                ),
 
                 // 2. Body (Title + Meta)
                 Padding(
@@ -164,12 +140,12 @@ class FeedCard extends StatelessWidget {
                                 content.source.logoUrl!.isNotEmpty) ...[
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(4),
-                                child: CachedNetworkImage(
+                                child: FacteurImage(
                                   imageUrl: content.source.logoUrl!,
                                   width: 16,
                                   height: 16,
                                   fit: BoxFit.cover,
-                                  errorWidget: (context, url, error) =>
+                                  errorWidget: (context) =>
                                       _buildSourcePlaceholder(colors),
                                 ),
                               ),
