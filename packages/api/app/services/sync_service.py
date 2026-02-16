@@ -54,25 +54,17 @@ class SyncService:
         
         async def sync_with_semaphore(source: Source):
             async with semaphore:
-                # Si on a un session_maker, on crée une session dédiée pour la tâche
                 if self.session_maker:
                     async with self.session_maker() as session:
-                        # On ré-associe l'objet source à la nouvelle session si nécessaire
-                        # Mais plus simple : on repasse par l'ID
                         stmt = select(Source).where(Source.id == source.id)
                         res = await session.execute(stmt)
                         source_obj = res.scalar_one()
-                        
-                        # Temporairement on "patche" self.session pour process_source
-                        # Hackish mais évite de refactorer tout process_source(session, source)
-                        old_session = self.session
-                        self.session = session
-                        try:
-                            return await self.process_source(source_obj)
-                        finally:
-                            self.session = old_session
+
+                        # Isolated SyncService instance per task (no shared session mutation)
+                        task_service = SyncService(session, self.session_maker)
+                        task_service.client = self.client
+                        return await task_service.process_source(source_obj)
                 else:
-                    # Fallback séquentiel sécurisé si pas de session_maker
                     return await self.process_source(source)
 
         tasks = [sync_with_semaphore(s) for s in sources]

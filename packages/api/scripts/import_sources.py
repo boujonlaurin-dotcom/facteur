@@ -58,11 +58,11 @@ VALID_THEMES = {
 CURATED_FEED_FALLBACKS = {
     # --- New CURATED sources (Story 4.1c Part 2/3) ---
     "https://www.francetvinfo.fr/": "https://www.francetvinfo.fr/titres.rss",
-    "https://www.radiofrance.fr/franceinter": "https://www.radiofrance.fr/franceinter/rss",
+    "https://www.radiofrance.fr/franceinter": "https://radiofrance-podcast.net/podcast09/rss_21207.xml",
     "https://www.rtl.fr/": "https://www.rtl.fr/actu/rss.xml",
     "https://www.europe1.fr/": "https://www.europe1.fr/rss.xml",
-    "https://www.brut.media/fr": "https://www.brut.media/fr/rss",  # May not exist, fallback
-    "https://www.blast-info.fr/": "https://www.blast-info.fr/rss",  # May not exist, fallback
+    "https://www.brut.media/fr": "https://www.brut.media/fr/flux-rss",
+    "https://www.blast-info.fr/": "https://api.blast-info.fr/rss.xml",
     "https://bonpote.com/": "https://bonpote.com/feed/",
     # --- Indexed Tech sources fallbacks ---
     "https://www.frandroid.com/": "https://www.frandroid.com/feed",
@@ -70,10 +70,10 @@ CURATED_FEED_FALLBACKS = {
     "https://www.futura-sciences.com/": "https://www.futura-sciences.com/rss/actualites.xml",
     # --- Existing podcast fallbacks ---
     "https://wondery.com/shows/guerres-de-business/": "https://feeds.megaphone.fm/WWS2399238883",
-    "https://www.irsem.fr/le-collimateur.html": "https://feeds.audiomeans.fr/feed/7f9a1cb1-0490-4886-9f6e-2195f4c4a6a5",
-    "https://www.slate.fr/podcasts/transfert": "https://feeds.audiomeans.fr/feed/295f7004-9442-4b26-8854-d4b8f5f24255",
+    "https://www.irsem.fr/le-collimateur.html": "https://feeds.audiomeans.fr/feed/64ee3763-1a46-44c2-8640-3a69405a3ad8.xml",
+    "https://www.slate.fr/podcasts/transfert": "https://feeds.360.audion.fm/EZqjvOzZXgWIKWg0EETBQ",
     "https://www.arte.tv/fr/videos/RC-014036/le-dessous-des-cartes/": "https://www.youtube.com/feeds/videos.xml?channel_id=UCHGMBrXUzClgjEzBMei-Jdw", 
-    "https://www.youtube.com/user/ScienceEtonnante": "https://www.youtube.com/feeds/videos.xml?channel_id=UC0NCBJ8G4BPaK9K-E86_m8A",
+    "https://www.youtube.com/user/ScienceEtonnante": "https://www.youtube.com/feeds/videos.xml?channel_id=UCaNlbnghtwlsGF-KzAFThqA",
     "https://www.youtube.com/user/dirtybiology": "https://www.youtube.com/feeds/videos.xml?channel_id=UCtqICqGbPSbTN09K1_7VZ3Q",
     "https://www.youtube.com/user/monsieurbidouille": "https://www.youtube.com/feeds/videos.xml?user=monsieurbidouille",
     "https://www.youtube.com/channel/UCLXDAkJ3rTe0khbCV1Q7hSA": "https://www.youtube.com/feeds/videos.xml?channel_id=UCLXDNUOO3EQ80VmD9nQBHPg",
@@ -82,31 +82,31 @@ CURATED_FEED_FALLBACKS = {
     "https://www.epsiloon.com/": None,  # No RSS feed available
     "https://www.philomag.com/": "https://www.philomag.com/feed",
     "https://nouveaudepart.co/": "https://nouveaudepart.substack.com/feed",
-    "https://www.techtrash.fr/": "https://www.techtrash.fr/rss/",
-    "https://le1hebdo.fr/": "https://le1hebdo.fr/rss.php",
+    "https://www.techtrash.fr/": None,  # Newsletter only, no RSS available
+    "https://le1hebdo.fr/": None,  # No RSS available
     "https://theconversation.com/fr": "https://theconversation.com/fr/articles.atom",
     "https://www.socialter.fr/": "https://www.socialter.fr/rss",
     "https://www.alternatives-economiques.fr/": "https://www.alternatives-economiques.fr/flux-rss",
     "https://www.lefigaro.fr/": "https://www.lefigaro.fr/rss/figaro_actualites.xml",
-    "https://www.lesechos.fr/": "https://services.lesechos.fr/rss/les-echos-une.xml",
+    "https://www.lesechos.fr/": None,  # Anti-bot 403, no public RSS
     "https://www.lopinion.fr/": "https://www.lopinion.fr/index.rss",
     "https://www.lepoint.fr/": "https://www.lepoint.fr/rss.xml",
     "https://www.politico.eu/": "https://www.politico.eu/feed/",
-    "https://www.commentaire.fr/": "https://www.commentaire.fr/rss",
+    "https://www.commentaire.fr/": "https://shs.cairn.info/rss/revue/COMM",
     "https://www.lemonde.fr/": "https://www.lemonde.fr/rss/une.xml",
     "https://www.mediapart.fr/": "https://www.mediapart.fr/articles/feed",
     "https://www.liberation.fr/": "https://www.liberation.fr/rss/",
     "https://reporterre.net/": "https://reporterre.net/spip.php?page=backend-simple",
-    "https://www.lecanardenchaine.fr/": "https://www.lecanardenchaine.fr/feed/",
-    "https://www.sismique.world/": "https://feeds.acast.com/public/shows/60f7e411b058c4001306e903",
+    "https://www.lecanardenchaine.fr/": "https://www.lecanardenchaine.fr/rss/index.xml",
+    "https://www.sismique.world/": "https://rss.acast.com/sismique",
     "https://www.rtl.fr/": "https://www.rtl.fr/podcast/le-journal-rtl.xml",
     "https://www.ouest-france.fr/": "https://www.ouest-france.fr/rss/une",
     "https://www.francetvinfo.fr/": "https://www.francetvinfo.fr/titres.rss",
-    "https://www.la-croix.com/": "https://www.la-croix.com/RSS/UNIVERS/ACTUALITE", 
+    "https://www.la-croix.com/": "https://www.la-croix.com/feeds/rss/site.xml",
     "https://www.tf1info.fr/": "https://www.tf1info.fr/flux-rss.xml",
     "https://www.midilibre.fr/": "https://www.midilibre.fr/rss",
     "https://www.cnews.fr/": "https://www.cnews.fr/rss", 
-    "https://www.rts.ch/": "https://www.rts.ch/info/monde/rss",
+    "https://www.rts.ch/": "https://www.rts.ch/info/suisse?format=rss/news",
     "https://www.lecho.be/": "https://www.lecho.be/rss/actualite.xml",
     "https://rmc.bfmtv.com/": "https://rmc.bfmtv.com/rss/info/flux-rss/flux-toutes-les-actualites/",
 }
@@ -240,7 +240,8 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     if internal_type == "youtube":
         feed_url = await detect_youtube_feed(url, client)
     elif internal_type == "podcast" and "radiofrance.fr" in url:
-        feed_url = f"{url.rstrip('/')}.rss"
+        # Check curated fallbacks first; the old .rss suffix pattern no longer works
+        feed_url = CURATED_FEED_FALLBACKS.get(url) or f"{url.rstrip('/')}.rss"
     else:
         feed_url = await detect_site_feed(url, client)
         
