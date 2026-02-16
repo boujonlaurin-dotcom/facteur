@@ -5,7 +5,9 @@ import 'package:facteur/config/theme.dart';
 class FacteurCard extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+  final GestureLongPressStartCallback? onLongPressStart;
+  final GestureLongPressMoveUpdateCallback? onLongPressMoveUpdate;
+  final GestureLongPressEndCallback? onLongPressEnd;
   final ScrollPhysics?
       scrollPhysics; // For cases where we might want to pass physics down
   final Color? backgroundColor;
@@ -16,7 +18,9 @@ class FacteurCard extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.onLongPress,
+    this.onLongPressStart,
+    this.onLongPressMoveUpdate,
+    this.onLongPressEnd,
     this.scrollPhysics,
     this.backgroundColor,
     this.padding,
@@ -91,7 +95,7 @@ class _FacteurCardState extends State<FacteurCard>
       child: widget.child,
     );
 
-    if (widget.onTap == null && widget.onLongPress == null) {
+    if (widget.onTap == null && widget.onLongPressStart == null) {
       return cardContent;
     }
 
@@ -105,12 +109,14 @@ class _FacteurCardState extends State<FacteurCard>
               widget.onTap?.call();
             }
           : null,
-      onLongPress: widget.onLongPress != null
-          ? () async {
+      onLongPressStart: widget.onLongPressStart != null
+          ? (details) async {
               await HapticFeedback.mediumImpact();
-              widget.onLongPress?.call();
+              widget.onLongPressStart?.call(details);
             }
           : null,
+      onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
+      onLongPressEnd: widget.onLongPressEnd,
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: cardContent,

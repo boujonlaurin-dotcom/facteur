@@ -25,6 +25,7 @@ import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../../../widgets/article_preview_modal.dart';
+import 'dart:math' as math;
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
@@ -49,6 +50,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   final ScrollController _scrollController = ScrollController();
   double _maxScrollPercent = 0.0;
   final int _itemsViewed = 0;
+
+  bool _hasNudged = false;
 
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
@@ -439,6 +442,49 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
+                                Widget cardWidget = AnimatedFeedCard(
+                                  isConsumed: isConsumed,
+                                  child: FeedCard(
+                                    content: content,
+                                    onTap: () =>
+                                        _showArticleModal(content),
+                                    onLongPressStart: (_) =>
+                                        ArticlePreviewOverlay.show(
+                                      context,
+                                      content,
+                                    ),
+                                    onLongPressMoveUpdate: (details) =>
+                                        ArticlePreviewOverlay.updateScroll(
+                                      details.localOffsetFromOrigin.dy,
+                                    ),
+                                    onLongPressEnd: (_) =>
+                                        ArticlePreviewOverlay.dismiss(),
+                                    onLike: () {
+                                      ref
+                                          .read(feedProvider.notifier)
+                                          .toggleLike(content);
+                                    },
+                                    isLiked: content.isLiked,
+                                    onSave: () {
+                                      ref
+                                          .read(feedProvider.notifier)
+                                          .toggleSave(content);
+                                    },
+                                    isSaved: content.isSaved,
+                                    onNotInterested: () =>
+                                        _showPersonalizationSheet(content),
+                                  ),
+                                );
+
+                                // Nudge: subtle scale pulse on first card
+                                if (contentIndex == 0 && !_hasNudged) {
+                                  cardWidget = _NudgePulseWrapper(
+                                    onComplete: () =>
+                                        setState(() => _hasNudged = true),
+                                    child: cardWidget,
+                                  );
+                                }
+
                                 return Padding(
                                   key: ValueKey(
                                       '${content.id}_${progressionTopic != null}'),
@@ -446,34 +492,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      AnimatedFeedCard(
-                                        isConsumed: isConsumed,
-                                        child: FeedCard(
-                                          content: content,
-                                          onTap: () =>
-                                              _showArticleModal(content),
-                                          onLongPress: () =>
-                                              ArticlePreviewModal.show(
-                                            context,
-                                            content,
-                                            () => _showArticleModal(content),
-                                          ),
-                                          onLike: () {
-                                            ref
-                                                .read(feedProvider.notifier)
-                                                .toggleLike(content);
-                                          },
-                                          isLiked: content.isLiked,
-                                          onSave: () {
-                                            ref
-                                                .read(feedProvider.notifier)
-                                                .toggleSave(content);
-                                          },
-                                          isSaved: content.isSaved,
-                                          onNotInterested: () =>
-                                              _showPersonalizationSheet(content),
-                                        ),
-                                      ),
+                                      cardWidget,
                                       if (progressionTopic != null) ...[
                                         TweenAnimationBuilder<double>(
                                           tween: Tween(begin: 0.0, end: 1.0),
@@ -570,6 +589,66 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Subtle scale pulse to hint at long-press functionality.
+/// Plays once after a short delay, then calls [onComplete].
+class _NudgePulseWrapper extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onComplete;
+
+  const _NudgePulseWrapper({
+    required this.child,
+    required this.onComplete,
+  });
+
+  @override
+  State<_NudgePulseWrapper> createState() => _NudgePulseWrapperState();
+}
+
+class _NudgePulseWrapperState extends State<_NudgePulseWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onComplete();
+      }
+    });
+    // Start after a short delay so the card is visible first
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted && !_started) {
+        _started = true;
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 1.0 + 0.03 * math.sin(_controller.value * math.pi);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: widget.child,
     );
   }
 }

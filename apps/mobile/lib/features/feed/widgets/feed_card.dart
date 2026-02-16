@@ -9,7 +9,9 @@ import 'package:timeago/timeago.dart' as timeago;
 class FeedCard extends StatelessWidget {
   final Content content;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+  final GestureLongPressStartCallback? onLongPressStart;
+  final GestureLongPressMoveUpdateCallback? onLongPressMoveUpdate;
+  final GestureLongPressEndCallback? onLongPressEnd;
   final VoidCallback? onSave;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
@@ -20,7 +22,9 @@ class FeedCard extends StatelessWidget {
     super.key,
     required this.content,
     this.onTap,
-    this.onLongPress,
+    this.onLongPressStart,
+    this.onLongPressMoveUpdate,
+    this.onLongPressEnd,
     this.onSave,
     this.onLike,
     this.onNotInterested,
@@ -41,7 +45,9 @@ class FeedCard extends StatelessWidget {
         children: [
           FacteurCard(
             onTap: onTap,
-            onLongPress: onLongPress,
+            onLongPressStart: onLongPressStart,
+            onLongPressMoveUpdate: onLongPressMoveUpdate,
+            onLongPressEnd: onLongPressEnd,
             padding: EdgeInsets.zero,
             borderRadius: FacteurRadius.small,
             child: Column(
