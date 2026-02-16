@@ -25,7 +25,6 @@ DEFAULT_PAYWALL_CONFIG: dict = {
         "Article premium",
         "🔒",
         "🔐",
-        "Accès libre",  # Paradoxalement, souvent dans les feeds mixtes payant/gratuit
     ],
     "url_patterns": [
         "/premium/",
@@ -35,7 +34,10 @@ DEFAULT_PAYWALL_CONFIG: dict = {
     "min_content_length": 200,
 }
 
-PAYWALL_THRESHOLD = 5
+# Threshold lowered to 3: a single keyword match (+3) is sufficient.
+# RSS feeds rarely expose URL patterns or truncated content, so requiring
+# corroborating evidence (score >= 5) caused 0% detection in practice.
+PAYWALL_THRESHOLD = 3
 
 # In-memory cache: source_id -> (config, expiry_timestamp)
 _config_cache: dict[str, tuple[dict, float]] = {}
