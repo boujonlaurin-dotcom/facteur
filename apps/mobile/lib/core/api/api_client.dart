@@ -83,11 +83,10 @@ class ApiClient {
     _dio.interceptors.add(
       RetryInterceptor(
         dio: _dio,
-        maxRetries: 3,
+        maxRetries: 2,
         retryDelays: const [
-          Duration(milliseconds: 500),
           Duration(seconds: 1),
-          Duration(seconds: 2),
+          Duration(seconds: 3),
         ],
       ),
     );

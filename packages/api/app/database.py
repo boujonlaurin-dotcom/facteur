@@ -45,8 +45,8 @@ if _use_queue_pool:
         poolclass=AsyncAdaptedQueuePool,
         # Pool size optimized for Supabase PgBouncer (60 connection limit shared)
         # Conservative sizing to avoid overwhelming Supabase connection pooler
-        pool_size=2,
-        max_overflow=3,
+        pool_size=5,
+        max_overflow=5,
         # Connection timeout - increased to prevent pool exhaustion
         pool_timeout=30,
         # Recycle connections frequently to prevent Supabase from killing them

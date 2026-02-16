@@ -56,7 +56,12 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   Future<DigestResponse> _loadDigest({DateTime? date}) async {
     final repository = ref.read(digestRepositoryProvider);
-    final digest = await repository.getDigest(date: date);
+    final digest = await repository.getDigest(date: date).timeout(
+      const Duration(seconds: 45),
+      onTimeout: () => throw TimeoutException(
+        'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
+      ),
+    );
     // Update cache after successful API call
     _updateCache(digest);
     return digest;

@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
 
     @model_validator(mode="after")
+    def auto_detect_railway_environment(self) -> "Settings":
+        """Auto-detect Railway production environment from RAILWAY_ENVIRONMENT_NAME."""
+        railway_env = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "")
+        if railway_env and self.environment == "development":
+            object.__setattr__(self, 'environment', 'production')
+        return self
+
+    @model_validator(mode="after")
     def validate_production_db(self) -> "Settings":
         """Empêche l'utilisation de localhost en production."""
         if self.is_production and not os.environ.get("DATABASE_URL"):
