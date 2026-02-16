@@ -335,11 +335,15 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           child: FeedCard(
             content: _convertToContent(item),
             onTap: () => widget.onItemTap(item),
-            onLongPress: () => ArticlePreviewModal.show(
+            onLongPressStart: (_) => ArticlePreviewOverlay.show(
               context,
               _convertToContent(item),
-              () => widget.onItemTap(item),
             ),
+            onLongPressMoveUpdate: (details) =>
+                ArticlePreviewOverlay.updateScroll(
+              details.localOffsetFromOrigin.dy,
+            ),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
             onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
             isLiked: item.isLiked,
             onSave: widget.onSave != null ? () => widget.onSave!(item) : null,

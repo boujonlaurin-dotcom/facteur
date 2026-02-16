@@ -134,12 +134,17 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
                                   isSaved: true,
                                   isLiked: content.isLiked,
                                   onTap: openArticle,
-                                  onLongPress: () =>
-                                      ArticlePreviewModal.show(
+                                  onLongPressStart: (_) =>
+                                      ArticlePreviewOverlay.show(
                                     context,
                                     content,
-                                    openArticle,
                                   ),
+                                  onLongPressMoveUpdate: (details) =>
+                                      ArticlePreviewOverlay.updateScroll(
+                                    details.localOffsetFromOrigin.dy,
+                                  ),
+                                  onLongPressEnd: (_) =>
+                                      ArticlePreviewOverlay.dismiss(),
                                   onSave: () async {
                                     // Remove from saved (unbookmark)
                                     if (!mounted) return;
