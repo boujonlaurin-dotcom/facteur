@@ -76,6 +76,17 @@ class Settings(BaseSettings):
     # RSS Retention
     rss_retention_days: int = 14
 
+    @field_validator("rss_retention_days")
+    @classmethod
+    def validate_rss_retention_days(cls, v: int) -> int:
+        """Empêche des valeurs négatives qui causeraient une suppression totale."""
+        if v < 0:
+            raise ValueError(
+                "rss_retention_days must be a non-negative integer (got {v}). "
+                "Negative values would delete ALL data instead of old data."
+            )
+        return v
+
     # CORS
     cors_origins: list[str] = ["*"]
 
