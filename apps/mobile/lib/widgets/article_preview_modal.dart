@@ -124,7 +124,14 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
     final screenSize = MediaQuery.of(context).size;
     final content = widget.content;
 
-    return AnimatedBuilder(
+    // Listener catches PointerUp independently of the gesture arena,
+    // guaranteeing dismissal even if the GestureDetector loses track
+    // (e.g. widget rebuild during long-press in a CustomScrollView).
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerUp: (_) => ArticlePreviewOverlay.dismiss(),
+      onPointerCancel: (_) => ArticlePreviewOverlay.dismiss(),
+      child: AnimatedBuilder(
       animation: _animController,
       builder: (context, child) {
         return Stack(
@@ -147,8 +154,8 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
                       .animate(_curvedAnimation),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxWidth: screenSize.width * 0.9,
-                      maxHeight: screenSize.height * 0.75,
+                      maxWidth: screenSize.width,
+                      maxHeight: screenSize.height * 0.85,
                     ),
                     child: Material(
                       color: Colors.transparent,
@@ -295,18 +302,20 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
                                           overflow: TextOverflow.ellipsis,
                                         ),
 
-                                        // Description (no maxLines — scrollable)
+                                        // Description (no maxLines — scrollable, HTML stripped)
                                         if (content.description != null &&
                                             content
                                                 .description!.isNotEmpty) ...[
                                           const SizedBox(
                                               height: FacteurSpacing.space3),
                                           Text(
-                                            content.description!,
+                                            _stripHtml(content.description!),
                                             style: textTheme.bodyMedium
                                                 ?.copyWith(
-                                              color: colors.textSecondary,
-                                              height: 1.4,
+                                              color: colors.textPrimary
+                                                  .withValues(alpha: 0.85),
+                                              height: 1.5,
+                                              fontSize: 14.5,
                                             ),
                                           ),
                                         ],
@@ -358,6 +367,7 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
           ],
         );
       },
+    ),
     );
   }
 
@@ -407,5 +417,27 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
     if (seconds < 60) return '${seconds}s';
     final minutes = (seconds / 60).ceil();
     return '$minutes min';
+  }
+
+  /// Strip HTML tags and decode common entities from RSS descriptions.
+  static String _stripHtml(String html) {
+    // Remove HTML tags
+    var text = html.replaceAll(RegExp(r'<[^>]+>'), '');
+    // Decode common HTML entities
+    text = text
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'")
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&#8217;', '\u2019')
+        .replaceAll('&#8216;', '\u2018')
+        .replaceAll('&#8220;', '\u201C')
+        .replaceAll('&#8221;', '\u201D');
+    // Collapse multiple whitespace/newlines into single space
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return text;
   }
 }
