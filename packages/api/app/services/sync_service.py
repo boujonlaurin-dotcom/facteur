@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import datetime
 import re
 import html
@@ -60,9 +61,9 @@ class SyncService:
                         res = await session.execute(stmt)
                         source_obj = res.scalar_one()
 
-                        # Isolated SyncService instance per task (no shared session mutation)
-                        task_service = SyncService(session, self.session_maker)
-                        task_service.client = self.client
+                        # Shallow copy isolates session state without creating a new httpx client
+                        task_service = copy.copy(self)
+                        task_service.session = session
                         return await task_service.process_source(source_obj)
                 else:
                     return await self.process_source(source)
