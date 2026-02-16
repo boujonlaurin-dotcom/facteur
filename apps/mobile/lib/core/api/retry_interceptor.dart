@@ -67,9 +67,11 @@ class RetryInterceptor extends Interceptor {
       return true;
     }
 
-    // Retry sur les erreurs 5xx (serveur)
+    // Retry sur les erreurs 5xx (serveur), sauf 503 (surcharge)
     final statusCode = err.response?.statusCode;
     if (statusCode != null && statusCode >= 500 && statusCode < 600) {
+      // Ne pas retry 503 (serveur surcharge) - les retries aggravent le probleme
+      if (statusCode == 503) return false;
       return true;
     }
 

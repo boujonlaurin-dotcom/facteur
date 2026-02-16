@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -505,13 +507,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            error.toString(),
-            style: TextStyle(
-              color: colors.textTertiary,
-              fontSize: 14,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _userFriendlyError(error),
+              style: TextStyle(
+                color: colors.textTertiary,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -522,6 +527,20 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         ],
       ),
     );
+  }
+
+  String _userFriendlyError(Object error) {
+    if (error is TimeoutException) {
+      return 'Le serveur met trop de temps à répondre.\nVérifiez votre connexion et réessayez.';
+    }
+    final msg = error.toString().toLowerCase();
+    if (msg.contains('socket') || msg.contains('connection')) {
+      return 'Connexion au serveur impossible.\nVérifiez votre connexion internet.';
+    }
+    if (msg.contains('503') || msg.contains('service unavailable')) {
+      return 'Le serveur est temporairement indisponible.\nRéessayez dans quelques instants.';
+    }
+    return 'Une erreur est survenue.\nVeuillez réessayer.';
   }
 
   /// Converts DigestItem to Content for navigation and PersonalizationSheet

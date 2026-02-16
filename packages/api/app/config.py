@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     app_name: str = "Facteur API"
     app_version: str = "1.0.0"
     environment: Literal["development", "staging", "production"] = "development"
-    debug: bool = True
+    debug: bool = False
 
     # Server
     host: str = "0.0.0.0"
@@ -84,6 +84,14 @@ class Settings(BaseSettings):
 
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
+
+    @model_validator(mode="after")
+    def auto_detect_railway_environment(self) -> "Settings":
+        """Auto-detect Railway production environment from RAILWAY_ENVIRONMENT_NAME."""
+        railway_env = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "")
+        if railway_env and self.environment == "development":
+            object.__setattr__(self, 'environment', 'production')
+        return self
 
     @model_validator(mode="after")
     def validate_production_db(self) -> "Settings":
