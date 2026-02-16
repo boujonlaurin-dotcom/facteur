@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     app_name: str = "Facteur API"
     app_version: str = "1.0.0"
     environment: Literal["development", "staging", "production"] = "development"
-    debug: bool = True
+    debug: bool = False
 
     # Server
     host: str = "0.0.0.0"
