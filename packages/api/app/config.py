@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     rss_sync_interval_minutes: int = 30
     rss_sync_enabled: bool = True
 
+    # RSS Retention
+    rss_retention_days: int = 14
+
     # CORS
     cors_origins: list[str] = ["*"]
 
