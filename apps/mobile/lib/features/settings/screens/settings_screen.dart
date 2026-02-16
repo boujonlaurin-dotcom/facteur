@@ -70,7 +70,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       horizontal: FacteurSpacing.space4,
                     ),
                     child: Material(
-                      color: colors.info.withValues(alpha: 0.1),
+                      color: colors.primary.withValues(alpha: 0.1),
                       borderRadius:
                           BorderRadius.circular(FacteurRadius.large),
                       child: InkWell(
@@ -94,7 +94,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               Icon(
                                 PhosphorIcons.chatCircleDots(
                                     PhosphorIconsStyle.regular),
-                                color: colors.info,
+                                color: colors.primary,
                                 size: 24,
                               ),
                               const SizedBox(width: FacteurSpacing.space4),
@@ -110,7 +110,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           .bodyMedium
                                           ?.copyWith(
                                             fontWeight: FontWeight.w600,
-                                            color: colors.info,
+                                            color: colors.primary,
                                           ),
                                     ),
                                     const SizedBox(height: 2),
@@ -120,7 +120,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           .textTheme
                                           .bodySmall
                                           ?.copyWith(
-                                            color: colors.info
+                                            color: colors.primary
                                                 .withValues(alpha: 0.7),
                                           ),
                                     ),
@@ -130,7 +130,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               Icon(
                                 PhosphorIcons.arrowSquareOut(
                                     PhosphorIconsStyle.regular),
-                                color: colors.info.withValues(alpha: 0.6),
+                                color: colors.primary.withValues(alpha: 0.6),
                                 size: 18,
                               ),
                             ],
@@ -164,7 +164,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         title: 'Mes sauvegardes',
                         subtitle: 'Articles à consulter plus tard',
                         onTap: () {
-                          context.go(RoutePaths.saved);
+                          context.push(RoutePaths.saved);
                         },
                       ),
                       _buildTile(

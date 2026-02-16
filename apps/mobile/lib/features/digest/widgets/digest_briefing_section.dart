@@ -51,12 +51,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final modeColor = widget.mode.effectiveColor(colors.primary);
 
-    // Calculate reading time (average 2 min per article if null)
-    final totalSeconds = widget.items.fold<int>(0, (sum, item) {
-      return sum + (item.durationSeconds ?? 120);
-    });
-    final totalMinutes = (totalSeconds / 60).ceil();
-
     // Gradient adapté au thème : dark → gradients sombres, light → gradients clairs.
     final gradStart =
         isDark ? widget.mode.gradientStart : widget.mode.lightGradientStart;
@@ -66,8 +60,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     // Couleurs internes : texte et icônes s'adaptent au fond du container.
     final textPrimary =
         isDark ? Colors.white : const Color(0xFF2C1E10);
-    final textSecondary =
-        isDark ? Colors.white.withValues(alpha: 0.5) : const Color(0xFF5C4A38);
 
     // TweenAnimationBuilder for smooth gradient transitions between modes.
     // Only `end` is set so changes animate from current value → new.
@@ -89,7 +81,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             : blendedEnd.withValues(alpha: 0.55);
 
         return Container(
-          margin: const EdgeInsets.only(top: 16, bottom: 12),
+          margin: const EdgeInsets.only(top: 12, bottom: 8),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
@@ -113,7 +105,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
             ],
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -121,55 +113,27 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: title + reading time
+                  // Left: title + progress bar
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                "L'Essentiel du jour",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .displaySmall
-                                    ?.copyWith(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: -0.5,
-                                      color: textPrimary,
-                                    ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        Text(
+                          "L'Essentiel du jour",
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: textPrimary,
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            _buildSegmentedProgressBar(colors, isDark),
-                          ],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Icon(
-                              PhosphorIcons.clock(
-                                  PhosphorIconsStyle.regular),
-                              size: 14,
-                              color: textSecondary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$totalMinutes min de lecture',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
-                                  ?.copyWith(
-                                    color: textSecondary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                            ),
-                          ],
-                        ),
+                        _buildSegmentedProgressBar(colors, isDark),
                       ],
                     ),
                   ),
@@ -202,7 +166,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
 
               // List of articles
               ListView.separated(
@@ -210,7 +174,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: widget.items.length,
                 separatorBuilder: (context, index) =>
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 5),
                 itemBuilder: (context, index) {
                   final item = widget.items[index];
                   return _buildRankedCard(context, item, index + 1);
