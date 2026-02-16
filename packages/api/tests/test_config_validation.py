@@ -40,11 +40,11 @@ def test_rss_retention_days_accepts_positive_values():
         assert settings.rss_retention_days == 30
 
 
-def test_rss_retention_days_default_is_14():
-    """Verify default retention is 14 days."""
+def test_rss_retention_days_default_is_20():
+    """Verify default retention is 20 days."""
     # Clear env var if set
     with patch.dict(os.environ, {}, clear=True):
         from app.config import Settings
 
         settings = Settings()
-        assert settings.rss_retention_days == 14
+        assert settings.rss_retention_days == 20

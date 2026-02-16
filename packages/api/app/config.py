@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     rss_sync_enabled: bool = True
 
     # RSS Retention
-    rss_retention_days: int = 14
+    rss_retention_days: int = 20
 
     @field_validator("rss_retention_days")
     @classmethod

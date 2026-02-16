@@ -47,11 +47,12 @@ FROM contents;
 -- Attendu: 70-80% des articles ont > 14 jours (inutiles pour digests)
 ```
 
-### Pourquoi 14 jours?
+### Pourquoi 20 jours?
 - **Digest quotidien**: Utilise uniquement articles récents (< 7 jours en pratique)
-- **Buffer de sécurité**: 14 jours = 2x la fenêtre active
-- **User behavior**: Aucun user ne consulte articles > 2 semaines
-- **Storage impact**: Purge 14j+ libère ~150-200 MB (50% du storage)
+- **Buffer de sécurité**: 20 jours = 3x la fenêtre active
+- **User behavior**: Aucun user ne consulte articles > 3 semaines
+- **Bookmarks préservés**: Les articles favoris ne sont jamais supprimés
+- **Storage impact**: Purge 20j+ libère ~150-200 MB (50% du storage)
 
 ---
 
@@ -59,7 +60,7 @@ FROM contents;
 
 ### Stratégie: Purge Automatique Quotidienne
 
-Implémentation d'un worker de nettoyage quotidien (cron 3 AM Paris) qui supprime les articles > 14 jours.
+Implémentation d'un worker de nettoyage quotidien (cron 3 AM Paris) qui supprime les articles > 20 jours **sauf les bookmarks** (is_saved=True).
 
 ### Architecture
 ```
@@ -68,7 +69,7 @@ Implémentation d'un worker de nettoyage quotidien (cron 3 AM Paris) qui supprim
 ├─────────────────────────────────────────────────────────────┤
 │ • RSS Sync (30 min interval)  → Ajoute articles             │
 │ • Daily Digest (8 AM)         → Consomme articles récents   │
-│ • Storage Cleanup (3 AM)      → Supprime articles > 14j  ✨ │
+│ • Storage Cleanup (3 AM)      → Supprime articles > 20j (sauf bookmarks) ✨ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,9 +81,10 @@ La suppression d'un article `contents` déclenche CASCADE sur:
 - ⚠️ `daily_digest.items` (JSONB) → Orphelins mais **non bloquant** (digests passés non affichés)
 
 ### Configuration
-- **Env var**: `RSS_RETENTION_DAYS` (default: 14)
+- **Env var**: `RSS_RETENTION_DAYS` (default: 20)
 - **Runtime**: Modifiable sans redéploiement (config.py LRU cache)
 - **Monitoring**: `verify_storage_health.sh` pour alerting
+- **Bookmarks**: Automatiquement exclus (WHERE NOT IN bookmarked_subquery)
 
 ---
 
@@ -96,13 +98,14 @@ La suppression d'un article `contents` déclenche CASCADE sur:
    - Logging structuré (start, skip, completion, error)
    - Rollback automatique sur erreur
 
-2. **`packages/api/tests/test_storage_cleanup.py`** (146 lignes)
-   - 5 tests unitaires:
+2. **`packages/api/tests/test_storage_cleanup.py`** (200+ lignes)
+   - 6 tests unitaires:
      - `test_cleanup_deletes_old_articles`
      - `test_cleanup_skips_when_no_old_articles`
      - `test_cleanup_rollback_on_error`
      - `test_cleanup_respects_custom_retention_days`
      - `test_cleanup_logs_statistics`
+     - `test_cleanup_preserves_bookmarked_articles` ✨ (nouveau)
 
 3. **`docs/qa/scripts/verify_storage_health.sh`** (44 lignes)
    - Query `pg_database_size(current_database())`
@@ -179,14 +182,20 @@ DATABASE_URL="postgresql://..." bash docs/qa/scripts/verify_storage_health.sh
 
 ```sql
 -- ÉTAPE 1: Vérifier le nombre d'articles à supprimer (DRY RUN)
+-- ⚠️ EXCLUT les bookmarks (is_saved=True) pour préserver les favoris users
 SELECT
-    COUNT(*) as articles_to_delete,
-    MIN(published_at) as oldest_article,
-    MAX(published_at) as newest_article_to_delete
-FROM contents
-WHERE published_at < NOW() - INTERVAL '14 days';
+    COUNT(*) FILTER (WHERE c.id NOT IN (
+        SELECT content_id FROM user_content_status WHERE is_saved = true
+    )) as articles_to_delete,
+    COUNT(*) FILTER (WHERE c.id IN (
+        SELECT content_id FROM user_content_status WHERE is_saved = true
+    )) as bookmarks_preserved,
+    MIN(c.published_at) as oldest_article,
+    MAX(c.published_at) as newest_to_delete
+FROM contents c
+WHERE c.published_at < NOW() - INTERVAL '20 days';
 
--- Attendu: ~5000-8000 articles (estimation pour 10 users)
+-- Attendu: ~5000-7000 articles to delete, ~200-500 bookmarks preserved
 
 -- ÉTAPE 2: Vérifier l'espace avant purge
 SELECT pg_database_size(current_database()) / 1024 / 1024 AS size_before_mb;
@@ -194,9 +203,13 @@ SELECT pg_database_size(current_database()) / 1024 / 1024 AS size_before_mb;
 -- Attendu: ~411 MB
 
 -- ÉTAPE 3: Exécuter la purge (ATTENTION: Action irréversible)
+-- ⚠️ PRÉSERVE les bookmarks (is_saved=True)
 -- ⚠️ Les FK CASCADE supprimeront aussi user_content_status, daily_top3, classification_queue
 DELETE FROM contents
-WHERE published_at < NOW() - INTERVAL '14 days';
+WHERE published_at < NOW() - INTERVAL '20 days'
+  AND id NOT IN (
+      SELECT content_id FROM user_content_status WHERE is_saved = true
+  );
 
 -- ÉTAPE 4: Vérifier l'espace après purge
 SELECT pg_database_size(current_database()) / 1024 / 1024 AS size_after_mb;
@@ -206,11 +219,13 @@ SELECT pg_database_size(current_database()) / 1024 / 1024 AS size_after_mb;
 -- ÉTAPE 5: Vérifier la répartition des articles restants
 SELECT
     COUNT(*) as remaining_articles,
+    COUNT(*) FILTER (WHERE published_at >= NOW() - INTERVAL '20 days') as recent,
+    COUNT(*) FILTER (WHERE published_at < NOW() - INTERVAL '20 days') as old_bookmarks,
     MIN(published_at) as oldest_remaining,
     MAX(published_at) as newest_article
 FROM contents;
 
--- Attendu: ~2000-3000 articles récents (< 14 jours)
+-- Attendu: ~2000-3000 articles récents + 200-500 vieux bookmarks préservés
 ```
 
 ### Screenshots à capturer
