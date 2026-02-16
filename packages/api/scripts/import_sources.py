@@ -88,7 +88,7 @@ CURATED_FEED_FALLBACKS = {
     "https://www.socialter.fr/": "https://www.socialter.fr/rss",
     "https://www.alternatives-economiques.fr/": "https://www.alternatives-economiques.fr/flux-rss",
     "https://www.lefigaro.fr/": "https://www.lefigaro.fr/rss/figaro_actualites.xml",
-    "https://www.lesechos.fr/": None,  # Anti-bot 403, no public RSS
+    "https://www.lesechos.fr/": "https://services.lesechos.fr/rss/les-echos-une.xml",
     "https://www.lopinion.fr/": "https://www.lopinion.fr/index.rss",
     "https://www.lepoint.fr/": "https://www.lepoint.fr/rss.xml",
     "https://www.politico.eu/": "https://www.politico.eu/feed/",
