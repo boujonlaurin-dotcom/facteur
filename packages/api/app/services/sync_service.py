@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, SourceType
-from app.models.source import Source
+from app.models.source import Source, UserSource
 from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
@@ -40,9 +40,18 @@ class SyncService:
         """Synchronise toutes les sources actives avec une limite de concomitance."""
         logger.info("Starting sync of all sources")
         
-        # Récupérer les sources actives
+        # Sync curated sources + user custom sources only (not indexed candidates)
+        custom_source_ids = (
+            select(UserSource.source_id)
+            .where(UserSource.is_custom == True)
+            .distinct()
+            .scalar_subquery()
+        )
         result = await self.session.execute(
-            select(Source).where(Source.is_active == True)
+            select(Source).where(
+                Source.is_active == True,
+                (Source.is_curated == True) | (Source.id.in_(custom_source_ids))
+            )
         )
         sources = result.scalars().all()
         
