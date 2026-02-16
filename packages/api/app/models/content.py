@@ -31,6 +31,9 @@ class Content(Base):
         # Partial index for Emergency Fallback on curated sources
         # Note: Partial index condition handled in migration
         Index("ix_contents_curated_published", "published_at", "source_id"),
+        # Composite index for theme-filtered queries with ORDER BY published_at DESC
+        # Replaces single-column ix_contents_theme (composite is a strict superset)
+        Index("ix_contents_theme_published", "theme", "published_at"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -62,7 +65,7 @@ class Content(Base):
     topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Thème inféré par ML à partir du titre/description (Phase 2 diversité feed)
     # Slug normalisé dérivé du top topic classifié (tech, society, etc.)
-    theme: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    theme: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     # Story 4.2-US-4: Named Entity Recognition
     # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Paywall detection: whether article is behind a paywall
