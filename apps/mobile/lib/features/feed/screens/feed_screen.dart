@@ -316,6 +316,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             onFilterChanged: (String? filter) {
                               if (filter == 'recent') {
                                 notifier.setFilter('recent');
+                              } else if (filter == null) {
+                                notifier.setFilter(null);
                               } else {
                                 notifier.setTheme(filter);
                               }
