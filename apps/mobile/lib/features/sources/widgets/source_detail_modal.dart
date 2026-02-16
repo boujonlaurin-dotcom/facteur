@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../models/source_model.dart';
 import '../../../widgets/design/facteur_button.dart';
 
@@ -41,7 +41,7 @@ class SourceDetailModal extends StatelessWidget {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: source.logoUrl != null
-                    ? CachedNetworkImage(
+                    ? FacteurImage(
                         imageUrl: source.logoUrl!, fit: BoxFit.cover)
                     : Icon(PhosphorIcons.article(), color: colors.secondary),
               ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/facteur_stamp.dart';
 import '../models/source_model.dart';
 import 'source_detail_modal.dart';
@@ -71,10 +71,10 @@ class SourceListItem extends StatelessWidget {
               ),
               clipBehavior: Clip.antiAlias,
               child: source.logoUrl != null && source.logoUrl!.isNotEmpty
-                  ? CachedNetworkImage(
+                  ? FacteurImage(
                       imageUrl: source.logoUrl!,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => Center(
+                      placeholder: (context) => Center(
                         child: SizedBox(
                           width: 16,
                           height: 16,
@@ -84,7 +84,7 @@ class SourceListItem extends StatelessWidget {
                           ),
                         ),
                       ),
-                      errorWidget: (context, url, error) =>
+                      errorWidget: (context) =>
                           Icon(_typeIcon, color: colors.secondary, size: 20),
                     )
                   : Icon(_typeIcon, color: colors.secondary, size: 20),

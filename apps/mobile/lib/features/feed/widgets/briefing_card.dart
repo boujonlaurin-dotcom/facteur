@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../models/content_model.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class BriefingCard extends StatelessWidget {
   final DailyTop3Item item;
@@ -109,11 +109,11 @@ class BriefingCard extends StatelessWidget {
                       Row(
                         children: [
                           if (item.content.source.logoUrl != null)
-                            CachedNetworkImage(
+                            FacteurImage(
                               imageUrl: item.content.source.logoUrl!,
                               width: 16,
                               height: 16,
-                              errorWidget: (_, __, ___) => const SizedBox(),
+                              errorWidget: (_) => const SizedBox(),
                             ),
                           const SizedBox(width: 4),
                           Expanded(
@@ -172,16 +172,16 @@ class BriefingCard extends StatelessWidget {
               if (item.content.thumbnailUrl != null)
                 SizedBox(
                   width: 100,
-                  child: CachedNetworkImage(
+                  child: FacteurImage(
                     imageUrl: item.content.thumbnailUrl!,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
+                    placeholder: (context) => Container(
                       color: colors.surface,
                       child: Icon(
                           PhosphorIcons.image(PhosphorIconsStyle.duotone),
                           color: colors.textTertiary),
                     ),
-                    errorWidget: (context, url, error) => Container(
+                    errorWidget: (context) => Container(
                       color: colors.surface,
                     ),
                   ),

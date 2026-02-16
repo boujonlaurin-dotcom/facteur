@@ -1,9 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
+import '../../../widgets/design/facteur_thumbnail.dart';
 import '../models/digest_models.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import 'article_action_bar.dart';
@@ -43,35 +44,11 @@ class DigestCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. Thumbnail with rank badge overlay
-                if (item.thumbnailUrl != null && item.thumbnailUrl!.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(FacteurRadius.small)),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: CachedNetworkImage(
-                        imageUrl: item.thumbnailUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: colors.backgroundSecondary,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colors.primary.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          color: colors.backgroundSecondary,
-                          child: Icon(
-                            PhosphorIcons.imageBroken(
-                                PhosphorIconsStyle.duotone),
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                FacteurThumbnail(
+                  imageUrl: item.thumbnailUrl,
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(FacteurRadius.small)),
+                ),
 
                 // 2. Body (Title + Meta + Reason)
                 Padding(
@@ -176,12 +153,12 @@ class DigestCard extends StatelessWidget {
                           item.source!.logoUrl!.isNotEmpty) ...[
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
+                          child: FacteurImage(
                             imageUrl: item.source!.logoUrl!,
                             width: 16,
                             height: 16,
                             fit: BoxFit.cover,
-                            errorWidget: (context, url, error) =>
+                            errorWidget: (context) =>
                                 _buildSourcePlaceholder(colors),
                           ),
                         ),
