@@ -9,6 +9,7 @@ import '../providers/conclusion_notifier.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
 import '../widgets/minimal_loader.dart';
+import '../widgets/theme_choice_bottom_sheet.dart';
 
 /// Écran d'animation de conclusion de l'onboarding
 /// Affiche une animation élégante pendant la sauvegarde des réponses
@@ -57,16 +58,23 @@ class _ConclusionAnimationScreenState
     );
   }
 
-  void _completeOnboarding() {
+  Future<void> _completeOnboarding() async {
     // Marquer l'onboarding comme terminé dans l'auth state
     ref.read(authStateProvider.notifier).setOnboardingCompleted();
 
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
 
+    // Proposer le choix du thème avant de naviguer
+    if (mounted) {
+      await showThemeChoiceBottomSheet(context, ref);
+    }
+
     // Naviguer vers le digest avec paramètre first pour welcome experience
     // context.go() remplace toute la stack (pas de back vers onboarding)
-    context.go('${RoutePaths.digest}?first=true');
+    if (mounted) {
+      context.go('${RoutePaths.digest}?first=true');
+    }
   }
 }
 

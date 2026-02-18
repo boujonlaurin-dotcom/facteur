@@ -11,9 +11,10 @@ import 'questions/age_question.dart';
 import 'questions/approach_question.dart';
 import 'questions/perspective_question.dart';
 import 'questions/response_style_question.dart';
-import 'questions/content_recency_question.dart';
 import 'questions/gamification_question.dart';
-import 'questions/weekly_goal_question.dart';
+import 'questions/article_count_question.dart';
+import 'questions/digest_mode_question.dart';
+import 'questions/media_concentration_screen.dart';
 import 'questions/themes_question.dart';
 import 'questions/sources_question.dart';
 import 'questions/finalize_question.dart';
@@ -47,7 +48,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
               child: Row(
                 children: [
-                  // Back button (visible only if can go back)
                   if (state.currentQuestionIndex > 0)
                     IconButton(
                       onPressed: () {
@@ -57,21 +57,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       tooltip: OnboardingStrings.backButtonTooltip,
                     )
                   else
-                    const SizedBox(width: 48), // Placeholder for alignment
-                  // Progress bar
+                    const SizedBox(width: 48),
                   Expanded(
                     child: OnboardingProgressBar(
                       progress: state.progress,
                       section: state.currentSection,
                     ),
                   ),
-
-                  const SizedBox(width: 48), // Balance the layout
+                  const SizedBox(width: 48),
                 ],
               ),
             ),
 
-            // Contenu de la question
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
@@ -112,7 +109,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  /// Section 1 : Overview (Q1-Q4 + R1)
+  /// Section 1 : Overview
   Widget _buildSection1Content(OnboardingState state) {
     final question = state.currentSection1Question;
 
@@ -123,13 +120,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case Section1Question.intro2:
         return const IntroScreen2(key: ValueKey('intro2'));
 
+      case Section1Question.mediaConcentration:
+        return const MediaConcentrationScreen(
+            key: ValueKey('media_concentration'));
+
       case Section1Question.objective:
         return const ObjectiveQuestion(key: ValueKey('objective'));
 
       case Section1Question.objectiveReaction:
-        final objective = state.answers.objective ?? 'learn';
-        final reaction = ObjectiveReactionMessages.messages[objective] ??
-            ObjectiveReactionMessages.messages['noise']!;
+        final objectives = state.answers.objectives ?? ['noise'];
+        final reaction = ObjectiveReactionMessages.getReaction(objectives);
         return ReactionScreen(
           key: const ValueKey('objective_reaction'),
           title: reaction.title,
@@ -147,7 +147,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
-  /// Section 2 : App Preferences (Q5-Q8b + R2)
+  /// Section 2 : App Preferences
   Widget _buildSection2Content(OnboardingState state) {
     final question = state.currentSection2Question;
 
@@ -158,34 +158,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case Section2Question.responseStyle:
         return const ResponseStyleQuestion(key: ValueKey('response_style'));
 
-      case Section2Question.contentRecency:
-        return const ContentRecencyQuestion(key: ValueKey('content_recency'));
-
-      case Section2Question.preferencesReaction:
-        final reaction = PreferencesReactionMessages.getReaction(
-          contentRecency: state.answers.contentRecency,
-        );
-        return ReactionScreen(
-          key: const ValueKey('preferences_reaction'),
-          title: reaction.title,
-          message: reaction.message,
-          onContinue: () {
-            ref
-                .read(onboardingProvider.notifier)
-                .continueAfterSection2Reaction();
-          },
-        );
-
       case Section2Question.gamification:
         return const GamificationQuestion(key: ValueKey('gamification'));
 
-      case Section2Question.weeklyGoal:
-        return const WeeklyGoalQuestion(key: ValueKey('weekly_goal'));
+      case Section2Question.articleCount:
+        return const ArticleCountQuestion(key: ValueKey('article_count'));
+
+      case Section2Question.digestMode:
+        return const DigestModeQuestion(key: ValueKey('digest_mode'));
     }
   }
 
-  /// Section 3 : Source Preferences (Themes → Sources → Finalize)
-  /// Ordre: Thèmes d'abord (Q9), puis Sources avec pré-sélection (Q10), puis Finalize
+  /// Section 3 : Source Preferences (Themes → Sources → Sources Reaction → Finalize)
   Widget _buildSection3Content(OnboardingState state) {
     final question = state.currentSection3Question;
 
@@ -195,6 +179,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section3Question.sources:
         return const SourcesQuestion(key: ValueKey('sources'));
+
+      case Section3Question.sourcesReaction:
+        return ReactionScreen(
+          key: const ValueKey('sources_reaction'),
+          title: OnboardingStrings.sourcesReactionTitle,
+          message: OnboardingStrings.sourcesReactionMessage,
+          onContinue: () {
+            ref
+                .read(onboardingProvider.notifier)
+                .continueAfterSourcesReaction();
+          },
+        );
 
       case Section3Question.finalize:
         return const FinalizeQuestion(key: ValueKey('finalize'));

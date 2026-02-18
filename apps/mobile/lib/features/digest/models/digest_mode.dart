@@ -46,7 +46,7 @@ enum DigestMode {
   ),
   perspective(
     key: 'perspective',
-    label: 'Changer de bord',
+    label: 'Ouvrir son point de vue',
     subtitle: "Découvrir l'autre bord politique",
     emoji: '🧭',
     // Tons bleu nuit/indigo — "horizon, ouverture"

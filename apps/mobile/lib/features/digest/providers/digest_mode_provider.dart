@@ -44,7 +44,7 @@ class DigestModeState {
 /// Provider pour le mode digest actif.
 ///
 /// Gère :
-/// - Le mode sélectionné (Pour vous, Serein, Changer de bord)
+/// - Le mode sélectionné (Pour vous, Serein, Ouvrir son point de vue)
 /// - La sauvegarde de la préférence pour demain
 /// - La régénération immédiate du digest avec le nouveau mode
 final digestModeProvider =

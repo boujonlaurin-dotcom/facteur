@@ -22,7 +22,8 @@ class StreakService:
         streak = await self._get_or_create_streak(user_id)
         profile = await self._get_profile(user_id)
 
-        weekly_goal = profile.weekly_goal if profile else 10
+        # weekly_goal is now daily article count (3/5/7), multiply by 7 for weekly semantics
+        weekly_goal = (profile.weekly_goal if profile else 5) * 7
 
         return StreakResponse(
             current_streak=streak.current_streak,

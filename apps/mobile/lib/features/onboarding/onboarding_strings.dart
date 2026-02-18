@@ -15,22 +15,27 @@ class OnboardingStrings {
   // Welcome Screen (ex-Intro 1)
   static const String welcomeTitle = 'Bienvenue sur Facteur !';
   static const String welcomeSubtitle =
-      "L'info est aujourd'hui un champ de bataille.\n\nReprenons le contrôle ensemble.";
-  static const String welcomeManifestoButton =
-      'Présentation Facteur (Manifeste)';
+      "L'information devrait vous aider à comprendre le monde.\n\nPas nous submerger.";
+  static const String welcomeManifestoButton = 'Lire notre Manifeste';
   static const String welcomeStartButton = 'Commencer';
 
   // Intro Screen 2
   static const String intro2Title =
-      'Facteur se veut être un outil de résistance.';
+      'Un hub d\'infos fiables.';
   static const String intro2Subtitle =
-      'Une app Open-Source pour reprendre le contrôle de son attention. \nUn espace où la transparence et la qualité de l\'information protègent des \'fake news\'.';
-  static const String intro2Button = 'Reprendre le contrôle';
+      'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
+  static const String intro2Button = 'Découvrir Facteur';
 
-  // Q1: Objective
+  // Media Concentration
+  static const String mediaConcentrationTitle =
+      'Savez-vous qui possède vos médias ?';
+  static const String mediaConcentrationText =
+      'Cette carte reflète la concentration des médias en France. \n\nFacteur vous aide à comprendre comment se positionnent les médias pour mieux diversifier vos sources.';
+  static const String mediaConcentrationButton = 'Continuer';
+
+  // Q1: Objective (multi-select)
   static const String q1Title =
       "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
-  static const String q1Subtitle = "(Si vous ne deviez en choisir qu'un)";
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
       "Trop d'info. Impossible de bien trier.";
@@ -72,14 +77,6 @@ class OnboardingStrings {
   static const String q6NuancedLabel = 'Toutes les perspectives';
   static const String q6NuancedSubtitle = 'Voir tous les angles';
 
-  // Q7: Content Recency
-  static const String q7Title = 'Vous préférez...';
-  static const String q7Subtitle = '';
-  static const String q7RecentLabel = 'L\'actu du moment';
-  static const String q7RecentSubtitle = 'Ce qui se passe maintenant';
-  static const String q7TimelessLabel = 'Des analyses intemporelles';
-  static const String q7TimelessSubtitle = 'Des contenus qui durent';
-
   // Q8: Gamification
   static const String q8Title =
       'Passer du temps à bien s\'informer est difficile. Travaillons-le !';
@@ -94,22 +91,30 @@ class OnboardingStrings {
   static const String q8NoLabel = 'Je préfère sans';
   static const String q8NoSubtitle = 'Tu pourras activer ça plus tard';
 
-  // Q8b: Weekly Goal
-  static const String q8bTitle = 'Votre objectif hebdo ?';
-  static const String q8bSubtitle =
-      'Combien de contenus à consulter et s\'approprier chaque semaine ?';
-  static const String q8bGoal5Label = '5 contenus';
-  static const String q8bGoal5Subtitle = '~20 min / semaine • Découverte';
-  static const String q8bGoal10Label = '10 contenus';
-  static const String q8bGoal10Subtitle = '~40 min / semaine • Proactif';
-  static const String q8bGoal10Recommended = 'Recommandé';
-  static const String q8bGoal15Label = '15 contenus';
-  static const String q8bGoal15Subtitle = '~1h / semaine • Expert';
+  // Article Count (replaces Weekly Goal)
+  static const String articleCountTitle = 'Combien d\'articles par jour ?';
+  static const String articleCountSubtitle =
+      'Facteur prépare votre sélection quotidienne.';
+  static const String articleCount3Label = '3 articles';
+  static const String articleCount3Subtitle = 'L\'essentiel immanquable';
+  static const String articleCount5Label = '5 articles';
+  static const String articleCount5Subtitle =
+      'Mix d\'infos importantes & personnalisées';
+  static const String articleCount5Recommended = 'Recommandé';
+  static const String articleCount7Label = '7 articles';
+  static const String articleCount7Subtitle = 'Pour aller plus loin';
 
-  // Q9: Sources (maintenant Q10 après inversion)
+  // Digest Mode
+  static const String digestModeTitle = 'Quel mode de récap quotidien préférez-vous ?';
+  static const String digestModeSubtitle =
+      'Vous pourrez changer à tout moment.';
+
+  // Q9: Sources
   static const String q9Title = 'Construisons votre front de sources fiables.';
   static const String q9Subtitle =
       'Sélectionnez les sources qui seront privilégiées pour votre flux.';
+  static const String q9HelperText =
+      'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
   static const String q9LoadingError = 'Erreur de chargement des sources';
   static const String q9EmptyList = 'Aucune source disponible';
@@ -118,8 +123,7 @@ class OnboardingStrings {
 
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
-      '💡 Pré-sélection basée sur vos thèmes';
-  static const String q9PreselectionSubtitle = '';
+      'Pré-sélection basée sur vos thèmes';
 
   // Q10: Themes
   static const String q10Title = 'Quels sont vos centres d\'intérêt ?';
@@ -136,16 +140,15 @@ class OnboardingStrings {
   static const String themeEnvironment = 'Environnement';
   static const String themeEconomy = 'Économie';
 
+  // Sources Reaction (after source selection)
+  static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
+  static const String sourcesReactionMessage =
+      'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
+
   // Finalize
-  static const String finalizeTitle =
-      'Ok.\nOn voit maintenant mieux comment aider.';
-  static const String finalizeSubtitle = 'Votre flux personnalisé est prêt.';
-  static const String finalizeFormatShort = 'Articles courts préférés';
-  static const String finalizeFormatLong = 'Articles longs préférés';
-  static const String finalizeFormatAudio = 'Podcasts préférés';
-  static const String finalizeFormatVideo = 'Vidéos préférées';
-  static const String finalizeFormatMixed = 'Format mixte';
-  static const String finalizeButton = 'Créer mon flux transparent';
+  static const String finalizeTitle = 'Votre essentiel est prêt.';
+  static const String finalizeSubtitle = 'Voici un résumé de vos choix.';
+  static const String finalizeButton = 'Créer mon essentiel';
 
   // Reactions: Objective (Q1)
   static const String r1NoiseTitle = 'Trop de bruit tue le signal.';
@@ -154,20 +157,12 @@ class OnboardingStrings {
   static const String r1BiasTitle = 'Voir plus clair.';
   static const String r1BiasMessage =
       'Facteur affichera systématiquement le positionnement des sources.\n\nVous saurez toujours d\'où vient l\'information.';
-  static const String r1AnxietyTitle = 'Avoir la vue complète.';
+  static const String r1AnxietyTitle = 'Respirer face au chaos.';
   static const String r1AnxietyMessage =
-      'Facteur privilégiera le temps long et l\'analyse.\n\nLe meilleur remède au chaos est d\'en comprendre les racines.';
-
-  // Reactions: Preferences (Section 2)
-  static const String r2RecentTitle = 'Ne pas perdre le fil !';
-  static const String r2RecentMessage =
-      'Facteur priorisera les contenus récents pour vous garder à jour.\n\n';
-  static const String r2TimelessTitle = '"L\'Histoire se répète."';
-  static const String r2TimelessMessage =
-      'Facteur privilégiera les analyses qui traversent le temps.\n\n';
-  static const String r2DefaultTitle = 'Préférences bien enregistrées.';
-  static const String r2DefaultMessage =
-      'Facteur personnalise votre profil.\n\nEncore quelques questions et on y est !';
+      'Facteur mettra en avant les solutions, l\'analyse et le recul.\n\nPour retrouver une information qui éclaire sans angoisser.';
+  static const String r1MultiTitle = 'Difficile de choisir.';
+  static const String r1MultiMessage =
+      'Facteur adresse tous ces sujets. Votre récap quotidien s\'adaptera à chacune de vos préoccupations.';
 
   // Animated Messages
   static const List<String> conclusionMessages = [
@@ -186,7 +181,31 @@ class OnboardingStrings {
     return '$count thème${count > 1 ? 's' : ''} sélectionné${count > 1 ? 's' : ''}';
   }
 
-  static String finalizeGoalSummary(int goal) {
-    return 'Objectif : $goal contenus/semaine';
+  static String finalizeSourcesSummary(int count) {
+    return '$count source${count > 1 ? 's' : ''} sélectionnée${count > 1 ? 's' : ''}';
   }
+
+  static String finalizeArticleCountSummary(int count) {
+    return '$count article${count > 1 ? 's' : ''} / jour';
+  }
+
+  // Manifesto content
+  static const String manifestoTitle = 'Notre Manifeste';
+  static const String manifestoSection1Title = 'Le Projet';
+  static const String manifestoSection1Content =
+      'Facteur est un projet open-source visant à créer un espace où l\'information redevient un bien commun, accessible et fiable.';
+  static const String manifestoSection2Title = 'Notre Mission';
+  static const String manifestoSection2Content =
+      'Redonner de la qualité, de l\'indépendance et de la pluralité à l\'information. Trier le signal du bruit pour informer en profondeur.';
+  static const String manifestoSection3Title = 'Notre Approche';
+  static const String manifestoSection3Content =
+      'La technologie doit servir l\'humain. Nous avançons pas-à-pas, avec transparence et avec notre communauté.';
+  static const String manifestoCombatsTitle = 'Ce contre quoi nous luttons :';
+  static const List<String> manifestoCombatTags = [
+    'Concentration des médias',
+    'Biais cognitifs',
+    'Algorithmes opaques',
+    'Addiction numérique',
+    'Polarisations extrêmes',
+  ];
 }

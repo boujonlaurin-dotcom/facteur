@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +7,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_button.dart';
 
 /// Provider to track if user has seen the digest welcome
 final digestWelcomeShownProvider = StateProvider<bool>((ref) => false);
@@ -105,145 +105,172 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
       onTap: _dismiss,
       child: FadeTransition(
         opacity: _backdropAnimation,
-        child: Container(
-          color: colors.backgroundPrimary.withValues(alpha: 0.9),
-          child: Center(
-            child: GestureDetector(
-              onTap: () {}, // Prevent tap through
-              child: SlideTransition(
-                position: _contentSlideAnimation,
-                child: FadeTransition(
-                  opacity: _contentAnimation,
-                  child: Container(
-                    margin: const EdgeInsets.all(FacteurSpacing.space4),
-                    padding: const EdgeInsets.all(FacteurSpacing.space6),
-                    decoration: BoxDecoration(
-                      color: colors.backgroundSecondary,
-                      borderRadius: BorderRadius.circular(FacteurRadius.large),
-                      boxShadow: [
-                        BoxShadow(
-                          color: colors.textPrimary.withValues(alpha: 0.1),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Logo
-                        Icon(
-                          PhosphorIcons.article(PhosphorIconsStyle.fill),
-                          size: 48,
-                          color: colors.primary,
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space4),
-
-                        // Title
-                        Text(
-                          'Bienvenue dans votre Essentiel',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
-                              ?.copyWith(
-                                color: colors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space3),
-
-                        // Description
-                        Text(
-                          'Chaque jour, 5 articles sélectionnés pour vous',
-                          style:
-                              Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                    color: colors.textSecondary,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space4),
-
-                        // Feature list
-                        _FeatureItem(
-                          icon: PhosphorIcons.eye(),
-                          title: 'Lisez',
-                          description: 'Marquez comme lu après lecture',
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space3),
-
-                        _FeatureItem(
-                          icon: PhosphorIcons.bookmark(),
-                          title: 'Sauvegardez',
-                          description: 'Gardez pour plus tard',
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space3),
-
-                        _FeatureItem(
-                          icon: PhosphorIcons.xCircle(),
-                          title: 'Passez',
-                          description: 'Ignorez ce qui ne vous intéresse pas',
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space4),
-
-                        // Streak info
-                        Container(
-                          padding: const EdgeInsets.all(FacteurSpacing.space3),
-                          decoration: BoxDecoration(
-                            color: colors.warning.withValues(alpha: 0.1),
-                            borderRadius:
-                                BorderRadius.circular(FacteurRadius.medium),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.55),
+            child: Center(
+              child: GestureDetector(
+                onTap: () {}, // Prevent tap through
+                child: SlideTransition(
+                  position: _contentSlideAnimation,
+                  child: FadeTransition(
+                    opacity: _contentAnimation,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space6,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space6,
+                        vertical: FacteurSpacing.space8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.backgroundPrimary,
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.large),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 32,
+                            offset: const Offset(0, 12),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                                color: colors.warning,
-                                size: 20,
-                              ),
-                              const SizedBox(width: FacteurSpacing.space2),
-                              Flexible(
-                                child: Text(
-                                  'Complétez les 5 pour maintenir votre série !',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: colors.textSecondary,
-                                      ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Title
+                          Text(
+                            'Bienvenue dans\nvotre Essentiel',
+                            style: Theme.of(context)
+                                .textTheme
+                                .displayMedium
+                                ?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space3),
+
+                          // Description
+                          Text(
+                            'Chaque jour, 5 articles sélectionnés pour vous',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space6),
+
+                          // Feature list
+                          _FeatureItem(
+                            icon: PhosphorIcons.eye(),
+                            title: 'Lisez',
+                            description: 'Marquez comme lu après lecture',
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space4),
+
+                          _FeatureItem(
+                            icon: PhosphorIcons.bookmark(),
+                            title: 'Sauvegardez',
+                            description: 'Gardez pour plus tard',
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space4),
+
+                          _FeatureItem(
+                            icon: PhosphorIcons.xCircle(),
+                            title: 'Passez',
+                            description:
+                                'Ignorez ce qui ne vous intéresse pas',
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space6),
+
+                          // Streak info
+                          Container(
+                            padding:
+                                const EdgeInsets.all(FacteurSpacing.space3),
+                            decoration: BoxDecoration(
+                              color:
+                                  colors.warning.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(
+                                  FacteurRadius.medium),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.fire(
+                                      PhosphorIconsStyle.fill),
+                                  color: colors.warning,
+                                  size: 20,
+                                ),
+                                const SizedBox(
+                                    width: FacteurSpacing.space2),
+                                Flexible(
+                                  child: Text(
+                                    'Complétez les 5 pour maintenir votre série !',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: colors.textSecondary,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: FacteurSpacing.space6),
+
+                          // Start button — full width, rounded
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _dismiss,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 18),
+                                backgroundColor: colors.primary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                      FacteurRadius.large),
                                 ),
                               ),
-                            ],
+                              child: const Text(
+                                'Commencer',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
 
-                        const SizedBox(height: FacteurSpacing.space4),
+                          const SizedBox(height: FacteurSpacing.space4),
 
-                        // Start button
-                        FacteurButton(
-                          label: 'Commencer',
-                          onPressed: _dismiss,
-                        ),
-
-                        const SizedBox(height: FacteurSpacing.space3),
-
-                        // Explorer hint
-                        Text(
-                          '💡 Vous pouvez explorer plus après votre Essentiel',
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: colors.textTertiary,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                          // Explorer hint
+                          Text(
+                            '💡 Vous pouvez explorer plus après votre Essentiel',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: colors.textTertiary,
+                                ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -276,12 +303,12 @@ class _FeatureItem extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(FacteurSpacing.space2),
           decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(FacteurRadius.small),
+            color: colors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
           ),
           child: Icon(
             icon,
-            size: 20,
+            size: 22,
             color: colors.primary,
           ),
         ),

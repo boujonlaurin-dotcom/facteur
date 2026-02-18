@@ -5,7 +5,7 @@ import '../onboarding_strings.dart';
 
 /// Modèle pour les réponses de l'onboarding
 class OnboardingAnswers {
-  final String? objective; // learn, culture, work
+  final List<String>? objectives; // multi-select: noise, bias, anxiety
   final String? ageRange; // 18-24, 25-34, 35-44, 45+
   final String? gender; // male, female, other, prefer_not_to_say
   final String? approach; // direct, detailed
@@ -13,9 +13,10 @@ class OnboardingAnswers {
   // Section 2
   final String? perspective; // big_picture, details
   final String? responseStyle; // decisive, nuanced
-  final String? contentRecency; // recent, timeless
+  final String? contentRecency; // kept nullable for backward compat (deprecated)
   final bool? gamificationEnabled;
-  final int? weeklyGoal; // 5, 10, 15
+  final int? dailyArticleCount; // 3, 5, 7
+  final String? digestMode; // pour_vous, serein, perspective
 
   // Section 3
   final List<String>? themes;
@@ -25,7 +26,7 @@ class OnboardingAnswers {
   final String? personalGoal; // culture, work, conversations, learning
 
   const OnboardingAnswers({
-    this.objective,
+    this.objectives,
     this.ageRange,
     this.gender,
     this.approach,
@@ -33,7 +34,8 @@ class OnboardingAnswers {
     this.responseStyle,
     this.contentRecency,
     this.gamificationEnabled,
-    this.weeklyGoal,
+    this.dailyArticleCount,
+    this.digestMode,
     this.themes,
     this.subtopics,
     this.preferredSources,
@@ -42,7 +44,7 @@ class OnboardingAnswers {
   });
 
   OnboardingAnswers copyWith({
-    String? objective,
+    List<String>? objectives,
     String? ageRange,
     String? gender,
     String? approach,
@@ -50,7 +52,8 @@ class OnboardingAnswers {
     String? responseStyle,
     String? contentRecency,
     bool? gamificationEnabled,
-    int? weeklyGoal,
+    int? dailyArticleCount,
+    String? digestMode,
     List<String>? themes,
     List<String>? subtopics,
     List<String>? preferredSources,
@@ -58,7 +61,7 @@ class OnboardingAnswers {
     String? personalGoal,
   }) {
     return OnboardingAnswers(
-      objective: objective ?? this.objective,
+      objectives: objectives ?? this.objectives,
       ageRange: ageRange ?? this.ageRange,
       gender: gender ?? this.gender,
       approach: approach ?? this.approach,
@@ -66,7 +69,8 @@ class OnboardingAnswers {
       responseStyle: responseStyle ?? this.responseStyle,
       contentRecency: contentRecency ?? this.contentRecency,
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
-      weeklyGoal: weeklyGoal ?? this.weeklyGoal,
+      dailyArticleCount: dailyArticleCount ?? this.dailyArticleCount,
+      digestMode: digestMode ?? this.digestMode,
       themes: themes ?? this.themes,
       subtopics: subtopics ?? this.subtopics,
       preferredSources: preferredSources ?? this.preferredSources,
@@ -76,7 +80,7 @@ class OnboardingAnswers {
   }
 
   Map<String, dynamic> toJson() => {
-        'objective': objective,
+        'objective': objectives?.join(','),
         'age_range': ageRange,
         'gender': gender,
         'approach': approach,
@@ -84,7 +88,8 @@ class OnboardingAnswers {
         'response_style': responseStyle,
         'content_recency': contentRecency,
         'gamification_enabled': gamificationEnabled,
-        'weekly_goal': weeklyGoal,
+        'weekly_goal': dailyArticleCount,
+        'digest_mode': digestMode,
         'themes': themes,
         'subtopics': subtopics,
         'preferred_sources': preferredSources,
@@ -93,8 +98,15 @@ class OnboardingAnswers {
       };
 
   factory OnboardingAnswers.fromJson(Map<String, dynamic> json) {
+    // Parse objective: could be comma-separated string (new) or single string (old)
+    List<String>? objectives;
+    final rawObjective = json['objective'];
+    if (rawObjective is String && rawObjective.isNotEmpty) {
+      objectives = rawObjective.split(',');
+    }
+
     return OnboardingAnswers(
-      objective: json['objective'] as String?,
+      objectives: objectives,
       ageRange: json['age_range'] as String?,
       gender: json['gender'] as String?,
       approach: json['approach'] as String?,
@@ -102,7 +114,8 @@ class OnboardingAnswers {
       responseStyle: json['response_style'] as String?,
       contentRecency: json['content_recency'] as String?,
       gamificationEnabled: json['gamification_enabled'] as bool?,
-      weeklyGoal: json['weekly_goal'] as int?,
+      dailyArticleCount: json['weekly_goal'] as int?,
+      digestMode: json['digest_mode'] as String?,
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
       subtopics: (json['subtopics'] as List<dynamic>?)?.cast<String>(),
       preferredSources:
@@ -125,31 +138,32 @@ enum OnboardingSection {
   const OnboardingSection(this.number, this.label);
 }
 
-/// Questions de la Section 1 (Overview)
+/// Questions de la Section 1 (Overview) — 7 étapes
 enum Section1Question {
-  intro1, // Intro: L'info est aujourd'hui un champ de bataille
-  intro2, // Intro: Facteur vise à être un outil de résistance
-  objective, // Q1: Diagnostic
+  intro1, // Intro: Welcome
+  intro2, // Intro: Mission
+  mediaConcentration, // NEW: Carte concentration médias
+  objective, // Q1: Multi-select diagnostic
   objectiveReaction, // R1: Réaction personnalisée
   ageRange, // Q2: Tranche d'âge
   approach, // Q3: Tu préfères...
 }
 
-/// Questions de la Section 2 (App Preferences)
+/// Questions de la Section 2 (App Preferences) — 5 étapes
 enum Section2Question {
   perspective, // Q5: Big-picture vs details
   responseStyle, // Q6: Tranchées vs nuancées
-  contentRecency, // Q7: Récent vs intemporel
-  preferencesReaction, // R2: Réaction personnalisée
   gamification, // Q8: Activer la gamification ?
-  weeklyGoal, // Q8b: Objectif hebdo (conditionnel)
+  articleCount, // NEW: 3/5/7 articles par jour
+  digestMode, // NEW: Pour vous / Serein / Ouvrir son point de vue
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes d'abord, puis Sources (avec pré-sélection), puis Finalize
+/// Ordre : Thèmes → Sources → Réaction sources → Finalize
 enum Section3Question {
   themes, // Q9: Vos thèmes préférés (premier)
   sources, // Q10: Vos sources préférées (avec pré-sélection basée sur thèmes)
+  sourcesReaction, // Réaction: vous pourrez ajouter vos propres sources
   finalize, // Écran de finalisation
 }
 
@@ -170,11 +184,10 @@ class OnboardingState {
   });
 
   /// Nombre total de questions dans la Section 1
-  static const int section1QuestionCount = 6;
+  static const int section1QuestionCount = 7;
 
-  /// Nombre total de questions dans la Section 2 (sans Q8b conditionnel)
-  static const int section2QuestionCount =
-      5; // 4 questions + 1 réaction (Q8b est en plus)
+  /// Nombre total de questions dans la Section 2
+  static const int section2QuestionCount = 5;
 
   /// Index de la question actuelle dans toutes les sections
   int get globalQuestionIndex {
@@ -191,7 +204,7 @@ class OnboardingState {
   }
 
   /// Nombre total d'étapes estimées pour l'onboarding
-  static const int totalSteps = 15; // 6 + 6 + 3
+  static const int totalSteps = 16; // 7 + 5 + 4
 
   /// Progression globale (0.0 à 1.0)
   double get progress => (globalQuestionIndex + 1) / totalSteps;
@@ -202,11 +215,9 @@ class OnboardingState {
       case OnboardingSection.overview:
         return (currentQuestionIndex + 1) / section1QuestionCount;
       case OnboardingSection.appPreferences:
-        // Max 6 questions si gamification activée
-        final maxQuestions = answers.gamificationEnabled == true ? 6 : 5;
-        return (currentQuestionIndex + 1) / maxQuestions;
+        return (currentQuestionIndex + 1) / section2QuestionCount;
       case OnboardingSection.sourcePreferences:
-        return (currentQuestionIndex + 1) / 3;
+        return (currentQuestionIndex + 1) / 4;
     }
   }
 
@@ -251,11 +262,21 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   static const String _answersKey = 'answers';
   static const String _sectionKey = 'section';
   static const String _questionKey = 'question';
+  static const String _versionKey = 'onboarding_version';
+  static const int _currentVersion = 2;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
     try {
       final box = await Hive.openBox(_hiveBoxName);
+      final savedVersion = box.get(_versionKey) as int?;
+
+      // Version mismatch: restart onboarding to avoid enum index crash
+      if (savedVersion != null && savedVersion != _currentVersion) {
+        await box.clear();
+        return;
+      }
+
       final savedAnswers = box.get(_answersKey);
       final savedSection = box.get(_sectionKey);
       final savedQuestion = box.get(_questionKey);
@@ -295,6 +316,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       await box.put(_answersKey, state.answers.toJson());
       await box.put(_sectionKey, state.currentSection.index);
       await box.put(_questionKey, state.currentQuestionIndex);
+      await box.put(_versionKey, _currentVersion);
     } catch (e) {
       // Ignorer les erreurs de sauvegarde
     }
@@ -318,30 +340,38 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
   }
 
-  /// Continue après l'intro 2 (vers Q1 - Diagnostic)
+  /// Continue après l'intro 2 (vers MediaConcentration)
   void continueAfterIntro() {
+    state = state.copyWith(
+      currentQuestionIndex: Section1Question.mediaConcentration.index,
+      isTransitioning: false,
+    );
+  }
+
+  /// Continue après MediaConcentration (vers Q1 - Objective)
+  void continueAfterMediaConcentration() {
     state = state.copyWith(
       currentQuestionIndex: Section1Question.objective.index,
       isTransitioning: false,
     );
   }
 
-  /// Sélectionne un objectif (Q1 - Diagnostic)
-  void selectObjective(String objective) {
+  /// Sélectionne les objectifs (Q1 - Diagnostic multi-select)
+  /// Does NOT auto-advance; user must tap Continue button
+  void selectObjectives(List<String> objectives) {
     state = state.copyWith(
-      answers: state.answers.copyWith(objective: objective),
-      isTransitioning: true,
+      answers: state.answers.copyWith(objectives: objectives),
     );
     _saveAnswers();
+  }
 
-    // Après un délai, montrer la réaction
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section1Question.objectiveReaction.index,
-        isTransitioning: false,
-        showReaction: true,
-      );
-    });
+  /// Continue après sélection des objectifs → objectiveReaction
+  void continueAfterObjectives() {
+    state = state.copyWith(
+      currentQuestionIndex: Section1Question.objectiveReaction.index,
+      isTransitioning: false,
+      showReaction: true,
+    );
   }
 
   /// Continue après la réaction (après R1)
@@ -398,7 +428,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
           );
         } else {
           state = state.copyWith(
-            currentQuestionIndex: Section2Question.contentRecency.index,
+            currentQuestionIndex: state.currentQuestionIndex - 1,
             showReaction: false,
           );
         }
@@ -410,12 +440,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     } else {
       // Revenir à la section précédente
       if (state.currentSection == OnboardingSection.sourcePreferences) {
-        final lastSection2Index = state.answers.gamificationEnabled == true
-            ? Section2Question.weeklyGoal.index
-            : Section2Question.gamification.index;
         state = state.copyWith(
           currentSection: OnboardingSection.appPreferences,
-          currentQuestionIndex: lastSection2Index,
+          currentQuestionIndex: Section2Question.digestMode.index,
         );
       } else if (state.currentSection == OnboardingSection.appPreferences) {
         state = state.copyWith(
@@ -455,7 +482,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne le style de réponse (Q6)
+  /// Sélectionne le style de réponse (Q6) → gamification
   void selectResponseStyle(String responseStyle) {
     state = state.copyWith(
       answers: state.answers.copyWith(responseStyle: responseStyle),
@@ -465,40 +492,14 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section2Question.contentRecency.index,
+        currentQuestionIndex: Section2Question.gamification.index,
         isTransitioning: false,
       );
     });
-  }
-
-  /// Sélectionne la récence du contenu (Q7)
-  void selectContentRecency(String contentRecency) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(contentRecency: contentRecency),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    // Après Q7, montrer la réaction
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section2Question.preferencesReaction.index,
-        isTransitioning: false,
-        showReaction: true,
-      );
-    });
-  }
-
-  /// Continue après la réaction Section 2 (après R2)
-  void continueAfterSection2Reaction() {
-    state = state.copyWith(
-      currentQuestionIndex: Section2Question.gamification.index,
-      showReaction: false,
-      isTransitioning: false,
-    );
   }
 
   /// Sélectionne l'activation de la gamification (Q8)
+  /// Always goes to articleCount next (no conditional branch)
   void selectGamification(bool enabled) {
     state = state.copyWith(
       answers: state.answers.copyWith(gamificationEnabled: enabled),
@@ -507,23 +508,33 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     _saveAnswers();
 
     Future.delayed(const Duration(milliseconds: 300), () {
-      if (enabled) {
-        // Si gamification activée, aller à Q8b
-        state = state.copyWith(
-          currentQuestionIndex: Section2Question.weeklyGoal.index,
-          isTransitioning: false,
-        );
-      } else {
-        // Sinon, transition vers Section 3
-        _transitionToSection3();
-      }
+      state = state.copyWith(
+        currentQuestionIndex: Section2Question.articleCount.index,
+        isTransitioning: false,
+      );
     });
   }
 
-  /// Sélectionne l'objectif hebdomadaire (Q8b)
-  void selectWeeklyGoal(int goal) {
+  /// Sélectionne le nombre d'articles par jour (3/5/7)
+  void selectDailyArticleCount(int count) {
     state = state.copyWith(
-      answers: state.answers.copyWith(weeklyGoal: goal),
+      answers: state.answers.copyWith(dailyArticleCount: count),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section2Question.digestMode.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
+  /// Sélectionne le mode digest
+  void selectDigestMode(String mode) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(digestMode: mode),
       isTransitioning: true,
     );
     _saveAnswers();
@@ -586,7 +597,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   }
 
   /// Sélectionne les sources (Q10) - multi-sélection
-  /// Nouvel ordre: Thèmes → Sources → Finalize
+  /// Nouvel ordre: Thèmes → Sources → Sources Reaction → Finalize
   void selectSources(List<String> sources) {
     state = state.copyWith(
       answers: state.answers.copyWith(preferredSources: sources),
@@ -594,13 +605,21 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Aller vers Finalize
+    // Aller vers Sources Reaction
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section3Question.finalize.index,
+        currentQuestionIndex: Section3Question.sourcesReaction.index,
         isTransitioning: false,
       );
     });
+  }
+
+  /// Continue après la réaction sources → Finalize
+  void continueAfterSourcesReaction() {
+    state = state.copyWith(
+      currentQuestionIndex: Section3Question.finalize.index,
+      isTransitioning: false,
+    );
   }
 
   /// Finalise l'onboarding - appelé depuis l'écran de finalisation
@@ -614,15 +633,15 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   void bypassOnboarding() {
     state = state.copyWith(
       answers: const OnboardingAnswers(
-        objective: 'learn',
+        objectives: ['noise'],
         ageRange: '25-34',
         gender: 'male',
         approach: 'direct',
         perspective: 'big_picture',
         responseStyle: 'decisive',
-        contentRecency: 'recent',
         gamificationEnabled: true,
-        weeklyGoal: 10,
+        dailyArticleCount: 5,
+        digestMode: 'pour_vous',
         themes: ['tech', 'international'],
         formatPreference: 'short',
         personalGoal: 'learning',
@@ -645,7 +664,8 @@ final onboardingProvider =
 final isSection1CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  return answers.objective != null &&
+  return answers.objectives != null &&
+      answers.objectives!.isNotEmpty &&
       answers.ageRange != null &&
       answers.approach != null;
 });
@@ -654,16 +674,11 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
 final isSection2CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  final baseComplete = answers.perspective != null &&
+  return answers.perspective != null &&
       answers.responseStyle != null &&
-      answers.contentRecency != null &&
-      answers.gamificationEnabled != null;
-
-  // Si gamification activée, weeklyGoal doit aussi être défini
-  if (answers.gamificationEnabled == true) {
-    return baseComplete && answers.weeklyGoal != null;
-  }
-  return baseComplete;
+      answers.gamificationEnabled != null &&
+      answers.dailyArticleCount != null &&
+      answers.digestMode != null;
 });
 
 /// Provider pour vérifier si Section 3 est complète
@@ -671,9 +686,10 @@ final isSection3CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
   return answers.themes != null &&
-      answers.themes!.isNotEmpty &&
-      answers.formatPreference != null;
-});/// Provider pour vérifier si l'onboarding est complet
+      answers.themes!.isNotEmpty;
+});
+
+/// Provider pour vérifier si l'onboarding est complet
 final isOnboardingCompleteProvider = Provider<bool>((ref) {
   final section1 = ref.watch(isSection1CompleteProvider);
   final section2 = ref.watch(isSection2CompleteProvider);
@@ -733,7 +749,9 @@ class AvailableThemes {
       color: Colors.indigo,
     ),
   ];
-}class ThemeOption {
+}
+
+class ThemeOption {
   final String slug;
   final String label;
   final String emoji;

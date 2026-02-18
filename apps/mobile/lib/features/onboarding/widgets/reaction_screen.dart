@@ -4,7 +4,6 @@ import '../../../config/theme.dart';
 import '../onboarding_strings.dart';
 
 /// Écran de réaction personnalisée après une réponse clé
-/// Affiche un message engageant avec animation de fade-in
 class ReactionScreen extends StatefulWidget {
   final String title;
   final String message;
@@ -18,8 +17,7 @@ class ReactionScreen extends StatefulWidget {
     required this.message,
     required this.onContinue,
     this.autoContinue = false,
-    this.autoContinueDelay =
-        const Duration(seconds: 4), // Augmenté un peu pour lire
+    this.autoContinueDelay = const Duration(seconds: 4),
   });
 
   @override
@@ -37,7 +35,6 @@ class _ReactionScreenState extends State<ReactionScreen>
   void initState() {
     super.initState();
 
-    // Animation du texte
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
@@ -47,7 +44,6 @@ class _ReactionScreenState extends State<ReactionScreen>
       curve: Curves.easeOut,
     );
 
-    // Animation du bouton (apparaît après le texte)
     _buttonController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -57,7 +53,6 @@ class _ReactionScreenState extends State<ReactionScreen>
       curve: Curves.easeOut,
     );
 
-    // Démarrer les animations
     _fadeController.forward().then((_) {
       Future.delayed(const Duration(milliseconds: 200), () {
         if (mounted) {
@@ -66,7 +61,6 @@ class _ReactionScreenState extends State<ReactionScreen>
       });
     });
 
-    // Auto-continue si activé
     if (widget.autoContinue) {
       Future.delayed(widget.autoContinueDelay, () {
         if (mounted) {
@@ -92,7 +86,6 @@ class _ReactionScreenState extends State<ReactionScreen>
         children: [
           const Spacer(flex: 2),
 
-          // Élément visuel neutre et minimaliste
           FadeTransition(
             opacity: _fadeAnimation,
             child: Container(
@@ -107,7 +100,6 @@ class _ReactionScreenState extends State<ReactionScreen>
 
           const SizedBox(height: FacteurSpacing.space8),
 
-          // Titre de la réaction
           FadeTransition(
             opacity: _fadeAnimation,
             child: Text(
@@ -119,7 +111,6 @@ class _ReactionScreenState extends State<ReactionScreen>
 
           const SizedBox(height: FacteurSpacing.space4),
 
-          // Message personnalisé
           FadeTransition(
             opacity: _fadeAnimation,
             child: Text(
@@ -134,7 +125,6 @@ class _ReactionScreenState extends State<ReactionScreen>
 
           const Spacer(flex: 3),
 
-          // Bouton continuer
           FadeTransition(
             opacity: _buttonAnimation,
             child: SizedBox(
@@ -157,6 +147,7 @@ class _ReactionScreenState extends State<ReactionScreen>
 }
 
 /// Messages de réaction pour chaque réponse à Q1 (Diagnostic)
+/// Supports multi-select: if multiple objectives, shows combined message
 class ObjectiveReactionMessages {
   static const Map<String, ReactionContent> messages = {
     'noise': ReactionContent(
@@ -172,30 +163,17 @@ class ObjectiveReactionMessages {
       message: OnboardingStrings.r1AnxietyMessage,
     ),
   };
-}
 
-/// Messages de réaction pour la Section 2 (préférences d'app)
-/// Basés uniquement sur la dernière réponse (contentRecency) pour éviter les répétitions
-class PreferencesReactionMessages {
-  static ReactionContent getReaction({required String? contentRecency}) {
-    // Simple logic: based only on contentRecency (last answered question)
-    if (contentRecency == 'recent') {
+  /// Get reaction for multi-select objectives
+  static ReactionContent getReaction(List<String> objectives) {
+    if (objectives.length > 1) {
       return const ReactionContent(
-        title: OnboardingStrings.r2RecentTitle,
-        message: OnboardingStrings.r2RecentMessage,
-      );
-    } else if (contentRecency == 'timeless') {
-      return const ReactionContent(
-        title: OnboardingStrings.r2TimelessTitle,
-        message: OnboardingStrings.r2TimelessMessage,
+        title: OnboardingStrings.r1MultiTitle,
+        message: OnboardingStrings.r1MultiMessage,
       );
     }
-
-    // Message par défaut
-    return const ReactionContent(
-      title: OnboardingStrings.r2DefaultTitle,
-      message: OnboardingStrings.r2DefaultMessage,
-    );
+    final key = objectives.isNotEmpty ? objectives.first : 'noise';
+    return messages[key] ?? messages['noise']!;
   }
 }
 
