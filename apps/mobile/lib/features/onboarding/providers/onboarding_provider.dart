@@ -101,8 +101,8 @@ class OnboardingAnswers {
     // Parse objective: could be comma-separated string (new) or single string (old)
     List<String>? objectives;
     final rawObjective = json['objective'];
-    if (rawObjective is String && rawObjective.isNotEmpty) {
-      objectives = rawObjective.split(',');
+    if (rawObjective is String) {
+      objectives = rawObjective.isNotEmpty ? rawObjective.split(',') : [];
     }
 
     return OnboardingAnswers(
