@@ -66,11 +66,11 @@ class PerspectiveQuestion extends ConsumerWidget {
                     emoji: '🔬', // Détails
                     label: OnboardingStrings.q5DetailsLabel,
                     subtitle: OnboardingStrings.q5DetailsSubtitle,
-                    isSelected: selectedPerspective == 'details',
+                    isSelected: selectedPerspective == 'detail_oriented',
                     onTap: () {
                       ref
                           .read(onboardingProvider.notifier)
-                          .selectPerspective('details');
+                          .selectPerspective('detail_oriented');
                     },
                   ),
                 ),
