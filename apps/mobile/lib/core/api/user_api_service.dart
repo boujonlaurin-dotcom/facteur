@@ -78,7 +78,7 @@ class UserApiService {
   /// Formate les réponses pour l'API (camelCase → snake_case)
   Map<String, dynamic> _formatAnswersForApi(OnboardingAnswers answers) {
     return {
-      'objectives': answers.objectives,
+      'objective': answers.objectives?.join(','),
       'age_range': answers.ageRange,
       'gender': answers.gender,
       'approach': answers.approach,
