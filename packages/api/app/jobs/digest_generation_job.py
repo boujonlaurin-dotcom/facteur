@@ -242,11 +242,17 @@ class DigestGenerationJob:
                 )
                 focus_theme = theme_result.scalar_one_or_none()
 
+            # Load user profile to get per-user daily article count
+            user_profile = await session.scalar(
+                select(UserProfile).where(UserProfile.user_id == user_id)
+            )
+            user_target = user_profile.weekly_goal if user_profile and user_profile.weekly_goal else DiversityConstraints.TARGET_DIGEST_SIZE
+
             # Sélectionner les articles via DigestSelector
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
-                limit=DiversityConstraints.TARGET_DIGEST_SIZE,
+                limit=user_target,
                 hours_lookback=self.hours_lookback,
                 mode=digest_mode,
                 focus_theme=focus_theme,

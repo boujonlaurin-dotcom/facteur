@@ -26,7 +26,7 @@ void main() {
           onboardingProvider.overrideWith((ref) {
             final notifier = OnboardingNotifier();
             // Manually set state via available public methods to avoid side effects of bypassOnboarding
-            notifier.selectObjective('learn');
+            notifier.selectObjectives(['learn']);
             return notifier;
           }),
         ],

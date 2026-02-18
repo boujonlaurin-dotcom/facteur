@@ -59,9 +59,9 @@ final personalizedFiltersProvider = Provider<List<FilterConfig>>((ref) {
 
   // Logique de personnalisation
 
-  // 1. "Longs formats" en premier si Objectif = Learn
-  // (Note: OnboardingAnswers.objective -> 'learn', 'culture', 'work'...)
-  if (answers.objective == 'learn' || answers.approach == 'detailed') {
+  // 1. "Longs formats" en premier si Objectif = Learn ou approche détaillée
+  if (answers.objectives?.contains('learn') == true ||
+      answers.approach == 'detailed') {
     _moveFilterToFront(filters, 'deep_dive');
   }
 

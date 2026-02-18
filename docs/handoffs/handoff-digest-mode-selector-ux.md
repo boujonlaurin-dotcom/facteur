@@ -14,7 +14,7 @@
 
 - **Pour vous** (☀️) — sélection personnalisée classique
 - **Serein** (🌿) — sans politique ni infos anxiogènes
-- **Changer de bord** (🧭) — découvrir l'autre bord politique
+- **Ouvrir son point de vue** (🧭) — découvrir l'autre bord politique
 
 Le **mode selector** est le composant clé de cette feature. C'est un vrai levier d'engagement : chaque changement de mode **régénère entièrement le digest** côté backend (DELETE + re-scoring + re-sélection). L'UI doit refléter cette importance.
 
@@ -74,13 +74,13 @@ Le backend gère déjà la régénération complète :
 **Pistes de palettes** :
 - **Pour vous** : tons chauds ambrés/dorés profonds — "coucher de soleil éditorial"
 - **Serein** : tons verts profonds, forêt — "nature apaisante"
-- **Changer de bord** : tons bleu nuit/indigo — "horizon, ouverture"
+- **Ouvrir son point de vue** : tons bleu nuit/indigo — "horizon, ouverture"
 
 ### 3. Les icônes ne conviennent pas
 
 **Actuel** : `sunDim` (Pour vous), `flowerLotus` (Serein), `detective` (Perspective)
 
-**Problème** : Les icônes ne communiquent pas clairement les modes. `detective` en particulier est ambigu pour "Changer de bord".
+**Problème** : Les icônes ne communiquent pas clairement les modes. `detective` en particulier est ambigu pour "Ouvrir son point de vue".
 
 **Attendu** : Choisir des icônes Phosphor qui communiquent immédiatement le concept de chaque mode. Libre choix — explorer le catalogue Phosphor Icons.
 

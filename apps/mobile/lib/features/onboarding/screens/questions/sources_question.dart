@@ -173,25 +173,13 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                   width: 1,
                 ),
               ),
-              child: Column(
-                children: [
-                  Text(
-                    OnboardingStrings.q9PreselectionTitle,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    OnboardingStrings.q9PreselectionSubtitle,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              child: Text(
+                OnboardingStrings.q9PreselectionTitle,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
               ),
             ),
 
@@ -331,8 +319,8 @@ class _SourceChip extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space3,
-          vertical: FacteurSpacing.space2,
+          horizontal: FacteurSpacing.space2,
+          vertical: 6,
         ),
         decoration: BoxDecoration(
           color: isSelected

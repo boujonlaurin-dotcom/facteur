@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../config/theme.dart';
 import '../../../../config/routes.dart';
+import '../../../digest/models/digest_mode.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../onboarding_strings.dart';
 
@@ -17,9 +18,11 @@ class FinalizeQuestion extends ConsumerWidget {
     final answers = state.answers;
     final colors = context.facteurColors;
 
-    // Résumé des préférences
     final themesCount = answers.themes?.length ?? 0;
-    final hasGamification = answers.gamificationEnabled == true;
+    final sourcesCount = answers.preferredSources?.length ?? 0;
+    final articleCount = answers.dailyArticleCount ?? 5;
+    final digestModeKey = answers.digestMode ?? 'pour_vous';
+    final digestMode = DigestMode.fromKey(digestModeKey);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
@@ -28,7 +31,6 @@ class FinalizeQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Titre
           Text(
             OnboardingStrings.finalizeTitle,
             style: Theme.of(context).textTheme.displayLarge,
@@ -39,15 +41,15 @@ class FinalizeQuestion extends ConsumerWidget {
 
           Text(
             OnboardingStrings.finalizeSubtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
+            style: Theme.of(context)
+                .textTheme
+                .bodyLarge
+                ?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
 
-          // Résumé des choix
           Container(
             padding: const EdgeInsets.all(FacteurSpacing.space4),
             decoration: BoxDecoration(
@@ -62,25 +64,26 @@ class FinalizeQuestion extends ConsumerWidget {
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _SummaryRow(
-                  emoji: _getFormatEmoji(answers.formatPreference),
-                  label: _getFormatLabel(answers.formatPreference),
+                  emoji: '📰',
+                  label: OnboardingStrings.finalizeSourcesSummary(sourcesCount),
                 ),
-                if (hasGamification) ...[
-                  const SizedBox(height: FacteurSpacing.space3),
-                  _SummaryRow(
-                    emoji: '🎯',
-                    label: OnboardingStrings.finalizeGoalSummary(
-                      answers.weeklyGoal ?? 10,
-                    ),
-                  ),
-                ],
+                const SizedBox(height: FacteurSpacing.space3),
+                _SummaryRow(
+                  emoji: '📋',
+                  label: OnboardingStrings.finalizeArticleCountSummary(
+                      articleCount),
+                ),
+                const SizedBox(height: FacteurSpacing.space3),
+                _SummaryRow(
+                  emoji: digestMode.emoji,
+                  label: 'Mode : ${digestMode.label}',
+                ),
               ],
             ),
           ),
 
           const Spacer(flex: 3),
 
-          // Bouton finaliser
           ElevatedButton(
             onPressed: () {
               ref.read(onboardingProvider.notifier).finalizeOnboarding();
@@ -107,36 +110,6 @@ class FinalizeQuestion extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  String _getFormatEmoji(String? format) {
-    switch (format) {
-      case 'short':
-        return '📝';
-      case 'long':
-        return '📖';
-      case 'audio':
-        return '🎧';
-      case 'video':
-        return '🎬';
-      default:
-        return '📝';
-    }
-  }
-
-  String _getFormatLabel(String? format) {
-    switch (format) {
-      case 'short':
-        return OnboardingStrings.finalizeFormatShort;
-      case 'long':
-        return OnboardingStrings.finalizeFormatLong;
-      case 'audio':
-        return OnboardingStrings.finalizeFormatAudio;
-      case 'video':
-        return OnboardingStrings.finalizeFormatVideo;
-      default:
-        return OnboardingStrings.finalizeFormatMixed;
-    }
   }
 }
 

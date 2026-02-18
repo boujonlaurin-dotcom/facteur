@@ -8,7 +8,6 @@ import '../../onboarding_strings.dart';
 import '../../../../widgets/design/facteur_logo.dart';
 
 /// Welcome Screen: "Bienvenue sur Facteur !"
-/// Replaces the old IntroScreen1.
 class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
 
@@ -18,10 +17,27 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   bool _showManifesto = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   void _toggleManifesto() {
     setState(() {
       _showManifesto = !_showManifesto;
+    });
+    if (!_showManifesto) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -34,15 +50,22 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 1),
+          if (!_showManifesto) ...[
+            const Spacer(flex: 1),
 
-          // Logo
-          const Center(child: FacteurLogo(size: 42)),
+            // Logo
+            const Center(child: FacteurLogo(size: 42)),
 
-          const SizedBox(height: FacteurSpacing.space6),
+            const SizedBox(height: FacteurSpacing.space6),
+          ] else ...[
+            const SizedBox(height: FacteurSpacing.space4),
+
+            const Center(child: FacteurLogo(size: 28)),
+
+            const SizedBox(height: FacteurSpacing.space3),
+          ],
 
           if (!_showManifesto) ...[
-            // Headline
             Text(
               OnboardingStrings.welcomeTitle,
               style: Theme.of(context).textTheme.displayLarge,
@@ -51,7 +74,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
             const SizedBox(height: FacteurSpacing.space6),
 
-            // Subtext
             Text(
               OnboardingStrings.welcomeSubtitle,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -62,7 +84,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             ),
             const Spacer(flex: 2),
           ] else ...[
-            // Manifesto Content
             Expanded(
               child: Container(
                 margin:
@@ -75,11 +96,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       Border.all(color: colors.primary.withValues(alpha: 0.1)),
                 ),
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Notre Manifeste',
+                        OnboardingStrings.manifestoTitle,
                         style:
                             Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   color: colors.primary,
@@ -88,30 +110,28 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       ),
                       const SizedBox(height: FacteurSpacing.space4),
                       _buildManifestoSection(
-                        'Le Projet',
-                        'Facteur est un projet open-source visant à créer une brique engageante et facile d\'accès pour s\'approprier l\'information.',
+                        OnboardingStrings.manifestoSection1Title,
+                        OnboardingStrings.manifestoSection1Content,
                       ),
                       _buildManifestoSection(
-                        'Notre But',
-                        'Re-donner de la qualité, de l\'indépendance et de la pluralité à l\'information. Trier l\'info du bruit pour informer en profondeur.',
+                        OnboardingStrings.manifestoSection2Title,
+                        OnboardingStrings.manifestoSection2Content,
                       ),
                       _buildManifestoSection(
-                        'Philosophie',
-                        'Nous pensons que la technologie doit servir l\'humanité - pas l\'inverse. Nous avançons pas-à-pas avec notre communauté.',
+                        OnboardingStrings.manifestoSection3Title,
+                        OnboardingStrings.manifestoSection3Content,
                       ),
                       const SizedBox(height: FacteurSpacing.space4),
                       Text(
-                        'Nos Combats :',
+                        OnboardingStrings.manifestoCombatsTitle,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: colors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: FacteurSpacing.space2),
-                      _buildCombatTag('Anti-trust des médias'),
-                      _buildCombatTag('Biais cognitifs'),
-                      _buildCombatTag('Algorithmes opaques'),
-                      _buildCombatTag('Addiction numérique'),
+                      ...OnboardingStrings.manifestoCombatTags
+                          .map((tag) => _buildCombatTag(tag)),
                     ],
                   ),
                 ),
@@ -119,7 +139,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             ),
           ],
 
-          // Manifesto Toggle Button
           TextButton(
             onPressed: _toggleManifesto,
             style: TextButton.styleFrom(
@@ -149,7 +168,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
           const SizedBox(height: 12),
 
-          // CTA Button
           ElevatedButton(
             onPressed: () {
               ref.read(onboardingProvider.notifier).continueToIntro2();
@@ -210,7 +228,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 }
 
 /// Intro screen 2: Facteur's mission
-/// Second part of the mission statement.
 class IntroScreen2 extends ConsumerWidget {
   const IntroScreen2({super.key});
 
@@ -225,7 +242,6 @@ class IntroScreen2 extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Headline
           Text(
             OnboardingStrings.intro2Title,
             style: Theme.of(context).textTheme.displayLarge,
@@ -234,7 +250,6 @@ class IntroScreen2 extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space6),
 
-          // Subtext
           Text(
             OnboardingStrings.intro2Subtitle,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -246,7 +261,6 @@ class IntroScreen2 extends ConsumerWidget {
 
           const Spacer(flex: 3),
 
-          // CTA Button
           ElevatedButton(
             onPressed: () {
               ref.read(onboardingProvider.notifier).continueAfterIntro();

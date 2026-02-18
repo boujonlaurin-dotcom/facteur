@@ -140,7 +140,11 @@ class DigestService:
         step_start = time.time()
         logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme)
         from app.services.digest_selector import DiversityConstraints
-        target_size = DiversityConstraints.TARGET_DIGEST_SIZE
+        from app.models.user import UserProfile as _UP
+        _user_profile = await self.session.scalar(
+            select(_UP).where(_UP.user_id == user_id)
+        )
+        target_size = _user_profile.weekly_goal if _user_profile and _user_profile.weekly_goal else DiversityConstraints.TARGET_DIGEST_SIZE
         digest_items = await self.selector.select_for_user(
             user_id, limit=target_size, hours_lookback=hours_lookback,
             mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,

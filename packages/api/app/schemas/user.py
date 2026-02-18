@@ -18,7 +18,7 @@ class UserProfileUpdate(BaseModel):
 
     display_name: Optional[str] = None
     gamification_enabled: Optional[bool] = None
-    weekly_goal: Optional[int] = Field(None, ge=5, le=15)
+    weekly_goal: Optional[int] = Field(None, ge=3, le=7)
 
 
 class UserProfileResponse(BaseModel):
@@ -71,9 +71,10 @@ class OnboardingAnswers(BaseModel):
     # Section 2 - App Preferences
     perspective: str = Field(..., description="big_picture ou detail_oriented")
     response_style: str = Field(..., description="decisive ou nuanced")
-    content_recency: str = Field(..., description="recent ou evergreen")
+    content_recency: Optional[str] = Field(None, description="recent ou evergreen (deprecated)")
     gamification_enabled: bool = True
-    weekly_goal: Optional[int] = Field(10, ge=5, le=15)
+    weekly_goal: Optional[int] = Field(5, ge=3, le=7, description="Daily article count (3/5/7)")
+    digest_mode: Optional[str] = Field("pour_vous", description="pour_vous, serein, perspective")
 
     # Section 3 - Source Preferences
     preferred_sources: Optional[list[str]] = Field(default_factory=list, description="Liste des sources sélectionnées")

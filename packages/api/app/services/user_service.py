@@ -95,7 +95,7 @@ class UserService:
         profile.age_range = answers.age_range
         profile.gender = answers.gender
         profile.gamification_enabled = answers.gamification_enabled
-        profile.weekly_goal = answers.weekly_goal or 10
+        profile.weekly_goal = answers.weekly_goal or 5
         profile.onboarding_completed = True
 
         # Nettoyer les anciennes préférences et intérêts pour garantir l'idempotence
@@ -120,6 +120,7 @@ class UserService:
             "content_recency": answers.content_recency,
             "format_preference": answers.format_preference,
             "personal_goal": answers.personal_goal,
+            "digest_mode": answers.digest_mode,
         }
 
         pref_count = 0
