@@ -78,7 +78,7 @@ class UserApiService {
   /// Formate les réponses pour l'API (camelCase → snake_case)
   Map<String, dynamic> _formatAnswersForApi(OnboardingAnswers answers) {
     return {
-      'objective': answers.objectives?.join(','),
+      'objectives': answers.objectives,
       'age_range': answers.ageRange,
       'gender': answers.gender,
       'approach': answers.approach,
@@ -86,12 +86,11 @@ class UserApiService {
       'response_style': answers.responseStyle,
       'content_recency': answers.contentRecency ?? 'recent',
       'gamification_enabled': answers.gamificationEnabled,
-      'weekly_goal': answers.dailyArticleCount,
+      'daily_article_count': answers.dailyArticleCount,
       'digest_mode': answers.digestMode,
       'themes': answers.themes,
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
-      'personal_goal': answers.personalGoal,
     };
   }
 
