@@ -2,7 +2,7 @@
 
 Data migration: weekly_goal (5/10/15) → daily article count (3/5/7)
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 34cec6ef13a6
 Revises: z1a2b3c4d5e6
 Create Date: 2026-02-18 01:00:00.000000
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
+revision: str = '34cec6ef13a6'
 down_revision: Union[str, Sequence[str], None] = 'z1a2b3c4d5e6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
