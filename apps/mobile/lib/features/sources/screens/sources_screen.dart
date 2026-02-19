@@ -79,10 +79,15 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             );
           }
 
-          final curatedSources =
-              filteredSources.where((s) => s.isCurated).toList();
-          final customSources =
-              filteredSources.where((s) => s.isCustom).toList();
+          // Split into 3 groups: custom (non-muted), curated (non-muted), muted
+          final customSources = filteredSources
+              .where((s) => s.isCustom && !s.isMuted)
+              .toList();
+          final curatedSources = filteredSources
+              .where((s) => s.isCurated && !s.isMuted)
+              .toList();
+          final mutedSources =
+              filteredSources.where((s) => s.isMuted).toList();
 
           return Column(
             children: [
@@ -146,6 +151,11 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                                   .read(userSourcesProvider.notifier)
                                   .toggleTrust(source.id, source.isTrusted);
                             },
+                            onToggleMute: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleMute(source.id, source.isMuted);
+                            },
                           )),
                       const SizedBox(height: 16),
                     ],
@@ -170,6 +180,50 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                               ref
                                   .read(userSourcesProvider.notifier)
                                   .toggleTrust(source.id, source.isTrusted);
+                            },
+                            onToggleMute: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleMute(source.id, source.isMuted);
+                            },
+                          )),
+                    ],
+                    if (mutedSources.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12.0),
+                        child: Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
+                              size: 16,
+                              color: colors.textTertiary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Sources masquées',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ...mutedSources.map((source) => SourceListItem(
+                            source: source,
+                            onTap: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleTrust(source.id, source.isTrusted);
+                            },
+                            onToggleMute: () {
+                              ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleMute(source.id, source.isMuted);
                             },
                           )),
                     ],
