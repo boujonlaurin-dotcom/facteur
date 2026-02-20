@@ -84,7 +84,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   Future<FeedResponse> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getFeed(
-        page: page, limit: _limit, mode: _selectedFilter, theme: _selectedTheme);
+        page: page,
+        limit: _limit,
+        mode: _selectedFilter,
+        theme: _selectedTheme);
 
     // Update pagination state
     _hasNext = response.pagination.hasNext;
@@ -309,6 +312,19 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// Check if content is currently being consumed (animating out)
   bool isContentConsumed(String contentId) {
     return _consumedContentIds.contains(contentId);
+  }
+
+  /// Update a content item in the feed list (e.g. after detail screen changes).
+  /// Preserves provider-managed fields like [status] (consumed marking).
+  void updateContent(Content updated) {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    final items = currentState.items.map((c) {
+      if (c.id != updated.id) return c;
+      return updated.copyWith(status: c.status);
+    }).toList();
+    state = AsyncData(FeedState(items: items));
   }
 
   Future<void> markContentAsConsumed(Content content) async {

@@ -98,7 +98,7 @@ class _NoteWelcomeTooltipState extends State<NoteWelcomeTooltip>
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    'Ta réaction compte. Ajoute une note !',
+                    'Approprie toi l\'info. Ajoute une note !',
                     style: TextStyle(
                       color: colors.textPrimary,
                       fontSize: 13,
