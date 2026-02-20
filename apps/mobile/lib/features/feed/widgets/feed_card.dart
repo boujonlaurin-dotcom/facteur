@@ -19,6 +19,7 @@ class FeedCard extends StatelessWidget {
   final bool isSaved;
   final bool isLiked;
   final bool isFollowedSource;
+  final Color? backgroundColor;
 
   const FeedCard({
     super.key,
@@ -33,6 +34,7 @@ class FeedCard extends StatelessWidget {
     this.isSaved = false,
     this.isLiked = false,
     this.isFollowedSource = false,
+    this.backgroundColor,
   });
 
   @override
@@ -51,6 +53,7 @@ class FeedCard extends StatelessWidget {
             onLongPressStart: onLongPressStart,
             onLongPressMoveUpdate: onLongPressMoveUpdate,
             onLongPressEnd: onLongPressEnd,
+            backgroundColor: backgroundColor,
             padding: EdgeInsets.zero,
             borderRadius: FacteurRadius.small,
             child: Column(

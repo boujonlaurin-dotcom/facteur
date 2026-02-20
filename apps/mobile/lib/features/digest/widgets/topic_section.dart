@@ -243,6 +243,13 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
+  /// Card background blends with the digest gradient container.
+  Color _cardBackground(BuildContext context) {
+    final colors = context.facteurColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return colors.surface.withValues(alpha: isDark ? 0.55 : 0.7);
+  }
+
   Widget _buildSingleArticle(DigestItem article) {
     return FeedCard(
       content: _convertToContent(article),
@@ -255,10 +262,12 @@ class _TopicSectionState extends State<TopicSection> {
           ? () => widget.onNotInterested!(article)
           : null,
       isFollowedSource: article.isFollowedSource,
+      backgroundColor: _cardBackground(context),
     );
   }
 
   Widget _buildPageView(DigestTopic topic) {
+    final bg = _cardBackground(context);
     return PageView.builder(
       controller: _pageController,
       onPageChanged: (index) => setState(() => _currentPage = index),
@@ -280,6 +289,7 @@ class _TopicSectionState extends State<TopicSection> {
                 ? () => widget.onNotInterested!(article)
                 : null,
             isFollowedSource: article.isFollowedSource,
+            backgroundColor: bg,
           ),
         );
       },
