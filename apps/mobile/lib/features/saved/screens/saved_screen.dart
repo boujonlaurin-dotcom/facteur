@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
@@ -13,6 +13,7 @@ import '../../feed/widgets/feed_card.dart';
 import '../models/collection_model.dart';
 import '../providers/collections_provider.dart';
 import '../providers/saved_feed_provider.dart';
+import '../providers/weekly_notes_provider.dart';
 import '../widgets/collection_dialogs.dart';
 import '../widgets/collection_grid_cell.dart';
 import '../widgets/collection_picker_sheet.dart';
@@ -30,12 +31,14 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
       ref.read(savedFeedProvider.notifier).refresh(),
       ref.read(collectionsProvider.notifier).refresh(),
     ]);
+    ref.invalidate(weeklyNotesProvider);
   }
 
   @override
   Widget build(BuildContext context) {
     final savedAsync = ref.watch(savedFeedProvider);
     final collectionsAsync = ref.watch(collectionsProvider);
+    final weeklyNotesAsync = ref.watch(weeklyNotesProvider);
     final colors = context.facteurColors;
 
     return Scaffold(
@@ -90,7 +93,25 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
               ),
             ),
 
-            // Section 2: Récemment sauvegardés (FeedCards)
+            // Section 2: Tes pensées de la semaine
+            weeklyNotesAsync.when(
+              data: (weeklyNotes) {
+                if (weeklyNotes.isEmpty) return const SliverToBoxAdapter();
+                return SliverToBoxAdapter(
+                  child: _WeeklyNotesSection(
+                    articles: weeklyNotes,
+                    colors: colors,
+                    onToggleSave: (content) {
+                      ref.read(savedFeedProvider.notifier).toggleSave(content);
+                    },
+                  ),
+                );
+              },
+              loading: () => const SliverToBoxAdapter(),
+              error: (_, __) => const SliverToBoxAdapter(),
+            ),
+
+            // Section 3: Récemment sauvegardés (FeedCards)
             savedAsync.when(
               data: (saved) {
                 if (saved.isEmpty) return const SliverToBoxAdapter();
@@ -139,9 +160,9 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          mainAxisSpacing: 16,
+          mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 0.75,
+          childAspectRatio: 1.0,
         ),
         delegate: SliverChildBuilderDelegate(
           (_, index) {
@@ -261,6 +282,82 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
   }
 }
 
+/// Section "Tes pensées de la semaine" — articles with notes from last 7 days.
+class _WeeklyNotesSection extends ConsumerWidget {
+  final List<Content> articles;
+  final FacteurColors colors;
+  final ValueChanged<Content> onToggleSave;
+
+  const _WeeklyNotesSection({
+    required this.articles,
+    required this.colors,
+    required this.onToggleSave,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Divider(
+          color: colors.border.withValues(alpha: 0.3),
+          height: 1,
+          indent: 16,
+          endIndent: 16,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.pencilLine(PhosphorIconsStyle.fill),
+                size: 16,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Tes pensées de la semaine',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...articles.map((article) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: FeedCard(
+                content: article,
+                isSaved: article.isSaved,
+                isLiked: article.isLiked,
+                onTap: () => context.pushNamed(
+                  RouteNames.contentDetail,
+                  pathParameters: {'id': article.id},
+                  extra: article,
+                ),
+                onLongPressStart: (_) =>
+                    ArticlePreviewOverlay.show(context, article),
+                onLongPressMoveUpdate: (details) =>
+                    ArticlePreviewOverlay.updateScroll(
+                        details.localOffsetFromOrigin.dy),
+                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+                onSave: () {
+                  onToggleSave(article);
+                  HapticFeedback.mediumImpact();
+                },
+                onSaveLongPress: () =>
+                    CollectionPickerSheet.show(context, article.id),
+              ),
+            )),
+      ],
+    );
+  }
+}
+
 /// Section "Récemment sauvegardés" avec des FeedCards complètes.
 class _RecentSavedSection extends ConsumerWidget {
   final List<Content> articles;
@@ -303,12 +400,11 @@ class _RecentSavedSection extends ConsumerWidget {
                 content: article,
                 isSaved: article.isSaved,
                 isLiked: article.isLiked,
-                onTap: () async {
-                  final uri = Uri.parse(article.url);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.inAppWebView);
-                  }
-                },
+                onTap: () => context.pushNamed(
+                  RouteNames.contentDetail,
+                  pathParameters: {'id': article.id},
+                  extra: article,
+                ),
                 onLongPressStart: (_) =>
                     ArticlePreviewOverlay.show(context, article),
                 onLongPressMoveUpdate: (details) =>

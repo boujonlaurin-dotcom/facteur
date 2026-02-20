@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.enums import ContentStatus
-from app.schemas.content import ContentStatusUpdate, HideContentRequest, ContentDetailResponse
+from app.schemas.content import ContentStatusUpdate, HideContentRequest, ContentDetailResponse, NoteUpsertRequest, NoteResponse
 from app.schemas.collection import SaveContentRequest
 from app.services.content_service import ContentService
 from app.services.collection_service import CollectionService
@@ -164,6 +164,52 @@ async def hide_content(
     
     await db.commit()
     return {"status": "ok", "is_hidden": True, "reason": request.reason}
+
+
+@router.put("/{content_id}/note", status_code=status.HTTP_200_OK, response_model=NoteResponse)
+async def upsert_note(
+    content_id: UUID,
+    request: NoteUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Crée ou met à jour une note sur un article. Auto-sauvegarde l'article."""
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+
+    try:
+        result = await service.upsert_note(
+            user_id=user_uuid,
+            content_id=content_id,
+            note_text=request.note_text,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    await db.commit()
+    return NoteResponse(
+        note_text=result.note_text,
+        note_updated_at=result.note_updated_at,
+        is_saved=result.is_saved,
+    )
+
+
+@router.delete("/{content_id}/note", status_code=status.HTTP_200_OK)
+async def delete_note(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Supprime la note d'un article. L'article reste sauvegardé."""
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+
+    result = await service.delete_note(user_id=user_uuid, content_id=content_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Status not found")
+
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)

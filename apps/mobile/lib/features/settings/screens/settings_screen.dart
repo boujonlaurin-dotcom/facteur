@@ -162,7 +162,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         context,
                         icon: Icons.bookmark_outline,
                         title: 'Mes sauvegardes',
-                        subtitle: 'Articles à consulter plus tard',
+                        subtitle: 'Articles sauvegardés et notes',
                         onTap: () {
                           context.push(RoutePaths.saved);
                         },

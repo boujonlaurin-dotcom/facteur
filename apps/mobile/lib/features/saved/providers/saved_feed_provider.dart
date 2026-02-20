@@ -16,9 +16,11 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
   static const int _limit = 20;
   bool _hasNext = true;
   bool _isLoadingMore = false;
+  bool _hasNoteFilter = false;
 
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
+  bool get hasNoteFilter => _hasNoteFilter;
 
   @override
   FutureOr<List<Content>> build() async {
@@ -35,10 +37,19 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
     return _fetchPage(page: 1);
   }
 
+  void setHasNoteFilter(bool value) {
+    if (_hasNoteFilter == value) return;
+    _hasNoteFilter = value;
+    refresh();
+  }
+
   Future<List<Content>> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getFeed(
-        page: page, limit: _limit, savedOnly: true // Force savedOnly
+        page: page,
+        limit: _limit,
+        savedOnly: true,
+        hasNote: _hasNoteFilter,
         );
 
     _hasNext = response.pagination.hasNext;
