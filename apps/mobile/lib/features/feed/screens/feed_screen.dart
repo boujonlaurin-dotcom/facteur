@@ -100,13 +100,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       return;
     }
 
-    final updated = await context.push<Content?>(
+    await context.push<bool>(
       '/feed/content/${content.id}',
       extra: content,
     );
-    if (updated != null) {
-      ref.read(feedProvider.notifier).updateContent(updated);
-    }
   }
 
   @override
@@ -360,10 +357,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // Saved nudge: show at position 6 if user has 3+ unread saves
                         final savedSummary =
                             ref.watch(savedSummaryProvider).valueOrNull;
-                        final savedNudgeDismissed = ref
-                                .watch(savedNudgeDismissedProvider)
-                                .valueOrNull ??
-                            false;
+                        final savedNudgeDismissed =
+                            ref.watch(savedNudgeDismissedProvider).valueOrNull ??
+                                false;
                         final showSavedNudge = !showCaughtUp &&
                             !savedNudgeDismissed &&
                             savedSummary != null &&
@@ -487,7 +483,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   isConsumed: isConsumed,
                                   child: FeedCard(
                                     content: content,
-                                    onTap: () => _showArticleModal(content),
+                                    onTap: () =>
+                                        _showArticleModal(content),
                                     onLongPressStart: (_) =>
                                         ArticlePreviewOverlay.show(
                                       context,
@@ -514,8 +511,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       if (!wasSaved) {
                                         NotificationService.showInfo(
                                           'Sauvegardé',
-                                          actionLabel:
-                                              'Ajouter à une collection',
+                                          actionLabel: 'Ajouter à une collection',
                                           onAction: () =>
                                               CollectionPickerSheet.show(
                                                   context, content.id),

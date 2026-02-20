@@ -272,9 +272,9 @@ class FeedCard extends StatelessWidget {
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(
                                   isSaved
-                                      ? PhosphorIcons.bookmarkSimple(
+                                      ? PhosphorIcons.bookmark(
                                           PhosphorIconsStyle.fill)
-                                      : PhosphorIcons.bookmarkSimple(),
+                                      : PhosphorIcons.bookmark(),
                                   size: 20,
                                   color: isSaved
                                       ? colors.primary
@@ -297,6 +297,7 @@ class FeedCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+
                         ],
                       ),
                     ],
@@ -332,7 +333,7 @@ class FeedCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     const Text(
-                      'Article annoté',
+                      'Note',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,

@@ -175,7 +175,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Note nudge: bounce note FAB after 20s if user hasn't opened note
-    _noteNudgeTimer = Timer(const Duration(seconds: _noteNudgeDelay), () {
+    _noteNudgeTimer =
+        Timer(const Duration(seconds: _noteNudgeDelay), () {
       if (mounted && !_hasOpenedNote) {
         _noteFabBounceController.forward();
       }
@@ -277,36 +278,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _shareArticle() async {
-    final content = _content;
-    if (content == null) return;
-
-    await Clipboard.setData(ClipboardData(text: content.url));
-    if (mounted) {
-      NotificationService.showInfo('Lien copié !');
-    }
-  }
-
-  Future<void> _openNoteSheet() async {
+  void _openNoteSheet() {
     final content = _content;
     if (content == null || content.isHidden) return;
 
-    // Capture state before opening sheet
-    final wasAlreadySaved = content.isSaved;
-    final hadNote = content.hasNote;
-
     _hasOpenedNote = true;
-    await NoteInputSheet.show(
+    NoteInputSheet.show(
       context,
       contentId: content.id,
       initialNoteText: content.noteText,
       onFirstCharacter: () {
-        // Auto-bookmark (visual feedback deferred to sheet close)
+        // Auto-bookmark + bounce animation
         if (!content.isSaved) {
           setState(() {
             _content = content.copyWith(isSaved: true);
           });
         }
+        _bookmarkBounceController.forward(from: 0);
       },
       onNoteSaved: (text) {
         if (mounted) {
@@ -322,23 +310,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       onNoteDeleted: () {
         if (mounted) {
           setState(() {
-            _content = _content?.clearNote();
+            _content = _content?.copyWith(
+              noteText: null,
+              noteUpdatedAt: null,
+            );
           });
         }
       },
     );
-
-    // Sheet closed — visual feedback if a note was created
-    if (mounted && _content != null && _content!.hasNote && !hadNote) {
-      _bookmarkBounceController.forward(from: 0);
-      if (!wasAlreadySaved) {
-        NotificationService.showInfo(
-          'Sauvegardé',
-          actionLabel: 'Ajouter à une collection',
-          onAction: () => CollectionPickerSheet.show(context, _content!.id),
-        );
-      }
-    }
   }
 
   @override
@@ -559,8 +538,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         heroTag: 'original_fab',
                         tooltip: _getFabLabel(),
                         child: Icon(
-                          PhosphorIcons.arrowSquareOut(
-                              PhosphorIconsStyle.regular),
+                          PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
                           size: 20,
                         ),
                       ),
@@ -571,19 +549,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         child: FloatingActionButton(
                           mini: true,
                           onPressed: content.isHidden ? null : _openNoteSheet,
-                          backgroundColor: content.isHidden
-                              ? colors.surfaceElevated
-                              : colors.primary,
+                          backgroundColor:
+                              content.isHidden ? colors.surfaceElevated : colors.primary,
                           foregroundColor: Colors.white,
                           elevation: 4,
                           heroTag: 'note_fab',
                           tooltip: 'Nouvelle note',
                           child: Icon(
                             content.hasNote
-                                ? PhosphorIcons.pencilLine(
-                                    PhosphorIconsStyle.fill)
-                                : PhosphorIcons.pencilLine(
-                                    PhosphorIconsStyle.regular),
+                                ? PhosphorIcons.pencilLine(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.pencilLine(PhosphorIconsStyle.regular),
                             size: 20,
                           ),
                         ),
@@ -631,7 +606,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       size: 18,
                       color: colors.textSecondary,
                     ),
-                    onPressed: () => context.pop(_content),
+                    onPressed: () => context.pop(_isConsumed),
                   ),
                   const SizedBox(width: 4),
 
@@ -709,44 +684,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
                   ),
 
-                  // Share button — copie le lien dans le presse-papier
-                  IconButton(
-                    padding: const EdgeInsets.all(4),
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(),
-                    onPressed: _shareArticle,
-                    icon: Icon(
-                      PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
-                      size: 22,
-                      color: colors.textSecondary,
-                    ),
-                  ),
-
                   // Bookmark toggle (with bounce animation)
-                  // Long-press opens collection picker
-                  GestureDetector(
-                    onLongPress: () {
-                      HapticFeedback.mediumImpact();
-                      CollectionPickerSheet.show(context, content.id);
-                    },
-                    child: ScaleTransition(
-                      scale: _bookmarkScaleAnimation,
-                      child: IconButton(
-                        padding: const EdgeInsets.all(4),
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(),
-                        onPressed: _toggleBookmark,
-                        icon: Icon(
-                          content.isSaved
-                              ? PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.fill)
-                              : PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.regular),
-                          size: 22,
-                          color: content.isSaved
-                              ? colors.primary
-                              : colors.textSecondary,
-                        ),
+                  ScaleTransition(
+                    scale: _bookmarkScaleAnimation,
+                    child: IconButton(
+                      padding: const EdgeInsets.all(4),
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(),
+                      onPressed: _toggleBookmark,
+                      icon: Icon(
+                        content.isSaved
+                            ? PhosphorIcons.bookmarkSimple(
+                                PhosphorIconsStyle.fill)
+                            : PhosphorIcons.bookmarkSimple(
+                                PhosphorIconsStyle.regular),
+                        size: 22,
+                        color: content.isSaved
+                            ? colors.primary
+                            : colors.textSecondary,
                       ),
                     ),
                   ),

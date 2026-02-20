@@ -75,7 +75,6 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
-    @JsonKey(name: 'note_text') String? noteText,
   }) = _DigestItem;
 
   factory DigestItem.fromJson(Map<String, dynamic> json) =>

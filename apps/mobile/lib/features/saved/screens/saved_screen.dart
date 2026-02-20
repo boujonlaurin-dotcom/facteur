@@ -162,7 +162,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 0.75,
+          childAspectRatio: 1.0,
         ),
         delegate: SliverChildBuilderDelegate(
           (_, index) {
@@ -243,12 +243,12 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
               leading: Icon(
                   PhosphorIcons.pencilSimple(PhosphorIconsStyle.regular),
                   color: colors.textPrimary),
-              title:
-                  Text('Renommer', style: TextStyle(color: colors.textPrimary)),
+              title: Text('Renommer',
+                  style: TextStyle(color: colors.textPrimary)),
               onTap: () async {
                 Navigator.pop(sheetContext);
-                final newName =
-                    await showRenameCollectionDialog(context, collection.name);
+                final newName = await showRenameCollectionDialog(
+                    context, collection.name);
                 if (newName != null && newName.isNotEmpty) {
                   await ref
                       .read(collectionsProvider.notifier)
@@ -257,9 +257,11 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
               },
             ),
             ListTile(
-              leading: Icon(PhosphorIcons.trash(PhosphorIconsStyle.regular),
+              leading: Icon(
+                  PhosphorIcons.trash(PhosphorIconsStyle.regular),
                   color: colors.error),
-              title: Text('Supprimer', style: TextStyle(color: colors.error)),
+              title:
+                  Text('Supprimer', style: TextStyle(color: colors.error)),
               onTap: () async {
                 Navigator.pop(sheetContext);
                 final confirmed = await showDeleteCollectionConfirmation(
