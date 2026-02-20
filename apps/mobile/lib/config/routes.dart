@@ -24,6 +24,8 @@ import '../features/subscription/screens/paywall_screen.dart';
 import '../features/digest/screens/digest_screen.dart';
 import '../features/digest/screens/closure_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
+import '../features/saved/screens/saved_all_screen.dart';
+import '../features/saved/screens/collection_detail_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/shell_scaffold.dart';
@@ -41,6 +43,8 @@ class RouteNames {
   static const String feed = 'feed';
   static const String contentDetail = 'content-detail';
   static const String saved = 'saved';
+  static const String savedAll = 'saved-all';
+  static const String collectionDetail = 'collection-detail';
   static const String sources = 'sources';
   static const String addSource = 'add-source';
   static const String settings = 'settings';
@@ -237,6 +241,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: RoutePaths.saved,
             name: RouteNames.saved,
             builder: (context, state) => const SavedScreen(),
+            routes: [
+              GoRoute(
+                path: 'all',
+                name: RouteNames.savedAll,
+                builder: (context, state) => const SavedAllScreen(),
+              ),
+              GoRoute(
+                path: 'collection/:id',
+                name: RouteNames.collectionDetail,
+                builder: (context, state) => CollectionDetailScreen(
+                  collectionId: state.pathParameters['id']!,
+                ),
+              ),
+            ],
           ),
 
           // MVP: Progressions routes temporarily disabled

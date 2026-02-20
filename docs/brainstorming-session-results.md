@@ -167,10 +167,6 @@ Valider hypothèses           Revenus récurrents
 Créer notoriété              Partenariats médias (long-shot)
 ```
 
----
-
-## Priorisation MVP
-
 ### Essentiel (V0)
 1. ✅ Agrégation multi-sources (RSS + Podcasts + YouTube via RSS)
 2. ✅ Algo de tri/recommandation (règles simples)
@@ -193,6 +189,26 @@ Créer notoriété              Partenariats médias (long-shot)
 
 ---
 
+## Priorisation MVP
+
+## Action Planning
+
+### Top 3 priorités immédiates
+
+| # | Priorité | Prochaine étape |
+|---|----------|-----------------|
+| 1 | **Définir le Project Brief** | Formaliser la vision et les objectifs avec le template BMad |
+| 2 | **Créer le PRD** | Détailler les exigences fonctionnelles et non-fonctionnelles |
+| 3 | **Designer l'onboarding** | Définir les 5-7 questions du questionnaire ludique |
+
+### Questions ouvertes pour la suite
+- Quel pricing exact ? (mensuel, annuel, quel montant ?)
+- Quelles sources RSS/newsletters intégrer en premier ?
+- Quel design system / identité visuelle ?
+- Solo founder ou équipe ? Build vs buy vs outsource ?
+
+---
+
 ## Décision Format MVP
 
 ### Dilemme exploré
@@ -201,6 +217,7 @@ Créer notoriété              Partenariats médias (long-shot)
 
 ### Décision finale
 > **App mobile** — Car l'hypothèse "les gens paieront pour une expérience fluide et ludique" ne peut pas être validée par une newsletter.
+
 
 ### Stack technique
 
@@ -239,22 +256,6 @@ Créer notoriété              Partenariats médias (long-shot)
 
 ---
 
-## Action Planning
-
-### Top 3 priorités immédiates
-
-| # | Priorité | Prochaine étape |
-|---|----------|-----------------|
-| 1 | **Définir le Project Brief** | Formaliser la vision et les objectifs avec le template BMad |
-| 2 | **Créer le PRD** | Détailler les exigences fonctionnelles et non-fonctionnelles |
-| 3 | **Designer l'onboarding** | Définir les 5-7 questions du questionnaire ludique |
-
-### Questions ouvertes pour la suite
-- Quel pricing exact ? (mensuel, annuel, quel montant ?)
-- Quelles sources RSS/newsletters intégrer en premier ?
-- Quel design system / identité visuelle ?
-- Solo founder ou équipe ? Build vs buy vs outsource ?
-
 ---
 
 ## Réflexion & Follow-up
@@ -275,4 +276,3 @@ Créer notoriété              Partenariats médias (long-shot)
 ---
 
 *Document généré via BMad Method — Session de brainstorming facilitée*
-

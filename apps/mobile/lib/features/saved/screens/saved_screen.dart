@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
-import '../../../widgets/article_preview_modal.dart';
-import '../providers/saved_feed_provider.dart';
-import '../../feed/widgets/feed_card.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../../widgets/article_preview_modal.dart';
+import '../../feed/models/content_model.dart';
+import '../../feed/widgets/feed_card.dart';
+import '../models/collection_model.dart';
+import '../providers/collections_provider.dart';
+import '../providers/saved_feed_provider.dart';
+import '../widgets/collection_dialogs.dart';
+import '../widgets/collection_grid_cell.dart';
+import '../widgets/collection_picker_sheet.dart';
 
 class SavedScreen extends ConsumerStatefulWidget {
   const SavedScreen({super.key});
@@ -17,34 +25,17 @@ class SavedScreen extends ConsumerStatefulWidget {
 }
 
 class _SavedScreenState extends ConsumerState<SavedScreen> {
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      ref.read(savedFeedProvider.notifier).loadMore();
-    }
-  }
-
   Future<void> _refresh() async {
-    return ref.read(savedFeedProvider.notifier).refresh();
+    await Future.wait([
+      ref.read(savedFeedProvider.notifier).refresh(),
+      ref.read(collectionsProvider.notifier).refresh(),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
-    final feedAsync = ref.watch(savedFeedProvider);
+    final savedAsync = ref.watch(savedFeedProvider);
+    final collectionsAsync = ref.watch(collectionsProvider);
     final colors = context.facteurColors;
 
     return Scaffold(
@@ -56,117 +47,324 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
         titleTextStyle: Theme.of(context).textTheme.displaySmall,
       ),
       body: RefreshIndicator(
-              onRefresh: _refresh,
-              color: colors.primary,
-              child: feedAsync.when(
-                data: (contents) {
-                  if (contents.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            PhosphorIcons.bookmarkSimple(
-                                PhosphorIconsStyle.duotone),
-                            size: 64,
-                            color: colors.textSecondary,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Aucune sauvegarde',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return CustomScrollView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 16),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              if (index == contents.length) {
-                                final notifier =
-                                    ref.read(savedFeedProvider.notifier);
-                                if (notifier.hasNext) {
-                                  return const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(16.0),
-                                      child:
-                                          CircularProgressIndicator.adaptive(),
-                                    ),
-                                  );
-                                } else {
-                                  return const SizedBox(height: 64);
-                                }
-                              }
-
-                              final content = contents[index];
-                              openArticle() async {
-                                final uri = Uri.parse(content.url);
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(
-                                    uri,
-                                    mode: LaunchMode.inAppWebView,
-                                  );
-                                } else {
-                                  NotificationService.showError(
-                                    'Impossible d\'ouvrir le lien : ${content.url}',
-                                  );
-                                }
-                              }
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: FeedCard(
-                                  content: content,
-                                  isSaved: true,
-                                  isLiked: content.isLiked,
-                                  onTap: openArticle,
-                                  onLongPressStart: (_) =>
-                                      ArticlePreviewOverlay.show(
-                                    context,
-                                    content,
-                                  ),
-                                  onLongPressMoveUpdate: (details) =>
-                                      ArticlePreviewOverlay.updateScroll(
-                                    details.localOffsetFromOrigin.dy,
-                                  ),
-                                  onLongPressEnd: (_) =>
-                                      ArticlePreviewOverlay.dismiss(),
-                                  onSave: () async {
-                                    // Remove from saved (unbookmark)
-                                    if (!mounted) return;
-                                    await ref
-                                        .read(savedFeedProvider.notifier)
-                                        .toggleSave(content);
-                                  },
-                                ),
-                              );
-                            },
-                            childCount: contents.length + 1,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-                loading: () => Center(
-                    child: CircularProgressIndicator(color: colors.primary)),
-                error: (err, stack) => Center(child: Text('Erreur: $err')),
+        onRefresh: _refresh,
+        color: colors.primary,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // Section 1: Collections header
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Text(
+                  'Collections',
+                  style: TextStyle(
+                    color: colors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
             ),
+
+            // Section 1: Collections grid
+            collectionsAsync.when(
+              data: (collections) => _buildCollectionsGrid(
+                collections,
+                savedAsync.value ?? [],
+                colors,
+              ),
+              loading: () => SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Center(
+                    child: CircularProgressIndicator(color: colors.primary),
+                  ),
+                ),
+              ),
+              error: (_, __) => _buildCollectionsGrid(
+                [],
+                savedAsync.value ?? [],
+                colors,
+              ),
+            ),
+
+            // Section 2: Récemment sauvegardés (FeedCards)
+            savedAsync.when(
+              data: (saved) {
+                if (saved.isEmpty) return const SliverToBoxAdapter();
+                final recents = saved.take(5).toList();
+                return SliverToBoxAdapter(
+                  child: _RecentSavedSection(
+                    articles: recents,
+                    colors: colors,
+                    onToggleSave: (content) {
+                      ref.read(savedFeedProvider.notifier).toggleSave(content);
+                    },
+                  ),
+                );
+              },
+              loading: () => const SliverToBoxAdapter(),
+              error: (_, __) => const SliverToBoxAdapter(),
+            ),
+
+            // Bottom spacing
+            const SliverToBoxAdapter(child: SizedBox(height: 64)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollectionsGrid(
+    List<Collection> collections,
+    List<Content> allSaved,
+    FacteurColors colors,
+  ) {
+    final totalSaved = allSaved.length;
+    final readCount =
+        allSaved.where((c) => c.status == ContentStatus.consumed).length;
+    final thumbnails = allSaved.take(4).map((c) => c.thumbnailUrl).toList();
+
+    if (totalSaved == 0 && collections.isEmpty) {
+      return SliverFillRemaining(child: _EmptyState(colors: colors));
+    }
+
+    // "Tous les articles" + user collections + "Nouvelle collection"
+    final itemCount = 1 + collections.length + 1;
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.75,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (_, index) {
+            // Index 0: "Tous les articles"
+            if (index == 0) {
+              return AllArticlesGridCell(
+                totalCount: totalSaved,
+                readCount: readCount,
+                thumbnails: thumbnails,
+                onTap: () => context.pushNamed('saved-all'),
+              );
+            }
+
+            // Last item: "Nouvelle collection"
+            if (index == itemCount - 1) {
+              return NewCollectionCell(
+                onTap: () => _createCollection(),
+              );
+            }
+
+            // User collections
+            final collection = collections[index - 1];
+            return CollectionGridCell(
+              collection: collection,
+              onTap: () => context.pushNamed(
+                'collection-detail',
+                pathParameters: {'id': collection.id},
+              ),
+              onLongPress: () => _showCollectionMenu(collection),
+            );
+          },
+          childCount: itemCount,
+        ),
+      ),
+    );
+  }
+
+  // Use the widget's own context (not builder context) for dialogs
+  Future<void> _createCollection() async {
+    final name = await showCreateCollectionDialog(context);
+    if (name != null && name.isNotEmpty) {
+      try {
+        await ref.read(collectionsProvider.notifier).createCollection(name);
+        HapticFeedback.mediumImpact();
+        NotificationService.showInfo('Collection "$name" créée');
+      } catch (e) {
+        NotificationService.showError(
+            'Erreur: ${e.toString().replaceAll('Exception: ', '')}');
+      }
+    }
+  }
+
+  void _showCollectionMenu(Collection collection) {
+    final colors = context.facteurColors;
+    HapticFeedback.mediumImpact();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: colors.backgroundSecondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textTertiary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Icon(
+                  PhosphorIcons.pencilSimple(PhosphorIconsStyle.regular),
+                  color: colors.textPrimary),
+              title: Text('Renommer',
+                  style: TextStyle(color: colors.textPrimary)),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final newName = await showRenameCollectionDialog(
+                    context, collection.name);
+                if (newName != null && newName.isNotEmpty) {
+                  await ref
+                      .read(collectionsProvider.notifier)
+                      .updateCollection(collection.id, newName);
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                  PhosphorIcons.trash(PhosphorIconsStyle.regular),
+                  color: colors.error),
+              title:
+                  Text('Supprimer', style: TextStyle(color: colors.error)),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final confirmed = await showDeleteCollectionConfirmation(
+                    context, collection.name);
+                if (confirmed) {
+                  await ref
+                      .read(collectionsProvider.notifier)
+                      .deleteCollection(collection.id);
+                  NotificationService.showInfo('Collection supprimée');
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Section "Récemment sauvegardés" avec des FeedCards complètes.
+class _RecentSavedSection extends ConsumerWidget {
+  final List<Content> articles;
+  final FacteurColors colors;
+  final ValueChanged<Content> onToggleSave;
+
+  const _RecentSavedSection({
+    required this.articles,
+    required this.colors,
+    required this.onToggleSave,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Divider(
+          color: colors.border.withValues(alpha: 0.3),
+          height: 1,
+          indent: 16,
+          endIndent: 16,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            'Récents',
+            style: TextStyle(
+              color: colors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        ...articles.map((article) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: FeedCard(
+                content: article,
+                isSaved: article.isSaved,
+                isLiked: article.isLiked,
+                onTap: () async {
+                  final uri = Uri.parse(article.url);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.inAppWebView);
+                  }
+                },
+                onLongPressStart: (_) =>
+                    ArticlePreviewOverlay.show(context, article),
+                onLongPressMoveUpdate: (details) =>
+                    ArticlePreviewOverlay.updateScroll(
+                        details.localOffsetFromOrigin.dy),
+                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+                onSave: () {
+                  onToggleSave(article);
+                  HapticFeedback.mediumImpact();
+                },
+                onSaveLongPress: () =>
+                    CollectionPickerSheet.show(context, article.id),
+              ),
+            )),
+      ],
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final FacteurColors colors;
+
+  const _EmptyState({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
+            size: 64,
+            color: colors.textSecondary,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Aucune sauvegarde',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: colors.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              'Sauvegardez des articles depuis le feed ou le digest',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: colors.textTertiary,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
