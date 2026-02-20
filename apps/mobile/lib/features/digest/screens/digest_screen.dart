@@ -16,6 +16,7 @@ import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
+import '../providers/digest_format_provider.dart';
 import '../providers/digest_mode_provider.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
@@ -173,11 +174,14 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final digestAsync = ref.watch(digestProvider);
     final modeState = ref.watch(digestModeProvider);
 
-    // Initialiser le mode depuis la réponse API
+    // Initialiser le mode et le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
         if (digest != null && previous?.value?.mode != digest.mode) {
           ref.read(digestModeProvider.notifier).initFromDigestResponse(digest.mode);
+        }
+        if (digest != null && previous?.value?.formatVersion != digest.formatVersion) {
+          ref.read(digestFormatProvider.notifier).initFromDigestResponse(digest.formatVersion);
         }
       });
     });
@@ -371,7 +375,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: digestAsync.when(
                       data: (digest) {
-                        if (digest == null || digest.items.isEmpty) {
+                        if (digest == null ||
+                            (digest.items.isEmpty && digest.topics.isEmpty)) {
                           return _buildEmptyState(colors);
                         }
 
@@ -386,6 +391,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 ignoring: modeState.isRegenerating,
                                 child: DigestBriefingSection(
                                   items: digest.items,
+                                  topics: digest.usesTopics
+                                      ? digest.topics
+                                      : null,
                                   onItemTap: _openArticle,
                                   onLike: _handleLike,
                                   onSave: _handleSave,

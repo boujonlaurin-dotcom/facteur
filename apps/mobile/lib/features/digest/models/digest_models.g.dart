@@ -81,6 +81,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
       rank: (json['rank'] as num?)?.toInt() ?? 0,
       reason: json['reason'] as String? ?? '',
+      isFollowedSource: json['is_followed_source'] as bool? ?? false,
       isPaid: json['is_paid'] as bool? ?? false,
       isRead: json['is_read'] as bool? ?? false,
       isSaved: json['is_saved'] as bool? ?? false,
@@ -106,12 +107,42 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'source': instance.source,
       'rank': instance.rank,
       'reason': instance.reason,
+      'is_followed_source': instance.isFollowedSource,
       'is_paid': instance.isPaid,
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
       'is_liked': instance.isLiked,
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
+    };
+
+_$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
+    _$DigestTopicImpl(
+      topicId: json['topic_id'] as String,
+      label: json['label'] as String,
+      rank: (json['rank'] as num?)?.toInt() ?? 1,
+      reason: json['reason'] as String? ?? '',
+      isTrending: json['is_trending'] as bool? ?? false,
+      isUne: json['is_une'] as bool? ?? false,
+      theme: json['theme'] as String?,
+      topicScore: (json['topic_score'] as num?)?.toDouble() ?? 0.0,
+      articles: (json['articles'] as List<dynamic>?)
+              ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+    );
+
+Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
+    <String, dynamic>{
+      'topic_id': instance.topicId,
+      'label': instance.label,
+      'rank': instance.rank,
+      'reason': instance.reason,
+      'is_trending': instance.isTrending,
+      'is_une': instance.isUne,
+      'theme': instance.theme,
+      'topic_score': instance.topicScore,
+      'articles': instance.articles,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
@@ -121,8 +152,13 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
       targetDate: DateTime.parse(json['target_date'] as String),
       generatedAt: DateTime.parse(json['generated_at'] as String),
       mode: json['mode'] as String? ?? 'pour_vous',
+      formatVersion: json['format_version'] as String? ?? 'topics_v1',
       items: (json['items'] as List<dynamic>?)
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      topics: (json['topics'] as List<dynamic>?)
+              ?.map((e) => DigestTopic.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       completionThreshold: (json['completion_threshold'] as num?)?.toInt() ?? 5,
@@ -140,7 +176,9 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'target_date': instance.targetDate.toIso8601String(),
       'generated_at': instance.generatedAt.toIso8601String(),
       'mode': instance.mode,
+      'format_version': instance.formatVersion,
       'items': instance.items,
+      'topics': instance.topics,
       'completion_threshold': instance.completionThreshold,
       'is_completed': instance.isCompleted,
       'completed_at': instance.completedAt?.toIso8601String(),

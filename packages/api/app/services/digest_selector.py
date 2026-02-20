@@ -534,144 +534,71 @@ class DigestSelector:
                 lookback_hours=hours_lookback
             )
         
-        # Track user source count separately for fallback decision
+        # Track user source count separately
         user_source_count = len(candidates)
-        total_candidates = len(candidates)
-        
-        # Étape 2: Fallback aux sources curatées si nécessaire
-        # CRITICAL FIX: Use curated fallback if user sources < 3 OR total < min_pool_size
-        # This ensures users always get a full digest even if they follow few sources
-        max_lookback = 168  # 7 jours max
-        fallback_iterations = 0
-        
-        # Enter fallback if we have fewer than 3 user sources OR need more candidates
-        needs_fallback = user_source_count < 3 or total_candidates < min_pool_size
-        
-        logger.info(
-            "digest_fallback_decision",
-            user_id=str(user_id),
-            user_source_count=user_source_count,
-            total_candidates=total_candidates,
-            min_pool_size=min_pool_size,
-            needs_fallback=needs_fallback,
-            condition_user_sources=f"{user_source_count} < 3",
-            condition_total=f"{total_candidates} < {min_pool_size}"
+
+        # Étape 2: ALWAYS enrich pool with curated sources
+        # Wider pool → better Jaccard clustering → fewer singleton topics.
+        # Curated articles compete on score like everything else; followed
+        # sources still get a +50 trusted_source bonus so they are preferred.
+        existing_ids = {c.id for c in candidates}
+        curated_query = (
+            select(Content)
+            .join(Content.source)
+            .options(selectinload(Content.source))
+            .where(
+                ~excluded_stmt,
+                Content.published_at >= since,
+                Source.is_curated == True,
+                Content.id.notin_(list(existing_ids)) if existing_ids else True,
+                Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
+                ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
+            )
+            .order_by(Content.published_at.desc())
+            .limit(200)
         )
-        
-        if needs_fallback:
-            for current_lookback in [hours_lookback, max_lookback]:
-                fallback_iterations += 1
-                
-                if len(candidates) >= min_pool_size:
-                    break
-                    
-                needed = min_pool_size - len(candidates)
-                existing_ids = {c.id for c in candidates}
-                since_fallback = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=current_lookback)
-                
-                fallback_query = (
-                    select(Content)
-                    .join(Content.source)
-                    .options(selectinload(Content.source))
-                    .where(
-                        ~excluded_stmt,
-                        Content.published_at >= since_fallback,
-                        Source.is_curated == True,
-                        # Exclure les articles déjà sélectionnés
-                        Content.id.notin_(list(existing_ids)) if existing_ids else True,
-                        # Respecter les mutes même en fallback
-                        Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
-                        ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
-                    )
-                    .order_by(Content.published_at.desc())
-                    .limit(needed * 3)  # Marge pour le scoring/diversité
+
+        # Filtrage des topics muets
+        if context.muted_topics:
+            curated_query = curated_query.where(
+                or_(
+                    Content.topics.is_(None),
+                    ~Content.topics.overlap(list(context.muted_topics))
                 )
-                
-                # Filtrage des topics muets
-                if context.muted_topics:
-                    fallback_query = fallback_query.where(
-                        or_(
-                            Content.topics.is_(None),
-                            ~Content.topics.overlap(list(context.muted_topics))
-                        )
-                    )
-
-                # Filtrage des types de contenu mutés
-                if context.muted_content_types:
-                    fallback_query = fallback_query.where(
-                        Content.content_type.notin_(list(context.muted_content_types))
-                    )
-
-                # Filtrage des articles payants (fallback, is_not(True) handles NULL rows)
-                if context.hide_paid_content:
-                    fallback_query = fallback_query.where(
-                        Content.is_paid.is_not(True)
-                    )
-
-                # Appliquer les filtres de mode sur le fallback aussi
-                if mode == DigestMode.SEREIN:
-                    fallback_query = apply_serein_filter(fallback_query)
-                elif mode == DigestMode.THEME_FOCUS and focus_theme:
-                    fallback_query = apply_theme_focus_filter(fallback_query, focus_theme)
-
-                # Prioriser les thèmes d'intérêt de l'utilisateur (seulement au premier essai)
-                # Inclut les sources dont les secondary_themes matchent aussi
-                if context.user_interests and current_lookback == hours_lookback:
-                    interests_list = list(context.user_interests)
-                    fallback_query = fallback_query.where(
-                        or_(
-                            Source.theme.in_(interests_list),
-                            Source.secondary_themes.overlap(interests_list)
-                        )
-                    )
-                
-                result = await self.session.execute(fallback_query)
-                fallback_candidates = list(result.scalars().all())
-                candidates.extend(fallback_candidates)
-                
-                curated_count = len(candidates) - user_source_count
-                
-                logger.info(
-                    "digest_candidates_fallback_iteration",
-                    user_id=str(user_id),
-                    iteration=fallback_iterations,
-                    lookback_hours=current_lookback,
-                    fetched_count=len(fallback_candidates),
-                    total_count=len(candidates),
-                    user_sources=user_source_count,
-                    curated_sources=curated_count,
-                    reason="user_sources_below_threshold_3"
-                )
-        else:
-            logger.info(
-                "digest_candidates_no_fallback_needed",
-                user_id=str(user_id),
-                user_source_count=user_source_count,
-                total_candidates=len(candidates),
-                min_pool_size=min_pool_size
             )
-            
-        if len(candidates) >= min_pool_size:
-            curated_count = len(candidates) - user_source_count
-            logger.info(
-                "digest_candidates_pool_complete",
-                user_id=str(user_id),
-                total_candidates=len(candidates),
-                user_sources=user_source_count,
-                curated_sources=curated_count,
-                user_to_curated_ratio=f"{user_source_count}:{curated_count}",
-                fallback_iterations=fallback_iterations
+
+        # Filtrage des types de contenu mutés
+        if context.muted_content_types:
+            curated_query = curated_query.where(
+                Content.content_type.notin_(list(context.muted_content_types))
             )
-        else:
-            curated_count = len(candidates) - user_source_count
-            logger.warning(
-                "digest_candidates_pool_insufficient",
-                user_id=str(user_id),
-                total_candidates=len(candidates),
-                user_sources=user_source_count,
-                curated_sources=curated_count,
-                required=min_pool_size
+
+        # Filtrage des articles payants
+        if context.hide_paid_content:
+            curated_query = curated_query.where(
+                Content.is_paid.is_not(True)
             )
+
+        # Appliquer les filtres de mode
+        if mode == DigestMode.SEREIN:
+            curated_query = apply_serein_filter(curated_query)
+        elif mode == DigestMode.THEME_FOCUS and focus_theme:
+            curated_query = apply_theme_focus_filter(curated_query, focus_theme)
+
+        result = await self.session.execute(curated_query)
+        curated_candidates = list(result.scalars().all())
+        candidates.extend(curated_candidates)
+
+        curated_count = len(curated_candidates)
+
+        logger.info(
+            "digest_candidates_pool_complete",
+            user_id=str(user_id),
+            total_candidates=len(candidates),
+            user_sources=user_source_count,
+            curated_sources=curated_count,
+            user_to_curated_ratio=f"{user_source_count}:{curated_count}",
+        )
             
         return candidates
     

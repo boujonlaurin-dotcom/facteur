@@ -67,6 +67,7 @@ class DigestItem with _$DigestItem {
     SourceMini? source,
     @Default(0) int rank,
     @Default('') String reason,
+    @JsonKey(name: 'is_followed_source') @Default(false) bool isFollowedSource,
     @JsonKey(name: 'is_paid') @Default(false) bool isPaid,
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
@@ -80,20 +81,58 @@ class DigestItem with _$DigestItem {
       _$DigestItemFromJson(json);
 }
 
+/// Model representing a topic cluster in the digest (topics_v1 format)
+@freezed
+class DigestTopic with _$DigestTopic {
+  const DigestTopic._();
+
+  const factory DigestTopic({
+    @JsonKey(name: 'topic_id') required String topicId,
+    required String label,
+    @Default(1) int rank,
+    @Default('') String reason,
+    @JsonKey(name: 'is_trending') @Default(false) bool isTrending,
+    @JsonKey(name: 'is_une') @Default(false) bool isUne,
+    String? theme,
+    @JsonKey(name: 'topic_score') @Default(0.0) double topicScore,
+    @Default([]) List<DigestItem> articles,
+  }) = _DigestTopic;
+
+  /// A topic is "covered" when at least one article has been interacted with
+  bool get isCovered =>
+      articles.any((a) => a.isRead || a.isSaved || a.isDismissed);
+
+  /// Number of sources covering this topic
+  int get sourceCount => articles.length;
+
+  factory DigestTopic.fromJson(Map<String, dynamic> json) =>
+      _$DigestTopicFromJson(json);
+}
+
 /// Model representing the full digest response from API
 @freezed
 class DigestResponse with _$DigestResponse {
+  const DigestResponse._();
+
   const factory DigestResponse({
     @JsonKey(name: 'digest_id') required String digestId,
     @JsonKey(name: 'user_id') required String userId,
     @JsonKey(name: 'target_date') required DateTime targetDate,
     @JsonKey(name: 'generated_at') required DateTime generatedAt,
     @JsonKey(defaultValue: 'pour_vous') @Default('pour_vous') String mode,
+    @JsonKey(name: 'format_version') @Default('topics_v1') String formatVersion,
     @Default([]) List<DigestItem> items,
+    @Default([]) List<DigestTopic> topics,
     @JsonKey(name: 'completion_threshold') @Default(5) int completionThreshold,
     @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
     @JsonKey(name: 'completed_at') DateTime? completedAt,
   }) = _DigestResponse;
+
+  /// Whether this digest uses the topics layout
+  bool get usesTopics => formatVersion == 'topics_v1' && topics.isNotEmpty;
+
+  /// Number of covered topics (for progress tracking)
+  int get coveredTopicCount => topics.where((t) => t.isCovered).length;
 
   factory DigestResponse.fromJson(Map<String, dynamic> json) =>
       _$DigestResponseFromJson(json);

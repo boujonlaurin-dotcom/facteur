@@ -139,9 +139,12 @@ class DigestService:
         if not effective_focus_theme and effective_mode == "theme_focus":
             effective_focus_theme = await self._get_user_focus_theme(user_id)
 
+        # 2b. Determine effective output format (user pref, default "topics")
+        effective_format = await self._get_user_digest_format(user_id)
+
         # 3. Generate new digest using DigestSelector
         step_start = time.time()
-        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme)
+        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme, output_format=effective_format)
         from app.services.digest_selector import DiversityConstraints
         from app.models.user import UserProfile as _UP
         _user_profile = await self.session.scalar(
@@ -151,12 +154,14 @@ class DigestService:
         digest_items = await self.selector.select_for_user(
             user_id, limit=target_size, hours_lookback=hours_lookback,
             mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
+            output_format=effective_format,
         )
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
         
         # Check if result is topic-based (list of TopicGroup)
         is_topics_format = digest_items and isinstance(digest_items[0], TopicGroup)
+        logger.info("digest_format_check", user_id=str(user_id), is_topics=is_topics_format, item_type=type(digest_items[0]).__name__ if digest_items else "empty")
 
         # Emergency Fallback: If standard selection returns nothing, grab from user's sources first
         # This prevents 503 errors when personalization is too restrictive or history is empty
@@ -1211,6 +1216,23 @@ class DigestService:
         )
         value = result.scalar_one_or_none()
         return value if value else None
+
+    async def _get_user_digest_format(self, user_id: UUID) -> str:
+        """Lit la préférence digest_format depuis user_preferences.
+
+        Returns 'topics' (default) or 'flat'.
+        """
+        from app.models.user import UserPreference, UserProfile
+        result = await self.session.execute(
+            select(UserPreference.preference_value)
+            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
+            .where(
+                UserProfile.user_id == user_id,
+                UserPreference.preference_key == "digest_format",
+            )
+        )
+        value = result.scalar_one_or_none()
+        return value if value in ("topics", "flat") else "topics"
 
     async def _get_user_focus_theme(self, user_id: UUID) -> Optional[str]:
         """Lit la préférence digest_focus_theme depuis user_preferences."""

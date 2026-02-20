@@ -18,6 +18,7 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onNotInterested;
   final bool isSaved;
   final bool isLiked;
+  final bool isFollowedSource;
 
   const FeedCard({
     super.key,
@@ -31,6 +32,7 @@ class FeedCard extends StatelessWidget {
     this.onNotInterested,
     this.isSaved = false,
     this.isLiked = false,
+    this.isFollowedSource = false,
   });
 
   @override
@@ -170,8 +172,24 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
+                            // Source suivie badge
+                            if (isFollowedSource) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                PhosphorIcons.star(PhosphorIconsStyle.fill),
+                                size: 12,
+                                color: colors.textSecondary,
+                              ),
+                            ],
+
                             // Récence
                             const SizedBox(width: FacteurSpacing.space2),
+                            Icon(
+                              PhosphorIcons.clock(),
+                              size: 12,
+                              color: colors.textSecondary,
+                            ),
+                            const SizedBox(width: 3),
                             Text(
                               timeago
                                   .format(content.publishedAt,

@@ -6,7 +6,7 @@ part of 'paid_content_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$hidePaidContentHash() => r'8bbf50cca550c43389149dc17406dfeff7aba8fd';
+String _$hidePaidContentHash() => r'e6ac4da4b85f6e44d9d8821494a940dc26f7948e';
 
 /// See also [HidePaidContent].
 @ProviderFor(HidePaidContent)

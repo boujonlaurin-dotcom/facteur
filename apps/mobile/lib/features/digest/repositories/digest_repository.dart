@@ -45,9 +45,14 @@ class DigestRepository {
         final data = response.data as Map<String, dynamic>;
         // ignore: avoid_print
         print('DigestRepository: Received data keys: ${data.keys}');
+        // ignore: avoid_print
+        print('DigestRepository: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}, items_count=${(data['items'] as List?)?.length ?? 0}');
 
         try {
-          return DigestResponse.fromJson(data);
+          final digest = DigestResponse.fromJson(data);
+          // ignore: avoid_print
+          print('DigestRepository: Parsed → usesTopics=${digest.usesTopics}, topics=${digest.topics.length}, items=${digest.items.length}');
+          return digest;
         } catch (e, stack) {
           // ignore: avoid_print
           print('DigestRepository: JSON PARSING ERROR: $e\n$stack');
@@ -169,6 +174,8 @@ class DigestRepository {
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
+        // ignore: avoid_print
+        print('DigestRepository.forceRegenerate: format_version=${data['format_version']}, topics_count=${(data['topics'] as List?)?.length ?? 0}');
         return DigestResponse.fromJson(data);
       }
       throw Exception('Failed to regenerate digest: ${response.statusCode}');

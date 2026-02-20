@@ -8,6 +8,7 @@ import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
 import 'digest_mode_tab_selector.dart';
+import 'topic_section.dart';
 
 /// Digest Briefing Section with premium design.
 /// Container smoothly animates its background color, border, and glow
@@ -16,6 +17,7 @@ import 'digest_mode_tab_selector.dart';
 /// Compact iOS-style segmented control sits top-right in the header.
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
+  final List<DigestTopic>? topics;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
@@ -29,6 +31,7 @@ class DigestBriefingSection extends StatefulWidget {
   const DigestBriefingSection({
     super.key,
     required this.items,
+    this.topics,
     required this.onItemTap,
     this.onSave,
     this.onLike,
@@ -43,9 +46,12 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
+  bool get _usesTopics =>
+      widget.topics != null && widget.topics!.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
-    if (widget.items.isEmpty) return const SizedBox.shrink();
+    if (widget.items.isEmpty && !_usesTopics) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -168,18 +174,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
               const SizedBox(height: 10),
 
-              // List of articles
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.items.length,
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 5),
-                itemBuilder: (context, index) {
-                  final item = widget.items[index];
-                  return _buildRankedCard(context, item, index + 1);
-                },
-              ),
+              // Layout branching: topics or flat
+              if (_usesTopics)
+                _buildTopicsLayout()
+              else
+                _buildFlatLayout(context),
             ],
           ),
         );
@@ -189,10 +188,19 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
   Widget _buildSegmentedProgressBar(
       FacteurColors colors, bool isDark) {
-    final processedCount = widget.items
-        .where((item) => item.isRead || item.isDismissed || item.isSaved)
-        .length;
-    final totalCount = widget.items.length;
+    final int processedCount;
+    final int totalCount;
+
+    if (_usesTopics) {
+      totalCount = widget.topics!.length;
+      processedCount = widget.topics!.where((t) => t.isCovered).length;
+    } else {
+      totalCount = widget.items.length;
+      processedCount = widget.items
+          .where((item) => item.isRead || item.isDismissed || item.isSaved)
+          .length;
+    }
+
     final isDone = processedCount >= totalCount;
 
     return Row(
@@ -229,6 +237,37 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           }),
         ),
       ],
+    );
+  }
+
+  /// Flat layout: existing list of ranked cards (flat_v1 / legacy)
+  Widget _buildFlatLayout(BuildContext context) {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: widget.items.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 5),
+      itemBuilder: (context, index) {
+        final item = widget.items[index];
+        return _buildRankedCard(context, item, index + 1);
+      },
+    );
+  }
+
+  /// Topics layout: sections with horizontal article scroll (topics_v1)
+  Widget _buildTopicsLayout() {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: widget.topics!.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (_, i) => TopicSection(
+        topic: widget.topics![i],
+        onArticleTap: widget.onItemTap,
+        onLike: widget.onLike,
+        onSave: widget.onSave,
+        onNotInterested: widget.onNotInterested,
+      ),
     );
   }
 

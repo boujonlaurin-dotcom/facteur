@@ -167,33 +167,29 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
-    // Optimistic update
+    // Optimistic update — apply to flat items
     final updatedItems = currentDigest.items.map((item) {
       if (item.contentId == contentId) {
-        switch (action) {
-          case 'like':
-            return item.copyWith(isLiked: true);
-          case 'unlike':
-            return item.copyWith(isLiked: false);
-          case 'read':
-            return item.copyWith(isRead: true, isDismissed: false);
-          case 'save':
-            return item.copyWith(isSaved: true);
-          case 'unsave':
-            return item.copyWith(isSaved: false);
-          case 'not_interested':
-            return item.copyWith(isDismissed: true, isRead: false);
-          case 'undo':
-            return item.copyWith(
-                isRead: false, isSaved: false, isLiked: false, isDismissed: false);
-          default:
-            return item;
-        }
+        return _applyActionToItem(item, action);
       }
       return item;
     }).toList();
 
-    final updatedDigest = currentDigest.copyWith(items: updatedItems);
+    // Also update articles inside topics (dual-update for topics_v1)
+    final updatedTopics = currentDigest.topics.map((topic) {
+      final updatedArticles = topic.articles.map((article) {
+        if (article.contentId == contentId) {
+          return _applyActionToItem(article, action);
+        }
+        return article;
+      }).toList();
+      return topic.copyWith(articles: updatedArticles);
+    }).toList();
+
+    final updatedDigest = currentDigest.copyWith(
+      items: updatedItems,
+      topics: updatedTopics,
+    );
     state = AsyncData(updatedDigest);
     // Optimistically update cache so navigating away and back reflects the action
     _updateCache(updatedDigest);
@@ -273,30 +269,60 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Get the count of processed items (read, dismissed, or saved)
+  /// Apply an action mutation to a DigestItem's flags.
+  DigestItem _applyActionToItem(DigestItem item, String action) {
+    switch (action) {
+      case 'like':
+        return item.copyWith(isLiked: true);
+      case 'unlike':
+        return item.copyWith(isLiked: false);
+      case 'read':
+        return item.copyWith(isRead: true, isDismissed: false);
+      case 'save':
+        return item.copyWith(isSaved: true);
+      case 'unsave':
+        return item.copyWith(isSaved: false);
+      case 'not_interested':
+        return item.copyWith(isDismissed: true, isRead: false);
+      case 'undo':
+        return item.copyWith(
+            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+      default:
+        return item;
+    }
+  }
+
+  /// Get the count of processed units (topics covered OR items processed)
   int get processedCount {
     final digest = state.value;
     if (digest == null) return 0;
+    if (digest.usesTopics) return digest.coveredTopicCount;
     return digest.items
         .where((item) => item.isRead || item.isDismissed || item.isSaved)
         .length;
   }
 
-  /// Get progress as a fraction (0.0 to 1.0)
-  double get progress {
+  /// Total units for progress denominator
+  int get totalCount {
     final digest = state.value;
-    if (digest == null || digest.items.isEmpty) return 0.0;
-    return processedCount / digest.items.length;
+    if (digest == null) return 0;
+    if (digest.usesTopics) return digest.topics.length;
+    return digest.items.length;
   }
 
-  /// Check if enough items are processed and trigger completion.
-  /// Completion triggers at completionThreshold (default 5) interactions,
-  /// not when all items are processed.
+  /// Get progress as a fraction (0.0 to 1.0)
+  double get progress {
+    final tc = totalCount;
+    if (tc == 0) return 0.0;
+    return processedCount / tc;
+  }
+
+  /// Check if all units are processed and trigger completion.
   void _checkAndHandleCompletion() {
     final digest = state.value;
     if (digest == null || digest.isCompleted) return;
 
-    if (processedCount >= digest.items.length) {
+    if (processedCount >= totalCount) {
       completeDigest();
     }
   }
@@ -411,19 +437,28 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
-    final updatedItems = currentDigest.items.map((item) {
-      if (item.contentId == contentId) {
-        return item.copyWith(
+    DigestItem applyFlags(DigestItem item) => item.copyWith(
           isRead: isRead ?? item.isRead,
           isSaved: isSaved ?? item.isSaved,
           isLiked: isLiked ?? item.isLiked,
           isDismissed: isDismissed ?? item.isDismissed,
         );
-      }
-      return item;
+
+    final updatedItems = currentDigest.items.map((item) {
+      return item.contentId == contentId ? applyFlags(item) : item;
     }).toList();
 
-    final updatedDigest = currentDigest.copyWith(items: updatedItems);
+    final updatedTopics = currentDigest.topics.map((topic) {
+      final updatedArticles = topic.articles.map((article) {
+        return article.contentId == contentId ? applyFlags(article) : article;
+      }).toList();
+      return topic.copyWith(articles: updatedArticles);
+    }).toList();
+
+    final updatedDigest = currentDigest.copyWith(
+      items: updatedItems,
+      topics: updatedTopics,
+    );
     state = AsyncData(updatedDigest);
     _updateCache(updatedDigest);
   }
