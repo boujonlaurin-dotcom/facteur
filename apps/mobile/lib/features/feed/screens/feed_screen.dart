@@ -25,6 +25,10 @@ import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../../core/ui/notification_service.dart';
+import '../../saved/widgets/collection_picker_sheet.dart';
+import '../../saved/widgets/saved_nudge.dart';
+import '../../saved/providers/saved_summary_provider.dart';
 import 'dart:math' as math;
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
@@ -350,12 +354,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 5;
                         const nudgePos = 5;
 
+                        // Saved nudge: show at position 6 if user has 3+ unread saves
+                        final savedSummary =
+                            ref.watch(savedSummaryProvider).valueOrNull;
+                        final savedNudgeDismissed =
+                            ref.watch(savedNudgeDismissedProvider).valueOrNull ??
+                                false;
+                        final showSavedNudge = !showCaughtUp &&
+                            !savedNudgeDismissed &&
+                            savedSummary != null &&
+                            savedSummary.unreadCount >= 3 &&
+                            contents.length > 6;
+                        const savedNudgePos = 6;
+
                         // Calculer le childCount - TOUJOURS utiliser la formule normale
                         // Le blocage est géré dans le builder, pas par le childCount
                         final int effectiveChildCount = contents.length +
                             1 +
                             (showCaughtUp ? 1 : 0) +
-                            (showingNudge ? 1 : 0);
+                            (showingNudge ? 1 : 0) +
+                            (showSavedNudge ? 1 : 0);
 
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -420,6 +438,23 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   }
                                 }
 
+                                // Saved Nudge at position 6
+                                if (showSavedNudge) {
+                                  final savedNudgeEffectivePos =
+                                      savedNudgePos + contentOffset;
+                                  if (listIndex == savedNudgeEffectivePos) {
+                                    final count = savedSummary!.unreadCount;
+                                    return SavedNudge(
+                                      key: const ValueKey('saved_nudge'),
+                                      message:
+                                          'Tu as $count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} non lu${count > 1 ? 's' : ''}',
+                                    );
+                                  }
+                                  if (listIndex > savedNudgeEffectivePos) {
+                                    contentOffset++;
+                                  }
+                                }
+
                                 final contentIndex = listIndex - contentOffset;
 
                                 if (contentIndex >= contents.length) {
@@ -468,11 +503,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     },
                                     isLiked: content.isLiked,
                                     onSave: () {
+                                      final wasSaved = content.isSaved;
                                       ref
                                           .read(feedProvider.notifier)
                                           .toggleSave(content);
+                                      // Show snackbar with collection CTA when saving (not unsaving)
+                                      if (!wasSaved) {
+                                        NotificationService.showInfo(
+                                          'Sauvegardé',
+                                          actionLabel: 'Ajouter à une collection',
+                                          onAction: () =>
+                                              CollectionPickerSheet.show(
+                                                  context, content.id),
+                                        );
+                                      }
                                     },
                                     isSaved: content.isSaved,
+                                    onSaveLongPress: () =>
+                                        CollectionPickerSheet.show(
+                                            context, content.id),
                                     onNotInterested: () =>
                                         _showPersonalizationSheet(content),
                                   ),

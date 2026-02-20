@@ -37,7 +37,9 @@ class NotificationService {
     state.removeCurrentSnackBar();
 
     final colors = (context ?? messengerKey.currentContext)?.facteurColors;
-    final primaryColor = colors?.primary ?? const Color(0xFFD35400);
+    final bgColor = colors?.backgroundSecondary ?? const Color(0xFF2A2A2A);
+    final textColor = colors?.textPrimary ?? Colors.white;
+    final accentColor = colors?.primary ?? const Color(0xFFD35400);
 
     state.showSnackBar(
       SnackBar(
@@ -45,31 +47,43 @@ class NotificationService {
         content: Row(
           children: [
             if (icon != null) ...[
-              Icon(icon, color: Colors.white, size: 20),
-              const SizedBox(width: 12),
+              Icon(icon, color: accentColor, size: 18),
+              const SizedBox(width: 10),
             ],
             Expanded(
               child: Text(
                 message,
-                style: FacteurTypography.bodyMedium(Colors.white)
-                    .copyWith(fontWeight: FontWeight.w500),
+                style: FacteurTypography.bodyMedium(textColor)
+                    .copyWith(fontWeight: FontWeight.w500, fontSize: 14),
               ),
             ),
+            if (actionLabel != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  state.hideCurrentSnackBar();
+                  onAction?.call();
+                },
+                child: Text(
+                  actionLabel,
+                  style: FacteurTypography.bodyMedium(accentColor).copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
-        backgroundColor: primaryColor,
+        backgroundColor: bgColor,
         behavior: SnackBarBehavior.floating,
+        elevation: 4,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         duration: duration,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
-        action: actionLabel != null
-            ? SnackBarAction(
-                label: actionLabel,
-                textColor: Colors.white,
-                onPressed: onAction ?? () {},
-              )
-            : null,
       ),
     );
 

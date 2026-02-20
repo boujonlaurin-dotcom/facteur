@@ -384,15 +384,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         // Silent tracking - no notification needed for automatic read
         break;
       case 'save':
-        NotificationService.showInfo(
-          'Article sauvegardé',
-          duration: const Duration(seconds: 2),
-        );
+        // Notification handled by DigestScreen._handleSave (with collection CTA)
+        break;
       case 'unsave':
-        NotificationService.showInfo(
-          'Article retiré des sauvegardes',
-          duration: const Duration(seconds: 2),
-        );
+        // Silent — visual toggle is sufficient feedback
+        break;
       case 'not_interested':
         // Silent — user will get specific feedback from the personalization sheet
         // after choosing to mute source or theme

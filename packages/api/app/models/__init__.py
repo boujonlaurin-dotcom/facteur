@@ -12,6 +12,7 @@ from app.models.daily_top3 import DailyTop3
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
 from app.models.user_personalization import UserPersonalization
+from app.models.collection import Collection, CollectionItem
 
 __all__ = [
     # Enums
@@ -45,5 +46,8 @@ __all__ = [
     "DigestCompletion",
     # Personalization (Story 4.7)
     "UserPersonalization",
+    # Collections (Saved Groups)
+    "Collection",
+    "CollectionItem",
 ]
 

@@ -13,6 +13,7 @@ import '../models/digest_models.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/streak_celebration.dart';
 import '../widgets/digest_summary.dart';
+import '../../saved/providers/saved_summary_provider.dart';
 
 /// Closure screen displayed after completing the digest (5/7 threshold)
 /// Shows celebration animation, streak count, and digest summary
@@ -281,6 +282,50 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 ),
               ),
             ),
+
+            // Saved articles nudge (subtle, after summary)
+            Builder(builder: (context) {
+              final savedSummary =
+                  ref.watch(savedSummaryProvider).valueOrNull;
+              if (savedSummary == null ||
+                  savedSummary.recentCount7d < 3) {
+                return const SizedBox.shrink();
+              }
+              final count = savedSummary.recentCount7d;
+              return Padding(
+                padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+                child: GestureDetector(
+                  onTap: () => context.push(RoutePaths.saved),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        PhosphorIcons.bookmarkSimple(
+                            PhosphorIconsStyle.regular),
+                        size: 14,
+                        color: colors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} cette semaine',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Voir',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
 
             const Spacer(flex: 3),
 
