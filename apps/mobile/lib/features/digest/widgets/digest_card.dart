@@ -345,7 +345,7 @@ class DigestCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           const Text(
-                            'Article avec note',
+                            'Article annoté',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
