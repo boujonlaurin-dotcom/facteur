@@ -265,10 +265,39 @@ class DigestService:
             if existing_ids:
                 curated_query = curated_query.where(Content.id.notin_(list(existing_ids)))
             stmt = curated_query
-            
+
             result = await self.session.execute(stmt)
             all_contents.extend(result.scalars().all())
-        
+
+        # LAST RESORT: If still not enough, query ANY active source with wider window (30 days)
+        # This guarantees new users always get a digest even if curated sources have no recent content
+        if len(all_contents) < limit:
+            existing_ids = {c.id for c in all_contents}
+            wider_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            any_source_query = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    Source.is_active == True,
+                    Content.published_at >= wider_cutoff,
+                )
+                .order_by(Content.published_at.desc())
+                .limit(fetch_limit - len(all_contents))
+            )
+            if existing_ids:
+                any_source_query = any_source_query.where(Content.id.notin_(list(existing_ids)))
+
+            result = await self.session.execute(any_source_query)
+            all_contents.extend(result.scalars().all())
+
+            if len(all_contents) > len(existing_ids):
+                logger.info(
+                    "digest_emergency_last_resort_used",
+                    user_id=str(user_id),
+                    added_count=len(all_contents) - len(existing_ids),
+                )
+
         # Apply diversity constraint: max 2 articles per source
         selected: list = []
         source_counts: dict = defaultdict(int)

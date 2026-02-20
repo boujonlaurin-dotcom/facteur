@@ -157,12 +157,10 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                           // Description
                           Text(
                             'Chaque jour, 5 articles sélectionnés pour vous',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyLarge
-                                ?.copyWith(
-                                  color: colors.textSecondary,
-                                ),
+                            style:
+                                Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: colors.textSecondary,
+                                    ),
                             textAlign: TextAlign.center,
                           ),
 
@@ -188,8 +186,7 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                           _FeatureItem(
                             icon: PhosphorIcons.xCircle(),
                             title: 'Passez',
-                            description:
-                                'Ignorez ce qui ne vous intéresse pas',
+                            description: 'Ignorez ce qui ne vous intéresse pas',
                           ),
 
                           const SizedBox(height: FacteurSpacing.space6),
@@ -199,22 +196,19 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                             padding:
                                 const EdgeInsets.all(FacteurSpacing.space3),
                             decoration: BoxDecoration(
-                              color:
-                                  colors.warning.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(
-                                  FacteurRadius.medium),
+                              color: colors.warning.withValues(alpha: 0.1),
+                              borderRadius:
+                                  BorderRadius.circular(FacteurRadius.medium),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  PhosphorIcons.fire(
-                                      PhosphorIconsStyle.fill),
+                                  PhosphorIcons.fire(PhosphorIconsStyle.fill),
                                   color: colors.warning,
                                   size: 20,
                                 ),
-                                const SizedBox(
-                                    width: FacteurSpacing.space2),
+                                const SizedBox(width: FacteurSpacing.space2),
                                 Flexible(
                                   child: Text(
                                     'Complétez les 5 pour maintenir votre série !',
@@ -238,8 +232,8 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                             child: ElevatedButton(
                               onPressed: _dismiss,
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 18),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 18),
                                 backgroundColor: colors.primary,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(
@@ -260,13 +254,11 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
 
                           // Explorer hint
                           Text(
-                            '💡 Vous pouvez explorer plus après votre Essentiel',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                  color: colors.textTertiary,
-                                ),
+                            'Et pour finir : fermez l\'app !',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: colors.textTertiary,
+                                    ),
                             textAlign: TextAlign.center,
                           ),
                         ],

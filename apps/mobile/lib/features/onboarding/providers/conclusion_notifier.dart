@@ -38,6 +38,12 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
   bool _apiCompleted = false;
   bool _animationCompleted = false;
 
+  static const _maxRetries = 2;
+  static const _retryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
+
   /// Démarre le processus de conclusion (animation + sauvegarde API)
   Future<void> startConclusion() async {
     state = const ConclusionLoading();
@@ -52,11 +58,11 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
 
     // 2. Démarrer l'appel API (en parallèle de l'animation)
     try {
-      await _saveOnboarding();
+      await _saveOnboardingWithRetry();
       _apiCompleted = true;
       _checkCompletion();
     } catch (e) {
-      // Annuler le timer et montrer l'erreur immédiatement
+      // Tous les retries ont échoué → montrer l'erreur
       _minAnimationTimer?.cancel();
       state = ConclusionError(e.toString());
     }
@@ -70,47 +76,68 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     }
   }
 
-  /// Sauvegarde les réponses d'onboarding via l'API
-  /// Retry automatique après refresh de session en cas d'erreur auth (403/401)
-  Future<void> _saveOnboarding() async {
+  /// Sauvegarde avec retry automatique pour erreurs transitoires
+  Future<void> _saveOnboardingWithRetry() async {
     final answers = _ref.read(onboardingProvider).answers;
     final userService = _ref.read(userApiServiceProvider);
 
     debugPrint('Début sauvegarde onboarding...');
 
-    // Premier essai
-    var result = await userService.saveOnboarding(answers);
+    OnboardingResult? lastResult;
 
-    // Si erreur d'auth (JWT stale après confirmation email), refresh session et réessayer
-    if (!result.success && result.errorType == ErrorType.auth) {
-      debugPrint('Onboarding: erreur auth, tentative de refresh session...');
-      try {
-        await _ref.read(authStateProvider.notifier).refreshUser();
-        // Petit délai pour laisser le token se propager
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-        debugPrint('Onboarding: session rafraîchie, retry API...');
-        result = await userService.saveOnboarding(answers);
-      } catch (e) {
-        debugPrint('Onboarding: échec refresh session: $e');
-        // On continue avec le résultat original
+    for (var attempt = 0; attempt <= _maxRetries; attempt++) {
+      if (attempt > 0) {
+        final delay = _retryDelays[attempt - 1];
+        debugPrint('Onboarding: retry $attempt/$_maxRetries après ${delay.inSeconds}s...');
+        await Future<void>.delayed(delay);
       }
-    }
 
-    if (result.success) {
-      await _saveProfileLocally(result.profile!);
-      await _trustSelectedSources(answers.preferredSources);
-      await _ref.read(onboardingProvider.notifier).clearSavedData();
+      var result = await userService.saveOnboarding(answers);
+
+      // Si erreur auth (JWT stale), refresh session et réessayer immédiatement
+      if (!result.success && result.errorType == ErrorType.auth) {
+        debugPrint('Onboarding: erreur auth, tentative de refresh session...');
+        try {
+          await _ref.read(authStateProvider.notifier).refreshUser();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          debugPrint('Onboarding: session rafraîchie, retry API...');
+          result = await userService.saveOnboarding(answers);
+        } catch (e) {
+          debugPrint('Onboarding: échec refresh session: $e');
+        }
+      }
+
+      if (result.success) {
+        await _saveProfileLocally(result.profile!);
+        // Trust sources en parallèle avec timeout (important pour le digest)
+        await _trustSelectedSourcesWithTimeout(answers.preferredSources);
+        await _ref.read(onboardingProvider.notifier).clearSavedData();
+
+        debugPrint(
+          'Onboarding sauvegardé avec succès ! '
+          'Profil: ${result.profile!.id}, '
+          'Intérêts: ${result.interestsCreated}, '
+          'Préférences: ${result.preferencesCreated}',
+        );
+        return; // Succès, on sort
+      }
+
+      lastResult = result;
+
+      // Ne pas retenter les erreurs de validation (données invalides → retry inutile)
+      if (result.errorType == ErrorType.validation) {
+        break;
+      }
 
       debugPrint(
-        'Onboarding sauvegardé avec succès ! '
-        'Profil: ${result.profile!.id}, '
-        'Intérêts: ${result.interestsCreated}, '
-        'Préférences: ${result.preferencesCreated}',
+        'Onboarding: échec tentative ${attempt + 1}/${_maxRetries + 1} '
+        '(${result.errorType}): ${result.errorMessage}',
       );
-    } else {
-      debugPrint('Erreur sauvegarde onboarding: ${result.errorMessage}');
-      throw Exception(result.friendlyErrorMessage);
     }
+
+    // Tous les retries ont échoué
+    debugPrint('Erreur sauvegarde onboarding après retries: ${lastResult?.errorMessage}');
+    throw Exception(lastResult?.friendlyErrorMessage ?? 'Erreur inconnue');
   }
 
   /// Sauvegarde le profil localement après succès API
@@ -127,19 +154,28 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
     }
   }
 
-  /// Marque les sources sélectionnées comme "de confiance"
-  Future<void> _trustSelectedSources(List<String>? sourceIds) async {
+  /// Marque les sources sélectionnées comme "de confiance" (avec timeout)
+  /// Awaité pour que les UserSource existent avant la génération du digest
+  Future<void> _trustSelectedSourcesWithTimeout(List<String>? sourceIds) async {
     if (sourceIds == null || sourceIds.isEmpty) return;
 
     final repository = _ref.read(sourcesRepositoryProvider);
 
-    for (final sourceId in sourceIds) {
-      try {
-        await repository.trustSource(sourceId);
-        debugPrint('Source $sourceId marquée comme de confiance');
-      } catch (e) {
-        debugPrint('Erreur trust source $sourceId: $e');
-      }
+    try {
+      await Future.wait(
+        sourceIds.map((sourceId) async {
+          try {
+            await repository.trustSource(sourceId);
+            debugPrint('Source $sourceId marquée comme de confiance');
+          } catch (e) {
+            debugPrint('Erreur trust source $sourceId: $e');
+          }
+        }),
+      ).timeout(const Duration(seconds: 5));
+    } on TimeoutException {
+      debugPrint('Trust sources timeout (5s) — digest utilisera le fallback');
+    } catch (e) {
+      debugPrint('Erreur globale trust sources: $e');
     }
   }
 

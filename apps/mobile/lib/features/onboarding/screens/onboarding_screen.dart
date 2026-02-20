@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_progress_bar.dart';
 import '../widgets/reaction_screen.dart';
 import '../onboarding_strings.dart';
+import '../../sources/screens/add_source_screen.dart';
 import 'questions/objective_question.dart';
 import 'questions/age_question.dart';
 import 'questions/approach_question.dart';
@@ -181,10 +183,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return const SourcesQuestion(key: ValueKey('sources'));
 
       case Section3Question.sourcesReaction:
-        return ReactionScreen(
+        return _SourcesReactionScreen(
           key: const ValueKey('sources_reaction'),
-          title: OnboardingStrings.sourcesReactionTitle,
-          message: OnboardingStrings.sourcesReactionMessage,
           onContinue: () {
             ref
                 .read(onboardingProvider.notifier)
@@ -195,5 +195,81 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       case Section3Question.finalize:
         return const FinalizeQuestion(key: ValueKey('finalize'));
     }
+  }
+}
+
+/// Widget dédié pour l'écran sources reaction avec compteur de sources ajoutées
+class _SourcesReactionScreen extends StatefulWidget {
+  final VoidCallback onContinue;
+
+  const _SourcesReactionScreen({
+    super.key,
+    required this.onContinue,
+  });
+
+  @override
+  State<_SourcesReactionScreen> createState() => _SourcesReactionScreenState();
+}
+
+class _SourcesReactionScreenState extends State<_SourcesReactionScreen> {
+  int _addedCount = 0;
+  static const _recommendedCount = 3;
+
+  Future<void> _openAddSource() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const AddSourceScreen(),
+      ),
+    );
+    // L'utilisateur revient de AddSourceScreen — incrémenter le compteur
+    if (mounted) {
+      setState(() => _addedCount++);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+
+    return ReactionScreen(
+      title: OnboardingStrings.sourcesReactionTitle,
+      message: OnboardingStrings.sourcesReactionMessage,
+      onContinue: widget.onContinue,
+      extraAction: Column(
+        children: [
+          OutlinedButton.icon(
+            onPressed: _openAddSource,
+            icon: Icon(
+              PhosphorIcons.plus(PhosphorIconsStyle.bold),
+              size: 18,
+            ),
+            label: const Text(OnboardingStrings.addSourceButton),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 14,
+              ),
+              side: BorderSide(
+                color: colors.primary.withValues(alpha: 0.3),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space3),
+          Text(
+            _addedCount >= _recommendedCount
+                ? '$_addedCount source${_addedCount > 1 ? 's' : ''} ajoutée${_addedCount > 1 ? 's' : ''}'
+                : '$_addedCount/$_recommendedCount sources (minimum recommandé)',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: _addedCount >= _recommendedCount
+                      ? colors.success
+                      : colors.textTertiary,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 }
