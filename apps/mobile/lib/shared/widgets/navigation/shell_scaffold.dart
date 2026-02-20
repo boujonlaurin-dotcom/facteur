@@ -52,15 +52,31 @@ class _BottomNavBar extends ConsumerWidget {
   void _onItemTapped(
       BuildContext context, WidgetRef ref, int index, int selectedIndex) {
     if (index == selectedIndex) {
-      // Already selected: Trigger scroll to top
-      HapticFeedback.mediumImpact();
-      switch (index) {
-        case 0:
-          ref.read(digestScrollTriggerProvider.notifier).state++;
-        case 1:
-          ref.read(feedScrollTriggerProvider.notifier).state++;
-        case 2:
-          ref.read(settingsScrollTriggerProvider.notifier).state++;
+      // Determine the root path for this tab
+      final tabRootPath = switch (index) {
+        0 => RoutePaths.digest,
+        1 => RoutePaths.feed,
+        2 => RoutePaths.settings,
+        _ => RoutePaths.digest,
+      };
+
+      final currentLocation = GoRouterState.of(context).uri.path;
+
+      if (currentLocation != tabRootPath) {
+        // In a sub-screen: pop to root of this tab
+        HapticFeedback.mediumImpact();
+        context.go(tabRootPath);
+      } else {
+        // Already at root: scroll to top
+        HapticFeedback.mediumImpact();
+        switch (index) {
+          case 0:
+            ref.read(digestScrollTriggerProvider.notifier).state++;
+          case 1:
+            ref.read(feedScrollTriggerProvider.notifier).state++;
+          case 2:
+            ref.read(settingsScrollTriggerProvider.notifier).state++;
+        }
       }
       return;
     }
