@@ -723,23 +723,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
 
                   // Bookmark toggle (with bounce animation)
-                  ScaleTransition(
-                    scale: _bookmarkScaleAnimation,
-                    child: IconButton(
-                      padding: const EdgeInsets.all(4),
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(),
-                      onPressed: _toggleBookmark,
-                      icon: Icon(
-                        content.isSaved
-                            ? PhosphorIcons.bookmarkSimple(
-                                PhosphorIconsStyle.fill)
-                            : PhosphorIcons.bookmarkSimple(
-                                PhosphorIconsStyle.regular),
-                        size: 22,
-                        color: content.isSaved
-                            ? colors.primary
-                            : colors.textSecondary,
+                  // Long-press opens collection picker
+                  GestureDetector(
+                    onLongPress: () {
+                      HapticFeedback.mediumImpact();
+                      CollectionPickerSheet.show(context, content.id);
+                    },
+                    child: ScaleTransition(
+                      scale: _bookmarkScaleAnimation,
+                      child: IconButton(
+                        padding: const EdgeInsets.all(4),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        onPressed: _toggleBookmark,
+                        icon: Icon(
+                          content.isSaved
+                              ? PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.fill)
+                              : PhosphorIcons.bookmarkSimple(
+                                  PhosphorIconsStyle.regular),
+                          size: 22,
+                          color: content.isSaved
+                              ? colors.primary
+                              : colors.textSecondary,
+                        ),
                       ),
                     ),
                   ),
