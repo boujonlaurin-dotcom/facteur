@@ -1,7 +1,7 @@
 """add_collections
 
-Revision ID: a1b2c3d4e5f6
-Revises: z1a2b3c4d5e6
+Revision ID: i4j5k6l7m8n9
+Revises: h3i4j5k6l7m8
 Create Date: 2026-02-20 10:00:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, None] = 'z1a2b3c4d5e6'
+revision: str = 'i4j5k6l7m8n9'
+down_revision: Union[str, None] = 'h3i4j5k6l7m8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
