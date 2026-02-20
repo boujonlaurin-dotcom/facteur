@@ -28,6 +28,7 @@ from app.services.recommendation.filter_presets import (
     get_opposing_biases,
     is_cluster_serein_compatible,
 )
+from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = structlog.get_logger()
@@ -56,6 +57,7 @@ class TopicGroup:
     is_trending: bool = False
     is_une: bool = False
     theme: str | None = None
+    subjects: list[str] = field(default_factory=list)
 
 
 class TopicSelector:
@@ -67,6 +69,7 @@ class TopicSelector:
 
     def __init__(self):
         self.importance_detector = ImportanceDetector()
+        self._perspective_service = PerspectiveService()
 
     async def select_topics_for_user(
         self,
@@ -356,6 +359,16 @@ class TopicSelector:
                     for a in scored_articles
                 )
 
+            # Extract display subjects from article titles
+            seen_kw: set[str] = set()
+            subjects: list[str] = []
+            for article in scored_articles:
+                for kw in self._perspective_service.extract_keywords(article.content.title, max_keywords=4):
+                    if kw.lower() not in seen_kw:
+                        seen_kw.add(kw.lower())
+                        subjects.append(kw)
+            subjects = subjects[:5]
+
             topic_groups.append(TopicGroup(
                 topic_id=cluster.cluster_id,
                 label="",  # Set after this loop
@@ -365,6 +378,7 @@ class TopicSelector:
                 is_trending=cluster.is_trending,
                 is_une=is_une,
                 theme=cluster.theme,
+                subjects=subjects,
             ))
 
         return topic_groups

@@ -610,6 +610,7 @@ class DigestService:
                     "is_une": tg.is_une,
                     "theme": tg.theme,
                     "topic_score": float(tg.topic_score),
+                    "subjects": tg.subjects,
                     "articles": [
                         {
                             "content_id": str(a.content.id),
@@ -960,6 +961,7 @@ class DigestService:
                 is_une=topic_data.get("is_une", False),
                 theme=topic_data.get("theme"),
                 topic_score=topic_data.get("topic_score", 0.0),
+                subjects=topic_data.get("subjects", []),
                 articles=topic_articles,
             ))
 

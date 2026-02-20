@@ -128,6 +128,10 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
       isUne: json['is_une'] as bool? ?? false,
       theme: json['theme'] as String?,
       topicScore: (json['topic_score'] as num?)?.toDouble() ?? 0.0,
+      subjects: (json['subjects'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
       articles: (json['articles'] as List<dynamic>?)
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -144,6 +148,7 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'is_une': instance.isUne,
       'theme': instance.theme,
       'topic_score': instance.topicScore,
+      'subjects': instance.subjects,
       'articles': instance.articles,
     };
 

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
+import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 
@@ -55,8 +57,8 @@ class _TopicSectionState extends State<TopicSection> {
   /// Estimated body + footer height for FeedCard WITH image.
   /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20)
   /// Footer: border (1) + padding (8) + row with button padding (32)
-  /// Buffer for box shadow + rounding = 7
-  static const double _bodyFooterHeight = 172.0;
+  /// Buffer for box shadow + rounding + content variation = 27
+  static const double _bodyFooterHeight = 192.0;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +152,7 @@ class _TopicSectionState extends State<TopicSection> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _simplifyReason(topic.reason),
+                  _computeSubjects(topic) ?? _simplifyReason(topic.reason),
                   style: TextStyle(
                     color: labelColor,
                     fontWeight: FontWeight.w600,
@@ -170,22 +172,7 @@ class _TopicSectionState extends State<TopicSection> {
             ],
           ),
 
-          // Row 2: Topic label — skip for singletons (card title is the same)
-          if (!isSingleton) ...[
-            const SizedBox(height: 4),
-            Text(
-              topic.label,
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: isDark ? Colors.white : const Color(0xFF2C1E10),
-                fontWeight: FontWeight.w800,
-                height: 1.25,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-
-          // Row 3: Badges — skip for singletons
+          // Row 2: Badges — skip for singletons
           if (!isSingleton && (topic.isTrending || topic.isUne)) ...[
             const SizedBox(height: 6),
             Wrap(
@@ -247,9 +234,16 @@ class _TopicSectionState extends State<TopicSection> {
     return FeedCard(
       content: _convertToContent(article),
       onTap: () => widget.onArticleTap(article),
+      onLongPressStart: (_) =>
+          ArticlePreviewOverlay.show(context, _convertToContent(article)),
+      onLongPressMoveUpdate: (details) =>
+          ArticlePreviewOverlay.updateScroll(details.localOffsetFromOrigin.dy),
+      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
       onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
       isLiked: article.isLiked,
       onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+      onSaveLongPress: () =>
+          CollectionPickerSheet.show(context, article.contentId),
       isSaved: article.isSaved,
       onNotInterested: widget.onNotInterested != null
           ? () => widget.onNotInterested!(article)
@@ -270,11 +264,18 @@ class _TopicSectionState extends State<TopicSection> {
           child: FeedCard(
             content: _convertToContent(article),
             onTap: () => widget.onArticleTap(article),
+            onLongPressStart: (_) =>
+                ArticlePreviewOverlay.show(context, _convertToContent(article)),
+            onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
+                details.localOffsetFromOrigin.dy),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
             onLike:
                 widget.onLike != null ? () => widget.onLike!(article) : null,
             isLiked: article.isLiked,
             onSave:
                 widget.onSave != null ? () => widget.onSave!(article) : null,
+            onSaveLongPress: () =>
+                CollectionPickerSheet.show(context, article.contentId),
             isSaved: article.isSaved,
             onNotInterested: widget.onNotInterested != null
                 ? () => widget.onNotInterested!(article)
@@ -341,6 +342,13 @@ class _TopicSectionState extends State<TopicSection> {
       default:
         return SourceType.article;
     }
+  }
+
+  /// Returns "Sujets : X, Y, Z" from backend-computed keywords, null if empty.
+  String? _computeSubjects(DigestTopic topic) {
+    final subjects = topic.subjects.where((s) => s.isNotEmpty).toList();
+    if (subjects.isEmpty) return null;
+    return 'Sujets\u00a0: ${subjects.join(', ')}';
   }
 
   /// Clean up reason strings for display.

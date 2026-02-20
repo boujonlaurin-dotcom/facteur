@@ -4,6 +4,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
+import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
@@ -111,7 +112,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
             ],
           ),
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -130,7 +131,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                               .textTheme
                               .displaySmall
                               ?.copyWith(
-                                fontSize: 20,
+                                fontSize: 23,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: -0.5,
                                 color: textPrimary,
@@ -350,6 +351,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
             isLiked: item.isLiked,
             onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
+            onSaveLongPress: () =>
+                CollectionPickerSheet.show(context, item.contentId),
             onNotInterested: widget.onNotInterested != null
                 ? () => widget.onNotInterested!(item)
                 : null,

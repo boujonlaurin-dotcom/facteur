@@ -1318,6 +1318,7 @@ mixin _$DigestTopic {
   String? get theme => throw _privateConstructorUsedError;
   @JsonKey(name: 'topic_score')
   double get topicScore => throw _privateConstructorUsedError;
+  List<String> get subjects => throw _privateConstructorUsedError;
   List<DigestItem> get articles => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -1341,6 +1342,7 @@ abstract class $DigestTopicCopyWith<$Res> {
       @JsonKey(name: 'is_une') bool isUne,
       String? theme,
       @JsonKey(name: 'topic_score') double topicScore,
+      List<String> subjects,
       List<DigestItem> articles});
 }
 
@@ -1365,6 +1367,7 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
     Object? isUne = null,
     Object? theme = freezed,
     Object? topicScore = null,
+    Object? subjects = null,
     Object? articles = null,
   }) {
     return _then(_value.copyWith(
@@ -1400,6 +1403,10 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
           ? _value.topicScore
           : topicScore // ignore: cast_nullable_to_non_nullable
               as double,
+      subjects: null == subjects
+          ? _value.subjects
+          : subjects // ignore: cast_nullable_to_non_nullable
+              as List<String>,
       articles: null == articles
           ? _value.articles
           : articles // ignore: cast_nullable_to_non_nullable
@@ -1425,6 +1432,7 @@ abstract class _$$DigestTopicImplCopyWith<$Res>
       @JsonKey(name: 'is_une') bool isUne,
       String? theme,
       @JsonKey(name: 'topic_score') double topicScore,
+      List<String> subjects,
       List<DigestItem> articles});
 }
 
@@ -1447,6 +1455,7 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
     Object? isUne = null,
     Object? theme = freezed,
     Object? topicScore = null,
+    Object? subjects = null,
     Object? articles = null,
   }) {
     return _then(_$DigestTopicImpl(
@@ -1482,6 +1491,10 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
           ? _value.topicScore
           : topicScore // ignore: cast_nullable_to_non_nullable
               as double,
+      subjects: null == subjects
+          ? _value._subjects
+          : subjects // ignore: cast_nullable_to_non_nullable
+              as List<String>,
       articles: null == articles
           ? _value._articles
           : articles // ignore: cast_nullable_to_non_nullable
@@ -1502,8 +1515,10 @@ class _$DigestTopicImpl extends _DigestTopic {
       @JsonKey(name: 'is_une') this.isUne = false,
       this.theme,
       @JsonKey(name: 'topic_score') this.topicScore = 0.0,
+      final List<String> subjects = const [],
       final List<DigestItem> articles = const []})
-      : _articles = articles,
+      : _subjects = subjects,
+        _articles = articles,
         super._();
 
   factory _$DigestTopicImpl.fromJson(Map<String, dynamic> json) =>
@@ -1531,6 +1546,15 @@ class _$DigestTopicImpl extends _DigestTopic {
   @override
   @JsonKey(name: 'topic_score')
   final double topicScore;
+  final List<String> _subjects;
+  @override
+  @JsonKey()
+  List<String> get subjects {
+    if (_subjects is EqualUnmodifiableListView) return _subjects;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_subjects);
+  }
+
   final List<DigestItem> _articles;
   @override
   @JsonKey()
@@ -1542,7 +1566,7 @@ class _$DigestTopicImpl extends _DigestTopic {
 
   @override
   String toString() {
-    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, articles: $articles)';
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles)';
   }
 
   @override
@@ -1560,6 +1584,7 @@ class _$DigestTopicImpl extends _DigestTopic {
             (identical(other.theme, theme) || other.theme == theme) &&
             (identical(other.topicScore, topicScore) ||
                 other.topicScore == topicScore) &&
+            const DeepCollectionEquality().equals(other._subjects, _subjects) &&
             const DeepCollectionEquality().equals(other._articles, _articles));
   }
 
@@ -1575,6 +1600,7 @@ class _$DigestTopicImpl extends _DigestTopic {
       isUne,
       theme,
       topicScore,
+      const DeepCollectionEquality().hash(_subjects),
       const DeepCollectionEquality().hash(_articles));
 
   @JsonKey(ignore: true)
@@ -1601,6 +1627,7 @@ abstract class _DigestTopic extends DigestTopic {
       @JsonKey(name: 'is_une') final bool isUne,
       final String? theme,
       @JsonKey(name: 'topic_score') final double topicScore,
+      final List<String> subjects,
       final List<DigestItem> articles}) = _$DigestTopicImpl;
   const _DigestTopic._() : super._();
 
@@ -1627,6 +1654,8 @@ abstract class _DigestTopic extends DigestTopic {
   @override
   @JsonKey(name: 'topic_score')
   double get topicScore;
+  @override
+  List<String> get subjects;
   @override
   List<DigestItem> get articles;
   @override

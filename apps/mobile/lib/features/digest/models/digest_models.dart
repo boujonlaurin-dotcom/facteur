@@ -96,6 +96,7 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'is_une') @Default(false) bool isUne,
     String? theme,
     @JsonKey(name: 'topic_score') @Default(0.0) double topicScore,
+    @Default([]) List<String> subjects,
     @Default([]) List<DigestItem> articles,
   }) = _DigestTopic;
 
