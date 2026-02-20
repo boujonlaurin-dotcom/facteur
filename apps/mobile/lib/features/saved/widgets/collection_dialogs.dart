@@ -64,28 +64,76 @@ Future<String?> _showNameDialog(
   required String hint,
   required String confirmLabel,
   String? initialValue,
-}) async {
-  final colors = context.facteurColors;
-  final controller = TextEditingController(text: initialValue);
-  final formKey = GlobalKey<FormState>();
-
-  final result = await showDialog<String>(
+}) {
+  return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => _NameDialog(
+      title: title,
+      hint: hint,
+      confirmLabel: confirmLabel,
+      initialValue: initialValue,
+    ),
+  );
+}
+
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({
+    required this.title,
+    required this.hint,
+    required this.confirmLabel,
+    this.initialValue,
+  });
+
+  final String title;
+  final String hint;
+  final String confirmLabel;
+  final String? initialValue;
+
+  @override
+  State<_NameDialog> createState() => _NameDialogState();
+}
+
+class _NameDialogState extends State<_NameDialog> {
+  late final TextEditingController _controller;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_formKey.currentState?.validate() ?? false) {
+      Navigator.pop(context, _controller.text.trim());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+
+    return AlertDialog(
       backgroundColor: colors.backgroundSecondary,
       title: Text(
-        title,
+        widget.title,
         style: TextStyle(color: colors.textPrimary, fontSize: 17),
       ),
       content: Form(
-        key: formKey,
+        key: _formKey,
         child: TextFormField(
-          controller: controller,
+          controller: _controller,
           autofocus: true,
           maxLength: 100,
           style: TextStyle(color: colors.textPrimary),
           decoration: InputDecoration(
-            hintText: hint,
+            hintText: widget.hint,
             hintStyle: TextStyle(color: colors.textTertiary),
             counterStyle: TextStyle(color: colors.textTertiary),
             enabledBorder: UnderlineInputBorder(
@@ -101,11 +149,7 @@ Future<String?> _showNameDialog(
             }
             return null;
           },
-          onFieldSubmitted: (value) {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(context, value.trim());
-            }
-          },
+          onFieldSubmitted: (_) => _submit(),
         ),
       ),
       actions: [
@@ -115,18 +159,11 @@ Future<String?> _showNameDialog(
               style: TextStyle(color: colors.textSecondary)),
         ),
         TextButton(
-          onPressed: () {
-            if (formKey.currentState!.validate()) {
-              Navigator.pop(context, controller.text.trim());
-            }
-          },
-          child: Text(confirmLabel,
+          onPressed: _submit,
+          child: Text(widget.confirmLabel,
               style: TextStyle(color: colors.primary)),
         ),
       ],
-    ),
-  );
-
-  controller.dispose();
-  return result;
+    );
+  }
 }
