@@ -333,7 +333,7 @@ class FeedCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     const Text(
-                      'Note',
+                      'Article avec note',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
