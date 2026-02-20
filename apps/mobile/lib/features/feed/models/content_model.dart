@@ -114,6 +114,33 @@ class Content {
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
 
+  /// Returns a copy with note fields explicitly set to null.
+  /// Needed because copyWith uses ?? which can't set nullable fields to null.
+  Content clearNote() {
+    return Content(
+      id: id,
+      title: title,
+      url: url,
+      thumbnailUrl: thumbnailUrl,
+      description: description,
+      htmlContent: htmlContent,
+      audioUrl: audioUrl,
+      contentType: contentType,
+      durationSeconds: durationSeconds,
+      publishedAt: publishedAt,
+      source: source,
+      status: status,
+      isSaved: isSaved,
+      isLiked: isLiked,
+      isHidden: isHidden,
+      isPaid: isPaid,
+      topics: topics,
+      recommendationReason: recommendationReason,
+      noteText: null,
+      noteUpdatedAt: null,
+    );
+  }
+
   factory Content.fromJson(Map<String, dynamic> json) {
     try {
       final sourceJson = json['source'];
@@ -146,8 +173,8 @@ class Content {
         isHidden: (json['is_hidden'] as bool?) ?? false,
         isPaid: (json['is_paid'] as bool?) ?? false,
         topics: (json['topics'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
+                ?.map((e) => e.toString())
+                .toList() ??
             const [],
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)

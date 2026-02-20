@@ -272,9 +272,9 @@ class FeedCard extends StatelessWidget {
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(
                                   isSaved
-                                      ? PhosphorIcons.bookmark(
+                                      ? PhosphorIcons.bookmarkSimple(
                                           PhosphorIconsStyle.fill)
-                                      : PhosphorIcons.bookmark(),
+                                      : PhosphorIcons.bookmarkSimple(),
                                   size: 20,
                                   color: isSaved
                                       ? colors.primary
@@ -297,7 +297,6 @@ class FeedCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-
                         ],
                       ),
                     ],

@@ -287,26 +287,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  void _openNoteSheet() {
+  Future<void> _openNoteSheet() async {
     final content = _content;
     if (content == null || content.isHidden) return;
 
-    // Capture saved state before opening sheet to detect auto-save via note
+    // Capture state before opening sheet
     final wasAlreadySaved = content.isSaved;
+    final hadNote = content.hasNote;
 
     _hasOpenedNote = true;
-    NoteInputSheet.show(
+    await NoteInputSheet.show(
       context,
       contentId: content.id,
       initialNoteText: content.noteText,
       onFirstCharacter: () {
-        // Auto-bookmark + bounce animation
+        // Auto-bookmark (visual feedback deferred to sheet close)
         if (!content.isSaved) {
           setState(() {
             _content = content.copyWith(isSaved: true);
           });
         }
-        _bookmarkBounceController.forward(from: 0);
       },
       onNoteSaved: (text) {
         if (mounted) {
@@ -317,28 +317,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               isSaved: true,
             );
           });
-          // Bounce bookmark + notification (same behaviour as manual bookmark)
-          _bookmarkBounceController.forward(from: 0);
-          if (!wasAlreadySaved) {
-            NotificationService.showInfo(
-              'Sauvegardé',
-              actionLabel: 'Ajouter à une collection',
-              onAction: () => CollectionPickerSheet.show(context, _content!.id),
-            );
-          }
         }
       },
       onNoteDeleted: () {
         if (mounted) {
           setState(() {
-            _content = _content?.copyWith(
-              noteText: null,
-              noteUpdatedAt: null,
-            );
+            _content = _content?.clearNote();
           });
         }
       },
     );
+
+    // Sheet closed — visual feedback if a note was created
+    if (mounted && _content != null && _content!.hasNote && !hadNote) {
+      _bookmarkBounceController.forward(from: 0);
+      if (!wasAlreadySaved) {
+        NotificationService.showInfo(
+          'Sauvegardé',
+          actionLabel: 'Ajouter à une collection',
+          onAction: () => CollectionPickerSheet.show(context, _content!.id),
+        );
+      }
+    }
   }
 
   @override

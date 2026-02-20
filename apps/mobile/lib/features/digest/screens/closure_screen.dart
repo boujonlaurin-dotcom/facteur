@@ -294,32 +294,45 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 padding: const EdgeInsets.only(top: FacteurSpacing.space3),
                 child: GestureDetector(
                   onTap: () => context.go(RoutePaths.saved),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        PhosphorIcons.bookmarkSimple(
-                            PhosphorIconsStyle.regular),
-                        size: 14,
-                        color: colors.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} cette semaine',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Voir',
-                        style: textTheme.bodySmall?.copyWith(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 32),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          PhosphorIcons.bookmarkSimple(
+                              PhosphorIconsStyle.regular),
+                          size: 16,
                           color: colors.primary,
-                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '$count article${count > 1 ? 's' : ''} sauvegardé${count > 1 ? 's' : ''} cette semaine',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Voir',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -332,8 +345,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 onTap: () => context.go(RoutePaths.saved),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: colors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
@@ -424,27 +437,33 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                             );
                           }
                         },
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              PhosphorIcons.chatCircleDots(
-                                  PhosphorIconsStyle.regular),
-                              size: 16,
-                              color: colors.textSecondary,
-                            ),
-                            const SizedBox(width: FacteurSpacing.space1),
-                            Text(
-                              'Un avis ? Dis-nous tout',
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: colors.textSecondary,
-                                decoration: TextDecoration.underline,
-                                decorationColor:
-                                    colors.textSecondary.withValues(alpha: 0.4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                PhosphorIcons.chatCircleDots(
+                                    PhosphorIconsStyle.regular),
+                                size: 16,
+                                color: colors.primary,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Text(
+                                'Un avis ? Dis-nous tout',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: colors.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],

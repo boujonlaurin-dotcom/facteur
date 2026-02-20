@@ -57,7 +57,7 @@ class ArticleActionBar extends StatelessWidget {
           // Save button
           Expanded(
             child: _ActionButton(
-              icon: PhosphorIcons.bookmark(),
+              icon: PhosphorIcons.bookmarkSimple(),
               label: 'Sauver',
               isActive: item.isSaved,
               activeColor: colors.primary,
