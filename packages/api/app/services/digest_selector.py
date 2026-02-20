@@ -138,7 +138,8 @@ class DigestSelector:
         mode: str = "pour_vous",
         focus_theme: Optional[str] = None,
         global_trending_context: Optional[GlobalTrendingContext] = None,
-    ) -> List[DigestItem]:
+        output_format: str = "topics",
+    ) -> list:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
         Args:
@@ -211,6 +212,32 @@ class DigestSelector:
                 return []
 
             logger.info("digest_selector_candidates_fetched", user_id=str(user_id), count=len(candidates), duration_ms=round(candidates_time * 1000, 2))
+
+            # === TOPIC FORMAT: delegate to TopicSelector ===
+            if output_format == "topics":
+                from app.services.topic_selector import TopicSelector
+                step_start = time.time()
+                topic_selector = TopicSelector()
+                topic_groups = await topic_selector.select_topics_for_user(
+                    candidates=candidates,
+                    context=context,
+                    target_topics=limit,
+                    trending_context=trending_context,
+                    mode=mode,
+                )
+                topic_time = time.time() - step_start
+                total_time = time.time() - start_time
+                logger.info(
+                    "digest_topic_selection_completed",
+                    user_id=str(user_id),
+                    topic_count=len(topic_groups),
+                    total_articles=sum(len(tg.articles) for tg in topic_groups),
+                    topic_selection_ms=round(topic_time * 1000, 2),
+                    total_ms=round(total_time * 1000, 2),
+                )
+                return topic_groups
+
+            # === FLAT FORMAT (legacy): original scoring + selection ===
 
             # 3-4. Scoring + sélection (deux passes pour pour_vous, single-pass pour les autres)
             scoring_time, diversity_time = 0.0, 0.0
