@@ -631,7 +631,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       size: 18,
                       color: colors.textSecondary,
                     ),
-                    onPressed: () => context.pop(_isConsumed),
+                    onPressed: () => context.pop(_content),
                   ),
                   const SizedBox(width: 4),
 

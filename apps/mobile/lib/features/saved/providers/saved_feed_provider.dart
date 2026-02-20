@@ -46,11 +46,11 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
   Future<List<Content>> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getFeed(
-        page: page,
-        limit: _limit,
-        savedOnly: true,
-        hasNote: _hasNoteFilter,
-        );
+      page: page,
+      limit: _limit,
+      savedOnly: true,
+      hasNote: _hasNoteFilter,
+    );
 
     _hasNext = response.pagination.hasNext;
     return response.items;
@@ -114,6 +114,24 @@ class SavedFeedNotifier extends AsyncNotifier<List<Content>> {
       // Rollback to original state on error
       state = AsyncData(originalItems);
       rethrow;
+    }
+  }
+
+  /// Update a content item in the saved list (e.g. after detail screen changes).
+  void updateContent(Content updated) {
+    final currentItems = state.value;
+    if (currentItems == null) return;
+
+    if (!updated.isSaved) {
+      // Article was unsaved — remove from list
+      state = AsyncData(
+        currentItems.where((c) => c.id != updated.id).toList(),
+      );
+    } else {
+      // Update in place
+      state = AsyncData(
+        currentItems.map((c) => c.id == updated.id ? updated : c).toList(),
+      );
     }
   }
 

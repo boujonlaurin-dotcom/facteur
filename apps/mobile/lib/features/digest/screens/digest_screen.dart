@@ -127,7 +127,15 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     // Navigate to article detail first
     HapticFeedback.mediumImpact();
     final content = _convertToContent(item);
-    await context.push('/feed/content/${item.contentId}', extra: content);
+    final updated = await context
+        .push<Content?>('/feed/content/${item.contentId}', extra: content);
+
+    // Sync bookmark state back to digest
+    if (updated != null && updated.isSaved != item.isSaved) {
+      ref
+          .read(digestProvider.notifier)
+          .syncItemFromDetail(item.contentId, isSaved: updated.isSaved);
+    }
 
     // Mark as read when returning from article (only if not already read)
     if (!item.isRead && !item.isDismissed) {
@@ -155,8 +163,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       NotificationService.showInfo(
         'Sauvegardé',
         actionLabel: 'Ajouter à une collection',
-        onAction: () =>
-            CollectionPickerSheet.show(context, item.contentId),
+        onAction: () => CollectionPickerSheet.show(context, item.contentId),
       );
     }
   }
@@ -190,10 +197,15 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
         if (digest != null && previous?.value?.mode != digest.mode) {
-          ref.read(digestModeProvider.notifier).initFromDigestResponse(digest.mode);
+          ref
+              .read(digestModeProvider.notifier)
+              .initFromDigestResponse(digest.mode);
         }
-        if (digest != null && previous?.value?.formatVersion != digest.formatVersion) {
-          ref.read(digestFormatProvider.notifier).initFromDigestResponse(digest.formatVersion);
+        if (digest != null &&
+            previous?.value?.formatVersion != digest.formatVersion) {
+          ref
+              .read(digestFormatProvider.notifier)
+              .initFromDigestResponse(digest.formatVersion);
         }
       });
     });
@@ -403,9 +415,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 ignoring: modeState.isRegenerating,
                                 child: DigestBriefingSection(
                                   items: digest.items,
-                                  topics: digest.usesTopics
-                                      ? digest.topics
-                                      : null,
+                                  topics:
+                                      digest.usesTopics ? digest.topics : null,
                                   onItemTap: _openArticle,
                                   onLike: _handleLike,
                                   onSave: _handleSave,
@@ -422,7 +433,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             if (modeState.isRegenerating)
                               Positioned.fill(
                                 child: _RegenerationOverlay(
-                                  modeColor: modeState.mode.effectiveColor(colors.primary),
+                                  modeColor: modeState.mode
+                                      .effectiveColor(colors.primary),
                                 ),
                               ),
                           ],

@@ -283,7 +283,52 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
               ),
             ),
 
-            // Saved articles nudge (subtle, after summary)
+            // Feedback CTA (first pill)
+            Padding(
+              padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+              child: GestureDetector(
+                onTap: () async {
+                  final uri = Uri.parse(ExternalLinks.feedbackFormUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(
+                      uri,
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 32),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: colors.textSecondary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        PhosphorIcons.chatCircleDots(
+                            PhosphorIconsStyle.regular),
+                        size: 16,
+                        color: colors.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Un avis ? Dis-nous tout',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // Saved articles nudge
             Builder(builder: (context) {
               final savedSummary = ref.watch(savedSummaryProvider).valueOrNull;
               if (savedSummary == null || savedSummary.recentCount7d < 3) {
@@ -422,49 +467,6 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                           color: colors.textSecondary,
                         ),
                         textAlign: TextAlign.center,
-                      ),
-
-                      const SizedBox(height: FacteurSpacing.space2),
-
-                      // Feedback CTA
-                      GestureDetector(
-                        onTap: () async {
-                          final uri = Uri.parse(ExternalLinks.feedbackFormUrl);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                PhosphorIcons.chatCircleDots(
-                                    PhosphorIconsStyle.regular),
-                                size: 16,
-                                color: colors.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Un avis ? Dis-nous tout',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: colors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ),
                     ],
                   ),

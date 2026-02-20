@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/saved_feed_provider.dart';
 
@@ -168,11 +169,19 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                                   content: content,
                                   isSaved: true,
                                   isLiked: content.isLiked,
-                                  onTap: () => context.pushNamed(
-                                    RouteNames.contentDetail,
-                                    pathParameters: {'id': content.id},
-                                    extra: content,
-                                  ),
+                                  onTap: () async {
+                                    final updated =
+                                        await context.pushNamed<dynamic>(
+                                      RouteNames.contentDetail,
+                                      pathParameters: {'id': content.id},
+                                      extra: content,
+                                    );
+                                    if (updated is Content) {
+                                      ref
+                                          .read(savedFeedProvider.notifier)
+                                          .updateContent(updated);
+                                    }
+                                  },
                                   onLongPressStart: (_) =>
                                       ArticlePreviewOverlay.show(
                                           context, content),
