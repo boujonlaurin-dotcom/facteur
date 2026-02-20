@@ -20,8 +20,7 @@ class OnboardingStrings {
   static const String welcomeStartButton = 'Commencer';
 
   // Intro Screen 2
-  static const String intro2Title =
-      'Un hub d\'infos fiables.';
+  static const String intro2Title = 'Ton hub d\'infos fiables.';
   static const String intro2Subtitle =
       'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
   static const String intro2Button = 'Découvrir Facteur';
@@ -105,7 +104,8 @@ class OnboardingStrings {
   static const String articleCount7Subtitle = 'Pour aller plus loin';
 
   // Digest Mode
-  static const String digestModeTitle = 'Quel mode de récap quotidien préférez-vous ?';
+  static const String digestModeTitle =
+      'Quel mode de récap quotidien préférez-vous ?';
   static const String digestModeSubtitle =
       'Vous pourrez changer à tout moment.';
 
@@ -144,6 +144,7 @@ class OnboardingStrings {
   static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
   static const String sourcesReactionMessage =
       'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
+  static const String addSourceButton = 'Ajouter une source';
 
   // Finalize
   static const String finalizeTitle = 'Votre essentiel est prêt.';
@@ -162,13 +163,13 @@ class OnboardingStrings {
       'Facteur mettra en avant les solutions, l\'analyse et le recul.\n\nPour retrouver une information qui éclaire sans angoisser.';
   static const String r1MultiTitle = 'Difficile de choisir.';
   static const String r1MultiMessage =
-      'Facteur adresse tous ces sujets. Votre récap quotidien s\'adaptera à chacune de vos préoccupations.';
+      'Facteur adresse chacun de ces points. Votre récap quotidien vise à répondre à ces préoccupations.';
 
   // Animated Messages
   static const List<String> conclusionMessages = [
     'Analyse de vos sélections...',
     'Construction de votre profil...',
-    'Filtrage de votre bruit...',
+    'Filtrage du bruit...',
     'Création du flux...',
   ];
 
