@@ -53,21 +53,27 @@ class UserService:
         return profile
 
     async def _ensure_streak_exists(self, user_id: str) -> None:
-        """Crée le streak s'il n'existe pas, en gérant les race conditions."""
+        """Crée le streak s'il n'existe pas, en gérant les race conditions.
+
+        Uses a savepoint (nested transaction) so that an IntegrityError only
+        rolls back the streak INSERT, not the entire transaction — preventing
+        silent data loss of previously flushed objects like UserProfile.
+        """
         result = await self.db.execute(
             select(UserStreak).where(UserStreak.user_id == UUID(user_id))
         )
         if not result.scalar_one_or_none():
             try:
-                streak = UserStreak(
-                    id=uuid4(),
-                    user_id=UUID(user_id),
-                )
-                self.db.add(streak)
-                await self.db.flush()
+                async with self.db.begin_nested():
+                    streak = UserStreak(
+                        id=uuid4(),
+                        user_id=UUID(user_id),
+                    )
+                    self.db.add(streak)
+                    await self.db.flush()
             except IntegrityError:
-                # Race condition: streak was created by another request
-                await self.db.rollback()
+                # Race condition: streak was created by another request.
+                # The savepoint is rolled back automatically, outer transaction intact.
                 logger.info(f"Streak already exists for user {user_id} (race condition handled)")
 
     async def update_profile(
