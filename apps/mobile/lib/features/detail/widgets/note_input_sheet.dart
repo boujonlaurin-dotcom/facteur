@@ -143,6 +143,8 @@ class _NoteInputSheetState extends State<NoteInputSheet> {
     _debounceTimer?.cancel();
     // Save on dispose if dirty (protection against accidental close)
     if (_isDirty && _controller.text.trim().isNotEmpty) {
+      // Notify parent synchronously before dispose so state is updated
+      widget.onNoteSaved?.call(_controller.text.trim());
       _saveNoteSync();
     }
     _controller.dispose();

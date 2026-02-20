@@ -676,6 +676,8 @@ mixin _$DigestItem {
   @JsonKey(name: 'recommendation_reason')
   DigestRecommendationReason? get recommendationReason =>
       throw _privateConstructorUsedError;
+  @JsonKey(name: 'note_text')
+  String? get noteText => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -713,7 +715,8 @@ abstract class $DigestItemCopyWith<$Res> {
       @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
       @JsonKey(name: 'recommendation_reason')
-      DigestRecommendationReason? recommendationReason});
+      DigestRecommendationReason? recommendationReason,
+      @JsonKey(name: 'note_text') String? noteText});
 
   $SourceMiniCopyWith<$Res>? get source;
   $DigestRecommendationReasonCopyWith<$Res>? get recommendationReason;
@@ -751,6 +754,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? isLiked = null,
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
+    Object? noteText = freezed,
   }) {
     return _then(_value.copyWith(
       contentId: null == contentId
@@ -829,6 +833,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.recommendationReason
           : recommendationReason // ignore: cast_nullable_to_non_nullable
               as DigestRecommendationReason?,
+      noteText: freezed == noteText
+          ? _value.noteText
+          : noteText // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 
@@ -890,7 +898,8 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
       @JsonKey(name: 'recommendation_reason')
-      DigestRecommendationReason? recommendationReason});
+      DigestRecommendationReason? recommendationReason,
+      @JsonKey(name: 'note_text') String? noteText});
 
   @override
   $SourceMiniCopyWith<$Res>? get source;
@@ -928,6 +937,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? isLiked = null,
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
+    Object? noteText = freezed,
   }) {
     return _then(_$DigestItemImpl(
       contentId: null == contentId
@@ -1006,6 +1016,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.recommendationReason
           : recommendationReason // ignore: cast_nullable_to_non_nullable
               as DigestRecommendationReason?,
+      noteText: freezed == noteText
+          ? _value.noteText
+          : noteText // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -1036,7 +1050,8 @@ class _$DigestItemImpl implements _DigestItem {
       @JsonKey(name: 'is_saved') this.isSaved = false,
       @JsonKey(name: 'is_liked') this.isLiked = false,
       @JsonKey(name: 'is_dismissed') this.isDismissed = false,
-      @JsonKey(name: 'recommendation_reason') this.recommendationReason})
+      @JsonKey(name: 'recommendation_reason') this.recommendationReason,
+      @JsonKey(name: 'note_text') this.noteText})
       : _topics = topics;
 
   factory _$DigestItemImpl.fromJson(Map<String, dynamic> json) =>
@@ -1106,10 +1121,13 @@ class _$DigestItemImpl implements _DigestItem {
   @override
   @JsonKey(name: 'recommendation_reason')
   final DigestRecommendationReason? recommendationReason;
+  @override
+  @JsonKey(name: 'note_text')
+  final String? noteText;
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText)';
   }
 
   @override
@@ -1144,7 +1162,9 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.isDismissed, isDismissed) ||
                 other.isDismissed == isDismissed) &&
             (identical(other.recommendationReason, recommendationReason) ||
-                other.recommendationReason == recommendationReason));
+                other.recommendationReason == recommendationReason) &&
+            (identical(other.noteText, noteText) ||
+                other.noteText == noteText));
   }
 
   @JsonKey(ignore: true)
@@ -1169,7 +1189,8 @@ class _$DigestItemImpl implements _DigestItem {
         isSaved,
         isLiked,
         isDismissed,
-        recommendationReason
+        recommendationReason,
+        noteText
       ]);
 
   @JsonKey(ignore: true)
@@ -1188,31 +1209,31 @@ class _$DigestItemImpl implements _DigestItem {
 
 abstract class _DigestItem implements DigestItem {
   const factory _DigestItem(
-          {@JsonKey(name: 'content_id') required final String contentId,
-          final String title,
-          final String url,
-          @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
-          final String? description,
-          final List<String> topics,
-          @JsonKey(
-              name: 'content_type',
-              fromJson: _contentTypeFromJson,
-              toJson: _contentTypeToJson)
-          final ContentType contentType,
-          @JsonKey(name: 'duration_seconds') final int? durationSeconds,
-          @JsonKey(name: 'published_at') final DateTime? publishedAt,
-          final SourceMini? source,
-          final int rank,
-          final String reason,
-          @JsonKey(name: 'is_followed_source') final bool isFollowedSource,
-          @JsonKey(name: 'is_paid') final bool isPaid,
-          @JsonKey(name: 'is_read') final bool isRead,
-          @JsonKey(name: 'is_saved') final bool isSaved,
-          @JsonKey(name: 'is_liked') final bool isLiked,
-          @JsonKey(name: 'is_dismissed') final bool isDismissed,
-          @JsonKey(name: 'recommendation_reason')
-          final DigestRecommendationReason? recommendationReason}) =
-      _$DigestItemImpl;
+      {@JsonKey(name: 'content_id') required final String contentId,
+      final String title,
+      final String url,
+      @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
+      final String? description,
+      final List<String> topics,
+      @JsonKey(
+          name: 'content_type',
+          fromJson: _contentTypeFromJson,
+          toJson: _contentTypeToJson)
+      final ContentType contentType,
+      @JsonKey(name: 'duration_seconds') final int? durationSeconds,
+      @JsonKey(name: 'published_at') final DateTime? publishedAt,
+      final SourceMini? source,
+      final int rank,
+      final String reason,
+      @JsonKey(name: 'is_followed_source') final bool isFollowedSource,
+      @JsonKey(name: 'is_paid') final bool isPaid,
+      @JsonKey(name: 'is_read') final bool isRead,
+      @JsonKey(name: 'is_saved') final bool isSaved,
+      @JsonKey(name: 'is_liked') final bool isLiked,
+      @JsonKey(name: 'is_dismissed') final bool isDismissed,
+      @JsonKey(name: 'recommendation_reason')
+      final DigestRecommendationReason? recommendationReason,
+      @JsonKey(name: 'note_text') final String? noteText}) = _$DigestItemImpl;
 
   factory _DigestItem.fromJson(Map<String, dynamic> json) =
       _$DigestItemImpl.fromJson;
@@ -1270,6 +1291,9 @@ abstract class _DigestItem implements DigestItem {
   @override
   @JsonKey(name: 'recommendation_reason')
   DigestRecommendationReason? get recommendationReason;
+  @override
+  @JsonKey(name: 'note_text')
+  String? get noteText;
   @override
   @JsonKey(ignore: true)
   _$$DigestItemImplCopyWith<_$DigestItemImpl> get copyWith =>

@@ -229,14 +229,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Sync a digest item's saved state from the detail screen (local only, no API).
-  void syncItemFromDetail(String contentId, {required bool isSaved}) {
+  /// Sync a digest item's state from the detail screen (local only, no API).
+  void syncItemFromDetail(String contentId,
+      {required bool isSaved, String? noteText}) {
     final currentDigest = state.value;
     if (currentDigest == null) return;
 
     DigestItem updateItem(DigestItem item) {
       if (item.contentId == contentId) {
-        return item.copyWith(isSaved: isSaved);
+        return item.copyWith(isSaved: isSaved, noteText: noteText);
       }
       return item;
     }

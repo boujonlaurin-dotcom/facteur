@@ -130,11 +130,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     final updated = await context
         .push<Content?>('/feed/content/${item.contentId}', extra: content);
 
-    // Sync bookmark state back to digest
-    if (updated != null && updated.isSaved != item.isSaved) {
-      ref
-          .read(digestProvider.notifier)
-          .syncItemFromDetail(item.contentId, isSaved: updated.isSaved);
+    // Sync bookmark + note state back to digest
+    if (updated != null) {
+      if (updated.isSaved != item.isSaved ||
+          updated.noteText != item.noteText) {
+        ref.read(digestProvider.notifier).syncItemFromDetail(
+              item.contentId,
+              isSaved: updated.isSaved,
+              noteText: updated.noteText,
+            );
+      }
     }
 
     // Mark as read when returning from article (only if not already read)

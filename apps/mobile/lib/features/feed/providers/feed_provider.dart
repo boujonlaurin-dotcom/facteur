@@ -315,13 +315,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   }
 
   /// Update a content item in the feed list (e.g. after detail screen changes).
+  /// Preserves provider-managed fields like [status] (consumed marking).
   void updateContent(Content updated) {
     final currentState = state.value;
     if (currentState == null) return;
 
-    final items = currentState.items
-        .map((c) => c.id == updated.id ? updated : c)
-        .toList();
+    final items = currentState.items.map((c) {
+      if (c.id != updated.id) return c;
+      return updated.copyWith(status: c.status);
+    }).toList();
     state = AsyncData(FeedState(items: items));
   }
 
