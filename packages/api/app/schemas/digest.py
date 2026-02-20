@@ -83,6 +83,7 @@ class DigestTopic(BaseModel):
     is_une: bool = False
     theme: str | None = None
     topic_score: float = 0.0
+    subjects: list[str] = Field(default_factory=list, description="Clustering keywords for display")
     articles: list[DigestTopicArticle] = Field(default_factory=list)
 
     class Config:
