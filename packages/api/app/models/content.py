@@ -124,6 +124,10 @@ class UserContentStatus(Base):
     liked_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    note_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

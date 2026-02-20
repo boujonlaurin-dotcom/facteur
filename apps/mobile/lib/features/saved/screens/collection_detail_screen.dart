@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
@@ -224,13 +225,11 @@ class _CollectionDetailScreenState
                               content: content,
                               isSaved: content.isSaved,
                               isLiked: content.isLiked,
-                              onTap: () async {
-                                final uri = Uri.parse(content.url);
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri,
-                                      mode: LaunchMode.inAppWebView);
-                                }
-                              },
+                              onTap: () => context.pushNamed(
+                                RouteNames.contentDetail,
+                                pathParameters: {'id': content.id},
+                                extra: content,
+                              ),
                               onLongPressStart: (_) =>
                                   ArticlePreviewOverlay.show(
                                       context, content),

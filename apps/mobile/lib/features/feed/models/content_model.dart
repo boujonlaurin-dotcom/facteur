@@ -86,6 +86,8 @@ class Content {
   final bool isPaid;
   final List<String> topics;
   final RecommendationReason? recommendationReason;
+  final String? noteText;
+  final DateTime? noteUpdatedAt;
 
   Content({
     required this.id,
@@ -106,7 +108,11 @@ class Content {
     this.isPaid = false,
     this.topics = const [],
     this.recommendationReason,
+    this.noteText,
+    this.noteUpdatedAt,
   });
+
+  bool get hasNote => noteText != null && noteText!.isNotEmpty;
 
   factory Content.fromJson(Map<String, dynamic> json) {
     try {
@@ -146,6 +152,10 @@ class Content {
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)
             : null,
+        noteText: json['note_text'] as String?,
+        noteUpdatedAt: json['note_updated_at'] != null
+            ? DateTime.tryParse(json['note_updated_at'] as String)
+            : null,
       );
     } catch (e, stack) {
       // ignore: avoid_print
@@ -181,6 +191,8 @@ class Content {
     bool? isPaid,
     List<String>? topics,
     RecommendationReason? recommendationReason,
+    String? noteText,
+    DateTime? noteUpdatedAt,
   }) {
     return Content(
       id: id ?? this.id,
@@ -201,6 +213,8 @@ class Content {
       isPaid: isPaid ?? this.isPaid,
       topics: topics ?? this.topics,
       recommendationReason: recommendationReason ?? this.recommendationReason,
+      noteText: noteText ?? this.noteText,
+      noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
     );
   }
 

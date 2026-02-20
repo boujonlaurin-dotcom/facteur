@@ -40,7 +40,7 @@ class RecommendationService:
             PersonalizationLayer()  # Story 4.7
         ])
 
-    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None) -> List[Content]:
+    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None, has_note: bool = False) -> List[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
         
@@ -109,6 +109,14 @@ class RecommendationService:
                      UserContentStatus.user_id == user_id,
                      UserContentStatus.is_saved == True
                  )
+             )
+             if has_note:
+                 stmt = stmt.where(
+                     UserContentStatus.note_text.isnot(None),
+                     UserContentStatus.note_text != '',
+                 )
+             stmt = (
+                 stmt
                  .order_by(desc(func.coalesce(UserContentStatus.saved_at, UserContentStatus.updated_at)))
                  .offset(offset)
                  .limit(limit)
@@ -123,8 +131,10 @@ class RecommendationService:
                  content.is_hidden = st.is_hidden
                  content.hidden_reason = st.hidden_reason
                  content.status = st.status
+                 content.note_text = st.note_text
+                 content.note_updated_at = st.note_updated_at
                  results.append(content)
-                 
+
              return results
         
         # 2. Get today's digest content_ids to exclude from feed (Story 10.20)

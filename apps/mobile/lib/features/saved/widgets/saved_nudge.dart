@@ -98,7 +98,7 @@ class SavedNudge extends ConsumerWidget {
               FilledButton.tonal(
                 onPressed: () {
                   _dismiss(ref);
-                  context.push(RoutePaths.saved);
+                  context.go(RoutePaths.saved);
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: colors.primary.withValues(alpha: 0.1),

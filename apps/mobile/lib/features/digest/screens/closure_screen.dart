@@ -293,7 +293,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
               return Padding(
                 padding: const EdgeInsets.only(top: FacteurSpacing.space3),
                 child: GestureDetector(
-                  onTap: () => context.push(RoutePaths.saved),
+                  onTap: () => context.go(RoutePaths.saved),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
@@ -324,6 +324,45 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                 ),
               );
             }),
+
+            // Note nudge (always visible)
+            Padding(
+              padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+              child: GestureDetector(
+                onTap: () => context.go(RoutePaths.saved),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        PhosphorIcons.pencilLine(PhosphorIconsStyle.fill),
+                        size: 16,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Ajoutez des notes pour retenir l\'essentiel !',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
             const Spacer(flex: 3),
 
@@ -397,7 +436,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                             ),
                             const SizedBox(width: FacteurSpacing.space1),
                             Text(
-                              'Un avis ? Dites-nous tout',
+                              'Un avis ? Dis-nous tout',
                               style: textTheme.bodyMedium?.copyWith(
                                 color: colors.textSecondary,
                                 decoration: TextDecoration.underline,

@@ -14,6 +14,7 @@ class FeedRepository {
     bool savedOnly = false,
     String? mode,
     String? theme,
+    bool hasNote = false,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -39,6 +40,10 @@ class FeedRepository {
 
       if (theme != null) {
         queryParams['theme'] = theme;
+      }
+
+      if (hasNote) {
+        queryParams['has_note'] = true;
       }
 
       final response = await _apiClient.dio.get<dynamic>(
@@ -154,6 +159,29 @@ class FeedRepository {
     } catch (e) {
       // ignore: avoid_print
       print('FeedRepository: [ERROR] toggleLike: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> upsertNote(String contentId, String noteText) async {
+    try {
+      await _apiClient.dio.put<void>(
+        'contents/$contentId/note',
+        data: {'note_text': noteText},
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] upsertNote: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteNote(String contentId) async {
+    try {
+      await _apiClient.dio.delete<void>('contents/$contentId/note');
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] deleteNote: $e');
       rethrow;
     }
   }

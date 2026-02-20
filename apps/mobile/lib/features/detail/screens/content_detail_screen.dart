@@ -12,7 +12,6 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../../../config/theme.dart';
-// import '../../../config/routes.dart'; // Unused
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
@@ -21,9 +20,10 @@ import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
+import '../widgets/note_input_sheet.dart';
+import '../widgets/note_welcome_tooltip.dart';
 import '../../../core/ui/notification_service.dart';
-// import '../../../widgets/design/facteur_button.dart'; // Unused
-// import '../../progress/repositories/progress_repository.dart'; // Unused
+import '../../saved/widgets/collection_picker_sheet.dart';
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -32,6 +32,7 @@ import '../../../core/ui/notification_service.dart';
 /// - Bouton "Comparer" (perspectives)
 /// - Analytics tracking
 /// - Bookmark toggle
+/// - Note sur article (Story Notes)
 class ContentDetailScreen extends ConsumerStatefulWidget {
   final String contentId;
   final Content? content; // Passed via extra from GoRouter
@@ -53,14 +54,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late Animation<double> _fabAnimation;
   late AnimationController _buttonPulseController;
   late Animation<double> _buttonScaleAnimation;
+  late AnimationController _bookmarkBounceController;
+  late Animation<double> _bookmarkScaleAnimation;
+  late AnimationController _noteFabBounceController;
+  late Animation<double> _noteFabScaleAnimation;
 
   bool _showFab = false;
+  bool _showNoteWelcome = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
 
   Timer? _readingTimer;
+  Timer? _noteNudgeTimer;
   bool _isConsumed = false;
+  bool _hasOpenedNote = false;
   static const int _consumptionThreshold = 30; // seconds
+  static const int _noteNudgeDelay = 20; // seconds
 
   Content? _content;
 
@@ -102,11 +111,54 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_buttonPulseController);
 
+    // Bookmark bounce animation (triggered on first note character)
+    _bookmarkBounceController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _bookmarkScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.3)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.3, end: 1.0)
+            .chain(CurveTween(curve: Curves.bounceOut)),
+        weight: 70,
+      ),
+    ]).animate(_bookmarkBounceController);
+
+    // Note FAB bounce animation (triggered at +20s nudge)
+    _noteFabBounceController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _noteFabScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.2)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.2, end: 1.0)
+            .chain(CurveTween(curve: Curves.bounceOut)),
+        weight: 70,
+      ),
+    ]).animate(_noteFabBounceController);
+
     // Show FAB after a short delay for smooth appearance
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() => _showFab = true);
         _fabController.forward();
+      }
+    });
+
+    // Check if note welcome tooltip should be shown (first time only)
+    NoteWelcomeTooltip.shouldShow().then((show) {
+      if (mounted && show) {
+        setState(() => _showNoteWelcome = true);
       }
     });
 
@@ -121,6 +173,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_content?.hasInAppContent == true && !_isConsumed) {
       _startReadingTimer();
     }
+
+    // Note nudge: bounce note FAB after 20s if user hasn't opened note
+    _noteNudgeTimer =
+        Timer(const Duration(seconds: _noteNudgeDelay), () {
+      if (mounted && !_hasOpenedNote) {
+        _noteFabBounceController.forward();
+      }
+    });
   }
 
   Future<void> _fetchContent() async {
@@ -184,11 +244,90 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  Future<void> _toggleBookmark() async {
+    final content = _content;
+    if (content == null) return;
+
+    HapticFeedback.lightImpact();
+    final wasSaved = content.isSaved;
+    final newSaved = !wasSaved;
+    setState(() {
+      _content = content.copyWith(isSaved: newSaved);
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+      await repository.toggleSave(content.id, newSaved);
+      if (mounted && newSaved) {
+        NotificationService.showInfo(
+          'Sauvegardé',
+          actionLabel: 'Ajouter à une collection',
+          onAction: () => CollectionPickerSheet.show(context, content.id),
+        );
+      }
+    } catch (e) {
+      // Rollback on error
+      if (mounted) {
+        setState(() {
+          _content = content.copyWith(isSaved: wasSaved);
+        });
+        NotificationService.showError('Erreur', context: context);
+      }
+    }
+  }
+
+  void _openNoteSheet() {
+    final content = _content;
+    if (content == null || content.isHidden) return;
+
+    _hasOpenedNote = true;
+    NoteInputSheet.show(
+      context,
+      contentId: content.id,
+      initialNoteText: content.noteText,
+      onFirstCharacter: () {
+        // Auto-bookmark + bounce animation
+        if (!content.isSaved) {
+          setState(() {
+            _content = content.copyWith(isSaved: true);
+          });
+        }
+        _bookmarkBounceController.forward(from: 0);
+      },
+      onNoteSaved: (text) {
+        if (mounted) {
+          setState(() {
+            _content = _content?.copyWith(
+              noteText: text,
+              noteUpdatedAt: DateTime.now(),
+              isSaved: true,
+            );
+          });
+        }
+      },
+      onNoteDeleted: () {
+        if (mounted) {
+          setState(() {
+            _content = _content?.copyWith(
+              noteText: null,
+              noteUpdatedAt: null,
+            );
+          });
+        }
+      },
+    );
+  }
+
   @override
   void dispose() {
     _readingTimer?.cancel();
+    _noteNudgeTimer?.cancel();
     _fabController.dispose();
     _buttonPulseController.dispose();
+    _bookmarkBounceController.dispose();
+    _noteFabBounceController.dispose();
     super.dispose();
 
     // Track article read duration on close (restored from ArticleViewerModal)
@@ -374,22 +513,59 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         ],
       ),
-      // FAB for opening original
+      // FABs: External link (left) + Note (right) + optional welcome tooltip
       floatingActionButton: _showFab
           ? ScaleTransition(
               scale: _fabAnimation,
-              child: FloatingActionButton(
-                mini: true,
-                onPressed: _openOriginalUrl,
-                backgroundColor: colors.surface,
-                foregroundColor: colors.textPrimary,
-                elevation: 4,
-                heroTag: 'original_fab',
-                tooltip: _getFabLabel(),
-                child: Icon(
-                  PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
-                  size: 20,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_showNoteWelcome)
+                    NoteWelcomeTooltip(
+                      onDismiss: () => setState(() => _showNoteWelcome = false),
+                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // External link FAB (transparent)
+                      FloatingActionButton(
+                        mini: true,
+                        onPressed: _openOriginalUrl,
+                        backgroundColor: colors.surface.withValues(alpha: 0.45),
+                        foregroundColor: colors.textPrimary,
+                        elevation: 2,
+                        heroTag: 'original_fab',
+                        tooltip: _getFabLabel(),
+                        child: Icon(
+                          PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Note FAB (primary color, with bounce animation)
+                      ScaleTransition(
+                        scale: _noteFabScaleAnimation,
+                        child: FloatingActionButton(
+                          mini: true,
+                          onPressed: content.isHidden ? null : _openNoteSheet,
+                          backgroundColor:
+                              content.isHidden ? colors.surfaceElevated : colors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 4,
+                          heroTag: 'note_fab',
+                          tooltip: 'Nouvelle note',
+                          child: Icon(
+                            content.hasNote
+                                ? PhosphorIcons.pencilLine(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.pencilLine(PhosphorIconsStyle.regular),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             )
           : null,
@@ -420,28 +596,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
               child: Row(
                 children: [
-                  // Discreet Back Button
+                  // Discreet Back Button (reduced icon, same hitbox)
                   IconButton(
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
                     constraints: const BoxConstraints(),
                     icon: Icon(
                       PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                      size: 20,
+                      size: 18,
                       color: colors.textSecondary,
                     ),
                     onPressed: () => context.pop(_isConsumed),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
 
-                  // Source logo
+                  // Source logo (reduced from 32 to 28)
                   if (content.source.logoUrl != null)
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                       child: CachedNetworkImage(
                         imageUrl: content.source.logoUrl!,
-                        width: 32,
-                        height: 32,
+                        width: 28,
+                        height: 28,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) =>
                             _buildSourcePlaceholder(colors),
@@ -449,7 +625,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     )
                   else
                     _buildSourcePlaceholder(colors),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
 
                   // Source Name + Time + Badges
                   Expanded(
@@ -508,9 +684,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
                   ),
 
+                  // Bookmark toggle (with bounce animation)
+                  ScaleTransition(
+                    scale: _bookmarkScaleAnimation,
+                    child: IconButton(
+                      padding: const EdgeInsets.all(4),
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(),
+                      onPressed: _toggleBookmark,
+                      icon: Icon(
+                        content.isSaved
+                            ? PhosphorIcons.bookmarkSimple(
+                                PhosphorIconsStyle.fill)
+                            : PhosphorIcons.bookmarkSimple(
+                                PhosphorIconsStyle.regular),
+                        size: 22,
+                        color: content.isSaved
+                            ? colors.primary
+                            : colors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+
                   // Comparer button
                   if (content.contentType == ContentType.article) ...[
-                    const SizedBox(width: 8),
                     ScaleTransition(
                       scale: _buttonScaleAnimation,
                       child: Container(
@@ -531,10 +729,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           },
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
+                              horizontal: 14,
+                              vertical: 8,
                             ),
-                            minimumSize: Size.zero,
+                            minimumSize: const Size(0, 36),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             backgroundColor: colors.primary,
                             foregroundColor: Colors.white,
@@ -606,7 +804,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
-          // footer: footer, // Removed
         );
 
       case ContentType.audio:
@@ -616,7 +813,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           description: content.description,
           thumbnailUrl: content.thumbnailUrl,
           durationSeconds: content.durationSeconds,
-          // footer: footer, // Removed
         );
 
       case ContentType.youtube:
@@ -625,7 +821,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           videoUrl: content.url,
           title: content.title,
           description: content.description,
-          // footer: footer, // Removed
         );
     }
   }

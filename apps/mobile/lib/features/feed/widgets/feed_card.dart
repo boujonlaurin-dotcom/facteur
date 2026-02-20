@@ -306,6 +306,44 @@ class FeedCard extends StatelessWidget {
               ],
             ),
           ),
+          if (content.hasNote)
+            Positioned(
+              top: 12,
+              left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      PhosphorIcons.pencilLine(PhosphorIconsStyle.fill),
+                      size: 11,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 3),
+                    const Text(
+                      'Note',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (isConsumed)
             Positioned(
               top: 12,
