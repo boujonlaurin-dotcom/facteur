@@ -291,6 +291,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final content = _content;
     if (content == null || content.isHidden) return;
 
+    // Capture saved state before opening sheet to detect auto-save via note
+    final wasAlreadySaved = content.isSaved;
+
     _hasOpenedNote = true;
     NoteInputSheet.show(
       context,
@@ -314,6 +317,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               isSaved: true,
             );
           });
+          // Bounce bookmark + notification (same behaviour as manual bookmark)
+          _bookmarkBounceController.forward(from: 0);
+          if (!wasAlreadySaved) {
+            NotificationService.showInfo(
+              'Sauvegardé',
+              actionLabel: 'Ajouter à une collection',
+              onAction: () => CollectionPickerSheet.show(context, _content!.id),
+            );
+          }
         }
       },
       onNoteDeleted: () {
