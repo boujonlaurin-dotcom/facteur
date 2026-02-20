@@ -661,6 +661,8 @@ mixin _$DigestItem {
   SourceMini? get source => throw _privateConstructorUsedError;
   int get rank => throw _privateConstructorUsedError;
   String get reason => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_followed_source')
+  bool get isFollowedSource => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_paid')
   bool get isPaid => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_read')
@@ -704,6 +706,7 @@ abstract class $DigestItemCopyWith<$Res> {
       SourceMini? source,
       int rank,
       String reason,
+      @JsonKey(name: 'is_followed_source') bool isFollowedSource,
       @JsonKey(name: 'is_paid') bool isPaid,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
@@ -741,6 +744,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
+    Object? isFollowedSource = null,
     Object? isPaid = null,
     Object? isRead = null,
     Object? isSaved = null,
@@ -797,6 +801,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.reason
           : reason // ignore: cast_nullable_to_non_nullable
               as String,
+      isFollowedSource: null == isFollowedSource
+          ? _value.isFollowedSource
+          : isFollowedSource // ignore: cast_nullable_to_non_nullable
+              as bool,
       isPaid: null == isPaid
           ? _value.isPaid
           : isPaid // ignore: cast_nullable_to_non_nullable
@@ -875,6 +883,7 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       SourceMini? source,
       int rank,
       String reason,
+      @JsonKey(name: 'is_followed_source') bool isFollowedSource,
       @JsonKey(name: 'is_paid') bool isPaid,
       @JsonKey(name: 'is_read') bool isRead,
       @JsonKey(name: 'is_saved') bool isSaved,
@@ -912,6 +921,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? source = freezed,
     Object? rank = null,
     Object? reason = null,
+    Object? isFollowedSource = null,
     Object? isPaid = null,
     Object? isRead = null,
     Object? isSaved = null,
@@ -968,6 +978,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.reason
           : reason // ignore: cast_nullable_to_non_nullable
               as String,
+      isFollowedSource: null == isFollowedSource
+          ? _value.isFollowedSource
+          : isFollowedSource // ignore: cast_nullable_to_non_nullable
+              as bool,
       isPaid: null == isPaid
           ? _value.isPaid
           : isPaid // ignore: cast_nullable_to_non_nullable
@@ -1016,6 +1030,7 @@ class _$DigestItemImpl implements _DigestItem {
       this.source,
       this.rank = 0,
       this.reason = '',
+      @JsonKey(name: 'is_followed_source') this.isFollowedSource = false,
       @JsonKey(name: 'is_paid') this.isPaid = false,
       @JsonKey(name: 'is_read') this.isRead = false,
       @JsonKey(name: 'is_saved') this.isSaved = false,
@@ -1071,6 +1086,9 @@ class _$DigestItemImpl implements _DigestItem {
   @JsonKey()
   final String reason;
   @override
+  @JsonKey(name: 'is_followed_source')
+  final bool isFollowedSource;
+  @override
   @JsonKey(name: 'is_paid')
   final bool isPaid;
   @override
@@ -1091,7 +1109,7 @@ class _$DigestItemImpl implements _DigestItem {
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason)';
   }
 
   @override
@@ -1117,6 +1135,8 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.source, source) || other.source == source) &&
             (identical(other.rank, rank) || other.rank == rank) &&
             (identical(other.reason, reason) || other.reason == reason) &&
+            (identical(other.isFollowedSource, isFollowedSource) ||
+                other.isFollowedSource == isFollowedSource) &&
             (identical(other.isPaid, isPaid) || other.isPaid == isPaid) &&
             (identical(other.isRead, isRead) || other.isRead == isRead) &&
             (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
@@ -1129,26 +1149,28 @@ class _$DigestItemImpl implements _DigestItem {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      contentId,
-      title,
-      url,
-      thumbnailUrl,
-      description,
-      const DeepCollectionEquality().hash(_topics),
-      contentType,
-      durationSeconds,
-      publishedAt,
-      source,
-      rank,
-      reason,
-      isPaid,
-      isRead,
-      isSaved,
-      isLiked,
-      isDismissed,
-      recommendationReason);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        contentId,
+        title,
+        url,
+        thumbnailUrl,
+        description,
+        const DeepCollectionEquality().hash(_topics),
+        contentType,
+        durationSeconds,
+        publishedAt,
+        source,
+        rank,
+        reason,
+        isFollowedSource,
+        isPaid,
+        isRead,
+        isSaved,
+        isLiked,
+        isDismissed,
+        recommendationReason
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -1182,6 +1204,7 @@ abstract class _DigestItem implements DigestItem {
           final SourceMini? source,
           final int rank,
           final String reason,
+          @JsonKey(name: 'is_followed_source') final bool isFollowedSource,
           @JsonKey(name: 'is_paid') final bool isPaid,
           @JsonKey(name: 'is_read') final bool isRead,
           @JsonKey(name: 'is_saved') final bool isSaved,
@@ -1227,6 +1250,9 @@ abstract class _DigestItem implements DigestItem {
   @override
   String get reason;
   @override
+  @JsonKey(name: 'is_followed_source')
+  bool get isFollowedSource;
+  @override
   @JsonKey(name: 'is_paid')
   bool get isPaid;
   @override
@@ -1250,6 +1276,341 @@ abstract class _DigestItem implements DigestItem {
       throw _privateConstructorUsedError;
 }
 
+DigestTopic _$DigestTopicFromJson(Map<String, dynamic> json) {
+  return _DigestTopic.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DigestTopic {
+  @JsonKey(name: 'topic_id')
+  String get topicId => throw _privateConstructorUsedError;
+  String get label => throw _privateConstructorUsedError;
+  int get rank => throw _privateConstructorUsedError;
+  String get reason => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_trending')
+  bool get isTrending => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_une')
+  bool get isUne => throw _privateConstructorUsedError;
+  String? get theme => throw _privateConstructorUsedError;
+  @JsonKey(name: 'topic_score')
+  double get topicScore => throw _privateConstructorUsedError;
+  List<DigestItem> get articles => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DigestTopicCopyWith<DigestTopic> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DigestTopicCopyWith<$Res> {
+  factory $DigestTopicCopyWith(
+          DigestTopic value, $Res Function(DigestTopic) then) =
+      _$DigestTopicCopyWithImpl<$Res, DigestTopic>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'topic_id') String topicId,
+      String label,
+      int rank,
+      String reason,
+      @JsonKey(name: 'is_trending') bool isTrending,
+      @JsonKey(name: 'is_une') bool isUne,
+      String? theme,
+      @JsonKey(name: 'topic_score') double topicScore,
+      List<DigestItem> articles});
+}
+
+/// @nodoc
+class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
+    implements $DigestTopicCopyWith<$Res> {
+  _$DigestTopicCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? topicId = null,
+    Object? label = null,
+    Object? rank = null,
+    Object? reason = null,
+    Object? isTrending = null,
+    Object? isUne = null,
+    Object? theme = freezed,
+    Object? topicScore = null,
+    Object? articles = null,
+  }) {
+    return _then(_value.copyWith(
+      topicId: null == topicId
+          ? _value.topicId
+          : topicId // ignore: cast_nullable_to_non_nullable
+              as String,
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      rank: null == rank
+          ? _value.rank
+          : rank // ignore: cast_nullable_to_non_nullable
+              as int,
+      reason: null == reason
+          ? _value.reason
+          : reason // ignore: cast_nullable_to_non_nullable
+              as String,
+      isTrending: null == isTrending
+          ? _value.isTrending
+          : isTrending // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isUne: null == isUne
+          ? _value.isUne
+          : isUne // ignore: cast_nullable_to_non_nullable
+              as bool,
+      theme: freezed == theme
+          ? _value.theme
+          : theme // ignore: cast_nullable_to_non_nullable
+              as String?,
+      topicScore: null == topicScore
+          ? _value.topicScore
+          : topicScore // ignore: cast_nullable_to_non_nullable
+              as double,
+      articles: null == articles
+          ? _value.articles
+          : articles // ignore: cast_nullable_to_non_nullable
+              as List<DigestItem>,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DigestTopicImplCopyWith<$Res>
+    implements $DigestTopicCopyWith<$Res> {
+  factory _$$DigestTopicImplCopyWith(
+          _$DigestTopicImpl value, $Res Function(_$DigestTopicImpl) then) =
+      __$$DigestTopicImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'topic_id') String topicId,
+      String label,
+      int rank,
+      String reason,
+      @JsonKey(name: 'is_trending') bool isTrending,
+      @JsonKey(name: 'is_une') bool isUne,
+      String? theme,
+      @JsonKey(name: 'topic_score') double topicScore,
+      List<DigestItem> articles});
+}
+
+/// @nodoc
+class __$$DigestTopicImplCopyWithImpl<$Res>
+    extends _$DigestTopicCopyWithImpl<$Res, _$DigestTopicImpl>
+    implements _$$DigestTopicImplCopyWith<$Res> {
+  __$$DigestTopicImplCopyWithImpl(
+      _$DigestTopicImpl _value, $Res Function(_$DigestTopicImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? topicId = null,
+    Object? label = null,
+    Object? rank = null,
+    Object? reason = null,
+    Object? isTrending = null,
+    Object? isUne = null,
+    Object? theme = freezed,
+    Object? topicScore = null,
+    Object? articles = null,
+  }) {
+    return _then(_$DigestTopicImpl(
+      topicId: null == topicId
+          ? _value.topicId
+          : topicId // ignore: cast_nullable_to_non_nullable
+              as String,
+      label: null == label
+          ? _value.label
+          : label // ignore: cast_nullable_to_non_nullable
+              as String,
+      rank: null == rank
+          ? _value.rank
+          : rank // ignore: cast_nullable_to_non_nullable
+              as int,
+      reason: null == reason
+          ? _value.reason
+          : reason // ignore: cast_nullable_to_non_nullable
+              as String,
+      isTrending: null == isTrending
+          ? _value.isTrending
+          : isTrending // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isUne: null == isUne
+          ? _value.isUne
+          : isUne // ignore: cast_nullable_to_non_nullable
+              as bool,
+      theme: freezed == theme
+          ? _value.theme
+          : theme // ignore: cast_nullable_to_non_nullable
+              as String?,
+      topicScore: null == topicScore
+          ? _value.topicScore
+          : topicScore // ignore: cast_nullable_to_non_nullable
+              as double,
+      articles: null == articles
+          ? _value._articles
+          : articles // ignore: cast_nullable_to_non_nullable
+              as List<DigestItem>,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DigestTopicImpl extends _DigestTopic {
+  const _$DigestTopicImpl(
+      {@JsonKey(name: 'topic_id') required this.topicId,
+      required this.label,
+      this.rank = 1,
+      this.reason = '',
+      @JsonKey(name: 'is_trending') this.isTrending = false,
+      @JsonKey(name: 'is_une') this.isUne = false,
+      this.theme,
+      @JsonKey(name: 'topic_score') this.topicScore = 0.0,
+      final List<DigestItem> articles = const []})
+      : _articles = articles,
+        super._();
+
+  factory _$DigestTopicImpl.fromJson(Map<String, dynamic> json) =>
+      _$$DigestTopicImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'topic_id')
+  final String topicId;
+  @override
+  final String label;
+  @override
+  @JsonKey()
+  final int rank;
+  @override
+  @JsonKey()
+  final String reason;
+  @override
+  @JsonKey(name: 'is_trending')
+  final bool isTrending;
+  @override
+  @JsonKey(name: 'is_une')
+  final bool isUne;
+  @override
+  final String? theme;
+  @override
+  @JsonKey(name: 'topic_score')
+  final double topicScore;
+  final List<DigestItem> _articles;
+  @override
+  @JsonKey()
+  List<DigestItem> get articles {
+    if (_articles is EqualUnmodifiableListView) return _articles;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_articles);
+  }
+
+  @override
+  String toString() {
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, articles: $articles)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DigestTopicImpl &&
+            (identical(other.topicId, topicId) || other.topicId == topicId) &&
+            (identical(other.label, label) || other.label == label) &&
+            (identical(other.rank, rank) || other.rank == rank) &&
+            (identical(other.reason, reason) || other.reason == reason) &&
+            (identical(other.isTrending, isTrending) ||
+                other.isTrending == isTrending) &&
+            (identical(other.isUne, isUne) || other.isUne == isUne) &&
+            (identical(other.theme, theme) || other.theme == theme) &&
+            (identical(other.topicScore, topicScore) ||
+                other.topicScore == topicScore) &&
+            const DeepCollectionEquality().equals(other._articles, _articles));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      topicId,
+      label,
+      rank,
+      reason,
+      isTrending,
+      isUne,
+      theme,
+      topicScore,
+      const DeepCollectionEquality().hash(_articles));
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DigestTopicImplCopyWith<_$DigestTopicImpl> get copyWith =>
+      __$$DigestTopicImplCopyWithImpl<_$DigestTopicImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DigestTopicImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DigestTopic extends DigestTopic {
+  const factory _DigestTopic(
+      {@JsonKey(name: 'topic_id') required final String topicId,
+      required final String label,
+      final int rank,
+      final String reason,
+      @JsonKey(name: 'is_trending') final bool isTrending,
+      @JsonKey(name: 'is_une') final bool isUne,
+      final String? theme,
+      @JsonKey(name: 'topic_score') final double topicScore,
+      final List<DigestItem> articles}) = _$DigestTopicImpl;
+  const _DigestTopic._() : super._();
+
+  factory _DigestTopic.fromJson(Map<String, dynamic> json) =
+      _$DigestTopicImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'topic_id')
+  String get topicId;
+  @override
+  String get label;
+  @override
+  int get rank;
+  @override
+  String get reason;
+  @override
+  @JsonKey(name: 'is_trending')
+  bool get isTrending;
+  @override
+  @JsonKey(name: 'is_une')
+  bool get isUne;
+  @override
+  String? get theme;
+  @override
+  @JsonKey(name: 'topic_score')
+  double get topicScore;
+  @override
+  List<DigestItem> get articles;
+  @override
+  @JsonKey(ignore: true)
+  _$$DigestTopicImplCopyWith<_$DigestTopicImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
 DigestResponse _$DigestResponseFromJson(Map<String, dynamic> json) {
   return _DigestResponse.fromJson(json);
 }
@@ -1266,7 +1627,10 @@ mixin _$DigestResponse {
   DateTime get generatedAt => throw _privateConstructorUsedError;
   @JsonKey(defaultValue: 'pour_vous')
   String get mode => throw _privateConstructorUsedError;
+  @JsonKey(name: 'format_version')
+  String get formatVersion => throw _privateConstructorUsedError;
   List<DigestItem> get items => throw _privateConstructorUsedError;
+  List<DigestTopic> get topics => throw _privateConstructorUsedError;
   @JsonKey(name: 'completion_threshold')
   int get completionThreshold => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_completed')
@@ -1292,7 +1656,9 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
       @JsonKey(defaultValue: 'pour_vous') String mode,
+      @JsonKey(name: 'format_version') String formatVersion,
       List<DigestItem> items,
+      List<DigestTopic> topics,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt});
@@ -1316,7 +1682,9 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
     Object? targetDate = null,
     Object? generatedAt = null,
     Object? mode = null,
+    Object? formatVersion = null,
     Object? items = null,
+    Object? topics = null,
     Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
@@ -1342,10 +1710,18 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
           ? _value.mode
           : mode // ignore: cast_nullable_to_non_nullable
               as String,
+      formatVersion: null == formatVersion
+          ? _value.formatVersion
+          : formatVersion // ignore: cast_nullable_to_non_nullable
+              as String,
       items: null == items
           ? _value.items
           : items // ignore: cast_nullable_to_non_nullable
               as List<DigestItem>,
+      topics: null == topics
+          ? _value.topics
+          : topics // ignore: cast_nullable_to_non_nullable
+              as List<DigestTopic>,
       completionThreshold: null == completionThreshold
           ? _value.completionThreshold
           : completionThreshold // ignore: cast_nullable_to_non_nullable
@@ -1376,7 +1752,9 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'target_date') DateTime targetDate,
       @JsonKey(name: 'generated_at') DateTime generatedAt,
       @JsonKey(defaultValue: 'pour_vous') String mode,
+      @JsonKey(name: 'format_version') String formatVersion,
       List<DigestItem> items,
+      List<DigestTopic> topics,
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt});
@@ -1398,7 +1776,9 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
     Object? targetDate = null,
     Object? generatedAt = null,
     Object? mode = null,
+    Object? formatVersion = null,
     Object? items = null,
+    Object? topics = null,
     Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
@@ -1424,10 +1804,18 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
           ? _value.mode
           : mode // ignore: cast_nullable_to_non_nullable
               as String,
+      formatVersion: null == formatVersion
+          ? _value.formatVersion
+          : formatVersion // ignore: cast_nullable_to_non_nullable
+              as String,
       items: null == items
           ? _value._items
           : items // ignore: cast_nullable_to_non_nullable
               as List<DigestItem>,
+      topics: null == topics
+          ? _value._topics
+          : topics // ignore: cast_nullable_to_non_nullable
+              as List<DigestTopic>,
       completionThreshold: null == completionThreshold
           ? _value.completionThreshold
           : completionThreshold // ignore: cast_nullable_to_non_nullable
@@ -1446,18 +1834,22 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
 
 /// @nodoc
 @JsonSerializable()
-class _$DigestResponseImpl implements _DigestResponse {
+class _$DigestResponseImpl extends _DigestResponse {
   const _$DigestResponseImpl(
       {@JsonKey(name: 'digest_id') required this.digestId,
       @JsonKey(name: 'user_id') required this.userId,
       @JsonKey(name: 'target_date') required this.targetDate,
       @JsonKey(name: 'generated_at') required this.generatedAt,
       @JsonKey(defaultValue: 'pour_vous') this.mode = 'pour_vous',
+      @JsonKey(name: 'format_version') this.formatVersion = 'topics_v1',
       final List<DigestItem> items = const [],
+      final List<DigestTopic> topics = const [],
       @JsonKey(name: 'completion_threshold') this.completionThreshold = 5,
       @JsonKey(name: 'is_completed') this.isCompleted = false,
       @JsonKey(name: 'completed_at') this.completedAt})
-      : _items = items;
+      : _items = items,
+        _topics = topics,
+        super._();
 
   factory _$DigestResponseImpl.fromJson(Map<String, dynamic> json) =>
       _$$DigestResponseImplFromJson(json);
@@ -1477,6 +1869,9 @@ class _$DigestResponseImpl implements _DigestResponse {
   @override
   @JsonKey(defaultValue: 'pour_vous')
   final String mode;
+  @override
+  @JsonKey(name: 'format_version')
+  final String formatVersion;
   final List<DigestItem> _items;
   @override
   @JsonKey()
@@ -1484,6 +1879,15 @@ class _$DigestResponseImpl implements _DigestResponse {
     if (_items is EqualUnmodifiableListView) return _items;
     // ignore: implicit_dynamic_type
     return EqualUnmodifiableListView(_items);
+  }
+
+  final List<DigestTopic> _topics;
+  @override
+  @JsonKey()
+  List<DigestTopic> get topics {
+    if (_topics is EqualUnmodifiableListView) return _topics;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_topics);
   }
 
   @override
@@ -1498,7 +1902,7 @@ class _$DigestResponseImpl implements _DigestResponse {
 
   @override
   String toString() {
-    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, items: $items, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt)';
+    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, formatVersion: $formatVersion, items: $items, topics: $topics, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt)';
   }
 
   @override
@@ -1514,7 +1918,10 @@ class _$DigestResponseImpl implements _DigestResponse {
             (identical(other.generatedAt, generatedAt) ||
                 other.generatedAt == generatedAt) &&
             (identical(other.mode, mode) || other.mode == mode) &&
+            (identical(other.formatVersion, formatVersion) ||
+                other.formatVersion == formatVersion) &&
             const DeepCollectionEquality().equals(other._items, _items) &&
+            const DeepCollectionEquality().equals(other._topics, _topics) &&
             (identical(other.completionThreshold, completionThreshold) ||
                 other.completionThreshold == completionThreshold) &&
             (identical(other.isCompleted, isCompleted) ||
@@ -1532,7 +1939,9 @@ class _$DigestResponseImpl implements _DigestResponse {
       targetDate,
       generatedAt,
       mode,
+      formatVersion,
       const DeepCollectionEquality().hash(_items),
+      const DeepCollectionEquality().hash(_topics),
       completionThreshold,
       isCompleted,
       completedAt);
@@ -1552,18 +1961,21 @@ class _$DigestResponseImpl implements _DigestResponse {
   }
 }
 
-abstract class _DigestResponse implements DigestResponse {
+abstract class _DigestResponse extends DigestResponse {
   const factory _DigestResponse(
           {@JsonKey(name: 'digest_id') required final String digestId,
           @JsonKey(name: 'user_id') required final String userId,
           @JsonKey(name: 'target_date') required final DateTime targetDate,
           @JsonKey(name: 'generated_at') required final DateTime generatedAt,
           @JsonKey(defaultValue: 'pour_vous') final String mode,
+          @JsonKey(name: 'format_version') final String formatVersion,
           final List<DigestItem> items,
+          final List<DigestTopic> topics,
           @JsonKey(name: 'completion_threshold') final int completionThreshold,
           @JsonKey(name: 'is_completed') final bool isCompleted,
           @JsonKey(name: 'completed_at') final DateTime? completedAt}) =
       _$DigestResponseImpl;
+  const _DigestResponse._() : super._();
 
   factory _DigestResponse.fromJson(Map<String, dynamic> json) =
       _$DigestResponseImpl.fromJson;
@@ -1584,7 +1996,12 @@ abstract class _DigestResponse implements DigestResponse {
   @JsonKey(defaultValue: 'pour_vous')
   String get mode;
   @override
+  @JsonKey(name: 'format_version')
+  String get formatVersion;
+  @override
   List<DigestItem> get items;
+  @override
+  List<DigestTopic> get topics;
   @override
   @JsonKey(name: 'completion_threshold')
   int get completionThreshold;
