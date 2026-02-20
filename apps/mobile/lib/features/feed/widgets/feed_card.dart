@@ -14,6 +14,7 @@ class FeedCard extends StatelessWidget {
   final GestureLongPressMoveUpdateCallback? onLongPressMoveUpdate;
   final GestureLongPressEndCallback? onLongPressEnd;
   final VoidCallback? onSave;
+  final VoidCallback? onSaveLongPress;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
   final bool isSaved;
@@ -27,6 +28,7 @@ class FeedCard extends StatelessWidget {
     this.onLongPressMoveUpdate,
     this.onLongPressEnd,
     this.onSave,
+    this.onSaveLongPress,
     this.onLike,
     this.onNotInterested,
     this.isSaved = false,
@@ -210,11 +212,11 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                          // Save button
+                          // Save button (tap = save/unsave, long press = collection picker)
                           if (onSave != null)
-                            InkWell(
+                            GestureDetector(
                               onTap: onSave,
-                              borderRadius: BorderRadius.circular(12),
+                              onLongPress: onSaveLongPress,
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(

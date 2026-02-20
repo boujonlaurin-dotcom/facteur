@@ -2,6 +2,7 @@
 
 from app.routers import (
     auth,
+    collections,
     contents,
     digest,
     feed,
@@ -17,6 +18,7 @@ from app.routers import (
 
 __all__ = [
     "auth",
+    "collections",
     "contents",
     "digest",
     "feed",

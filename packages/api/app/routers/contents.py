@@ -7,7 +7,9 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.enums import ContentStatus
 from app.schemas.content import ContentStatusUpdate, HideContentRequest, ContentDetailResponse
+from app.schemas.collection import SaveContentRequest
 from app.services.content_service import ContentService
+from app.services.collection_service import CollectionService
 
 router = APIRouter()
 
@@ -59,10 +61,11 @@ async def update_content_status(
 @router.post("/{content_id}/save", status_code=status.HTTP_200_OK)
 async def save_content(
     content_id: UUID,
+    data: SaveContentRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Sauvegarde un contenu pour plus tard."""
+    """Sauvegarde un contenu pour plus tard, optionnellement dans des collections."""
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
@@ -71,7 +74,12 @@ async def save_content(
         content_id=content_id,
         is_saved=True
     )
-    
+
+    # Optionally add to collections
+    if data and data.collection_ids:
+        collection_service = CollectionService(db)
+        await collection_service.add_to_collections(user_uuid, content_id, data.collection_ids)
+
     await db.commit()
     return {"status": "ok", "is_saved": True}
 
