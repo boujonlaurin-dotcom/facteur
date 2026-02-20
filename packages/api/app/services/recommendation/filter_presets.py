@@ -98,6 +98,66 @@ def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:
         ]
 
 
+def is_cluster_serein_compatible(cluster: "TopicCluster") -> bool:
+    """Vérifie si un topic cluster est compatible avec le mode Serein.
+
+    Un cluster est EXCLU si :
+    - Son thème dominant ∈ SEREIN_EXCLUDED_THEMES, OU
+    - >50% de ses articles matchent au moins un SEREIN_KEYWORD dans titre/description
+
+    Args:
+        cluster: TopicCluster à évaluer (from importance_detector)
+
+    Returns:
+        True si le cluster est serein-compatible (peut être inclus)
+    """
+    # Check 1: thème dominant
+    if cluster.theme and cluster.theme.lower() in SEREIN_EXCLUDED_THEMES:
+        return False
+
+    # Check 2: mots-clés anxiogènes dans titre/description
+    import re as _re
+    pattern = _re.compile("|".join(SEREIN_KEYWORDS), _re.IGNORECASE)
+    match_count = 0
+    for content in cluster.contents:
+        text = (content.title or "") + " " + (content.description or "")
+        if pattern.search(text):
+            match_count += 1
+
+    if len(cluster.contents) > 0 and match_count / len(cluster.contents) > 0.5:
+        return False
+
+    return True
+
+
+def find_perspective_article(
+    candidates: list["Content"],
+    topic_source_ids: set[UUID],
+    user_bias: "BiasStance",
+) -> "Content | None":
+    """Trouve 1 article de biais opposé à l'utilisateur, hors des sources du topic.
+
+    Utilisé par TopicSelector pour enrichir un topic en mode Perspective.
+
+    Args:
+        candidates: Pool global de candidats
+        topic_source_ids: Source IDs déjà dans le topic (à exclure)
+        user_bias: Biais dominant de l'utilisateur
+
+    Returns:
+        Content de biais opposé, ou None si aucun trouvé
+    """
+    opposing = get_opposing_biases(user_bias)
+
+    for content in candidates:
+        if content.source_id in topic_source_ids:
+            continue
+        if content.source and content.source.bias_stance in opposing:
+            return content
+
+    return None
+
+
 async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStance:
     """Détermine le biais dominant de l'utilisateur via ses sources suivies.
 

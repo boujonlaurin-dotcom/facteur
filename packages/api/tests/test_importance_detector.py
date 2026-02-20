@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from app.services.briefing.importance_detector import ImportanceDetector, FRENCH_STOP_WORDS
+from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster, FRENCH_STOP_WORDS
 
 
 class TestNormalizeTitle:
@@ -156,20 +156,21 @@ class TestDetectTrendingClusters:
     def test_trending_with_3_sources(self):
         """Test détection d'un cluster avec 3 sources différentes."""
         detector = ImportanceDetector(similarity_threshold=0.4, min_sources_for_trending=3)
-        
+
         # Créer 3 articles sur le même sujet de 3 sources différentes
+        # Titres avec Jaccard > 0.4 (mots clés: macron, reforme, retraites)
         source_a = uuid.uuid4()
         source_b = uuid.uuid4()
         source_c = uuid.uuid4()
-        
+
         contents = [
-            self._create_mock_content("Macron annonce une grande réforme", source_a),
-            self._create_mock_content("Macron présente sa réforme majeure", source_b),
-            self._create_mock_content("La réforme de Macron enfin dévoilée", source_c),
+            self._create_mock_content("Macron réforme retraites annonce plan", source_a),
+            self._create_mock_content("Macron réforme retraites présentation officielle", source_b),
+            self._create_mock_content("Macron annonce réforme retraites France", source_c),
         ]
-        
+
         trending = detector.detect_trending_clusters(contents)
-        
+
         # Les 3 articles devraient être marqués comme trending
         assert len(trending) == 3
         for content in contents:
@@ -195,17 +196,17 @@ class TestDetectTrendingClusters:
     def test_not_trending_same_source(self):
         """Test qu'un cluster avec une seule source n'est pas trending."""
         detector = ImportanceDetector(similarity_threshold=0.4, min_sources_for_trending=3)
-        
+
         source_a = uuid.uuid4()
-        
+
         contents = [
-            self._create_mock_content("Macron annonce une grande réforme", source_a),
-            self._create_mock_content("Macron présente sa réforme majeure", source_a),
-            self._create_mock_content("La réforme de Macron enfin dévoilée", source_a),
+            self._create_mock_content("Macron réforme retraites annonce plan", source_a),
+            self._create_mock_content("Macron réforme retraites présentation officielle", source_a),
+            self._create_mock_content("Macron annonce réforme retraites France", source_a),
         ]
-        
+
         trending = detector.detect_trending_clusters(contents)
-        
+
         # Tous de la même source, donc pas trending
         assert len(trending) == 0
 
@@ -223,10 +224,10 @@ class TestDetectTrendingClusters:
         source_e = uuid.uuid4()
         
         contents = [
-            # Cluster 1
-            self._create_mock_content("Macron annonce une grande réforme", source_a),
-            self._create_mock_content("Macron présente sa réforme", source_b),
-            self._create_mock_content("Réforme Macron dévoilée", source_c),
+            # Cluster 1 (Jaccard > 0.4 : mots communs macron, reforme, retraites)
+            self._create_mock_content("Macron réforme retraites annonce plan", source_a),
+            self._create_mock_content("Macron réforme retraites présentation officielle", source_b),
+            self._create_mock_content("Macron annonce réforme retraites France", source_c),
             # Cluster 2
             self._create_mock_content("Ukraine attaque Russie", source_d),
             self._create_mock_content("L'Ukraine contre-attaque", source_e),
@@ -335,3 +336,165 @@ class TestImportanceDetectorInit:
         """Test avec min_sources < 2."""
         with pytest.raises(ValueError):
             ImportanceDetector(min_sources_for_trending=1)
+
+
+class TestBuildTopicClusters:
+    """Tests pour build_topic_clusters — clustering universel."""
+
+    def _create_mock_content(self, title: str, source_id=None, theme=None):
+        mock = MagicMock()
+        mock.id = uuid.uuid4()
+        mock.source_id = source_id or uuid.uuid4()
+        mock.title = title
+        mock.guid = str(uuid.uuid4())
+        mock.theme = theme
+        mock.source = MagicMock()
+        mock.source.theme = theme
+        return mock
+
+    def test_empty_input(self):
+        detector = ImportanceDetector()
+        clusters = detector.build_topic_clusters([])
+        assert clusters == []
+
+    def test_single_content_returns_singleton_cluster(self):
+        detector = ImportanceDetector()
+        content = self._create_mock_content("Macron annonce une réforme")
+        clusters = detector.build_topic_clusters([content])
+        assert len(clusters) == 1
+        assert len(clusters[0].contents) == 1
+        assert clusters[0].contents[0] is content
+
+    def test_similar_titles_grouped(self):
+        """Articles avec titres similaires doivent former un seul cluster."""
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        source_a = uuid.uuid4()
+        source_b = uuid.uuid4()
+        source_c = uuid.uuid4()
+
+        # Titres avec Jaccard > 0.4 (mots communs : macron, reforme, retraites)
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", source_a),
+            self._create_mock_content("Macron réforme retraites présentation officielle", source_b),
+            self._create_mock_content("Macron annonce réforme retraites France", source_c),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+        # Should form 1 cluster with 3 articles
+        assert len(clusters) == 1
+        assert len(clusters[0].contents) == 3
+        assert len(clusters[0].source_ids) == 3
+
+    def test_dissimilar_titles_separate_clusters(self):
+        """Articles très différents doivent former des clusters séparés."""
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        contents = [
+            self._create_mock_content("Macron annonce une grande réforme"),
+            self._create_mock_content("Apple lance un nouveau smartphone révolutionnaire"),
+        ]
+        clusters = detector.build_topic_clusters(contents)
+        assert len(clusters) == 2
+
+    def test_clusters_sorted_by_size(self):
+        """Les clusters doivent être triés par taille décroissante."""
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        src1, src2, src3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+        contents = [
+            # Cluster 1: unique article
+            self._create_mock_content("Apple lance un nouveau produit"),
+            # Cluster 2: 3 articles (should be first after sort)
+            self._create_mock_content("Macron réforme retraites annonce plan", src1),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2),
+            self._create_mock_content("Macron annonce réforme retraites France", src3),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+        assert len(clusters[0].contents) >= len(clusters[-1].contents)
+
+    def test_topic_cluster_properties(self):
+        """Vérifie is_trending et is_multi_source."""
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        src1, src2, src3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", src1),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2),
+            self._create_mock_content("Macron annonce réforme retraites France", src3),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+        cluster = clusters[0]
+        assert cluster.is_multi_source is True
+        assert cluster.is_trending is True  # 3 sources
+
+    def test_two_sources_multi_source_not_trending(self):
+        """Cluster avec 2 sources : is_multi_source=True, is_trending=False."""
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        src1, src2 = uuid.uuid4(), uuid.uuid4()
+
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", src1),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+        cluster = clusters[0]
+        assert cluster.is_multi_source is True
+        assert cluster.is_trending is False
+
+    def test_threshold_override(self):
+        """Le paramètre similarity_threshold override le seuil de l'instance."""
+        detector = ImportanceDetector(similarity_threshold=0.9)  # Très strict
+        src1, src2 = uuid.uuid4(), uuid.uuid4()
+
+        # Jaccard entre ces 2 titres ≈ 0.43
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", src1),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2),
+        ]
+
+        # Avec seuil d'instance strict (0.9) : 2 clusters séparés
+        clusters_strict = detector.build_topic_clusters(contents)
+        assert len(clusters_strict) == 2
+
+        # Avec override à 0.3 : devrait grouper
+        clusters_loose = detector.build_topic_clusters(contents, similarity_threshold=0.3)
+        assert len(clusters_loose) == 1
+
+    def test_cluster_has_uuid_id(self):
+        """Chaque cluster doit avoir un cluster_id UUID valide."""
+        detector = ImportanceDetector()
+        content = self._create_mock_content("Test article")
+        clusters = detector.build_topic_clusters([content])
+        assert clusters[0].cluster_id  # non-empty
+        uuid.UUID(clusters[0].cluster_id)  # should not raise
+
+    def test_theme_from_content(self):
+        """Le thème dominant est extrait des contenus."""
+        detector = ImportanceDetector(similarity_threshold=0.3)
+        src1, src2 = uuid.uuid4(), uuid.uuid4()
+
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", src1, theme="politics"),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2, theme="politics"),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+        assert clusters[0].theme == "politics"
+
+    def test_detect_trending_uses_build_topic_clusters(self):
+        """detect_trending_clusters doit retourner le même résultat qu'avant le refactoring."""
+        detector = ImportanceDetector(similarity_threshold=0.4, min_sources_for_trending=3)
+        src1, src2, src3 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+        contents = [
+            self._create_mock_content("Macron réforme retraites annonce plan", src1),
+            self._create_mock_content("Macron réforme retraites présentation officielle", src2),
+            self._create_mock_content("Macron annonce réforme retraites France", src3),
+        ]
+
+        trending_ids = detector.detect_trending_clusters(contents)
+        assert len(trending_ids) == 3
+        for c in contents:
+            assert c.id in trending_ids

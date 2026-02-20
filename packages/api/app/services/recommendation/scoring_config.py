@@ -117,6 +117,29 @@ class ScoringWeights:
     # 0.5 = ceil(7 * 0.5) = 4 slots max pour trending.
     DIGEST_TRENDING_TARGET_RATIO = 0.5
 
+    # --- TOPIC SELECTION (Sujets du jour — Epic 10 refonte) ---
+
+    # Bonus pour un topic contenant ≥1 article d'une source suivie par l'user.
+    TOPIC_FOLLOWED_SOURCE_BONUS = 40.0
+
+    # Bonus pour un topic trending (couvert par ≥3 sources distinctes).
+    TOPIC_TRENDING_BONUS = 50.0
+
+    # Bonus pour un topic contenant ≥1 article "À la Une".
+    TOPIC_UNE_BONUS = 35.0
+
+    # Bonus pour un topic dont le thème dominant matche les intérêts user.
+    TOPIC_THEME_MATCH_BONUS = 45.0
+
+    # Garde-fou anti-niche : minimum de topics trending/une dans le digest.
+    TOPIC_MIN_TRENDING = 1
+
+    # Nombre maximum d'articles par topic group.
+    TOPIC_MAX_ARTICLES = 3
+
+    # Seuil Jaccard pour le clustering universel (légèrement inférieur au trending 0.4).
+    TOPIC_CLUSTER_THRESHOLD = 0.35
+
     # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
 
     # Delta applied to user_subtopics.weight when liking/unliking content.

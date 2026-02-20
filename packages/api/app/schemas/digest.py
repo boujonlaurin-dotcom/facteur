@@ -37,6 +37,58 @@ class DigestRecommendationReason(BaseModel):
     breakdown: List[DigestScoreBreakdown] = Field(default_factory=list)  # Détail par facteur
 
 
+class DigestTopicArticle(BaseModel):
+    """Single article within a topic group (topics_v1 format).
+
+    Contains article metadata + topic-specific info like whether
+    the source is followed by the user.
+    """
+
+    content_id: UUID
+    title: str
+    url: str
+    thumbnail_url: str | None = None
+    description: str | None = None
+    topics: list[str] = []
+    content_type: ContentType = ContentType.ARTICLE
+    duration_seconds: int | None = None
+    published_at: datetime
+    is_paid: bool = False
+    source: SourceMini
+    rank: int = Field(..., ge=1, le=3, description="Position within topic (1-3)")
+    reason: str
+    is_followed_source: bool = False
+    recommendation_reason: DigestRecommendationReason | None = None
+    is_read: bool = False
+    is_saved: bool = False
+    is_liked: bool = False
+    is_dismissed: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class DigestTopic(BaseModel):
+    """A topic group in the digest (topics_v1 format).
+
+    Represents a "sujet du jour" — a topic covered by 1-3 articles
+    from different sources.
+    """
+
+    topic_id: str
+    label: str
+    rank: int = Field(..., ge=1, le=7, description="Position in digest (1-7)")
+    reason: str
+    is_trending: bool = False
+    is_une: bool = False
+    theme: str | None = None
+    topic_score: float = 0.0
+    articles: list[DigestTopicArticle] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
 class DigestItem(BaseModel):
     """Single item in a digest (one of 7 articles).
 
@@ -83,9 +135,10 @@ class DigestItem(BaseModel):
 class DigestResponse(BaseModel):
     """Response for GET /api/digest.
 
-    Returns the daily digest for the current user, containing 7 articles
-    or empty items array if digest hasn't been generated yet.
-    Completion is triggered after completion_threshold interactions (default: 5).
+    Returns the daily digest for the current user.
+    - format_version="flat_v1": legacy flat list in `items`
+    - format_version="topics_v1": grouped topics in `topics` + flat fallback in `items`
+    Completion is triggered after completion_threshold interactions.
     """
 
     digest_id: UUID
@@ -93,7 +146,9 @@ class DigestResponse(BaseModel):
     target_date: date
     generated_at: datetime
     mode: str = Field(default="pour_vous", description="Digest mode (pour_vous, serein, perspective, theme_focus)")
-    items: list[DigestItem] = Field(..., description="Array of 7 digest items")
+    format_version: str = Field(default="flat_v1", description="Storage format: flat_v1 or topics_v1")
+    items: list[DigestItem] = Field(default_factory=list, description="Flat list of digest items (always populated for backward compat)")
+    topics: list[DigestTopic] = Field(default_factory=list, description="Topic groups (populated when format_version=topics_v1)")
     completion_threshold: int = Field(
         default=5,
         description="Number of interactions needed to complete the digest"
