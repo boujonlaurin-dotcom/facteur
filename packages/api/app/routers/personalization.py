@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.user_personalization import UserPersonalization
+from app.models.source import UserSource
 
 from app.services.user_service import UserService
 
@@ -110,9 +111,20 @@ async def mute_source(
         )
         
         await db.execute(stmt)
+
+        # Auto-untrust: muting a source removes it from followed sources
+        existing_trust = await db.scalar(
+            select(UserSource).where(
+                UserSource.user_id == user_uuid,
+                UserSource.source_id == request.source_id,
+            )
+        )
+        if existing_trust:
+            await db.delete(existing_trust)
+
         await db.commit()
         return {"message": "Source mutée avec succès", "source_id": str(request.source_id)}
-        
+
     except Exception as e:
         logger.error("mute_source_error", error=str(e), user_id=str(user_uuid), source_id=str(request.source_id))
         await db.rollback()

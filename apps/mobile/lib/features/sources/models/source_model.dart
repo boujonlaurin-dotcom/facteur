@@ -18,6 +18,7 @@ class Source {
   final bool isCurated;
   final bool isCustom;
   final bool isTrusted;
+  final bool isMuted;
   final String biasStance;
   final String reliabilityScore;
   final String biasOrigin;
@@ -36,6 +37,7 @@ class Source {
     this.isCurated = false,
     this.isCustom = false,
     this.isTrusted = false,
+    this.isMuted = false,
     this.biasStance = 'unknown',
     this.reliabilityScore = 'unknown',
     this.biasOrigin = 'unknown',
@@ -55,6 +57,7 @@ class Source {
     bool? isCurated,
     bool? isCustom,
     bool? isTrusted,
+    bool? isMuted,
     String? biasStance,
     String? reliabilityScore,
     String? biasOrigin,
@@ -73,6 +76,7 @@ class Source {
       isCurated: isCurated ?? this.isCurated,
       isCustom: isCustom ?? this.isCustom,
       isTrusted: isTrusted ?? this.isTrusted,
+      isMuted: isMuted ?? this.isMuted,
       biasStance: biasStance ?? this.biasStance,
       reliabilityScore: reliabilityScore ?? this.reliabilityScore,
       biasOrigin: biasOrigin ?? this.biasOrigin,
@@ -98,6 +102,7 @@ class Source {
         isCurated: (json['is_curated'] as bool?) ?? false,
         isCustom: (json['is_custom'] as bool?) ?? false,
         isTrusted: (json['is_trusted'] as bool?) ?? false,
+        isMuted: (json['is_muted'] as bool?) ?? false,
         biasStance:
             (json['bias_stance'] as String?)?.toLowerCase() ?? 'unknown',
         reliabilityScore:

@@ -25,7 +25,6 @@ DEFAULT_PAYWALL_CONFIG: dict = {
         "Article premium",
         "🔒",
         "🔐",
-        "Accès libre",  # Paradoxalement, souvent dans les feeds mixtes payant/gratuit
     ],
     "url_patterns": [
         "/premium/",

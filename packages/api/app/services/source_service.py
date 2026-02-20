@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.source import Source, UserSource
 from app.models.content import Content
+from app.models.user_personalization import UserPersonalization
 from app.schemas.source import (
     SourceCatalogResponse,
     SourceDetectResponse,
@@ -29,6 +30,14 @@ class SourceService:
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
         """Récupère toutes les sources (curées + custom)."""
         user_uuid = UUID(user_id)
+
+        # Load muted sources for is_muted flag
+        muted_source_ids = set()
+        personalization = await self.db.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+        )
+        if personalization and personalization.muted_sources:
+            muted_source_ids = set(personalization.muted_sources)
 
         # Sources curées
         curated = await self.get_curated_sources(user_id)
@@ -58,6 +67,7 @@ class SourceService:
                 is_curated=False,
                 is_custom=True,
                 is_trusted=True,
+                is_muted=s.id in muted_source_ids,
                 content_count=0,  # TODO
                 bias_stance=s.bias_stance.value,
                 reliability_score=s.reliability_score.value,
@@ -78,12 +88,20 @@ class SourceService:
         sources = result.scalars().all()
 
         trusted_source_ids = set()
+        muted_source_ids = set()
         if user_id:
+            user_uuid = UUID(user_id)
             user_sources_query = select(UserSource.source_id).where(
-                UserSource.user_id == UUID(user_id)
+                UserSource.user_id == user_uuid
             )
             user_sources_result = await self.db.execute(user_sources_query)
             trusted_source_ids = set(user_sources_result.scalars().all())
+
+            personalization = await self.db.scalar(
+                select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+            )
+            if personalization and personalization.muted_sources:
+                muted_source_ids = set(personalization.muted_sources)
 
         return [
             SourceResponse(
@@ -97,6 +115,7 @@ class SourceService:
                 is_curated=True,
                 is_custom=False,
                 is_trusted=s.id in trusted_source_ids,
+                is_muted=s.id in muted_source_ids,
                 content_count=0,  # TODO
                 bias_stance=s.bias_stance.value,
                 reliability_score=s.reliability_score.value,
@@ -229,6 +248,16 @@ class SourceService:
             is_custom=False,  # Par définition ici
         )
         self.db.add(user_source)
+
+        # Auto-unmute: following a source removes it from muted list
+        personalization = await self.db.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == UUID(user_id))
+        )
+        if personalization and personalization.muted_sources and UUID(source_id) in personalization.muted_sources:
+            personalization.muted_sources = [
+                s for s in personalization.muted_sources if s != UUID(source_id)
+            ]
+
         await self.db.flush()
         return True
 

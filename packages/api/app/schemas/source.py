@@ -22,6 +22,7 @@ class SourceResponse(BaseModel):
     is_curated: bool
     is_custom: bool = False
     is_trusted: bool = False
+    is_muted: bool = False
     content_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"

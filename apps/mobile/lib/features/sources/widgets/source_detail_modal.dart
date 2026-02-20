@@ -8,11 +8,13 @@ import '../../../widgets/design/facteur_button.dart';
 class SourceDetailModal extends StatelessWidget {
   final Source source;
   final VoidCallback onToggleTrust;
+  final VoidCallback? onToggleMute;
 
   const SourceDetailModal({
     super.key,
     required this.source,
     required this.onToggleTrust,
+    this.onToggleMute,
   });
 
   @override
@@ -149,22 +151,59 @@ class SourceDetailModal extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // Action Button
-          FacteurButton(
-            onPressed: () {
-              onToggleTrust();
-              Navigator.pop(context);
-            },
-            label: source.isTrusted
-                ? 'Ne plus suivre'
-                : 'Ajouter comme source de confiance',
-            type: !source.isTrusted
-                ? FacteurButtonType.primary
-                : FacteurButtonType.secondary,
-            icon: source.isTrusted
-                ? PhosphorIcons.check()
-                : PhosphorIcons.shieldCheck(),
-          ),
+          // Action Buttons
+          if (source.isMuted) ...[
+            // Muted state: follow (auto-unmutes via backend) + unmute
+            FacteurButton(
+              onPressed: () {
+                onToggleTrust();
+                Navigator.pop(context);
+              },
+              label: 'Ajouter comme source de confiance',
+              type: FacteurButtonType.primary,
+              icon: PhosphorIcons.shieldCheck(),
+            ),
+            const SizedBox(height: 8),
+            FacteurButton(
+              onPressed: () {
+                onToggleMute?.call();
+                Navigator.pop(context);
+              },
+              label: 'Ne plus masquer',
+              type: FacteurButtonType.secondary,
+              icon: PhosphorIcons.eye(),
+            ),
+          ] else ...[
+            // Trust/Untrust button
+            FacteurButton(
+              onPressed: () {
+                onToggleTrust();
+                Navigator.pop(context);
+              },
+              label: source.isTrusted
+                  ? 'Ne plus suivre'
+                  : 'Ajouter comme source de confiance',
+              type: !source.isTrusted
+                  ? FacteurButtonType.primary
+                  : FacteurButtonType.secondary,
+              icon: source.isTrusted
+                  ? PhosphorIcons.check()
+                  : PhosphorIcons.shieldCheck(),
+            ),
+            if (onToggleMute != null) ...[
+              const SizedBox(height: 8),
+              // Mute button
+              FacteurButton(
+                onPressed: () {
+                  onToggleMute!();
+                  Navigator.pop(context);
+                },
+                label: 'Masquer cette source',
+                type: FacteurButtonType.secondary,
+                icon: PhosphorIcons.eyeSlash(),
+              ),
+            ],
+          ],
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
       ),
