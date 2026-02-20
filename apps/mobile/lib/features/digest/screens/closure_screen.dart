@@ -285,10 +285,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
             // Saved articles nudge (subtle, after summary)
             Builder(builder: (context) {
-              final savedSummary =
-                  ref.watch(savedSummaryProvider).valueOrNull;
-              if (savedSummary == null ||
-                  savedSummary.recentCount7d < 3) {
+              final savedSummary = ref.watch(savedSummaryProvider).valueOrNull;
+              if (savedSummary == null || savedSummary.recentCount7d < 3) {
                 return const SizedBox.shrink();
               }
               final count = savedSummary.recentCount7d;
@@ -367,7 +365,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
 
                       // Message emphasizing user is up to date
                       Text(
-                        'ps : Tu peux maintenant aussi fermer l\'app ;-)',
+                        'Tu peux aussi fermer l\'app. 👀',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -379,8 +377,7 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                       // Feedback CTA
                       GestureDetector(
                         onTap: () async {
-                          final uri =
-                              Uri.parse(ExternalLinks.feedbackFormUrl);
+                          final uri = Uri.parse(ExternalLinks.feedbackFormUrl);
                           if (await canLaunchUrl(uri)) {
                             await launchUrl(
                               uri,
@@ -404,8 +401,8 @@ class _ClosureScreenState extends ConsumerState<ClosureScreen>
                               style: textTheme.bodyMedium?.copyWith(
                                 color: colors.textSecondary,
                                 decoration: TextDecoration.underline,
-                                decorationColor: colors.textSecondary
-                                    .withValues(alpha: 0.4),
+                                decorationColor:
+                                    colors.textSecondary.withValues(alpha: 0.4),
                               ),
                             ),
                           ],
