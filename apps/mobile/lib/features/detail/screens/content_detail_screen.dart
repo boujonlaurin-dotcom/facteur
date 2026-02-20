@@ -175,8 +175,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Note nudge: bounce note FAB after 20s if user hasn't opened note
-    _noteNudgeTimer =
-        Timer(const Duration(seconds: _noteNudgeDelay), () {
+    _noteNudgeTimer = Timer(const Duration(seconds: _noteNudgeDelay), () {
       if (mounted && !_hasOpenedNote) {
         _noteFabBounceController.forward();
       }
@@ -275,6 +274,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         });
         NotificationService.showError('Erreur', context: context);
       }
+    }
+  }
+
+  Future<void> _shareArticle() async {
+    final content = _content;
+    if (content == null) return;
+
+    await Clipboard.setData(ClipboardData(text: content.url));
+    if (mounted) {
+      NotificationService.showInfo('Lien copié !');
     }
   }
 
@@ -538,7 +547,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         heroTag: 'original_fab',
                         tooltip: _getFabLabel(),
                         child: Icon(
-                          PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                          PhosphorIcons.arrowSquareOut(
+                              PhosphorIconsStyle.regular),
                           size: 20,
                         ),
                       ),
@@ -549,16 +559,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         child: FloatingActionButton(
                           mini: true,
                           onPressed: content.isHidden ? null : _openNoteSheet,
-                          backgroundColor:
-                              content.isHidden ? colors.surfaceElevated : colors.primary,
+                          backgroundColor: content.isHidden
+                              ? colors.surfaceElevated
+                              : colors.primary,
                           foregroundColor: Colors.white,
                           elevation: 4,
                           heroTag: 'note_fab',
                           tooltip: 'Nouvelle note',
                           child: Icon(
                             content.hasNote
-                                ? PhosphorIcons.pencilLine(PhosphorIconsStyle.fill)
-                                : PhosphorIcons.pencilLine(PhosphorIconsStyle.regular),
+                                ? PhosphorIcons.pencilLine(
+                                    PhosphorIconsStyle.fill)
+                                : PhosphorIcons.pencilLine(
+                                    PhosphorIconsStyle.regular),
                             size: 20,
                           ),
                         ),
@@ -681,6 +694,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ),
                       ],
+                    ),
+                  ),
+
+                  // Share button — copie le lien dans le presse-papier
+                  IconButton(
+                    padding: const EdgeInsets.all(4),
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(),
+                    onPressed: _shareArticle,
+                    icon: Icon(
+                      PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
+                      size: 22,
+                      color: colors.textSecondary,
                     ),
                   ),
 
