@@ -196,6 +196,38 @@ class DigestCard extends StatelessWidget {
                           fontSize: 11,
                         ),
                       ),
+
+                      // Paywall badge
+                      if (item.isPaid) ...[
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colors.warning.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                PhosphorIcons.lock(PhosphorIconsStyle.fill),
+                                size: 10,
+                                color: colors.warning,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                'Payant',
+                                style: TextStyle(
+                                  color: colors.warning,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
