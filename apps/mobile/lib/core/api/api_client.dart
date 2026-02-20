@@ -60,15 +60,38 @@ class ApiClient {
           return handler.next(options);
         },
         onError: (error, handler) async {
-          // Gérer le cas spécifique "Email non confirmé" (403) ou "Token invalide" (401)
-          if (error.response?.statusCode == 403 ||
-              error.response?.statusCode == 401) {
-            // Si c'est un problème d'email non confirmé ou d'auth, on déclenche le callback
+          final statusCode = error.response?.statusCode;
+
+          if (statusCode == 401) {
+            // Attempt token refresh before signing out
+            try {
+              final refreshed = await _supabase.auth
+                  .refreshSession()
+                  .timeout(const Duration(seconds: 5));
+              if (refreshed.session != null) {
+                // Retry the original request with the new token
+                final opts = error.requestOptions;
+                opts.headers['Authorization'] =
+                    'Bearer ${refreshed.session!.accessToken}';
+                final response = await _dio.fetch<dynamic>(opts);
+                return handler.resolve(response);
+              }
+            } catch (_) {
+              // Refresh failed — fall through to onAuthError
+            }
+            // Refresh failed or returned no session — signal logout
             if (onAuthError != null) {
               // ignore: avoid_print
               print(
-                  '⛔️ ApiClient: Auth Error (${error.response?.statusCode}). Triggering onAuthError...');
-              onAuthError!(error.response?.statusCode ?? 401);
+                  '⛔️ ApiClient: 401 after refresh attempt. Triggering onAuthError.');
+              onAuthError!(401);
+            }
+          } else if (statusCode == 403) {
+            if (onAuthError != null) {
+              // ignore: avoid_print
+              print(
+                  '⛔️ ApiClient: Auth Error (403). Triggering onAuthError...');
+              onAuthError!(403);
             }
           }
 

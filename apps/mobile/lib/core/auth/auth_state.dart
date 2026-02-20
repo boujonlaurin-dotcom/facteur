@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -78,7 +79,8 @@ class AuthState {
 }
 
 /// Notifier pour l'état d'authentification
-class AuthStateNotifier extends StateNotifier<AuthState> {
+class AuthStateNotifier extends StateNotifier<AuthState>
+    with WidgetsBindingObserver {
   AuthStateNotifier() : super(const AuthState(isLoading: true)) {
     _init();
   }
@@ -87,6 +89,7 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
 
   Future<void> _init() async {
     try {
+      WidgetsBinding.instance.addObserver(this);
       debugPrint('AuthStateNotifier: Starting initialization...');
 
       // Timeout de sécurité: si l'init prend plus de 10s, on force isLoading: false
@@ -192,6 +195,22 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     await profileBox.clear();
 
     state = const AuthState();
+  }
+
+  @override
+  // ignore: avoid_renaming_method_parameters
+  void didChangeAppLifecycleState(AppLifecycleState appState) {
+    if (appState == AppLifecycleState.resumed && state.isAuthenticated) {
+      debugPrint(
+          'AuthStateNotifier: App resumed. Proactively refreshing session...');
+      refreshUser();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _checkOnboardingStatus() async {

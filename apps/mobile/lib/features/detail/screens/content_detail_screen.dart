@@ -519,19 +519,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: _buildHeader(context, content),
           ),
 
-          // 3. Drag Handle (Bottom aligned)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colors.textSecondary.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
         ],
       ),
       // FABs: External link (left) + Note (right) + optional welcome tooltip

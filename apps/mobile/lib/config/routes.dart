@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -224,8 +225,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final contentId = state.pathParameters['id']!;
                   // Story 5.2: Pass Content via extra for in-app reading
                   final content = state.extra as Content?;
-                  return MaterialPage(
-                    fullscreenDialog: true,
+                  return CupertinoPage(
                     child: ContentDetailScreen(
                       contentId: contentId,
                       content: content,
@@ -245,13 +245,17 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'all',
                 name: RouteNames.savedAll,
-                builder: (context, state) => const SavedAllScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: SavedAllScreen(),
+                ),
               ),
               GoRoute(
                 path: 'collection/:id',
                 name: RouteNames.collectionDetail,
-                builder: (context, state) => CollectionDetailScreen(
-                  collectionId: state.pathParameters['id']!,
+                pageBuilder: (context, state) => CupertinoPage(
+                  child: CollectionDetailScreen(
+                    collectionId: state.pathParameters['id']!,
+                  ),
                 ),
               ),
             ],
@@ -293,34 +297,46 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'sources', // /settings/sources
                 name: RouteNames.sources,
-                builder: (context, state) => const SourcesScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: SourcesScreen(),
+                ),
                 routes: [
                   GoRoute(
                     path: 'add', // /settings/sources/add
                     name: RouteNames.addSource,
-                    builder: (context, state) => const AddSourceScreen(),
+                    pageBuilder: (context, state) => const CupertinoPage(
+                      child: AddSourceScreen(),
+                    ),
                   ),
                 ],
               ),
               GoRoute(
                 path: 'account', // /settings/account
                 name: RouteNames.account,
-                builder: (context, state) => const AccountScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: AccountScreen(),
+                ),
               ),
               GoRoute(
                 path: 'notifications', // /settings/notifications
                 name: RouteNames.notifications,
-                builder: (context, state) => const NotificationsScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: NotificationsScreen(),
+                ),
               ),
               GoRoute(
                 path: 'about', // /settings/about
                 name: RouteNames.about,
-                builder: (context, state) => const AboutScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: AboutScreen(),
+                ),
               ),
               GoRoute(
                 path: 'digest', // /settings/digest
                 name: RouteNames.digestSettings,
-                builder: (context, state) => const DigestSettingsScreen(),
+                pageBuilder: (context, state) => const CupertinoPage(
+                  child: DigestSettingsScreen(),
+                ),
               ),
             ],
           ),

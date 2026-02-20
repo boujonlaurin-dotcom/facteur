@@ -324,7 +324,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               if (filter == 'recent') {
                                 notifier.setFilter('recent');
                               } else if (filter == null) {
-                                notifier.setFilter(null);
+                                // Deselecting: clear whichever is active
+                                if (notifier.selectedTheme != null) {
+                                  notifier.setTheme(null);
+                                } else {
+                                  notifier.setFilter(null);
+                                }
                               } else {
                                 notifier.setTheme(filter);
                               }
