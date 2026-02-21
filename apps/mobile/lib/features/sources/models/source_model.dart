@@ -25,6 +25,7 @@ class Source {
   final double? scoreIndependence;
   final double? scoreRigor;
   final double? scoreUx;
+  final int followerCount;
 
   Source({
     required this.id,
@@ -44,6 +45,7 @@ class Source {
     this.scoreIndependence,
     this.scoreRigor,
     this.scoreUx,
+    this.followerCount = 0,
   });
 
   Source copyWith({
@@ -64,6 +66,7 @@ class Source {
     double? scoreIndependence,
     double? scoreRigor,
     double? scoreUx,
+    int? followerCount,
   }) {
     return Source(
       id: id ?? this.id,
@@ -83,6 +86,7 @@ class Source {
       scoreIndependence: scoreIndependence ?? this.scoreIndependence,
       scoreRigor: scoreRigor ?? this.scoreRigor,
       scoreUx: scoreUx ?? this.scoreUx,
+      followerCount: followerCount ?? this.followerCount,
     );
   }
 
@@ -112,6 +116,7 @@ class Source {
         scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
         scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
         scoreUx: (json['score_ux'] as num?)?.toDouble(),
+        followerCount: (json['follower_count'] as int?) ?? 0,
       );
     } catch (e) {
       debugPrint('Source.fromJson: [ERROR] Failed to parse: $e');

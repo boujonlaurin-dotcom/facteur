@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -9,6 +10,7 @@ import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../widgets/source_detail_modal.dart';
 import '../widgets/source_preview_card.dart';
 
 /// Écran d'ajout de source
@@ -94,28 +96,12 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         context.pop();
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         NotificationService.showError('Erreur lors de l\'ajout : $e');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<void> _confirmSourceFromSearchResult(Source source) async {
-    // Build preview locally from the Source object (avoids redundant detect call)
-    setState(() {
-      _previewData = {
-        'source_id': source.id,
-        'name': source.name,
-        'description': source.description,
-        'logo_url': source.logoUrl,
-        'detected_type': source.type.name,
-        'theme': source.theme,
-        'feed_url': source.url,
-        'preview': null,
-      };
-      _searchResults = null;
-    });
   }
 
   void _resetResults() {
@@ -137,6 +123,56 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         NotificationService.showError('Impossible d\'ouvrir AtlasFlux');
       }
     }
+  }
+
+  Future<void> _toggleTrustSource(Source source) async {
+    try {
+      final repository = ref.read(sourcesRepositoryProvider);
+      if (source.isTrusted) {
+        await repository.untrustSource(source.id);
+      } else {
+        await repository.trustSource(source.id);
+        if (mounted) {
+          NotificationService.showSuccess(
+              'Source ajoutée ! Ses articles apparaîtront dans ton feed.');
+        }
+      }
+      // Update local search results optimistically
+      if (mounted && _searchResults != null) {
+        setState(() {
+          _searchResults = _searchResults!
+              .map((s) => s.id == source.id
+                  ? s.copyWith(isTrusted: !source.isTrusted)
+                  : s)
+              .toList();
+        });
+      }
+      ref.invalidate(trendingSourcesProvider);
+      ref.invalidate(userSourcesProvider);
+    } catch (e) {
+      if (mounted) NotificationService.showError('Erreur : $e');
+    }
+  }
+
+  void _showSourceModal(Source source) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SourceDetailModal(
+        source: source,
+        onToggleTrust: () => _toggleTrustSource(source),
+        onCopyFeedUrl: source.isCustom && (source.url?.isNotEmpty ?? false)
+            ? () async {
+                await Clipboard.setData(ClipboardData(text: source.url!));
+                if (mounted) {
+                  NotificationService.showSuccess(
+                      'URL du flux copiée dans le presse-papiers !');
+                }
+              }
+            : null,
+      ),
+    );
   }
 
   @override
@@ -278,19 +314,44 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
             style: Theme.of(context).textTheme.titleSmall,
             maxLines: 1,
             overflow: TextOverflow.ellipsis),
-        subtitle: Text(source.theme ?? 'Général',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: colors.primary)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                source.description?.isNotEmpty == true
+                    ? source.description!
+                    : source.getThemeLabel(),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textSecondary),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+            if (source.followerCount > 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(PhosphorIcons.users(PhosphorIconsStyle.regular),
+                      size: 11, color: colors.textTertiary),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${source.followerCount} ${source.followerCount == 1 ? 'lecteur' : 'lecteurs'}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: colors.textTertiary,
+                          fontSize: 11,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
         trailing: source.isTrusted
             ? Icon(PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
                 color: colors.success)
-            : IconButton(
-                icon: Icon(PhosphorIcons.plusCircle(PhosphorIconsStyle.fill),
-                    color: colors.primary),
-                onPressed: () => _confirmSourceFromSearchResult(source),
-              ),
+            : Icon(PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                color: colors.textTertiary),
+        onTap: () => _showSourceModal(source),
       ),
     );
   }
@@ -325,6 +386,12 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        PrimaryButton(
+          label: 'Rechercher',
+          onPressed: _detectOrSearchSource,
+          isLoading: false,
+        ),
+        const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Container(
@@ -356,12 +423,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 24),
-        PrimaryButton(
-          label: 'Rechercher',
-          onPressed: _detectOrSearchSource,
-          isLoading: false,
         ),
         const SizedBox(height: 40),
         Text(

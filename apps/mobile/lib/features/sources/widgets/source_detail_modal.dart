@@ -9,12 +9,14 @@ class SourceDetailModal extends StatelessWidget {
   final Source source;
   final VoidCallback onToggleTrust;
   final VoidCallback? onToggleMute;
+  final VoidCallback? onCopyFeedUrl;
 
   const SourceDetailModal({
     super.key,
     required this.source,
     required this.onToggleTrust,
     this.onToggleMute,
+    this.onCopyFeedUrl,
   });
 
   @override
@@ -173,6 +175,15 @@ class SourceDetailModal extends StatelessWidget {
               type: FacteurButtonType.secondary,
               icon: PhosphorIcons.eye(),
             ),
+            if (onCopyFeedUrl != null) ...[
+              const SizedBox(height: 8),
+              FacteurButton(
+                onPressed: onCopyFeedUrl!,
+                label: 'Copier l\'URL du flux RSS',
+                type: FacteurButtonType.secondary,
+                icon: PhosphorIcons.copy(),
+              ),
+            ],
           ] else ...[
             // Trust/Untrust button
             FacteurButton(
@@ -201,6 +212,15 @@ class SourceDetailModal extends StatelessWidget {
                 label: 'Masquer cette source',
                 type: FacteurButtonType.secondary,
                 icon: PhosphorIcons.eyeSlash(),
+              ),
+            ],
+            if (onCopyFeedUrl != null) ...[
+              const SizedBox(height: 8),
+              FacteurButton(
+                onPressed: onCopyFeedUrl!,
+                label: 'Copier l\'URL du flux RSS',
+                type: FacteurButtonType.secondary,
+                icon: PhosphorIcons.copy(),
               ),
             ],
           ],
