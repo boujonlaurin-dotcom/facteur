@@ -428,6 +428,17 @@ class TopicSelector:
                     is_positive=True,
                 ))
 
+            # Source affinity bonus (learned from interactions)
+            affinity = context.source_affinity_scores.get(content.source_id, 0.0)
+            if affinity > 0:
+                affinity_bonus = affinity * ScoringWeights.SOURCE_AFFINITY_MAX_BONUS
+                score += affinity_bonus
+                breakdown.append(DigestScoreBreakdown(
+                    label=f"Source appréciée ({affinity:.0%})",
+                    points=affinity_bonus,
+                    is_positive=True,
+                ))
+
             # Thème matche
             content_theme = getattr(content, "theme", None)
             source_theme = content.source.theme if content.source else None

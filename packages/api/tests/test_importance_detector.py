@@ -28,15 +28,15 @@ class TestNormalizeTitle:
     def test_normalize_removes_stop_words(self):
         """Test que les stop words sont filtrés."""
         detector = ImportanceDetector()
-        tokens = detector.normalize_title("Le président de la France est en visite")
-        
+        tokens = detector.normalize_title("Le chercheur de la France est en visite")
+
         # "le", "de", "la", "est", "en" sont des stop words
         assert "le" not in tokens
         assert "de" not in tokens
         assert "la" not in tokens
-        
-        # "president", "france", "visite" devraient rester
-        assert "president" in tokens
+
+        # "chercheur", "france", "visite" devraient rester
+        assert "chercheur" in tokens
         assert "france" in tokens
         assert "visite" in tokens
 
@@ -52,14 +52,14 @@ class TestNormalizeTitle:
     def test_normalize_removes_short_words(self):
         """Test que les mots < 3 caractères sont filtrés."""
         detector = ImportanceDetector()
-        tokens = detector.normalize_title("Un AI va révolutionner le monde")
-        
+        tokens = detector.normalize_title("Un AI va révolutionner les technologies")
+
         # "ai" et "va" ont moins de 3 caractères
         assert "ai" not in tokens
         assert "va" not in tokens
-        # "revolutionner" et "monde" restent
+        # "revolutionner" et "technologies" restent
         assert "revolutionner" in tokens
-        assert "monde" in tokens
+        assert "technologies" in tokens
 
     def test_normalize_empty_string(self):
         """Test avec une chaîne vide."""

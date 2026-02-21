@@ -51,18 +51,58 @@ class TopicCluster:
         """Cluster couvert par ≥2 sources distinctes."""
         return len(self.source_ids) >= 2
 
-# Stop words français courants (à filtrer des titres)
+# Stop words français courants (à filtrer des titres).
+# IMPORTANT: Les mots sont en version SANS ACCENT car normalize_title() strip les accents.
+# Enrichi avec les mots news-génériques de StoryService.STOPWORDS pour éviter les faux clusters.
 FRENCH_STOP_WORDS = frozenset([
+    # --- Articles, pronoms, déterminants ---
     "le", "la", "les", "un", "une", "des", "du", "de", "au", "aux",
     "ce", "ces", "cet", "cette", "mon", "ton", "son", "ma", "ta", "sa",
     "mes", "tes", "ses", "notre", "votre", "leur", "nos", "vos", "leurs",
-    "qui", "que", "quoi", "dont", "où", "quel", "quelle", "quels", "quelles",
-    "et", "ou", "mais", "donc", "or", "ni", "car", "pour", "par", "avec",
-    "sans", "sous", "sur", "dans", "en", "à", "est", "sont", "a", "ont",
+    "qui", "que", "quoi", "dont", "quel", "quelle", "quels", "quelles",
     "il", "elle", "ils", "elles", "on", "nous", "vous", "je", "tu",
-    "se", "ne", "pas", "plus", "très", "aussi", "tout", "tous", "toute",
-    "même", "autres", "autre", "entre", "après", "avant", "comme", "être",
-    "faire", "fait", "dit", "peut", "faut", "doit", "si", "quand", "comment"
+    "se", "ne", "pas", "plus", "moins", "tres", "aussi", "tout", "tous", "toute",
+    "meme", "autres", "autre",
+    # --- Conjonctions, prépositions ---
+    "et", "ou", "mais", "donc", "or", "ni", "car", "pour", "par", "avec",
+    "sans", "sous", "sur", "dans", "en", "est", "sont", "ont",
+    "entre", "apres", "avant", "comme", "vers", "chez",
+    "face", "contre", "selon", "suite", "depuis", "lors", "durant", "pendant",
+    # --- Verbes courants ---
+    "etre", "avoir", "faire", "fait", "dit", "peut", "faut", "doit",
+    "ete", "sera", "peuvent", "vont", "veut", "alors",
+    "si", "quand", "comment", "pourquoi", "combien",
+    # --- Adverbes ---
+    "encore", "toujours", "jamais", "souvent", "bien", "mal",
+    "peu", "beaucoup", "trop", "assez", "vraiment",
+    # --- Noms news-génériques (causent les faux clusters) ---
+    "monde", "pays", "president", "gouvernement", "ministre",
+    "politique", "economie", "societe", "histoire",
+    "international", "national", "local",
+    # --- Adjectifs courants ---
+    "nouveau", "nouvelle", "nouveaux", "nouvelles",
+    "grand", "grande", "grands", "grandes",
+    "petit", "petite", "petits", "petites",
+    "premier", "premiere", "dernier", "derniere",
+    # --- Temporels ---
+    "annee", "annees", "jour", "jours", "fois", "temps",
+    "heure", "heures", "minute", "minutes",
+    # --- Nombres ---
+    "deux", "trois", "quatre", "cinq",
+    # --- Personnes/lieux génériques ---
+    "personnes", "gens", "hommes", "femmes", "enfants",
+    "ville", "villes", "region", "zone", "secteur",
+    # --- Abstraits ---
+    "question", "probleme", "solution", "projet", "plan", "mesure",
+    "effet", "impact", "consequence", "resultat", "cause", "raison",
+    # --- Géo génériques ---
+    "europe", "europeen", "europeenne", "americain", "occidental",
+    # --- News filler ---
+    "informations", "article", "articles", "savoir", "retenir",
+    "exclusif", "exclusive", "urgent", "breaking",
+    "video", "photo", "photos", "images", "podcast", "interview",
+    "analyse", "decryptage", "explications", "enquete", "dossier",
+    "revele", "montre", "indique", "suggere", "affirme", "estime",
 ])
 
 
@@ -187,9 +227,19 @@ class ImportanceDetector:
         # Phase 1: Clustering Jaccard (même algo que detect_trending_clusters)
         raw_clusters: list[dict] = []
 
+        from app.services.recommendation.scoring_config import ScoringWeights
+
         for content in contents:
             tokens = self.normalize_title(content.title)
             if not tokens:
+                continue
+
+            # Minimum token constraint: very short titles become singletons
+            if len(tokens) < ScoringWeights.TOPIC_CLUSTER_MIN_TOKENS:
+                raw_clusters.append({
+                    "tokens": tokens,
+                    "contents": [content],
+                })
                 continue
 
             matched_cluster = None
@@ -203,6 +253,10 @@ class ImportanceDetector:
 
             if matched_cluster:
                 matched_cluster["contents"].append(content)
+                # Evolve cluster tokens with cap to prevent drift
+                merged = matched_cluster["tokens"] | tokens
+                if len(merged) <= ScoringWeights.TOPIC_CLUSTER_MAX_TOKENS:
+                    matched_cluster["tokens"] = merged
             else:
                 raw_clusters.append({
                     "tokens": tokens,
