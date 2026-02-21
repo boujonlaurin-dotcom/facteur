@@ -227,9 +227,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: FacteurSpacing.space6,
-                          vertical: FacteurSpacing.space4,
+                          vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 32)),
+                        child: Center(child: FacteurLogo(size: 22)),
                       ),
                     ),
                     SliverToBoxAdapter(

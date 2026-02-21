@@ -79,6 +79,7 @@ class _FacteurCardState extends State<FacteurCard>
     final cardColor = widget.backgroundColor ?? context.facteurColors.surface;
 
     final Widget cardContent = Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius:

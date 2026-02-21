@@ -253,13 +253,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   child: Padding(
                     padding: EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space6,
-                      vertical: FacteurSpacing.space4,
+                      vertical: FacteurSpacing.space3,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         StreakIndicator(),
-                        FacteurLogo(size: 32),
+                        FacteurLogo(size: 22),
                         // Empty space to balance layout
                         SizedBox(width: 48),
                       ],

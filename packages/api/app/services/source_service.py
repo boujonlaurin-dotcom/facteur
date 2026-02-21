@@ -129,23 +129,23 @@ class SourceService:
 
     async def get_trending_sources(self, user_id: str, limit: int = 10) -> list[SourceResponse]:
         """Récupère les sources les plus populaires de la communauté."""
-        # Grouper par source.id et trier par le nombre d'occurrences dans user_sources
+        count_col = func.count(UserSource.user_id).label("follower_count")
         query = (
-            select(Source)
+            select(Source, count_col)
             .join(UserSource)
             .where(Source.is_active == True)
+            .where(Source.is_curated == False)
             .group_by(Source.id)
-            .order_by(func.count(UserSource.user_id).desc())
+            .order_by(count_col.desc())
             .limit(limit)
         )
-        
+
         result = await self.db.execute(query)
-        sources = result.scalars().all()
-        
+        rows = result.all()  # list of (Source, follower_count) tuples
+
         # Check trusted & muted status for the current user
         user_uuid = UUID(user_id)
-        
-        trusted_source_ids = set()
+
         user_sources_query = select(UserSource.source_id).where(
             UserSource.user_id == user_uuid
         )
@@ -173,6 +173,7 @@ class SourceService:
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
                 content_count=0,
+                follower_count=follower_count,
                 bias_stance=getattr(s.bias_stance, 'value', 'unknown'),
                 reliability_score=getattr(s.reliability_score, 'value', 'unknown'),
                 bias_origin=getattr(s.bias_origin, 'value', 'unknown'),
@@ -180,7 +181,7 @@ class SourceService:
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
             )
-            for s in sources
+            for s, follower_count in rows
         ]
 
     async def search_sources(self, query: str, limit: int = 10, user_id: Optional[str] = None) -> list[SourceResponse]:

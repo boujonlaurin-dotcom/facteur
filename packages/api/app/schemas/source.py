@@ -24,6 +24,7 @@ class SourceResponse(BaseModel):
     is_trusted: bool = False
     is_muted: bool = False
     content_count: int = 0
+    follower_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"
     bias_origin: str = "unknown"
