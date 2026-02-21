@@ -89,6 +89,10 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
       widget.onSwipeOpen();
+
+      // The callback may have unmounted the widget (e.g. navigation).
+      // Do not touch the AnimationController after disposal.
+      if (!mounted) return;
     }
 
     _snapBack();
