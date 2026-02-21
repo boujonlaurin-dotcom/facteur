@@ -258,9 +258,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        StreakIndicator(),
-                        FacteurLogo(size: 22),
+                      children: [
+                        const StreakIndicator(),
+                        const FacteurLogo(size: 22),
                         UpdateButton(),
                       ],
                     ),
