@@ -38,6 +38,8 @@ import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
+import '../widgets/source_filter_chip.dart';
+import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
 
 /// Écran principal du feed
@@ -315,26 +317,84 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                           final notifier = ref.read(feedProvider.notifier);
 
-                          return FilterBar(
-                            selectedFilter: notifier.selectedFilter == 'recent'
-                                ? 'recent'
-                                : notifier.selectedTheme,
-                            userBias: ref.watch(userBiasProvider).valueOrNull,
-                            availableFilters: themeFilters,
-                            onFilterChanged: (String? filter) {
-                              if (filter == 'recent') {
-                                notifier.setFilter('recent');
-                              } else if (filter == null) {
-                                // Deselecting: clear whichever is active
-                                if (notifier.selectedTheme != null) {
-                                  notifier.setTheme(null);
-                                } else {
-                                  notifier.setFilter(null);
-                                }
-                              } else {
-                                notifier.setTheme(filter);
-                              }
-                            },
+                          // Source filter state
+                          final sourcesAsync = ref.watch(userSourcesProvider);
+                          final allSources = sourcesAsync.valueOrNull ?? [];
+                          final followedSources = allSources
+                              .where((s) =>
+                                  (s.isTrusted || s.isCustom) && !s.isMuted)
+                              .toList();
+                          final hasFollowedSources =
+                              followedSources.isNotEmpty;
+                          final selectedSourceId = notifier.selectedSourceId;
+                          final selectedSourceName = selectedSourceId != null
+                              ? followedSources
+                                  .where((s) => s.id == selectedSourceId)
+                                  .firstOrNull
+                                  ?.name
+                              : null;
+
+                          // When source filter is active: show only the source chip
+                          if (selectedSourceId != null) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16.0, vertical: 8.0),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SourceFilterChip(
+                                  selectedSourceId: selectedSourceId,
+                                  selectedSourceName: selectedSourceName,
+                                  onSourceChanged: (sourceId) {
+                                    if (sourceId != null) {
+                                      notifier.setSource(sourceId);
+                                    } else {
+                                      notifier.setSource(null);
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                          }
+
+                          // No source active: show source chip + filter bar
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilterBar(
+                                selectedFilter:
+                                    notifier.selectedFilter == 'recent'
+                                        ? 'recent'
+                                        : notifier.selectedTheme,
+                                userBias: ref
+                                    .watch(userBiasProvider)
+                                    .valueOrNull,
+                                availableFilters: themeFilters,
+                                sourceFilterChip: hasFollowedSources
+                                    ? SourceFilterChip(
+                                        onSourceChanged: (sourceId) {
+                                          if (sourceId != null) {
+                                            notifier.setSource(sourceId);
+                                          }
+                                        },
+                                      )
+                                    : null,
+                                onFilterChanged: (String? filter) {
+                                  if (filter == 'recent') {
+                                    notifier.setFilter('recent');
+                                  } else if (filter == null) {
+                                    // Deselecting: clear whichever is active
+                                    if (notifier.selectedTheme != null) {
+                                      notifier.setTheme(null);
+                                    } else {
+                                      notifier.setFilter(null);
+                                    }
+                                  } else {
+                                    notifier.setTheme(filter);
+                                  }
+                                },
+                              ),
+                            ],
                           );
                         }),
                       ),

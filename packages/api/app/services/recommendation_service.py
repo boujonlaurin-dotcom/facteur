@@ -40,7 +40,7 @@ class RecommendationService:
             PersonalizationLayer()  # Story 4.7
         ])
 
-    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None, has_note: bool = False) -> List[Content]:
+    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None, has_note: bool = False, source_id: Optional[str] = None) -> List[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
         
@@ -164,6 +164,9 @@ class RecommendationService:
         if personalization and personalization.hide_paid_content is not None:
             hide_paid_content = personalization.hide_paid_content
 
+        # Convert source_id string to UUID if provided
+        source_uuid = UUID(source_id) if source_id else None
+
         candidates = await self._get_candidates(
             user_id,
             limit_candidates=500,
@@ -181,11 +184,13 @@ class RecommendationService:
             theme=theme,
             # Paywall filter
             hide_paid_content=hide_paid_content,
+            # Source filter
+            source_id=source_uuid,
         )
 
-        # RECENT mode: skip scoring, return pure chronological order
+        # Source filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
-        if mode == FeedFilterMode.RECENT:
+        if source_uuid or mode == FeedFilterMode.RECENT:
             paginated = candidates[offset:offset + limit]
             content_ids = [c.id for c in paginated]
             if content_ids:
@@ -492,7 +497,7 @@ class RecommendationService:
         
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None, hide_paid_content: bool = True) -> List[Content]:
+    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None, hide_paid_content: bool = True, source_id: Optional[UUID] = None) -> List[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import or_, and_
 
@@ -550,9 +555,12 @@ class RecommendationService:
         )
 
         # Base source filter
-        # When theme filter is active: show all curated sources (broader discovery)
-        # Otherwise: restrict to user's followed sources (personalized feed)
-        if theme:
+        # source_id: show only articles from this specific source
+        # theme: show all curated sources (broader discovery)
+        # followed_source_ids: restrict to user's followed sources (personalized feed)
+        if source_id:
+            query = query.where(Content.source_id == source_id)
+        elif theme:
             query = query.where(Source.is_curated == True)
         elif followed_source_ids:
             query = query.where(Source.id.in_(list(followed_source_ids)))
@@ -591,8 +599,8 @@ class RecommendationService:
         if hide_paid_content:
             query = query.where(Content.is_paid.is_not(True))
 
-        # Apply Mode Logic
-        if mode:
+        # Apply Mode Logic (skip when filtering by specific source)
+        if mode and not source_id:
             if mode == FeedFilterMode.INSPIRATION:
                 # Mode "Sérénité" : Positive/Zen — via filter_presets partagés
                 query = apply_serein_filter(query)
@@ -625,8 +633,8 @@ class RecommendationService:
 
                 query = query.where(Source.bias_stance.in_(target_bias))
 
-        # Apply theme filter (Story 2 - Feed par thème)
-        if theme:
+        # Apply theme filter (Story 2 - Feed par thème, skip when source filter active)
+        if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
 
         query = (

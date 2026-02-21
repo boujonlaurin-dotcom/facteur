@@ -29,6 +29,7 @@ class FilterBar extends StatefulWidget {
   final ValueChanged<String?> onFilterChanged;
   final String? userBias; // Pour la description dynamique de "perspectives"
   final List<FilterConfig>? availableFilters;
+  final Widget? sourceFilterChip; // Optional source filter chip (placed first)
 
   const FilterBar({
     super.key,
@@ -36,6 +37,7 @@ class FilterBar extends StatefulWidget {
     required this.onFilterChanged,
     this.userBias,
     this.availableFilters,
+    this.sourceFilterChip,
   });
 
   @override
@@ -291,12 +293,19 @@ class _FilterBarState extends State<FilterBar> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
-            children: visibleFilters
-                .map<Widget>((FilterConfig f) => Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: _buildFilterChip(context, f.label, f.key),
-                    ))
-                .toList(),
+            children: [
+              if (widget.sourceFilterChip != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: widget.sourceFilterChip!,
+                ),
+              ],
+              ...visibleFilters
+                  .map<Widget>((FilterConfig f) => Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: _buildFilterChip(context, f.label, f.key),
+                      )),
+            ],
           ),
         ),
         // Description avec alignement dynamique qui suit le chip (anchor)

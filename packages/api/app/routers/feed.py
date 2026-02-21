@@ -28,6 +28,7 @@ async def get_personalized_feed(
     theme: Optional[str] = Query(None, description="Theme slug to filter by (e.g. 'tech', 'science')"),
     saved_only: bool = Query(False, alias="saved"),
     has_note: bool = Query(False, alias="has_note"),
+    source_id: Optional[str] = Query(None, description="Source UUID to filter by"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -50,6 +51,7 @@ async def get_personalized_feed(
         saved_only=saved_only,
         theme=theme,
         has_note=has_note,
+        source_id=source_id,
     )
 
     # Calculate pagination metadata

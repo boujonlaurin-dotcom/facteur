@@ -36,6 +36,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   bool _isLoadingMore = false;
   String? _selectedFilter;
   String? _selectedTheme;
+  String? _selectedSourceId;
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
@@ -43,6 +44,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   bool get hasNext => _hasNext;
   String? get selectedFilter => _selectedFilter;
   String? get selectedTheme => _selectedTheme;
+  String? get selectedSourceId => _selectedSourceId;
 
   @override
   FutureOr<FeedState> build() async {
@@ -58,6 +60,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _isLoadingMore = false;
     _selectedFilter = null; // Reset filter on build/rebuild
     _selectedTheme = null;
+    _selectedSourceId = null;
 
     // Fetch initial page
     final response = await _fetchPage(page: 1);
@@ -71,6 +74,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (_selectedFilter == filter) return;
     _selectedFilter = filter;
     _selectedTheme = null; // Theme et mode sont mutuellement exclusifs
+    _selectedSourceId = null;
     await refresh();
   }
 
@@ -78,6 +82,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (_selectedTheme == theme) return;
     _selectedTheme = theme;
     _selectedFilter = null; // Theme et mode sont mutuellement exclusifs
+    _selectedSourceId = null;
+    await refresh();
+  }
+
+  Future<void> setSource(String? sourceId) async {
+    if (_selectedSourceId == sourceId) return;
+    _selectedSourceId = sourceId;
+    _selectedFilter = null;
+    _selectedTheme = null;
     await refresh();
   }
 
@@ -87,7 +100,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         page: page,
         limit: _limit,
         mode: _selectedFilter,
-        theme: _selectedTheme);
+        theme: _selectedTheme,
+        sourceId: _selectedSourceId);
 
     // Update pagination state
     _hasNext = response.pagination.hasNext;
