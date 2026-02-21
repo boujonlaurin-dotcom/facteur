@@ -45,6 +45,11 @@ jobs:
           cd apps/mobile
           flutter pub run flutter_launcher_icons
 
+      # Generate version tag BEFORE build so it can be injected into the APK
+      - name: Generate version
+        id: version
+        run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+
       - name: Build APK
         run: |
           cd apps/mobile
@@ -52,18 +57,14 @@ jobs:
             --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
-            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}"
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: facteur-app-release
           path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
-
-      # Créer une release beta avec lien de téléchargement direct
-      - name: Generate version
-        id: version
-        run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
       - name: Rename APK
         run: |
@@ -75,21 +76,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: "🧪 Facteur Beta - ${{ steps.version.outputs.version }}"
+          name: "Facteur Beta - ${{ steps.version.outputs.version }}"
           body: |
-            ## 📱 Télécharger l'APK
-            
-            **Clique sur le fichier `.apk` ci-dessous pour télécharger l'application.**
-            
+            ## Telecharger l'APK
+
+            **Clique sur le fichier `.apk` ci-dessous pour telecharger l'application.**
+
             ### Installation sur Android
-            1. Télécharge le fichier `.apk` sur ton téléphone
-            2. Ouvre le fichier téléchargé
-            3. Si demandé, autorise l'installation d'apps inconnues
+            1. Telecharge le fichier `.apk` sur ton telephone
+            2. Ouvre le fichier telecharge
+            3. Si demande, autorise l'installation d'apps inconnues
             4. Installe l'application
-            
+
+            **Ou depuis l'app**: si tu as deja une version installee, appuie sur l'icone de mise a jour en haut a droite du digest.
+
             ---
-            🗓️ Build: ${{ steps.version.outputs.version }}
-            📝 Commit: ${{ github.sha }}
+            Build: ${{ steps.version.outputs.version }}
+            Commit: ${{ github.sha }}
           files: apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
           prerelease: true
           generate_release_notes: true

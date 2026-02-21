@@ -12,6 +12,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 
+import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -249,19 +250,18 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               controller: _scrollController,
               slivers: [
                 // Feed-style header with logo and streak
-                const SliverToBoxAdapter(
+                SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(
+                    padding: const EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space6,
                       vertical: FacteurSpacing.space3,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        StreakIndicator(),
-                        FacteurLogo(size: 22),
-                        // Empty space to balance layout
-                        SizedBox(width: 48),
+                        const StreakIndicator(),
+                        const FacteurLogo(size: 22),
+                        UpdateButton(),
                       ],
                     ),
                   ),

@@ -212,6 +212,19 @@ class FeedConstants {
   ];
 }
 
+/// App release tag, injected at compile time by CI.
+/// Empty string in dev builds (update feature hidden).
+class AppUpdateConstants {
+  AppUpdateConstants._();
+
+  /// Release tag injected by CI (e.g. "beta-20260221-1430")
+  static const String releaseTag =
+      String.fromEnvironment('APP_RELEASE_TAG');
+
+  /// Whether this is a CI-built release (not a dev build)
+  static bool get isReleaseBuild => releaseTag.isNotEmpty;
+}
+
 /// Liens externes
 class ExternalLinks {
   ExternalLinks._();
