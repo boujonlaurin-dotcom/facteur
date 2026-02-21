@@ -21,7 +21,7 @@ Réutilise l'infrastructure de scoring existante sans modification.
 import asyncio
 import datetime
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil
 from typing import Any, List, Set, Tuple, Optional, Dict
 from uuid import UUID
@@ -90,6 +90,7 @@ class DigestContext:
     muted_content_types: Set[str]
     hide_paid_content: bool = True
     user_bias_stance: Optional[BiasStance] = None
+    source_affinity_scores: Dict[UUID, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -425,6 +426,9 @@ class DigestSelector:
         if mode == DigestMode.PERSPECTIVE:
             user_bias_stance = await calculate_user_bias(self.session, user_id)
 
+        # Compute source affinity from past interactions
+        source_affinity_scores = await self.rec_service._compute_source_affinity(user_id)
+
         return DigestContext(
             user_id=user_id,
             user_profile=user_profile,
@@ -441,6 +445,7 @@ class DigestSelector:
             muted_content_types=muted_content_types,
             hide_paid_content=hide_paid_content,
             user_bias_stance=user_bias_stance,
+            source_affinity_scores=source_affinity_scores,
         )
     
     async def _get_candidates(
@@ -633,7 +638,8 @@ class DigestSelector:
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
             muted_content_types=context.muted_content_types,
-            custom_source_ids=context.custom_source_ids
+            custom_source_ids=context.custom_source_ids,
+            source_affinity_scores=context.source_affinity_scores,
         )
         
         scored = []

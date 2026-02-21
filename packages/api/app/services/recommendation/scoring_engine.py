@@ -27,13 +27,15 @@ class ScoringContext:
         muted_themes: Set[str] = None,
         muted_topics: Set[str] = None,
         muted_content_types: Set[str] = None,
-        custom_source_ids: Set[UUID] = None
+        custom_source_ids: Set[UUID] = None,
+        source_affinity_scores: Dict[UUID, float] = None
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
         self.user_interest_weights = user_interest_weights
         self.followed_source_ids = followed_source_ids
         self.custom_source_ids = custom_source_ids or set()
+        self.source_affinity_scores = source_affinity_scores or {}
         self.user_prefs = user_prefs
         self.now = now
         self.user_subtopics = user_subtopics or set()

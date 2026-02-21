@@ -431,6 +431,14 @@ class DigestService:
             status.is_hidden = False
             # Increment regular streak via StreakService
             await self.streak_service.increment_consumption(str(user_id))
+            # Feedback: reinforce theme + subtopic weights
+            from app.services.content_service import ContentService
+            from app.services.recommendation.scoring_config import ScoringWeights
+            content_service = ContentService(self.session)
+            await content_service._adjust_interest_weight(user_id, content_id, None)
+            await content_service._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
 
         elif action == DigestAction.SAVE:
             status.is_saved = True

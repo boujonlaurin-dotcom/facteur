@@ -212,7 +212,10 @@ class RecommendationService:
         # 3. Score Candidates using ScoringEngine
         scored_candidates = []
         now = datetime.datetime.now(datetime.timezone.utc)
-        
+
+        # Compute source affinity from past interactions
+        source_affinity_scores = await self._compute_source_affinity(user_id)
+
         # Context creation
         context = ScoringContext(
             user_profile=user_profile,
@@ -228,7 +231,8 @@ class RecommendationService:
             muted_themes=muted_themes,
             muted_topics=muted_topics,
             muted_content_types=muted_content_types,
-            custom_source_ids=custom_source_ids
+            custom_source_ids=custom_source_ids,
+            source_affinity_scores=source_affinity_scores,
         )
         
         for content in candidates:
@@ -347,6 +351,8 @@ class RecommendationService:
                             return "Source de confiance"
                         elif "personnalisée" in details.lower():
                             return "Ta source personnalisée"
+                        elif "affinit" in details.lower():
+                            return "Source appréciée"
                         elif "Recency" in details:
                             return "Récence"
                         else:
@@ -433,6 +439,8 @@ class RecommendationService:
                                     label = "Vos intérêts"
                             elif "confiance" in details.lower():
                                 label = "Source suivie"
+                            elif "affinit" in details.lower():
+                                label = "Source appréciée"
                             elif "Recency" in details:
                                 label = "À la une"
                         elif layer == 'article_topic':
@@ -654,6 +662,45 @@ class RecommendationService:
                        sample_sources=[c.source.name if c.source else "N/A" for c in candidates_list[:5]])
 
         return candidates_list
+
+    async def _compute_source_affinity(self, user_id: UUID) -> dict[UUID, float]:
+        """Compute source affinity scores from past interactions.
+
+        Score brut = likes * 3 + saves * 2 + consumed * 1
+        Normalisé en 0.0-1.0 (min-max sur les sources de l'utilisateur).
+        """
+        from sqlalchemy import case
+
+        stmt = (
+            select(
+                Content.source_id,
+                func.sum(
+                    case((UserContentStatus.is_liked == True, 3), else_=0)
+                    + case((UserContentStatus.is_saved == True, 2), else_=0)
+                    + case((UserContentStatus.status == ContentStatus.CONSUMED, 1), else_=0)
+                ).label("raw_score"),
+            )
+            .join(Content, UserContentStatus.content_id == Content.id)
+            .where(UserContentStatus.user_id == user_id)
+            .group_by(Content.source_id)
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+
+        if not rows:
+            return {}
+
+        scores = {row.source_id: float(row.raw_score) for row in rows if row.raw_score > 0}
+
+        if not scores:
+            return {}
+
+        # Normalisation min-max → 0.0 à 1.0
+        max_score = max(scores.values())
+        if max_score == 0:
+            return {}
+
+        return {sid: score / max_score for sid, score in scores.items()}
 
     # _calculate_user_bias and _get_opposing_biases moved to
     # app.services.recommendation.filter_presets (shared with DigestSelector)

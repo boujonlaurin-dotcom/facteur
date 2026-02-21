@@ -137,8 +137,17 @@ class ScoringWeights:
     # Nombre maximum d'articles par topic group.
     TOPIC_MAX_ARTICLES = 3
 
-    # Seuil Jaccard pour le clustering universel (légèrement inférieur au trending 0.4).
-    TOPIC_CLUSTER_THRESHOLD = 0.35
+    # Seuil Jaccard pour le clustering universel.
+    # 0.45 = articles doivent partager ~45% de tokens pour être groupés.
+    # Plus strict que trending (0.4) pour éviter les faux clusters.
+    TOPIC_CLUSTER_THRESHOLD = 0.45
+
+    # Minimum de tokens pour qu'un article soit candidat au clustering.
+    # Articles avec < 3 tokens après filtrage deviennent des singletons.
+    TOPIC_CLUSTER_MIN_TOKENS = 3
+
+    # Maximum de tokens par cluster (évite la dérive par union successive).
+    TOPIC_CLUSTER_MAX_TOKENS = 15
 
     # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
 
@@ -148,5 +157,15 @@ class ScoringWeights:
     # Delta applied to user_subtopics.weight when bookmarking content.
     BOOKMARK_TOPIC_BOOST = 0.05
 
+    # Delta applied to user_subtopics.weight when consuming (reading) content.
+    # Weakest signal (implicit) — accumulates over many reads.
+    READ_TOPIC_BOOST = 0.03
+
     # Learning rate applied to UserInterest.weight on like/bookmark.
     LIKE_INTEREST_RATE = 0.03
+
+    # --- SOURCE AFFINITY (Learned from interactions) ---
+
+    # Maximum bonus for a source with highest engagement.
+    # Calibré pour être significatif mais pas dominant vs theme match (50 pts).
+    SOURCE_AFFINITY_MAX_BONUS = 25.0
