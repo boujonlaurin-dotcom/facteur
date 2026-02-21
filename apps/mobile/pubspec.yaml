@@ -67,6 +67,11 @@ dependencies:
   shared_preferences: ^2.5.4
   confetti: ^0.7.0
 
+  # Auto Update (Android APK)
+  package_info_plus: ^8.0.0
+  path_provider: ^2.1.2
+  open_filex: ^4.5.0
+
 dev_dependencies:
   mocktail: ^1.0.3
   mockito: ^5.4.4
