@@ -24,6 +24,7 @@ import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
+import '../widgets/swipe_to_open_card.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -488,51 +489,55 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                Widget cardWidget = AnimatedFeedCard(
-                                  isConsumed: isConsumed,
-                                  child: FeedCard(
-                                    content: content,
-                                    onTap: () => _showArticleModal(content),
-                                    onLongPressStart: (_) =>
-                                        ArticlePreviewOverlay.show(
-                                      context,
-                                      content,
+                                Widget cardWidget = SwipeToOpenCard(
+                                  onSwipeOpen: () =>
+                                      _showArticleModal(content),
+                                  child: AnimatedFeedCard(
+                                    isConsumed: isConsumed,
+                                    child: FeedCard(
+                                      content: content,
+                                      onTap: () =>
+                                          _showArticleModal(content),
+                                      onLongPressStart: (_) =>
+                                          ArticlePreviewOverlay.show(
+                                        context,
+                                        content,
+                                      ),
+                                      onLongPressMoveUpdate: (details) =>
+                                          ArticlePreviewOverlay.updateScroll(
+                                        details.localOffsetFromOrigin.dy,
+                                      ),
+                                      onLongPressEnd: (_) =>
+                                          ArticlePreviewOverlay.dismiss(),
+                                      onLike: () {
+                                        ref
+                                            .read(feedProvider.notifier)
+                                            .toggleLike(content);
+                                      },
+                                      isLiked: content.isLiked,
+                                      onSave: () {
+                                        final wasSaved = content.isSaved;
+                                        ref
+                                            .read(feedProvider.notifier)
+                                            .toggleSave(content);
+                                        if (!wasSaved) {
+                                          NotificationService.showInfo(
+                                            'Sauvegardé',
+                                            actionLabel:
+                                                'Ajouter à une collection',
+                                            onAction: () =>
+                                                CollectionPickerSheet.show(
+                                                    context, content.id),
+                                          );
+                                        }
+                                      },
+                                      isSaved: content.isSaved,
+                                      onSaveLongPress: () =>
+                                          CollectionPickerSheet.show(
+                                              context, content.id),
+                                      onNotInterested: () =>
+                                          _showPersonalizationSheet(content),
                                     ),
-                                    onLongPressMoveUpdate: (details) =>
-                                        ArticlePreviewOverlay.updateScroll(
-                                      details.localOffsetFromOrigin.dy,
-                                    ),
-                                    onLongPressEnd: (_) =>
-                                        ArticlePreviewOverlay.dismiss(),
-                                    onLike: () {
-                                      ref
-                                          .read(feedProvider.notifier)
-                                          .toggleLike(content);
-                                    },
-                                    isLiked: content.isLiked,
-                                    onSave: () {
-                                      final wasSaved = content.isSaved;
-                                      ref
-                                          .read(feedProvider.notifier)
-                                          .toggleSave(content);
-                                      // Show snackbar with collection CTA when saving (not unsaving)
-                                      if (!wasSaved) {
-                                        NotificationService.showInfo(
-                                          'Sauvegardé',
-                                          actionLabel:
-                                              'Ajouter à une collection',
-                                          onAction: () =>
-                                              CollectionPickerSheet.show(
-                                                  context, content.id),
-                                        );
-                                      }
-                                    },
-                                    isSaved: content.isSaved,
-                                    onSaveLongPress: () =>
-                                        CollectionPickerSheet.show(
-                                            context, content.id),
-                                    onNotInterested: () =>
-                                        _showPersonalizationSheet(content),
                                   ),
                                 );
 
