@@ -112,12 +112,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header: title+progress (left) | selector+subtitle (right)
-              Row(
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Left: title + progress bar
@@ -172,6 +174,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                     ],
                   ),
                 ],
+              ),
               ),
               const SizedBox(height: 10),
 
@@ -337,6 +340,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         Opacity(
           opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
           child: FeedCard(
+            boxShadow: const [],
             content: _convertToContent(item),
             onTap: () => widget.onItemTap(item),
             onLongPressStart: (_) => ArticlePreviewOverlay.show(

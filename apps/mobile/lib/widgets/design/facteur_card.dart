@@ -13,6 +13,7 @@ class FacteurCard extends StatefulWidget {
   final Color? backgroundColor;
   final EdgeInsetsGeometry? padding;
   final double? borderRadius;
+  final List<BoxShadow>? boxShadow;
 
   const FacteurCard({
     super.key,
@@ -25,6 +26,7 @@ class FacteurCard extends StatefulWidget {
     this.backgroundColor,
     this.padding,
     this.borderRadius,
+    this.boxShadow,
   });
 
   @override
@@ -84,7 +86,7 @@ class _FacteurCardState extends State<FacteurCard>
         color: cardColor,
         borderRadius:
             BorderRadius.circular(widget.borderRadius ?? FacteurRadius.medium),
-        boxShadow: [
+        boxShadow: widget.boxShadow ?? [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,

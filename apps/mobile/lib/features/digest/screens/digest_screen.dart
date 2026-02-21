@@ -401,7 +401,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                 // Digest Briefing Section
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: digestAsync.when(
                       data: (digest) {
                         if (digest == null ||
