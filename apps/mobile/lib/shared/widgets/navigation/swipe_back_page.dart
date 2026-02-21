@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 
 /// A [Page] that uses the standard Cupertino slide-from-right transition
-/// but with full-screen swipe-back gesture detection instead of the
-/// default edge-only (20px) gesture area.
+/// but with a wider swipe-back gesture zone (left ~35% of screen) instead
+/// of the default edge-only (20px) gesture area.
 ///
 /// Drop-in replacement for [CupertinoPage] on pushed screens.
 class FullSwipeCupertinoPage<T> extends Page<T> {
@@ -128,11 +128,11 @@ class _BackGestureController {
   }
 }
 
-/// Full-screen gesture detector for back navigation.
+/// Wide-area gesture detector for back navigation.
 ///
 /// Unlike Flutter's built-in detector (limited to 20px from the left edge),
-/// this one covers the entire screen width, allowing users to swipe back
-/// from anywhere.
+/// this one covers the left third of the screen, giving a much larger
+/// swipe-back target without interfering with vertical scrolling in content.
 class _FullScreenBackGestureDetector extends StatefulWidget {
   final Widget child;
   final ValueGetter<bool> enabledCallback;
@@ -209,14 +209,23 @@ class _FullScreenBackGestureDetectorState
     }
   }
 
+  /// Fraction of screen width from the left edge where the gesture is active.
+  static const double _gestureWidthFraction = 0.35;
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
     return Stack(
       fit: StackFit.passthrough,
       children: [
         widget.child,
-        // Full-screen transparent overlay to capture pointer events
-        Positioned.fill(
+        // Left-third overlay — wide enough for easy swiping,
+        // narrow enough to not fight vertical scroll in content.
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: screenWidth * _gestureWidthFraction,
           child: Listener(
             onPointerDown: _handlePointerDown,
             behavior: HitTestBehavior.translucent,
