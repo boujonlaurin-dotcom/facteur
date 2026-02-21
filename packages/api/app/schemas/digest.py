@@ -55,7 +55,7 @@ class DigestTopicArticle(BaseModel):
     published_at: datetime
     is_paid: bool = False
     source: SourceMini
-    rank: int = Field(..., ge=1, le=3, description="Position within topic (1-3)")
+    rank: int = Field(..., ge=1, description="Position within topic")
     reason: str
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
@@ -77,7 +77,7 @@ class DigestTopic(BaseModel):
 
     topic_id: str
     label: str
-    rank: int = Field(..., ge=1, le=7, description="Position in digest (1-7)")
+    rank: int = Field(..., ge=1, description="Position in digest")
     reason: str
     is_trending: bool = False
     is_une: bool = False
@@ -117,7 +117,7 @@ class DigestItem(BaseModel):
     source: SourceMini
 
     # Digest-specific info
-    rank: int = Field(..., ge=1, le=7, description="Position in digest (1-7)")
+    rank: int = Field(..., ge=1, description="Position in digest")
     reason: str = Field(..., description="Selection reason for display (backward compatibility)")
     recommendation_reason: Optional[DigestRecommendationReason] = Field(
         None, description="Detailed scoring breakdown with contributions"
