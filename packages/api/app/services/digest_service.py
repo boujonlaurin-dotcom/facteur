@@ -127,8 +127,15 @@ class DigestService:
                 await self.session.delete(existing_digest)
                 await self.session.flush()
             else:
-                logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
-                return await self._build_digest_response(existing_digest, user_id)
+                logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), format_version=existing_digest.format_version, duration_ms=round(existing_time * 1000, 2))
+                try:
+                    return await self._build_digest_response(existing_digest, user_id)
+                except Exception:
+                    # Existing digest is corrupt (format mismatch, missing content, etc.)
+                    # Delete and regenerate instead of returning 503
+                    logger.exception("digest_existing_corrupt_regenerating", user_id=str(user_id), digest_id=str(existing_digest.id), format_version=existing_digest.format_version)
+                    await self.session.delete(existing_digest)
+                    await self.session.flush()
         logger.info("digest_no_existing", user_id=str(user_id), duration_ms=round(existing_time * 1000, 2))
         
         # 2. Determine effective mode (param > user pref > default)
@@ -144,21 +151,29 @@ class DigestService:
 
         # 3. Generate new digest using DigestSelector
         step_start = time.time()
-        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme, output_format=effective_format)
         from app.services.digest_selector import DiversityConstraints
         from app.models.user import UserProfile as _UP
         _user_profile = await self.session.scalar(
             select(_UP).where(_UP.user_id == user_id)
         )
-        target_size = _user_profile.weekly_goal if _user_profile and _user_profile.weekly_goal else DiversityConstraints.TARGET_DIGEST_SIZE
-        digest_items = await self.selector.select_for_user(
-            user_id, limit=target_size, hours_lookback=hours_lookback,
-            mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
-            output_format=effective_format,
-        )
+        # Clamp weekly_goal to sensible range (3-10) to avoid edge cases
+        raw_goal = _user_profile.weekly_goal if _user_profile and _user_profile.weekly_goal else DiversityConstraints.TARGET_DIGEST_SIZE
+        target_size = max(3, min(raw_goal, 10))
+        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme, output_format=effective_format, target_size=target_size, raw_weekly_goal=raw_goal)
+
+        try:
+            digest_items = await self.selector.select_for_user(
+                user_id, limit=target_size, hours_lookback=hours_lookback,
+                mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
+                output_format=effective_format,
+            )
+        except Exception:
+            logger.exception("digest_selector_crashed", user_id=str(user_id), output_format=effective_format)
+            digest_items = []
+
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
-        
+
         # Check if result is topic-based (list of TopicGroup)
         is_topics_format = digest_items and isinstance(digest_items[0], TopicGroup)
         logger.info("digest_format_check", user_id=str(user_id), is_topics=is_topics_format, item_type=type(digest_items[0]).__name__ if digest_items else "empty")
@@ -611,14 +626,15 @@ class DigestService:
             target_date=target_date,
             items=items_json,
             mode=mode or "pour_vous",
-            generated_at=datetime.utcnow()
+            format_version="flat_v1",
+            generated_at=datetime.utcnow(),
         )
-        
+
         self.session.add(digest)
         await self.session.flush()
-        
+
         return digest
-    
+
     async def _create_digest_record_topics(
         self,
         user_id: UUID,
