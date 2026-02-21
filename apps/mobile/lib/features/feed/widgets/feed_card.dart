@@ -20,6 +20,8 @@ class FeedCard extends StatelessWidget {
   final bool isSaved;
   final bool isLiked;
   final bool isFollowedSource;
+  final Color? backgroundColor;
+  final List<BoxShadow>? boxShadow;
 
   const FeedCard({
     super.key,
@@ -35,6 +37,8 @@ class FeedCard extends StatelessWidget {
     this.isSaved = false,
     this.isLiked = false,
     this.isFollowedSource = false,
+    this.backgroundColor,
+    this.boxShadow,
   });
 
   @override
@@ -53,9 +57,12 @@ class FeedCard extends StatelessWidget {
             onLongPressStart: onLongPressStart,
             onLongPressMoveUpdate: onLongPressMoveUpdate,
             onLongPressEnd: onLongPressEnd,
+            backgroundColor: backgroundColor,
+            boxShadow: boxShadow,
             padding: EdgeInsets.zero,
             borderRadius: FacteurRadius.small,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. Image (Header)

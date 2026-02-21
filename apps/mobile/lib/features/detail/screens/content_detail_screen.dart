@@ -500,7 +500,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Header height = SafeArea top + vertical padding (16*2) + content (~40)
           Builder(builder: (context) {
             final topInset = MediaQuery.of(context).padding.top;
-            final headerHeight = topInset + 72;
+            final headerHeight = topInset + 64;
             return Positioned.fill(
               child: Padding(
                 padding: EdgeInsets.only(top: headerHeight),
@@ -595,7 +595,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space3,
         ),
         decoration: BoxDecoration(
           color: colors.backgroundPrimary,
@@ -608,14 +608,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
               child: Row(
                 children: [
-                  // Discreet Back Button (reduced icon, same hitbox)
+                  // Discreet Back Button (reduced icon, maintained hitbox)
                   IconButton(
-                    padding: EdgeInsets.zero,
+                    padding: const EdgeInsets.all(8),
                     visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(),
                     icon: Icon(
                       PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                      size: 18,
+                      size: 16,
                       color: colors.textSecondary,
                     ),
                     onPressed: () => context.pop(_content),
@@ -658,39 +657,41 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            // Bias badge
+                            // Bias dot
                             if (content.source.biasStance != 'unknown') ...[
                               const SizedBox(width: 6),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
+                                width: 7,
+                                height: 7,
                                 decoration: BoxDecoration(
-                                  color: colors.textSecondary
-                                      .withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  content.source.getBiasLabel(),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.textSecondary,
-                                  ),
+                                  color: content.source.getBiasColor(),
+                                  shape: BoxShape.circle,
                                 ),
                               ),
                             ],
                           ],
                         ),
-                        const SizedBox(height: 2),
-                        // Ligne 2 : Temps relatif
-                        Text(
-                          timeago.format(content.publishedAt, locale: 'fr'),
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontSize: 11,
-                          ),
+                        const SizedBox(height: 1),
+                        // Ligne 2 : Temps relatif (icône + format court)
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                              size: 11,
+                              color: colors.textTertiary,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              timeago
+                                  .format(content.publishedAt,
+                                      locale: 'fr_short')
+                                  .replaceAll('il y a ', ''),
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.textTertiary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
