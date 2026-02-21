@@ -15,6 +15,7 @@ class FeedRepository {
     String? mode,
     String? theme,
     bool hasNote = false,
+    String? sourceId,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -44,6 +45,10 @@ class FeedRepository {
 
       if (hasNote) {
         queryParams['has_note'] = true;
+      }
+
+      if (sourceId != null) {
+        queryParams['source_id'] = sourceId;
       }
 
       final response = await _apiClient.dio.get<dynamic>(
