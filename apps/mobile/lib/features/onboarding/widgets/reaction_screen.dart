@@ -10,6 +10,7 @@ class ReactionScreen extends StatefulWidget {
   final VoidCallback onContinue;
   final bool autoContinue;
   final Duration autoContinueDelay;
+  final Widget? extraAction;
 
   const ReactionScreen({
     super.key,
@@ -18,6 +19,7 @@ class ReactionScreen extends StatefulWidget {
     required this.onContinue,
     this.autoContinue = false,
     this.autoContinueDelay = const Duration(seconds: 4),
+    this.extraAction,
   });
 
   @override
@@ -122,6 +124,14 @@ class _ReactionScreenState extends State<ReactionScreen>
               textAlign: TextAlign.center,
             ),
           ),
+
+          if (widget.extraAction != null) ...[
+            const SizedBox(height: FacteurSpacing.space6),
+            FadeTransition(
+              opacity: _buttonAnimation,
+              child: widget.extraAction!,
+            ),
+          ],
 
           const Spacer(flex: 3),
 

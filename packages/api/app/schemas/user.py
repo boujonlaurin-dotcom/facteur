@@ -103,6 +103,7 @@ class OnboardingResponse(BaseModel):
     interests_created: int
     subtopics_created: int
     preferences_created: int
+    sources_created: int = 0
 
 
 class UserStatsResponse(BaseModel):

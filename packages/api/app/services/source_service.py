@@ -48,7 +48,7 @@ class SourceService:
             .join(UserSource)
             .where(
                 UserSource.user_id == user_uuid,
-                UserSource.is_custom == True,
+                Source.is_curated == False,
             )
             .distinct()
         )
@@ -69,9 +69,9 @@ class SourceService:
                 is_trusted=True,
                 is_muted=s.id in muted_source_ids,
                 content_count=0,  # TODO
-                bias_stance=s.bias_stance.value,
-                reliability_score=s.reliability_score.value,
-                bias_origin=s.bias_origin.value,
+                bias_stance=getattr(s.bias_stance, 'value', 'unknown'),
+                reliability_score=getattr(s.reliability_score, 'value', 'unknown'),
+                bias_origin=getattr(s.bias_origin, 'value', 'unknown'),
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
@@ -117,9 +117,120 @@ class SourceService:
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
                 content_count=0,  # TODO
-                bias_stance=s.bias_stance.value,
-                reliability_score=s.reliability_score.value,
-                bias_origin=s.bias_origin.value,
+                bias_stance=getattr(s.bias_stance, 'value', 'unknown'),
+                reliability_score=getattr(s.reliability_score, 'value', 'unknown'),
+                bias_origin=getattr(s.bias_origin, 'value', 'unknown'),
+                score_independence=s.score_independence,
+                score_rigor=s.score_rigor,
+                score_ux=s.score_ux,
+            )
+            for s in sources
+        ]
+
+    async def get_trending_sources(self, user_id: str, limit: int = 10) -> list[SourceResponse]:
+        """Récupère les sources les plus populaires de la communauté."""
+        # Grouper par source.id et trier par le nombre d'occurrences dans user_sources
+        query = (
+            select(Source)
+            .join(UserSource)
+            .where(Source.is_active == True)
+            .group_by(Source.id)
+            .order_by(func.count(UserSource.user_id).desc())
+            .limit(limit)
+        )
+        
+        result = await self.db.execute(query)
+        sources = result.scalars().all()
+        
+        # Check trusted & muted status for the current user
+        user_uuid = UUID(user_id)
+        
+        trusted_source_ids = set()
+        user_sources_query = select(UserSource.source_id).where(
+            UserSource.user_id == user_uuid
+        )
+        user_sources_result = await self.db.execute(user_sources_query)
+        trusted_source_ids = set(user_sources_result.scalars().all())
+
+        muted_source_ids = set()
+        personalization = await self.db.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+        )
+        if personalization and personalization.muted_sources:
+            muted_source_ids = set(personalization.muted_sources)
+
+        return [
+            SourceResponse(
+                id=s.id,
+                name=s.name,
+                url=s.url,
+                type=s.type,
+                theme=s.theme,
+                description=s.description,
+                logo_url=s.logo_url,
+                is_curated=s.is_curated,
+                is_custom=not s.is_curated,
+                is_trusted=s.id in trusted_source_ids,
+                is_muted=s.id in muted_source_ids,
+                content_count=0,
+                bias_stance=getattr(s.bias_stance, 'value', 'unknown'),
+                reliability_score=getattr(s.reliability_score, 'value', 'unknown'),
+                bias_origin=getattr(s.bias_origin, 'value', 'unknown'),
+                score_independence=s.score_independence,
+                score_rigor=s.score_rigor,
+                score_ux=s.score_ux,
+            )
+            for s in sources
+        ]
+
+    async def search_sources(self, query: str, limit: int = 10, user_id: Optional[str] = None) -> list[SourceResponse]:
+        """Recherche des sources par mots-clés dans la base de données."""
+        search_query = (
+            select(Source)
+            .where(
+                Source.is_active == True,
+                (Source.name.ilike(f"%{query}%")) | (Source.url.ilike(f"%{query}%"))
+            )
+            .order_by(Source.created_at.desc())
+            .limit(limit)
+        )
+
+        result = await self.db.execute(search_query)
+        sources = result.scalars().all()
+
+        # Load user context for is_trusted / is_muted flags
+        trusted_source_ids = set()
+        muted_source_ids = set()
+        if user_id:
+            user_uuid = UUID(user_id)
+            user_sources_result = await self.db.execute(
+                select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+            )
+            trusted_source_ids = set(user_sources_result.scalars().all())
+
+            personalization = await self.db.scalar(
+                select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+            )
+            if personalization and personalization.muted_sources:
+                muted_source_ids = set(personalization.muted_sources)
+
+        return [
+            SourceResponse(
+                id=s.id,
+                name=s.name,
+                url=s.url,
+                type=s.type,
+                theme=s.theme,
+                description=s.description,
+                logo_url=s.logo_url,
+                is_curated=s.is_curated,
+                is_custom=not s.is_curated,
+                is_trusted=s.id in trusted_source_ids,
+                is_muted=s.id in muted_source_ids,
+                content_count=0,
+                bias_stance=getattr(s.bias_stance, 'value', 'unknown'),
+                reliability_score=getattr(s.reliability_score, 'value', 'unknown'),
+                bias_origin=getattr(s.bias_origin, 'value', 'unknown'),
                 score_independence=s.score_independence,
                 score_rigor=s.score_rigor,
                 score_ux=s.score_ux,
@@ -179,8 +290,6 @@ class SourceService:
 
         await self.db.flush()
 
-        await self.db.flush()
-
         return SourceResponse(
             id=source.id,
             name=source.name,
@@ -193,9 +302,9 @@ class SourceService:
             is_custom=True,
             is_trusted=True,
             content_count=0,
-            bias_stance=source.bias_stance.value,
-            reliability_score=source.reliability_score.value,
-            bias_origin=source.bias_origin.value,
+            bias_stance=getattr(source.bias_stance, 'value', 'unknown'),
+            reliability_score=getattr(source.reliability_score, 'value', 'unknown'),
+            bias_origin=getattr(source.bias_origin, 'value', 'unknown'),
             score_independence=source.score_independence,
             score_rigor=source.score_rigor,
             score_ux=source.score_ux,
@@ -245,7 +354,7 @@ class SourceService:
             id=uuid4(),
             user_id=UUID(user_id),
             source_id=UUID(source_id),
-            is_custom=False,  # Par définition ici
+            is_custom=not source.is_curated,
         )
         self.db.add(user_source)
 
@@ -288,9 +397,11 @@ class SourceService:
         try:
             detected = await self.rss_parser.detect(url)
             
+            existing = await self._get_source_by_feed_url(detected.feed_url)
+            
             latest_titles = []
             if detected.entries:
-                latest_titles = [e["title"] for e in detected.entries[:3]]
+                latest_titles = [e.get("title", "Sans titre") for e in detected.entries[:3]]
                 
             # Map feed_type to valid SourceType
             source_type = detected.feed_type
@@ -298,16 +409,20 @@ class SourceService:
                 source_type = "article"
                 
             return SourceDetectResponse(
+                source_id=existing.id if existing else None,
                 detected_type=source_type,
                 feed_url=detected.feed_url,
                 name=detected.title,
                 description=detected.description,
                 logo_url=detected.logo_url,
-                theme=self._guess_theme(detected.title, detected.description or ""),
+                theme=existing.theme if existing else self._guess_theme(detected.title, detected.description or ""),
                 preview={
                     "item_count": len(detected.entries),
-                    "latest_title": detected.entries[0].get("title") if detected.entries else None,
+                    "latest_titles": latest_titles,
                 },
+                bias_stance=getattr(existing.bias_stance, 'value', 'unknown') if existing else "unknown",
+                reliability_score=getattr(existing.reliability_score, 'value', 'unknown') if existing else "unknown",
+                bias_origin=getattr(existing.bias_origin, 'value', 'unknown') if existing else "unknown",
             )
         except ValueError as e:
             # Fallback for youtube if smart detect fails but structure looks like youtube?

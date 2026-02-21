@@ -54,17 +54,39 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return await _loadDigest();
   }
 
+  static const _digestMaxRetries = 2;
+  static const _digestRetryDelays = [
+    Duration(seconds: 3),
+    Duration(seconds: 5),
+  ];
+
   Future<DigestResponse> _loadDigest({DateTime? date}) async {
     final repository = ref.read(digestRepositoryProvider);
-    final digest = await repository.getDigest(date: date).timeout(
-          const Duration(seconds: 45),
-          onTimeout: () => throw TimeoutException(
-            'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
-          ),
-        );
-    // Update cache after successful API call
-    _updateCache(digest);
-    return digest;
+
+    for (var attempt = 0; attempt <= _digestMaxRetries; attempt++) {
+      try {
+        final digest = await repository.getDigest(date: date).timeout(
+              const Duration(seconds: 45),
+              onTimeout: () => throw TimeoutException(
+                'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
+              ),
+            );
+        // Update cache after successful API call
+        _updateCache(digest);
+        return digest;
+      } on DigestGenerationException {
+        // 503: digest generation failed, retry after delay
+        if (attempt < _digestMaxRetries) {
+          // ignore: avoid_print
+          print('DigestNotifier: 503 error, retry ${attempt + 1}/$_digestMaxRetries...');
+          await Future<void>.delayed(_digestRetryDelays[attempt]);
+          continue;
+        }
+        rethrow;
+      }
+    }
+    // Unreachable but satisfies the compiler
+    throw DigestGenerationException();
   }
 
   Future<void> loadDigest({DateTime? date}) async {

@@ -9,6 +9,11 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
 });
 
+final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getTrendingSources(limit: 10);
+});
+
 final userSourcesProvider =
     AsyncNotifierProvider<UserSourcesNotifier, List<Source>>(() {
   return UserSourcesNotifier();
