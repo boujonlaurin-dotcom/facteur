@@ -112,9 +112,16 @@ class ContentService:
             # Feedback Loop: Adjust Interest Weights based on consumption
             # Axe 3.1 du plan d'amélioration
             await self._adjust_interest_weight(
-                user_id, 
-                content_id, 
+                user_id,
+                content_id,
                 update_data.time_spent_seconds
+            )
+
+            # Feedback Loop: Adjust Subtopic Weights on read
+            # Weakest signal (implicit) — accumulates over many reads.
+            from app.services.recommendation.scoring_config import ScoringWeights
+            await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
 
         return updated_status

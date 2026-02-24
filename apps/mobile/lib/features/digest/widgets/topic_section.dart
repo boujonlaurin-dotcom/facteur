@@ -55,10 +55,10 @@ class _TopicSectionState extends State<TopicSection> {
   }
 
   /// Estimated body + footer height for FeedCard WITH image.
-  /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20)
-  /// Footer: border (1) + padding (8) + row with button padding (32)
-  /// Buffer for box shadow + rounding + content variation = 27
-  static const double _bodyFooterHeight = 192.0;
+  /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20) = 124
+  /// Footer: border (1) + padding (8) + row with buttons (32) = 41
+  /// Small buffer for content variation = 5
+  static const double _bodyFooterHeight = 170.0;
 
   @override
   Widget build(BuildContext context) {
@@ -232,6 +232,7 @@ class _TopicSectionState extends State<TopicSection> {
 
   Widget _buildSingleArticle(DigestItem article) {
     return FeedCard(
+      boxShadow: const [],
       content: _convertToContent(article),
       onTap: () => widget.onArticleTap(article),
       onLongPressStart: (_) =>
@@ -261,26 +262,30 @@ class _TopicSectionState extends State<TopicSection> {
         final article = topic.articles[index];
         return Padding(
           padding: const EdgeInsets.only(right: 8),
-          child: FeedCard(
-            content: _convertToContent(article),
-            onTap: () => widget.onArticleTap(article),
-            onLongPressStart: (_) =>
-                ArticlePreviewOverlay.show(context, _convertToContent(article)),
-            onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-                details.localOffsetFromOrigin.dy),
-            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-            onLike:
-                widget.onLike != null ? () => widget.onLike!(article) : null,
-            isLiked: article.isLiked,
-            onSave:
-                widget.onSave != null ? () => widget.onSave!(article) : null,
-            onSaveLongPress: () =>
-                CollectionPickerSheet.show(context, article.contentId),
-            isSaved: article.isSaved,
-            onNotInterested: widget.onNotInterested != null
-                ? () => widget.onNotInterested!(article)
-                : null,
-            isFollowedSource: article.isFollowedSource,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: FeedCard(
+              boxShadow: const [],
+              content: _convertToContent(article),
+              onTap: () => widget.onArticleTap(article),
+              onLongPressStart: (_) =>
+                  ArticlePreviewOverlay.show(context, _convertToContent(article)),
+              onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
+                  details.localOffsetFromOrigin.dy),
+              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+              onLike:
+                  widget.onLike != null ? () => widget.onLike!(article) : null,
+              isLiked: article.isLiked,
+              onSave:
+                  widget.onSave != null ? () => widget.onSave!(article) : null,
+              onSaveLongPress: () =>
+                  CollectionPickerSheet.show(context, article.contentId),
+              isSaved: article.isSaved,
+              onNotInterested: widget.onNotInterested != null
+                  ? () => widget.onNotInterested!(article)
+                  : null,
+              isFollowedSource: article.isFollowedSource,
+            ),
           ),
         );
       },
