@@ -57,3 +57,4 @@ jobs:
           DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test
           SKIP_STARTUP_CHECKS: 'true'
           ENVIRONMENT: development
+          PYTHONPATH: ${{ github.workspace }}/packages/api
