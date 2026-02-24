@@ -105,23 +105,26 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def auto_detect_railway_environment(self) -> "Settings":
-        """Auto-detect Railway production environment from RAILWAY_ENVIRONMENT_NAME."""
+        """Auto-detect Railway environment from RAILWAY_ENVIRONMENT_NAME."""
         railway_env = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "")
-        if railway_env and self.environment == "development":
-            object.__setattr__(self, 'environment', 'production')
+        if railway_env:
+            if railway_env.lower() == "staging":
+                object.__setattr__(self, 'environment', 'staging')
+            elif self.environment == "development":
+                object.__setattr__(self, 'environment', 'production')
         return self
 
     @model_validator(mode="after")
-    def validate_production_db(self) -> "Settings":
-        """Empêche l'utilisation de localhost en production."""
-        if self.is_production and not os.environ.get("DATABASE_URL"):
+    def validate_deployed_db(self) -> "Settings":
+        """Empêche l'utilisation de localhost en production/staging."""
+        if self.environment in ("production", "staging") and not os.environ.get("DATABASE_URL"):
             raise ValueError(
-                "❌ CRITICAL ERROR: DATABASE_URL is missing in production. "
-                "Set DATABASE_URL in Railway (or your hosting env)."
+                f"DATABASE_URL is missing in {self.environment}. "
+                "Set DATABASE_URL in Railway."
             )
-        if self.is_production and "localhost" in self.database_url:
+        if self.environment in ("production", "staging") and "localhost" in self.database_url:
             raise ValueError(
-                f"❌ CRITICAL ERROR: DATABASE_URL points to localhost in production ({self.database_url}). "
+                f"DATABASE_URL points to localhost in {self.environment}. "
                 "Check your environment variables on Railway."
             )
         return self
@@ -130,6 +133,11 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Vérifie si on est en production."""
         return self.environment == "production"
+
+    @property
+    def is_staging(self) -> bool:
+        """Vérifie si on est en staging."""
+        return self.environment == "staging"
 
 
 @lru_cache

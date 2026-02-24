@@ -57,6 +57,7 @@
 | **DECIDE** | Produit `implementation_plan.md` | MAJ Story: "Technical Approach" | - | **STOP**<br>→ GO user |
 | **ACT** | Implémente atomiquement | MAJ Story: tasks ✓, File List, Changelog | `.claude-hooks/pre-code-change.sh` | - |
 | **VERIFY** | Crée script QA one-liner | MAJ Story/Bug: "Verification", script path | - | **STOP** |
+| **REVIEW** | Peer Review via Conductor (workspace séparé) | Diff review + checklist validée | - | **STOP**<br>→ GO user |
 
 ### Détails M.A.D.A par Type
 
@@ -77,6 +78,43 @@
 2. Decide: Impact analysis + rollback plan
 3. Act: Migration en étapes
 4. Verify: Rollback test + documentation
+
+---
+
+## 🔍 ÉTAPE 3: Peer Review Conductor (OBLIGATOIRE AVANT MERGE)
+
+**Règle bloquante** : Aucun merge vers `main` sans Peer Review validée.
+
+### Processus
+
+1. **L'agent finit son travail** (VERIFY terminé, branche prête)
+2. **L'agent STOP** et notifie l'utilisateur : "Branche prête pour Peer Review"
+3. **L'utilisateur ouvre un nouveau workspace Conductor** sur la branche de travail
+4. **L'utilisateur fournit le prompt de Peer Review** (template ci-dessous)
+5. **L'agent reviewer analyse** le diff complet et produit un rapport
+6. **Si blockers** → retour à l'agent dev pour correction
+7. **Si OK** → merge autorisé
+
+### Prompt de Peer Review (Template)
+
+L'utilisateur copie ce prompt dans le nouveau workspace Conductor :
+
+> Review the workspace diff of this branch as a senior developer peer review.
+> Check for:
+> 1. **Security** : injection, auth bypass, exposed secrets, CORS issues
+> 2. **Guardrails Facteur** : Python `list[]` (jamais `List[]`), Supabase stale token, worktree isolation
+> 3. **Breaking changes** : API contract changes, DB schema changes sans migration, removed endpoints
+> 4. **Test coverage** : new code paths sans tests, edge cases non couverts
+> 5. **Architecture** : respect des patterns existants (Riverpod, Repository pattern, Service layer)
+> 6. **Performance** : N+1 queries, missing indexes, unbounded queries
+>
+> Output: BLOCKERS / WARNINGS / SUGGESTIONS / APPROVED ou NOT APPROVED
+
+### Règles
+
+- L'agent de review est **un workspace Conductor séparé** (pas le même agent qui a codé)
+- L'agent de développement **NE DOIT PAS** se self-review ni merger sans ce processus
+- Le prompt de review est adaptable au contexte (le template ci-dessus est un minimum)
 
 ---
 
@@ -212,7 +250,12 @@ git worktree remove ../<agent>-<tache>
 10. [ ] **Safety Guardrails vérifiés** (si zone à risque)
 11. [ ] **Story/Bug MAJ** (tasks ✓, File List, Changelog)
 12. [ ] **Script vérification** (`docs/qa/scripts/verify_<task>.sh`)
-13. [ ] **Cleanup worktree** (après merge)
+
+**Avant merge**:
+
+13. [ ] **Peer Review Conductor** → Workspace séparé ouvert par l'utilisateur
+14. [ ] **Review APPROVED** → Merge autorisé
+15. [ ] **Cleanup worktree** (après merge)
 
 ---
 
@@ -240,7 +283,7 @@ git worktree remove ../<agent>-<tache>
 
 ---
 
-*Dernière MAJ: 2026-02-14*
+*Dernière MAJ: 2026-02-24*
 *Mainteneurs: Human (Laurin) + AI agents collaborativement*
 *Ancien CLAUDE.md (590 lignes): [docs/CLAUDE.md.backup-2026-02-14](docs/CLAUDE.md.backup-2026-02-14)*
 *Cursor legacy: [docs/archive/cursor-legacy-2026-02-14](docs/archive/cursor-legacy-2026-02-14)*
