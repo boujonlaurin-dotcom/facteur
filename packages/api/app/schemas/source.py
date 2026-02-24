@@ -22,9 +22,7 @@ class SourceResponse(BaseModel):
     is_curated: bool
     is_custom: bool = False
     is_trusted: bool = False
-    is_muted: bool = False
     content_count: int = 0
-    follower_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"
     bias_origin: str = "unknown"
@@ -40,36 +38,26 @@ class SourceResponse(BaseModel):
 class SourceCreate(BaseModel):
     """Création d'une source custom."""
 
-    url: str
+    url: HttpUrl
     name: Optional[str] = None
 
 
 class SourceDetectRequest(BaseModel):
     """Requête de détection de source."""
 
-    url: str
+    url: HttpUrl
 
 
 class SourceDetectResponse(BaseModel):
     """Réponse de détection de source."""
 
-    source_id: Optional[UUID] = None
     detected_type: SourceType
     feed_url: str
     name: str
     description: Optional[str] = None
     logo_url: Optional[str] = None
     theme: str
-    preview: Optional[dict] = None  # item_count, latest_titles
-    is_search_result: bool = False # Flag to know if we should display a list
-    bias_stance: str = "unknown"
-    reliability_score: str = "unknown"
-    bias_origin: str = "unknown"
-
-
-class SourceSearchResponse(BaseModel):
-    """Réponse quand on reçoit plusieurs résultats."""
-    results: list[SourceResponse]
+    preview: Optional[dict] = None  # item_count, latest_title
 
 
 class SourceCatalogResponse(BaseModel):

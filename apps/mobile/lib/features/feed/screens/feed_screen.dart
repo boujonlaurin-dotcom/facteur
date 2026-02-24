@@ -60,6 +60,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   bool _hasNudged = false;
 
+  // Feed Refresh: track timestamps of recent refreshes for anti-addiction
+  final List<DateTime> _refreshTimestamps = [];
+
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
 
@@ -190,8 +193,55 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     context.go(RoutePaths.feed);
   }
 
+  bool get _isRefreshCompulsive {
+    // 3+ refreshes in 10 minutes → suggest "Articles récents" mode
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 10));
+    final recent = _refreshTimestamps.where((t) => t.isAfter(cutoff)).length;
+    return recent >= 3;
+  }
+
   Future<void> _refresh() async {
-    return ref.read(feedProvider.notifier).refresh();
+    // On web, mark all displayed (non-consumed) articles as impressed and re-fetch.
+    // The CSS overscroll-behavior-y:contain prevents browser native pull-to-refresh,
+    // so Flutter's RefreshIndicator handles the gesture.
+    if (kIsWeb) {
+      // Use all currently displayed article IDs (web doesn't track _viewedIds reliably)
+      final feedState = ref.read(feedProvider).value;
+      if (feedState != null) {
+        final allIds = feedState.items
+            .where((c) => c.status != ContentStatus.consumed)
+            .map((c) => c.id)
+            .toSet();
+        if (allIds.isNotEmpty) {
+          await ref.read(feedProvider.notifier).refreshArticles(allIds);
+          return;
+        }
+      }
+      await ref.read(feedProvider.notifier).refresh();
+      return;
+    }
+
+    final colors = context.facteurColors;
+    final isCompulsive = _isRefreshCompulsive;
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _RefreshConfirmSheet(
+        isCompulsive: isCompulsive,
+        colors: colors,
+      ),
+    );
+
+    if (result == 'refresh') {
+      _refreshTimestamps.add(DateTime.now());
+      // Pass only the IDs of articles the user actually scrolled past
+      await ref.read(feedProvider.notifier).refreshArticles(_viewedIds);
+    } else if (result == 'recent') {
+      // Redirect to "Articles récents" mode
+      ref.read(feedProvider.notifier).setFilter('recent');
+    }
   }
 
   void _showPersonalizationSheet(Content content) {
@@ -774,6 +824,139 @@ class _NudgePulseWrapperState extends State<_NudgePulseWrapper>
         return Transform.scale(scale: scale, child: child);
       },
       child: widget.child,
+    );
+  }
+}
+
+/// Bottom sheet de confirmation pour le refresh du feed.
+/// Oriente vers le bien-être digital. Affiche un message alternatif
+/// si l'utilisateur refresh de manière compulsive (3+ en 10 min).
+class _RefreshConfirmSheet extends StatelessWidget {
+  final bool isCompulsive;
+  final FacteurColors colors;
+
+  const _RefreshConfirmSheet({
+    required this.isCompulsive,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isCompulsive
+                    ? PhosphorIcons.heartbeat(PhosphorIconsStyle.bold)
+                    : PhosphorIcons.arrowsClockwise(PhosphorIconsStyle.bold),
+                color: colors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isCompulsive
+                      ? 'Prends un moment'
+                      : 'Rafraîchir l\'Explorer ?',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isCompulsive
+                ? 'Tu as déjà rafraîchi plusieurs fois. '
+                  'As-tu vraiment besoin de plus d\'info maintenant ? '
+                  'Essaie plutôt les derniers articles publiés.'
+                : 'Les articles que tu n\'as pas lus seront déclassés '
+                  'et remplacés par de nouveaux contenus.',
+            style: TextStyle(
+              color: colors.textSecondary,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (isCompulsive) ...[
+            // Primary: redirect to "recent" mode
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, 'recent'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Voir les derniers articles',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Secondary: refresh anyway
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, 'refresh'),
+                child: Text('Rafraîchir quand même',
+                    style: TextStyle(color: colors.textSecondary)),
+              ),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(color: colors.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text('Annuler',
+                        style: TextStyle(color: colors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, 'refresh'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Rafraîchir',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

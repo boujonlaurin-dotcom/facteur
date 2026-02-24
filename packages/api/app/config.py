@@ -99,10 +99,6 @@ class Settings(BaseSettings):
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
 
-    # App Update (GitHub Releases)
-    github_token: str = ""  # Personal access token with repo read scope
-    github_repo: str = "boujonlaurin-dotcom/facteur"  # owner/repo
-
     @model_validator(mode="after")
     def auto_detect_railway_environment(self) -> "Settings":
         """Auto-detect Railway production environment from RAILWAY_ENVIRONMENT_NAME."""

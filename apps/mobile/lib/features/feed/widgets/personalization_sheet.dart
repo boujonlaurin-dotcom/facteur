@@ -22,12 +22,16 @@ class PersonalizationSheet extends ConsumerWidget {
     final topic = content.progressionTopic;
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
       padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -199,8 +203,29 @@ class PersonalizationSheet extends ConsumerWidget {
               colors: colors,
             ),
 
+          // "Already seen" — permanent strong impression penalty
+          _buildActionOption(
+            context,
+            icon: PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
+            label: "J'ai déjà vu cet article",
+            onTap: () async {
+              Navigator.pop(context);
+              try {
+                await ref
+                    .read(feedProvider.notifier)
+                    .impressContent(content);
+                NotificationService.showInfo('Article marqué comme déjà vu');
+              } catch (e) {
+                NotificationService.showError(
+                    'Erreur réseau — réessaie dans un instant');
+              }
+            },
+            colors: colors,
+          ),
+
           const SizedBox(height: 8),
         ],
+      ),
       ),
     );
   }

@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
-from app.models.content import Content
+from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
 from app.services.recommendation_service import RecommendationService
-from app.schemas.content import ContentResponse
+from app.schemas.content import ContentResponse, FeedRefreshRequest
 from app.schemas.feed import FeedResponse, PaginationMeta
 
 import structlog
@@ -27,8 +27,6 @@ async def get_personalized_feed(
     mode: Optional[FeedFilterMode] = Query(None),
     theme: Optional[str] = Query(None, description="Theme slug to filter by (e.g. 'tech', 'science')"),
     saved_only: bool = Query(False, alias="saved"),
-    has_note: bool = Query(False, alias="has_note"),
-    source_id: Optional[str] = Query(None, description="Source UUID to filter by"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -50,8 +48,6 @@ async def get_personalized_feed(
         mode=mode,
         saved_only=saved_only,
         theme=theme,
-        has_note=has_note,
-        source_id=source_id,
     )
 
     # Calculate pagination metadata
@@ -67,6 +63,50 @@ async def get_personalized_feed(
             has_next=has_next
         )
     )
+
+
+@router.post("/refresh", status_code=200)
+async def refresh_feed(
+    body: FeedRefreshRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Marque les articles affichés comme 'déjà vus' pour le scoring.
+
+    Upsert user_content_status avec last_impressed_at = now().
+    Le status reste UNSEEN (pas d'exclusion du feed), seul le scoring
+    applique un malus temporel via ImpressionLayer.
+    """
+    from sqlalchemy.dialects.postgresql import insert
+    from app.models.enums import ContentStatus
+
+    user_uuid = UUID(current_user_id)
+    now = datetime.now(timezone.utc)
+    refreshed = 0
+
+    for content_id in body.content_ids:
+        stmt = (
+            insert(UserContentStatus)
+            .values(
+                user_id=user_uuid,
+                content_id=content_id,
+                status=ContentStatus.UNSEEN.value,
+                last_impressed_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_={"last_impressed_at": now, "updated_at": now},
+            )
+        )
+        await db.execute(stmt)
+        refreshed += 1
+
+    await db.commit()
+    logger.info("feed_refresh", user_id=current_user_id, refreshed=refreshed)
+    return {"refreshed": refreshed}
 
 
 @router.post("/briefing/{content_id}/read", status_code=200)

@@ -31,17 +31,14 @@ from app.models.enums import ContentStatus
 from app.models.user_personalization import UserPersonalization
 from app.models.user import UserStreak
 from app.schemas.digest import (
-    DigestItem,
-    DigestResponse,
-    DigestAction,
-    DigestScoreBreakdown,
-    DigestRecommendationReason,
-    DigestTopic,
-    DigestTopicArticle,
+    DigestItem, 
+    DigestResponse, 
+    DigestAction, 
+    DigestScoreBreakdown, 
+    DigestRecommendationReason
 )
 from app.services.digest_selector import DigestSelector
 from app.services.streak_service import StreakService
-from app.services.topic_selector import TopicGroup
 
 logger = structlog.get_logger()
 
@@ -127,15 +124,8 @@ class DigestService:
                 await self.session.delete(existing_digest)
                 await self.session.flush()
             else:
-                logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), format_version=existing_digest.format_version, duration_ms=round(existing_time * 1000, 2))
-                try:
-                    return await self._build_digest_response(existing_digest, user_id)
-                except Exception:
-                    # Existing digest is corrupt (format mismatch, missing content, etc.)
-                    # Delete and regenerate instead of returning 503
-                    logger.exception("digest_existing_corrupt_regenerating", user_id=str(user_id), digest_id=str(existing_digest.id), format_version=existing_digest.format_version)
-                    await self.session.delete(existing_digest)
-                    await self.session.flush()
+                logger.info("digest_found_existing", user_id=str(user_id), digest_id=str(existing_digest.id), duration_ms=round(existing_time * 1000, 2))
+                return await self._build_digest_response(existing_digest, user_id)
         logger.info("digest_no_existing", user_id=str(user_id), duration_ms=round(existing_time * 1000, 2))
         
         # 2. Determine effective mode (param > user pref > default)
@@ -146,59 +136,35 @@ class DigestService:
         if not effective_focus_theme and effective_mode == "theme_focus":
             effective_focus_theme = await self._get_user_focus_theme(user_id)
 
-        # 2b. Determine effective output format (user pref, default "topics")
-        effective_format = await self._get_user_digest_format(user_id)
-
         # 3. Generate new digest using DigestSelector
         step_start = time.time()
+        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme)
         from app.services.digest_selector import DiversityConstraints
-        from app.models.user import UserProfile as _UP
-        _user_profile = await self.session.scalar(
-            select(_UP).where(_UP.user_id == user_id)
+        target_size = DiversityConstraints.TARGET_DIGEST_SIZE
+        digest_items = await self.selector.select_for_user(
+            user_id, limit=target_size, hours_lookback=hours_lookback,
+            mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
         )
-        # Clamp weekly_goal to sensible range (3-10) to avoid edge cases
-        raw_goal = _user_profile.weekly_goal if _user_profile and _user_profile.weekly_goal else DiversityConstraints.TARGET_DIGEST_SIZE
-        target_size = max(3, min(raw_goal, 10))
-        logger.info("digest_generating_new", user_id=str(user_id), hours_lookback=hours_lookback, mode=effective_mode, focus_theme=effective_focus_theme, output_format=effective_format, target_size=target_size, raw_weekly_goal=raw_goal)
-
-        try:
-            digest_items = await self.selector.select_for_user(
-                user_id, limit=target_size, hours_lookback=hours_lookback,
-                mode=effective_mode or "pour_vous", focus_theme=effective_focus_theme,
-                output_format=effective_format,
-            )
-        except Exception:
-            logger.exception("digest_selector_crashed", user_id=str(user_id), output_format=effective_format)
-            digest_items = []
-
         selection_time = time.time() - step_start
         logger.info("digest_step_selection", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(selection_time * 1000, 2))
-
-        # Check if result is topic-based (list of TopicGroup)
-        is_topics_format = digest_items and isinstance(digest_items[0], TopicGroup)
-        logger.info("digest_format_check", user_id=str(user_id), is_topics=is_topics_format, item_type=type(digest_items[0]).__name__ if digest_items else "empty")
-
+        
         # Emergency Fallback: If standard selection returns nothing, grab from user's sources first
         # This prevents 503 errors when personalization is too restrictive or history is empty
         if not digest_items:
             step_start = time.time()
             logger.warning("digest_generation_standard_failed_attempting_fallback", user_id=str(user_id))
             digest_items = await self._get_emergency_candidates(user_id=user_id, limit=target_size)
-            is_topics_format = False  # Emergency fallback always returns flat items
             fallback_time = time.time() - step_start
             logger.info("digest_step_fallback", user_id=str(user_id), item_count=len(digest_items), duration_ms=round(fallback_time * 1000, 2))
-
+            
         if not digest_items:
             # If even emergency fallback fails, then we truly have a problem (empty DB?)
             logger.error("digest_generation_failed_total", user_id=str(user_id))
             return None
-
+        
         # 4. Store in database
         step_start = time.time()
-        if is_topics_format:
-            digest = await self._create_digest_record_topics(user_id, target_date, digest_items, mode=effective_mode)
-        else:
-            digest = await self._create_digest_record(user_id, target_date, digest_items, mode=effective_mode)
+        digest = await self._create_digest_record(user_id, target_date, digest_items, mode=effective_mode)
         store_time = time.time() - step_start
         
         total_time = time.time() - start_time
@@ -280,39 +246,10 @@ class DigestService:
             if existing_ids:
                 curated_query = curated_query.where(Content.id.notin_(list(existing_ids)))
             stmt = curated_query
-
+            
             result = await self.session.execute(stmt)
             all_contents.extend(result.scalars().all())
-
-        # LAST RESORT: If still not enough, query ANY active source with wider window (30 days)
-        # This guarantees new users always get a digest even if curated sources have no recent content
-        if len(all_contents) < limit:
-            existing_ids = {c.id for c in all_contents}
-            wider_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-            any_source_query = (
-                select(Content)
-                .join(Content.source)
-                .options(selectinload(Content.source))
-                .where(
-                    Source.is_active == True,
-                    Content.published_at >= wider_cutoff,
-                )
-                .order_by(Content.published_at.desc())
-                .limit(fetch_limit - len(all_contents))
-            )
-            if existing_ids:
-                any_source_query = any_source_query.where(Content.id.notin_(list(existing_ids)))
-
-            result = await self.session.execute(any_source_query)
-            all_contents.extend(result.scalars().all())
-
-            if len(all_contents) > len(existing_ids):
-                logger.info(
-                    "digest_emergency_last_resort_used",
-                    user_id=str(user_id),
-                    added_count=len(all_contents) - len(existing_ids),
-                )
-
+        
         # Apply diversity constraint: max 2 articles per source
         selected: list = []
         source_counts: dict = defaultdict(int)
@@ -431,14 +368,6 @@ class DigestService:
             status.is_hidden = False
             # Increment regular streak via StreakService
             await self.streak_service.increment_consumption(str(user_id))
-            # Feedback: reinforce theme + subtopic weights
-            from app.services.content_service import ContentService
-            from app.services.recommendation.scoring_config import ScoringWeights
-            content_service = ContentService(self.session)
-            await content_service._adjust_interest_weight(user_id, content_id, None)
-            await content_service._adjust_subtopic_weights(
-                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
-            )
 
         elif action == DigestAction.SAVE:
             status.is_saved = True
@@ -634,75 +563,14 @@ class DigestService:
             target_date=target_date,
             items=items_json,
             mode=mode or "pour_vous",
-            format_version="flat_v1",
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.utcnow()
         )
-
+        
         self.session.add(digest)
         await self.session.flush()
-
+        
         return digest
-
-    async def _create_digest_record_topics(
-        self,
-        user_id: UUID,
-        target_date: date,
-        topic_groups: list[TopicGroup],
-        mode: str | None = None,
-    ) -> DailyDigest:
-        """Create a new DailyDigest at topics_v1 format."""
-        items_json = {
-            "format": "topics_v1",
-            "topics": [
-                {
-                    "topic_id": tg.topic_id,
-                    "label": tg.label,
-                    "rank": i + 1,
-                    "reason": tg.reason,
-                    "is_trending": tg.is_trending,
-                    "is_une": tg.is_une,
-                    "theme": tg.theme,
-                    "topic_score": float(tg.topic_score),
-                    "subjects": tg.subjects,
-                    "articles": [
-                        {
-                            "content_id": str(a.content.id),
-                            "rank": j + 1,
-                            "reason": a.reason,
-                            "source_name": a.content.source.name if a.content.source else None,
-                            "score": float(a.score),
-                            "is_followed_source": a.is_followed_source,
-                            "breakdown": [
-                                {
-                                    "label": b.label,
-                                    "points": b.points,
-                                    "is_positive": b.is_positive,
-                                }
-                                for b in (a.breakdown or [])
-                            ],
-                        }
-                        for j, a in enumerate(tg.articles)
-                    ],
-                }
-                for i, tg in enumerate(topic_groups)
-            ],
-        }
-
-        digest = DailyDigest(
-            id=uuid4(),
-            user_id=user_id,
-            target_date=target_date,
-            items=items_json,
-            mode=mode or "pour_vous",
-            format_version="topics_v1",
-            generated_at=datetime.utcnow(),
-        )
-
-        self.session.add(digest)
-        await self.session.flush()
-
-        return digest
-
+    
     def _determine_top_reason(self, breakdown: List[DigestScoreBreakdown]) -> str:
         """Extract the most significant positive reason for the label.
         
@@ -752,15 +620,10 @@ class DigestService:
         user_id: UUID
     ) -> DigestResponse:
         """Build DigestResponse from database record with action states.
-
-        Branches on format_version:
-        - topics_v1: grouped topics + flat items fallback
-        - flat_v1 / None: legacy flat list
+        
+        Optimized: batch-fetches all content and action states in 3 queries
+        instead of 2*N queries (N per content + N per action state).
         """
-        if digest.format_version == "topics_v1":
-            return await self._build_topics_response(digest, user_id)
-
-        # Legacy flat format
         # Extract all content IDs upfront
         content_ids = [UUID(item_data["content_id"]) for item_data in digest.items]
         
@@ -872,166 +735,12 @@ class DigestService:
             target_date=digest.target_date,
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
-            format_version=digest.format_version or "flat_v1",
             items=items,
-            topics=[],
             completion_threshold=DiversityConstraints.COMPLETION_THRESHOLD,
             is_completed=completion is not None,
-            completed_at=completion.completed_at if completion else None,
+            completed_at=completion.completed_at if completion else None
         )
     
-    async def _build_topics_response(
-        self,
-        digest: DailyDigest,
-        user_id: UUID,
-    ) -> DigestResponse:
-        """Build DigestResponse from a topics_v1 JSONB record.
-
-        Produces both `topics` (new grouped format) and `items` (flat legacy)
-        so that old mobile clients continue to work.
-        """
-        topics_data = digest.items.get("topics", []) if isinstance(digest.items, dict) else []
-
-        # Collect all content_ids across all topics
-        all_content_ids: list[UUID] = []
-        for topic in topics_data:
-            for article in topic.get("articles", []):
-                all_content_ids.append(UUID(article["content_id"]))
-
-        # Batch query: completion
-        completion = await self.session.scalar(
-            select(DigestCompletion).where(
-                and_(
-                    DigestCompletion.user_id == user_id,
-                    DigestCompletion.target_date == digest.target_date,
-                )
-            )
-        )
-
-        # Batch query: content + sources
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
-        )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
-
-        # Batch query: action states
-        action_states_map = await self._get_batch_action_states(user_id, all_content_ids)
-
-        # Build topics + flat items
-        response_topics: list[DigestTopic] = []
-        flat_items: list[DigestItem] = []
-        global_rank = 0
-
-        for topic_data in topics_data:
-            topic_articles: list[DigestTopicArticle] = []
-
-            for art_data in topic_data.get("articles", []):
-                content_id = UUID(art_data["content_id"])
-                content = content_map.get(content_id)
-                if not content or not content.source:
-                    continue
-
-                action_state = action_states_map.get(
-                    content_id,
-                    {"is_read": False, "is_saved": False, "is_liked": False, "is_dismissed": False},
-                )
-
-                # Rebuild breakdown
-                breakdown_raw = art_data.get("breakdown") or []
-                breakdown = [
-                    DigestScoreBreakdown(
-                        label=b.get("label", ""),
-                        points=b.get("points", 0.0),
-                        is_positive=b.get("is_positive", True),
-                    )
-                    for b in breakdown_raw
-                    if isinstance(b, dict) and b.get("label")
-                ]
-
-                recommendation_reason = None
-                if breakdown:
-                    recommendation_reason = DigestRecommendationReason(
-                        label=self._determine_top_reason(breakdown),
-                        score_total=sum(b.points for b in breakdown),
-                        breakdown=breakdown,
-                    )
-
-                topic_article = DigestTopicArticle(
-                    content_id=content_id,
-                    title=content.title,
-                    url=content.url,
-                    thumbnail_url=content.thumbnail_url,
-                    description=content.description,
-                    topics=content.topics or [],
-                    content_type=content.content_type,
-                    duration_seconds=content.duration_seconds,
-                    published_at=content.published_at,
-                    is_paid=content.is_paid if hasattr(content, "is_paid") else False,
-                    source=content.source,
-                    rank=art_data.get("rank", 1),
-                    reason=art_data.get("reason", ""),
-                    is_followed_source=art_data.get("is_followed_source", False),
-                    recommendation_reason=recommendation_reason,
-                    is_read=action_state["is_read"],
-                    is_saved=action_state["is_saved"],
-                    is_liked=action_state["is_liked"],
-                    is_dismissed=action_state["is_dismissed"],
-                )
-                topic_articles.append(topic_article)
-
-                # Also build flat DigestItem for backward compat
-                global_rank += 1
-                flat_items.append(DigestItem(
-                    content_id=content_id,
-                    title=content.title,
-                    url=content.url,
-                    thumbnail_url=content.thumbnail_url,
-                    description=content.description,
-                    topics=content.topics or [],
-                    content_type=content.content_type,
-                    duration_seconds=content.duration_seconds,
-                    published_at=content.published_at,
-                    is_paid=content.is_paid if hasattr(content, "is_paid") else False,
-                    source=content.source,
-                    rank=global_rank,
-                    reason=art_data.get("reason", ""),
-                    recommendation_reason=recommendation_reason,
-                    is_read=action_state["is_read"],
-                    is_saved=action_state["is_saved"],
-                    is_liked=action_state["is_liked"],
-                    is_dismissed=action_state["is_dismissed"],
-                ))
-
-            response_topics.append(DigestTopic(
-                topic_id=topic_data.get("topic_id", ""),
-                label=topic_data.get("label", ""),
-                rank=topic_data.get("rank", 0),
-                reason=topic_data.get("reason", ""),
-                is_trending=topic_data.get("is_trending", False),
-                is_une=topic_data.get("is_une", False),
-                theme=topic_data.get("theme"),
-                topic_score=topic_data.get("topic_score", 0.0),
-                subjects=topic_data.get("subjects", []),
-                articles=topic_articles,
-            ))
-
-        return DigestResponse(
-            digest_id=digest.id,
-            user_id=digest.user_id,
-            target_date=digest.target_date,
-            generated_at=digest.generated_at,
-            mode=digest.mode or "pour_vous",
-            format_version="topics_v1",
-            items=flat_items,
-            topics=response_topics,
-            completion_threshold=len(response_topics),
-            is_completed=completion is not None,
-            completed_at=completion.completed_at if completion else None,
-        )
-
     async def _get_item_action_state(
         self, 
         user_id: UUID, 
@@ -1169,15 +878,7 @@ class DigestService:
         digest: DailyDigest
     ) -> Dict[str, int]:
         """Count actions taken on digest items."""
-        # Handle both flat and topics_v1 formats
-        if isinstance(digest.items, dict) and digest.items.get("format") == "topics_v1":
-            content_ids = [
-                UUID(a["content_id"])
-                for t in digest.items["topics"]
-                for a in t["articles"]
-            ]
-        else:
-            content_ids = [UUID(item["content_id"]) for item in digest.items]
+        content_ids = [UUID(item["content_id"]) for item in digest.items]
         
         # Get all statuses for these content items
         stmt = select(UserContentStatus).where(
@@ -1271,23 +972,6 @@ class DigestService:
         )
         value = result.scalar_one_or_none()
         return value if value else None
-
-    async def _get_user_digest_format(self, user_id: UUID) -> str:
-        """Lit la préférence digest_format depuis user_preferences.
-
-        Returns 'topics' (default) or 'flat'.
-        """
-        from app.models.user import UserPreference, UserProfile
-        result = await self.session.execute(
-            select(UserPreference.preference_value)
-            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
-            .where(
-                UserProfile.user_id == user_id,
-                UserPreference.preference_key == "digest_format",
-            )
-        )
-        value = result.scalar_one_or_none()
-        return value if value in ("topics", "flat") else "topics"
 
     async def _get_user_focus_theme(self, user_id: UUID) -> Optional[str]:
         """Lit la préférence digest_focus_theme depuis user_preferences."""

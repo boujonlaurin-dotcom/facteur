@@ -1,13 +1,10 @@
 """Routes utilisateur."""
 
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
@@ -72,15 +69,8 @@ async def save_onboarding(
 ) -> OnboardingResponse:
     """Sauvegarder les réponses de l'onboarding."""
     service = UserService(db)
-    try:
-        result = await service.save_onboarding(user_id, data.answers)
-        return OnboardingResponse.model_validate(result)
-    except Exception as e:
-        logger.error(f"Onboarding save failed for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save onboarding data. Please retry.",
-        )
+    result = await service.save_onboarding(user_id, data.answers)
+    return OnboardingResponse.model_validate(result)
 
 
 @router.get("/preferences", response_model=list[UserPreferenceResponse])
@@ -115,6 +105,8 @@ async def get_stats(
     """Récupérer les statistiques utilisateur."""
     service = UserService(db)
     stats = await service.get_stats(user_id)
+
+    return stats
 
     return stats
 

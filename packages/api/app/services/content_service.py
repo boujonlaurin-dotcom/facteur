@@ -4,7 +4,6 @@ from uuid import UUID
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import UserContentStatus
@@ -59,8 +58,6 @@ class ContentService:
             "is_hidden": user_status.is_hidden if user_status else False,
             "hidden_reason": user_status.hidden_reason if user_status else None,
             "time_spent_seconds": user_status.time_spent_seconds if user_status else 0,
-            "note_text": user_status.note_text if user_status else None,
-            "note_updated_at": user_status.note_updated_at if user_status else None,
         }
 
     async def update_content_status(
@@ -112,16 +109,9 @@ class ContentService:
             # Feedback Loop: Adjust Interest Weights based on consumption
             # Axe 3.1 du plan d'amélioration
             await self._adjust_interest_weight(
-                user_id,
-                content_id,
+                user_id, 
+                content_id, 
                 update_data.time_spent_seconds
-            )
-
-            # Feedback Loop: Adjust Subtopic Weights on read
-            # Weakest signal (implicit) — accumulates over many reads.
-            from app.services.recommendation.scoring_config import ScoringWeights
-            await self._adjust_subtopic_weights(
-                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
 
         return updated_status
@@ -351,83 +341,3 @@ class ContentService:
         
         result = await self.session.scalars(stmt)
         return result.one()
-
-    async def upsert_note(
-        self, user_id: UUID, content_id: UUID, note_text: str
-    ) -> UserContentStatus:
-        """Crée ou met à jour une note sur un article. Auto-sauvegarde l'article."""
-        from app.services.recommendation.scoring_config import ScoringWeights
-
-        # Check article is not hidden
-        existing = await self.session.scalar(
-            select(UserContentStatus).where(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id == content_id,
-            )
-        )
-        if existing and existing.is_hidden:
-            raise ValueError("Cannot add note to hidden article")
-
-        now = datetime.utcnow()
-
-        values: dict = {
-            "user_id": user_id,
-            "content_id": content_id,
-            "note_text": note_text,
-            "note_updated_at": now,
-            "is_saved": True,
-            "saved_at": now,
-            "updated_at": now,
-        }
-
-        stmt = (
-            insert(UserContentStatus)
-            .values(**values)
-            .on_conflict_do_update(
-                index_elements=["user_id", "content_id"],
-                set_={
-                    "note_text": note_text,
-                    "note_updated_at": now,
-                    "is_saved": True,
-                    "saved_at": func.coalesce(
-                        UserContentStatus.saved_at, now
-                    ),
-                    "updated_at": now,
-                },
-            )
-            .returning(UserContentStatus)
-        )
-
-        result = await self.session.scalars(stmt)
-        status = result.one()
-
-        # Reinforce subtopic weights (same as bookmark)
-        await self._adjust_subtopic_weights(
-            user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
-        )
-
-        return status
-
-    async def delete_note(
-        self, user_id: UUID, content_id: UUID
-    ) -> UserContentStatus | None:
-        """Supprime la note d'un article. L'article reste sauvegardé."""
-        now = datetime.utcnow()
-
-        stmt = (
-            select(UserContentStatus)
-            .where(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id == content_id,
-            )
-        )
-        status = await self.session.scalar(stmt)
-
-        if not status:
-            return None
-
-        status.note_text = None
-        status.note_updated_at = None
-        status.updated_at = now
-
-        return status

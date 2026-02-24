@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, field_serializer
 
 from app.models.enums import BiasOrigin, BiasStance, ContentStatus, ContentType, HiddenReason, ReliabilityScore
 
@@ -13,20 +13,6 @@ class HideContentRequest(BaseModel):
     """Requête pour masquer un contenu."""
 
     reason: HiddenReason
-
-
-class NoteUpsertRequest(BaseModel):
-    """Requête pour créer/mettre à jour une note sur un article."""
-
-    note_text: str = Field(..., min_length=1, max_length=1000)
-
-
-class NoteResponse(BaseModel):
-    """Réponse après upsert/delete d'une note."""
-
-    note_text: str | None = None
-    note_updated_at: datetime | None = None
-    is_saved: bool = False
 
 
 class SourceMini(BaseModel):
@@ -78,8 +64,6 @@ class ContentResponse(BaseModel):
     topics: list[str] | None = None  # Topics ML granulaires (slugs), NULL si non classifié
     is_paid: bool = False  # Paywall detection
     recommendation_reason: Optional[RecommendationReason] = None
-    note_text: str | None = None
-    note_updated_at: datetime | None = None
 
     @field_serializer('topics', when_used='always')
     def serialize_topics(self, value: list[str] | None) -> list[str]:
@@ -110,8 +94,6 @@ class ContentDetailResponse(BaseModel):
     is_hidden: bool = False
     hidden_reason: Optional[str] = None
     time_spent_seconds: int = 0
-    note_text: str | None = None
-    note_updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -135,8 +117,14 @@ class DailyTop3Response(BaseModel):
         from_attributes = True
 
 
+class FeedRefreshRequest(BaseModel):
+    """Requête pour rafraîchir le feed (marquer les articles visibles comme 'déjà affiché')."""
+
+    content_ids: list[UUID]
+
+
 class FeedResponse(BaseModel):
     """Réponse globale du feed."""
-    
+
     briefing: list[DailyTop3Response] = []  # Le Top 3 du jour (vide si on n'est pas "today" ou déjà vu?)
     items: list[ContentResponse]            # Le flux infini

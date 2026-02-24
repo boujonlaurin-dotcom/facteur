@@ -42,9 +42,7 @@ from app.config import get_settings
 from app.database import init_db, close_db, get_db, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.routers import (
-    app_update,
     auth,
-    collections,
     contents,
     digest,
     feed,
@@ -197,8 +195,6 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
 app.include_router(personalization.router, prefix="/api/users/personalization", tags=["Personalization"])
-app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
-app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
     
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

@@ -80,6 +80,7 @@ def make_context(
     ctx.muted_source_ids = set()
     ctx.history_content_ids = set()
     ctx.subtopic_weights = {}
+    ctx.source_affinity_scores = {}
     return ctx
 
 

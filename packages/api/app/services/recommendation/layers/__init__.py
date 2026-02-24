@@ -5,7 +5,8 @@ from .quality import QualityLayer
 from .visual import VisualLayer
 from .article_topic import ArticleTopicLayer
 from .personalization import PersonalizationLayer
+from .impression import ImpressionLayer
 
-__all__ = ["CoreLayer", "StaticPreferenceLayer", "BehavioralLayer", "QualityLayer", "VisualLayer", "ArticleTopicLayer", "PersonalizationLayer"]
+__all__ = ["CoreLayer", "StaticPreferenceLayer", "BehavioralLayer", "QualityLayer", "VisualLayer", "ArticleTopicLayer", "PersonalizationLayer", "ImpressionLayer"]
 
 

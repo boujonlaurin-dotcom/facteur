@@ -28,7 +28,9 @@ class ScoringContext:
         muted_topics: Set[str] = None,
         muted_content_types: Set[str] = None,
         custom_source_ids: Set[UUID] = None,
-        source_affinity_scores: Dict[UUID, float] = None
+        source_affinity_scores: Dict[UUID, float] = None,
+        # Feed Refresh: impression data {content_id: (timestamp, is_manual)}
+        impression_data: Dict[UUID, tuple] = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -46,6 +48,9 @@ class ScoringContext:
         self.muted_themes = muted_themes or set()
         self.muted_topics = muted_topics or set()
         self.muted_content_types = muted_content_types or set()
+
+        # Feed Refresh: {content_id: (last_impressed_at, manually_impressed)}
+        self.impression_data = impression_data or {}
         
         # Diagnostics pour explicabilité
         self.reasons: Dict[UUID, Dict[str, Any]] = {}

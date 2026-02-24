@@ -125,11 +125,7 @@ class SyncService:
             for entry in feed.entries[:50]:
                 content_data = self._parse_entry(entry, source)
                 if content_data:
-                    # Paywall detection: fetch article HTML head for JSON-LD signal
-                    html_head = None
-                    if content_data.get("content_type") == ContentType.ARTICLE:
-                        html_head = await self._fetch_html_head(content_data.get("url", ""))
-
+                    # Paywall detection: enrich with is_paid flag
                     content_data["is_paid"] = detect_paywall(
                         title=content_data.get("title", ""),
                         description=content_data.get("description"),
@@ -137,7 +133,6 @@ class SyncService:
                         html_content=content_data.get("html_content"),
                         source_id=str(source.id),
                         paywall_config=getattr(source, "paywall_config", None),
-                        html_head=html_head,
                     )
                     is_new = await self._save_content(content_data)
                     if is_new:
@@ -344,27 +339,6 @@ class SyncService:
             
         return True
 
-    async def _fetch_html_head(self, url: str) -> Optional[str]:
-        """Fetch first ~50KB of an article page for paywall detection.
-
-        Uses Range header to avoid downloading the full page.
-        Returns HTML head content or None on any error.
-        """
-        if not url:
-            return None
-        try:
-            response = await self.client.get(
-                url,
-                headers={"Range": "bytes=0-50000"},
-                timeout=5.0,
-            )
-            # Accept both 200 (full) and 206 (partial) responses
-            if response.status_code in (200, 206):
-                return response.text[:50000]
-        except Exception:
-            pass  # Fail silently — scoring fallback will handle detection
-        return None
-
     def _parse_duration(self, duration_str: str) -> Optional[int]:
         """Convertit une durée itunes (HH:MM:SS ou MM:SS ou secondes) en entier."""
         try:
@@ -402,11 +376,7 @@ class SyncService:
                 existing.html_content = data["html_content"]
             if not existing.audio_url and data.get("audio_url"):
                 existing.audio_url = data["audio_url"]
-
-            # Paywall: upgrade false→true only (never downgrade paid→free)
-            if data.get("is_paid") and not existing.is_paid:
-                existing.is_paid = True
-
+            
             return False
             
         # Create new content

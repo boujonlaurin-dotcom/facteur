@@ -69,17 +69,7 @@ class CoreLayer(BaseScoringLayer):
                 context.add_reason(content.id, self.name, ScoringWeights.CUSTOM_SOURCE_BONUS, "Ta source personnalisée")
         else:
             score += ScoringWeights.STANDARD_SOURCE
-
-        # 2b. Source Affinity Bonus (learned from interactions)
-        affinity = context.source_affinity_scores.get(content.source_id, 0.0)
-        if affinity > 0:
-            affinity_bonus = affinity * ScoringWeights.SOURCE_AFFINITY_MAX_BONUS
-            score += affinity_bonus
-            context.add_reason(
-                content.id, self.name, affinity_bonus,
-                f"Affinité source: {affinity:.0%}"
-            )
-
+            
         # 3. Recency Decay (Base)
         # Score = 30 / (hours_old/24 + 1)
         if content.published_at:

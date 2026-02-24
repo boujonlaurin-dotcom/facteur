@@ -56,9 +56,6 @@ class DailyDigest(Base):
     mode: Mapped[Optional[str]] = mapped_column(
         String(30), nullable=True, default="pour_vous"
     )
-    format_version: Mapped[Optional[str]] = mapped_column(
-        String(20), nullable=True, default="flat_v1", server_default="flat_v1"
-    )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )

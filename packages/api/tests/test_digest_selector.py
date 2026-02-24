@@ -551,6 +551,7 @@ class TestTwoPassSelection:
             muted_sources=set(),
             muted_themes=set(),
             muted_topics=set(),
+            muted_content_types=set(),
         )
 
     @pytest.fixture

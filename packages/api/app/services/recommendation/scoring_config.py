@@ -164,6 +164,18 @@ class ScoringWeights:
     # Learning rate applied to UserInterest.weight on like/bookmark.
     LIKE_INTEREST_RATE = 0.03
 
+    # --- IMPRESSION LAYER (Feed Refresh) ---
+    # Malus temporel par tiers : plus l'article a été affiché récemment, plus le malus est fort.
+    # Après 72h, le malus disparaît totalement (l'utilisateur a oublié l'article).
+
+    IMPRESSION_VERY_RECENT = -100.0  # < 1h  — invisible après refresh
+    IMPRESSION_RECENT = -70.0        # < 24h — très peu de chances de remonter
+    IMPRESSION_DAY = -40.0           # < 48h — remonte si très pertinent
+    IMPRESSION_OLD = -20.0           # < 72h — léger handicap
+    # > 72h : 0 pts (entièrement récupéré)
+
+    IMPRESSION_MANUAL = -120.0       # "J'ai déjà vu" — malus permanent, pas de decay
+
     # --- SOURCE AFFINITY (Learned from interactions) ---
 
     # Maximum bonus for a source with highest engagement.

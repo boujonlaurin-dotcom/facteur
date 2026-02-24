@@ -8,6 +8,7 @@ from app.models.content import Content
 from app.models.source import Source
 from app.services.recommendation_service import RecommendationService
 
+@pytest.mark.skip(reason="Obsolete: _score_content replaced by ScoringEngine — see test_scoring_v2.py")
 @pytest.mark.asyncio
 async def test_score_content_logic():
     service = RecommendationService(MagicMock())
@@ -71,6 +72,7 @@ async def test_score_content_logic():
     assert score1 > score2, "Trusted source should boost score"
     assert score1 > score3, "Interest match should boost score"
 
+@pytest.mark.skip(reason="Obsolete: _score_content replaced by ScoringEngine — see test_scoring_v2.py")
 @pytest.mark.asyncio
 async def test_persona_ranking_weights():
     """
