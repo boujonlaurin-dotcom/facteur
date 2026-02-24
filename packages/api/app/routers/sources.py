@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -15,8 +15,8 @@ from app.schemas.source import (
     SourceCreate,
     SourceDetectRequest,
     SourceDetectResponse,
-    SourceSearchResponse,
     SourceResponse,
+    SourceSearchResponse,
 )
 from app.services.source_service import SourceService
 
@@ -73,11 +73,12 @@ async def add_source(
 
     try:
         source = await service.add_custom_source(user_id, str(data.url), data.name)
-        
+
         # Trigger immediate sync in background after request returns (and DB commits)
         from app.workers.rss_sync import sync_source
+
         background_tasks.add_task(sync_source, str(source.id))
-        
+
         return source
     except ValueError as e:
         # Log failed custom source attempt
@@ -90,7 +91,9 @@ async def add_source(
         )
         db.add(attempt)
         await db.flush()
-        logger.info("failed_source_attempt", endpoint="custom", input=str(data.url)[:100])
+        logger.info(
+            "failed_source_attempt", endpoint="custom", input=str(data.url)[:100]
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
@@ -130,11 +133,11 @@ async def detect_source(
 
         # Robust URL detection: checks for protocol or a string that looks like a domain (e.g. domain.tld)
         is_url_like = (
-            url_input.startswith("http://") or
-            url_input.startswith("https://") or
-            "youtube.com" in url_input or
-            "youtu.be" in url_input or
-            re.match(r'^[\w\.-]+\.[a-z]{2,6}(/.*)?$', url_input.lower())
+            url_input.startswith("http://")
+            or url_input.startswith("https://")
+            or "youtube.com" in url_input
+            or "youtu.be" in url_input
+            or re.match(r"^[\w\.-]+\.[a-z]{2,6}(/.*)?$", url_input.lower())
         )
 
         if is_url_like and not url_input.startswith("http"):
@@ -158,11 +161,14 @@ async def detect_source(
         )
         db.add(attempt)
         await db.flush()
-        logger.info("failed_source_attempt", endpoint="detect", input=data.url.strip()[:100])
+        logger.info(
+            "failed_source_attempt", endpoint="detect", input=data.url.strip()[:100]
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
 
 @router.post("/{source_id}/trust")
 async def trust_source(

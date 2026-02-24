@@ -1,15 +1,13 @@
 """Worker asynchrone pour la classification ML des contenus."""
 
 import asyncio
+import contextlib
 from datetime import datetime
-from typing import List, Optional, Tuple
-from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
-from app.database import Base
 from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.models.source import Source
@@ -22,14 +20,14 @@ settings = get_settings()
 
 class ClassificationWorker:
     """Worker qui traite la file d'attente de classification ML.
-    
+
     Ce worker fonctionne de manière asynchrone et peut être démarré
     comme tâche de fond dans l'application FastAPI.
     """
-    
+
     def __init__(self, batch_size: int = 10, interval: int = 60):
         """Initialize the worker.
-        
+
         Args:
             batch_size: Nombre d'articles à traiter par lot
             interval: Intervalle en secondes entre chaque vérification
@@ -37,8 +35,8 @@ class ClassificationWorker:
         self.batch_size = batch_size
         self.interval = interval
         self.running = False
-        self._task: Optional[asyncio.Task] = None
-        
+        self._task: asyncio.Task | None = None
+
         # Create engine for worker (separate from main app)
         self.engine = create_async_engine(
             settings.database_url,
@@ -49,7 +47,7 @@ class ClassificationWorker:
                 "prepare_threshold": None,
             },
         )
-        
+
         self.session_maker = async_sessionmaker(
             self.engine,
             class_=AsyncSession,
@@ -57,23 +55,23 @@ class ClassificationWorker:
             autocommit=False,
             autoflush=False,
         )
-        
+
         # Initialize ML services (lazy loading)
         self._classifier = None
         self._ner = None
-    
+
     def _get_classifier(self):
         """Lazy load classification service."""
         if self._classifier is None:
             self._classifier = get_classification_service()
         return self._classifier
-    
+
     def _get_ner(self):
         """Lazy load NER service."""
         if self._ner is None:
             self._ner = get_ner_service()
         return self._ner
-    
+
     async def start(self):
         """Start the worker in the background."""
         if self.running:
@@ -95,30 +93,30 @@ class ClassificationWorker:
             async with self.session_maker() as session:
                 result = await session.execute(
                     update(ClassificationQueue)
-                    .where(ClassificationQueue.status == 'processing')
-                    .values(status='pending', updated_at=datetime.utcnow())
+                    .where(ClassificationQueue.status == "processing")
+                    .values(status="pending", updated_at=datetime.utcnow())
                 )
                 count = result.rowcount
                 await session.commit()
 
                 if count > 0:
-                    logger.info("classification_worker.recovered_stuck_items", count=count)
+                    logger.info(
+                        "classification_worker.recovered_stuck_items", count=count
+                    )
         except Exception as e:
             logger.error("classification_worker.recovery_failed", error=str(e))
-    
+
     async def stop(self):
         """Stop the worker gracefully."""
         self.running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
-        
+
         await self.engine.dispose()
-    
+
     async def _run_loop(self):
         """Main processing loop."""
         while self.running:
@@ -126,24 +124,26 @@ class ClassificationWorker:
                 await self._process_batch()
             except Exception as e:
                 import structlog
+
                 logger = structlog.get_logger()
                 logger.error("classification_worker_error", error=str(e))
-            
+
             # Wait before next batch
             await asyncio.sleep(self.interval)
-    
+
     async def _process_batch(self):
         """Process one batch of pending items."""
         async with self.session_maker() as session:
             service = ClassificationQueueService(session)
-            
+
             # Dequeue batch
             items = await service.dequeue_batch(batch_size=self.batch_size)
-            
+
             if not items:
                 return
 
             import structlog
+
             logger = structlog.get_logger()
             logger.info("classification_worker.processing_batch", count=len(items))
 
@@ -154,7 +154,7 @@ class ClassificationWorker:
                 except Exception as e:
                     # Mark as failed - will be retried
                     await service.mark_failed(item.id, str(e)[:500])
-    
+
     async def _classify_item(self, session: AsyncSession, item: ClassificationQueue):
         """Classify a single content item using ML (topics + NER).
 
@@ -169,7 +169,9 @@ class ClassificationWorker:
             return
 
         # Pre-load source for fallback topics (same lazy-loading issue)
-        source = await session.get(Source, content.source_id) if content.source_id else None
+        source = (
+            await session.get(Source, content.source_id) if content.source_id else None
+        )
 
         # Get topics and entities
         topics, entities = await self._extract_topics_and_entities(content, source)
@@ -177,8 +179,10 @@ class ClassificationWorker:
         # Mark as completed with both topics and entities
         service = ClassificationQueueService(session)
         await service.mark_completed_with_entities(item.id, topics, entities)
-    
-    async def _extract_topics_and_entities(self, content: Content, source=None) -> Tuple[List[str], List[dict]]:
+
+    async def _extract_topics_and_entities(
+        self, content: Content, source=None
+    ) -> tuple[list[str], list[dict]]:
         """Extract both topics and entities from content.
 
         Args:
@@ -203,13 +207,16 @@ class ClassificationWorker:
                 )
             except Exception as e:
                 import structlog
+
                 logger = structlog.get_logger()
-                logger.warning("classification_failed", error=str(e), content_id=str(content.id))
+                logger.warning(
+                    "classification_failed", error=str(e), content_id=str(content.id)
+                )
 
         # Fallback to source topics if classification fails
         if not topics and source:
             topics = source.granular_topics or []
-        
+
         # 2. Entity extraction (spaCy NER)
         ner = self._get_ner()
         if ner and ner.is_ready():
@@ -222,14 +229,17 @@ class ClassificationWorker:
                 entities = [e.to_dict() for e in ner_entities]
             except Exception as e:
                 import structlog
+
                 logger = structlog.get_logger()
-                logger.warning("ner_extraction_failed", error=str(e), content_id=str(content.id))
-        
+                logger.warning(
+                    "ner_extraction_failed", error=str(e), content_id=str(content.id)
+                )
+
         return topics, entities
 
 
 # Global worker instance (singleton)
-_worker_instance: Optional[ClassificationWorker] = None
+_worker_instance: ClassificationWorker | None = None
 
 
 def get_worker() -> ClassificationWorker:

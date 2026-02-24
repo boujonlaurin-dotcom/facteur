@@ -2,10 +2,19 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, CheckConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,10 +26,10 @@ if TYPE_CHECKING:
 
 class DailyTop3(Base):
     """Top 3 articles quotidiens d'un utilisateur.
-    
+
     Génération quotidienne à 8h Paris. Chaque utilisateur reçoit 3 articles
     sélectionnés selon l'importance objective et la pertinence personnalisée.
-    
+
     Attributes:
         user_id: UUID de l'utilisateur.
         content_id: UUID de l'article sélectionné.
@@ -36,7 +45,13 @@ class DailyTop3(Base):
         Index("ix_daily_top3_user_date", "user_id", "generated_at"),
         CheckConstraint("rank >= 1 AND rank <= 3", name="ck_daily_top3_rank_range"),
         # Unique constraint on (user_id, rank, DATE(generated_at AT TIME ZONE 'UTC'))
-        Index("uq_daily_top3_user_rank_day", "user_id", "rank", text("date(generated_at AT TIME ZONE 'UTC')"), unique=True),
+        Index(
+            "uq_daily_top3_user_rank_day",
+            "user_id",
+            "rank",
+            text("date(generated_at AT TIME ZONE 'UTC')"),
+            unique=True,
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -46,16 +61,12 @@ class DailyTop3(Base):
         PGUUID(as_uuid=True), nullable=False, index=True
     )
     content_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), 
+        PGUUID(as_uuid=True),
         ForeignKey("contents.id", ondelete="CASCADE"),
-        nullable=False
+        nullable=False,
     )
-    rank: Mapped[int] = mapped_column(
-        Integer, nullable=False
-    )
-    top3_reason: Mapped[str] = mapped_column(
-        String(100), nullable=False
-    )
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    top3_reason: Mapped[str] = mapped_column(String(100), nullable=False)
     consumed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )

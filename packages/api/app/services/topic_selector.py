@@ -23,12 +23,11 @@ from app.models.enums import DigestMode
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.digest_selector import DigestContext, GlobalTrendingContext
+from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.filter_presets import (
     find_perspective_article,
-    get_opposing_biases,
     is_cluster_serein_compatible,
 )
-from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = structlog.get_logger()
@@ -128,7 +127,7 @@ class TopicSelector:
         )
 
         # 5. Ranking final
-        for i, tg in enumerate(topic_groups, 1):
+        for _i, tg in enumerate(topic_groups, 1):
             tg.label = tg.articles[0].content.title if tg.articles else ""
 
         logger.info(
@@ -167,8 +166,7 @@ class TopicSelector:
 
             # Bonus source suivie
             has_followed = any(
-                c.source_id in context.followed_source_ids
-                for c in cluster.contents
+                c.source_id in context.followed_source_ids for c in cluster.contents
             )
             if has_followed:
                 score += ScoringWeights.TOPIC_FOLLOWED_SOURCE_BONUS
@@ -189,8 +187,7 @@ class TopicSelector:
             has_une = False
             if trending_context:
                 has_une = any(
-                    c.id in trending_context.une_content_ids
-                    for c in cluster.contents
+                    c.id in trending_context.une_content_ids for c in cluster.contents
                 )
                 if has_une:
                     score += ScoringWeights.TOPIC_UNE_BONUS
@@ -214,13 +211,13 @@ class TopicSelector:
 
     def _best_recency_bonus(self, contents: list[Content]) -> float:
         """Retourne le meilleur bonus recency parmi les articles."""
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         best = 0.0
 
         for content in contents:
             published = content.published_at
             if published and published.tzinfo is None:
-                published = published.replace(tzinfo=datetime.timezone.utc)
+                published = published.replace(tzinfo=datetime.UTC)
             if not published:
                 continue
 
@@ -332,24 +329,29 @@ class TopicSelector:
             # Mode perspective : enrichir avec article de biais opposé
             if mode == DigestMode.PERSPECTIVE and context.user_bias_stance:
                 if len(scored_articles) < ScoringWeights.TOPIC_MAX_ARTICLES:
-                    topic_source_ids = set(a.content.source_id for a in scored_articles)
+                    topic_source_ids = {a.content.source_id for a in scored_articles}
                     perspective_content = find_perspective_article(
                         candidates=all_candidates,
                         topic_source_ids=topic_source_ids,
                         user_bias=context.user_bias_stance,
                     )
                     if perspective_content:
-                        scored_articles.append(ScoredArticle(
-                            content=perspective_content,
-                            score=0.0,
-                            reason="Perspective opposée",
-                            breakdown=[DigestScoreBreakdown(
-                                label="Perspective opposée",
-                                points=80.0,
-                                is_positive=True,
-                            )],
-                            is_followed_source=perspective_content.source_id in context.followed_source_ids,
-                        ))
+                        scored_articles.append(
+                            ScoredArticle(
+                                content=perspective_content,
+                                score=0.0,
+                                reason="Perspective opposée",
+                                breakdown=[
+                                    DigestScoreBreakdown(
+                                        label="Perspective opposée",
+                                        points=80.0,
+                                        is_positive=True,
+                                    )
+                                ],
+                                is_followed_source=perspective_content.source_id
+                                in context.followed_source_ids,
+                            )
+                        )
 
             # Determine is_une
             is_une = False
@@ -363,23 +365,27 @@ class TopicSelector:
             seen_kw: set[str] = set()
             subjects: list[str] = []
             for article in scored_articles:
-                for kw in self._perspective_service.extract_keywords(article.content.title, max_keywords=4):
+                for kw in self._perspective_service.extract_keywords(
+                    article.content.title, max_keywords=4
+                ):
                     if kw.lower() not in seen_kw:
                         seen_kw.add(kw.lower())
                         subjects.append(kw)
             subjects = subjects[:5]
 
-            topic_groups.append(TopicGroup(
-                topic_id=cluster.cluster_id,
-                label="",  # Set after this loop
-                articles=scored_articles,
-                topic_score=topic_score,
-                reason=reason,
-                is_trending=cluster.is_trending,
-                is_une=is_une,
-                theme=cluster.theme,
-                subjects=subjects,
-            ))
+            topic_groups.append(
+                TopicGroup(
+                    topic_id=cluster.cluster_id,
+                    label="",  # Set after this loop
+                    articles=scored_articles,
+                    topic_score=topic_score,
+                    reason=reason,
+                    is_trending=cluster.is_trending,
+                    is_une=is_une,
+                    theme=cluster.theme,
+                    subjects=subjects,
+                )
+            )
 
         return topic_groups
 
@@ -395,9 +401,11 @@ class TopicSelector:
         Contrainte : sources différentes entre les articles sélectionnés.
         """
         max_articles = ScoringWeights.TOPIC_MAX_ARTICLES
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
-        article_scores: list[tuple[Content, float, str, list[DigestScoreBreakdown]]] = []
+        article_scores: list[
+            tuple[Content, float, str, list[DigestScoreBreakdown]]
+        ] = []
 
         for content in cluster.contents:
             breakdown: list[DigestScoreBreakdown] = []
@@ -406,38 +414,44 @@ class TopicSelector:
             # Recency
             published = content.published_at
             if published and published.tzinfo is None:
-                published = published.replace(tzinfo=datetime.timezone.utc)
+                published = published.replace(tzinfo=datetime.UTC)
             if published:
                 hours_old = (now - published).total_seconds() / 3600
                 recency_bonus = self._recency_bonus(hours_old)
                 if recency_bonus > 0:
                     score += recency_bonus
-                    breakdown.append(DigestScoreBreakdown(
-                        label=self._recency_label(hours_old),
-                        points=recency_bonus,
-                        is_positive=True,
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label=self._recency_label(hours_old),
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
 
             # Source suivie
             is_followed = content.source_id in context.followed_source_ids
             if is_followed:
                 score += ScoringWeights.TRUSTED_SOURCE
-                breakdown.append(DigestScoreBreakdown(
-                    label="Source de confiance",
-                    points=ScoringWeights.TRUSTED_SOURCE,
-                    is_positive=True,
-                ))
+                breakdown.append(
+                    DigestScoreBreakdown(
+                        label="Source de confiance",
+                        points=ScoringWeights.TRUSTED_SOURCE,
+                        is_positive=True,
+                    )
+                )
 
             # Source affinity bonus (learned from interactions)
             affinity = context.source_affinity_scores.get(content.source_id, 0.0)
             if affinity > 0:
                 affinity_bonus = affinity * ScoringWeights.SOURCE_AFFINITY_MAX_BONUS
                 score += affinity_bonus
-                breakdown.append(DigestScoreBreakdown(
-                    label=f"Source appréciée ({affinity:.0%})",
-                    points=affinity_bonus,
-                    is_positive=True,
-                ))
+                breakdown.append(
+                    DigestScoreBreakdown(
+                        label=f"Source appréciée ({affinity:.0%})",
+                        points=affinity_bonus,
+                        is_positive=True,
+                    )
+                )
 
             # Thème matche
             content_theme = getattr(content, "theme", None)
@@ -445,37 +459,45 @@ class TopicSelector:
             theme = content_theme or source_theme
             if theme and theme in context.user_interests:
                 score += ScoringWeights.THEME_MATCH
-                breakdown.append(DigestScoreBreakdown(
-                    label=f"Thème matché : {theme}",
-                    points=ScoringWeights.THEME_MATCH,
-                    is_positive=True,
-                ))
+                breakdown.append(
+                    DigestScoreBreakdown(
+                        label=f"Thème matché : {theme}",
+                        points=ScoringWeights.THEME_MATCH,
+                        is_positive=True,
+                    )
+                )
 
             # Trending/Une bonus
             if trending_context:
                 if content.id in trending_context.trending_content_ids:
                     score += ScoringWeights.DIGEST_TRENDING_BONUS
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Sujet du jour",
-                        points=ScoringWeights.DIGEST_TRENDING_BONUS,
-                        is_positive=True,
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Sujet du jour",
+                            points=ScoringWeights.DIGEST_TRENDING_BONUS,
+                            is_positive=True,
+                        )
+                    )
                 if content.id in trending_context.une_content_ids:
                     score += ScoringWeights.DIGEST_UNE_BONUS
-                    breakdown.append(DigestScoreBreakdown(
-                        label="À la une",
-                        points=ScoringWeights.DIGEST_UNE_BONUS,
-                        is_positive=True,
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="À la une",
+                            points=ScoringWeights.DIGEST_UNE_BONUS,
+                            is_positive=True,
+                        )
+                    )
 
             # Source curated
             if content.source and content.source.is_curated:
                 score += ScoringWeights.CURATED_SOURCE
-                breakdown.append(DigestScoreBreakdown(
-                    label="Source qualitative",
-                    points=ScoringWeights.CURATED_SOURCE,
-                    is_positive=True,
-                ))
+                breakdown.append(
+                    DigestScoreBreakdown(
+                        label="Source qualitative",
+                        points=ScoringWeights.CURATED_SOURCE,
+                        is_positive=True,
+                    )
+                )
 
             # Build reason
             reason = self._article_reason(content, context, breakdown)
@@ -495,13 +517,15 @@ class TopicSelector:
             if content.source_id in used_sources:
                 continue
 
-            selected.append(ScoredArticle(
-                content=content,
-                score=score,
-                reason=reason,
-                breakdown=breakdown,
-                is_followed_source=content.source_id in context.followed_source_ids,
-            ))
+            selected.append(
+                ScoredArticle(
+                    content=content,
+                    score=score,
+                    reason=reason,
+                    breakdown=breakdown,
+                    is_followed_source=content.source_id in context.followed_source_ids,
+                )
+            )
             used_sources.add(content.source_id)
 
         return selected

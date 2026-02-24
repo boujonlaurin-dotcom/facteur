@@ -6,8 +6,9 @@ Part of Story 4.1d - ML-based topic classification for RSS articles.
 
 from __future__ import annotations
 
-import structlog
 from typing import TYPE_CHECKING
+
+import structlog
 
 from app.config import get_settings
 
@@ -20,11 +21,11 @@ log = structlog.get_logger()
 class ClassificationService:
     """
     Service de classification zero-shot utilisant CamemBERT.
-    
+
     Classifie les titres et descriptions d'articles dans la taxonomie 50-topics.
     Le modèle est chargé en lazy-loading uniquement si ML_ENABLED=true.
     """
-    
+
     # 50 labels candidats en français pour la classification zero-shot
     CANDIDATE_LABELS_FR: list[str] = [
         # Tech & Science
@@ -87,7 +88,7 @@ class ClassificationService:
         "philosophie",
         "fact-checking",
     ]
-    
+
     # Mapping des labels français vers les slugs normalisés
     LABEL_TO_SLUG: dict[str, str] = {
         "intelligence artificielle": "ai",
@@ -142,26 +143,29 @@ class ClassificationService:
         "philosophie": "philosophy",
         "fact-checking": "factcheck",
     }
-    
+
     def __init__(self) -> None:
         """Initialise le service. Charge le modèle seulement si ML_ENABLED=true."""
         self.classifier: Pipeline | None = None
         self._model_loaded = False
-        
+
         settings = get_settings()
         if settings.ml_enabled:
             self._load_model()
-    
+
     def _load_model(self) -> None:
         """Charge le pipeline de classification zero-shot."""
         if self._model_loaded:
             return
-        
-        log.info("classification_service.loading_model", model="MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7")
-        
+
+        log.info(
+            "classification_service.loading_model",
+            model="MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7",
+        )
+
         try:
             from transformers import pipeline
-            
+
             # Use mDeBERTa multilingual model trained for NLI/zero-shot classification
             # This model supports French and is specifically trained for this task
             # device=-1 forces CPU usage
@@ -172,11 +176,11 @@ class ClassificationService:
             )
             self._model_loaded = True
             log.info("classification_service.model_loaded")
-            
+
         except Exception as e:
             log.error("classification_service.load_error", error=str(e))
             raise
-    
+
     def classify(
         self,
         title: str,
@@ -186,53 +190,53 @@ class ClassificationService:
     ) -> list[str]:
         """
         Classifie un article basé sur son titre et sa description.
-        
+
         Args:
             title: Titre de l'article
             description: Description/résumé optionnel
             top_k: Nombre maximum de topics à retourner
             threshold: Score minimum pour inclure un topic
-            
+
         Returns:
             Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
         """
         if not self.classifier:
             log.warning("classification_service.classifier_not_loaded")
             return []
-        
+
         # Combine titre et description pour plus de contexte
         text = f"{title}. {description}".strip() if description else title
-        
+
         if not text:
             return []
-        
+
         try:
             result = self.classifier(
                 text,
                 candidate_labels=self.CANDIDATE_LABELS_FR,
                 multi_label=True,
             )
-            
+
             # Extrait les labels avec score > threshold
             topics: list[str] = []
-            for label, score in zip(result["labels"], result["scores"]):
+            for label, score in zip(result["labels"], result["scores"], strict=False):
                 if score >= threshold and len(topics) < top_k:
                     slug = self.LABEL_TO_SLUG.get(label)
                     if slug:
                         topics.append(slug)
-            
+
             log.debug(
                 "classification_service.classified",
                 text=text[:100],
                 topics=topics,
             )
-            
+
             return topics
-            
+
         except Exception as e:
             log.error("classification_service.classify_error", error=str(e))
             return []
-    
+
     async def classify_async(
         self,
         title: str,
@@ -242,21 +246,21 @@ class ClassificationService:
     ) -> list[str]:
         """
         Version asynchrone de classify.
-        
+
         Exécute la classification dans un thread pool pour ne pas bloquer
         l'event loop asyncio.
-        
+
         Args:
             title: Titre de l'article
             description: Description/résumé optionnel
             top_k: Nombre maximum de topics à retourner
             threshold: Score minimum pour inclure un topic
-            
+
         Returns:
             Liste des slugs de topics
         """
         import asyncio
-        
+
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
@@ -266,7 +270,7 @@ class ClassificationService:
             top_k,
             threshold,
         )
-    
+
     def is_ready(self) -> bool:
         """Retourne True si le modèle est chargé et prêt."""
         return self._model_loaded and self.classifier is not None

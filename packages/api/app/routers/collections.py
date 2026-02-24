@@ -30,7 +30,9 @@ async def list_collections(
     return await service.list_collections(user_uuid)
 
 
-@router.post("/", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_collection(
     data: CollectionCreate,
     db: AsyncSession = Depends(get_db),
@@ -81,7 +83,9 @@ async def update_collection(
     user_uuid = UUID(current_user_id)
 
     try:
-        collection = await service.update_collection(user_uuid, collection_id, data.name)
+        collection = await service.update_collection(
+            user_uuid, collection_id, data.name
+        )
         await db.commit()
         # Re-fetch full data
         collections = await service.list_collections(user_uuid)
@@ -142,7 +146,9 @@ async def add_collection_item(
     user_uuid = UUID(current_user_id)
 
     try:
-        item = await service.add_to_collection(user_uuid, collection_id, data.content_id)
+        item = await service.add_to_collection(
+            user_uuid, collection_id, data.content_id
+        )
         await db.commit()
         return {"status": "ok", "item_id": str(item.id)}
     except ValueError as e:

@@ -30,7 +30,7 @@ async def restore_purchases(
 ) -> dict[str, str]:
     """
     Restaurer les achats.
-    
+
     Note: La restauration est gérée par RevenueCat côté client.
     Ce endpoint synchronise l'état avec le backend.
     """
@@ -38,4 +38,3 @@ async def restore_purchases(
     await service.sync_with_revenuecat(user_id)
 
     return {"status": "synced"}
-
