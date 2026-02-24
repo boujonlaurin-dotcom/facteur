@@ -164,14 +164,31 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         );
 
         // Éviter les mises à jour inutiles si l'user n'a pas changé
-        if (state.user?.id == user?.id &&
+        final bool sameUser = state.user?.id == user?.id &&
             !state.isLoading &&
-            state.user != null) {
-          return;
+            state.user != null;
+        if (sameUser) {
+          // Autoriser les updates si le statut email_confirmed a changé
+          // ou si on est dans un état forceUnconfirmed à réévaluer
+          final bool emailStatusChanged =
+              state.user?.emailConfirmedAt != user?.emailConfirmedAt;
+          if (!emailStatusChanged && !state.forceUnconfirmed) {
+            return;
+          }
         }
         if (state.user == null && user == null && !state.isLoading) return;
 
-        state = state.copyWith(user: user, isLoading: false);
+        // Vérifier si l'email est maintenant confirmé pour reset forceUnconfirmed
+        final isNowConfirmed = user?.emailConfirmedAt != null ||
+            (user?.appMetadata['providers'] as List<dynamic>?)
+                    ?.any((p) => p != 'email') ==
+                true;
+
+        state = state.copyWith(
+          user: user,
+          isLoading: false,
+          forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
+        );
 
         if (user != null) {
           _checkOnboardingStatus();

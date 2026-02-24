@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -27,6 +29,27 @@ class _EmailConfirmationScreenState
     extends ConsumerState<EmailConfirmationScreen> {
   bool _resending = false;
   bool _resent = false;
+  Timer? _autoRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-poll toutes les 6s pour détecter la confirmation email
+    _autoRefreshTimer = Timer.periodic(
+      const Duration(seconds: 6),
+      (_) {
+        if (mounted) {
+          ref.read(authStateProvider.notifier).refreshUser();
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _resendEmail() async {
     setState(() {
