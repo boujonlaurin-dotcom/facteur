@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
@@ -71,6 +72,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await authNotifier.signInWithEmail(email, password,
           rememberMe: _rememberMe);
     }
+
+    // Signal the OS that the autofill context is complete.
+    // Triggers the "Save password?" prompt on iOS/Android.
+    TextInput.finishAutofillContext();
   }
 
   Future<void> _forgotPassword() async {
@@ -163,7 +168,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
+            child: AutofillGroup(
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
@@ -218,6 +224,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: TextField(
                           controller: _firstNameController,
                           textCapitalization: TextCapitalization.words,
+                          autofillHints: const [AutofillHints.givenName],
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             hintText: 'Prénom',
                             prefixIcon: Icon(Icons.person_outline),
@@ -229,6 +237,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: TextField(
                           controller: _lastNameController,
                           textCapitalization: TextCapitalization.words,
+                          autofillHints: const [AutofillHints.familyName],
+                          textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             hintText: 'Nom',
                           ),
@@ -244,6 +254,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   autocorrect: false,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
                     hintText: 'Email',
                     prefixIcon: Icon(Icons.email_outlined),
@@ -255,6 +267,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  autofillHints: [
+                    _isSignUp
+                        ? AutofillHints.newPassword
+                        : AutofillHints.password,
+                  ],
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submitEmail(),
                   decoration: InputDecoration(
                     hintText: 'Mot de passe',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -453,6 +472,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   textAlign: TextAlign.center,
                 ),
               ],
+            ),
             ),
           ),
         ),
