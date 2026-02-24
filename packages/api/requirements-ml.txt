@@ -1,8 +1,9 @@
-# Optional ML dependencies (enable only if ML_ENABLED=true)
-numpy>=1.26.0,<2.0
-transformers==4.38.2
-torch==2.2.0
-spacy==3.8.11
-
-# spaCy French model (install separately):
-# python -m spacy download fr_core_news_md
+# ML dependencies are no longer needed locally.
+# Classification is now handled via Mistral API (see classification_service.py).
+# httpx (already in requirements.txt) is the only dependency needed.
+#
+# Previous local dependencies (removed):
+# - transformers==4.38.2 (mDeBERTa zero-shot, ~890MB RAM)
+# - torch==2.2.0
+# - numpy>=1.26.0,<2.0
+# - spacy==3.8.11 (NER, ~100MB RAM)

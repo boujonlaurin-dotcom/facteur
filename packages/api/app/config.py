@@ -94,7 +94,8 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
 
     # ML Classification (Story 4.1d)
-    ml_enabled: bool = False  # Set to True to load CamemBERT model
+    ml_enabled: bool = False  # Set to True to enable classification worker
+    mistral_api_key: str = ""  # Mistral API key for LLM-based classification
 
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
