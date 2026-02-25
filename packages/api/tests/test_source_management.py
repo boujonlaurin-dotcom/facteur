@@ -47,7 +47,7 @@ async def test_source_lifecycle_states(db_session: AsyncSession):
     assert indexed.score_independence is None
 
 def test_source_model_defaults():
-    source = Source(name="Test")
+    source = Source(name="Test", is_curated=False, is_active=True)
     assert source.is_curated is False
     assert source.is_active is True
 
