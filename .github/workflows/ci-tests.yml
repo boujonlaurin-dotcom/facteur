@@ -51,12 +51,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r packages/api/requirements.txt
 
-      - name: Run database migrations
-        run: cd packages/api && alembic upgrade head
-        env:
-          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
-          ENVIRONMENT: development
-
       - name: Run tests
         run: cd packages/api && pytest -v --tb=short
         env:

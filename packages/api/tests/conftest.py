@@ -12,10 +12,11 @@ from app.models.source import Source
 from app.models.enums import SourceType
 from app.database import Base
 
+# Register all models with Base.metadata
+import app.models  # noqa: F401
+
 settings = get_settings()
 
-# Use the same database but with a test schema or separate tables
-# For now, we'll use the main database but roll back transactions
 test_engine = create_async_engine(
     settings.database_url,
     echo=False,
@@ -33,6 +34,16 @@ TestSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def create_tables():
+    """Create all database tables from model definitions."""
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest_asyncio.fixture
