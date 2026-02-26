@@ -216,8 +216,8 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             colors: colors,
           ),
 
-        // Mute topic actions (topics ML granulaires, max 2)
-        for (final topicSlug in item.topics.take(2))
+        // Mute topic actions (all ML topics of this article)
+        for (final topicSlug in item.topics)
           if (_getThemeLabel(theme ?? '').toLowerCase() !=
               getTopicLabel(topicSlug).toLowerCase())
             _buildActionOption(
@@ -366,6 +366,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
       'society': 'Société',
       'environment': 'Environnement',
       'economy': 'Économie',
+      'sport': 'Sport',
     };
     return translations[slug.toLowerCase()] ?? slug;
   }

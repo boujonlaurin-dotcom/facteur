@@ -1,279 +1,376 @@
 """
-ClassificationService: Zero-shot classification using CamemBERT.
+ClassificationService: LLM-based topic classification via Mistral API.
 
-Part of Story 4.1d - ML-based topic classification for RSS articles.
+Replaces the previous mDeBERTa zero-shot model with a fast, cheap API call.
+Benefits: ~3000+ articles/hour (vs ~150), better quality (contextual), no local RAM.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
 
+import httpx
 import structlog
 
 from app.config import get_settings
 
-if TYPE_CHECKING:
-    from transformers import Pipeline
-
 log = structlog.get_logger()
+
+
+# 50 topic slugs in the Facteur taxonomy
+VALID_TOPIC_SLUGS: set[str] = {
+    # Tech & Science
+    "ai",
+    "tech",
+    "cybersecurity",
+    "gaming",
+    "space",
+    "science",
+    "privacy",
+    # Société
+    "politics",
+    "economy",
+    "work",
+    "education",
+    "health",
+    "justice",
+    "immigration",
+    "inequality",
+    "feminism",
+    "lgbtq",
+    "religion",
+    # Environnement
+    "climate",
+    "environment",
+    "energy",
+    "biodiversity",
+    "agriculture",
+    "food",
+    # Culture
+    "cinema",
+    "music",
+    "literature",
+    "art",
+    "media",
+    "fashion",
+    "design",
+    # Lifestyle
+    "travel",
+    "gastronomy",
+    "sport",
+    "wellness",
+    "family",
+    "relationships",
+    # Business
+    "startups",
+    "finance",
+    "realestate",
+    "entrepreneurship",
+    "marketing",
+    # International
+    "geopolitics",
+    "europe",
+    "usa",
+    "africa",
+    "asia",
+    "middleeast",
+    # Autres
+    "history",
+    "philosophy",
+    "factcheck",
+}
+
+# Slug -> French label for the LLM prompt
+SLUG_TO_LABEL: dict[str, str] = {
+    "ai": "Intelligence artificielle",
+    "tech": "Technologie",
+    "cybersecurity": "Cybersécurité",
+    "gaming": "Jeux vidéo",
+    "space": "Espace et astronomie",
+    "science": "Science",
+    "privacy": "Données et vie privée",
+    "politics": "Politique",
+    "economy": "Économie",
+    "work": "Emploi et travail",
+    "education": "Éducation",
+    "health": "Santé",
+    "justice": "Justice et droit",
+    "immigration": "Immigration",
+    "inequality": "Inégalités sociales",
+    "feminism": "Féminisme et droits des femmes",
+    "lgbtq": "LGBTQ+",
+    "religion": "Religion",
+    "climate": "Climat",
+    "environment": "Environnement",
+    "energy": "Énergie",
+    "biodiversity": "Biodiversité",
+    "agriculture": "Agriculture",
+    "food": "Alimentation",
+    "cinema": "Cinéma",
+    "music": "Musique",
+    "literature": "Littérature",
+    "art": "Art",
+    "media": "Médias",
+    "fashion": "Mode",
+    "design": "Design",
+    "travel": "Voyage",
+    "gastronomy": "Gastronomie",
+    "sport": "Sport",
+    "wellness": "Bien-être",
+    "family": "Famille et parentalité",
+    "relationships": "Relations et amour",
+    "startups": "Startups",
+    "finance": "Finance",
+    "realestate": "Immobilier",
+    "entrepreneurship": "Entrepreneuriat",
+    "marketing": "Marketing",
+    "geopolitics": "Géopolitique",
+    "europe": "Europe",
+    "usa": "États-Unis",
+    "africa": "Afrique",
+    "asia": "Asie",
+    "middleeast": "Moyen-Orient",
+    "history": "Histoire",
+    "philosophy": "Philosophie",
+    "factcheck": "Fact-checking",
+}
+
+# Build the topic list for the prompt (sorted for consistency)
+_TOPIC_LIST_FOR_PROMPT = "\n".join(
+    f"- {slug}: {label}" for slug, label in sorted(SLUG_TO_LABEL.items())
+)
+
+CLASSIFICATION_SYSTEM_PROMPT = f"""Tu es un classificateur d'articles de presse francophone.
+
+Pour chaque article, tu dois assigner 1 à 3 topics parmi cette liste prédéfinie (utilise UNIQUEMENT les slugs) :
+
+{_TOPIC_LIST_FOR_PROMPT}
+
+Règles :
+- Retourne UNIQUEMENT les slugs, séparés par des virgules (ex: "politics, economy, europe")
+- Maximum 3 topics par article
+- Choisis les topics les plus spécifiques et pertinents
+- Le premier topic doit être le plus pertinent
+- Ne retourne JAMAIS un slug qui n'est pas dans la liste ci-dessus
+- Réponds UNIQUEMENT avec les slugs, rien d'autre"""
+
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
 class ClassificationService:
     """
-    Service de classification zero-shot utilisant CamemBERT.
+    Service de classification d'articles via l'API Mistral.
 
-    Classifie les titres et descriptions d'articles dans la taxonomie 50-topics.
-    Le modèle est chargé en lazy-loading uniquement si ML_ENABLED=true.
+    Classifie les articles dans la taxonomie 50-topics en utilisant
+    un modèle LLM léger et rapide (mistral-small-latest).
     """
 
-    # 50 labels candidats en français pour la classification zero-shot
-    CANDIDATE_LABELS_FR: list[str] = [
-        # Tech & Science
-        "intelligence artificielle",
-        "technologie",
-        "cybersécurité",
-        "jeux vidéo",
-        "espace et astronomie",
-        "science",
-        "données et vie privée",
-        # Société
-        "politique",
-        "économie",
-        "emploi et travail",
-        "éducation",
-        "santé",
-        "justice et droit",
-        "immigration",
-        "inégalités sociales",
-        "féminisme et droits des femmes",
-        "LGBTQ+",
-        "religion",
-        # Environnement
-        "climat",
-        "environnement",
-        "énergie",
-        "biodiversité",
-        "agriculture",
-        "alimentation",
-        # Culture
-        "cinéma",
-        "musique",
-        "littérature",
-        "art",
-        "médias",
-        "mode",
-        "design",
-        # Lifestyle
-        "voyage",
-        "gastronomie",
-        "sport",
-        "bien-être",
-        "famille et parentalité",
-        "relations et amour",
-        # Business
-        "startups",
-        "finance",
-        "immobilier",
-        "entrepreneuriat",
-        "marketing",
-        # International
-        "géopolitique",
-        "Europe",
-        "États-Unis",
-        "Afrique",
-        "Asie",
-        "Moyen-Orient",
-        # Autres
-        "histoire",
-        "philosophie",
-        "fact-checking",
-    ]
-
-    # Mapping des labels français vers les slugs normalisés
-    LABEL_TO_SLUG: dict[str, str] = {
-        "intelligence artificielle": "ai",
-        "technologie": "tech",
-        "cybersécurité": "cybersecurity",
-        "jeux vidéo": "gaming",
-        "espace et astronomie": "space",
-        "science": "science",
-        "données et vie privée": "privacy",
-        "politique": "politics",
-        "économie": "economy",
-        "emploi et travail": "work",
-        "éducation": "education",
-        "santé": "health",
-        "justice et droit": "justice",
-        "immigration": "immigration",
-        "inégalités sociales": "inequality",
-        "féminisme et droits des femmes": "feminism",
-        "LGBTQ+": "lgbtq",
-        "religion": "religion",
-        "climat": "climate",
-        "environnement": "environment",
-        "énergie": "energy",
-        "biodiversité": "biodiversity",
-        "agriculture": "agriculture",
-        "alimentation": "food",
-        "cinéma": "cinema",
-        "musique": "music",
-        "littérature": "literature",
-        "art": "art",
-        "médias": "media",
-        "mode": "fashion",
-        "design": "design",
-        "voyage": "travel",
-        "gastronomie": "gastronomy",
-        "sport": "sport",
-        "bien-être": "wellness",
-        "famille et parentalité": "family",
-        "relations et amour": "relationships",
-        "startups": "startups",
-        "finance": "finance",
-        "immobilier": "realestate",
-        "entrepreneuriat": "entrepreneurship",
-        "marketing": "marketing",
-        "géopolitique": "geopolitics",
-        "Europe": "europe",
-        "États-Unis": "usa",
-        "Afrique": "africa",
-        "Asie": "asia",
-        "Moyen-Orient": "middleeast",
-        "histoire": "history",
-        "philosophie": "philosophy",
-        "fact-checking": "factcheck",
-    }
-
     def __init__(self) -> None:
-        """Initialise le service. Charge le modèle seulement si ML_ENABLED=true."""
-        self.classifier: Pipeline | None = None
-        self._model_loaded = False
-
         settings = get_settings()
-        if settings.ml_enabled:
-            self._load_model()
+        self._api_key = settings.mistral_api_key
+        self._ready = bool(self._api_key)
+        self._client: httpx.AsyncClient | None = None
 
-    def _load_model(self) -> None:
-        """Charge le pipeline de classification zero-shot."""
-        if self._model_loaded:
-            return
-
-        log.info(
-            "classification_service.loading_model",
-            model="MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7",
-        )
-
-        try:
-            from transformers import pipeline
-
-            # Use mDeBERTa multilingual model trained for NLI/zero-shot classification
-            # This model supports French and is specifically trained for this task
-            # device=-1 forces CPU usage
-            self.classifier = pipeline(
-                task="zero-shot-classification",
-                model="MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7",
-                device=-1,
+        if not self._ready:
+            log.warning(
+                "classification_service.no_api_key",
+                message="MISTRAL_API_KEY not set. Classification will be unavailable.",
             )
-            self._model_loaded = True
-            log.info("classification_service.model_loaded")
+        else:
+            log.info("classification_service.initialized", model="mistral-small-latest")
 
-        except Exception as e:
-            log.error("classification_service.load_error", error=str(e))
-            raise
-
-    def classify(
-        self,
-        title: str,
-        description: str = "",
-        top_k: int = 3,
-        threshold: float = 0.1,
-    ) -> list[str]:
-        """
-        Classifie un article basé sur son titre et sa description.
-
-        Args:
-            title: Titre de l'article
-            description: Description/résumé optionnel
-            top_k: Nombre maximum de topics à retourner
-            threshold: Score minimum pour inclure un topic
-
-        Returns:
-            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
-        """
-        if not self.classifier:
-            log.warning("classification_service.classifier_not_loaded")
-            return []
-
-        # Combine titre et description pour plus de contexte
-        text = f"{title}. {description}".strip() if description else title
-
-        if not text:
-            return []
-
-        try:
-            result = self.classifier(
-                text,
-                candidate_labels=self.CANDIDATE_LABELS_FR,
-                multi_label=True,
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
             )
-
-            # Extrait les labels avec score > threshold
-            topics: list[str] = []
-            for label, score in zip(result["labels"], result["scores"], strict=False):
-                if score >= threshold and len(topics) < top_k:
-                    slug = self.LABEL_TO_SLUG.get(label)
-                    if slug:
-                        topics.append(slug)
-
-            log.debug(
-                "classification_service.classified",
-                text=text[:100],
-                topics=topics,
-            )
-
-            return topics
-
-        except Exception as e:
-            log.error("classification_service.classify_error", error=str(e))
-            return []
+        return self._client
 
     async def classify_async(
         self,
         title: str,
         description: str = "",
         top_k: int = 3,
-        threshold: float = 0.1,
     ) -> list[str]:
         """
-        Version asynchrone de classify.
-
-        Exécute la classification dans un thread pool pour ne pas bloquer
-        l'event loop asyncio.
+        Classifie un article basé sur son titre et sa description via Mistral API.
 
         Args:
             title: Titre de l'article
             description: Description/résumé optionnel
             top_k: Nombre maximum de topics à retourner
-            threshold: Score minimum pour inclure un topic
 
         Returns:
-            Liste des slugs de topics
+            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
         """
-        import asyncio
+        if not self._ready:
+            return []
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self.classify,
-            title,
-            description,
-            top_k,
-            threshold,
+        text = f"{title}. {description}".strip() if description else title
+        if not text:
+            return []
+
+        try:
+            client = self._get_client()
+            response = await client.post(
+                MISTRAL_API_URL,
+                json={
+                    "model": "mistral-small-latest",
+                    "messages": [
+                        {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
+                        {"role": "user", "content": text},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 50,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            raw_answer = data["choices"][0]["message"]["content"].strip()
+            topics = self._parse_topics(raw_answer, top_k)
+
+            log.debug(
+                "classification_service.classified",
+                text=text[:100],
+                raw=raw_answer,
+                topics=topics,
+            )
+
+            return topics
+
+        except Exception as e:
+            log.error(
+                "classification_service.classify_error", error=str(e), title=title[:100]
+            )
+            return []
+
+    async def classify_batch_async(
+        self,
+        items: list[dict],
+        top_k: int = 3,
+    ) -> list[list[str]]:
+        """
+        Classifie un batch d'articles en un seul appel API.
+
+        Args:
+            items: Liste de dicts avec 'title' et 'description'
+            top_k: Nombre maximum de topics par article
+
+        Returns:
+            Liste de listes de slugs (même ordre que items)
+        """
+        if not self._ready or not items:
+            return [[] for _ in items]
+
+        # Build batch prompt
+        articles_text = "\n\n".join(
+            f"[Article {i + 1}]\n{item['title']}. {item.get('description', '')}"
+            for i, item in enumerate(items)
         )
 
+        batch_prompt = (
+            f"Classifie chacun de ces {len(items)} articles. "
+            "Réponds en JSON array, un élément par article, chaque élément étant "
+            'un array de slugs. Exemple pour 2 articles: [["politics", "europe"], ["ai", "tech"]]\n\n'
+            f"{articles_text}"
+        )
+
+        try:
+            client = self._get_client()
+            response = await client.post(
+                MISTRAL_API_URL,
+                json={
+                    "model": "mistral-small-latest",
+                    "messages": [
+                        {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
+                        {"role": "user", "content": batch_prompt},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 30 * len(items),
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            raw_answer = data["choices"][0]["message"]["content"].strip()
+            results = self._parse_batch_response(raw_answer, len(items), top_k)
+
+            log.info(
+                "classification_service.batch_classified",
+                count=len(items),
+                successful=sum(1 for r in results if r),
+            )
+
+            return results
+
+        except Exception as e:
+            log.error(
+                "classification_service.batch_error", error=str(e), count=len(items)
+            )
+            return [[] for _ in items]
+
+    def _parse_topics(self, raw: str, top_k: int) -> list[str]:
+        """Parse la réponse du LLM en liste de slugs validés."""
+        # Clean up common LLM artifacts
+        raw = raw.strip().strip('"').strip("'").strip("`")
+
+        slugs = [s.strip().lower() for s in raw.split(",")]
+        valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
+        return valid[:top_k]
+
+    def _parse_batch_response(
+        self, raw: str, expected_count: int, top_k: int
+    ) -> list[list[str]]:
+        """Parse la réponse batch du LLM (JSON array of arrays)."""
+        try:
+            # Try JSON parse first
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and len(parsed) == expected_count:
+                results = []
+                for item in parsed:
+                    if isinstance(item, list):
+                        valid = [
+                            s.strip().lower()
+                            for s in item
+                            if isinstance(s, str)
+                            and s.strip().lower() in VALID_TOPIC_SLUGS
+                        ]
+                        results.append(valid[:top_k])
+                    else:
+                        results.append([])
+                return results
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Fallback: try line-by-line parsing
+        log.warning("classification_service.batch_parse_fallback", raw=raw[:200])
+        lines = [line.strip() for line in raw.strip().split("\n") if line.strip()]
+        results = []
+        for line in lines[:expected_count]:
+            clean = line.strip("[]").strip()
+            slugs = [s.strip().strip('"').strip("'").lower() for s in clean.split(",")]
+            valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
+            results.append(valid[:top_k])
+
+        while len(results) < expected_count:
+            results.append([])
+
+        return results
+
     def is_ready(self) -> bool:
-        """Retourne True si le modèle est chargé et prêt."""
-        return self._model_loaded and self.classifier is not None
+        """Retourne True si le service est configuré et prêt."""
+        return self._ready
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
 
 
 # Singleton instance (lazy-loaded)

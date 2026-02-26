@@ -23,6 +23,7 @@ from app.models.enums import DigestMode
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.digest_selector import DigestContext, GlobalTrendingContext
+from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.filter_presets import (
     find_perspective_article,
@@ -197,6 +198,24 @@ class TopicSelector:
             if cluster.theme and cluster.theme in context.user_interests:
                 score += ScoringWeights.TOPIC_THEME_MATCH_BONUS
                 reasons.append(f"Thème : {cluster.theme}")
+
+            # Bonus topic match (ML topics ∩ user_subtopics at cluster level)
+            if context.user_subtopics:
+                best_topic_match: str | None = None
+                for c in cluster.contents:
+                    if c.topics:
+                        for t in c.topics:
+                            if t.lower() in context.user_subtopics:
+                                best_topic_match = t.lower()
+                                break
+                    if best_topic_match:
+                        break
+                if best_topic_match:
+                    topic_label = SLUG_TO_LABEL.get(
+                        best_topic_match, best_topic_match.capitalize()
+                    )
+                    score += ScoringWeights.TOPIC_MATCH
+                    reasons.append(f"Sujet : {topic_label}")
 
             # Bonus recency (meilleur article du cluster)
             best_recency = self._best_recency_bonus(cluster.contents)
@@ -467,6 +486,43 @@ class TopicSelector:
                     )
                 )
 
+            # Topic match (ML topics ∩ user_subtopics)
+            if content.topics and context.user_subtopics:
+                matched_topics = 0
+                for topic in content.topics:
+                    topic_lower = topic.lower()
+                    if (
+                        topic_lower in context.user_subtopics
+                        and matched_topics < ScoringWeights.TOPIC_MAX_MATCHES
+                    ):
+                        w = context.user_subtopic_weights.get(topic_lower, 1.0)
+                        points = ScoringWeights.TOPIC_MATCH * w
+                        topic_label = SLUG_TO_LABEL.get(topic_lower, topic.capitalize())
+                        if w > 1.0:
+                            label = f"Renforcé par vos j'aime : {topic_label}"
+                        else:
+                            label = f"Sujet : {topic_label}"
+                        score += points
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label=label,
+                                points=points,
+                                is_positive=True,
+                            )
+                        )
+                        matched_topics += 1
+
+                # Precision bonus if topic + theme both match
+                if matched_topics > 0 and theme and theme in context.user_interests:
+                    score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Précision thématique",
+                            points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
+                            is_positive=True,
+                        )
+                    )
+
             # Trending/Une bonus
             if trending_context:
                 if content.id in trending_context.trending_content_ids:
@@ -592,6 +648,7 @@ class TopicSelector:
                 "culture": "Culture & Idées",
                 "science": "Sciences",
                 "international": "Géopolitique",
+                "sport": "Sport",
             }
             return f"Thème : {_LABELS.get(theme.lower(), theme.capitalize())}"
 

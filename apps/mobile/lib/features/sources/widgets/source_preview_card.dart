@@ -197,21 +197,26 @@ class SourcePreviewCard extends StatelessWidget {
   String _getThemeLabel(String slug) {
     switch (slug.toLowerCase()) {
       case 'tech':
-        return 'Tech & Futur';
+        return 'Tech & Innovation';
+      case 'society':
       case 'society_climate':
-        return 'Société & Climat';
+        return 'Société';
       case 'economy':
         return 'Économie';
       case 'environment':
         return 'Environnement';
       case 'politics':
         return 'Politique';
+      case 'culture':
       case 'culture_ideas':
         return 'Culture & Idées';
       case 'science':
-        return 'Science';
+        return 'Sciences';
+      case 'international':
       case 'geopolitics':
         return 'Géopolitique';
+      case 'sport':
+        return 'Sport';
       default:
         if (slug == 'custom' || slug.isEmpty) return 'Général';
         return slug[0].toUpperCase() + slug.substring(1);
