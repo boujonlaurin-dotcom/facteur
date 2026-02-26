@@ -135,6 +135,7 @@ class ClassificationWorker:
     async def _process_batch(self):
         """Process one batch of pending items using batch API call."""
         import structlog
+
         logger = structlog.get_logger()
 
         async with self.session_maker() as session:
@@ -165,10 +166,12 @@ class ClassificationWorker:
 
             for i, (item, content) in enumerate(zip(items, contents, strict=False)):
                 if content and content.title:
-                    batch_items.append({
-                        "title": content.title or "",
-                        "description": content.description or "",
-                    })
+                    batch_items.append(
+                        {
+                            "title": content.title or "",
+                            "description": content.description or "",
+                        }
+                    )
                     batch_indices.append(i)
 
             # Call Mistral API in batch
@@ -182,7 +185,9 @@ class ClassificationWorker:
 
             # Process results
             batch_result_idx = 0
-            for i, (item, content, source) in enumerate(zip(items, contents, sources, strict=False)):
+            for i, (item, content, source) in enumerate(
+                zip(items, contents, sources, strict=False)
+            ):
                 try:
                     if content is None:
                         await service.mark_completed_with_entities(item.id, [], [])
@@ -190,14 +195,20 @@ class ClassificationWorker:
 
                     # Get topics from batch result
                     if i in batch_indices:
-                        topics = all_topics[batch_result_idx] if batch_result_idx < len(all_topics) else []
+                        topics = (
+                            all_topics[batch_result_idx]
+                            if batch_result_idx < len(all_topics)
+                            else []
+                        )
                         batch_result_idx += 1
                     else:
                         topics = []
 
                     # Fallback: use source.granular_topics, but only valid slugs
                     if not topics and source and source.granular_topics:
-                        topics = [t for t in source.granular_topics if t in VALID_TOPIC_SLUGS]
+                        topics = [
+                            t for t in source.granular_topics if t in VALID_TOPIC_SLUGS
+                        ]
 
                     await service.mark_completed_with_entities(item.id, topics, [])
 

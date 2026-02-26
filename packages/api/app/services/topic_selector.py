@@ -211,7 +211,9 @@ class TopicSelector:
                     if best_topic_match:
                         break
                 if best_topic_match:
-                    topic_label = SLUG_TO_LABEL.get(best_topic_match, best_topic_match.capitalize())
+                    topic_label = SLUG_TO_LABEL.get(
+                        best_topic_match, best_topic_match.capitalize()
+                    )
                     score += ScoringWeights.TOPIC_MATCH
                     reasons.append(f"Sujet : {topic_label}")
 
@@ -489,7 +491,10 @@ class TopicSelector:
                 matched_topics = 0
                 for topic in content.topics:
                     topic_lower = topic.lower()
-                    if topic_lower in context.user_subtopics and matched_topics < ScoringWeights.TOPIC_MAX_MATCHES:
+                    if (
+                        topic_lower in context.user_subtopics
+                        and matched_topics < ScoringWeights.TOPIC_MAX_MATCHES
+                    ):
                         w = context.user_subtopic_weights.get(topic_lower, 1.0)
                         points = ScoringWeights.TOPIC_MATCH * w
                         topic_label = SLUG_TO_LABEL.get(topic_lower, topic.capitalize())
@@ -498,21 +503,25 @@ class TopicSelector:
                         else:
                             label = f"Sujet : {topic_label}"
                         score += points
-                        breakdown.append(DigestScoreBreakdown(
-                            label=label,
-                            points=points,
-                            is_positive=True,
-                        ))
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label=label,
+                                points=points,
+                                is_positive=True,
+                            )
+                        )
                         matched_topics += 1
 
                 # Precision bonus if topic + theme both match
                 if matched_topics > 0 and theme and theme in context.user_interests:
                     score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Précision thématique",
-                        points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
-                        is_positive=True,
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Précision thématique",
+                            points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
+                            is_positive=True,
+                        )
+                    )
 
             # Trending/Une bonus
             if trending_context:

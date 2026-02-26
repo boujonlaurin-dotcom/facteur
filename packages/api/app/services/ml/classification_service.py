@@ -20,22 +20,64 @@ log = structlog.get_logger()
 # 50 topic slugs in the Facteur taxonomy
 VALID_TOPIC_SLUGS: set[str] = {
     # Tech & Science
-    "ai", "tech", "cybersecurity", "gaming", "space", "science", "privacy",
+    "ai",
+    "tech",
+    "cybersecurity",
+    "gaming",
+    "space",
+    "science",
+    "privacy",
     # Société
-    "politics", "economy", "work", "education", "health", "justice",
-    "immigration", "inequality", "feminism", "lgbtq", "religion",
+    "politics",
+    "economy",
+    "work",
+    "education",
+    "health",
+    "justice",
+    "immigration",
+    "inequality",
+    "feminism",
+    "lgbtq",
+    "religion",
     # Environnement
-    "climate", "environment", "energy", "biodiversity", "agriculture", "food",
+    "climate",
+    "environment",
+    "energy",
+    "biodiversity",
+    "agriculture",
+    "food",
     # Culture
-    "cinema", "music", "literature", "art", "media", "fashion", "design",
+    "cinema",
+    "music",
+    "literature",
+    "art",
+    "media",
+    "fashion",
+    "design",
     # Lifestyle
-    "travel", "gastronomy", "sport", "wellness", "family", "relationships",
+    "travel",
+    "gastronomy",
+    "sport",
+    "wellness",
+    "family",
+    "relationships",
     # Business
-    "startups", "finance", "realestate", "entrepreneurship", "marketing",
+    "startups",
+    "finance",
+    "realestate",
+    "entrepreneurship",
+    "marketing",
     # International
-    "geopolitics", "europe", "usa", "africa", "asia", "middleeast",
+    "geopolitics",
+    "europe",
+    "usa",
+    "africa",
+    "asia",
+    "middleeast",
     # Autres
-    "history", "philosophy", "factcheck",
+    "history",
+    "philosophy",
+    "factcheck",
 }
 
 # Slug -> French label for the LLM prompt
@@ -95,8 +137,7 @@ SLUG_TO_LABEL: dict[str, str] = {
 
 # Build the topic list for the prompt (sorted for consistency)
 _TOPIC_LIST_FOR_PROMPT = "\n".join(
-    f"- {slug}: {label}"
-    for slug, label in sorted(SLUG_TO_LABEL.items())
+    f"- {slug}: {label}" for slug, label in sorted(SLUG_TO_LABEL.items())
 )
 
 CLASSIFICATION_SYSTEM_PROMPT = f"""Tu es un classificateur d'articles de presse francophone.
@@ -131,8 +172,10 @@ class ClassificationService:
         self._client: httpx.AsyncClient | None = None
 
         if not self._ready:
-            log.warning("classification_service.no_api_key",
-                        message="MISTRAL_API_KEY not set. Classification will be unavailable.")
+            log.warning(
+                "classification_service.no_api_key",
+                message="MISTRAL_API_KEY not set. Classification will be unavailable.",
+            )
         else:
             log.info("classification_service.initialized", model="mistral-small-latest")
 
@@ -201,8 +244,9 @@ class ClassificationService:
             return topics
 
         except Exception as e:
-            log.error("classification_service.classify_error",
-                      error=str(e), title=title[:100])
+            log.error(
+                "classification_service.classify_error", error=str(e), title=title[:100]
+            )
             return []
 
     async def classify_batch_async(
@@ -225,14 +269,14 @@ class ClassificationService:
 
         # Build batch prompt
         articles_text = "\n\n".join(
-            f"[Article {i+1}]\n{item['title']}. {item.get('description', '')}"
+            f"[Article {i + 1}]\n{item['title']}. {item.get('description', '')}"
             for i, item in enumerate(items)
         )
 
         batch_prompt = (
             f"Classifie chacun de ces {len(items)} articles. "
             "Réponds en JSON array, un élément par article, chaque élément étant "
-            "un array de slugs. Exemple pour 2 articles: [[\"politics\", \"europe\"], [\"ai\", \"tech\"]]\n\n"
+            'un array de slugs. Exemple pour 2 articles: [["politics", "europe"], ["ai", "tech"]]\n\n'
             f"{articles_text}"
         )
 
@@ -265,8 +309,9 @@ class ClassificationService:
             return results
 
         except Exception as e:
-            log.error("classification_service.batch_error",
-                      error=str(e), count=len(items))
+            log.error(
+                "classification_service.batch_error", error=str(e), count=len(items)
+            )
             return [[] for _ in items]
 
     def _parse_topics(self, raw: str, top_k: int) -> list[str]:
@@ -289,8 +334,12 @@ class ClassificationService:
                 results = []
                 for item in parsed:
                     if isinstance(item, list):
-                        valid = [s.strip().lower() for s in item
-                                 if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS]
+                        valid = [
+                            s.strip().lower()
+                            for s in item
+                            if isinstance(s, str)
+                            and s.strip().lower() in VALID_TOPIC_SLUGS
+                        ]
                         results.append(valid[:top_k])
                     else:
                         results.append([])
