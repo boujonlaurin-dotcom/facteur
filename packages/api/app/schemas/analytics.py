@@ -7,22 +7,24 @@ Schema unifié suivant les patterns GAFAM (YouTube, Meta, Spotify):
 - Session-level events restent surface-specific (digest_session, feed_session)
 """
 
-from enum import Enum
-
-from pydantic import BaseModel, Field
+from enum import StrEnum
 from uuid import UUID
 
+from pydantic import BaseModel, Field
 
-class InteractionAction(str, Enum):
+
+class InteractionAction(StrEnum):
     """Actions possibles sur un contenu."""
+
     READ = "read"
     SAVE = "save"
     DISMISS = "dismiss"
     PASS = "pass"
 
 
-class InteractionSurface(str, Enum):
+class InteractionSurface(StrEnum):
     """Surface d'interaction."""
+
     FEED = "feed"
     DIGEST = "digest"
 
@@ -35,6 +37,7 @@ class ContentInteractionPayload(BaseModel):
     - Le champ 'surface' distingue le contexte
     - Forward-compatible avec atomic_themes (Camembert)
     """
+
     action: InteractionAction
     surface: InteractionSurface
     content_id: UUID
@@ -51,6 +54,7 @@ class ContentInteractionPayload(BaseModel):
 
 class DigestSessionPayload(BaseModel):
     """Payload pour un événement digest_session."""
+
     session_id: str
     digest_date: str
     articles_read: int = 0
@@ -64,6 +68,7 @@ class DigestSessionPayload(BaseModel):
 
 class FeedSessionPayload(BaseModel):
     """Payload pour un événement feed_session."""
+
     session_id: str
     scroll_depth_percent: float = 0.0
     items_viewed: int = 0

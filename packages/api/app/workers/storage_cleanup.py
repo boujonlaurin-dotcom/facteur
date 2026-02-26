@@ -1,9 +1,9 @@
 """Worker de nettoyage du storage RSS."""
 
-import structlog
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select, func, exists
+import structlog
+from sqlalchemy import delete, func, select
 
 from app.config import get_settings
 from app.database import async_session_maker
@@ -22,7 +22,7 @@ async def cleanup_old_articles() -> dict:
         Dict avec statistiques: {deleted_count, retention_days, preserved_bookmarks}
     """
     retention_days = settings.rss_retention_days
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=retention_days)
 
     logger.info(
         "storage_cleanup_started",
@@ -33,25 +33,28 @@ async def cleanup_old_articles() -> dict:
     async with async_session_maker() as session:
         try:
             # Subquery: articles bookmarkés (à préserver)
-            bookmarked_subquery = (
-                select(UserContentStatus.content_id)
-                .where(UserContentStatus.is_saved == True)
+            bookmarked_subquery = select(UserContentStatus.content_id).where(
+                UserContentStatus.is_saved
             )
 
             # Count avant purge (pour logging)
             count_result = await session.execute(
-                select(func.count()).select_from(Content).where(
+                select(func.count())
+                .select_from(Content)
+                .where(
                     Content.published_at < cutoff_date,
-                    ~Content.id.in_(bookmarked_subquery)  # Exclure bookmarks
+                    ~Content.id.in_(bookmarked_subquery),  # Exclure bookmarks
                 )
             )
             to_delete = count_result.scalar_one()
 
             # Count bookmarks préservés
             preserved_result = await session.execute(
-                select(func.count()).select_from(Content).where(
+                select(func.count())
+                .select_from(Content)
+                .where(
                     Content.published_at < cutoff_date,
-                    Content.id.in_(bookmarked_subquery)
+                    Content.id.in_(bookmarked_subquery),
                 )
             )
             preserved_bookmarks = preserved_result.scalar_one()
@@ -72,7 +75,7 @@ async def cleanup_old_articles() -> dict:
             result = await session.execute(
                 delete(Content).where(
                     Content.published_at < cutoff_date,
-                    ~Content.id.in_(bookmarked_subquery)
+                    ~Content.id.in_(bookmarked_subquery),
                 )
             )
             deleted_count = result.rowcount

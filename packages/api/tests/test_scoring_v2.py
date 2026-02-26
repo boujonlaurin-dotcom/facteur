@@ -70,8 +70,8 @@ def test_core_layer_theme_match_single_taxonomy(base_context):
     layer = CoreLayer()
     score = layer.score(content, base_context)
     
-    # Needs to be > 70 (Theme Match 70 + Source Standard 10 + Recency ~30)
-    assert score > 100.0 
+    # Theme Match (50) + Source Standard (15) + Recency (~30) = ~95
+    assert score > 90.0
     assert "Thème: tech" in [r['details'] for r in base_context.reasons[content.id]]
 
 def test_core_layer_source_affinity(mock_content, base_context):
@@ -163,7 +163,8 @@ def test_article_topic_layer_single_match(base_context):
     base_context.user_subtopics = {"ai", "climate"}
     layer = ArticleTopicLayer()
     score = layer.score(content, base_context)
-    assert score == 80.0
+    # TOPIC_MATCH (45) + SUBTOPIC_PRECISION_BONUS (18) = 63
+    assert score == 63.0
 
 # --- PersonalizationLayer Tests (Story 4.7) ---
 

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
@@ -28,22 +28,24 @@ class ClassificationQueue(Base):
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     content_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("contents.id", ondelete="CASCADE"),
-        unique=True, nullable=False
+        PGUUID(as_uuid=True),
+        ForeignKey("contents.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
     )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
     )  # pending, processing, completed, failed
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    processed_at: Mapped[Optional[datetime]] = mapped_column(
+    processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

@@ -54,7 +54,6 @@ class ScoringWeights:
     # Article ancien (< 168h): +1 pt
     RECENT_OLD_BONUS = 1.0
 
-
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
     # Bonus léger pour les sources qualitatives (curées par Facteur).
@@ -63,7 +62,6 @@ class ScoringWeights:
     # Pénalité pour les sources de basse qualité/fiabilité.
     # Adouci de -30→-20 pour permettre la récupération.
     FQS_LOW_MALUS = -20.0
-
 
     # --- BEHAVIORAL LAYER (Engagement) ---
 

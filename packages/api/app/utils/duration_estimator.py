@@ -1,7 +1,6 @@
 """Estimation de durée de lecture."""
 
 import re
-from typing import Optional
 
 
 def estimate_reading_time(
@@ -10,11 +9,11 @@ def estimate_reading_time(
 ) -> int:
     """
     Estime le temps de lecture d'un texte en secondes.
-    
+
     Args:
         text: Le texte à analyser
         words_per_minute: Vitesse de lecture moyenne (défaut: 200 WPM)
-    
+
     Returns:
         Durée estimée en secondes
     """
@@ -38,7 +37,7 @@ def estimate_reading_time(
 def format_duration(seconds: int) -> str:
     """
     Formate une durée en secondes en string lisible.
-    
+
     Examples:
         - 120 -> "2 min"
         - 3600 -> "1h"
@@ -57,4 +56,3 @@ def format_duration(seconds: int) -> str:
         return f"{hours}h"
     else:
         return f"{hours}h {remaining_minutes}min"
-

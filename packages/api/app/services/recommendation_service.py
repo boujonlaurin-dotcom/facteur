@@ -1,49 +1,69 @@
 import datetime
-from typing import List, Optional, Set
 from uuid import UUID
-import asyncio
 
 import structlog
-from sqlalchemy import select, desc, func
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
+from app.models.enums import ContentStatus, ContentType, FeedFilterMode
 from app.models.source import Source, UserSource
-from app.models.user import UserInterest, UserProfile, UserSubtopic
-from app.models.enums import ContentStatus, FeedFilterMode, ContentType, BiasStance
+from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
 
-from app.services.recommendation.scoring_engine import ScoringEngine, ScoringContext
-from app.services.recommendation.layers import CoreLayer, StaticPreferenceLayer, BehavioralLayer, QualityLayer, VisualLayer, ArticleTopicLayer, PersonalizationLayer
+from app.schemas.content import RecommendationReason, ScoreContribution
 from app.services.recommendation.filter_presets import (
     apply_serein_filter,
     apply_theme_focus_filter,
-    get_opposing_biases,
     calculate_user_bias,
+    get_opposing_biases,
 )
-from app.schemas.content import RecommendationReason, ScoreContribution
+from app.services.recommendation.layers import (
+    ArticleTopicLayer,
+    BehavioralLayer,
+    CoreLayer,
+    PersonalizationLayer,
+    QualityLayer,
+    StaticPreferenceLayer,
+    VisualLayer,
+)
+from app.services.recommendation.scoring_engine import ScoringContext, ScoringEngine
+
 
 class RecommendationService:
     def __init__(self, session: AsyncSession):
         self.session = session
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
-        self.scoring_engine = ScoringEngine([
-            CoreLayer(),
-            StaticPreferenceLayer(),
-            BehavioralLayer(),
-            QualityLayer(),
-            VisualLayer(),
-            ArticleTopicLayer(),
-            PersonalizationLayer()  # Story 4.7
-        ])
+        self.scoring_engine = ScoringEngine(
+            [
+                CoreLayer(),
+                StaticPreferenceLayer(),
+                BehavioralLayer(),
+                QualityLayer(),
+                VisualLayer(),
+                ArticleTopicLayer(),
+                PersonalizationLayer(),  # Story 4.7
+            ]
+        )
 
-    async def get_feed(self, user_id: UUID, limit: int = 20, offset: int = 0, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, saved_only: bool = False, theme: Optional[str] = None, has_note: bool = False, source_id: Optional[str] = None) -> List[Content]:
+    async def get_feed(
+        self,
+        user_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+        content_type: str | None = None,
+        mode: FeedFilterMode | None = None,
+        saved_only: bool = False,
+        theme: str | None = None,
+        has_note: bool = False,
+        source_id: str | None = None,
+    ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
-        
+
         Algorithme V2 (Modular Scoring):
         1. Récupérer les candidats.
         2. Scorer via ScoringEngine (Core + Prefs + Behavioral).
@@ -52,30 +72,32 @@ class RecommendationService:
         """
         # 1. Fetch user profile with interests and preferences
         from sqlalchemy.orm import joinedload
+
         from app.models.user_personalization import UserPersonalization
-        
+
         # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
         user_profile = await self.session.scalar(
             select(UserProfile)
             .options(
-                joinedload(UserProfile.interests),
-                joinedload(UserProfile.preferences)
+                joinedload(UserProfile.interests), joinedload(UserProfile.preferences)
             )
             .where(UserProfile.user_id == user_id)
         )
-        
+
         followed_sources_res = await self.session.execute(
-            select(UserSource.source_id, UserSource.is_custom).where(UserSource.user_id == user_id)
+            select(UserSource.source_id, UserSource.is_custom).where(
+                UserSource.user_id == user_id
+            )
         )
-        
+
         # We need followed_source_ids, subtopics and personalization
         followed_source_ids = set()
         custom_source_ids = set()
         for row in followed_sources_res:
-             followed_source_ids.add(row.source_id)
-             if row.is_custom:
-                 custom_source_ids.add(row.source_id)
-        
+            followed_source_ids.add(row.source_id)
+            if row.is_custom:
+                custom_source_ids.add(row.source_id)
+
         user_subtopics = set()
         user_subtopic_weights: dict[str, float] = {}
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
@@ -83,81 +105,107 @@ class RecommendationService:
         for row in subtopics_rows:
             user_subtopics.add(row.topic_slug)
             user_subtopic_weights[row.topic_slug] = row.weight
-        
+
         personalization = await self.session.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_id)
         )
-        
+
         user_interests = set()
         user_interest_weights = {}
         user_prefs = {}
-        
+
         if user_profile:
             for i in user_profile.interests:
                 user_interests.add(i.interest_slug)
                 user_interest_weights[i.interest_slug] = i.weight
-                
+
             for p in user_profile.preferences:
                 user_prefs[p.preference_key] = p.preference_value
-        
-        if saved_only:
-             # Fetch saved items directly
-             stmt = (
-                 select(UserContentStatus)
-                 .options(selectinload(UserContentStatus.content).options(selectinload(Content.source)))
-                 .where(
-                     UserContentStatus.user_id == user_id,
-                     UserContentStatus.is_saved == True
-                 )
-             )
-             if has_note:
-                 stmt = stmt.where(
-                     UserContentStatus.note_text.isnot(None),
-                     UserContentStatus.note_text != '',
-                 )
-             stmt = (
-                 stmt
-                 .order_by(desc(func.coalesce(UserContentStatus.saved_at, UserContentStatus.updated_at)))
-                 .offset(offset)
-                 .limit(limit)
-             )
-             
-             statuses = await self.session.scalars(stmt)
-             results = []
-             for st in statuses:
-                 content = st.content
-                 # Populate transient fields
-                 content.is_saved = True
-                 content.is_hidden = st.is_hidden
-                 content.hidden_reason = st.hidden_reason
-                 content.status = st.status
-                 content.note_text = st.note_text
-                 content.note_updated_at = st.note_updated_at
-                 results.append(content)
 
-             return results
-        
+        if saved_only:
+            # Fetch saved items directly
+            stmt = (
+                select(UserContentStatus)
+                .options(
+                    selectinload(UserContentStatus.content).options(
+                        selectinload(Content.source)
+                    )
+                )
+                .where(UserContentStatus.user_id == user_id, UserContentStatus.is_saved)
+            )
+            if has_note:
+                stmt = stmt.where(
+                    UserContentStatus.note_text.isnot(None),
+                    UserContentStatus.note_text != "",
+                )
+            stmt = (
+                stmt.order_by(
+                    desc(
+                        func.coalesce(
+                            UserContentStatus.saved_at, UserContentStatus.updated_at
+                        )
+                    )
+                )
+                .offset(offset)
+                .limit(limit)
+            )
+
+            statuses = await self.session.scalars(stmt)
+            results = []
+            for st in statuses:
+                content = st.content
+                # Populate transient fields
+                content.is_saved = True
+                content.is_hidden = st.is_hidden
+                content.hidden_reason = st.hidden_reason
+                content.status = st.status
+                content.note_text = st.note_text
+                content.note_updated_at = st.note_updated_at
+                results.append(content)
+
+            return results
+
         # 2. Get today's digest content_ids to exclude from feed (Story 10.20)
-        from app.models.daily_digest import DailyDigest
         from datetime import date as date_module
+
+        from app.models.daily_digest import DailyDigest
+
         digest_content_ids: list[UUID] = []
         try:
             digest_row = await self.session.scalar(
                 select(DailyDigest).where(
                     DailyDigest.user_id == user_id,
-                    DailyDigest.target_date == date_module.today()
+                    DailyDigest.target_date == date_module.today(),
                 )
             )
             if digest_row and digest_row.items:
-                digest_content_ids = [UUID(item["content_id"]) for item in digest_row.items]
+                digest_content_ids = [
+                    UUID(item["content_id"]) for item in digest_row.items
+                ]
         except Exception as e:
             logger.warning("feed_digest_exclusion_failed", error=str(e))
 
         # Story 4.7: Personalization filters
-        muted_sources = set(personalization.muted_sources) if personalization and personalization.muted_sources else set()
-        muted_themes = set(t.lower() for t in personalization.muted_themes) if personalization and personalization.muted_themes else set()
-        muted_topics = set(t.lower() for t in personalization.muted_topics) if personalization and personalization.muted_topics else set()
-        muted_content_types = set(t.lower() for t in personalization.muted_content_types) if personalization and personalization.muted_content_types else set()
+        muted_sources = (
+            set(personalization.muted_sources)
+            if personalization and personalization.muted_sources
+            else set()
+        )
+        muted_themes = (
+            {t.lower() for t in personalization.muted_themes}
+            if personalization and personalization.muted_themes
+            else set()
+        )
+        muted_topics = (
+            {t.lower() for t in personalization.muted_topics}
+            if personalization and personalization.muted_topics
+            else set()
+        )
+        muted_content_types = (
+            {t.lower() for t in personalization.muted_content_types}
+            if personalization and personalization.muted_content_types
+            else set()
+        )
 
         # Paywall filter preference
         hide_paid_content = True  # Default: hide paid articles
@@ -191,12 +239,12 @@ class RecommendationService:
         # Source filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
         if source_uuid or mode == FeedFilterMode.RECENT:
-            paginated = candidates[offset:offset + limit]
+            paginated = candidates[offset : offset + limit]
             content_ids = [c.id for c in paginated]
             if content_ids:
                 stmt = select(UserContentStatus).where(
                     UserContentStatus.user_id == user_id,
-                    UserContentStatus.content_id.in_(content_ids)
+                    UserContentStatus.content_id.in_(content_ids),
                 )
                 statuses = await self.session.scalars(stmt)
                 status_map = {s.content_id: s for s in statuses}
@@ -211,7 +259,7 @@ class RecommendationService:
 
         # 3. Score Candidates using ScoringEngine
         scored_candidates = []
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Compute source affinity from past interactions
         source_affinity_scores = await self._compute_source_affinity(user_id)
@@ -234,34 +282,34 @@ class RecommendationService:
             custom_source_ids=custom_source_ids,
             source_affinity_scores=source_affinity_scores,
         )
-        
+
         for content in candidates:
             score = self.scoring_engine.compute_score(content, context)
             scored_candidates.append((content, score))
-            
+
         # 4. Sort by score DESC
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
-        
+
         # 4b. Diversity Re-ranking (Source Fatigue)
         # Apply a cumulative penalty for multiple items from the same source
         # to ensure a diverse top-of-feed.
         final_list = []
         source_counts = {}
-        decay_factor = 0.70 # Each subsequent item from same source loses 30% score (Story diversity fix)
-        
+        decay_factor = 0.70  # Each subsequent item from same source loses 30% score (Story diversity fix)
+
         for content, base_score in scored_candidates:
-             source_id = content.source_id
-             count = source_counts.get(source_id, 0)
-             
-             # FinalScore = BaseScore * (decay_factor ^ count)
-             final_score = base_score * (decay_factor ** count)
-             
-             final_list.append((content, final_score))
-             source_counts[source_id] = count + 1
-             
+            source_id = content.source_id
+            count = source_counts.get(source_id, 0)
+
+            # FinalScore = BaseScore * (decay_factor ^ count)
+            final_score = base_score * (decay_factor**count)
+
+            final_list.append((content, final_score))
+            source_counts[source_id] = count + 1
+
         # Sort again with diversity penalties applied to find the new Top-N
         final_list.sort(key=lambda x: x[1], reverse=True)
-        
+
         # 5. Paginate
         scored_candidates = final_list
         start = offset
@@ -269,10 +317,9 @@ class RecommendationService:
         # Check bounds
         if start >= len(scored_candidates):
             return []
-            
-    
+
         result = [item[0] for item in scored_candidates[start:end]]
-        
+
         # 5.5 Hydrate Recommendation Reason (Transparency)
         for content in result:
             reasons_list = context.reasons.get(content.id, [])
@@ -292,58 +339,86 @@ class RecommendationService:
                     "society_climate": "Société",
                     "culture_ideas": "Culture & Idées",
                 }
-                
+
                 # Mapping des 50 sous-thèmes -> Français
                 SUBTOPIC_TRANSLATIONS = {
                     # Tech (12)
-                    "ai": "IA", "llm": "LLM", "crypto": "Crypto", "web3": "Web3",
-                    "space": "Spatial", "biotech": "Biotech", "quantum": "Quantique",
-                    "cybersecurity": "Cybersécurité", "robotics": "Robotique",
-                    "gaming": "Gaming", "cleantech": "Cleantech", "data-privacy": "Données",
+                    "ai": "IA",
+                    "llm": "LLM",
+                    "crypto": "Crypto",
+                    "web3": "Web3",
+                    "space": "Spatial",
+                    "biotech": "Biotech",
+                    "quantum": "Quantique",
+                    "cybersecurity": "Cybersécurité",
+                    "robotics": "Robotique",
+                    "gaming": "Gaming",
+                    "cleantech": "Cleantech",
+                    "data-privacy": "Données",
                     # Society (10)
-                    "social-justice": "Justice sociale", "feminism": "Féminisme",
-                    "lgbtq": "LGBTQ+", "immigration": "Immigration", "health": "Santé",
-                    "education": "Éducation", "urbanism": "Urbanisme", "housing": "Logement",
-                    "work-reform": "Travail", "justice-system": "Justice",
+                    "social-justice": "Justice sociale",
+                    "feminism": "Féminisme",
+                    "lgbtq": "LGBTQ+",
+                    "immigration": "Immigration",
+                    "health": "Santé",
+                    "education": "Éducation",
+                    "urbanism": "Urbanisme",
+                    "housing": "Logement",
+                    "work-reform": "Travail",
+                    "justice-system": "Justice",
                     # Environment (8)
-                    "climate": "Climat", "biodiversity": "Biodiversité",
-                    "energy-transition": "Transition énergétique", "pollution": "Pollution",
-                    "circular-economy": "Économie circulaire", "agriculture": "Agriculture",
-                    "oceans": "Océans", "forests": "Forêts",
+                    "climate": "Climat",
+                    "biodiversity": "Biodiversité",
+                    "energy-transition": "Transition énergétique",
+                    "pollution": "Pollution",
+                    "circular-economy": "Économie circulaire",
+                    "agriculture": "Agriculture",
+                    "oceans": "Océans",
+                    "forests": "Forêts",
                     # Economy (8)
-                    "macro": "Macro-économie", "finance": "Finance", "startups": "Startups",
-                    "venture-capital": "VC", "labor-market": "Emploi", "inflation": "Inflation",
-                    "trade": "Commerce", "taxation": "Fiscalité",
+                    "macro": "Macro-économie",
+                    "finance": "Finance",
+                    "startups": "Startups",
+                    "venture-capital": "VC",
+                    "labor-market": "Emploi",
+                    "inflation": "Inflation",
+                    "trade": "Commerce",
+                    "taxation": "Fiscalité",
                     # Politics (5)
-                    "elections": "Élections", "institutions": "Institutions",
-                    "local-politics": "Politique locale", "activism": "Activisme",
+                    "elections": "Élections",
+                    "institutions": "Institutions",
+                    "local-politics": "Politique locale",
+                    "activism": "Activisme",
                     "democracy": "Démocratie",
                     # Culture (4)
-                    "philosophy": "Philosophie", "art": "Art", "cinema": "Cinéma",
+                    "philosophy": "Philosophie",
+                    "art": "Art",
+                    "cinema": "Cinéma",
                     "media-critics": "Critique des médias",
                     # Science (2)
-                    "fundamental-research": "Recherche", "applied-science": "Sciences appliquées",
+                    "fundamental-research": "Recherche",
+                    "applied-science": "Sciences appliquées",
                     # International (1)
                     "geopolitics": "Géopolitique",
                 }
-                
+
                 def _get_theme_label(raw_theme: str) -> str:
                     raw_theme = raw_theme.lower().strip()
                     return THEME_TRANSLATIONS.get(raw_theme, raw_theme.capitalize())
-                
+
                 def _get_subtopic_label(slug: str) -> str:
                     slug = slug.lower().strip()
                     return SUBTOPIC_TRANSLATIONS.get(slug, slug.capitalize())
-                
+
                 def _reason_to_label(reason: dict) -> str:
                     """Convert a reason dict to a human-readable French label."""
-                    layer = reason['layer']
-                    details = reason['details']
-                    
-                    if layer == 'core_v1':
+                    layer = reason["layer"]
+                    details = reason["details"]
+
+                    if layer == "core_v1":
                         if "Theme match" in details:
                             try:
-                                theme_slug = details.split(': ')[1]
+                                theme_slug = details.split(": ")[1]
                                 return f"Thème : {_get_theme_label(theme_slug)}"
                             except Exception:
                                 return "Thème matché"
@@ -357,82 +432,96 @@ class RecommendationService:
                             return "Récence"
                         else:
                             return details
-                    elif layer == 'article_topic':
+                    elif layer == "article_topic":
                         try:
                             # "Topic match: ai, crypto (précis)" -> "Sous-thèmes : IA, Crypto"
-                            raw = details.split(': ')[1]
+                            raw = details.split(": ")[1]
                             # Remove "(précis)" suffix if present
                             raw = raw.replace(" (précis)", "")
-                            slugs = [t.strip() for t in raw.split(',')]
+                            slugs = [t.strip() for t in raw.split(",")]
                             labels = [_get_subtopic_label(s) for s in slugs[:2]]
                             return f"Sous-thèmes : {', '.join(labels)}"
                         except Exception:
                             return "Sous-thèmes matchés"
-                    elif layer == 'static_prefs':
+                    elif layer == "static_prefs":
                         if "Recent" in details:
                             return "Très récent"
                         elif "format" in details.lower():
                             return "Format préféré"
                         else:
                             return "Préférence"
-                    elif layer == 'behavioral':
+                    elif layer == "behavioral":
                         if "High interest" in details:
                             try:
-                                theme_slug = details.split(': ')[1].split(' ')[0]
-                                return f"Engagement élevé : {_get_theme_label(theme_slug)}"
+                                theme_slug = details.split(": ")[1].split(" ")[0]
+                                return (
+                                    f"Engagement élevé : {_get_theme_label(theme_slug)}"
+                                )
                             except Exception:
                                 return "Engagement élevé"
                         else:
                             return "Engagement"
-                    elif layer == 'quality':
+                    elif layer == "quality":
                         if "qualitative" in details.lower():
                             return "Source qualitative"
                         elif "Low" in details:
                             return "Fiabilité basse"
                         else:
                             return "Qualité source"
-                    elif layer == 'visual':
+                    elif layer == "visual":
                         return "Aperçu disponible"
                     else:
                         return details
-                
+
                 # Build breakdown list
                 breakdown = []
                 score_total = 0.0
-                
+
                 for reason in reasons_list:
                     try:
-                        pts = reason.get('score_contribution', 0.0)
+                        pts = reason.get("score_contribution", 0.0)
                         score_total += pts
-                        breakdown.append(ScoreContribution(
-                            label=_reason_to_label(reason),
-                            points=pts,
-                            is_positive=(pts >= 0)
-                        ))
+                        breakdown.append(
+                            ScoreContribution(
+                                label=_reason_to_label(reason),
+                                points=pts,
+                                is_positive=(pts >= 0),
+                            )
+                        )
                     except Exception as e:
-                        logger.warning("reason_breakdown_failed", error=str(e), content_id=str(content.id))
+                        logger.warning(
+                            "reason_breakdown_failed",
+                            error=str(e),
+                            content_id=str(content.id),
+                        )
                         continue
-                
+
                 # Sort by absolute contribution (highest first)
                 breakdown.sort(key=lambda x: abs(x.points), reverse=True)
-                
+
                 # Determine top label (for the tag)
                 # Prioritize granular topics over broad themes
-                reasons_list.sort(key=lambda x: (x.get('layer') == 'article_topic', x.get('score_contribution', 0.0)), reverse=True)
-                
+                reasons_list.sort(
+                    key=lambda x: (
+                        x.get("layer") == "article_topic",
+                        x.get("score_contribution", 0.0),
+                    ),
+                    reverse=True,
+                )
+
                 label = "Recommandé pour vous"  # Fallback
-                
+
                 if reasons_list:
                     top = reasons_list[0]
-                    
+
                     try:
-                        layer = top.get('layer')
-                        details = top.get('details', '')
-                        
-                        if layer == 'core_v1':
+                        layer = top.get("layer")
+                        details = top.get("details", "")
+
+                        if layer == "core_v1":
                             if "Theme match" in details:
                                 try:
-                                    theme_slug = details.split(': ')[1]
+                                    theme_slug = details.split(": ")[1]
                                     theme_fr = _get_theme_label(theme_slug)
                                     label = f"Vos intérêts : {theme_fr}"
                                 except Exception:
@@ -443,57 +532,65 @@ class RecommendationService:
                                 label = "Source appréciée"
                             elif "Recency" in details:
                                 label = "À la une"
-                        elif layer == 'article_topic':
+                        elif layer == "article_topic":
                             try:
-                                raw_part = details.split(': ')[1].split(' [')[0].replace(" (précis)", "")
-                                topic_slugs = [t.strip() for t in raw_part.split(',')]
-                                topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
+                                raw_part = (
+                                    details.split(": ")[1]
+                                    .split(" [")[0]
+                                    .replace(" (précis)", "")
+                                )
+                                topic_slugs = [t.strip() for t in raw_part.split(",")]
+                                topic_labels = [
+                                    _get_subtopic_label(t) for t in topic_slugs[:2]
+                                ]
                                 if "[liked:" in details:
                                     label = f"Renforcé par vos j'aime : {', '.join(topic_labels)}"
                                 else:
                                     label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
                             except Exception:
                                 label = "Vos centres d'intérêt"
-                        elif layer == 'static_prefs':
+                        elif layer == "static_prefs":
                             if "Recent" in details:
                                 label = "Très récent"
                             elif "format" in details or "Pref" in details:
                                 label = "Format préféré"
-                        elif layer == 'behavioral':
+                        elif layer == "behavioral":
                             if "High interest" in details:
                                 try:
-                                    theme_slug = details.split(': ')[1].split(' ')[0]
+                                    theme_slug = details.split(": ")[1].split(" ")[0]
                                     theme_fr = _get_theme_label(theme_slug)
                                     label = f"Sujet passionnant : {theme_fr}"
                                 except Exception:
                                     label = "Sujet passionnant"
-                        elif layer == 'quality':
+                        elif layer == "quality":
                             if "qualitative" in details.lower():
                                 label = "Source de Confiance"
                             elif "Low" in details:
                                 label = "Source Controversée"
-                        elif layer == 'visual':
+                        elif layer == "visual":
                             label = "Aperçu disponible"
                     except Exception as e:
-                        logger.warning("top_reason_label_failed", error=str(e), content_id=str(content.id))
+                        logger.warning(
+                            "top_reason_label_failed",
+                            error=str(e),
+                            content_id=str(content.id),
+                        )
 
                 content.recommendation_reason = RecommendationReason(
-                    label=label,
-                    score_total=score_total,
-                    breakdown=breakdown
+                    label=label, score_total=score_total, breakdown=breakdown
                 )
-        
+
         # 6. Hydrate with User Status (is_saved, etc)
         content_ids = [c.id for c in result]
         if content_ids:
             # Fetch statuses for these contents
             stmt = select(UserContentStatus).where(
                 UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id.in_(content_ids)
+                UserContentStatus.content_id.in_(content_ids),
             )
             statuses = await self.session.scalars(stmt)
             status_map = {s.content_id: s for s in statuses}
-            
+
             for content in result:
                 st = status_map.get(content.id)
                 # Attach temporary attributes for Pydantic serialization
@@ -502,25 +599,40 @@ class RecommendationService:
                 content.is_hidden = st.is_hidden if st else False
                 content.hidden_reason = st.hidden_reason if st else None
                 content.status = st.status if st else ContentStatus.UNSEEN
-        
+
         return result
 
-    async def _get_candidates(self, user_id: UUID, limit_candidates: int, content_type: Optional[str] = None, mode: Optional[FeedFilterMode] = None, followed_source_ids: Set[UUID] = None, muted_sources: Set[UUID] = None, muted_themes: Set[str] = None, muted_topics: Set[str] = None, muted_content_types: Set[str] = None, digest_content_ids: list[UUID] = None, theme: Optional[str] = None, hide_paid_content: bool = True, source_id: Optional[UUID] = None) -> List[Content]:
+    async def _get_candidates(
+        self,
+        user_id: UUID,
+        limit_candidates: int,
+        content_type: str | None = None,
+        mode: FeedFilterMode | None = None,
+        followed_source_ids: set[UUID] = None,
+        muted_sources: set[UUID] = None,
+        muted_themes: set[str] = None,
+        muted_topics: set[str] = None,
+        muted_content_types: set[str] = None,
+        digest_content_ids: list[UUID] = None,
+        theme: str | None = None,
+        hide_paid_content: bool = True,
+        source_id: UUID | None = None,
+    ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
-        from sqlalchemy import or_, and_
+        from sqlalchemy import and_, or_
 
         # Sanitize inputs to prevent SQL Tri-state logic issues with "NOT IN (NULL, ...)"
         # If a set contains None, "NOT IN" evaluates to NULL (unknown) for ALL rows, causing empty results.
         if muted_sources:
-             muted_sources = {s for s in muted_sources if s is not None}
-        
+            muted_sources = {s for s in muted_sources if s is not None}
+
         if muted_themes:
-             # Filter out None and empty strings
-             muted_themes = {t for t in muted_themes if t}
-        
+            # Filter out None and empty strings
+            muted_themes = {t for t in muted_themes if t}
+
         if muted_topics:
-             # Filter out None and empty strings
-             muted_topics = {t for t in muted_topics if t}
+            # Filter out None and empty strings
+            muted_topics = {t for t in muted_topics if t}
 
         # Candidates to EXCLUDE:
         # 1. is_hidden == True
@@ -528,24 +640,26 @@ class RecommendationService:
         # 2. is_saved == True (Triaged to watch later)
         # OR
         # 3. status IN (SEEN, CONSUMED)
-        
+
         # Optimization: Use NOT EXISTS instead of NOT IN for exclusion
         # This is generally faster in Postgres for large status tables
         from sqlalchemy import exists
-        
+
         exists_stmt = exists().where(
             UserContentStatus.content_id == Content.id,
             UserContentStatus.user_id == user_id,
             or_(
-                UserContentStatus.is_hidden == True,
-                UserContentStatus.is_saved == True,
-                UserContentStatus.status.in_([ContentStatus.SEEN, ContentStatus.CONSUMED])
-            )
+                UserContentStatus.is_hidden,
+                UserContentStatus.is_saved,
+                UserContentStatus.status.in_(
+                    [ContentStatus.SEEN, ContentStatus.CONSUMED]
+                ),
+            ),
         )
-        
+
         query = (
             select(Content)
-            .join(Content.source) # Join needed for all mode filters
+            .join(Content.source)  # Join needed for all mode filters
             .options(selectinload(Content.source))
             .where(~exists_stmt)
         )
@@ -558,8 +672,12 @@ class RecommendationService:
         logger.info(
             "feed_source_filter",
             user_id=str(user_id),
-            followed_source_count=len(followed_source_ids) if followed_source_ids else 0,
-            followed_source_ids=[str(s) for s in list(followed_source_ids)[:10]] if followed_source_ids else []
+            followed_source_count=len(followed_source_ids)
+            if followed_source_ids
+            else 0,
+            followed_source_ids=[str(s) for s in list(followed_source_ids)[:10]]
+            if followed_source_ids
+            else [],
         )
 
         # Base source filter
@@ -569,39 +687,39 @@ class RecommendationService:
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme:
-            query = query.where(Source.is_curated == True)
+            query = query.where(Source.is_curated)
         elif followed_source_ids:
             query = query.where(Source.id.in_(list(followed_source_ids)))
         else:
-            query = query.where(Source.is_curated == True)
-        
+            query = query.where(Source.is_curated)
+
         # Apply Personalization Filters (Mutes)
         if muted_sources:
-             query = query.where(Source.id.notin_(list(muted_sources)))
-        
+            query = query.where(Source.id.notin_(list(muted_sources)))
+
         if muted_themes:
-             # SQL IN operator is case-sensitive, but we stored lowercase slugs. 
-             # Ensure Source.theme is compared correctly (assuming themes are lowercase in DB or we use lower())
-             query = query.where(~Source.theme.in_(list(muted_themes)))
+            # SQL IN operator is case-sensitive, but we stored lowercase slugs.
+            # Ensure Source.theme is compared correctly (assuming themes are lowercase in DB or we use lower())
+            query = query.where(~Source.theme.in_(list(muted_themes)))
 
         if muted_topics:
-             # Filter based on Content.topics (Array overlap)
-             # Postgres operator && (overlap). Negated with ~
-             # Fix 500: Handle NULL Content.topics explicitly
-             query = query.where(
-                 or_(
-                     Content.topics.is_(None),
-                     ~Content.topics.overlap(list(muted_topics))
-                 )
-             )
-        
+            # Filter based on Content.topics (Array overlap)
+            # Postgres operator && (overlap). Negated with ~
+            # Fix 500: Handle NULL Content.topics explicitly
+            query = query.where(
+                or_(
+                    Content.topics.is_(None),
+                    ~Content.topics.overlap(list(muted_topics)),
+                )
+            )
+
         # Apply content_type filter if provided (positive filter)
         if content_type:
-             query = query.where(Content.content_type == content_type)
+            query = query.where(Content.content_type == content_type)
 
         # Apply muted content types filter (negative filter from personalization)
         if muted_content_types:
-             query = query.where(Content.content_type.notin_(list(muted_content_types)))
+            query = query.where(Content.content_type.notin_(list(muted_content_types)))
 
         # Apply paywall filter (is_not(True) handles NULL rows)
         if hide_paid_content:
@@ -620,19 +738,23 @@ class RecommendationService:
                     or_(
                         # Videos et Podcasts: Durée inconnue (NULL) ou > 10 min
                         and_(
-                            or_(Content.duration_seconds > 600, Content.duration_seconds == None),
-                            Content.content_type.in_([ContentType.PODCAST, ContentType.YOUTUBE])
+                            or_(
+                                Content.duration_seconds > 600,
+                                Content.duration_seconds is None,
+                            ),
+                            Content.content_type.in_(
+                                [ContentType.PODCAST, ContentType.YOUTUBE]
+                            ),
                         ),
                         # Articles longs (estimation basée sur description length comme proxy)
                         # TODO: Ajouter un vrai champ reading_time_minutes à Content
                         and_(
                             Content.content_type == ContentType.ARTICLE,
-                            func.length(Content.description) > 2000  # ~10 min de lecture
-                        )
+                            func.length(Content.description)
+                            > 2000,  # ~10 min de lecture
+                        ),
                     )
                 )
-
-
 
             elif mode == FeedFilterMode.PERSPECTIVES:
                 # Mode "Angle Mort" : Perspective swap — via filter_presets partagés
@@ -645,21 +767,21 @@ class RecommendationService:
         if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
 
-        query = (
-            query
-            .order_by(Content.published_at.desc())
-            .limit(limit_candidates)
-        )
-        
+        query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
+
         candidates = await self.session.scalars(query)
         candidates_list = list(candidates.all())
-        
+
         # Debug logging for mode filters
         if mode:
-            logger.info("candidates_after_mode_filter", 
-                       mode=mode.value, 
-                       count=len(candidates_list),
-                       sample_sources=[c.source.name if c.source else "N/A" for c in candidates_list[:5]])
+            logger.info(
+                "candidates_after_mode_filter",
+                mode=mode.value,
+                count=len(candidates_list),
+                sample_sources=[
+                    c.source.name if c.source else "N/A" for c in candidates_list[:5]
+                ],
+            )
 
         return candidates_list
 
@@ -675,9 +797,11 @@ class RecommendationService:
             select(
                 Content.source_id,
                 func.sum(
-                    case((UserContentStatus.is_liked == True, 3), else_=0)
-                    + case((UserContentStatus.is_saved == True, 2), else_=0)
-                    + case((UserContentStatus.status == ContentStatus.CONSUMED, 1), else_=0)
+                    case((UserContentStatus.is_liked, 3), else_=0)
+                    + case((UserContentStatus.is_saved, 2), else_=0)
+                    + case(
+                        (UserContentStatus.status == ContentStatus.CONSUMED, 1), else_=0
+                    )
                 ).label("raw_score"),
             )
             .join(Content, UserContentStatus.content_id == Content.id)
@@ -690,7 +814,9 @@ class RecommendationService:
         if not rows:
             return {}
 
-        scores = {row.source_id: float(row.raw_score) for row in rows if row.raw_score > 0}
+        scores = {
+            row.source_id: float(row.raw_score) for row in rows if row.raw_score > 0
+        }
 
         if not scores:
             return {}
@@ -704,4 +830,3 @@ class RecommendationService:
 
     # _calculate_user_bias and _get_opposing_biases moved to
     # app.services.recommendation.filter_presets (shared with DigestSelector)
-

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -27,7 +26,7 @@ class QuizResponse(BaseModel):
     id: UUID
     topic: str
     question: str
-    options: List[str]  # Simplified for now, just list of strings
+    options: list[str]  # Simplified for now, just list of strings
     difficulty: int
     # We don't return correct_answer here obviously
 
@@ -44,7 +43,7 @@ class QuizResultResponse(BaseModel):
     is_correct: bool
     correct_answer: int
     points_earned: int
-    new_level: Optional[int] = None
+    new_level: int | None = None
     message: str
 
 

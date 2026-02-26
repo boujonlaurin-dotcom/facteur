@@ -1,7 +1,6 @@
 """Service abonnement."""
 
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -29,7 +28,9 @@ class SubscriptionService:
 
         return SubscriptionResponse(
             status=SubscriptionStatus(subscription.status),
-            trial_end=subscription.trial_end if subscription.status == "trial" else None,
+            trial_end=subscription.trial_end
+            if subscription.status == "trial"
+            else None,
             current_period_end=subscription.current_period_end,
             days_remaining=subscription.days_remaining,
             is_premium=subscription.status in ("active", "trial"),
@@ -37,7 +38,7 @@ class SubscriptionService:
             product_id=subscription.product_id,
         )
 
-    async def _get_subscription(self, user_id: str) -> Optional[UserSubscription]:
+    async def _get_subscription(self, user_id: str) -> UserSubscription | None:
         """Récupère l'abonnement d'un utilisateur."""
         query = select(UserSubscription).where(
             UserSubscription.user_id == UUID(user_id)
@@ -64,9 +65,7 @@ class SubscriptionService:
         # TODO: Appeler l'API RevenueCat pour vérifier l'état
         pass
 
-    async def handle_initial_purchase(
-        self, app_user_id: str, event_data: dict
-    ) -> None:
+    async def handle_initial_purchase(self, app_user_id: str, event_data: dict) -> None:
         """Gère un premier achat."""
         subscription = await self._get_subscription(app_user_id)
 
@@ -116,4 +115,3 @@ class SubscriptionService:
         if subscription:
             subscription.status = "expired"
             await self.db.flush()
-

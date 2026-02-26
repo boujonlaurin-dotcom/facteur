@@ -12,12 +12,8 @@ Exports:
 
 from app.jobs.digest_generation_job import (
     DigestGenerationJob,
+    generate_digest_for_user,
     run_digest_generation,
-    generate_digest_for_user
 )
 
-__all__ = [
-    "DigestGenerationJob",
-    "run_digest_generation",
-    "generate_digest_for_user"
-]
+__all__ = ["DigestGenerationJob", "run_digest_generation", "generate_digest_for_user"]

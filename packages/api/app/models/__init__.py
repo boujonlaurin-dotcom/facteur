@@ -1,19 +1,19 @@
 """Modèles SQLAlchemy pour Facteur."""
 
-from app.models.enums import ContentStatus, ContentType, SourceType
-from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak
-from app.models.source import Source, UserSource
-from app.models.content import Content, UserContentStatus
-from app.models.classification_queue import ClassificationQueue
-from app.models.progress import UserTopicProgress, TopicQuiz
 from app.models.analytics import AnalyticsEvent
-from app.models.subscription import UserSubscription
-from app.models.daily_top3 import DailyTop3
-from app.models.daily_digest import DailyDigest
-from app.models.digest_completion import DigestCompletion
-from app.models.user_personalization import UserPersonalization
+from app.models.classification_queue import ClassificationQueue
 from app.models.collection import Collection, CollectionItem
+from app.models.content import Content, UserContentStatus
+from app.models.daily_digest import DailyDigest
+from app.models.daily_top3 import DailyTop3
+from app.models.digest_completion import DigestCompletion
+from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
+from app.models.progress import TopicQuiz, UserTopicProgress
+from app.models.source import Source, UserSource
+from app.models.subscription import UserSubscription
+from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
+from app.models.user_personalization import UserPersonalization
 
 __all__ = [
     # Enums
@@ -53,4 +53,3 @@ __all__ = [
     # Source Attempt Tracking (Epic 12)
     "FailedSourceAttempt",
 ]
-

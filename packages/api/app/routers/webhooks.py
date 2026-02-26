@@ -2,13 +2,13 @@
 
 import hashlib
 import hmac
+
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.schemas.subscription import RevenueCatWebhookEvent
 from app.services.subscription_service import SubscriptionService
 
 router = APIRouter()
@@ -39,7 +39,7 @@ async def revenuecat_webhook(
 ) -> dict[str, str]:
     """
     Webhook RevenueCat pour les événements d'abonnement.
-    
+
     Événements gérés:
     - INITIAL_PURCHASE
     - RENEWAL
@@ -107,4 +107,3 @@ async def revenuecat_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed",
         )
-

@@ -1,31 +1,37 @@
-import structlog
 import os
+
+import structlog
 from alembic.config import Config
-from alembic import script
 from alembic.runtime import migration
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+from alembic import script
 from app.database import engine
 
 logger = structlog.get_logger()
 
 # Compute absolute path to alembic.ini relative to this file's location
 # checks.py is in packages/api/app/, alembic.ini is in packages/api/
-_ALEMBIC_INI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
+_ALEMBIC_INI_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini"
+)
 
 # Environment variable to bypass migration check during migration rollout
 # Set FACTEUR_MIGRATION_IN_PROGRESS=1 to allow app to start while migrations are being applied
 # WARNING: Only use this temporarily during migration deployments
 MIGRATION_BYPASS_ENV = "FACTEUR_MIGRATION_IN_PROGRESS"
 
+
 def _get_current_revision_sync(connection: AsyncConnection):
     """Sync function to get current revision from DB context."""
     context = migration.MigrationContext.configure(connection)
     return context.get_current_revision()
 
+
 async def check_migrations_up_to_date():
     """
     Checks if the database is up-to-date with Alembic migrations.
-    
+
     Behavior:
     - Config errors (alembic.ini not found): WARNING, continue startup
     - DB connection errors: WARNING, continue startup
@@ -33,23 +39,30 @@ async def check_migrations_up_to_date():
     - FACTEUR_MIGRATION_IN_PROGRESS=1: WARNING, continue (for migration rollout)
     """
     logger.info("startup_check_migrations_start")
-    
+
     # Check for bypass flag (used during migration rollout or CI)
-    if os.getenv(MIGRATION_BYPASS_ENV) == "1" or os.getenv("SKIP_STARTUP_CHECKS") == "True":
+    if (
+        os.getenv(MIGRATION_BYPASS_ENV) == "1"
+        or os.getenv("SKIP_STARTUP_CHECKS") == "True"
+    ):
         logger.warning(
             "startup_migration_check_bypassed",
             reason="Bypass flag detected",
-            action="App will start without migration validation."
+            action="App will start without migration validation.",
         )
         return  # Continue boot without migration check
 
     # Auto-skip if no DATABASE_URL is set (avoids crash during basic Docker boot tests)
     from app.config import get_settings
+
     settings = get_settings()
     if not os.environ.get("DATABASE_URL") and not settings.is_production:
-        logger.warning("startup_migration_check_skipped_no_db", reason="DATABASE_URL not set in non-production")
+        logger.warning(
+            "startup_migration_check_skipped_no_db",
+            reason="DATABASE_URL not set in non-production",
+        )
         return
-    
+
     # 1. Get HEAD revision from code (alembic.ini)
     try:
         alembic_cfg = Config(_ALEMBIC_INI_PATH)
@@ -77,5 +90,5 @@ async def check_migrations_up_to_date():
         error_msg = f"Pending migrations detected! Code head: {head_rev}, DB current: {current_rev}. Run 'alembic upgrade head'."
         logger.critical("startup_check_migrations_mismatch", error=error_msg)
         raise RuntimeError(error_msg)
-    
+
     logger.info("startup_check_migrations_ok")
