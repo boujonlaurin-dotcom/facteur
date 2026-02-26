@@ -16,7 +16,7 @@ from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.models.source import Source
 from app.services.classification_queue_service import ClassificationQueueService
-from app.services.ml.classification_service import get_classification_service, VALID_TOPIC_SLUGS
+from app.services.ml.classification_service import VALID_TOPIC_SLUGS, get_classification_service
 
 settings = get_settings()
 
@@ -160,7 +160,7 @@ class ClassificationWorker:
             batch_items: list[dict] = []
             batch_indices: list[int] = []  # Maps batch position → items index
 
-            for i, (item, content) in enumerate(zip(items, contents)):
+            for i, (item, content) in enumerate(zip(items, contents, strict=False)):
                 if content and content.title:
                     batch_items.append({
                         "title": content.title or "",
@@ -179,7 +179,7 @@ class ClassificationWorker:
 
             # Process results
             batch_result_idx = 0
-            for i, (item, content, source) in enumerate(zip(items, contents, sources)):
+            for i, (item, content, source) in enumerate(zip(items, contents, sources, strict=False)):
                 try:
                     if content is None:
                         await service.mark_completed_with_entities(item.id, [], [])

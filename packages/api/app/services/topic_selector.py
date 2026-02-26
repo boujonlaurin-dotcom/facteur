@@ -23,12 +23,12 @@ from app.models.enums import DigestMode
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.digest_selector import DigestContext, GlobalTrendingContext
+from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.filter_presets import (
     find_perspective_article,
     is_cluster_serein_compatible,
 )
-from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.recommendation.scoring_config import ScoringWeights
 
 logger = structlog.get_logger()

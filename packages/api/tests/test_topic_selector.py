@@ -81,6 +81,8 @@ def make_context(
     ctx.history_content_ids = set()
     ctx.subtopic_weights = {}
     ctx.source_affinity_scores = {}
+    ctx.user_subtopics = set()
+    ctx.user_subtopic_weights = {}
     return ctx
 
 

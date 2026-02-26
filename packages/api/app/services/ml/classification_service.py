@@ -300,7 +300,7 @@ class ClassificationService:
 
         # Fallback: try line-by-line parsing
         log.warning("classification_service.batch_parse_fallback", raw=raw[:200])
-        lines = [l.strip() for l in raw.strip().split("\n") if l.strip()]
+        lines = [line.strip() for line in raw.strip().split("\n") if line.strip()]
         results = []
         for line in lines[:expected_count]:
             clean = line.strip("[]").strip()
