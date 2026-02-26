@@ -1,0 +1,69 @@
+name: Deploy to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to deploy'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to staging
+        run: railway up --environment staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Health check (liveness)
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://facteur-staging.up.railway.app/api/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Liveness check passed"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Liveness check failed after 10 attempts"
+          exit 1
+
+      - name: Readiness check (database)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://facteur-staging.up.railway.app/api/health/ready)
+          if [ "$STATUS" = "200" ]; then
+            echo "Readiness check passed (DB connected)"
+          else
+            echo "WARNING: Readiness check returned $STATUS (DB may not be ready)"
+            exit 1
+          fi
+
+      - name: Environment check
+        run: |
+          ENV=$(curl -s https://facteur-staging.up.railway.app/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
+          if [ "$ENV" = "staging" ]; then
+            echo "Environment correctly reports: staging"
+          else
+            echo "FAIL: Environment reports '$ENV' instead of 'staging'"
+            exit 1
+          fi
