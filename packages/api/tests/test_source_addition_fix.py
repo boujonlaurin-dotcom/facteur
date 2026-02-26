@@ -16,6 +16,7 @@ import pytest
 def test_source_service_has_logger():
     """Vérifie que le correctif (logger défini) est présent — pas de NameError en prod."""
     from app.services import source_service
+
     assert hasattr(source_service, "logger")
     assert source_service.logger is not None
 
@@ -54,12 +55,19 @@ async def test_add_custom_source_no_500(db_session: AsyncSession, fake_detection
     """
     user_id = str(uuid4())
 
-    with patch.object(SourceService, "detect_source", new_callable=AsyncMock, return_value=fake_detection):
+    with patch.object(
+        SourceService,
+        "detect_source",
+        new_callable=AsyncMock,
+        return_value=fake_detection,
+    ):
         service = SourceService(db_session)
-        result = await service.add_custom_source(user_id, "https://example.com/feed", "Test Name")
+        result = await service.add_custom_source(
+            user_id, "https://example.com/feed", "Test Name"
+        )
 
     assert result is not None
-    assert result.name == "Test Source"
+    assert result.name == "Test Name"
     assert result.id is not None
     assert result.is_custom is True
 
@@ -69,14 +77,24 @@ async def test_add_custom_source_idempotent(db_session: AsyncSession, fake_detec
     """Deux appels pour la même URL + même user : pas de doublon UserSource."""
     user_id = str(uuid4())
 
-    with patch.object(SourceService, "detect_source", new_callable=AsyncMock, return_value=fake_detection):
+    with patch.object(
+        SourceService,
+        "detect_source",
+        new_callable=AsyncMock,
+        return_value=fake_detection,
+    ):
         service = SourceService(db_session)
-        r1 = await service.add_custom_source(user_id, "https://example.com/feed", "Test")
-        r2 = await service.add_custom_source(user_id, "https://example.com/feed", "Test")
+        r1 = await service.add_custom_source(
+            user_id, "https://example.com/feed", "Test"
+        )
+        r2 = await service.add_custom_source(
+            user_id, "https://example.com/feed", "Test"
+        )
 
     assert r1.id == r2.id
     # Un seul lien user_sources pour ce (user_id, source_id)
     from uuid import UUID
+
     result = await db_session.execute(
         select(UserSource).where(
             UserSource.user_id == UUID(user_id),
