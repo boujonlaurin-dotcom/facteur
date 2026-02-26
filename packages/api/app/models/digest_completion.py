@@ -46,9 +46,7 @@ class DigestCompletion(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), nullable=False, index=True
-    )
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     target_date: Mapped[date] = mapped_column(Date, nullable=False)
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
