@@ -43,9 +43,13 @@ async def test_source_lifecycle_states(db_session: AsyncSession):
     assert curated.name == "Curated Source"
     assert curated.score_independence == 0.9
 
-    result = await db_session.execute(select(Source).where(Source.is_curated == False))
+    result = await db_session.execute(
+        select(Source).where(
+            Source.is_curated == False, Source.name == "Indexed Source"
+        )
+    )
     indexed = result.scalars().first()
-    assert indexed.name == "Indexed Source"
+    assert indexed is not None
     assert indexed.score_independence is None
 
 
