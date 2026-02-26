@@ -12,7 +12,6 @@ Le scoring (3) sert de filet de sécurité quand pas de HTML disponible.
 import json
 import re
 import time
-from typing import Optional
 
 import structlog
 
@@ -48,7 +47,7 @@ _config_cache: dict[str, tuple[dict, float]] = {}
 _CACHE_TTL_SECONDS = 3600  # 1 hour
 
 
-def _get_config(source_id: str, paywall_config: Optional[dict]) -> dict:
+def _get_config(source_id: str, paywall_config: dict | None) -> dict:
     """Get paywall config for a source, with in-memory caching."""
     now = time.monotonic()
     cache_key = str(source_id)
@@ -57,11 +56,13 @@ def _get_config(source_id: str, paywall_config: Optional[dict]) -> dict:
     if cached and cached[1] > now:
         return cached[0]
 
-    if paywall_config and any([
-        paywall_config.get("keywords"),
-        paywall_config.get("url_patterns"),
-        paywall_config.get("min_content_length"),
-    ]):
+    if paywall_config and any(
+        [
+            paywall_config.get("keywords"),
+            paywall_config.get("url_patterns"),
+            paywall_config.get("min_content_length"),
+        ]
+    ):
         config = paywall_config
     else:
         config = DEFAULT_PAYWALL_CONFIG
@@ -70,7 +71,7 @@ def _get_config(source_id: str, paywall_config: Optional[dict]) -> dict:
     return config
 
 
-def detect_paywall_from_html(html_head: str) -> Optional[bool]:
+def detect_paywall_from_html(html_head: str) -> bool | None:
     """Detect paywall from article HTML head using structured data.
 
     Checks (in order):
@@ -121,7 +122,7 @@ def detect_paywall_from_html(html_head: str) -> Optional[bool]:
 
     # 3. Check JS variable patterns (e.g., Le Figaro: window.FFF.isPremium = true)
     premium_js_pattern = re.compile(
-        r'isPremium\s*[=:]\s*(true|false)',
+        r"isPremium\s*[=:]\s*(true|false)",
         re.IGNORECASE,
     )
     premium_match = premium_js_pattern.search(html_head)
@@ -133,12 +134,12 @@ def detect_paywall_from_html(html_head: str) -> Optional[bool]:
 
 def detect_paywall(
     title: str,
-    description: Optional[str],
+    description: str | None,
     url: str,
-    html_content: Optional[str],
+    html_content: str | None,
     source_id: str,
-    paywall_config: Optional[dict] = None,
-    html_head: Optional[str] = None,
+    paywall_config: dict | None = None,
+    html_head: str | None = None,
 ) -> bool:
     """Detect if an article is behind a paywall.
 

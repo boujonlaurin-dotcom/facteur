@@ -5,8 +5,19 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -44,32 +55,40 @@ class Content(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
-    thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content_type: Mapped[ContentType] = mapped_column(
-        Enum(ContentType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20), nullable=False
+        Enum(
+            ContentType,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
+        nullable=False,
     )
     guid: Mapped[str] = mapped_column(String(500), nullable=False)
     # Story 5.2: In-App Reading Mode
-    html_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    audio_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    html_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Story clustering (Story 7.2)
-    cluster_id: Mapped[Optional[UUID]] = mapped_column(
+    cluster_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True, index=True
     )
     # Story 4.1c: Granular topic tagging
-    topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    topics: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     # Thème inféré par ML à partir du titre/description (Phase 2 diversité feed)
     # Slug normalisé dérivé du top topic classifié (tech, society, etc.)
-    theme: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    theme: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Story 4.2-US-4: Named Entity Recognition
     # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
     # Paywall detection: whether article is behind a paywall
-    is_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_paid: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -89,13 +108,22 @@ class UserContentStatus(Base):
 
     __tablename__ = "user_content_status"
     __table_args__ = (
-        UniqueConstraint("user_id", "content_id", name="uq_user_content_status_user_content"),
+        UniqueConstraint(
+            "user_id", "content_id", name="uq_user_content_status_user_content"
+        ),
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
         Index("ix_user_content_status_user_liked", "user_id", "is_liked"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
         # Performance index for digest exclusion queries
         # Used in _get_candidates() EXISTS subquery that filters out seen/saved/hidden content
-        Index("ix_user_content_status_exclusion", "user_id", "content_id", "is_hidden", "is_saved", "status"),
+        Index(
+            "ix_user_content_status_exclusion",
+            "user_id",
+            "content_id",
+            "is_hidden",
+            "is_saved",
+            "status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -106,22 +134,27 @@ class UserContentStatus(Base):
         PGUUID(as_uuid=True), ForeignKey("contents.id", ondelete="CASCADE")
     )
     status: Mapped[ContentStatus] = mapped_column(
-        Enum(ContentStatus, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        Enum(
+            ContentStatus,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
         default=ContentStatus.UNSEEN,
     )
     is_saved: Mapped[bool] = mapped_column(default=False, server_default="false")
     is_liked: Mapped[bool] = mapped_column(default=False, server_default="false")
     is_hidden: Mapped[bool] = mapped_column(default=False, server_default="false")
-    hidden_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    seen_at: Mapped[Optional[datetime]] = mapped_column(
+    hidden_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
-    saved_at: Mapped[Optional[datetime]] = mapped_column(
+    saved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    liked_at: Mapped[Optional[datetime]] = mapped_column(
+    liked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     note_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -137,4 +170,3 @@ class UserContentStatus(Base):
 
     # Relations
     content: Mapped["Content"] = relationship(back_populates="user_statuses")
-

@@ -1,7 +1,5 @@
 """Schemas feed."""
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 from app.schemas.content import ContentResponse
@@ -32,7 +30,6 @@ class FeedResponse(BaseModel):
 class FeedFilters(BaseModel):
     """Filtres du feed."""
 
-    type: Optional[str] = None  # article, podcast, youtube
-    theme: Optional[str] = None
-    source_id: Optional[str] = None
-
+    type: str | None = None  # article, podcast, youtube
+    theme: str | None = None
+    source_id: str | None = None

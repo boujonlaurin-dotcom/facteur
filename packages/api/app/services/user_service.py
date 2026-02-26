@@ -1,15 +1,20 @@
 """Service utilisateur."""
 
 import logging
-from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak, UserSubtopic
-from app.models.source import Source, UserSource
+from app.models.source import UserSource
+from app.models.user import (
+    UserInterest,
+    UserPreference,
+    UserProfile,
+    UserStreak,
+    UserSubtopic,
+)
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 
 logger = logging.getLogger(__name__)
@@ -21,7 +26,7 @@ class UserService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_profile(self, user_id: str) -> Optional[UserProfile]:
+    async def get_profile(self, user_id: str) -> UserProfile | None:
         """Récupère le profil utilisateur."""
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.user_id == UUID(user_id))
@@ -74,11 +79,13 @@ class UserService:
             except IntegrityError:
                 # Race condition: streak was created by another request.
                 # The savepoint is rolled back automatically, outer transaction intact.
-                logger.info(f"Streak already exists for user {user_id} (race condition handled)")
+                logger.info(
+                    f"Streak already exists for user {user_id} (race condition handled)"
+                )
 
     async def update_profile(
         self, user_id: str, data: UserProfileUpdate
-    ) -> Optional[UserProfile]:
+    ) -> UserProfile | None:
         """Met à jour le profil utilisateur."""
         profile = await self.get_profile(user_id)
         if not profile:
@@ -91,9 +98,7 @@ class UserService:
         await self.db.flush()
         return profile
 
-    async def save_onboarding(
-        self, user_id: str, answers: OnboardingAnswers
-    ) -> dict:
+    async def save_onboarding(self, user_id: str, answers: OnboardingAnswers) -> dict:
         """Sauvegarde les réponses de l'onboarding."""
         profile = await self.get_or_create_profile(user_id)
 
@@ -254,4 +259,3 @@ class UserService:
             by_type={},
             by_theme={},
         )
-

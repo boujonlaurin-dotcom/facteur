@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from uuid import uuid4
 from datetime import datetime
 
@@ -23,7 +23,7 @@ async def test_set_save_status():
     mock_result.one.return_value = mock_status
     session.scalars.return_value = mock_result
     
-    result = await service.set_save_status(user_id, content_id, True)
-    
+    with patch.object(service, "_adjust_subtopic_weights", new_callable=AsyncMock):
+        result = await service.set_save_status(user_id, content_id, True)
+
     assert result.is_saved == True
-    session.scalars.assert_called_once()

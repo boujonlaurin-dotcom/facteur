@@ -4,11 +4,16 @@ Permet de dériver content.theme depuis content.topics[0] après classification 
 Le thème inféré est utilisé par le scoring pour améliorer la diversité du feed.
 """
 
-
 # Les 9 thèmes valides de la taxonomie Facteur
 VALID_THEMES: set[str] = {
-    "tech", "society", "environment", "economy",
-    "politics", "culture", "science", "international",
+    "tech",
+    "society",
+    "environment",
+    "economy",
+    "politics",
+    "culture",
+    "science",
+    "international",
     "sport",
 }
 

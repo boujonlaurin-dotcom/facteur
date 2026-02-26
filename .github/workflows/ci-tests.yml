@@ -1,0 +1,60 @@
+name: API Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/api/**'
+      - '.github/workflows/ci-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install linter
+        run: pip install ruff
+
+      - name: Ruff check
+        run: cd packages/api && ruff check app/
+
+      - name: Ruff format check
+        run: cd packages/api && ruff format --check app/
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: facteur_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r packages/api/requirements.txt
+
+      - name: Run tests
+        run: cd packages/api && pytest -v --tb=short
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
+          SKIP_STARTUP_CHECKS: 'true'
+          ENVIRONMENT: development
+          PYTHONPATH: ${{ github.workspace }}/packages/api

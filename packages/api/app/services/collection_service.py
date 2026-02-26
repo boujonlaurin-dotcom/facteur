@@ -68,15 +68,17 @@ class CollectionService:
             thumb_result = await self.session.execute(thumb_stmt)
             thumbnails = [row[0] for row in thumb_result.all()]
 
-            response.append({
-                "id": col.id,
-                "name": col.name,
-                "position": col.position,
-                "item_count": item_count,
-                "read_count": read_count,
-                "thumbnails": thumbnails,
-                "created_at": col.created_at,
-            })
+            response.append(
+                {
+                    "id": col.id,
+                    "name": col.name,
+                    "position": col.position,
+                    "item_count": item_count,
+                    "read_count": read_count,
+                    "thumbnails": thumbnails,
+                    "created_at": col.created_at,
+                }
+            )
 
         return response
 
@@ -93,9 +95,8 @@ class CollectionService:
             raise ValueError(f"Maximum {MAX_COLLECTIONS_PER_USER} collections atteint")
 
         # Get next position
-        max_pos_stmt = (
-            select(func.coalesce(func.max(Collection.position), -1))
-            .where(Collection.user_id == user_id)
+        max_pos_stmt = select(func.coalesce(func.max(Collection.position), -1)).where(
+            Collection.user_id == user_id
         )
         max_pos = await self.session.scalar(max_pos_stmt)
 
@@ -107,10 +108,17 @@ class CollectionService:
         self.session.add(collection)
         await self.session.flush()
 
-        logger.info("collection_created", user_id=str(user_id), collection_id=str(collection.id), name=name)
+        logger.info(
+            "collection_created",
+            user_id=str(user_id),
+            collection_id=str(collection.id),
+            name=name,
+        )
         return collection
 
-    async def update_collection(self, user_id: UUID, collection_id: UUID, name: str) -> Collection:
+    async def update_collection(
+        self, user_id: UUID, collection_id: UUID, name: str
+    ) -> Collection:
         """Renomme une collection."""
         collection = await self._get_user_collection(user_id, collection_id)
         collection.name = name.strip()
@@ -123,7 +131,9 @@ class CollectionService:
         collection = await self._get_user_collection(user_id, collection_id)
         await self.session.delete(collection)
         await self.session.flush()
-        logger.info("collection_deleted", user_id=str(user_id), collection_id=str(collection_id))
+        logger.info(
+            "collection_deleted", user_id=str(user_id), collection_id=str(collection_id)
+        )
 
     async def get_collection_items(
         self,
@@ -167,25 +177,29 @@ class CollectionService:
         rows = result.all()
 
         items = []
-        for content, user_status, added_at in rows:
-            items.append({
-                "id": content.id,
-                "title": content.title,
-                "url": content.url,
-                "thumbnail_url": content.thumbnail_url,
-                "content_type": content.content_type,
-                "duration_seconds": content.duration_seconds,
-                "published_at": content.published_at,
-                "source": content.source,
-                "description": content.description,
-                "topics": content.topics or [],
-                "is_paid": content.is_paid,
-                "status": user_status.status if user_status else ContentStatus.UNSEEN,
-                "is_saved": user_status.is_saved if user_status else False,
-                "is_liked": user_status.is_liked if user_status else False,
-                "is_hidden": user_status.is_hidden if user_status else False,
-                "hidden_reason": user_status.hidden_reason if user_status else None,
-            })
+        for content, user_status, _added_at in rows:
+            items.append(
+                {
+                    "id": content.id,
+                    "title": content.title,
+                    "url": content.url,
+                    "thumbnail_url": content.thumbnail_url,
+                    "content_type": content.content_type,
+                    "duration_seconds": content.duration_seconds,
+                    "published_at": content.published_at,
+                    "source": content.source,
+                    "description": content.description,
+                    "topics": content.topics or [],
+                    "is_paid": content.is_paid,
+                    "status": user_status.status
+                    if user_status
+                    else ContentStatus.UNSEEN,
+                    "is_saved": user_status.is_saved if user_status else False,
+                    "is_liked": user_status.is_liked if user_status else False,
+                    "is_hidden": user_status.is_hidden if user_status else False,
+                    "hidden_reason": user_status.hidden_reason if user_status else None,
+                }
+            )
 
         return items
 
@@ -244,7 +258,7 @@ class CollectionService:
             .select_from(UserContentStatus)
             .where(
                 UserContentStatus.user_id == user_id,
-                UserContentStatus.is_saved == True,
+                UserContentStatus.is_saved,
             )
         )
         total_saved = await self.session.scalar(total_stmt) or 0
@@ -255,7 +269,7 @@ class CollectionService:
             .select_from(UserContentStatus)
             .where(
                 UserContentStatus.user_id == user_id,
-                UserContentStatus.is_saved == True,
+                UserContentStatus.is_saved,
                 UserContentStatus.status != ContentStatus.CONSUMED,
             )
         )
@@ -267,7 +281,7 @@ class CollectionService:
             .select_from(UserContentStatus)
             .where(
                 UserContentStatus.user_id == user_id,
-                UserContentStatus.is_saved == True,
+                UserContentStatus.is_saved,
                 UserContentStatus.saved_at >= seven_days_ago,
             )
         )
@@ -282,7 +296,7 @@ class CollectionService:
             )
             .where(
                 UserContentStatus.user_id == user_id,
-                UserContentStatus.is_saved == True,
+                UserContentStatus.is_saved,
                 Content.theme.isnot(None),
             )
             .group_by(Content.theme)
@@ -290,9 +304,7 @@ class CollectionService:
             .limit(5)
         )
         theme_result = await self.session.execute(theme_stmt)
-        top_themes = [
-            {"theme": row[0], "count": row[1]} for row in theme_result.all()
-        ]
+        top_themes = [{"theme": row[0], "count": row[1]} for row in theme_result.all()]
 
         return {
             "total_saved": total_saved,
@@ -301,7 +313,9 @@ class CollectionService:
             "top_themes": top_themes,
         }
 
-    async def _get_user_collection(self, user_id: UUID, collection_id: UUID) -> Collection:
+    async def _get_user_collection(
+        self, user_id: UUID, collection_id: UUID
+    ) -> Collection:
         """Récupère une collection en vérifiant la propriété."""
         stmt = select(Collection).where(
             Collection.id == collection_id,

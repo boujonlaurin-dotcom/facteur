@@ -1,10 +1,8 @@
 """Perspectives service - MVP live search via Google News RSS."""
 
-import asyncio
-from dataclasses import dataclass
-from typing import List, Optional
-from urllib.parse import quote
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from urllib.parse import quote
 
 import httpx
 import structlog
@@ -70,15 +68,17 @@ DOMAIN_BIAS_MAP = {
 @dataclass
 class Perspective:
     """A perspective from an external source."""
+
     title: str
     url: str
     source_name: str
     source_domain: str
     bias_stance: str  # left, center-left, center, center-right, right, unknown
-    published_at: Optional[str] = None
+    published_at: str | None = None
 
 
 import certifi
+
 
 class PerspectiveService:
     """Service for fetching perspectives via Google News RSS."""
@@ -88,42 +88,42 @@ class PerspectiveService:
         self.max_results = max_results
 
     async def search_perspectives(
-        self, 
-        keywords: List[str], 
-        exclude_url: Optional[str] = None,
-        exclude_title: Optional[str] = None
-    ) -> List[Perspective]:
+        self,
+        keywords: list[str],
+        exclude_url: str | None = None,
+        exclude_title: str | None = None,
+    ) -> list[Perspective]:
         """
         Search for perspectives using Google News RSS.
-        
+
         Args:
             keywords: List of 4-5 keywords from article title for precision
             exclude_url: Optional URL to exclude from results (the source article)
             exclude_title: Optional title to exclude (if similarity is too high)
-            
+
         Returns:
             List of Perspective objects, max 10
         """
         query = " ".join(keywords)
         encoded_query = quote(query)
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=fr&gl=FR&ceid=FR:fr"
-        
+
         logger.info(
             "perspectives_search_start",
             keywords=keywords,
             query=query,
         )
-        
+
         try:
             headers = {"User-Agent": USER_AGENT}
             async with httpx.AsyncClient(
-                timeout=self.timeout, 
+                timeout=self.timeout,
                 verify=certifi.where(),
                 headers=headers,
                 follow_redirects=True,
             ) as client:
                 response = await client.get(url)
-                
+
                 if response.status_code != 200:
                     logger.warning(
                         "perspectives_search_http_error",
@@ -131,8 +131,10 @@ class PerspectiveService:
                         keywords=keywords,
                     )
                     return []
-                
-                perspectives = self._parse_rss(response.content, exclude_url, exclude_title)
+
+                perspectives = self._parse_rss(
+                    response.content, exclude_url, exclude_title
+                )
                 logger.info(
                     "perspectives_search_success",
                     keywords=keywords,
@@ -166,43 +168,43 @@ class PerspectiveService:
             return []
 
     def _parse_rss(
-        self, 
-        content: bytes, 
-        exclude_url: Optional[str] = None,
-        exclude_title: Optional[str] = None
-    ) -> List[Perspective]:
+        self,
+        content: bytes,
+        exclude_url: str | None = None,
+        exclude_title: str | None = None,
+    ) -> list[Perspective]:
         """Parse Google News RSS feed."""
         try:
             root = ET.fromstring(content)
             items = root.findall(".//item")
-            
+
             logger.debug(
                 "perspectives_parse_rss",
                 total_items=len(items),
             )
-            
+
             perspectives = []
             seen_domains = set()
-            
+
             for item in items:
                 if len(perspectives) >= self.max_results:
                     break
-                
+
                 title_el = item.find("title")
                 link_el = item.find("link")
                 source_el = item.find("source")
                 pub_date_el = item.find("pubDate")
-                
+
                 if title_el is None or link_el is None:
                     continue
-                
+
                 title = title_el.text or ""
                 link = link_el.text or ""
 
                 # 1. Filter out exact URL match
                 if exclude_url and link == exclude_url:
                     continue
-                
+
                 # 2. Filter out very similar titles (simple exact match or contains for now)
                 # Google News titles often include " - Source Name" at the end
                 if exclude_title:
@@ -210,37 +212,41 @@ class PerspectiveService:
                     clean_exclude = exclude_title.strip().lower()
                     if clean_title == clean_exclude or clean_exclude in clean_title:
                         continue
-                
+
                 source_name = source_el.text if source_el is not None else "Unknown"
                 source_url = source_el.get("url", "") if source_el is not None else ""
-                
+
                 # Extract domain from source URL
                 domain = self._extract_domain(source_url)
-                
+
                 # Skip duplicates from same domain
                 if domain in seen_domains:
                     continue
                 seen_domains.add(domain)
-                
+
                 # Get bias
                 bias = DOMAIN_BIAS_MAP.get(domain, "unknown")
-                
-                perspectives.append(Perspective(
-                    title=title_el.text or "",
-                    url=link_el.text or "",
-                    source_name=source_name,
-                    source_domain=domain,
-                    bias_stance=bias,
-                    published_at=pub_date_el.text if pub_date_el is not None else None
-                ))
-            
+
+                perspectives.append(
+                    Perspective(
+                        title=title_el.text or "",
+                        url=link_el.text or "",
+                        source_name=source_name,
+                        source_domain=domain,
+                        bias_stance=bias,
+                        published_at=pub_date_el.text
+                        if pub_date_el is not None
+                        else None,
+                    )
+                )
+
             return perspectives
-            
+
         except ET.ParseError as e:
             logger.error(
                 "perspectives_parse_xml_error",
                 error=str(e),
-                content_preview=content[:200].decode('utf-8', errors='ignore'),
+                content_preview=content[:200].decode("utf-8", errors="ignore"),
             )
             return []
         except Exception as e:
@@ -255,6 +261,7 @@ class PerspectiveService:
         """Extract domain from URL."""
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(url)
             domain = parsed.netloc
             # Remove www. prefix
@@ -264,57 +271,170 @@ class PerspectiveService:
         except Exception:
             return ""
 
-    def extract_keywords(self, title: str, max_keywords: int = 5) -> List[str]:
+    def extract_keywords(self, title: str, max_keywords: int = 5) -> list[str]:
         """
         Extract significant keywords from a title.
-        
+
         Prioritizes:
         1. Capitalized words (proper nouns like "Trump", "Powell", "Macron")
         2. Acronyms (all caps like "IA", "UE", "ONU")
         3. Long words that aren't stopwords
         """
         import re
-        
+
         # French stopwords (lowercase only for comparison)
         stopwords = {
-            "le", "la", "les", "un", "une", "des", "de", "du", "d", "l", "et", "en", "à", "au", "aux",
-            "ce", "cette", "qui", "que", "quoi", "dont", "où", "se", "ne", "pas", "plus", "moins",
-            "il", "elle", "on", "nous", "vous", "ils", "elles", "avec", "pour", "par", "sur", "sous",
-            "dans", "entre", "vers", "chez", "sans", "est", "sont", "être", "avoir", "fait", "faire",
-            "mais", "ou", "donc", "car", "si", "alors", "quand", "comme", "après", "avant",
-            "pourquoi", "comment", "face", "contre", "entre", "tout", "tous", "toute", "toutes",
-            "cet", "cette", "ces", "son", "sa", "ses", "leur", "leurs", "notre", "nos", "votre", "vos",
-            "public", "doit", "peut", "veut", "sera", "été", "aussi", "très", "bien", "mal",
-            "nouveau", "nouvelle", "nouveaux", "nouvelles", "grand", "grande", "petit", "petite",
-            "premier", "première", "dernier", "dernière", "autre", "autres", "même", "mêmes",
+            "le",
+            "la",
+            "les",
+            "un",
+            "une",
+            "des",
+            "de",
+            "du",
+            "d",
+            "l",
+            "et",
+            "en",
+            "à",
+            "au",
+            "aux",
+            "ce",
+            "cette",
+            "qui",
+            "que",
+            "quoi",
+            "dont",
+            "où",
+            "se",
+            "ne",
+            "pas",
+            "plus",
+            "moins",
+            "il",
+            "elle",
+            "on",
+            "nous",
+            "vous",
+            "ils",
+            "elles",
+            "avec",
+            "pour",
+            "par",
+            "sur",
+            "sous",
+            "dans",
+            "entre",
+            "vers",
+            "chez",
+            "sans",
+            "est",
+            "sont",
+            "être",
+            "avoir",
+            "fait",
+            "faire",
+            "mais",
+            "ou",
+            "donc",
+            "car",
+            "si",
+            "alors",
+            "quand",
+            "comme",
+            "après",
+            "avant",
+            "pourquoi",
+            "comment",
+            "face",
+            "contre",
+            "tout",
+            "tous",
+            "toute",
+            "toutes",
+            "cet",
+            "ces",
+            "son",
+            "sa",
+            "ses",
+            "leur",
+            "leurs",
+            "notre",
+            "nos",
+            "votre",
+            "vos",
+            "public",
+            "doit",
+            "peut",
+            "veut",
+            "sera",
+            "été",
+            "aussi",
+            "très",
+            "bien",
+            "mal",
+            "nouveau",
+            "nouvelle",
+            "nouveaux",
+            "nouvelles",
+            "grand",
+            "grande",
+            "petit",
+            "petite",
+            "premier",
+            "première",
+            "dernier",
+            "dernière",
+            "autre",
+            "autres",
+            "même",
+            "mêmes",
         }
-        
+
         # Common title filler words to ignore (even if capitalized at start)
         title_fillers = {
-            "Le", "La", "Les", "Un", "Une", "Des", "Ce", "Cette", "Ces", "Son", "Sa", "Ses",
-            "Comment", "Pourquoi", "Quand", "Qui", "Que", "Où", "Voici", "Voilà",
+            "Le",
+            "La",
+            "Les",
+            "Un",
+            "Une",
+            "Des",
+            "Ce",
+            "Cette",
+            "Ces",
+            "Son",
+            "Sa",
+            "Ses",
+            "Comment",
+            "Pourquoi",
+            "Quand",
+            "Qui",
+            "Que",
+            "Où",
+            "Voici",
+            "Voilà",
         }
-        
+
         # Split on punctuation but preserve words
-        words = re.findall(r'\b[\wÀ-ÿ]+\b', title)
-        
+        words = re.findall(r"\b[\wÀ-ÿ]+\b", title)
+
         proper_nouns = []  # Capitalized words (likely names/places)
-        acronyms = []      # All caps words (like IA, UE, ONU)
-        regular_words = [] # Other significant words
-        
+        acronyms = []  # All caps words (like IA, UE, ONU)
+        regular_words = []  # Other significant words
+
         for i, word in enumerate(words):
             # Skip very short words
             if len(word) <= 2:
                 continue
-                
+
             # Skip stopwords
             if word.lower() in stopwords:
                 continue
-                
+
             # Skip title fillers
             if word in title_fillers:
                 continue
-            
+
             # Check for acronyms (all uppercase, 2-5 chars)
             if word.isupper() and 2 <= len(word) <= 5:
                 acronyms.append(word)
@@ -332,17 +452,17 @@ class PerspectiveService:
             # Regular significant words
             elif len(word) > 4 and word.lower() not in stopwords:
                 regular_words.append(word.lower())
-        
+
         # Combine: prioritize proper nouns and acronyms, then regular words
         keywords = []
-        
+
         # First add proper nouns (most important for news)
         for pn in proper_nouns:
             if pn not in keywords:
                 keywords.append(pn)
             if len(keywords) >= max_keywords:
                 break
-        
+
         # Add acronyms
         if len(keywords) < max_keywords:
             for acr in acronyms:
@@ -350,7 +470,7 @@ class PerspectiveService:
                     keywords.append(acr)
                 if len(keywords) >= max_keywords:
                     break
-        
+
         # Fill with regular words if needed (targeting 4-5 keywords)
         if len(keywords) < max_keywords:
             for rw in regular_words:
@@ -358,5 +478,5 @@ class PerspectiveService:
                     keywords.append(rw)
                 if len(keywords) >= max_keywords:
                     break
-        
+
         return keywords

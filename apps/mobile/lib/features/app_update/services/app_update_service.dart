@@ -18,7 +18,7 @@ class AppUpdateService {
     required void Function(int received, int total) onProgress,
   }) async {
     // 1. Get temporary download URL from backend
-    final urlResponse = await _apiClient.get('/app/update/download-url');
+    final urlResponse = await _apiClient.get('app/update/download-url');
     final downloadUrl = (urlResponse as Map<String, dynamic>)['url'] as String;
 
     // 2. Get temp directory for download

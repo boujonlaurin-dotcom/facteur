@@ -55,10 +55,12 @@ final appUpdateProvider =
 
   try {
     final apiClient = ref.read(apiClientProvider);
-    final data = await apiClient.get('/app/update');
+    final data = await apiClient.get('app/update');
     return AppUpdateInfo.fromJson(data as Map<String, dynamic>);
-  } catch (_) {
+  } catch (e) {
     // Fail silently — update check should never block the app
+    // ignore: avoid_print
+    print('AppUpdate: check failed: $e');
     return null;
   }
 });

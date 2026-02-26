@@ -5,10 +5,10 @@ Increased throughput: batch_size=20, interval=15s → ~4800 articles/hour.
 """
 
 import asyncio
+import contextlib
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
@@ -37,7 +37,7 @@ class ClassificationWorker:
         self.batch_size = batch_size
         self.interval = interval
         self.running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
         # Create engine for worker (separate from main app)
         self.engine = create_async_engine(
@@ -87,14 +87,16 @@ class ClassificationWorker:
             async with self.session_maker() as session:
                 result = await session.execute(
                     update(ClassificationQueue)
-                    .where(ClassificationQueue.status == 'processing')
-                    .values(status='pending', updated_at=datetime.utcnow())
+                    .where(ClassificationQueue.status == "processing")
+                    .values(status="pending", updated_at=datetime.utcnow())
                 )
                 count = result.rowcount
                 await session.commit()
 
                 if count > 0:
-                    logger.info("classification_worker.recovered_stuck_items", count=count)
+                    logger.info(
+                        "classification_worker.recovered_stuck_items", count=count
+                    )
         except Exception as e:
             logger.error("classification_worker.recovery_failed", error=str(e))
 
@@ -103,10 +105,8 @@ class ClassificationWorker:
         self.running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
         # Close the classification service's HTTP client
@@ -123,6 +123,7 @@ class ClassificationWorker:
                 await self._process_batch()
             except Exception as e:
                 import structlog
+
                 logger = structlog.get_logger()
                 logger.error("classification_worker_error", error=str(e))
 
@@ -202,7 +203,7 @@ class ClassificationWorker:
 
 
 # Global worker instance (singleton)
-_worker_instance: Optional[ClassificationWorker] = None
+_worker_instance: ClassificationWorker | None = None
 
 
 def get_worker() -> ClassificationWorker:

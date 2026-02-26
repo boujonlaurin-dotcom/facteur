@@ -4,10 +4,10 @@ These enums are shared between SQLAlchemy models and Pydantic schemas.
 They map to PostgreSQL ENUM types in the database.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class SourceType(str, Enum):
+class SourceType(StrEnum):
     """Type de source de contenu."""
 
     ARTICLE = "article"
@@ -15,7 +15,7 @@ class SourceType(str, Enum):
     YOUTUBE = "youtube"
 
 
-class ContentType(str, Enum):
+class ContentType(StrEnum):
     """Type de contenu individuel."""
 
     ARTICLE = "article"
@@ -23,7 +23,7 @@ class ContentType(str, Enum):
     YOUTUBE = "youtube"
 
 
-class ContentStatus(str, Enum):
+class ContentStatus(StrEnum):
     """Statut d'un contenu pour un utilisateur."""
 
     UNSEEN = "unseen"
@@ -31,7 +31,7 @@ class ContentStatus(str, Enum):
     CONSUMED = "consumed"
 
 
-class HiddenReason(str, Enum):
+class HiddenReason(StrEnum):
     """Raison pour laquelle un contenu est masqué."""
 
     SOURCE = "source"
@@ -39,7 +39,7 @@ class HiddenReason(str, Enum):
     CONTENT_TYPE = "content_type"
 
 
-class BiasStance(str, Enum):
+class BiasStance(StrEnum):
     """Positionnement éditorial (biais) d'une source."""
 
     LEFT = "left"
@@ -52,7 +52,7 @@ class BiasStance(str, Enum):
     UNKNOWN = "unknown"
 
 
-class ReliabilityScore(str, Enum):
+class ReliabilityScore(StrEnum):
     """Score de fiabilité d'une source."""
 
     LOW = "low"
@@ -62,8 +62,7 @@ class ReliabilityScore(str, Enum):
     UNKNOWN = "unknown"
 
 
-
-class BiasOrigin(str, Enum):
+class BiasOrigin(StrEnum):
     """Origine de l'information de biais."""
 
     EXTERNAL_DB = "external-db"
@@ -72,7 +71,7 @@ class BiasOrigin(str, Enum):
     UNKNOWN = "unknown"
 
 
-class FeedFilterMode(str, Enum):
+class FeedFilterMode(StrEnum):
     """Mode de filtrage du feed (Intent-based)."""
 
     RECENT = "recent"
@@ -81,11 +80,10 @@ class FeedFilterMode(str, Enum):
     DEEP_DIVE = "deep_dive"
 
 
-class DigestMode(str, Enum):
+class DigestMode(StrEnum):
     """Mode de personnalisation du digest quotidien (Epic 11)."""
 
     POUR_VOUS = "pour_vous"
     SEREIN = "serein"
     PERSPECTIVE = "perspective"
     THEME_FOCUS = "theme_focus"
-

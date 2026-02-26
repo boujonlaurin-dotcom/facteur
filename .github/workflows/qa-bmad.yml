@@ -9,13 +9,25 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: facteur_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -27,3 +39,7 @@ jobs:
         run: |
           chmod +x docs/qa/scripts/verify_sources_v2_final.sh
           ./docs/qa/scripts/verify_sources_v2_final.sh
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test@localhost:5432/facteur_test?sslmode=disable
+          ENVIRONMENT: development
+          SKIP_STARTUP_CHECKS: 'true'

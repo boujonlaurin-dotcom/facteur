@@ -21,4 +21,3 @@ async def get_streak(
     streak = await service.get_streak(user_id)
 
     return streak
-

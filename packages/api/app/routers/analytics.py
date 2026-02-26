@@ -3,8 +3,8 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 class EventCreate(BaseModel):
     """Schéma de création d'événement."""
+
     event_type: str = Field(..., description="Type d'événement (ex: session_start)")
     event_data: dict = Field(default_factory=dict, description="Données de l'événement")
     device_id: str | None = Field(None, description="Identifiant unique du device")
@@ -32,7 +33,7 @@ async def log_event(
         user_id=user_id,
         event_type=event.event_type,
         event_data=event.event_data,
-        device_id=event.device_id
+        device_id=event.device_id,
     )
     return {"status": "ok"}
 

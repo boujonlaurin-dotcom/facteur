@@ -11,7 +11,6 @@ Safe reuse of existing services through DigestService.
 
 import time
 from datetime import date
-from typing import Optional
 from uuid import UUID
 
 import structlog
@@ -22,11 +21,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.schemas.digest import (
-    DigestResponse,
+    DigestAction,
     DigestActionRequest,
     DigestActionResponse,
     DigestCompletionResponse,
-    DigestAction,
+    DigestResponse,
 )
 from app.services.digest_service import DigestService
 
@@ -37,31 +36,34 @@ router = APIRouter()
 
 class ActionRequest(BaseModel):
     """Simple action request body model."""
+
     content_id: str
     action: str
 
 
 @router.get("", response_model=DigestResponse)
 async def get_digest(
-    target_date: Optional[date] = Query(None, description="Date for digest (default: today)"),
+    target_date: date | None = Query(
+        None, description="Date for digest (default: today)"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
     Get today's digest for the current user.
-    
+
     Returns the daily digest containing 5 curated articles.
     If digest doesn't exist yet, it will be generated on-demand.
-    
+
     Each item includes:
     - Content metadata (title, url, thumbnail, etc.)
     - Source information
     - Selection reason
     - User's current action state (is_read, is_saved, is_dismissed)
-    
+
     Query Parameters:
     - target_date: Optional specific date (YYYY-MM-DD format). Defaults to today.
-    
+
     Response:
     - digest_id: Unique identifier for this digest
     - user_id: User ID
@@ -86,7 +88,7 @@ async def get_digest(
         )
         raise HTTPException(
             status_code=503,
-            detail="Digest generation encountered an unexpected error. Please try again later."
+            detail="Digest generation encountered an unexpected error. Please try again later.",
         )
 
     elapsed = time.monotonic() - start
@@ -98,8 +100,7 @@ async def get_digest(
             elapsed_ms=round(elapsed * 1000, 1),
         )
         raise HTTPException(
-            status_code=503,
-            detail="Digest generation failed. Please try again later."
+            status_code=503, detail="Digest generation failed. Please try again later."
         )
 
     logger.info(
@@ -121,20 +122,20 @@ async def apply_digest_action(
 ):
     """
     Apply an action to an item in the digest.
-    
+
     Actions:
     - **read**: Mark article as consumed (triggers streak update)
     - **save**: Save article to user's list
     - **not_interested**: Hide article and mute its source (triggers personalization)
     - **undo**: Reset all actions on the item
-    
+
     Path Parameters:
     - digest_id: ID of the digest
-    
+
     Request Body:
     - content_id: ID of the content/article
     - action: One of 'read', 'save', 'not_interested', 'undo'
-    
+
     Note: 'not_interested' automatically adds the source to the user's
     muted sources list (via personalization system).
     """
@@ -142,15 +143,15 @@ async def apply_digest_action(
     user_uuid = UUID(current_user_id)
     digest_uuid = UUID(digest_id)
     start = time.monotonic()
-    
+
     try:
         result = await service.apply_action(
             digest_id=digest_uuid,
             user_id=user_uuid,
             content_id=request.content_id,
-            action=request.action
+            action=request.action,
         )
-        
+
         elapsed = time.monotonic() - start
         logger.info(
             "digest_action_applied",
@@ -159,7 +160,7 @@ async def apply_digest_action(
             action=request.action.value,
             elapsed_ms=round(elapsed * 1000, 1),
         )
-        
+
         # Determine message based on action
         messages = {
             DigestAction.READ: "Article marqué comme lu",
@@ -167,17 +168,17 @@ async def apply_digest_action(
             DigestAction.LIKE: "Article aimé",
             DigestAction.UNLIKE: "Like retiré",
             DigestAction.NOT_INTERESTED: "Article masqué et source ignorée",
-            DigestAction.UNDO: "Action annulée"
+            DigestAction.UNDO: "Action annulée",
         }
-        
+
         return DigestActionResponse(
             success=result["success"],
             content_id=result["content_id"],
             action=result["action"],
             applied_at=result["applied_at"],
-            message=messages.get(request.action, "Action appliquée")
+            message=messages.get(request.action, "Action appliquée"),
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -185,24 +186,26 @@ async def apply_digest_action(
 @router.post("/{digest_id}/complete", response_model=DigestCompletionResponse)
 async def complete_digest(
     digest_id: str,
-    closure_time_seconds: Optional[int] = Query(None, description="Time spent reading in seconds"),
+    closure_time_seconds: int | None = Query(
+        None, description="Time spent reading in seconds"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
     """
     Record completion of the digest.
-    
+
     Called when user finishes their daily digest. This endpoint:
     - Records completion stats (read/saved/dismissed counts)
     - Updates closure streak (consecutive days completing digest)
     - Returns updated streak information
-    
+
     Path Parameters:
     - digest_id: ID of the completed digest
-    
+
     Query Parameters:
     - closure_time_seconds: Optional time spent in seconds (for analytics)
-    
+
     Response:
     - success: Whether completion was recorded
     - articles_read: Count of articles marked as read
@@ -210,22 +213,22 @@ async def complete_digest(
     - articles_dismissed: Count dismissed (not interested)
     - closure_streak: Current consecutive completion streak
     - streak_message: Celebration message (e.g., "Série de 7 jours! 🔥")
-    
-    Note: Completion is idempotent - calling multiple times for same 
+
+    Note: Completion is idempotent - calling multiple times for same
     digest on same day won't increment streak multiple times.
     """
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
     digest_uuid = UUID(digest_id)
     start = time.monotonic()
-    
+
     try:
         result = await service.complete_digest(
             digest_id=digest_uuid,
             user_id=user_uuid,
-            closure_time_seconds=closure_time_seconds
+            closure_time_seconds=closure_time_seconds,
         )
-        
+
         elapsed = time.monotonic() - start
         logger.info(
             "digest_completed",
@@ -234,7 +237,7 @@ async def complete_digest(
             elapsed_ms=round(elapsed * 1000, 1),
             closure_streak=result["closure_streak"],
         )
-        
+
         return DigestCompletionResponse(
             success=result["success"],
             digest_id=result["digest_id"],
@@ -244,19 +247,25 @@ async def complete_digest(
             articles_dismissed=result["articles_dismissed"],
             closure_time_seconds=result.get("closure_time_seconds"),
             closure_streak=result["closure_streak"],
-            streak_message=result.get("streak_message")
+            streak_message=result.get("streak_message"),
         )
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/generate", response_model=DigestResponse)
 async def generate_digest(
-    target_date: Optional[date] = Query(None, description="Date for digest (default: today)"),
+    target_date: date | None = Query(
+        None, description="Date for digest (default: today)"
+    ),
     force: bool = Query(False, description="Force regeneration even if exists"),
-    mode: Optional[str] = Query(None, description="Digest mode (pour_vous, serein, perspective, theme_focus)"),
-    focus_theme: Optional[str] = Query(None, description="Theme slug for theme_focus mode"),
+    mode: str | None = Query(
+        None, description="Digest mode (pour_vous, serein, perspective, theme_focus)"
+    ),
+    focus_theme: str | None = Query(
+        None, description="Theme slug for theme_focus mode"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -287,10 +296,7 @@ async def generate_digest(
     )
 
     if not digest:
-        raise HTTPException(
-            status_code=503,
-            detail="Digest generation failed"
-        )
+        raise HTTPException(status_code=503, detail="Digest generation failed")
 
     # Return the complete digest response with items
     return digest

@@ -4,23 +4,23 @@ ArticleTopicLayer - Topic-based scoring layer for Story 4.1d.
 Scores content based on intersection of content.topics with user_subtopics.
 """
 
-from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
-from app.services.recommendation.scoring_config import ScoringWeights
 from app.models.content import Content
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 
 
 class ArticleTopicLayer(BaseScoringLayer):
     """
     Couche de scoring pour les topics granulaires (50-topics taxonomy).
-    
+
     Score: +40 points par topic commun entre content.topics et user_subtopics.
     Maximum: 2 matches = 80 points.
     Bonus: +10 si le thème source est AUSSI matché (précision).
-    
+
     This layer enables fine-grained personalization beyond broad themes,
     allowing users who prefer "AI" to see more AI content from tech sources.
     """
-    
+
     @property
     def name(self) -> str:
         return "article_topic"
@@ -44,7 +44,7 @@ class ArticleTopicLayer(BaseScoringLayer):
         # Use subtopic weights to scale the score
         # Base: TOPIC_MATCH per match. Weight > 1.0 amplifies, < 1.0 attenuates.
         weights = context.user_subtopic_weights
-        matched_list = sorted(list(matches))[:match_count]
+        matched_list = sorted(matches)[:match_count]
         score = 0.0
         boosted_topics = []
         for topic in matched_list:
@@ -58,7 +58,7 @@ class ArticleTopicLayer(BaseScoringLayer):
         user_interests_lower = {s.lower().strip() for s in context.user_interests}
 
         # Tier 1: content.theme (ML-inferred, most precise)
-        if hasattr(content, 'theme') and content.theme:
+        if hasattr(content, "theme") and content.theme:
             if content.theme.lower().strip() in user_interests_lower:
                 has_theme_match = True
 
@@ -68,7 +68,11 @@ class ArticleTopicLayer(BaseScoringLayer):
                 has_theme_match = True
 
         # Tier 3: source.secondary_themes
-        if not has_theme_match and content.source and getattr(content.source, 'secondary_themes', None):
+        if (
+            not has_theme_match
+            and content.source
+            and getattr(content.source, "secondary_themes", None)
+        ):
             secondary_set = {t.lower().strip() for t in content.source.secondary_themes}
             if secondary_set & user_interests_lower:
                 has_theme_match = True
@@ -83,11 +87,6 @@ class ArticleTopicLayer(BaseScoringLayer):
         if boosted_topics:
             detail += f" [liked: {', '.join(boosted_topics)}]"
 
-        context.add_reason(
-            content.id,
-            self.name,
-            score,
-            detail
-        )
+        context.add_reason(content.id, self.name, score, detail)
 
         return score

@@ -1,13 +1,13 @@
 """Configuration de l'application via variables d'environnement."""
 
+import os
 from functools import lru_cache
-from typing import Literal, Any
+from pathlib import Path
+from typing import Any, Literal
+
+from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
-from dotenv import load_dotenv
-from pathlib import Path
-
 
 # Force load .env from the package directory to avoid shadowing by external env vars
 load_dotenv(Path(__file__).parent.parent / ".env", override=True)
@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # Database (Supabase PostgreSQL)
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:54322/postgres"
+    database_url: str = (
+        "postgresql+psycopg://postgres:postgres@localhost:54322/postgres"
+    )
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -48,16 +50,15 @@ class Settings(BaseSettings):
                 v = v.replace("postgres://", "postgresql+psycopg://", 1)
             elif v.startswith("postgresql://") and "+psycopg" not in v:
                 v = v.replace("postgresql://", "postgresql+psycopg://", 1)
-            
+
             # Ensure sslmode=require is present if not already (important for Railway/Supabase pooling)
             # But only append if query params don't already exist or if sslmode is missing
             if "?" not in v:
                 v += "?sslmode=require"
             elif "sslmode=" not in v:
                 v += "&sslmode=require"
-                
-        return v
 
+        return v
 
     # Supabase
     supabase_url: str = ""
@@ -106,23 +107,31 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def auto_detect_railway_environment(self) -> "Settings":
-        """Auto-detect Railway production environment from RAILWAY_ENVIRONMENT_NAME."""
+        """Auto-detect Railway environment from RAILWAY_ENVIRONMENT_NAME."""
         railway_env = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "")
-        if railway_env and self.environment == "development":
-            object.__setattr__(self, 'environment', 'production')
+        if railway_env:
+            if railway_env.lower() == "staging":
+                object.__setattr__(self, "environment", "staging")
+            elif self.environment == "development":
+                object.__setattr__(self, "environment", "production")
         return self
 
     @model_validator(mode="after")
-    def validate_production_db(self) -> "Settings":
-        """Empêche l'utilisation de localhost en production."""
-        if self.is_production and not os.environ.get("DATABASE_URL"):
+    def validate_deployed_db(self) -> "Settings":
+        """Empêche l'utilisation de localhost en production/staging."""
+        if self.environment in ("production", "staging") and not os.environ.get(
+            "DATABASE_URL"
+        ):
             raise ValueError(
-                "❌ CRITICAL ERROR: DATABASE_URL is missing in production. "
-                "Set DATABASE_URL in Railway (or your hosting env)."
+                f"DATABASE_URL is missing in {self.environment}. "
+                "Set DATABASE_URL in Railway."
             )
-        if self.is_production and "localhost" in self.database_url:
+        if (
+            self.environment in ("production", "staging")
+            and "localhost" in self.database_url
+        ):
             raise ValueError(
-                f"❌ CRITICAL ERROR: DATABASE_URL points to localhost in production ({self.database_url}). "
+                f"DATABASE_URL points to localhost in {self.environment}. "
                 "Check your environment variables on Railway."
             )
         return self
@@ -132,9 +141,13 @@ class Settings(BaseSettings):
         """Vérifie si on est en production."""
         return self.environment == "production"
 
+    @property
+    def is_staging(self) -> bool:
+        """Vérifie si on est en staging."""
+        return self.environment == "staging"
+
 
 @lru_cache
 def get_settings() -> Settings:
     """Retourne les settings (cached)."""
     return Settings()
-
