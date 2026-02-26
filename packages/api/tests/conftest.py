@@ -1,19 +1,18 @@
 """Test configuration and fixtures for API tests."""
 
-import pytest
-import pytest_asyncio
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-
-from app.config import get_settings
-from app.models.source import Source
-from app.models.enums import SourceType
-from app.database import Base
 
 # Register all models with Base.metadata
 import app.models  # noqa: F401
+from app.config import get_settings
+from app.database import Base
+from app.models.enums import SourceType
+from app.models.source import Source
 
 settings = get_settings()
 
@@ -36,9 +35,13 @@ TestSessionLocal = async_sessionmaker(
 )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def create_tables():
-    """Create all database tables from model definitions (once per session)."""
+    """Create all database tables from model definitions (once per session).
+
+    Not autouse — only runs when a test depends on db_session.
+    This prevents pure unit tests from requiring a database connection.
+    """
     import asyncio
 
     async def _setup():
@@ -51,7 +54,7 @@ def create_tables():
 
 
 @pytest_asyncio.fixture
-async def db_session():
+async def db_session(create_tables):
     """Create a test database session with automatic rollback."""
     async with TestSessionLocal() as session:
         try:
