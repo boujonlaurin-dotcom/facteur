@@ -16,7 +16,10 @@ from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.models.source import Source
 from app.services.classification_queue_service import ClassificationQueueService
-from app.services.ml.classification_service import VALID_TOPIC_SLUGS, get_classification_service
+from app.services.ml.classification_service import (
+    VALID_TOPIC_SLUGS,
+    get_classification_service,
+)
 
 settings = get_settings()
 
