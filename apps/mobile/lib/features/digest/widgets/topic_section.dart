@@ -5,6 +5,8 @@ import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
+import '../../feed/widgets/swipe_to_open_card.dart';
+import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -21,6 +23,12 @@ class TopicSection extends StatefulWidget {
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onSwipeDismiss;
+  final String? activeDismissalId;
+  final VoidCallback? onDismissUndo;
+  final VoidCallback? onDismissAutoResolve;
+  final VoidCallback? onDismissMuteSource;
+  final void Function(String topic)? onDismissMuteTopic;
 
   const TopicSection({
     super.key,
@@ -29,6 +37,12 @@ class TopicSection extends StatefulWidget {
     this.onLike,
     this.onSave,
     this.onNotInterested,
+    this.onSwipeDismiss,
+    this.activeDismissalId,
+    this.onDismissUndo,
+    this.onDismissAutoResolve,
+    this.onDismissMuteSource,
+    this.onDismissMuteTopic,
   });
 
   @override
@@ -67,6 +81,10 @@ class _TopicSectionState extends State<TopicSection> {
     final topic = widget.topic;
     final isMulti = topic.articles.length > 1;
 
+    // If every article in this topic is dismissed, hide the entire section
+    final allDismissed = topic.articles.every((a) => a.isDismissed);
+    if (allDismissed) return const SizedBox.shrink();
+
     return AnimatedOpacity(
       opacity: topic.isCovered ? 0.7 : 1.0,
       duration: const Duration(milliseconds: 300),
@@ -95,7 +113,7 @@ class _TopicSectionState extends State<TopicSection> {
                 );
               },
             )
-          else
+          else if (!topic.articles.first.isDismissed)
             // Singleton: no PageView, let the card size itself naturally
             _buildSingleArticle(topic.articles.first),
 
@@ -231,25 +249,45 @@ class _TopicSectionState extends State<TopicSection> {
   }
 
   Widget _buildSingleArticle(DigestItem article) {
-    return FeedCard(
-      boxShadow: const [],
-      content: _convertToContent(article),
-      onTap: () => widget.onArticleTap(article),
-      onLongPressStart: (_) =>
-          ArticlePreviewOverlay.show(context, _convertToContent(article)),
-      onLongPressMoveUpdate: (details) =>
-          ArticlePreviewOverlay.updateScroll(details.localOffsetFromOrigin.dy),
-      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-      onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-      isLiked: article.isLiked,
-      onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-      onSaveLongPress: () =>
-          CollectionPickerSheet.show(context, article.contentId),
-      isSaved: article.isSaved,
-      onNotInterested: widget.onNotInterested != null
-          ? () => widget.onNotInterested!(article)
+    // Show dismiss banner if this article is being dismissed
+    if (widget.activeDismissalId == article.contentId) {
+      return AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        child: DismissBanner(
+          content: _convertToContent(article),
+          onUndo: widget.onDismissUndo ?? () {},
+          onMuteSource: widget.onDismissMuteSource ?? () {},
+          onMuteTopic: widget.onDismissMuteTopic ?? (_) {},
+          onAutoResolve: widget.onDismissAutoResolve ?? () {},
+        ),
+      );
+    }
+
+    return SwipeToOpenCard(
+      onSwipeOpen: () => widget.onArticleTap(article),
+      onSwipeDismiss: widget.onSwipeDismiss != null
+          ? () => widget.onSwipeDismiss!(article)
           : null,
-      isFollowedSource: article.isFollowedSource,
+      child: FeedCard(
+        boxShadow: const [],
+        content: _convertToContent(article),
+        onTap: () => widget.onArticleTap(article),
+        onLongPressStart: (_) =>
+            ArticlePreviewOverlay.show(context, _convertToContent(article)),
+        onLongPressMoveUpdate: (details) =>
+            ArticlePreviewOverlay.updateScroll(details.localOffsetFromOrigin.dy),
+        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
+        isLiked: article.isLiked,
+        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+        onSaveLongPress: () =>
+            CollectionPickerSheet.show(context, article.contentId),
+        isSaved: article.isSaved,
+        onNotInterested: widget.onNotInterested != null
+            ? () => widget.onNotInterested!(article)
+            : null,
+        isFollowedSource: article.isFollowedSource,
+      ),
     );
   }
 

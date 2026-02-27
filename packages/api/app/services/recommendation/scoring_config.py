@@ -159,6 +159,10 @@ class ScoringWeights:
     # Weakest signal (implicit) — accumulates over many reads.
     READ_TOPIC_BOOST = 0.03
 
+    # Delta applied to user_subtopics.weight when dismissing (swipe-left) content.
+    # ~2 dismissals cancel 1 like. Progressive, not a kill switch.
+    DISMISS_TOPIC_PENALTY = -0.10
+
     # Learning rate applied to UserInterest.weight on like/bookmark.
     LIKE_INTEREST_RATE = 0.03
 

@@ -154,20 +154,38 @@ async def unlike_content(
 @router.post("/{content_id}/hide", status_code=status.HTTP_200_OK)
 async def hide_content(
     content_id: UUID,
-    request: HideContentRequest,
+    request: HideContentRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Masque un contenu (pas intéressé)."""
+    """Masque un contenu (pas intéressé). Body optionnel: swipe-left sans raison = {}."""
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
+    reason = request.reason if request else None
+
     await service.set_hide_status(
-        user_id=user_uuid, content_id=content_id, is_hidden=True, reason=request.reason
+        user_id=user_uuid, content_id=content_id, is_hidden=True, reason=reason
     )
 
     await db.commit()
-    return {"status": "ok", "is_hidden": True, "reason": request.reason}
+    return {"status": "ok", "is_hidden": True, "reason": reason}
+
+
+@router.delete("/{content_id}/hide", status_code=status.HTTP_200_OK)
+async def unhide_content(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Annule le masquage d'un contenu (undo swipe-dismiss)."""
+    service = ContentService(db)
+    user_uuid = UUID(current_user_id)
+
+    await service.unset_hide_status(user_id=user_uuid, content_id=content_id)
+
+    await db.commit()
+    return {"status": "ok", "is_hidden": False}
 
 
 @router.post("/{content_id}/impress", status_code=status.HTTP_200_OK)

@@ -191,15 +191,25 @@ class FeedRepository {
     }
   }
 
-  Future<void> hideContent(String contentId, HiddenReason reason) async {
+  Future<void> hideContent(String contentId, [HiddenReason? reason]) async {
     try {
       await _apiClient.dio.post<void>(
         'contents/$contentId/hide',
-        data: {'reason': reason.name},
+        data: reason != null ? {'reason': reason.name} : <String, dynamic>{},
       );
     } catch (e) {
       // ignore: avoid_print
       print('FeedRepository: [ERROR] hideContent: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> unhideContent(String contentId) async {
+    try {
+      await _apiClient.dio.delete<void>('contents/$contentId/hide');
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] unhideContent: $e');
       rethrow;
     }
   }

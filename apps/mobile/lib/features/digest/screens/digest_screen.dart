@@ -12,6 +12,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 
+import '../../feed/providers/feed_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../sources/models/source_model.dart';
@@ -190,6 +191,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       isScrollControlled: true,
       builder: (_) => DigestPersonalizationSheet(item: item),
     );
+  }
+
+  void _handleSwipeDismiss(DigestItem item) {
+    HapticFeedback.lightImpact();
+    ref.read(digestProvider.notifier).applyAction(item.contentId, 'not_interested');
   }
 
   @override
@@ -426,6 +432,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   onLike: _handleLike,
                                   onSave: _handleSave,
                                   onNotInterested: _handleNotInterested,
+                                  onSwipeDismiss: _handleSwipeDismiss,
+                                  onMuteSource: (sourceId) =>
+                                      ref.read(feedProvider.notifier).muteSourceById(sourceId),
+                                  onMuteTopic: (topic) =>
+                                      ref.read(feedProvider.notifier).muteTopic(topic),
                                   mode: modeState.mode,
                                   isRegenerating: modeState.isRegenerating,
                                   onTapModeSelector: () {
