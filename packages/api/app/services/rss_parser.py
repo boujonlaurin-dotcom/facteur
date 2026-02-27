@@ -283,10 +283,7 @@ class RSSParser:
 
             if "rss" in type_attr or "atom" in type_attr or "xml" in type_attr:
                 if href:
-                    if href.startswith("/"):
-                        found_url = urljoin(url, href)
-                    else:
-                        found_url = href
+                    found_url = urljoin(url, href) if href.startswith("/") else href
                     break
 
         if found_url:
