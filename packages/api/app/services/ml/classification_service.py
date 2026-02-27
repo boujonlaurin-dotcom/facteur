@@ -231,7 +231,16 @@ class ClassificationService:
             response.raise_for_status()
             data = response.json()
 
-            raw_answer = data["choices"][0]["message"]["content"].strip()
+            choices = data.get("choices") or []
+            if not choices:
+                log.warning("classification_service.empty_choices", title=title[:100])
+                return []
+            raw_answer = (choices[0].get("message") or {}).get("content") or ""
+            raw_answer = raw_answer.strip()
+            if not raw_answer:
+                log.warning("classification_service.empty_content", title=title[:100])
+                return []
+
             topics = self._parse_topics(raw_answer, top_k)
 
             log.debug(
@@ -297,7 +306,20 @@ class ClassificationService:
             response.raise_for_status()
             data = response.json()
 
-            raw_answer = data["choices"][0]["message"]["content"].strip()
+            choices = data.get("choices") or []
+            if not choices:
+                log.warning(
+                    "classification_service.batch_empty_choices", count=len(items)
+                )
+                return [[] for _ in items]
+            raw_answer = (choices[0].get("message") or {}).get("content") or ""
+            raw_answer = raw_answer.strip()
+            if not raw_answer:
+                log.warning(
+                    "classification_service.batch_empty_content", count=len(items)
+                )
+                return [[] for _ in items]
+
             results = self._parse_batch_response(raw_answer, len(items), top_k)
 
             log.info(
