@@ -73,9 +73,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           rememberMe: _rememberMe);
     }
 
-    // Signal the OS that the autofill context is complete.
-    // Triggers the "Save password?" prompt on iOS/Android.
-    TextInput.finishAutofillContext();
+    // Only trigger the "Save password?" OS prompt if auth succeeded.
+    // On failure, errors are caught inside authNotifier (no rethrow),
+    // so we check state.error to avoid saving wrong credentials.
+    final authState = ref.read(authStateProvider);
+    if (authState.error == null && !authState.isLoading) {
+      TextInput.finishAutofillContext();
+    }
   }
 
   Future<void> _forgotPassword() async {
