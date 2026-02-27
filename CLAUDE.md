@@ -81,67 +81,52 @@
 
 ---
 
-## 🚀 ÉTAPE 3: PR Lifecycle (CI → Staging → Review → Merge)
+## 🚀 ÉTAPE 3: PR Lifecycle (Dev → Review → CI → Staging → Merge)
 
-**Règle bloquante** : Aucun merge vers `main` sans CI green + staging verified + Peer Review APPROVED.
+**Règle bloquante** : Aucun merge vers `main` sans Peer Review APPROVED + CI green + staging verified.
+**Schéma complet** : [`.context/pipeline-facteur.md`](.context/pipeline-facteur.md)
 
-### 3.1 Ouvrir la PR
+### 3.1 Handoff : l'agent dev prépare la review
+
+En fin de développement, dis **"prépare le handoff"** à l'agent dev.
+Il écrit `.context/pr-handoff.md` selon le template dans [`.context/prompts/handoff-review.md`](.context/prompts/handoff-review.md), puis STOP.
+
+### 3.2 Test local [SKIP: easy devs]
+
+Tu testes en local sur la même branche. Si KO → retour workspace dev avec le problème.
+
+### 3.3 Peer Review Conductor (AVANT la PR)
+
+1. Ouvre un **nouveau workspace Conductor** sur la **même branche**
+2. Colle le prompt depuis [`.context/prompts/peer-review.md`](.context/prompts/peer-review.md)
+3. L'agent review lit le handoff + le diff, laisse des DiffComments inline
+4. **Si blockers** → copie la sortie dans le workspace dev → fix → re-review
+5. **Si APPROVED** → passe à 3.4
+
+### 3.4 Ouvrir la PR + CI
 
 ```bash
 git push origin <branch-name>
 gh pr create --title "<type>: <description>" --body "$(cat .github/pull_request_template.md)"
 ```
 
-CI s'exécute automatiquement : `lint` + `test` + `build` (Docker) + `verify` (BMAD).
-**Ne pas continuer tant que CI est rouge.**
+CI auto : `lint` + `test` + `build` + `verify`. Si échec → agent dev fix dans le même workspace → re-push.
 
-### 3.2 Déployer en Staging
+### 3.5 Staging (automatique)
 
-**Automatique** : `deploy-staging.yml` se déclenche dès que `lint`, `test` et `build` passent sur la PR.
-Smoke tests inclus (health, readiness, environment check). Visible dans les checks de la PR.
+`deploy-staging.yml` se déclenche dès que CI green. Smoke tests auto (health, readiness, env check).
+Si smoke fail → problème infra/config, pas de code. Fix sur la même branche, ne pas recréer de branche.
 
-Fallback manuel si besoin : `gh workflow run deploy-staging.yml --ref <branch-name>`
+### 3.6 Merge & Production
 
-### 3.3 Handoff : l'agent dev prépare la review
-
-Avant de STOP, l'agent dev **écrit un résumé de handoff** dans `.context/pr-handoff.md` :
-
-```markdown
-# PR #XX — <titre>
-## Quoi : <résumé en 2-3 lignes>
-## Pourquoi : <problème résolu / valeur ajoutée>
-## Zones à risque : <fichiers/modules critiques modifiés>
-## Ce que le reviewer doit vérifier en priorité : <points d'attention>
-```
-
-Puis l'agent STOP et notifie : **"PR #XX prête pour Peer Review — handoff dans `.context/pr-handoff.md`"**
-
-### 3.4 Peer Review Conductor
-
-1. **L'utilisateur ouvre un workspace Conductor séparé** sur la branche
-2. **Prompt de review** (le reviewer lit automatiquement `.context/pr-handoff.md` + le diff) :
-
-> Lis `.context/pr-handoff.md` pour le contexte, puis review le workspace diff en peer review senior.
-> Check: Security, Guardrails Facteur (`list[]`, stale token), Breaking changes, Test coverage, Architecture, Performance.
-> Utilise l'outil DiffComment pour laisser tes commentaires directement sur les lignes de code.
-> Output final : BLOCKERS / WARNINGS / SUGGESTIONS / **APPROVED** ou **NOT APPROVED**
-
-3. **Si blockers** → copier la sortie du reviewer dans le workspace de l'agent dev → l'agent fix → re-push → CI re-run
-4. **Si APPROVED** → merge autorisé
-
-### 3.5 Merge & Production
-
-Merge via **GitHub UI** (bouton "Squash and merge") ou CLI :
-```bash
-gh pr merge <PR-number> --squash
-```
-Railway auto-déploie sur production via push to main.
+Tous les checks verts → clic **"Squash and merge"** sur GitHub UI.
+Railway auto-déploie sur production.
 
 ### Règles
 
-- L'agent de review est **un workspace Conductor séparé** (pas le même agent qui a codé)
-- L'agent de dev **NE DOIT PAS** se self-review ni merger sans ce processus
-- PR docs-only (stories, README) : skip staging (cocher "N/A" dans la PR template)
+- L'agent reviewer est un **workspace Conductor séparé** (pas le même qui a codé)
+- L'agent dev **NE DOIT PAS** se self-review ni merger sans ce processus
+- **Fast track** (docs, config, petit fix) : skip test local + staging N/A dans PR template
 
 ---
 
@@ -280,11 +265,13 @@ git worktree remove ../<agent>-<tache>
 
 **Avant merge** ([ÉTAPE 3](#-étape-3--pr-lifecycle-ci--staging--review--merge)):
 
-13. [ ] **PR ouverte** + CI green (lint, test, build, verify)
-14. [ ] **Staging déployé** + smoke tests passed (`deploy-staging.yml`)
+13. [ ] **Handoff écrit** (`.context/pr-handoff.md`) → agent STOP
+14. [ ] **Test local** (skip si easy dev)
 15. [ ] **Peer Review Conductor** → Workspace séparé → APPROVED
-16. [ ] **Merge** (squash) → Production auto-deploy
-17. [ ] **Cleanup worktree** (après merge)
+16. [ ] **PR ouverte** + CI green (lint, test, build, verify)
+17. [ ] **Staging déployé** auto + smoke tests passed
+18. [ ] **Merge** (squash via GitHub UI) → Production auto-deploy
+19. [ ] **Cleanup worktree** (après merge)
 
 ---
 
