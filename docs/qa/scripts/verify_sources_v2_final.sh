@@ -42,8 +42,8 @@ pytest tests/test_rss_parser.py -v
 echo -e "🔍 [Step 3] Verifying YouTube & Reddit are accepted by RSSParser..."
 python3 - <<EOF
 import asyncio
+import re
 from app.services.rss_parser import RSSParser
-from app.config import settings
 
 async def check():
     parser = RSSParser()
@@ -53,7 +53,6 @@ async def check():
     print("✅ YouTube URLs are no longer blocked by SourceService")
 
     # Verify Reddit URL transform logic exists
-    import re
     reddit_match = re.match(
         r"https?://(?:www\.|old\.)?reddit\.com/r/([\w]+)/?",
         "https://www.reddit.com/r/technology"

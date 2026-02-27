@@ -224,7 +224,9 @@ class RSSParser:
             channel_id = await self._resolve_youtube_channel_id(url)
 
             if channel_id:
-                rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+                rss_url = (
+                    f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+                )
                 logger.info(
                     "Resolved YouTube channel",
                     channel_id=channel_id,
@@ -246,9 +248,7 @@ class RSSParser:
                     )
 
             logger.warning("Failed to resolve YouTube channel_id", url=url)
-            raise ValueError(
-                "Could not resolve YouTube channel. Please check the URL."
-            )
+            raise ValueError("Could not resolve YouTube channel. Please check the URL.")
 
         # ── Stage 1: Direct RSS parse ─────────────────────────────
         try:
