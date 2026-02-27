@@ -5,6 +5,7 @@ enum SourceType {
   podcast,
   video,
   youtube,
+  reddit,
 }
 
 class Source {

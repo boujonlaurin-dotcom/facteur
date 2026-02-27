@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +14,6 @@ import '../providers/sources_providers.dart';
 import '../widgets/source_detail_modal.dart';
 import '../widgets/source_preview_card.dart';
 
-/// Écran d'ajout de source
 class AddSourceScreen extends ConsumerStatefulWidget {
   const AddSourceScreen({super.key});
 
@@ -23,6 +23,7 @@ class AddSourceScreen extends ConsumerStatefulWidget {
 
 class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   final _searchController = TextEditingController();
+  int _currentTab = 0;
   bool _isLoading = false;
   Map<String, dynamic>? _previewData;
   List<Source>? _searchResults;
@@ -33,10 +34,16 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     super.dispose();
   }
 
+  // ─── Shared Logic ──────────────────────────────────────────────
+
   Future<void> _detectOrSearchSource() async {
     final query = _searchController.text.trim();
-    if (query.isEmpty) {
-      return;
+    if (query.isEmpty) return;
+
+    // Smart transform for Reddit tab
+    String resolvedQuery = query;
+    if (_currentTab == 2) {
+      resolvedQuery = _transformRedditInput(query);
     }
 
     setState(() => _isLoading = true);
@@ -44,17 +51,15 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
     try {
       final repository = ref.read(sourcesRepositoryProvider);
-      final data = await repository.detectSource(query);
+      final data = await repository.detectSource(resolvedQuery);
 
       setState(() {
         if (data.containsKey('results')) {
-          // C'est une recherche par mots clés
           final resultsList = data['results'] as List<dynamic>;
           _searchResults = resultsList
               .map((json) => Source.fromJson(json as Map<String, dynamic>))
               .toList();
         } else {
-          // C'est une URL valide détectée
           _previewData = data;
         }
       });
@@ -64,6 +69,35 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _transformRedditInput(String input) {
+    final trimmed = input.trim();
+
+    // Already a full URL
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+
+    // reddit.com/r/... without protocol
+    if (trimmed.startsWith('reddit.com/') ||
+        trimmed.startsWith('www.reddit.com/') ||
+        trimmed.startsWith('old.reddit.com/')) {
+      return 'https://$trimmed';
+    }
+
+    // r/subreddit format
+    final rSlashMatch = RegExp(r'^r/(\w+)$').firstMatch(trimmed);
+    if (rSlashMatch != null) {
+      return 'https://www.reddit.com/r/${rSlashMatch.group(1)}';
+    }
+
+    // Plain subreddit name
+    if (RegExp(r'^\w+$').hasMatch(trimmed)) {
+      return 'https://www.reddit.com/r/$trimmed';
+    }
+
+    return trimmed;
   }
 
   Future<void> _confirmSourceFromPreview() async {
@@ -76,10 +110,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       final sourceId = _previewData!['source_id'] as String?;
 
       if (sourceId != null && sourceId.isNotEmpty && sourceId != 'fallback') {
-        // Known source in DB, just associate it
         await repository.trustSource(sourceId);
       } else {
-        // Unknown source, add it
         final feedUrl = _previewData!['feed_url'] as String?;
         if (feedUrl == null || feedUrl.isEmpty) {
           NotificationService.showError('URL du flux introuvable');
@@ -91,7 +123,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
       if (mounted) {
         NotificationService.showSuccess(
-            'Source ajoutée ! Ses articles apparaîtront dans ton feed.');
+            'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
         ref.invalidate(userSourcesProvider);
         context.pop();
       }
@@ -134,10 +166,9 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         await repository.trustSource(source.id);
         if (mounted) {
           NotificationService.showSuccess(
-              'Source ajoutée ! Ses articles apparaîtront dans ton feed.');
+              'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
         }
       }
-      // Update local search results optimistically
       if (mounted && _searchResults != null) {
         setState(() {
           _searchResults = _searchResults!
@@ -167,13 +198,15 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
                 await Clipboard.setData(ClipboardData(text: source.url!));
                 if (mounted) {
                   NotificationService.showSuccess(
-                      'URL du flux copiée dans le presse-papiers !');
+                      'URL du flux copiee dans le presse-papiers !');
                 }
               }
             : null,
       ),
     );
   }
+
+  // ─── Build ─────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -196,45 +229,448 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Rechercher ou coller une URL...',
-                prefixIcon: Icon(
-                  PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-                ),
-                suffixIcon: IconButton(
-                  icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill)),
-                  onPressed: _resetAll,
-                ),
+            // SegmentedControl
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoSlidingSegmentedControl<int>(
+                groupValue: _currentTab,
+                onValueChanged: (value) {
+                  setState(() {
+                    _currentTab = value!;
+                    _resetAll();
+                  });
+                },
+                backgroundColor: colors.surface,
+                thumbColor: colors.backgroundPrimary,
+                children: {
+                  0: _buildSegment(
+                    PhosphorIcons.globe(PhosphorIconsStyle.regular),
+                    'URL / RSS',
+                  ),
+                  1: _buildSegment(
+                    PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
+                    'YouTube',
+                  ),
+                  2: _buildSegment(
+                    PhosphorIcons.redditLogo(PhosphorIconsStyle.regular),
+                    'Reddit',
+                  ),
+                },
               ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              enabled: !_isLoading,
-              style: Theme.of(context).textTheme.bodyMedium,
-              onSubmitted: (_) => _detectOrSearchSource(),
             ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (_previewData != null)
-              SourcePreviewCard(
-                data: _previewData!,
-                onConfirm: _confirmSourceFromPreview,
-                onCancel: _resetAll,
-                isLoading: _isLoading,
-              )
-            else if (_searchResults != null)
-              _buildSearchResults()
-            else
-              _buildEmptyState(),
+            const SizedBox(height: 20),
+
+            // Tab content
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _currentTab == 0
+                  ? _buildUrlRssPage()
+                  : _currentTab == 1
+                      ? _buildYouTubePage()
+                      : _buildRedditPage(),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSegment(IconData icon, String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 4),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tab 0: URL / RSS ──────────────────────────────────────────
+
+  Widget _buildUrlRssPage() {
+    return Column(
+      key: const ValueKey('url_rss'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildInputField(
+          hint: 'Rechercher ou coller une URL...',
+          icon: PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          _buildLoadingIndicator()
+        else if (_previewData != null)
+          _buildPreviewCard()
+        else if (_searchResults != null)
+          _buildSearchResults()
+        else
+          _buildUrlRssEmptyState(),
+      ],
+    );
+  }
+
+  Widget _buildUrlRssEmptyState() {
+    final colors = context.facteurColors;
+    final trendingAsyncValue = ref.watch(trendingSourcesProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PrimaryButton(
+          label: 'Rechercher',
+          onPressed: _detectOrSearchSource,
+          isLoading: false,
+        ),
+        const SizedBox(height: 16),
+        _buildHelpCard(
+          title: 'Ajouter un site ou flux RSS',
+          examples: const [
+            'lemonde.fr',
+            'techcrunch.com',
+            'leplongeoir.substack.com',
+            'arstechnica.com',
+          ],
+          description:
+              'La plupart des sites d\'actualite, blogs et newsletters Substack ont un flux RSS automatiquement detecte.',
+        ),
+        const SizedBox(height: 40),
+        Text(
+          'Pepites de la communaute',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 16),
+        trendingAsyncValue.when(
+          data: (sources) {
+            if (sources.isEmpty) {
+              return Text(
+                'Aucune pepite pour le moment.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textTertiary),
+              );
+            }
+            return Column(
+              children: sources.map((s) => _buildSourceListTile(s)).toList(),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Text(
+            'Impossible de charger les tendances.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colors.error),
+          ),
+        ),
+        const SizedBox(height: 40),
+        _buildAtlasFluxCard(),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ─── Tab 1: YouTube ────────────────────────────────────────────
+
+  Widget _buildYouTubePage() {
+    return Column(
+      key: const ValueKey('youtube'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildInputField(
+          hint: 'Coller le lien d\'une chaine YouTube...',
+          icon: PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          _buildLoadingIndicator()
+        else if (_previewData != null)
+          _buildPreviewCard()
+        else ...[
+          PrimaryButton(
+            label: 'Rechercher',
+            onPressed: _detectOrSearchSource,
+            isLoading: false,
+          ),
+          const SizedBox(height: 16),
+          _buildHelpCard(
+            title: 'Comment trouver le lien',
+            steps: const [
+              'Ouvrez YouTube',
+              'Allez sur la chaine souhaitee',
+              'Copiez l\'URL de la barre d\'adresse',
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildHelpCard(
+            title: 'Exemples de chaines',
+            examples: const [
+              'youtube.com/@ScienceEtonnante',
+              'youtube.com/@Heu7reka',
+              'youtube.com/@Fouloscopie',
+              'youtube.com/@HugoDecrypte',
+            ],
+            description:
+                'Facteur recupere les dernieres videos publiees sur la chaine.',
+          ),
+        ],
+        const SizedBox(height: 40),
+        _buildAtlasFluxCard(),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ─── Tab 2: Reddit ─────────────────────────────────────────────
+
+  Widget _buildRedditPage() {
+    final colors = context.facteurColors;
+
+    return Column(
+      key: const ValueKey('reddit'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildInputField(
+          hint: 'Nom du subreddit ou URL...',
+          icon: PhosphorIcons.redditLogo(PhosphorIconsStyle.regular),
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          _buildLoadingIndicator()
+        else if (_previewData != null)
+          _buildPreviewCard()
+        else ...[
+          PrimaryButton(
+            label: 'Rechercher',
+            onPressed: _detectOrSearchSource,
+            isLoading: false,
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Vous pouvez entrer :',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.textPrimary,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                _buildBulletPoint(context, 'Le nom : technology'),
+                const SizedBox(height: 4),
+                _buildBulletPoint(
+                    context, 'L\'URL : reddit.com/r/technology'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildHelpCard(
+            title: 'Exemples de subreddits',
+            examples: const [
+              'r/technology',
+              'r/worldnews',
+              'r/selfhosted',
+              'r/science',
+            ],
+            description:
+                'Facteur recupere les 25 derniers posts du subreddit.',
+          ),
+        ],
+        const SizedBox(height: 40),
+        _buildAtlasFluxCard(),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ─── Shared Widgets ────────────────────────────────────────────
+
+  Widget _buildInputField({
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: Icon(icon),
+        suffixIcon: IconButton(
+          icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill)),
+          onPressed: _resetAll,
+        ),
+      ),
+      keyboardType: keyboardType,
+      autocorrect: false,
+      enabled: !_isLoading,
+      style: Theme.of(context).textTheme.bodyMedium,
+      onSubmitted: (_) => _detectOrSearchSource(),
+    );
+  }
+
+  Widget _buildLoadingIndicator() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32.0),
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard() {
+    return SourcePreviewCard(
+      data: _previewData!,
+      onConfirm: _confirmSourceFromPreview,
+      onCancel: _resetAll,
+      isLoading: _isLoading,
+    );
+  }
+
+  Widget _buildHelpCard({
+    required String title,
+    List<String>? examples,
+    List<String>? steps,
+    String? description,
+  }) {
+    final colors = context.facteurColors;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colors.textPrimary,
+                ),
+          ),
+          if (steps != null) ...[
+            const SizedBox(height: 12),
+            ...steps.asMap().entries.map((entry) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        child: Text(
+                          '${entry.key + 1}.',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          entry.value,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: colors.textSecondary,
+                                    height: 1.4,
+                                  ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+          if (examples != null) ...[
+            const SizedBox(height: 12),
+            ...examples.map((ex) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _buildBulletPoint(context, ex),
+                )),
+          ],
+          if (description != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              description,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                    height: 1.4,
+                  ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAtlasFluxCard() {
+    final colors = context.facteurColors;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(PhosphorIcons.books(PhosphorIconsStyle.light),
+              size: 32, color: colors.primary),
+          const SizedBox(height: 12),
+          Text(
+            'Toujours en manque d\'inspiration ?',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(color: colors.textPrimary),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Plongez dans la bibliotheque francophone AtlasFlux.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: colors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _openAtlasFlux,
+            icon: Icon(
+                PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                size: 18,
+                color: colors.primary),
+            label: Text('Explorer AtlasFlux',
+                style: TextStyle(color: colors.primary)),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: colors.primary),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          )
+        ],
       ),
     );
   }
@@ -252,7 +688,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
                   size: 48, color: colors.textTertiary),
               const SizedBox(height: 16),
               Text(
-                'Aucun résultat trouvé',
+                'Aucun resultat trouve',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.textSecondary,
                     ),
@@ -268,7 +704,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Résultats de la recherche',
+          'Resultats de la recherche',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 16),
@@ -307,7 +743,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
                   color: colors.backgroundSecondary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+                child: Icon(
+                    PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
                     color: colors.primary),
               ),
         title: Text(source.name,
@@ -375,134 +812,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
                 ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildEmptyState() {
-    final colors = context.facteurColors;
-    final trendingAsyncValue = ref.watch(trendingSourcesProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        PrimaryButton(
-          label: 'Rechercher',
-          onPressed: _detectOrSearchSource,
-          isLoading: false,
-        ),
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: colors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '💡 En manque d\'idées ? Ajoute par exemple :',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                _buildBulletPoint(
-                    context, 'Le nom de ton blog ou newsletter préférée'),
-                const SizedBox(height: 8),
-                _buildBulletPoint(context,
-                    'Le lien direct vers un site de niche (ex: heidi.news)'),
-                const SizedBox(height: 8),
-                _buildBulletPoint(
-                    context, 'Le lien d\'un profil Substack connu'),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 40),
-        Text(
-          'Pépites de la communauté',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 16),
-        trendingAsyncValue.when(
-          data: (sources) {
-            if (sources.isEmpty) {
-              return Text(
-                'Aucune pépite pour le moment.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textTertiary),
-              );
-            }
-            return Column(
-              children: sources.map((s) => _buildSourceListTile(s)).toList(),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text(
-            'Impossible de charger les tendances.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: colors.error),
-          ),
-        ),
-        const SizedBox(height: 40),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: colors.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colors.primary.withOpacity(0.3)),
-          ),
-          child: Column(
-            children: [
-              Icon(PhosphorIcons.books(PhosphorIconsStyle.light),
-                  size: 32, color: colors.primary),
-              const SizedBox(height: 12),
-              Text(
-                'Toujours en manque d\'inspiration ?',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(color: colors.textPrimary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Plongez dans la bibliothèque francophone AtlasFlux.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: _openAtlasFlux,
-                icon: Icon(
-                    PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
-                    size: 18,
-                    color: colors.primary),
-                label: Text('Explorer AtlasFlux',
-                    style: TextStyle(color: colors.primary)),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: colors.primary),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              )
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
       ],
     );
   }
