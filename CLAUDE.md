@@ -102,20 +102,34 @@ Smoke tests inclus (health, readiness, environment check). Visible dans les chec
 
 Fallback manuel si besoin : `gh workflow run deploy-staging.yml --ref <branch-name>`
 
-### 3.3 Peer Review Conductor
+### 3.3 Handoff : l'agent dev prépare la review
 
-1. **L'agent STOP** et notifie : "PR #XX prête pour Peer Review"
-2. **L'utilisateur ouvre un workspace Conductor séparé** sur la branche
-3. **Prompt de review** :
+Avant de STOP, l'agent dev **écrit un résumé de handoff** dans `.context/pr-handoff.md` :
 
-> Review the workspace diff as a senior developer peer review.
+```markdown
+# PR #XX — <titre>
+## Quoi : <résumé en 2-3 lignes>
+## Pourquoi : <problème résolu / valeur ajoutée>
+## Zones à risque : <fichiers/modules critiques modifiés>
+## Ce que le reviewer doit vérifier en priorité : <points d'attention>
+```
+
+Puis l'agent STOP et notifie : **"PR #XX prête pour Peer Review — handoff dans `.context/pr-handoff.md`"**
+
+### 3.4 Peer Review Conductor
+
+1. **L'utilisateur ouvre un workspace Conductor séparé** sur la branche
+2. **Prompt de review** (le reviewer lit automatiquement `.context/pr-handoff.md` + le diff) :
+
+> Lis `.context/pr-handoff.md` pour le contexte, puis review le workspace diff en peer review senior.
 > Check: Security, Guardrails Facteur (`list[]`, stale token), Breaking changes, Test coverage, Architecture, Performance.
-> Output: BLOCKERS / WARNINGS / SUGGESTIONS / APPROVED ou NOT APPROVED
+> Utilise l'outil DiffComment pour laisser tes commentaires directement sur les lignes de code.
+> Output final : BLOCKERS / WARNINGS / SUGGESTIONS / **APPROVED** ou **NOT APPROVED**
 
-4. **Si blockers** → retour agent dev → fix → re-push → CI re-run
-5. **Si APPROVED** → merge autorisé
+3. **Si blockers** → copier la sortie du reviewer dans le workspace de l'agent dev → l'agent fix → re-push → CI re-run
+4. **Si APPROVED** → merge autorisé
 
-### 3.4 Merge & Production
+### 3.5 Merge & Production
 
 Merge via **GitHub UI** (bouton "Squash and merge") ou CLI :
 ```bash
