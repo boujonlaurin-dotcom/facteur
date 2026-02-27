@@ -28,16 +28,16 @@ class TestNormalizeTitle:
     def test_normalize_removes_stop_words(self):
         """Test que les stop words sont filtrés."""
         detector = ImportanceDetector()
-        tokens = detector.normalize_title("Le président de la France est en visite")
-        
+        tokens = detector.normalize_title("Le directeur de la startup est en visite")
+
         # "le", "de", "la", "est", "en" sont des stop words
         assert "le" not in tokens
         assert "de" not in tokens
         assert "la" not in tokens
-        
-        # "president", "france", "visite" devraient rester
-        assert "president" in tokens
-        assert "france" in tokens
+
+        # "directeur", "startup", "visite" devraient rester
+        assert "directeur" in tokens
+        assert "startup" in tokens
         assert "visite" in tokens
 
     def test_normalize_removes_accents(self):
@@ -52,14 +52,14 @@ class TestNormalizeTitle:
     def test_normalize_removes_short_words(self):
         """Test que les mots < 3 caractères sont filtrés."""
         detector = ImportanceDetector()
-        tokens = detector.normalize_title("Un AI va révolutionner le monde")
-        
+        tokens = detector.normalize_title("Un AI va révolutionner la planète")
+
         # "ai" et "va" ont moins de 3 caractères
         assert "ai" not in tokens
         assert "va" not in tokens
-        # "revolutionner" et "monde" restent
+        # "revolutionner" et "planete" restent
         assert "revolutionner" in tokens
-        assert "monde" in tokens
+        assert "planete" in tokens
 
     def test_normalize_empty_string(self):
         """Test avec une chaîne vide."""
@@ -163,9 +163,9 @@ class TestDetectTrendingClusters:
         source_c = uuid.uuid4()
         
         contents = [
-            self._create_mock_content("Macron annonce une grande réforme", source_a),
-            self._create_mock_content("Macron présente sa réforme majeure", source_b),
-            self._create_mock_content("La réforme de Macron enfin dévoilée", source_c),
+            self._create_mock_content("Macron annonce réforme fiscale majeure", source_a),
+            self._create_mock_content("Macron réforme fiscale annonce Bercy", source_b),
+            self._create_mock_content("Macron annonce réforme fiscale contestée", source_c),
         ]
         
         trending = detector.detect_trending_clusters(contents)

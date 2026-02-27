@@ -1,8 +1,8 @@
 """Layer d'impression — pénalise les articles déjà affichés mais non cliqués."""
 
-from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
-from app.services.recommendation.scoring_config import ScoringWeights
 from app.models.content import Content
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 
 
 class ImpressionLayer(BaseScoringLayer):

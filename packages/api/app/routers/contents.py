@@ -177,7 +177,7 @@ async def impress_content(
     current_user_id: str = Depends(get_current_user_id),
 ):
     """Marque un article comme 'déjà vu' — malus permanent fort (-120 pts)."""
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from sqlalchemy.dialects.postgresql import insert
 
@@ -185,7 +185,7 @@ async def impress_content(
     from app.models.enums import ContentStatus
 
     user_uuid = UUID(current_user_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     stmt = (
         insert(UserContentStatus)
