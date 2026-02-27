@@ -153,6 +153,56 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  /// Refresh feed: mark visible (scrolled-past) articles as "already shown",
+  /// then re-fetch. Only articles whose IDs are in [visibleContentIds] are
+  /// marked — articles loaded by infinite scroll but not yet seen are skipped.
+  Future<void> refreshArticles(Set<String> visibleContentIds) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Only mark non-consumed, visible articles
+    final contentIds = currentState.items
+        .where((c) =>
+            c.status != ContentStatus.consumed &&
+            visibleContentIds.contains(c.id))
+        .map((c) => c.id)
+        .toList();
+
+    if (contentIds.isEmpty) {
+      await refresh();
+      return;
+    }
+
+    final repository = ref.read(feedRepositoryProvider);
+    await repository.refreshFeed(contentIds);
+    await refresh();
+  }
+
+  /// Mark a single article as "already seen" — permanent strong penalty.
+  Future<void> impressContent(Content content) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove from feed
+    final updatedItems = List<Content>.from(currentState.items);
+    updatedItems.removeWhere((c) => c.id == content.id);
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.impressContent(content.id);
+    } catch (e) {
+      await refresh();
+      rethrow;
+    }
+  }
+
+  /// Mark an article as "already seen" by ID only (used from digest).
+  Future<void> impressContentById(String contentId) async {
+    final repository = ref.read(feedRepositoryProvider);
+    await repository.impressContent(contentId);
+  }
+
   Future<void> toggleSave(Content content) async {
     final currentState = state.value;
     if (currentState == null) return;

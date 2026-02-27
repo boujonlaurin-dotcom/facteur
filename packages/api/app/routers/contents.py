@@ -170,6 +170,48 @@ async def hide_content(
     return {"status": "ok", "is_hidden": True, "reason": request.reason}
 
 
+@router.post("/{content_id}/impress", status_code=status.HTTP_200_OK)
+async def impress_content(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Marque un article comme 'déjà vu' — malus permanent fort (-120 pts)."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.content import UserContentStatus
+    from app.models.enums import ContentStatus
+
+    user_uuid = UUID(current_user_id)
+    now = datetime.now(UTC)
+
+    stmt = (
+        insert(UserContentStatus)
+        .values(
+            user_id=user_uuid,
+            content_id=content_id,
+            status=ContentStatus.UNSEEN.value,
+            manually_impressed=True,
+            last_impressed_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "content_id"],
+            set_={
+                "manually_impressed": True,
+                "last_impressed_at": now,
+                "updated_at": now,
+            },
+        )
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"status": "ok", "manually_impressed": True}
+
+
 @router.put(
     "/{content_id}/note", status_code=status.HTTP_200_OK, response_model=NoteResponse
 )

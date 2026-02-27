@@ -24,6 +24,7 @@ from app.services.recommendation.layers import (
     ArticleTopicLayer,
     BehavioralLayer,
     CoreLayer,
+    ImpressionLayer,
     PersonalizationLayer,
     QualityLayer,
     StaticPreferenceLayer,
@@ -46,6 +47,7 @@ class RecommendationService:
                 VisualLayer(),
                 ArticleTopicLayer(),
                 PersonalizationLayer(),  # Story 4.7
+                ImpressionLayer(),  # Feed Refresh
             ]
         )
 
@@ -264,6 +266,9 @@ class RecommendationService:
         # Compute source affinity from past interactions
         source_affinity_scores = await self._compute_source_affinity(user_id)
 
+        # Fetch impression data for candidates (Feed Refresh feature)
+        impression_data = await self.fetch_impression_data(user_id, candidates)
+
         # Context creation
         context = ScoringContext(
             user_profile=user_profile,
@@ -281,6 +286,7 @@ class RecommendationService:
             muted_content_types=muted_content_types,
             custom_source_ids=custom_source_ids,
             source_affinity_scores=source_affinity_scores,
+            impression_data=impression_data,
         )
 
         for content in candidates:
@@ -827,6 +833,34 @@ class RecommendationService:
             return {}
 
         return {sid: score / max_score for sid, score in scores.items()}
+
+    async def fetch_impression_data(
+        self, user_id: UUID, candidates: list[Content]
+    ) -> dict[UUID, tuple]:
+        """Fetch impression timestamps for candidates (Feed Refresh).
+
+        Returns {content_id: (last_impressed_at, manually_impressed)} for
+        candidates that have been impressed at least once.
+        """
+        candidate_ids = [c.id for c in candidates]
+        if not candidate_ids:
+            return {}
+
+        stmt = select(
+            UserContentStatus.content_id,
+            UserContentStatus.last_impressed_at,
+            UserContentStatus.manually_impressed,
+        ).where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id.in_(candidate_ids),
+            UserContentStatus.last_impressed_at.isnot(None),
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+        return {
+            row.content_id: (row.last_impressed_at, row.manually_impressed)
+            for row in rows
+        }
 
     # _calculate_user_bias and _get_opposing_biases moved to
     # app.services.recommendation.filter_presets (shared with DigestSelector)

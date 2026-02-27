@@ -1,9 +1,7 @@
 """Routers API."""
 
 from app.routers import (
-    app_update,
     auth,
-    collections,
     contents,
     digest,
     feed,
@@ -18,9 +16,7 @@ from app.routers import (
 )
 
 __all__ = [
-    "app_update",
     "auth",
-    "collections",
     "contents",
     "digest",
     "feed",

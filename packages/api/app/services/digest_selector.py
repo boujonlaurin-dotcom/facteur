@@ -704,6 +704,11 @@ class DigestSelector:
         Retourne les candidats avec leur score et un breakdown détaillé des contributions
         pour la transparence algorithmique.
         """
+        # Fetch impression data so ImpressionLayer applies in digest too
+        impression_data = await self.rec_service.fetch_impression_data(
+            context.user_id, candidates
+        )
+
         # Construire le ScoringContext pour le moteur existant
         scoring_context = ScoringContext(
             user_profile=context.user_profile,
@@ -720,6 +725,7 @@ class DigestSelector:
             muted_content_types=context.muted_content_types,
             custom_source_ids=context.custom_source_ids,
             source_affinity_scores=context.source_affinity_scores,
+            impression_data=impression_data,
         )
 
         scored = []

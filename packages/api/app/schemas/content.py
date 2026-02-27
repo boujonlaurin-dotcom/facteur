@@ -147,6 +147,12 @@ class DailyTop3Response(BaseModel):
         from_attributes = True
 
 
+class FeedRefreshRequest(BaseModel):
+    """Requête pour rafraîchir le feed (marquer les articles visibles comme 'déjà affiché')."""
+
+    content_ids: list[UUID] = Field(..., max_length=200)
+
+
 class FeedResponse(BaseModel):
     """Réponse globale du feed."""
 

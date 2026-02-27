@@ -1,6 +1,7 @@
 from .article_topic import ArticleTopicLayer
 from .behavioral import BehavioralLayer
 from .core import CoreLayer
+from .impression import ImpressionLayer
 from .personalization import PersonalizationLayer
 from .quality import QualityLayer
 from .static_prefs import StaticPreferenceLayer
@@ -14,4 +15,5 @@ __all__ = [
     "VisualLayer",
     "ArticleTopicLayer",
     "PersonalizationLayer",
+    "ImpressionLayer",
 ]

@@ -204,6 +204,29 @@ class FeedRepository {
     }
   }
 
+  /// Refresh feed: mark visible articles as "already shown" for scoring penalty.
+  Future<void> refreshFeed(List<String> contentIds) async {
+    try {
+      await _apiClient.dio.post<void>(
+        'feed/refresh',
+        data: {'content_ids': contentIds},
+      );
+    } catch (e) {
+      print('FeedRepository: [ERROR] refreshFeed: $e');
+      rethrow;
+    }
+  }
+
+  /// Mark a single article as "already seen" — permanent strong penalty.
+  Future<void> impressContent(String contentId) async {
+    try {
+      await _apiClient.dio.post<void>('contents/$contentId/impress');
+    } catch (e) {
+      print('FeedRepository: [ERROR] impressContent: $e');
+      rethrow;
+    }
+  }
+
   Future<void> updateContentStatus(
       String contentId, ContentStatus status) async {
     try {
