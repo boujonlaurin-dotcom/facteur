@@ -167,8 +167,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     }
 
-    // Load more
-    if (currentScroll >= maxScroll - 200) {
+    // Load more — skip when user is actively scrolling UP.
+    // Triggering a state update + SliverList rebuild during an upward scroll
+    // causes Flutter to recalculate scroll geometry mid-gesture, which snaps
+    // the position back to the bottom. Only block when direction is explicitly
+    // forward (= toward top); idle and reverse (toward bottom) are fine.
+    final notScrollingUp = _scrollController.position.userScrollDirection !=
+        ScrollDirection.forward;
+    if (currentScroll >= maxScroll - 200 && notScrollingUp) {
       ref.read(feedProvider.notifier).loadMore();
     }
   }
