@@ -89,6 +89,14 @@ class Content(Base):
     is_paid: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # In-App Reading: content quality signal ('full', 'partial', 'none')
+    content_quality: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default=None
+    )
+    # In-App Reading: last extraction attempt timestamp (prevents infinite retries)
+    extraction_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

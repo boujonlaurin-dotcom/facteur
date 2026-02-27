@@ -75,6 +75,15 @@ class ScoringWeights:
     # Augmenté de 10→12 pour encourager le contenu visuel.
     IMAGE_BOOST = 12.0
 
+    # --- CONTENT QUALITY LAYER (Lecture in-app) ---
+
+    # Boost pour les articles avec contenu riche (>500 chars texte brut).
+    # Favorise les articles lisibles dans le reader natif Facteur.
+    CONTENT_QUALITY_FULL_BOOST = 10.0
+
+    # Boost réduit pour les articles avec contenu partiel (100-500 chars).
+    CONTENT_QUALITY_PARTIAL_BOOST = 5.0
+
     # --- ARTICLE TOPIC LAYER (Topics Granulaires) ---
 
     # Bonus par topic granulaire matchant entre content.topics et user_subtopics.

@@ -65,6 +65,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
       url: json['url'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String?,
       description: json['description'] as String?,
+      htmlContent: json['html_content'] as String?,
       topics: (json['topics'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
@@ -101,6 +102,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'url': instance.url,
       'thumbnail_url': instance.thumbnailUrl,
       'description': instance.description,
+      'html_content': instance.htmlContent,
       'topics': instance.topics,
       'content_type': _contentTypeToJson(instance.contentType),
       'duration_seconds': instance.durationSeconds,

@@ -588,6 +588,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       url: item.url,
       thumbnailUrl: item.thumbnailUrl,
       description: item.description,
+      htmlContent: item.htmlContent,
       contentType: item.contentType,
       durationSeconds: item.durationSeconds,
       publishedAt: item.publishedAt ?? DateTime.now(),

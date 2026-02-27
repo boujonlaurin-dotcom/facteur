@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
+from app.services.content_extractor import ContentExtractor
 from app.services.paywall_detector import detect_paywall
 
 logger = structlog.get_logger()
@@ -449,6 +450,14 @@ class SyncService:
             if data.get("is_paid") and not existing.is_paid:
                 existing.is_paid = True
 
+            # In-App Reading: enrich with trafilatura if content not full quality
+            if (
+                existing.content_type == ContentType.ARTICLE
+                and existing.content_quality != "full"
+                and not existing.html_content
+            ):
+                await self._enrich_content(existing)
+
             return False
 
         # Create new content
@@ -476,10 +485,66 @@ class SyncService:
         # we should flush.
         await self.session.flush()
 
+        # In-App Reading: enrich article content with trafilatura
+        if new_content.content_type == ContentType.ARTICLE:
+            await self._enrich_content(new_content)
+
         # US-2: Add to classification queue for ML processing
         await self._enqueue_for_classification(new_content, data)
 
         return True
+
+    async def _enrich_content(self, content: Content) -> None:
+        """Enrich article content with trafilatura if content quality is not full.
+
+        Runs extraction in a thread pool to avoid blocking the event loop.
+        Updates content_quality and duration_seconds based on extracted text.
+        """
+        extractor = ContentExtractor()
+
+        # Compute quality from existing content if not yet done
+        if not content.content_quality:
+            if content.html_content or content.description:
+                content.content_quality = extractor.compute_quality_for_existing(
+                    content.html_content, content.description
+                )
+
+        # Skip if existing content is already full quality
+        if content.content_quality == "full":
+            return
+
+        content.extraction_attempted_at = datetime.datetime.now(
+            datetime.timezone.utc
+        )
+
+        try:
+            # Run sync trafilatura in thread pool (with 20s timeout)
+            result = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, extractor.extract, content.url
+                ),
+                timeout=20.0,
+            )
+
+            if result.html_content:
+                content.html_content = result.html_content
+            if result.reading_time_seconds and not content.duration_seconds:
+                content.duration_seconds = result.reading_time_seconds
+
+            # Always set content_quality (even if extraction failed → 'none')
+            content.content_quality = result.content_quality
+
+        except Exception:
+            logger.exception(
+                "content_enrichment_failed",
+                content_id=str(content.id),
+                url=content.url,
+            )
+            # Ensure quality is set even on failure
+            if not content.content_quality:
+                content.content_quality = extractor.compute_quality_for_existing(
+                    content.html_content, content.description
+                )
 
     async def _enqueue_for_classification(self, content: Content, data: dict) -> None:
         """Add content to classification queue with priority based on age."""

@@ -23,6 +23,7 @@ from app.services.recommendation.filter_presets import (
 from app.services.recommendation.layers import (
     ArticleTopicLayer,
     BehavioralLayer,
+    ContentQualityLayer,
     CoreLayer,
     PersonalizationLayer,
     QualityLayer,
@@ -44,6 +45,7 @@ class RecommendationService:
                 BehavioralLayer(),
                 QualityLayer(),
                 VisualLayer(),
+                ContentQualityLayer(),
                 ArticleTopicLayer(),
                 PersonalizationLayer(),  # Story 4.7
             ]

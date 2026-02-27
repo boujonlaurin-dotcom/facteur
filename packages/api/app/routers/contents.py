@@ -1,10 +1,16 @@
+import asyncio
+from datetime import datetime, timezone
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
+from app.models.content import Content
+from app.models.enums import ContentType
 from app.schemas.collection import SaveContentRequest
 from app.schemas.content import (
     ContentDetailResponse,
@@ -14,7 +20,10 @@ from app.schemas.content import (
     NoteUpsertRequest,
 )
 from app.services.collection_service import CollectionService
+from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -31,15 +40,93 @@ async def get_content_detail(
 ):
     """
     Récupère le détail d'un contenu.
+    Enrichit le contenu on-demand via trafilatura si html_content manquant.
     """
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
-    content = await service.get_content_detail(content_id, user_uuid)
-    if not content:
+    content_data = await service.get_content_detail(content_id, user_uuid)
+    if not content_data:
         raise HTTPException(status_code=404, detail="Contenu non trouvé")
 
-    return content
+    # On-demand enrichment: try to get full content for articles
+    if content_data.get("content_type") == ContentType.ARTICLE:
+        quality = content_data.get("content_quality")
+        extractor = ContentExtractor(download_timeout=10)
+
+        # Compute quality from existing content if not yet done
+        if not quality and (
+            content_data.get("html_content") or content_data.get("description")
+        ):
+            quality = extractor.compute_quality_for_existing(
+                content_data.get("html_content"), content_data.get("description")
+            )
+            content_data["content_quality"] = quality
+
+        # Try trafilatura if content is not full quality
+        # AND no recent extraction attempt (cooldown 6h to prevent retry storms)
+        attempted_at = content_data.get("extraction_attempted_at")
+        cooldown_expired = (
+            attempted_at is None
+            or (datetime.now(timezone.utc) - attempted_at).total_seconds()
+            > 6 * 3600
+        )
+
+        if quality != "full" and cooldown_expired:
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, extractor.extract, content_data["url"]
+                    ),
+                    timeout=15.0,
+                )
+
+                # Persist enrichment to DB (single commit)
+                stmt = select(Content).where(Content.id == content_id)
+                db_content = await db.scalar(stmt)
+                if db_content:
+                    db_content.extraction_attempted_at = datetime.now(
+                        timezone.utc
+                    )
+                    if result.html_content:
+                        content_data["html_content"] = result.html_content
+                        content_data["content_quality"] = result.content_quality
+                        db_content.html_content = result.html_content
+                        db_content.content_quality = result.content_quality
+                        if (
+                            result.reading_time_seconds
+                            and not db_content.duration_seconds
+                        ):
+                            db_content.duration_seconds = (
+                                result.reading_time_seconds
+                            )
+                            content_data["duration_seconds"] = (
+                                result.reading_time_seconds
+                            )
+                    elif not db_content.content_quality:
+                        db_content.content_quality = quality or "none"
+                    await db.commit()
+
+            except Exception:
+                # Mark attempt even on failure to prevent retry storm
+                try:
+                    stmt = select(Content).where(Content.id == content_id)
+                    db_content = await db.scalar(stmt)
+                    if db_content:
+                        db_content.extraction_attempted_at = datetime.now(
+                            timezone.utc
+                        )
+                        if not db_content.content_quality:
+                            db_content.content_quality = quality or "none"
+                        await db.commit()
+                except Exception:
+                    pass  # Don't fail the request over persistence
+                logger.exception(
+                    "on_demand_enrichment_failed",
+                    content_id=str(content_id),
+                )
+
+    return content_data
 
 
 @router.post("/{content_id}/status", status_code=status.HTTP_200_OK)
