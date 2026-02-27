@@ -399,6 +399,72 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 16),
 
+                // Séparateur "ou"
+                Row(
+                  children: [
+                    Expanded(
+                      child: Divider(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'ou',
+                        style:
+                            Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colors.textTertiary,
+                                ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Divider(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // Bouton Google Sign-In
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: authState.isLoading
+                        ? null
+                        : () {
+                            ref
+                                .read(authStateProvider.notifier)
+                                .signInWithGoogle();
+                          },
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: colors.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      backgroundColor: colors.surfacePaper,
+                    ),
+                    icon: Image.asset(
+                      'assets/icons/google_g_logo.png',
+                      height: 20,
+                      width: 20,
+                    ),
+                    label: Text(
+                      _isSignUp
+                          ? 'S\'inscrire avec Google'
+                          : 'Se connecter avec Google',
+                      style:
+                          Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: colors.textPrimary,
+                              ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
                 // Toggle inscription/connexion amélioré
                 if (!_isSignUp) ...[
                   // Mode login : afficher un encart attractif pour l'inscription
