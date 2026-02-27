@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Force load .env from the package directory to avoid shadowing by external env vars
-load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+# Load .env for local dev; never override existing env vars (Railway injects them)
+load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 
 
 class Settings(BaseSettings):
