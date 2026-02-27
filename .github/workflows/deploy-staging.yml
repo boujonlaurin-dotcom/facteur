@@ -1,0 +1,128 @@
+name: Deploy to Staging
+
+on:
+  # Auto-deploy quand CI passe sur une PR
+  workflow_run:
+    workflows: ["API Tests", "Build Docker Image"]
+    types: [completed]
+
+  # Fallback manuel
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to deploy'
+        required: false
+        default: ''
+
+jobs:
+  # Gate: ne déploie que si TOUTES les conditions sont remplies
+  check-gates:
+    runs-on: ubuntu-latest
+    outputs:
+      should-deploy: ${{ steps.gate.outputs.deploy }}
+      deploy-ref: ${{ steps.gate.outputs.ref }}
+    steps:
+      - name: Evaluate deploy conditions
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Manual dispatch : toujours déployer
+            if (context.eventName === 'workflow_dispatch') {
+              const ref = context.payload.inputs?.ref || context.ref;
+              core.setOutput('deploy', 'true');
+              core.setOutput('ref', ref);
+              console.log(`Manual deploy: ${ref}`);
+              return;
+            }
+
+            // workflow_run : vérifier que c'est une PR et que le run a réussi
+            const run = context.payload.workflow_run;
+            if (run.event !== 'pull_request' || run.conclusion !== 'success') {
+              core.setOutput('deploy', 'false');
+              console.log(`Skip: event=${run.event}, conclusion=${run.conclusion}`);
+              return;
+            }
+
+            // Vérifier que TOUS les checks requis sont passés sur ce commit
+            const { data: checks } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: run.head_sha,
+            });
+
+            const required = ['lint', 'test', 'build'];
+            const results = {};
+            for (const check of checks.check_runs) {
+              if (required.includes(check.name)) {
+                results[check.name] = check.conclusion;
+              }
+            }
+
+            const allPassed = required.every(name => results[name] === 'success');
+            console.log(`Check results: ${JSON.stringify(results)}`);
+            console.log(`All required checks passed: ${allPassed}`);
+
+            core.setOutput('deploy', allPassed ? 'true' : 'false');
+            core.setOutput('ref', run.head_branch);
+
+  deploy:
+    needs: check-gates
+    if: needs.check-gates.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-gates.outputs.deploy-ref }}
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to staging
+        run: railway up --environment staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Health check (liveness)
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://facteur-staging.up.railway.app/api/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Liveness check passed"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Liveness check failed after 10 attempts"
+          exit 1
+
+      - name: Readiness check (database)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://facteur-staging.up.railway.app/api/health/ready)
+          if [ "$STATUS" = "200" ]; then
+            echo "Readiness check passed (DB connected)"
+          else
+            echo "WARNING: Readiness check returned $STATUS (DB may not be ready)"
+            exit 1
+          fi
+
+      - name: Environment check
+        run: |
+          ENV=$(curl -s https://facteur-staging.up.railway.app/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
+          if [ "$ENV" = "staging" ]; then
+            echo "Environment correctly reports: staging"
+          else
+            echo "FAIL: Environment reports '$ENV' instead of 'staging'"
+            exit 1
+          fi
