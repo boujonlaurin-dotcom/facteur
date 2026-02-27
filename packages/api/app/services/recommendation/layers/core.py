@@ -105,7 +105,6 @@ class CoreLayer(BaseScoringLayer):
                 f"Affinité source: {affinity:.0%}",
             )
 
-
         # 3. Recency Decay (Base)
         # Score = 30 / (hours_old/24 + 1)
         if content.published_at:

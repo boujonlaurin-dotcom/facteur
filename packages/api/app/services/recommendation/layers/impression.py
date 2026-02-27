@@ -24,7 +24,7 @@ class ImpressionLayer(BaseScoringLayer):
         return "impression"
 
     def score(self, content: Content, context: ScoringContext) -> float:
-        if not hasattr(context, 'impression_data') or not context.impression_data:
+        if not hasattr(context, "impression_data") or not context.impression_data:
             return 0.0
 
         data = context.impression_data.get(content.id)
@@ -36,9 +36,10 @@ class ImpressionLayer(BaseScoringLayer):
         # Manual "already seen" — permanent strong penalty
         if is_manual:
             context.add_reason(
-                content.id, self.name,
+                content.id,
+                self.name,
                 ScoringWeights.IMPRESSION_MANUAL,
-                "Marqué comme déjà vu"
+                "Marqué comme déjà vu",
             )
             return ScoringWeights.IMPRESSION_MANUAL
 

@@ -846,17 +846,14 @@ class RecommendationService:
         if not candidate_ids:
             return {}
 
-        stmt = (
-            select(
-                UserContentStatus.content_id,
-                UserContentStatus.last_impressed_at,
-                UserContentStatus.manually_impressed,
-            )
-            .where(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id.in_(candidate_ids),
-                UserContentStatus.last_impressed_at.isnot(None),
-            )
+        stmt = select(
+            UserContentStatus.content_id,
+            UserContentStatus.last_impressed_at,
+            UserContentStatus.manually_impressed,
+        ).where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id.in_(candidate_ids),
+            UserContentStatus.last_impressed_at.isnot(None),
         )
 
         rows = (await self.session.execute(stmt)).all()

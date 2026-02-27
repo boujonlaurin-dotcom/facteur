@@ -166,7 +166,9 @@ class UserContentStatus(Base):
         DateTime(timezone=True), nullable=True
     )
     # Manual "already seen" flag — permanent strong penalty, no time decay
-    manually_impressed: Mapped[bool] = mapped_column(default=False, server_default="false")
+    manually_impressed: Mapped[bool] = mapped_column(
+        default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
