@@ -217,10 +217,16 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   @override
   // ignore: avoid_renaming_method_parameters
   void didChangeAppLifecycleState(AppLifecycleState appState) {
-    if (appState == AppLifecycleState.resumed && state.isAuthenticated) {
-      debugPrint(
-          'AuthStateNotifier: App resumed. Proactively refreshing session...');
-      refreshUser();
+    if (appState == AppLifecycleState.resumed) {
+      // Reset loading state in case user cancelled an OAuth flow
+      if (state.isLoading) {
+        state = state.copyWith(isLoading: false);
+      }
+      if (state.isAuthenticated) {
+        debugPrint(
+            'AuthStateNotifier: App resumed. Proactively refreshing session...');
+        refreshUser();
+      }
     }
   }
 
@@ -406,7 +412,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      await _supabase.auth.signInWithOAuth(OAuthProvider.apple);
+      final redirectUrl = kIsWeb
+          ? '${Uri.base.origin}/auth/callback'
+          : 'io.supabase.facteur://login-callback';
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: redirectUrl,
+      );
     } on AuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -424,7 +436,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      await _supabase.auth.signInWithOAuth(OAuthProvider.google);
+      final redirectUrl = kIsWeb
+          ? '${Uri.base.origin}/auth/callback'
+          : 'io.supabase.facteur://login-callback';
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirectUrl,
+      );
     } on AuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
