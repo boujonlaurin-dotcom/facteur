@@ -1,7 +1,6 @@
 """Modèle abonnement."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import DateTime, String
@@ -20,21 +19,19 @@ class UserSubscription(Base):
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), unique=True, nullable=False
     )
-    revenuecat_user_id: Mapped[Optional[str]] = mapped_column(
-        String(200), nullable=True
-    )
+    revenuecat_user_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="trial"
     )  # trial, active, expired, cancelled
-    product_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    product_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     trial_start: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
     trial_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    current_period_start: Mapped[Optional[datetime]] = mapped_column(
+    current_period_start: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    current_period_end: Mapped[Optional[datetime]] = mapped_column(
+    current_period_end: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -64,4 +61,3 @@ class UserSubscription(Base):
             delta = self.current_period_end - datetime.utcnow()
             return max(0, delta.days)
         return 0
-

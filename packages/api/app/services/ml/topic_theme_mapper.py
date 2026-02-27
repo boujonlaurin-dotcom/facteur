@@ -4,11 +4,17 @@ Permet de dériver content.theme depuis content.topics[0] après classification 
 Le thème inféré est utilisé par le scoring pour améliorer la diversité du feed.
 """
 
-
-# Les 8 thèmes valides de la taxonomie Facteur
+# Les 9 thèmes valides de la taxonomie Facteur
 VALID_THEMES: set[str] = {
-    "tech", "society", "environment", "economy",
-    "politics", "culture", "science", "international",
+    "tech",
+    "society",
+    "environment",
+    "economy",
+    "politics",
+    "culture",
+    "science",
+    "international",
+    "sport",
 }
 
 
@@ -52,7 +58,7 @@ TOPIC_TO_THEME: dict[str, str] = {
     # Lifestyle → mapped to closest broad theme
     "travel": "culture",
     "gastronomy": "culture",
-    "sport": "culture",
+    "sport": "sport",
     "wellness": "society",
     "family": "society",
     "relationships": "society",

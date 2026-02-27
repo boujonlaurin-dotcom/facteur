@@ -272,6 +272,7 @@ class PersonalizationSheet extends ConsumerWidget {
       'society': 'Société',
       'environment': 'Environnement',
       'economy': 'Économie',
+      'sport': 'Sport',
     };
     return translations[slug.toLowerCase()] ?? slug;
   }

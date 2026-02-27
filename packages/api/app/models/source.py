@@ -2,11 +2,20 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PGUUID
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -31,31 +40,52 @@ class Source(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     feed_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20), nullable=False
+        Enum(
+            SourceType,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
+        nullable=False,
     )
     theme: Mapped[str] = mapped_column(String(50), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    logo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_curated: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_synced_at: Mapped[Optional[datetime]] = mapped_column(
+    last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     # Biais et fiabilité (Story 7.1)
     bias_stance: Mapped[BiasStance] = mapped_column(
-        Enum(BiasStance, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        Enum(
+            BiasStance,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
         default=BiasStance.UNKNOWN,
         server_default=BiasStance.UNKNOWN.value,
     )
     reliability_score: Mapped[ReliabilityScore] = mapped_column(
-        Enum(ReliabilityScore, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        Enum(
+            ReliabilityScore,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
         default=ReliabilityScore.UNKNOWN,
         server_default=ReliabilityScore.UNKNOWN.value,
     )
     bias_origin: Mapped[BiasOrigin] = mapped_column(
-        Enum(BiasOrigin, values_callable=lambda x: [e.value for e in x], native_enum=False, length=20),
+        Enum(
+            BiasOrigin,
+            values_callable=lambda x: [e.value for e in x],
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
         default=BiasOrigin.UNKNOWN,
         server_default=BiasOrigin.UNKNOWN.value,
@@ -65,18 +95,22 @@ class Source(Base):
     )
 
     # Scores granulaires (FQS Pillars - Story 7.5)
-    score_independence: Mapped[Optional[float]] = mapped_column(nullable=True)
-    score_rigor: Mapped[Optional[float]] = mapped_column(nullable=True)
-    score_ux: Mapped[Optional[float]] = mapped_column(nullable=True)
-    granular_topics: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    score_independence: Mapped[float | None] = mapped_column(nullable=True)
+    score_rigor: Mapped[float | None] = mapped_column(nullable=True)
+    score_ux: Mapped[float | None] = mapped_column(nullable=True)
+    granular_topics: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
     # Thèmes secondaires pour les sources généralistes (Phase 1 diversité feed)
-    secondary_themes: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    secondary_themes: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
 
     # Daily Briefing (Story 4.4) - URL du feed "À la Une" pour les sources de référence
-    une_feed_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    une_feed_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Paywall detection config (per-source patterns)
-    paywall_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    paywall_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relations
     contents: Mapped[list["Content"]] = relationship(
@@ -91,7 +125,9 @@ class UserSource(Base):
     """Association utilisateur-source."""
 
     __tablename__ = "user_sources"
-    __table_args__ = (UniqueConstraint("user_id", "source_id", name="uq_user_sources_user_source"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_id", name="uq_user_sources_user_source"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -111,4 +147,3 @@ class UserSource(Base):
 
 # Import pour éviter les circular imports
 from app.models.content import Content  # noqa: E402, F401
-

@@ -1,13 +1,23 @@
 """Service utilisateur."""
 
-from typing import Optional
+import logging
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import UserProfile, UserPreference, UserInterest, UserStreak, UserSubtopic
+from app.models.source import UserSource
+from app.models.user import (
+    UserInterest,
+    UserPreference,
+    UserProfile,
+    UserStreak,
+    UserSubtopic,
+)
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -16,7 +26,7 @@ class UserService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_profile(self, user_id: str) -> Optional[UserProfile]:
+    async def get_profile(self, user_id: str) -> UserProfile | None:
         """Récupère le profil utilisateur."""
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.user_id == UUID(user_id))
@@ -33,18 +43,7 @@ class UserService:
         self.db.add(profile)
         await self.db.flush()
 
-        # Tenter de créer le streak s'il n'existe pas déjà
-        # Utiliser une vérification explicite pour éviter les erreurs de contrainte unique
-        # si le streak a été créé par un autre processus (ex: appel API parallèle)
-        result = await self.db.execute(
-            select(UserStreak).where(UserStreak.user_id == UUID(user_id))
-        )
-        if not result.scalar_one_or_none():
-            streak = UserStreak(
-                id=uuid4(),
-                user_id=UUID(user_id),
-            )
-            self.db.add(streak)
+        await self._ensure_streak_exists(user_id)
 
         return profile
 
@@ -54,25 +53,39 @@ class UserService:
         if not profile:
             profile = await self.create_profile(user_id)
 
-        # Vérifier si le streak existe, sinon le créer (pour les anciens users ou race conditions)
-        # Note: ceci est une mesure de sécurité car create_profile devrait le créer
-        # mais si l'onboarding est relancé ou s'il y a eu une erreur, on s'assure qu'il existe.
+        await self._ensure_streak_exists(user_id)
+
+        return profile
+
+    async def _ensure_streak_exists(self, user_id: str) -> None:
+        """Crée le streak s'il n'existe pas, en gérant les race conditions.
+
+        Uses a savepoint (nested transaction) so that an IntegrityError only
+        rolls back the streak INSERT, not the entire transaction — preventing
+        silent data loss of previously flushed objects like UserProfile.
+        """
         result = await self.db.execute(
             select(UserStreak).where(UserStreak.user_id == UUID(user_id))
         )
         if not result.scalar_one_or_none():
-            streak = UserStreak(
-                id=uuid4(),
-                user_id=UUID(user_id),
-            )
-            self.db.add(streak)
-            await self.db.flush()
-
-        return profile
+            try:
+                async with self.db.begin_nested():
+                    streak = UserStreak(
+                        id=uuid4(),
+                        user_id=UUID(user_id),
+                    )
+                    self.db.add(streak)
+                    await self.db.flush()
+            except IntegrityError:
+                # Race condition: streak was created by another request.
+                # The savepoint is rolled back automatically, outer transaction intact.
+                logger.info(
+                    f"Streak already exists for user {user_id} (race condition handled)"
+                )
 
     async def update_profile(
         self, user_id: str, data: UserProfileUpdate
-    ) -> Optional[UserProfile]:
+    ) -> UserProfile | None:
         """Met à jour le profil utilisateur."""
         profile = await self.get_profile(user_id)
         if not profile:
@@ -85,9 +98,7 @@ class UserService:
         await self.db.flush()
         return profile
 
-    async def save_onboarding(
-        self, user_id: str, answers: OnboardingAnswers
-    ) -> dict:
+    async def save_onboarding(self, user_id: str, answers: OnboardingAnswers) -> dict:
         """Sauvegarde les réponses de l'onboarding."""
         profile = await self.get_or_create_profile(user_id)
 
@@ -95,7 +106,7 @@ class UserService:
         profile.age_range = answers.age_range
         profile.gender = answers.gender
         profile.gamification_enabled = answers.gamification_enabled
-        profile.weekly_goal = answers.weekly_goal or 10
+        profile.weekly_goal = answers.weekly_goal or 5
         profile.onboarding_completed = True
 
         # Nettoyer les anciennes préférences et intérêts pour garantir l'idempotence
@@ -120,6 +131,7 @@ class UserService:
             "content_recency": answers.content_recency,
             "format_preference": answers.format_preference,
             "personal_goal": answers.personal_goal,
+            "digest_mode": answers.digest_mode,
         }
 
         pref_count = 0
@@ -161,6 +173,36 @@ class UserService:
                 self.db.add(subtopic)
                 subtopic_count += 1
 
+        # Sauvegarder les sources sélectionnées (UserSource)
+        # Atomique avec le reste de l'onboarding — pas de race condition
+        sources_created = 0
+        if answers.preferred_sources:
+            # Vérifier quelles sources existent et sont actives
+            valid_source_ids = set()
+            for sid in answers.preferred_sources:
+                try:
+                    valid_source_ids.add(UUID(sid))
+                except ValueError:
+                    continue
+
+            if valid_source_ids:
+                existing_result = await self.db.execute(
+                    select(UserSource.source_id).where(
+                        UserSource.user_id == UUID(user_id),
+                        UserSource.source_id.in_(list(valid_source_ids)),
+                    )
+                )
+                already_trusted = set(existing_result.scalars().all())
+
+                for source_id in valid_source_ids - already_trusted:
+                    user_source = UserSource(
+                        id=uuid4(),
+                        user_id=UUID(user_id),
+                        source_id=source_id,
+                        is_custom=False,
+                    )
+                    self.db.add(user_source)
+                    sources_created += 1
 
         await self.db.flush()
         return {
@@ -168,6 +210,7 @@ class UserService:
             "interests_created": interest_count,
             "subtopics_created": subtopic_count,
             "preferences_created": pref_count,
+            "sources_created": sources_created,
         }
 
     async def get_preferences(self, user_id: str) -> list[UserPreference]:
@@ -216,4 +259,3 @@ class UserService:
             by_type={},
             by_theme={},
         )
-

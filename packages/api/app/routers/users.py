@@ -1,23 +1,25 @@
 """Routes utilisateur."""
 
-from typing import Optional
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
 from app.database import get_db
 from app.dependencies import get_current_user_id
+from app.schemas.streak import StreakResponse
 from app.schemas.user import (
     OnboardingRequest,
     OnboardingResponse,
+    UserInterestResponse,
+    UserPreferenceResponse,
     UserProfileResponse,
     UserProfileUpdate,
-    UserPreferenceResponse,
-    UserInterestResponse,
     UserStatsResponse,
 )
-from app.schemas.streak import StreakResponse
 from app.services.streak_service import StreakService
 from app.services.user_service import UserService
 
@@ -69,8 +71,15 @@ async def save_onboarding(
 ) -> OnboardingResponse:
     """Sauvegarder les réponses de l'onboarding."""
     service = UserService(db)
-    result = await service.save_onboarding(user_id, data.answers)
-    return OnboardingResponse.model_validate(result)
+    try:
+        result = await service.save_onboarding(user_id, data.answers)
+        return OnboardingResponse.model_validate(result)
+    except Exception as e:
+        logger.error(f"Onboarding save failed for user {user_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save onboarding data. Please retry.",
+        )
 
 
 @router.get("/preferences", response_model=list[UserPreferenceResponse])
@@ -108,8 +117,6 @@ async def get_stats(
 
     return stats
 
-    return stats
-
 
 @router.get("/streak", response_model=StreakResponse)
 async def get_streak(
@@ -123,12 +130,14 @@ async def get_streak(
 
 class PreferenceUpdateRequest(BaseModel):
     """Requête de mise à jour de préférence clé-valeur."""
+
     key: str
     value: str
 
 
 class PreferenceUpdateResponse(BaseModel):
     """Réponse de mise à jour de préférence."""
+
     success: bool
     key: str
     value: str
@@ -148,6 +157,7 @@ async def update_preference(
 
 class TopThemeResponse(BaseModel):
     """Un thème utilisateur avec son poids."""
+
     interest_slug: str
     weight: float
 
@@ -162,6 +172,5 @@ async def get_top_themes(
     interests = await service.get_interests(user_id)
     themes = sorted(interests, key=lambda i: i.weight, reverse=True)
     return [
-        TopThemeResponse(interest_slug=i.interest_slug, weight=i.weight)
-        for i in themes
+        TopThemeResponse(interest_slug=i.interest_slug, weight=i.weight) for i in themes
     ]

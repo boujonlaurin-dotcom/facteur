@@ -1,13 +1,12 @@
 """Utilitaires YouTube."""
 
 import re
-from typing import Optional
 
 
-def extract_youtube_channel_id(url: str) -> Optional[str]:
+def extract_youtube_channel_id(url: str) -> str | None:
     """
     Extrait l'ID de chaîne YouTube depuis une URL.
-    
+
     Supporte les formats:
     - https://youtube.com/channel/UC...
     - https://youtube.com/c/ChannelName
@@ -42,7 +41,7 @@ def extract_youtube_channel_id(url: str) -> Optional[str]:
 def get_youtube_rss_url(channel_id: str) -> str:
     """
     Retourne l'URL du flux RSS YouTube pour une chaîne.
-    
+
     Note: Seuls les IDs au format UC... fonctionnent directement.
     Les handles et noms personnalisés nécessitent une résolution préalable.
     """
@@ -69,7 +68,7 @@ def get_youtube_rss_url(channel_id: str) -> str:
 def get_youtube_thumbnail(video_id: str, quality: str = "mqdefault") -> str:
     """
     Retourne l'URL de la thumbnail d'une vidéo YouTube.
-    
+
     Qualités disponibles:
     - default (120x90)
     - mqdefault (320x180)
@@ -80,7 +79,7 @@ def get_youtube_thumbnail(video_id: str, quality: str = "mqdefault") -> str:
     return f"https://img.youtube.com/vi/{video_id}/{quality}.jpg"
 
 
-def extract_video_id(url: str) -> Optional[str]:
+def extract_video_id(url: str) -> str | None:
     """Extrait l'ID de vidéo depuis une URL YouTube."""
     patterns = [
         r"youtube\.com/watch\?v=([\w-]+)",
@@ -94,4 +93,3 @@ def extract_video_id(url: str) -> Optional[str]:
             return match.group(1)
 
     return None
-

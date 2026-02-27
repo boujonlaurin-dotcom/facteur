@@ -16,17 +16,16 @@ Usage:
 
 import asyncio
 import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
 
 from app.database import async_session_maker
-from app.models.user import UserProfile
 from app.models.daily_digest import DailyDigest
+from app.models.user import UserProfile
 from app.services.digest_selector import (
     DigestSelector,
     DiversityConstraints,
@@ -38,21 +37,21 @@ logger = structlog.get_logger()
 
 class DigestGenerationJob:
     """Job de génération quotidienne des digests.
-    
+
     Cette classe gère la génération batch des digests pour tous les
     utilisateurs actifs. Elle est conçue pour être exécutée une fois
     par jour, typiquement à 8h du matin (heure de Paris).
-    
+
     Attributes:
         batch_size: Nombre d'utilisateurs traités par batch (défaut: 100)
         concurrency_limit: Nombre de digests générés en parallèle (défaut: 10)
     """
-    
+
     def __init__(
         self,
         batch_size: int = 100,
         concurrency_limit: int = 10,
-        hours_lookback: int = 48
+        hours_lookback: int = 48,
     ):
         self.batch_size = batch_size
         self.concurrency_limit = concurrency_limit
@@ -62,47 +61,51 @@ class DigestGenerationJob:
             "processed": 0,
             "success": 0,
             "failed": 0,
-            "skipped": 0
+            "skipped": 0,
         }
-    
-    async def run(self, session: AsyncSession, target_date: Optional[datetime.date] = None) -> Dict[str, Any]:
+
+    async def run(
+        self, session: AsyncSession, target_date: datetime.date | None = None
+    ) -> dict[str, Any]:
         """Exécute le job de génération pour tous les utilisateurs.
-        
+
         Args:
             session: Session SQLAlchemy async
             target_date: Date du digest (défaut: aujourd'hui)
-            
+
         Returns:
             Statistiques d'exécution
         """
         if target_date is None:
             target_date = datetime.date.today()
-        
+
         logger.info(
             "digest_generation_job_started",
             target_date=str(target_date),
             batch_size=self.batch_size,
-            concurrency_limit=self.concurrency_limit
+            concurrency_limit=self.concurrency_limit,
         )
-        
+
         start_time = datetime.datetime.utcnow()
-        
+
         try:
             # 1. Récupérer tous les utilisateurs avec un profil
             user_ids = await self._get_active_users(session)
             self.stats["total_users"] = len(user_ids)
-            
+
             logger.info(
                 "digest_generation_users_loaded",
                 count=len(user_ids),
-                target_date=str(target_date)
+                target_date=str(target_date),
             )
 
             # 1.5 Build global trending context ONCE for the entire batch
-            global_trending_context: Optional[GlobalTrendingContext] = None
+            global_trending_context: GlobalTrendingContext | None = None
             try:
                 selector = DigestSelector(session)
-                global_trending_context = await selector._build_global_trending_context()
+                global_trending_context = (
+                    await selector._build_global_trending_context()
+                )
                 logger.info(
                     "digest_generation_global_context_built",
                     trending_count=len(global_trending_context.trending_content_ids),
@@ -114,47 +117,49 @@ class DigestGenerationJob:
 
             # 2. Traiter par batches pour limiter la charge mémoire
             for i in range(0, len(user_ids), self.batch_size):
-                batch = user_ids[i:i + self.batch_size]
-                await self._process_batch(session, batch, target_date, global_trending_context)
-                
+                batch = user_ids[i : i + self.batch_size]
+                await self._process_batch(
+                    session, batch, target_date, global_trending_context
+                )
+
                 # Commit après chaque batch
                 await session.commit()
-                
+
                 logger.debug(
                     "digest_generation_batch_complete",
                     batch_start=i,
                     batch_size=len(batch),
-                    processed=self.stats["processed"]
+                    processed=self.stats["processed"],
                 )
-            
+
             # 3. Finaliser
             duration = (datetime.datetime.utcnow() - start_time).total_seconds()
-            
+
             logger.info(
                 "digest_generation_job_completed",
                 target_date=str(target_date),
                 duration_seconds=duration,
-                **self.stats
+                **self.stats,
             )
-            
+
             return {
                 "success": True,
                 "target_date": str(target_date),
                 "duration_seconds": duration,
-                "stats": self.stats.copy()
+                "stats": self.stats.copy(),
             }
-            
+
         except Exception as e:
             logger.error(
                 "digest_generation_job_failed",
                 target_date=str(target_date),
-                error=str(e)
+                error=str(e),
             )
             raise
-    
-    async def _get_active_users(self, session: AsyncSession) -> List[UUID]:
+
+    async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).
-        
+
         Pour l'instant, tous les utilisateurs avec un profil sont considérés
         comme actifs. Dans le futur, on pourrait ajouter une logique de
         "dernière connexion" ou "utilisateur actif".
@@ -162,13 +167,13 @@ class DigestGenerationJob:
         stmt = select(UserProfile.user_id).order_by(UserProfile.user_id)
         result = await session.execute(stmt)
         return list(result.scalars().all())
-    
+
     async def _process_batch(
         self,
         session: AsyncSession,
-        user_ids: List[UUID],
+        user_ids: list[UUID],
         target_date: datetime.date,
-        global_trending_context: Optional[GlobalTrendingContext] = None,
+        global_trending_context: GlobalTrendingContext | None = None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
 
@@ -179,20 +184,22 @@ class DigestGenerationJob:
 
         async def process_with_limit(user_id: UUID) -> None:
             async with semaphore:
-                await self._generate_digest_for_user(session, user_id, target_date, global_trending_context)
-        
+                await self._generate_digest_for_user(
+                    session, user_id, target_date, global_trending_context
+                )
+
         # Créer les tâches
         tasks = [process_with_limit(uid) for uid in user_ids]
-        
+
         # Exécuter toutes les tâches du batch
         await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     async def _generate_digest_for_user(
         self,
         session: AsyncSession,
         user_id: UUID,
         target_date: datetime.date,
-        global_trending_context: Optional[GlobalTrendingContext] = None,
+        global_trending_context: GlobalTrendingContext | None = None,
     ) -> None:
         """Génère le digest pour un utilisateur spécifique.
 
@@ -203,27 +210,28 @@ class DigestGenerationJob:
             global_trending_context: Contexte trending pré-calculé
         """
         self.stats["processed"] += 1
-        
+
         try:
             # Vérifier si un digest existe déjà pour cette date
             existing = await session.scalar(
                 select(DailyDigest).where(
                     DailyDigest.user_id == user_id,
-                    DailyDigest.target_date == target_date
+                    DailyDigest.target_date == target_date,
                 )
             )
-            
+
             if existing:
                 logger.debug(
                     "digest_generation_skipped_exists",
                     user_id=str(user_id),
-                    target_date=str(target_date)
+                    target_date=str(target_date),
                 )
                 self.stats["skipped"] += 1
                 return
-            
+
             # Lire les préférences de mode digest de l'utilisateur
             from app.models.user import UserPreference
+
             mode_result = await session.execute(
                 select(UserPreference.preference_value).where(
                     UserPreference.user_id == user_id,
@@ -242,136 +250,151 @@ class DigestGenerationJob:
                 )
                 focus_theme = theme_result.scalar_one_or_none()
 
+            # Load user profile to get per-user daily article count
+            user_profile = await session.scalar(
+                select(UserProfile).where(UserProfile.user_id == user_id)
+            )
+            user_target = (
+                user_profile.weekly_goal
+                if user_profile and user_profile.weekly_goal
+                else DiversityConstraints.TARGET_DIGEST_SIZE
+            )
+
             # Sélectionner les articles via DigestSelector
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
-                limit=DiversityConstraints.TARGET_DIGEST_SIZE,
+                limit=user_target,
                 hours_lookback=self.hours_lookback,
                 mode=digest_mode,
                 focus_theme=focus_theme,
                 global_trending_context=global_trending_context,
             )
-            
+
             if not digest_items:
                 logger.warning(
                     "digest_generation_empty",
                     user_id=str(user_id),
-                    target_date=str(target_date)
+                    target_date=str(target_date),
                 )
                 self.stats["failed"] += 1
                 return
-            
+
             # Construire les items JSONB
             items = []
             for item in digest_items:
-                items.append({
-                    "content_id": str(item.content.id),
-                    "rank": item.rank,
-                    "reason": item.reason,
-                    "score": item.score,
-                    "source_id": str(item.content.source_id) if item.content.source_id else None,
-                    "title": item.content.title,
-                    "published_at": item.content.published_at.isoformat() if item.content.published_at else None
-                })
-            
+                items.append(
+                    {
+                        "content_id": str(item.content.id),
+                        "rank": item.rank,
+                        "reason": item.reason,
+                        "score": item.score,
+                        "source_id": str(item.content.source_id)
+                        if item.content.source_id
+                        else None,
+                        "title": item.content.title,
+                        "published_at": item.content.published_at.isoformat()
+                        if item.content.published_at
+                        else None,
+                    }
+                )
+
             # Insérer le digest
             digest = DailyDigest(
                 user_id=user_id,
                 target_date=target_date,
                 items=items,
                 mode=digest_mode,
-                generated_at=datetime.datetime.utcnow()
+                generated_at=datetime.datetime.utcnow(),
             )
-            
+
             session.add(digest)
-            
+
             logger.debug(
                 "digest_generation_success",
                 user_id=str(user_id),
                 target_date=str(target_date),
-                article_count=len(items)
+                article_count=len(items),
             )
-            
+
             self.stats["success"] += 1
-            
+
         except Exception as e:
             logger.error(
                 "digest_generation_user_failed",
                 user_id=str(user_id),
                 target_date=str(target_date),
-                error=str(e)
+                error=str(e),
             )
             self.stats["failed"] += 1
 
 
 # Fonction principale pour l'export
 
+
 async def run_digest_generation(
-    target_date: Optional[datetime.date] = None,
+    target_date: datetime.date | None = None,
     batch_size: int = 100,
-    concurrency_limit: int = 10
-) -> Dict[str, Any]:
+    concurrency_limit: int = 10,
+) -> dict[str, Any]:
     """Fonction principale pour exécuter la génération des digests.
-    
+
     Cette fonction est le point d'entrée pour le job de génération.
     Elle peut être appelée:
     - Via un script CLI
     - Via un scheduler (APScheduler, Celery Beat)
     - Directement depuis le code
-    
+
     Args:
         target_date: Date du digest (défaut: aujourd'hui)
         batch_size: Nombre d'utilisateurs par batch (défaut: 100)
         concurrency_limit: Limite de concurrence (défaut: 10)
-        
+
     Returns:
         Statistiques d'exécution
-        
+
     Example:
         >>> result = await run_digest_generation()
         >>> print(f"Generated {result['stats']['success']} digests")
-        
+
         >>> # Pour une date spécifique
         >>> from datetime import date
         >>> result = await run_digest_generation(target_date=date(2024, 1, 15))
     """
     job = DigestGenerationJob(
-        batch_size=batch_size,
-        concurrency_limit=concurrency_limit
+        batch_size=batch_size, concurrency_limit=concurrency_limit
     )
-    
+
     # Obtenir une session depuis le contexte
     async with async_session_maker() as session:
         try:
             result = await job.run(session, target_date)
             await session.commit()
             return result
-        except Exception as e:
+        except Exception:
             await session.rollback()
             raise
 
 
 # Fonction pour génération manuelle d'un seul utilisateur
 
+
 async def generate_digest_for_user(
-    user_id: UUID,
-    target_date: Optional[datetime.date] = None,
-    force: bool = False
-) -> Optional[DailyDigest]:
+    user_id: UUID, target_date: datetime.date | None = None, force: bool = False
+) -> DailyDigest | None:
     """Génère le digest pour un utilisateur spécifique (mode on-demand).
-    
+
     Cette fonction permet de générer un digest pour un utilisateur
     spécifique, par exemple pour du testing ou pour du lazy-loading.
-    
+
     Args:
         user_id: ID de l'utilisateur
         target_date: Date du digest (défaut: aujourd'hui)
         force: Si True, régénère même si un digest existe (défaut: False)
-        
+
     Returns:
         Le DailyDigest créé, ou None si erreur
-        
+
     Example:
         >>> from uuid import UUID
         >>> digest = await generate_digest_for_user(
@@ -381,7 +404,7 @@ async def generate_digest_for_user(
     """
     if target_date is None:
         target_date = datetime.date.today()
-    
+
     async with async_session_maker() as session:
         try:
             # Vérifier l'existant
@@ -389,81 +412,87 @@ async def generate_digest_for_user(
                 existing = await session.scalar(
                     select(DailyDigest).where(
                         DailyDigest.user_id == user_id,
-                        DailyDigest.target_date == target_date
+                        DailyDigest.target_date == target_date,
                     )
                 )
                 if existing:
                     logger.info(
                         "digest_on_demand_skipped_exists",
                         user_id=str(user_id),
-                        target_date=str(target_date)
+                        target_date=str(target_date),
                     )
                     return existing
-            
+
             # Générer
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,
-                hours_lookback=48
+                hours_lookback=48,
             )
-            
+
             if not digest_items:
                 logger.warning(
                     "digest_on_demand_empty",
                     user_id=str(user_id),
-                    target_date=str(target_date)
+                    target_date=str(target_date),
                 )
                 return None
-            
+
             # Construire les items
             items = []
             for item in digest_items:
-                items.append({
-                    "content_id": str(item.content.id),
-                    "rank": item.rank,
-                    "reason": item.reason,
-                    "score": item.score,
-                    "source_id": str(item.content.source_id) if item.content.source_id else None,
-                    "title": item.content.title,
-                    "published_at": item.content.published_at.isoformat() if item.content.published_at else None
-                })
-            
+                items.append(
+                    {
+                        "content_id": str(item.content.id),
+                        "rank": item.rank,
+                        "reason": item.reason,
+                        "score": item.score,
+                        "source_id": str(item.content.source_id)
+                        if item.content.source_id
+                        else None,
+                        "title": item.content.title,
+                        "published_at": item.content.published_at.isoformat()
+                        if item.content.published_at
+                        else None,
+                    }
+                )
+
             # Supprimer l'ancien si force=True
             if force:
                 await session.execute(
                     select(DailyDigest).where(
                         DailyDigest.user_id == user_id,
-                        DailyDigest.target_date == target_date
+                        DailyDigest.target_date == target_date,
                     )
                 )
-            
+
             # Créer le nouveau digest
             digest = DailyDigest(
                 user_id=user_id,
                 target_date=target_date,
                 items=items,
-                generated_at=datetime.datetime.utcnow()
+                generated_at=datetime.datetime.utcnow(),
             )
-            
+
             session.add(digest)
             await session.commit()
-            
+
             logger.info(
                 "digest_on_demand_success",
                 user_id=str(user_id),
                 target_date=str(target_date),
-                article_count=len(items)
+                article_count=len(items),
             )
-            
+
             return digest
-            
+
         except Exception as e:
             await session.rollback()
             logger.error(
                 "digest_on_demand_failed",
                 user_id=str(user_id),
                 target_date=str(target_date),
-                error=str(e)
+                error=str(e),
             )
             return None

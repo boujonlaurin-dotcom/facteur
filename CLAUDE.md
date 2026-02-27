@@ -5,7 +5,7 @@
 > **Pour petits ajustements simples (<10 lignes), lis [QUICK_START.md](QUICK_START.md) d'abord.**
 > **Ce fichier est pour tâches complexes (features, bugs zones à risque, maintenance).**
 >
-> Lis ce fichier EN ENTIER pour tâches complexes. 242 lignes essentielles, zéro fluff.
+> Lis ce fichier EN ENTIER pour tâches complexes. 260 lignes essentielles, zéro fluff.
 
 ---
 
@@ -57,6 +57,7 @@
 | **DECIDE** | Produit `implementation_plan.md` | MAJ Story: "Technical Approach" | - | **STOP**<br>→ GO user |
 | **ACT** | Implémente atomiquement | MAJ Story: tasks ✓, File List, Changelog | `.claude-hooks/pre-code-change.sh` | - |
 | **VERIFY** | Crée script QA one-liner | MAJ Story/Bug: "Verification", script path | - | **STOP** |
+| **REVIEW** | PR Lifecycle: CI → Staging → Peer Review ([ÉTAPE 3](#-étape-3--pr-lifecycle-ci--staging--review--merge)) | PR green + staging verified + review APPROVED | - | **STOP**<br>→ GO user |
 
 ### Détails M.A.D.A par Type
 
@@ -77,6 +78,70 @@
 2. Decide: Impact analysis + rollback plan
 3. Act: Migration en étapes
 4. Verify: Rollback test + documentation
+
+---
+
+## 🚀 ÉTAPE 3: PR Lifecycle (CI → Staging → Review → Merge)
+
+**Règle bloquante** : Aucun merge vers `main` sans CI green + staging verified + Peer Review APPROVED.
+
+### 3.1 Ouvrir la PR
+
+```bash
+git push origin <branch-name>
+gh pr create --title "<type>: <description>" --body "$(cat .github/pull_request_template.md)"
+```
+
+CI s'exécute automatiquement : `lint` + `test` + `build` (Docker) + `verify` (BMAD).
+**Ne pas continuer tant que CI est rouge.**
+
+### 3.2 Déployer en Staging
+
+**Automatique** : `deploy-staging.yml` se déclenche dès que `lint`, `test` et `build` passent sur la PR.
+Smoke tests inclus (health, readiness, environment check). Visible dans les checks de la PR.
+
+Fallback manuel si besoin : `gh workflow run deploy-staging.yml --ref <branch-name>`
+
+### 3.3 Handoff : l'agent dev prépare la review
+
+Avant de STOP, l'agent dev **écrit un résumé de handoff** dans `.context/pr-handoff.md` :
+
+```markdown
+# PR #XX — <titre>
+## Quoi : <résumé en 2-3 lignes>
+## Pourquoi : <problème résolu / valeur ajoutée>
+## Zones à risque : <fichiers/modules critiques modifiés>
+## Ce que le reviewer doit vérifier en priorité : <points d'attention>
+```
+
+Puis l'agent STOP et notifie : **"PR #XX prête pour Peer Review — handoff dans `.context/pr-handoff.md`"**
+
+### 3.4 Peer Review Conductor
+
+1. **L'utilisateur ouvre un workspace Conductor séparé** sur la branche
+2. **Prompt de review** (le reviewer lit automatiquement `.context/pr-handoff.md` + le diff) :
+
+> Lis `.context/pr-handoff.md` pour le contexte, puis review le workspace diff en peer review senior.
+> Check: Security, Guardrails Facteur (`list[]`, stale token), Breaking changes, Test coverage, Architecture, Performance.
+> Utilise l'outil DiffComment pour laisser tes commentaires directement sur les lignes de code.
+> Output final : BLOCKERS / WARNINGS / SUGGESTIONS / **APPROVED** ou **NOT APPROVED**
+
+3. **Si blockers** → copier la sortie du reviewer dans le workspace de l'agent dev → l'agent fix → re-push → CI re-run
+4. **Si APPROVED** → merge autorisé
+
+### 3.5 Merge & Production
+
+Merge via **GitHub UI** (bouton "Squash and merge") ou CLI :
+```bash
+gh pr merge <PR-number> --squash
+```
+Railway auto-déploie sur production via push to main.
+
+### Règles
+
+- L'agent de review est **un workspace Conductor séparé** (pas le même agent qui a codé)
+- L'agent de dev **NE DOIT PAS** se self-review ni merger sans ce processus
+- PR docs-only (stories, README) : skip staging (cocher "N/A" dans la PR template)
 
 ---
 
@@ -212,7 +277,14 @@ git worktree remove ../<agent>-<tache>
 10. [ ] **Safety Guardrails vérifiés** (si zone à risque)
 11. [ ] **Story/Bug MAJ** (tasks ✓, File List, Changelog)
 12. [ ] **Script vérification** (`docs/qa/scripts/verify_<task>.sh`)
-13. [ ] **Cleanup worktree** (après merge)
+
+**Avant merge** ([ÉTAPE 3](#-étape-3--pr-lifecycle-ci--staging--review--merge)):
+
+13. [ ] **PR ouverte** + CI green (lint, test, build, verify)
+14. [ ] **Staging déployé** + smoke tests passed (`deploy-staging.yml`)
+15. [ ] **Peer Review Conductor** → Workspace séparé → APPROVED
+16. [ ] **Merge** (squash) → Production auto-deploy
+17. [ ] **Cleanup worktree** (après merge)
 
 ---
 
@@ -240,7 +312,7 @@ git worktree remove ../<agent>-<tache>
 
 ---
 
-*Dernière MAJ: 2026-02-14*
+*Dernière MAJ: 2026-02-27*
 *Mainteneurs: Human (Laurin) + AI agents collaborativement*
 *Ancien CLAUDE.md (590 lignes): [docs/CLAUDE.md.backup-2026-02-14](docs/CLAUDE.md.backup-2026-02-14)*
 *Cursor legacy: [docs/archive/cursor-legacy-2026-02-14](docs/archive/cursor-legacy-2026-02-14)*

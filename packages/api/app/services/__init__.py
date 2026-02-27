@@ -1,11 +1,11 @@
 """Services métier."""
 
-from app.services.user_service import UserService
 from app.services.content_service import ContentService
-from app.services.source_service import SourceService
-from app.services.subscription_service import SubscriptionService
-from app.services.streak_service import StreakService
 from app.services.recommendation_service import RecommendationService
+from app.services.source_service import SourceService
+from app.services.streak_service import StreakService
+from app.services.subscription_service import SubscriptionService
+from app.services.user_service import UserService
 
 __all__ = [
     "UserService",
@@ -15,4 +15,3 @@ __all__ = [
     "StreakService",
     "RecommendationService",
 ]
-

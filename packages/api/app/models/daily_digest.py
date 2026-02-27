@@ -2,12 +2,13 @@
 
 import uuid
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Date, DateTime, Index, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
@@ -23,11 +24,11 @@ class DailyDigest(Base):
 
     Les articles sont stockés dans une colonne JSONB 'items' qui contient
     un tableau de 7 objets avec les références content_id et les métadonnées.
-    
+
     Attributes:
         user_id: UUID de l'utilisateur.
         target_date: Date du digest (généralement aujourd'hui).
-        items: JSONB array de 5 articles [{"content_id": "...", "rank": 1, 
+        items: JSONB array de 5 articles [{"content_id": "...", "rank": 1,
                "reason": "...", "source_slug": "..."}, ...]
         generated_at: Date/heure de génération du digest.
     """
@@ -44,17 +45,16 @@ class DailyDigest(Base):
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), nullable=False, index=True
-    )
-    target_date: Mapped[date] = mapped_column(
-        Date, nullable=False
-    )
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
     items: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
-    mode: Mapped[Optional[str]] = mapped_column(
+    mode: Mapped[str | None] = mapped_column(
         String(30), nullable=True, default="pour_vous"
+    )
+    format_version: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default="flat_v1", server_default="flat_v1"
     )
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
@@ -63,7 +63,10 @@ class DailyDigest(Base):
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
     )
 
     # Pas de relations directes - les content_ids sont dans items JSONB

@@ -2,11 +2,11 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -41,9 +41,7 @@ class TopicQuiz(Base):
     """Quiz associé à un thème pour lier knowledge et gamification."""
 
     __tablename__ = "topic_quizzes"
-    __table_args__ = (
-        Index("ix_topic_quizzes_topic", "topic"),
-    )
+    __table_args__ = (Index("ix_topic_quizzes_topic", "topic"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -54,7 +52,7 @@ class TopicQuiz(Base):
     # Pour l'instant index de la bonne réponse (0, 1, 2...)
     correct_answer: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty: Mapped[int] = mapped_column(Integer, default=1)
-    
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

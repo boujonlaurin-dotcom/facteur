@@ -1,15 +1,15 @@
 """Dépendances FastAPI (injection)."""
 
 import asyncio
+
 import httpx
 import sentry_sdk
+import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.config import get_settings
-
-import structlog
 
 logger = structlog.get_logger()
 
@@ -24,11 +24,14 @@ _jwks_cache = None
 _email_confirmed_cache = {}
 _EMAIL_CACHE_TTL_SECONDS = 300  # 5 minutes
 
-import certifi
 import time
 
+import certifi
 
-async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, timeout: float = 5.0) -> bool | None:
+
+async def _check_email_confirmed_with_retry(
+    user_id: str, max_retries: int = 3, timeout: float = 5.0
+) -> bool | None:
     """
     Check if user email is confirmed in database with retry logic and caching.
 
@@ -44,9 +47,11 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
         True if email is confirmed, False if definitely not confirmed,
         None if we couldn't reach the database (fail-open: caller should allow access)
     """
-    from app.database import async_session_maker
     from sqlalchemy import text
-    from sqlalchemy.exc import OperationalError, TimeoutError as SQLAlchemyTimeoutError
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+
+    from app.database import async_session_maker
 
     global _email_confirmed_cache
 
@@ -67,10 +72,12 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
                 # Execute query with shorter timeout to avoid holding connections
                 result = await asyncio.wait_for(
                     session.execute(
-                        text("SELECT email_confirmed_at FROM auth.users WHERE id = :uid"),
-                        {"uid": user_id}
+                        text(
+                            "SELECT email_confirmed_at FROM auth.users WHERE id = :uid"
+                        ),
+                        {"uid": user_id},
                     ),
-                    timeout=timeout
+                    timeout=timeout,
                 )
                 row = result.fetchone()
                 is_confirmed = row is not None and row[0] is not None
@@ -80,29 +87,51 @@ async def _check_email_confirmed_with_retry(user_id: str, max_retries: int = 3, 
 
                 return is_confirmed
 
-        except (asyncio.TimeoutError, SQLAlchemyTimeoutError) as timeout_err:
+        except (TimeoutError, SQLAlchemyTimeoutError):
             # Connection pool timeout - retry with backoff
             if attempt < max_retries - 1:
-                wait_time = 0.5 * (2 ** attempt)  # Exponential backoff: 0.5s, 1s, 2s
-                logger.warning("auth_db_timeout_retry", attempt=attempt + 1, wait_time=wait_time)
+                wait_time = 0.5 * (2**attempt)  # Exponential backoff: 0.5s, 1s, 2s
+                logger.warning(
+                    "auth_db_timeout_retry", attempt=attempt + 1, wait_time=wait_time
+                )
                 await asyncio.sleep(wait_time)
             else:
-                logger.warning("auth_db_check_unreachable", reason="timeout", max_retries=max_retries, user_id=user_id)
+                logger.warning(
+                    "auth_db_check_unreachable",
+                    reason="timeout",
+                    max_retries=max_retries,
+                    user_id=user_id,
+                )
                 return None
 
         except OperationalError as op_err:
             # Connection/SSL errors - retry with backoff
             if attempt < max_retries - 1:
-                wait_time = 0.5 * (2 ** attempt)
-                logger.warning("auth_db_connection_error_retry", attempt=attempt + 1, error=str(op_err), wait_time=wait_time)
+                wait_time = 0.5 * (2**attempt)
+                logger.warning(
+                    "auth_db_connection_error_retry",
+                    attempt=attempt + 1,
+                    error=str(op_err),
+                    wait_time=wait_time,
+                )
                 await asyncio.sleep(wait_time)
             else:
-                logger.warning("auth_db_check_unreachable", reason="operational_error", max_retries=max_retries, user_id=user_id)
+                logger.warning(
+                    "auth_db_check_unreachable",
+                    reason="operational_error",
+                    max_retries=max_retries,
+                    user_id=user_id,
+                )
                 return None
 
         except Exception as e:
             # Unexpected error - don't retry, fail-open
-            logger.warning("auth_db_check_unreachable", reason="unexpected_error", error=str(e), user_id=user_id)
+            logger.warning(
+                "auth_db_check_unreachable",
+                reason="unexpected_error",
+                error=str(e),
+                user_id=user_id,
+            )
             return None
 
     return None
@@ -112,9 +141,9 @@ async def fetch_jwks():
     global _jwks_cache
     if _jwks_cache:
         return _jwks_cache
-    
+
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-    
+
     try:
         # Use certifi bundle for SSL verification (fix for macOS local issuer error)
         # Add timeout to prevent hanging indefinite requests
@@ -128,12 +157,12 @@ async def fetch_jwks():
     except Exception as e:
         logger.error("auth_jwks_fetch_failed", error=str(e))
         # Log response content if available (for 4xx/5xx errors)
-        if 'response' in locals():
+        if "response" in locals():
             logger.error("auth_jwks_fetch_response", response_text=response.text)
         # Rethrow as 500 (will be caught by main.py logger) but with clear message
         raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED, # 501 or 503 might be more appropriate, but keeping it simple
-            detail=f"Auth configuration error: Could not fetch JWKS. {str(e)}"
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,  # 501 or 503 might be more appropriate, but keeping it simple
+            detail=f"Auth configuration error: Could not fetch JWKS. {str(e)}",
         )
 
 
@@ -185,15 +214,15 @@ async def get_current_user_id(
         email_confirmed_at = payload.get("email_confirmed_at")
         user_metadata = payload.get("user_metadata", {})
         email_verified = user_metadata.get("email_verified", False)
-        
+
         is_email_confirmed = email_confirmed_at is not None or email_verified is True
-        
+
         if not is_email_confirmed:
-            # On vérifie le provider pour ne pas bloquer les logins sociaux qui pourraient 
+            # On vérifie le provider pour ne pas bloquer les logins sociaux qui pourraient
             # avoir une structure différente ou être confirmés d'office
             app_metadata = payload.get("app_metadata", {})
             provider = app_metadata.get("provider")
-            
+
             if provider == "email":
                 # Fallback: Check DB directly (JWT might be stale after manual confirmation)
                 # Uses retry logic to handle connection pool timeouts gracefully
@@ -233,7 +262,7 @@ async def get_optional_user_id(
 ) -> str | None:
     """
     Version optionnelle - retourne None si pas de token.
-    
+
     Utile pour les endpoints qui fonctionnent avec ou sans auth.
     """
     if not credentials:
@@ -243,4 +272,3 @@ async def get_optional_user_id(
         return await get_current_user_id(credentials)
     except HTTPException:
         return None
-

@@ -1,0 +1,52 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to production
+        run: railway up --environment production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Health check (liveness)
+        run: |
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              https://facteur-production.up.railway.app/api/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Liveness check passed"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Liveness check failed after 10 attempts"
+          exit 1
+
+      - name: Readiness check (database)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://facteur-production.up.railway.app/api/health/ready)
+          if [ "$STATUS" = "200" ]; then
+            echo "Readiness check passed (DB connected)"
+          else
+            echo "WARNING: Readiness check returned $STATUS (DB may not be ready)"
+            exit 1
+          fi

@@ -1,13 +1,12 @@
 """Service streak et gamification."""
 
-from datetime import date, datetime, timedelta
-from typing import Optional
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import UserStreak, UserProfile
+from app.models.user import UserProfile, UserStreak
 from app.schemas.streak import StreakResponse
 
 
@@ -36,7 +35,7 @@ class StreakService:
     async def increment_consumption(self, user_id: str) -> UserStreak:
         """
         Incrémente le compteur de consommation.
-        
+
         Met à jour le streak quotidien et le compteur hebdomadaire.
         """
         streak = await self._get_or_create_streak(user_id)
@@ -94,9 +93,8 @@ class StreakService:
 
         return streak
 
-    async def _get_profile(self, user_id: str) -> Optional[UserProfile]:
+    async def _get_profile(self, user_id: str) -> UserProfile | None:
         """Récupère le profil utilisateur."""
         query = select(UserProfile).where(UserProfile.user_id == UUID(user_id))
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
-

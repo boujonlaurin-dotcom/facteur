@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Service de sélection d'articles pour le Digest quotidien (7 articles).
 
 Ce service implémente l'algorithme de sélection intelligent pour Epic 10,
@@ -21,32 +22,32 @@ Réutilise l'infrastructure de scoring existante sans modification.
 import asyncio
 import datetime
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from math import ceil
-from typing import Any, List, Set, Tuple, Optional, Dict
+from typing import Any
 from uuid import UUID
-from collections import defaultdict
 
 import structlog
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
+from app.models.enums import BiasStance, ContentStatus, DigestMode
 from app.models.source import Source, UserSource
-from app.models.user import UserProfile, UserInterest, UserSubtopic
-from app.models.enums import ContentStatus, DigestMode, BiasStance
+from app.models.user import UserProfile, UserSubtopic
+from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
-from app.services.recommendation_service import RecommendationService
-from app.services.recommendation.scoring_engine import ScoringContext
-from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.filter_presets import (
     apply_serein_filter,
     apply_theme_focus_filter,
-    get_opposing_biases,
     calculate_user_bias,
+    get_opposing_biases,
 )
-from app.schemas.digest import DigestScoreBreakdown
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import ScoringContext
+from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
 
@@ -54,7 +55,7 @@ logger = structlog.get_logger()
 @dataclass
 class DigestItem:
     """Représente un article sélectionné pour le digest.
-    
+
     Attributes:
         content: L'article Content sélectionné
         score: Le score calculé par le ScoringEngine
@@ -62,35 +63,37 @@ class DigestItem:
         reason: La raison de sélection (pour affichage utilisateur)
         breakdown: Les contributions détaillées au score (pour transparence)
     """
+
     content: Content
     score: float
     rank: int
     reason: str
-    breakdown: Optional[List[DigestScoreBreakdown]] = None
+    breakdown: list[DigestScoreBreakdown] | None = None
 
 
 @dataclass
 class DigestContext:
     """Contexte pour la sélection du digest.
-    
+
     Contient les données utilisateur nécessaires pour la sélection.
     """
+
     user_id: UUID
-    user_profile: Optional[UserProfile]
-    user_interests: Set[str]
-    user_interest_weights: Dict[str, float]
-    followed_source_ids: Set[UUID]
-    custom_source_ids: Set[UUID]
-    user_prefs: Dict[str, Any]
-    user_subtopics: Set[str]
-    user_subtopic_weights: Dict[str, float]
-    muted_sources: Set[UUID]
-    muted_themes: Set[str]
-    muted_topics: Set[str]
-    muted_content_types: Set[str]
+    user_profile: UserProfile | None
+    user_interests: set[str]
+    user_interest_weights: dict[str, float]
+    followed_source_ids: set[UUID]
+    custom_source_ids: set[UUID]
+    user_prefs: dict[str, Any]
+    user_subtopics: set[str]
+    user_subtopic_weights: dict[str, float]
+    muted_sources: set[UUID]
+    muted_themes: set[str]
+    muted_topics: set[str]
+    muted_content_types: set[str]
     hide_paid_content: bool = True
-    user_bias_stance: Optional[BiasStance] = None
-    source_affinity_scores: Dict[UUID, float] = field(default_factory=dict)
+    user_bias_stance: BiasStance | None = None
+    source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -100,13 +103,15 @@ class GlobalTrendingContext:
     Contient les IDs des contenus objectivement importants
     (trending cross-source et "À la une" éditorial).
     """
-    trending_content_ids: Set[UUID]
-    une_content_ids: Set[UUID]
+
+    trending_content_ids: set[UUID]
+    une_content_ids: set[UUID]
     computed_at: datetime.datetime
 
 
 class DiversityConstraints:
     """Configuration des contraintes de diversité."""
+
     MAX_PER_SOURCE = 1
     MAX_PER_THEME = 2
     TARGET_DIGEST_SIZE = 7
@@ -119,26 +124,26 @@ class DigestSelector:
 
     Cette classe implémente la logique de sélection des 7 articles
     du digest avec garanties de diversité et mécanisme de fallback.
-    
+
     Usage:
         selector = DigestSelector(session)
         digest_items = await selector.select_for_user(user_id)
     """
-    
+
     def __init__(self, session: AsyncSession):
         self.session = session
         self.rec_service = RecommendationService(session)
         self.constraints = DiversityConstraints()
         self.importance_detector = ImportanceDetector()
-        
+
     async def select_for_user(
         self,
         user_id: UUID,
         limit: int = 7,
         hours_lookback: int = 168,
         mode: str = "pour_vous",
-        focus_theme: Optional[str] = None,
-        global_trending_context: Optional[GlobalTrendingContext] = None,
+        focus_theme: str | None = None,
+        global_trending_context: GlobalTrendingContext | None = None,
         output_format: str = "topics",
     ) -> list:
         """Sélectionne les articles pour le digest d'un utilisateur.
@@ -160,18 +165,28 @@ class DigestSelector:
         start_time = time.time()
 
         try:
-            logger.info("digest_selection_started", user_id=str(user_id), limit=limit, mode=mode, focus_theme=focus_theme)
+            logger.info(
+                "digest_selection_started",
+                user_id=str(user_id),
+                limit=limit,
+                mode=mode,
+                focus_theme=focus_theme,
+            )
 
             # 1. Construire le contexte utilisateur
             step_start = time.time()
             context = await self._build_digest_context(user_id, mode=mode)
             context_time = time.time() - step_start
-            
+
             if not context.user_profile:
                 logger.warning("digest_selection_no_profile", user_id=str(user_id))
                 return []
-            
-            logger.info("digest_selector_context_built", user_id=str(user_id), duration_ms=round(context_time * 1000, 2))
+
+            logger.info(
+                "digest_selector_context_built",
+                user_id=str(user_id),
+                duration_ms=round(context_time * 1000, 2),
+            )
 
             # 1.5 Build or use global trending context (pour_vous only)
             trending_context = None
@@ -181,7 +196,9 @@ class DigestSelector:
                     logger.info(
                         "digest_using_precomputed_trending_context",
                         user_id=str(user_id),
-                        trending_count=len(global_trending_context.trending_content_ids),
+                        trending_count=len(
+                            global_trending_context.trending_content_ids
+                        ),
                         une_count=len(global_trending_context.une_content_ids),
                     )
                 else:
@@ -209,14 +226,24 @@ class DigestSelector:
             candidates_time = time.time() - step_start
 
             if not candidates:
-                logger.warning("digest_selection_no_candidates", user_id=str(user_id), duration_ms=round(candidates_time * 1000, 2))
+                logger.warning(
+                    "digest_selection_no_candidates",
+                    user_id=str(user_id),
+                    duration_ms=round(candidates_time * 1000, 2),
+                )
                 return []
 
-            logger.info("digest_selector_candidates_fetched", user_id=str(user_id), count=len(candidates), duration_ms=round(candidates_time * 1000, 2))
+            logger.info(
+                "digest_selector_candidates_fetched",
+                user_id=str(user_id),
+                count=len(candidates),
+                duration_ms=round(candidates_time * 1000, 2),
+            )
 
             # === TOPIC FORMAT: delegate to TopicSelector ===
             if output_format == "topics":
                 from app.services.topic_selector import TopicSelector
+
                 step_start = time.time()
                 topic_selector = TopicSelector()
                 topic_groups = await topic_selector.select_topics_for_user(
@@ -242,7 +269,9 @@ class DigestSelector:
 
             # 3-4. Scoring + sélection (deux passes pour pour_vous, single-pass pour les autres)
             scoring_time, diversity_time = 0.0, 0.0
-            if trending_context and (mode == "pour_vous" or mode == DigestMode.POUR_VOUS):
+            if trending_context and (
+                mode == "pour_vous" or mode == DigestMode.POUR_VOUS
+            ):
                 step_start = time.time()
                 selected = await self._two_pass_selection(
                     candidates=candidates,
@@ -262,11 +291,17 @@ class DigestSelector:
             else:
                 # Single-pass pour serein, perspective, theme_focus (inchangé)
                 step_start = time.time()
-                scored_candidates_with_breakdown = await self._score_candidates(candidates, context, mode=mode)
+                scored_candidates_with_breakdown = await self._score_candidates(
+                    candidates, context, mode=mode
+                )
                 scoring_time = time.time() - step_start
 
-                non_zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s > 0]
-                zero_scores = [s for _, s, _ in scored_candidates_with_breakdown if s == 0]
+                non_zero_scores = [
+                    s for _, s, _ in scored_candidates_with_breakdown if s > 0
+                ]
+                zero_scores = [
+                    s for _, s, _ in scored_candidates_with_breakdown if s == 0
+                ]
 
                 logger.info(
                     "digest_selector_scoring_done",
@@ -274,7 +309,13 @@ class DigestSelector:
                     count=len(scored_candidates_with_breakdown),
                     non_zero_count=len(non_zero_scores),
                     zero_count=len(zero_scores),
-                    max_score=round(max((s for _, s, _ in scored_candidates_with_breakdown), default=0), 2),
+                    max_score=round(
+                        max(
+                            (s for _, s, _ in scored_candidates_with_breakdown),
+                            default=0,
+                        ),
+                        2,
+                    ),
                     duration_ms=round(scoring_time * 1000, 2),
                 )
 
@@ -293,39 +334,49 @@ class DigestSelector:
                     target_count=limit,
                     had_candidates=len(scored_candidates_with_breakdown) > 0,
                 )
-            
+
             # 5. Construire les résultats
             digest_items = []
             user_source_items = []
             curated_items = []
-            
+
             for i, (content, score, reason, breakdown) in enumerate(selected, 1):
-                digest_items.append(DigestItem(
-                    content=content,
-                    score=score,
-                    rank=i,
-                    reason=reason,
-                    breakdown=breakdown
-                ))
+                digest_items.append(
+                    DigestItem(
+                        content=content,
+                        score=score,
+                        rank=i,
+                        reason=reason,
+                        breakdown=breakdown,
+                    )
+                )
                 # Track source type
                 if content.source_id in context.followed_source_ids:
                     user_source_items.append(content.id)
                 else:
                     curated_items.append(content.id)
-            
+
             total_time = time.time() - start_time
-            
+
             # Calculate ratio of user sources vs curated in final selection
             total_items = len(digest_items)
             user_items_count = len(user_source_items)
             curated_items_count = len(curated_items)
-            
+
             logger.info(
-                "digest_selection_completed", 
-                user_id=str(user_id), 
+                "digest_selection_completed",
+                user_id=str(user_id),
                 count=len(digest_items),
-                sources=[str(s) for s in set(item.content.source_id for item in digest_items)],
-                themes=list(set(item.content.source.theme for item in digest_items if item.content.source)),
+                sources=[
+                    str(s) for s in {item.content.source_id for item in digest_items}
+                ],
+                themes=list(
+                    {
+                        item.content.source.theme
+                        for item in digest_items
+                        if item.content.source
+                    }
+                ),
                 context_ms=round(context_time * 1000, 2),
                 candidates_ms=round(candidates_time * 1000, 2),
                 scoring_ms=round(scoring_time * 1000, 2),
@@ -335,17 +386,27 @@ class DigestSelector:
                 final_user_source_count=user_items_count,
                 final_curated_count=curated_items_count,
                 user_to_curated_ratio=f"{user_items_count}:{curated_items_count}",
-                percent_user_sources=round(user_items_count / total_items * 100, 1) if total_items > 0 else 0
+                percent_user_sources=round(user_items_count / total_items * 100, 1)
+                if total_items > 0
+                else 0,
             )
-            
+
             return digest_items
-            
+
         except Exception as e:
             total_time = time.time() - start_time
-            logger.error("digest_selection_error", user_id=str(user_id), error=str(e), total_ms=round(total_time * 1000, 2), exc_info=True)
+            logger.error(
+                "digest_selection_error",
+                user_id=str(user_id),
+                error=str(e),
+                total_ms=round(total_time * 1000, 2),
+                exc_info=True,
+            )
             return []
-    
-    async def _build_digest_context(self, user_id: UUID, mode: str = "pour_vous") -> DigestContext:
+
+    async def _build_digest_context(
+        self, user_id: UUID, mode: str = "pour_vous"
+    ) -> DigestContext:
         """Construit le contexte utilisateur pour la sélection.
 
         Récupère les données utilisateur nécessaires depuis la base de données.
@@ -356,51 +417,52 @@ class DigestSelector:
             select(UserProfile)
             .options(
                 selectinload(UserProfile.interests),
-                selectinload(UserProfile.preferences)
+                selectinload(UserProfile.preferences),
             )
             .where(UserProfile.user_id == user_id)
         )
         profile_result = await self.session.execute(profile_stmt)
         user_profile = profile_result.scalar_one_or_none()
-        
+
         # Récupérer les sources suivies
         sources_stmt = select(UserSource).where(UserSource.user_id == user_id)
         sources_result = await self.session.execute(sources_stmt)
         user_sources = sources_result.scalars().all()
-        
+
         followed_source_ids = set()
         custom_source_ids = set()
         for us in user_sources:
             followed_source_ids.add(us.source_id)
             if us.is_custom:
                 custom_source_ids.add(us.source_id)
-        
+
         # Récupérer les sous-thèmes et poids
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
         subtopics_result = await self.session.execute(subtopics_stmt)
         subtopic_rows = subtopics_result.scalars().all()
         user_subtopics = {row.topic_slug for row in subtopic_rows}
         user_subtopic_weights = {row.topic_slug: row.weight for row in subtopic_rows}
-        
+
         # Construire les sets d'intérêts et poids
         user_interests = set()
         user_interest_weights = {}
         user_prefs = {}
-        
+
         if user_profile:
             for interest in user_profile.interests:
                 user_interests.add(interest.interest_slug)
                 user_interest_weights[interest.interest_slug] = interest.weight
-            
+
             for pref in user_profile.preferences:
                 user_prefs[pref.preference_key] = pref.preference_value
-        
+
         # Récupérer la personnalisation (mutes)
         from app.models.user_personalization import UserPersonalization
+
         personalization = await self.session.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_id)
         )
-        
+
         muted_sources = set()
         muted_themes = set()
         muted_topics = set()
@@ -408,13 +470,17 @@ class DigestSelector:
 
         if personalization:
             if personalization.muted_sources:
-                muted_sources = set(s for s in personalization.muted_sources if s is not None)
+                muted_sources = {
+                    s for s in personalization.muted_sources if s is not None
+                }
             if personalization.muted_themes:
-                muted_themes = set(t.lower() for t in personalization.muted_themes if t)
+                muted_themes = {t.lower() for t in personalization.muted_themes if t}
             if personalization.muted_topics:
-                muted_topics = set(t.lower() for t in personalization.muted_topics if t)
+                muted_topics = {t.lower() for t in personalization.muted_topics if t}
             if personalization.muted_content_types:
-                muted_content_types = set(t.lower() for t in personalization.muted_content_types if t)
+                muted_content_types = {
+                    t.lower() for t in personalization.muted_content_types if t
+                }
 
         # Paywall filter preference
         hide_paid_content = True  # Default: hide paid articles
@@ -427,7 +493,9 @@ class DigestSelector:
             user_bias_stance = await calculate_user_bias(self.session, user_id)
 
         # Compute source affinity from past interactions
-        source_affinity_scores = await self.rec_service._compute_source_affinity(user_id)
+        source_affinity_scores = await self.rec_service._compute_source_affinity(
+            user_id
+        )
 
         return DigestContext(
             user_id=user_id,
@@ -447,7 +515,7 @@ class DigestSelector:
             user_bias_stance=user_bias_stance,
             source_affinity_scores=source_affinity_scores,
         )
-    
+
     async def _get_candidates(
         self,
         user_id: UUID,
@@ -455,8 +523,8 @@ class DigestSelector:
         hours_lookback: int,
         min_pool_size: int,
         mode: str = "pour_vous",
-        focus_theme: Optional[str] = None,
-    ) -> List[Content]:
+        focus_theme: str | None = None,
+    ) -> list[Content]:
         """Récupère les candidats pour le digest.
 
         Strategy:
@@ -465,24 +533,28 @@ class DigestSelector:
         3. Exclure les articles déjà vus, sauvegardés, ou masqués
         4. Appliquer les filtres de mode (serein, theme_focus)
         """
-        since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_lookback)
-        
+        since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            hours=hours_lookback
+        )
+
         # Construire la requête de base avec exclusions
         from sqlalchemy import exists
-        
+
         # Sous-requête pour exclure les articles déjà traités
         excluded_stmt = exists().where(
             UserContentStatus.content_id == Content.id,
             UserContentStatus.user_id == user_id,
             or_(
-                UserContentStatus.is_hidden == True,
-                UserContentStatus.is_saved == True,
-                UserContentStatus.status.in_([ContentStatus.SEEN, ContentStatus.CONSUMED])
-            )
+                UserContentStatus.is_hidden,
+                UserContentStatus.is_saved,
+                UserContentStatus.status.in_(
+                    [ContentStatus.SEEN, ContentStatus.CONSUMED]
+                ),
+            ),
         )
-        
+
         candidates = []
-        
+
         # Étape 1: Articles des sources suivies (PRIORITY)
         if context.followed_source_ids:
             user_sources_query = (
@@ -494,19 +566,23 @@ class DigestSelector:
                     Content.published_at >= since,
                     Source.id.in_(list(context.followed_source_ids)),
                     # Respecter les mutes
-                    Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
-                    ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
+                    Source.id.notin_(list(context.muted_sources))
+                    if context.muted_sources
+                    else True,
+                    ~Source.theme.in_(list(context.muted_themes))
+                    if context.muted_themes
+                    else True,
                 )
                 .order_by(Content.published_at.desc())
                 .limit(200)
             )
-            
+
             # Filtrage des topics muets
             if context.muted_topics:
                 user_sources_query = user_sources_query.where(
                     or_(
                         Content.topics.is_(None),
-                        ~Content.topics.overlap(list(context.muted_topics))
+                        ~Content.topics.overlap(list(context.muted_topics)),
                     )
                 )
 
@@ -526,19 +602,21 @@ class DigestSelector:
             if mode == DigestMode.SEREIN:
                 user_sources_query = apply_serein_filter(user_sources_query)
             elif mode == DigestMode.THEME_FOCUS and focus_theme:
-                user_sources_query = apply_theme_focus_filter(user_sources_query, focus_theme)
+                user_sources_query = apply_theme_focus_filter(
+                    user_sources_query, focus_theme
+                )
 
             result = await self.session.execute(user_sources_query)
             user_candidates = list(result.scalars().all())
             candidates.extend(user_candidates)
-            
+
             logger.info(
                 "digest_candidates_user_sources",
                 user_id=str(user_id),
                 count=len(user_candidates),
-                lookback_hours=hours_lookback
+                lookback_hours=hours_lookback,
             )
-        
+
         # Track user source count separately
         user_source_count = len(candidates)
 
@@ -554,10 +632,14 @@ class DigestSelector:
             .where(
                 ~excluded_stmt,
                 Content.published_at >= since,
-                Source.is_curated == True,
+                Source.is_curated,
                 Content.id.notin_(list(existing_ids)) if existing_ids else True,
-                Source.id.notin_(list(context.muted_sources)) if context.muted_sources else True,
-                ~Source.theme.in_(list(context.muted_themes)) if context.muted_themes else True
+                Source.id.notin_(list(context.muted_sources))
+                if context.muted_sources
+                else True,
+                ~Source.theme.in_(list(context.muted_themes))
+                if context.muted_themes
+                else True,
             )
             .order_by(Content.published_at.desc())
             .limit(200)
@@ -568,7 +650,7 @@ class DigestSelector:
             curated_query = curated_query.where(
                 or_(
                     Content.topics.is_(None),
-                    ~Content.topics.overlap(list(context.muted_topics))
+                    ~Content.topics.overlap(list(context.muted_topics)),
                 )
             )
 
@@ -580,9 +662,7 @@ class DigestSelector:
 
         # Filtrage des articles payants
         if context.hide_paid_content:
-            curated_query = curated_query.where(
-                Content.is_paid.is_not(True)
-            )
+            curated_query = curated_query.where(Content.is_paid.is_not(True))
 
         # Appliquer les filtres de mode
         if mode == DigestMode.SEREIN:
@@ -604,15 +684,15 @@ class DigestSelector:
             curated_sources=curated_count,
             user_to_curated_ratio=f"{user_source_count}:{curated_count}",
         )
-            
+
         return candidates
-    
+
     async def _score_candidates(
         self,
-        candidates: List[Content],
+        candidates: list[Content],
         context: DigestContext,
         mode: str = "pour_vous",
-    ) -> List[Tuple[Content, float, List[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, list[DigestScoreBreakdown]]]:
         """Score les candidats en utilisant le ScoringEngine existant avec bonus de fraîcheur.
 
         Cette méthode utilise le ScoringEngine configuré dans RecommendationService
@@ -636,7 +716,7 @@ class DigestSelector:
             user_interest_weights=context.user_interest_weights,
             followed_source_ids=context.followed_source_ids,
             user_prefs=context.user_prefs,
-            now=datetime.datetime.now(datetime.timezone.utc),
+            now=datetime.datetime.now(datetime.UTC),
             user_subtopics=context.user_subtopics,
             user_subtopic_weights=context.user_subtopic_weights,
             muted_sources=context.muted_sources,
@@ -647,132 +727,167 @@ class DigestSelector:
             source_affinity_scores=context.source_affinity_scores,
             impression_data=impression_data,
         )
-        
+
         scored = []
         for content in candidates:
-            breakdown: List[DigestScoreBreakdown] = []
-            
+            breakdown: list[DigestScoreBreakdown] = []
+
             try:
                 # Get base score from ScoringEngine
-                base_score = self.rec_service.scoring_engine.compute_score(content, scoring_context)
-                
+                base_score = self.rec_service.scoring_engine.compute_score(
+                    content, scoring_context
+                )
+
                 # Calculate recency bonus based on article age
                 # Defensive: Ensure both datetimes are timezone-aware
                 published = content.published_at
-                now = datetime.datetime.now(datetime.timezone.utc)
-                
+                now = datetime.datetime.now(datetime.UTC)
+
                 if published.tzinfo is None:
-                    published = published.replace(tzinfo=datetime.timezone.utc)
+                    published = published.replace(tzinfo=datetime.UTC)
                 if now.tzinfo is None:
-                    now = now.replace(tzinfo=datetime.timezone.utc)
-                
+                    now = now.replace(tzinfo=datetime.UTC)
+
                 hours_old = (now - published).total_seconds() / 3600
-                
+
                 # Add recency contribution to breakdown
                 if hours_old < 6:
                     recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Article très récent (< 6h)",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Article très récent (< 6h)",
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
                 elif hours_old < 24:
                     recency_bonus = ScoringWeights.RECENT_BONUS  # +25
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Article récent (< 24h)",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Article récent (< 24h)",
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
                 elif hours_old < 48:
                     recency_bonus = ScoringWeights.RECENT_DAY_BONUS  # +15
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Publié aujourd'hui",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Publié aujourd'hui",
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
                 elif hours_old < 72:
                     recency_bonus = ScoringWeights.RECENT_YESTERDAY_BONUS  # +8
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Publié hier",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Publié hier", points=recency_bonus, is_positive=True
+                        )
+                    )
                 elif hours_old < 120:
                     recency_bonus = ScoringWeights.RECENT_WEEK_BONUS  # +3
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Article de la semaine",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Article de la semaine",
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
                 elif hours_old < 168:
                     recency_bonus = ScoringWeights.RECENT_OLD_BONUS  # +1
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Article ancien",
-                        points=recency_bonus,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Article ancien",
+                            points=recency_bonus,
+                            is_positive=True,
+                        )
+                    )
                 else:
                     recency_bonus = 0.0
-                
+
                 # Mode PERSPECTIVE : boost articles de biais opposé
                 perspective_bonus = 0.0
                 if mode == DigestMode.PERSPECTIVE and context.user_bias_stance:
                     opposing = get_opposing_biases(context.user_bias_stance)
                     if content.source and content.source.bias_stance in opposing:
                         perspective_bonus = 80.0
-                        breakdown.append(DigestScoreBreakdown(
-                            label="Perspective opposée",
-                            points=perspective_bonus,
-                            is_positive=True
-                        ))
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label="Perspective opposée",
+                                points=perspective_bonus,
+                                is_positive=True,
+                            )
+                        )
 
                 final_score = base_score + recency_bonus + perspective_bonus
 
                 # Capture CoreLayer contributions
                 # Theme match (3-tier: content.theme > source.theme > secondary)
                 _theme_breakdown_added = False
-                if hasattr(content, 'theme') and content.theme and content.theme in context.user_interests:
-                    breakdown.append(DigestScoreBreakdown(
-                        label=f"Thème article : {content.theme}",
-                        points=ScoringWeights.THEME_MATCH,
-                        is_positive=True
-                    ))
+                if (
+                    hasattr(content, "theme")
+                    and content.theme
+                    and content.theme in context.user_interests
+                ):
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label=f"Thème article : {content.theme}",
+                            points=ScoringWeights.THEME_MATCH,
+                            is_positive=True,
+                        )
+                    )
                     _theme_breakdown_added = True
                 elif content.source and content.source.theme in context.user_interests:
-                    breakdown.append(DigestScoreBreakdown(
-                        label=f"Thème matché : {content.source.theme}",
-                        points=ScoringWeights.THEME_MATCH,
-                        is_positive=True
-                    ))
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label=f"Thème matché : {content.source.theme}",
+                            points=ScoringWeights.THEME_MATCH,
+                            is_positive=True,
+                        )
+                    )
                     _theme_breakdown_added = True
-                elif content.source and getattr(content.source, 'secondary_themes', None):
-                    matched_sec = set(content.source.secondary_themes) & context.user_interests
+                elif content.source and getattr(
+                    content.source, "secondary_themes", None
+                ):
+                    matched_sec = (
+                        set(content.source.secondary_themes) & context.user_interests
+                    )
                     if matched_sec:
                         sec_theme = sorted(matched_sec)[0]
-                        sec_pts = ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
-                        breakdown.append(DigestScoreBreakdown(
-                            label=f"Thème secondaire : {sec_theme}",
-                            points=sec_pts,
-                            is_positive=True
-                        ))
+                        sec_pts = (
+                            ScoringWeights.THEME_MATCH
+                            * ScoringWeights.SECONDARY_THEME_FACTOR
+                        )
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label=f"Thème secondaire : {sec_theme}",
+                                points=sec_pts,
+                                is_positive=True,
+                            )
+                        )
                         _theme_breakdown_added = True
-                
+
                 # Source followed
                 if content.source_id in context.followed_source_ids:
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Source de confiance",
-                        points=ScoringWeights.TRUSTED_SOURCE,
-                        is_positive=True
-                    ))
-                    
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Source de confiance",
+                            points=ScoringWeights.TRUSTED_SOURCE,
+                            is_positive=True,
+                        )
+                    )
+
                     # Custom source bonus
                     if content.source_id in context.custom_source_ids:
-                        breakdown.append(DigestScoreBreakdown(
-                            label="Ta source personnalisée",
-                            points=ScoringWeights.CUSTOM_SOURCE_BONUS,
-                            is_positive=True
-                        ))
-                
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label="Ta source personnalisée",
+                                points=ScoringWeights.CUSTOM_SOURCE_BONUS,
+                                is_positive=True,
+                            )
+                        )
+
                 # Capture ArticleTopicLayer contributions
                 if content.topics:
                     matched_topics = 0
@@ -785,48 +900,58 @@ class DigestSelector:
                                 label = f"Renforcé par vos j'aime : {topic}"
                             else:
                                 label = f"Sous-thème : {topic}"
-                            breakdown.append(DigestScoreBreakdown(
-                                label=label,
-                                points=points,
-                                is_positive=True
-                            ))
+                            breakdown.append(
+                                DigestScoreBreakdown(
+                                    label=label, points=points, is_positive=True
+                                )
+                            )
                             matched_topics += 1
-                    
+
                     # Subtopic precision bonus if any topics matched
                     if matched_topics > 0:
-                        breakdown.append(DigestScoreBreakdown(
-                            label="Précision thématique",
-                            points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
-                            is_positive=True
-                        ))
-                
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label="Précision thématique",
+                                points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
+                                is_positive=True,
+                            )
+                        )
+
                 # Capture StaticPreferenceLayer contributions
-                if content.content_type and context.user_prefs.get('preferred_format'):
-                    if content.content_type.value == context.user_prefs.get('preferred_format'):
-                        breakdown.append(DigestScoreBreakdown(
-                            label=f"Format préféré : {content.content_type.value}",
-                            points=15.0,  # Format preference weight
-                            is_positive=True
-                        ))
-                
+                if content.content_type and context.user_prefs.get("preferred_format"):
+                    if content.content_type.value == context.user_prefs.get(
+                        "preferred_format"
+                    ):
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label=f"Format préféré : {content.content_type.value}",
+                                points=15.0,  # Format preference weight
+                                is_positive=True,
+                            )
+                        )
+
                 # Capture QualityLayer contributions
                 if content.source and content.source.is_curated:
-                    breakdown.append(DigestScoreBreakdown(
-                        label="Source qualitative",
-                        points=ScoringWeights.CURATED_SOURCE,
-                        is_positive=True
-                    ))
-                
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Source qualitative",
+                            points=ScoringWeights.CURATED_SOURCE,
+                            is_positive=True,
+                        )
+                    )
+
                 # Low reliability penalty (if applicable)
-                if content.source and hasattr(content.source, 'reliability_score'):
+                if content.source and hasattr(content.source, "reliability_score"):
                     reliability = content.source.reliability_score
                     if reliability and reliability.value == "low":
-                        breakdown.append(DigestScoreBreakdown(
-                            label="Fiabilité source faible",
-                            points=ScoringWeights.FQS_LOW_MALUS,
-                            is_positive=False
-                        ))
-                
+                        breakdown.append(
+                            DigestScoreBreakdown(
+                                label="Fiabilité source faible",
+                                points=ScoringWeights.FQS_LOW_MALUS,
+                                is_positive=False,
+                            )
+                        )
+
                 logger.debug(
                     "digest_scoring_breakdown",
                     content_id=str(content.id),
@@ -834,9 +959,9 @@ class DigestSelector:
                     base_score=round(base_score, 2),
                     recency_bonus=recency_bonus,
                     final_score=round(final_score, 2),
-                    breakdown_count=len(breakdown)
+                    breakdown_count=len(breakdown),
                 )
-                
+
                 scored.append((content, final_score, breakdown))
             except Exception as e:
                 logger.error(
@@ -847,24 +972,24 @@ class DigestSelector:
                     published_at=str(content.published_at),
                     error=str(e),
                     error_type=type(e).__name__,
-                    exc_info=True
+                    exc_info=True,
                 )
                 # Attribuer un score minimal pour ne pas bloquer
                 scored.append((content, 0.0, breakdown))
-        
+
         # Trier par score décroissant
         scored.sort(key=lambda x: x[1], reverse=True)
-        
+
         return scored
-    
+
     def _select_with_diversity(
         self,
-        scored_candidates: List[Tuple[Content, float, List[DigestScoreBreakdown]]],
+        scored_candidates: list[tuple[Content, float, list[DigestScoreBreakdown]]],
         target_count: int,
         mode: str = "pour_vous",
-        initial_source_counts: Optional[Dict[UUID, int]] = None,
-        initial_theme_counts: Optional[Dict[str, int]] = None,
-    ) -> List[Tuple[Content, float, str, List[DigestScoreBreakdown]]]:
+        initial_source_counts: dict[UUID, int] | None = None,
+        initial_theme_counts: dict[str, int] | None = None,
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
@@ -881,7 +1006,6 @@ class DigestSelector:
             Liste de tuples (Content, score, reason, breakdown)
         """
         DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
-        MIN_SOURCES = 3
 
         # Relax max_per_theme in THEME_FOCUS mode (all articles are same theme)
         effective_max_per_theme = self.constraints.MAX_PER_THEME
@@ -889,7 +1013,7 @@ class DigestSelector:
             effective_max_per_theme = target_count  # No theme limit
 
         # Count distinct sources in candidate pool for fallback decision
-        distinct_sources = set(c.source_id for c, _, _ in scored_candidates)
+        distinct_sources = {c.source_id for c, _, _ in scored_candidates}
         effective_max_per_source = self.constraints.MAX_PER_SOURCE
 
         if len(distinct_sources) < self.constraints.TARGET_DIGEST_SIZE:
@@ -898,12 +1022,12 @@ class DigestSelector:
                 "digest_diversity_fallback_max_per_source",
                 distinct_sources=len(distinct_sources),
                 target=self.constraints.TARGET_DIGEST_SIZE,
-                effective_max_per_source=effective_max_per_source
+                effective_max_per_source=effective_max_per_source,
             )
 
         selected = []
-        source_counts: Dict[UUID, int] = defaultdict(int, initial_source_counts or {})
-        theme_counts: Dict[str, int] = defaultdict(int, initial_theme_counts or {})
+        source_counts: dict[UUID, int] = defaultdict(int, initial_source_counts or {})
+        theme_counts: dict[str, int] = defaultdict(int, initial_theme_counts or {})
 
         for content, score, breakdown in scored_candidates:
             if len(selected) >= target_count:
@@ -912,7 +1036,7 @@ class DigestSelector:
             source_id = content.source_id
             # Utiliser content.theme ML si disponible, sinon source.theme
             theme = None
-            if hasattr(content, 'theme') and content.theme:
+            if hasattr(content, "theme") and content.theme:
                 theme = content.theme
             elif content.source:
                 theme = content.source.theme
@@ -932,28 +1056,35 @@ class DigestSelector:
                 final_score = score + diversity_penalty
                 # Ajouter au breakdown pour transparence (règle d'or : visible à l'utilisateur)
                 breakdown = list(breakdown)  # Copie pour ne pas muter l'original
-                breakdown.append(DigestScoreBreakdown(
-                    label="Diversité revue de presse",
-                    points=round(diversity_penalty, 1),
-                    is_positive=False
-                ))
+                breakdown.append(
+                    DigestScoreBreakdown(
+                        label="Diversité revue de presse",
+                        points=round(diversity_penalty, 1),
+                        is_positive=False,
+                    )
+                )
             else:
                 final_score = score
 
             # Contraintes respectées - ajouter avec raison générée
-            reason = self._generate_reason(content, source_counts, theme_counts, breakdown)
+            reason = self._generate_reason(
+                content, source_counts, theme_counts, breakdown
+            )
             selected.append((content, final_score, reason, breakdown))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
 
         # Ensure minimum source diversity
-        selected_sources = set(item[0].source_id for item in selected)
-        if len(selected_sources) < self.constraints.MIN_SOURCES and len(scored_candidates) >= target_count:
+        selected_sources = {item[0].source_id for item in selected}
+        if (
+            len(selected_sources) < self.constraints.MIN_SOURCES
+            and len(scored_candidates) >= target_count
+        ):
             logger.warning(
                 "digest_diversity_insufficient_sources",
                 selected_sources=len(selected_sources),
-                min_required=self.constraints.MIN_SOURCES
+                min_required=self.constraints.MIN_SOURCES,
             )
 
         logger.debug(
@@ -962,31 +1093,31 @@ class DigestSelector:
             source_distribution={str(k): v for k, v in source_counts.items()},
             theme_distribution=dict(theme_counts),
             diversity_divisor=DIVERSITY_DIVISOR,
-            effective_max_per_source=effective_max_per_source
+            effective_max_per_source=effective_max_per_source,
         )
 
         return selected
-    
-    _THEME_LABELS: Dict[str, str] = {
-        'tech': 'Tech & Innovation',
-        'society': 'Société',
-        'environment': 'Environnement',
-        'economy': 'Économie',
-        'politics': 'Politique',
-        'culture': 'Culture & Idées',
-        'science': 'Sciences',
-        'international': 'Géopolitique',
-        'geopolitics': 'Géopolitique',
-        'society_climate': 'Société',
-        'culture_ideas': 'Culture & Idées',
+
+    _THEME_LABELS: dict[str, str] = {
+        "tech": "Tech & Innovation",
+        "society": "Société",
+        "environment": "Environnement",
+        "economy": "Économie",
+        "politics": "Politique",
+        "culture": "Culture & Idées",
+        "science": "Sciences",
+        "international": "Géopolitique",
+        "geopolitics": "Géopolitique",
+        "society_climate": "Société",
+        "culture_ideas": "Culture & Idées",
     }
 
     def _generate_reason(
         self,
         content: Content,
-        source_counts: Dict[UUID, int],
-        theme_counts: Dict[str, int],
-        breakdown: Optional[List[DigestScoreBreakdown]] = None
+        source_counts: dict[UUID, int],
+        theme_counts: dict[str, int],
+        breakdown: list[DigestScoreBreakdown] | None = None,
     ) -> str:
         """Génère la raison de sélection pour affichage utilisateur.
 
@@ -1010,7 +1141,7 @@ class DigestSelector:
 
         # 2. Thème article ML ou thème source — ex: "Thème : Environnement"
         theme = None
-        if hasattr(content, 'theme') and content.theme:
+        if hasattr(content, "theme") and content.theme:
             theme = content.theme
         elif content.source:
             theme = content.source.theme
@@ -1043,20 +1174,26 @@ class DigestSelector:
 
         Les contraintes de diversité (max 1/source, max 2/theme) s'appliquent globalement.
         """
-        trending_target = ceil(target_count * ScoringWeights.DIGEST_TRENDING_TARGET_RATIO)
+        trending_target = ceil(
+            target_count * ScoringWeights.DIGEST_TRENDING_TARGET_RATIO
+        )
 
         # Partitionner les candidats en trending pertinent vs personnalisé
         trending_candidates: list[Content] = []
         personalized_candidates: list[Content] = []
 
-        all_important_ids = trending_context.trending_content_ids | trending_context.une_content_ids
+        all_important_ids = (
+            trending_context.trending_content_ids | trending_context.une_content_ids
+        )
 
         for content in candidates:
             if content.id in all_important_ids:
                 # Vérifier la pertinence pour l'utilisateur
                 source_theme = content.source.theme if content.source else None
-                content_theme = getattr(content, 'theme', None)
-                secondary_themes = getattr(content.source, 'secondary_themes', None) or []
+                content_theme = getattr(content, "theme", None)
+                secondary_themes = (
+                    getattr(content.source, "secondary_themes", None) or []
+                )
 
                 is_relevant = (
                     content.source_id in context.followed_source_ids
@@ -1084,7 +1221,9 @@ class DigestSelector:
         pass1_selected: _4t = []
         if trending_candidates:
             scored_trending = await self._score_candidates(
-                trending_candidates, context, mode="pour_vous",
+                trending_candidates,
+                context,
+                mode="pour_vous",
             )
 
             # Ajouter les bonus trending/une
@@ -1096,19 +1235,23 @@ class DigestSelector:
 
                 if content.id in trending_context.trending_content_ids:
                     bonus += ScoringWeights.DIGEST_TRENDING_BONUS
-                    bd_copy.append(DigestScoreBreakdown(
-                        label="Sujet du jour",
-                        points=ScoringWeights.DIGEST_TRENDING_BONUS,
-                        is_positive=True,
-                    ))
+                    bd_copy.append(
+                        DigestScoreBreakdown(
+                            label="Sujet du jour",
+                            points=ScoringWeights.DIGEST_TRENDING_BONUS,
+                            is_positive=True,
+                        )
+                    )
 
                 if content.id in trending_context.une_content_ids:
                     bonus += ScoringWeights.DIGEST_UNE_BONUS
-                    bd_copy.append(DigestScoreBreakdown(
-                        label="À la une",
-                        points=ScoringWeights.DIGEST_UNE_BONUS,
-                        is_positive=True,
-                    ))
+                    bd_copy.append(
+                        DigestScoreBreakdown(
+                            label="À la une",
+                            points=ScoringWeights.DIGEST_UNE_BONUS,
+                            is_positive=True,
+                        )
+                    )
 
                 boosted_trending.append((content, score + bonus, bd_copy))
 
@@ -1130,15 +1273,17 @@ class DigestSelector:
 
         if remaining_count > 0 and personalized_candidates:
             scored_personalized = await self._score_candidates(
-                personalized_candidates, context, mode="pour_vous",
+                personalized_candidates,
+                context,
+                mode="pour_vous",
             )
 
             # Construire les compteurs existants depuis pass 1 pour continuité diversité
-            pass1_source_counts: Dict[UUID, int] = defaultdict(int)
-            pass1_theme_counts: Dict[str, int] = defaultdict(int)
+            pass1_source_counts: dict[UUID, int] = defaultdict(int)
+            pass1_theme_counts: dict[str, int] = defaultdict(int)
             for content, _, _, _ in pass1_selected:
                 pass1_source_counts[content.source_id] += 1
-                theme = getattr(content, 'theme', None)
+                theme = getattr(content, "theme", None)
                 if not theme and content.source:
                     theme = content.source.theme
                 if theme:
@@ -1163,7 +1308,7 @@ class DigestSelector:
         Doit être appelé 1x par batch, ou avec cache court pour on-demand.
         """
         # 1. Fetch contenus des dernières 24h (toutes sources actives)
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         since = now - datetime.timedelta(hours=24)
         stmt = (
             select(Content)
@@ -1185,7 +1330,8 @@ class DigestSelector:
         # 3. Fetch GUIDs "À la une" et identifier les contenus une
         une_guids = await self._fetch_une_guids()
         une_ids = self.importance_detector.identify_une_contents(
-            recent_contents, une_guids,
+            recent_contents,
+            une_guids,
         )
 
         logger.info(
@@ -1201,7 +1347,7 @@ class DigestSelector:
             computed_at=now,
         )
 
-    async def _fetch_une_guids(self) -> Set[str]:
+    async def _fetch_une_guids(self) -> set[str]:
         """Récupère les GUIDs des articles 'À la Une'."""
         import feedparser as fp
 
@@ -1212,14 +1358,14 @@ class DigestSelector:
         if not sources:
             return set()
 
-        une_guids: Set[str] = set()
+        une_guids: set[str] = set()
 
         async def parse_feed(url: str) -> list[str]:
             try:
                 loop = asyncio.get_event_loop()
                 feed = await loop.run_in_executor(None, fp.parse, url)
                 return [
-                    entry.id if hasattr(entry, 'id') else entry.link
+                    entry.id if hasattr(entry, "id") else entry.link
                     for entry in feed.entries[:5]
                 ]
             except Exception as e:

@@ -1,7 +1,5 @@
-from typing import Optional
-
-from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 from app.models.content import Content
+from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 
 
 class BehavioralLayer(BaseScoringLayer):
@@ -14,16 +12,22 @@ class BehavioralLayer(BaseScoringLayer):
     def name(self) -> str:
         return "behavioral"
 
-    def _get_effective_theme(self, content: Content, context: ScoringContext) -> Optional[str]:
+    def _get_effective_theme(
+        self, content: Content, context: ScoringContext
+    ) -> str | None:
         """Détermine le thème effectif: content.theme > source.theme > secondary_themes."""
         # Tier 1: Article-level theme (ML-inferred)
-        if hasattr(content, 'theme') and content.theme and content.theme in context.user_interests:
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme in context.user_interests
+        ):
             return content.theme
         # Tier 2: Source primary theme
         if content.source and content.source.theme in context.user_interests:
             return content.source.theme
         # Tier 3: Source secondary themes
-        if content.source and getattr(content.source, 'secondary_themes', None):
+        if content.source and getattr(content.source, "secondary_themes", None):
             matched = set(content.source.secondary_themes) & context.user_interests
             if matched:
                 return sorted(matched)[0]
@@ -42,12 +46,22 @@ class BehavioralLayer(BaseScoringLayer):
                 base_theme_score = 50.0
                 bonus = base_theme_score * (weight - 1.0)
                 score += bonus
-                context.add_reason(content.id, self.name, bonus, f"High interest: {effective_theme} (x{weight:.1f})")
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    bonus,
+                    f"High interest: {effective_theme} (x{weight:.1f})",
+                )
 
             elif weight < 1.0:
                 base_theme_score = 50.0
                 malus = base_theme_score * (1.0 - weight)
                 score -= malus
-                context.add_reason(content.id, self.name, -malus, f"Low interest: {effective_theme} (x{weight:.1f})")
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    -malus,
+                    f"Low interest: {effective_theme} (x{weight:.1f})",
+                )
 
         return score

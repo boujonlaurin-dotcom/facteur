@@ -34,7 +34,7 @@ class TokenResponse(BaseModel):
 async def signup(request: SignupRequest) -> TokenResponse:
     """
     Créer un nouveau compte.
-    
+
     Note: L'authentification est gérée côté client via Supabase.
     Ce endpoint est un placeholder pour une éventuelle logique serveur.
     """
@@ -50,7 +50,7 @@ async def signup(request: SignupRequest) -> TokenResponse:
 async def login(request: LoginRequest) -> TokenResponse:
     """
     Se connecter avec email/password.
-    
+
     Note: L'authentification est gérée côté client via Supabase.
     """
     raise HTTPException(
@@ -63,7 +63,7 @@ async def login(request: LoginRequest) -> TokenResponse:
 async def logout(user_id: str = Depends(get_current_user_id)) -> dict[str, str]:
     """
     Se déconnecter.
-    
+
     Note: La déconnexion est gérée côté client via Supabase.
     """
     return {"message": "Logout handled by client"}
@@ -73,11 +73,10 @@ async def logout(user_id: str = Depends(get_current_user_id)) -> dict[str, str]:
 async def refresh_token() -> TokenResponse:
     """
     Rafraîchir le token.
-    
+
     Note: Le refresh est géré côté client via Supabase.
     """
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Token refresh is handled by Supabase client SDK",
     )
-

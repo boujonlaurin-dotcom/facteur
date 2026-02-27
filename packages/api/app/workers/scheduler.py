@@ -1,16 +1,16 @@
 """Scheduler pour les jobs background."""
 
+import pytz
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
-import pytz
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
-from app.workers.rss_sync import sync_all_sources
-from app.workers.top3_job import generate_daily_top3_job
-from app.workers.storage_cleanup import cleanup_old_articles
 from app.jobs.digest_generation_job import run_digest_generation
+from app.workers.rss_sync import sync_all_sources
+from app.workers.storage_cleanup import cleanup_old_articles
+from app.workers.top3_job import generate_daily_top3_job
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -75,4 +75,3 @@ def stop_scheduler() -> None:
         scheduler.shutdown()
         scheduler = None
         logger.info("Scheduler stopped")
-
