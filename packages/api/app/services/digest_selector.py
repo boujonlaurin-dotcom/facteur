@@ -705,7 +705,7 @@ class DigestSelector:
         pour la transparence algorithmique.
         """
         # Fetch impression data so ImpressionLayer applies in digest too
-        impression_data = await self.rec_service._fetch_impression_data(
+        impression_data = await self.rec_service.fetch_impression_data(
             context.user_id, candidates
         )
 

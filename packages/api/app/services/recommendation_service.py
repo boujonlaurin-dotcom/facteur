@@ -267,7 +267,7 @@ class RecommendationService:
         source_affinity_scores = await self._compute_source_affinity(user_id)
 
         # Fetch impression data for candidates (Feed Refresh feature)
-        impression_data = await self._fetch_impression_data(user_id, candidates)
+        impression_data = await self.fetch_impression_data(user_id, candidates)
 
         # Context creation
         context = ScoringContext(
@@ -834,7 +834,7 @@ class RecommendationService:
 
         return {sid: score / max_score for sid, score in scores.items()}
 
-    async def _fetch_impression_data(
+    async def fetch_impression_data(
         self, user_id: UUID, candidates: list[Content]
     ) -> dict[UUID, tuple]:
         """Fetch impression timestamps for candidates (Feed Refresh).

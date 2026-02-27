@@ -238,6 +238,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       _refreshTimestamps.add(DateTime.now());
       // Pass only the IDs of articles the user actually scrolled past
       await ref.read(feedProvider.notifier).refreshArticles(_viewedIds);
+      _viewedIds.clear();
     } else if (result == 'recent') {
       // Redirect to "Articles récents" mode
       ref.read(feedProvider.notifier).setFilter('recent');

@@ -51,6 +51,8 @@ async def get_personalized_feed(
         mode=mode,
         saved_only=saved_only,
         theme=theme,
+        has_note=has_note,
+        source_id=source_id,
     )
 
     # Calculate pagination metadata
