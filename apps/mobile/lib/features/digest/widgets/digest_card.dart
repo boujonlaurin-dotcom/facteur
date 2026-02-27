@@ -1,3 +1,4 @@
+import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -102,7 +103,7 @@ class DigestCard extends StatelessWidget {
                           item.description!.isNotEmpty) ...[
                         const SizedBox(height: FacteurSpacing.space2),
                         Text(
-                          item.description!,
+                          stripHtml(item.description!),
                           style: textTheme.bodySmall?.copyWith(
                             color: colors.textSecondary.withValues(alpha: 0.8),
                             height: 1.3,

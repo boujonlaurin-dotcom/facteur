@@ -1,5 +1,6 @@
 from .article_topic import ArticleTopicLayer
 from .behavioral import BehavioralLayer
+from .content_quality import ContentQualityLayer
 from .core import CoreLayer
 from .impression import ImpressionLayer
 from .personalization import PersonalizationLayer
@@ -13,6 +14,7 @@ __all__ = [
     "BehavioralLayer",
     "QualityLayer",
     "VisualLayer",
+    "ContentQualityLayer",
     "ArticleTopicLayer",
     "PersonalizationLayer",
     "ImpressionLayer",
