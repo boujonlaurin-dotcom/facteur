@@ -121,9 +121,7 @@ class ContentExtractor:
                                 quality=quality,
                             )
                 except Exception:
-                    logger.warning(
-                        "content_extractor_readability_failed", url=url
-                    )
+                    logger.warning("content_extractor_readability_failed", url=url)
 
             reading_time = None
             if text_content:
@@ -147,9 +145,7 @@ class ContentExtractor:
             logger.exception("content_extractor_error", url=url)
             return ExtractedContent()
 
-    def _extract_with_readability(
-        self, html_source: str
-    ) -> tuple[str, str] | None:
+    def _extract_with_readability(self, html_source: str) -> tuple[str, str] | None:
         """Fallback extraction using readability-lxml.
 
         Args:

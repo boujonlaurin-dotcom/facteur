@@ -68,8 +68,7 @@ async def get_content_detail(
         attempted_at = content_data.get("extraction_attempted_at")
         cooldown_expired = (
             attempted_at is None
-            or (datetime.now(UTC) - attempted_at).total_seconds()
-            > 6 * 3600
+            or (datetime.now(UTC) - attempted_at).total_seconds() > 6 * 3600
         )
 
         if quality != "full" and cooldown_expired:
@@ -95,9 +94,7 @@ async def get_content_detail(
                             result.reading_time_seconds
                             and not db_content.duration_seconds
                         ):
-                            db_content.duration_seconds = (
-                                result.reading_time_seconds
-                            )
+                            db_content.duration_seconds = result.reading_time_seconds
                             content_data["duration_seconds"] = (
                                 result.reading_time_seconds
                             )
