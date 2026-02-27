@@ -25,6 +25,8 @@ import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../widgets/swipe_to_open_card.dart';
+import '../widgets/dismiss_banner.dart';
+import '../providers/swipe_hint_provider.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -59,6 +61,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
+
+  // Swipe-left dismiss: active banner state (max 1 at a time)
+  String? _activeDismissalId;
+  Content? _activeDismissalContent;
+  int _activeDismissalIndex = 0;
+  bool _swipeHintSeen = false;
+  double _lastScrollPosition = 0;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -170,6 +179,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     }
 
+    // Dismiss banner: auto-collapse on significant scroll
+    if (_activeDismissalId != null &&
+        (currentScroll - _lastScrollPosition).abs() > 100) {
+      _resolveActiveBanner();
+      setState(() {});
+    }
+    _lastScrollPosition = currentScroll;
+
     // Load more
     if (currentScroll >= maxScroll - 200) {
       ref.read(feedProvider.notifier).loadMore();
@@ -254,10 +271,86 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
+  // --- Swipe-left dismiss handlers ---
+
+  void _handleSwipeDismiss(Content content, int contentIndex) {
+    // Auto-resolve previous banner if any
+    if (_activeDismissalId != null) {
+      _resolveActiveBanner();
+    }
+
+    setState(() {
+      _activeDismissalId = content.id;
+      _activeDismissalContent = content;
+      _activeDismissalIndex = contentIndex;
+    });
+  }
+
+  /// Undo dismiss for a specific content (captured in closure).
+  /// The backend hide is only sent on auto-resolve/mute, so undo just clears
+  /// the local banner state — no API call needed.
+  void _handleDismissUndo(Content content, int index) {
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Mute source for a specific content (captured in closure).
+  void _handleDismissMuteSource(Content content) {
+    ref.read(feedProvider.notifier).swipeDismissAndMuteSource(content);
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Mute topic for a specific content (captured in closure).
+  void _handleDismissMuteTopic(Content content, String topic) {
+    ref.read(feedProvider.notifier).swipeDismissAndMuteTopic(content, topic);
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Auto-resolve for a specific content (captured in closure).
+  /// Guards against stale callback from an old banner timer.
+  void _handleDismissAutoResolve(Content content) {
+    // Only act if this banner is still the active one
+    if (_activeDismissalId != content.id) return;
+
+    ref.read(feedProvider.notifier).swipeDismiss(content);
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalContent = null;
+    });
+  }
+
+  /// Resolves the active banner as hide-without-precision.
+  void _resolveActiveBanner() {
+    final content = _activeDismissalContent;
+    if (content != null) {
+      ref.read(feedProvider.notifier).swipeDismiss(content);
+    }
+    _activeDismissalId = null;
+    _activeDismissalContent = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+
+    // Swipe-left hint: check if already seen
+    final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
+    if (hintSeen) _swipeHintSeen = true;
 
     // Listen to scroll to top trigger
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
@@ -600,9 +693,57 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
+                                // Show dismiss banner if this card is being dismissed
+                                if (_activeDismissalId == content.id &&
+                                    _activeDismissalContent != null) {
+                                  final capturedContent =
+                                      _activeDismissalContent!;
+                                  final capturedIndex =
+                                      _activeDismissalIndex;
+                                  return Padding(
+                                    key: ValueKey('dismiss_${content.id}'),
+                                    padding:
+                                        const EdgeInsets.only(bottom: 16),
+                                    child: AnimatedSize(
+                                      duration:
+                                          const Duration(milliseconds: 300),
+                                      child: DismissBanner(
+                                        content: capturedContent,
+                                        onUndo: () => _handleDismissUndo(
+                                            capturedContent,
+                                            capturedIndex),
+                                        onMuteSource: () =>
+                                            _handleDismissMuteSource(
+                                                capturedContent),
+                                        onMuteTopic: (topic) =>
+                                            _handleDismissMuteTopic(
+                                                capturedContent, topic),
+                                        onAutoResolve: () =>
+                                            _handleDismissAutoResolve(
+                                                capturedContent),
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                final showHint = !_swipeHintSeen &&
+                                    contentIndex <= 1;
+
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () =>
                                       _showArticleModal(content),
+                                  onSwipeDismiss: () =>
+                                      _handleSwipeDismiss(
+                                          content, contentIndex),
+                                  enableHintAnimation: showHint,
+                                  onHintAnimationComplete: () {
+                                    if (!_swipeHintSeen) {
+                                      _swipeHintSeen = true;
+                                      markSwipeLeftHintSeen();
+                                      ref.invalidate(
+                                          swipeLeftHintSeenProvider);
+                                    }
+                                  },
                                   child: AnimatedFeedCard(
                                     isConsumed: isConsumed,
                                     child: FeedCard(

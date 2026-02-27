@@ -291,6 +291,97 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  /// Swipe-dismiss: hide without reason. Backend adjusts subtopic weights.
+  Future<void> swipeDismiss(Content content) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    final updatedItems = List<Content>.from(currentState.items);
+    updatedItems.removeWhere((c) => c.id == content.id);
+
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+    } catch (e) {
+      // Silent failure — optimistic remove stays
+      print('FeedNotifier: swipeDismiss failed for ${content.id}: $e');
+    }
+  }
+
+  /// Undo a swipe-dismiss: re-insert article at original position.
+  Future<void> undoSwipeDismiss(Content content, int originalIndex) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    final updatedItems = List<Content>.from(currentState.items);
+    final insertIndex = originalIndex.clamp(0, updatedItems.length);
+    updatedItems.insert(insertIndex, content);
+
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.unhideContent(content.id);
+    } catch (e) {
+      print('FeedNotifier: undoSwipeDismiss failed for ${content.id}: $e');
+    }
+  }
+
+  /// Swipe-dismiss + mute source combo (from banner "Moins de [Source]").
+  Future<void> swipeDismissAndMuteSource(Content content) async {
+    // Hide is already done by swipeDismiss or will be done here
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove all from this source
+    final updatedItems =
+        currentState.items.where((c) => c.source.id != content.source.id).toList();
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+    } catch (e) {
+      print('FeedNotifier: swipeDismissAndMuteSource hide failed: $e');
+    }
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteSource(content.source.id);
+    } catch (e) {
+      print('FeedNotifier: swipeDismissAndMuteSource mute failed: $e');
+    }
+  }
+
+  /// Swipe-dismiss + mute topic combo (from banner "Moins sur [Topic]").
+  Future<void> swipeDismissAndMuteTopic(Content content, String topic) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    // Optimistic remove: the dismissed article + all articles matching this topic slug
+    final updatedItems = currentState.items.where((c) {
+      if (c.id == content.id) return false;
+      return !c.topics.contains(topic);
+    }).toList();
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+    } catch (e) {
+      print('FeedNotifier: swipeDismissAndMuteTopic hide failed: $e');
+    }
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteTopic(topic);
+    } catch (e) {
+      print('FeedNotifier: swipeDismissAndMuteTopic mute failed: $e');
+    }
+  }
+
   Future<void> muteSource(Content content) async {
     await muteSourceById(content.source.id);
   }

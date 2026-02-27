@@ -16,9 +16,9 @@ from app.models.enums import (
 
 
 class HideContentRequest(BaseModel):
-    """Requête pour masquer un contenu."""
+    """Requête pour masquer un contenu. Reason optionnel (swipe-left sans précision)."""
 
-    reason: HiddenReason
+    reason: HiddenReason | None = None
 
 
 class NoteUpsertRequest(BaseModel):
