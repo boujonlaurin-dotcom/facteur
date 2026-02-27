@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
@@ -68,7 +68,7 @@ async def get_content_detail(
         attempted_at = content_data.get("extraction_attempted_at")
         cooldown_expired = (
             attempted_at is None
-            or (datetime.now(timezone.utc) - attempted_at).total_seconds()
+            or (datetime.now(UTC) - attempted_at).total_seconds()
             > 6 * 3600
         )
 
@@ -85,9 +85,7 @@ async def get_content_detail(
                 stmt = select(Content).where(Content.id == content_id)
                 db_content = await db.scalar(stmt)
                 if db_content:
-                    db_content.extraction_attempted_at = datetime.now(
-                        timezone.utc
-                    )
+                    db_content.extraction_attempted_at = datetime.now(UTC)
                     if result.html_content:
                         content_data["html_content"] = result.html_content
                         content_data["content_quality"] = result.content_quality
@@ -113,9 +111,7 @@ async def get_content_detail(
                     stmt = select(Content).where(Content.id == content_id)
                     db_content = await db.scalar(stmt)
                     if db_content:
-                        db_content.extraction_attempted_at = datetime.now(
-                            timezone.utc
-                        )
+                        db_content.extraction_attempted_at = datetime.now(UTC)
                         if not db_content.content_quality:
                             db_content.content_quality = quality or "none"
                         await db.commit()

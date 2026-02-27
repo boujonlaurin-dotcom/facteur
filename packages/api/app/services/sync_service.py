@@ -513,9 +513,7 @@ class SyncService:
         if content.content_quality == "full":
             return
 
-        content.extraction_attempted_at = datetime.datetime.now(
-            datetime.timezone.utc
-        )
+        content.extraction_attempted_at = datetime.datetime.now(datetime.UTC)
 
         try:
             # Run sync trafilatura in thread pool (with 20s timeout)
