@@ -84,12 +84,12 @@
 ## 🚀 ÉTAPE 3: PR Lifecycle (Dev → Review → CI → Staging → Merge)
 
 **Règle bloquante** : Aucun merge vers `main` sans Peer Review APPROVED + CI green + staging verified.
-**Schéma complet** : [`.context/pipeline-facteur.md`](.context/pipeline-facteur.md)
+**Schéma complet** : [`docs/workflow/pipeline.md`](docs/workflow/pipeline.md)
 
 ### 3.1 Handoff : l'agent dev prépare la review
 
 En fin de développement, dis **"prépare le handoff"** à l'agent dev.
-Il écrit `.context/pr-handoff.md` selon le template dans [`.context/prompts/handoff-review.md`](.context/prompts/handoff-review.md), puis STOP.
+Il écrit `.context/pr-handoff.md` selon le template dans [`docs/workflow/prompts/handoff-review.md`](docs/workflow/prompts/handoff-review.md), puis STOP.
 
 ### 3.2 Test local [SKIP: easy devs]
 
@@ -98,7 +98,7 @@ Tu testes en local sur la même branche. Si KO → retour workspace dev avec le 
 ### 3.3 Peer Review Conductor (AVANT la PR)
 
 1. Ouvre un **nouveau workspace Conductor** sur la **même branche**
-2. Colle le prompt depuis [`.context/prompts/peer-review.md`](.context/prompts/peer-review.md)
+2. Colle le prompt depuis [`docs/workflow/prompts/peer-review.md`](docs/workflow/prompts/peer-review.md)
 3. L'agent review lit le handoff + le diff, laisse des DiffComments inline
 4. **Si blockers** → copie la sortie dans le workspace dev → fix → re-review
 5. **Si APPROVED** → passe à 3.4
