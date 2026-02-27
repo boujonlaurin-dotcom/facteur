@@ -81,8 +81,9 @@ async def refresh_feed(
     Le status reste UNSEEN (pas d'exclusion du feed), seul le scoring
     applique un malus temporel via ImpressionLayer.
     """
-    from app.models.enums import ContentStatus
     from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.enums import ContentStatus
 
     user_uuid = UUID(current_user_id)
     now = datetime.now(UTC)
