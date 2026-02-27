@@ -1,6 +1,12 @@
 name: Deploy to Staging
 
 on:
+  # Auto-deploy quand CI passe sur une PR
+  workflow_run:
+    workflows: ["API Tests", "Build Docker Image"]
+    types: [completed]
+
+  # Fallback manuel
   workflow_dispatch:
     inputs:
       ref:
@@ -9,13 +15,66 @@ on:
         default: ''
 
 jobs:
+  # Gate: ne déploie que si TOUTES les conditions sont remplies
+  check-gates:
+    runs-on: ubuntu-latest
+    outputs:
+      should-deploy: ${{ steps.gate.outputs.deploy }}
+      deploy-ref: ${{ steps.gate.outputs.ref }}
+    steps:
+      - name: Evaluate deploy conditions
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Manual dispatch : toujours déployer
+            if (context.eventName === 'workflow_dispatch') {
+              const ref = context.payload.inputs?.ref || context.ref;
+              core.setOutput('deploy', 'true');
+              core.setOutput('ref', ref);
+              console.log(`Manual deploy: ${ref}`);
+              return;
+            }
+
+            // workflow_run : vérifier que c'est une PR et que le run a réussi
+            const run = context.payload.workflow_run;
+            if (run.event !== 'pull_request' || run.conclusion !== 'success') {
+              core.setOutput('deploy', 'false');
+              console.log(`Skip: event=${run.event}, conclusion=${run.conclusion}`);
+              return;
+            }
+
+            // Vérifier que TOUS les checks requis sont passés sur ce commit
+            const { data: checks } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: run.head_sha,
+            });
+
+            const required = ['lint', 'test', 'build'];
+            const results = {};
+            for (const check of checks.check_runs) {
+              if (required.includes(check.name)) {
+                results[check.name] = check.conclusion;
+              }
+            }
+
+            const allPassed = required.every(name => results[name] === 'success');
+            console.log(`Check results: ${JSON.stringify(results)}`);
+            console.log(`All required checks passed: ${allPassed}`);
+
+            core.setOutput('deploy', allPassed ? 'true' : 'false');
+            core.setOutput('ref', run.head_branch);
+
   deploy:
+    needs: check-gates
+    if: needs.check-gates.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
+          ref: ${{ needs.check-gates.outputs.deploy-ref }}
 
       - name: Install Railway CLI
         run: npm i -g @railway/cli

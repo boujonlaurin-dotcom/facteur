@@ -97,16 +97,10 @@ CI s'exécute automatiquement : `lint` + `test` + `build` (Docker) + `verify` (B
 
 ### 3.2 Déployer en Staging
 
-```bash
-# Déclenche le deploy staging (depuis la branche PR)
-gh workflow run deploy-staging.yml --ref <branch-name>
+**Automatique** : `deploy-staging.yml` se déclenche dès que `lint`, `test` et `build` passent sur la PR.
+Smoke tests inclus (health, readiness, environment check). Visible dans les checks de la PR.
 
-# Attendre ~2 min, puis vérifier
-curl https://facteur-staging.up.railway.app/api/health
-curl https://facteur-staging.up.railway.app/api/health/ready
-```
-
-Vérifie que `environment` retourne `"staging"` dans la réponse health.
+Fallback manuel si besoin : `gh workflow run deploy-staging.yml --ref <branch-name>`
 
 ### 3.3 Peer Review Conductor
 
@@ -123,12 +117,11 @@ Vérifie que `environment` retourne `"staging"` dans la réponse health.
 
 ### 3.4 Merge & Production
 
+Merge via **GitHub UI** (bouton "Squash and merge") ou CLI :
 ```bash
 gh pr merge <PR-number> --squash
-# Railway auto-déploie sur production via push to main
-# OU déploiement manuel contrôlé :
-gh workflow run promote-to-production.yml
 ```
+Railway auto-déploie sur production via push to main.
 
 ### Règles
 
@@ -305,7 +298,7 @@ git worktree remove ../<agent>-<tache>
 
 ---
 
-*Dernière MAJ: 2026-02-26*
+*Dernière MAJ: 2026-02-27*
 *Mainteneurs: Human (Laurin) + AI agents collaborativement*
 *Ancien CLAUDE.md (590 lignes): [docs/CLAUDE.md.backup-2026-02-14](docs/CLAUDE.md.backup-2026-02-14)*
 *Cursor legacy: [docs/archive/cursor-legacy-2026-02-14](docs/archive/cursor-legacy-2026-02-14)*
