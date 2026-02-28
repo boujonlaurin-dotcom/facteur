@@ -126,16 +126,12 @@ class RSSParser:
             return url.rstrip("/") + "/feed"
 
         # GitHub Releases: github.com/owner/repo → /releases.atom
-        gh_match = re.match(
-            r"https?://github\.com/([\w.-]+)/([\w.-]+)/?$", url
-        )
+        gh_match = re.match(r"https?://github\.com/([\w.-]+)/([\w.-]+)/?$", url)
         if gh_match:
             return f"https://github.com/{gh_match.group(1)}/{gh_match.group(2)}/releases.atom"
 
         # GitHub Commits: github.com/owner/repo/commits → /commits.atom
-        gh_commits = re.match(
-            r"https?://github\.com/([\w.-]+)/([\w.-]+)/commits", url
-        )
+        gh_commits = re.match(r"https?://github\.com/([\w.-]+)/([\w.-]+)/commits", url)
         if gh_commits:
             return f"https://github.com/{gh_commits.group(1)}/{gh_commits.group(2)}/commits.atom"
 
@@ -524,9 +520,8 @@ class RSSParser:
             for candidate in candidate_urls[:5]:
                 try:
                     cand_resp = await self.client.get(candidate)
-                    if (
-                        cand_resp.status_code == 200
-                        and self._is_feed_content_type(cand_resp)
+                    if cand_resp.status_code == 200 and self._is_feed_content_type(
+                        cand_resp
                     ):
                         cand_feed = await loop.run_in_executor(
                             None, feedparser.parse, cand_resp.text
@@ -541,16 +536,16 @@ class RSSParser:
 
         # ── Stage 4: Expanded suffix fallback + Content-Type check
         common_suffixes = [
-            "/feed",       # WordPress
-            "/rss",        # Generic
-            "/feed.xml",   # Hugo, Jekyll, Eleventy
-            "/rss.xml",    # Drupal, custom
-            "/atom.xml",   # Atom (Jekyll, Ghost)
+            "/feed",  # WordPress
+            "/rss",  # Generic
+            "/feed.xml",  # Hugo, Jekyll, Eleventy
+            "/rss.xml",  # Drupal, custom
+            "/atom.xml",  # Atom (Jekyll, Ghost)
             "/index.xml",  # Hugo default
-            "/feed/all",   # Custom CMS (e.g. grimper.com)
-            "/feed/rss",   # CMS variants
+            "/feed/all",  # Custom CMS (e.g. grimper.com)
+            "/feed/rss",  # CMS variants
             "/blog/feed",  # WordPress with /blog prefix
-            "/.rss",       # Reddit-style
+            "/.rss",  # Reddit-style
         ]
         suffix_tried = 0
         for suffix in common_suffixes:
