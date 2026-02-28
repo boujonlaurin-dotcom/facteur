@@ -1,4 +1,5 @@
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
@@ -98,7 +99,7 @@ class FeedCard extends StatelessWidget {
                           content.description!.isNotEmpty) ...[
                         const SizedBox(height: FacteurSpacing.space2),
                         Text(
-                          content.description!,
+                          stripHtml(content.description!),
                           style: textTheme.bodySmall?.copyWith(
                             color: colors.textSecondary.withValues(alpha: 0.8),
                             height: 1.3,
