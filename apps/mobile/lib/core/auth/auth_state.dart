@@ -319,7 +319,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     try {
       // Deep link pour native, URL web pour Flutter web
       final redirectUrl = kIsWeb
-          ? '${Uri.base.origin}/email-confirmation'
+          ? Uri.base.resolve('email-confirmation').toString()
           : 'io.supabase.facteur://login-callback';
 
       await _supabase.auth.signUp(
@@ -406,7 +406,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      await _supabase.auth.signInWithOAuth(OAuthProvider.apple);
+      final redirectUrl = kIsWeb
+          ? Uri.base.resolve('auth/callback').toString()
+          : 'io.supabase.facteur://login-callback';
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.apple,
+        redirectTo: redirectUrl,
+      );
     } on AuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -424,7 +430,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      await _supabase.auth.signInWithOAuth(OAuthProvider.google);
+      final redirectUrl = kIsWeb
+          ? Uri.base.resolve('facteur/auth/callback').toString()
+          : 'io.supabase.facteur://login-callback';
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirectUrl,
+      );
     } on AuthException catch (e) {
       state = state.copyWith(
         isLoading: false,
