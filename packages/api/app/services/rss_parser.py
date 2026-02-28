@@ -222,7 +222,9 @@ class RSSParser:
                     error=str(e),
                 )
             except Exception as e:
-                logger.warning("Reddit RSS fetch failed", subreddit=subreddit, error=str(e))
+                logger.warning(
+                    "Reddit RSS fetch failed", subreddit=subreddit, error=str(e)
+                )
             raise ValueError(
                 f"Could not fetch RSS feed for r/{subreddit}. The subreddit may not exist."
             )
