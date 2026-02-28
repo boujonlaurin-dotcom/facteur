@@ -13,6 +13,7 @@ class SourceType(StrEnum):
     ARTICLE = "article"
     PODCAST = "podcast"
     YOUTUBE = "youtube"
+    REDDIT = "reddit"
 
 
 class ContentType(StrEnum):
