@@ -23,6 +23,12 @@ class FacteurThumbnail extends StatefulWidget {
 class _FacteurThumbnailState extends State<FacteurThumbnail> {
   bool _hasError = false;
 
+  // Cache statique des URLs d'images échouées — persiste pendant la session.
+  // Évite la correction de scroll causée par l'effondrement de hauteur
+  // quand une carte avec image cassée repasse dans le viewport après avoir
+  // été disposée (addAutomaticKeepAlives: false dans SliverList).
+  static final Set<String> _failedUrls = {};
+
   @override
   void didUpdateWidget(FacteurThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -33,7 +39,8 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.imageUrl == null || widget.imageUrl!.isEmpty || _hasError) {
+    final url = widget.imageUrl;
+    if (url == null || url.isEmpty || _hasError || _failedUrls.contains(url)) {
       return const SizedBox.shrink();
     }
 
@@ -44,7 +51,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
       child: AspectRatio(
         aspectRatio: widget.aspectRatio,
         child: FacteurImage(
-          imageUrl: widget.imageUrl!,
+          imageUrl: url,
           fit: BoxFit.cover,
           placeholder: (context) => Container(
             color: colors.backgroundSecondary,
@@ -56,6 +63,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
             ),
           ),
           errorWidget: (context) {
+            _failedUrls.add(url); // Cache immédiat pour éviter le re-collapse
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) setState(() => _hasError = true);
             });
