@@ -304,3 +304,320 @@ async def test_youtube_no_api_key_falls_back_to_html():
 
     assert "channel_id=UCtest123456789" in result.feed_url
     assert result.feed_type == "youtube"
+
+
+# ─── Platform Transform Tests ────────────────────────────────────
+
+
+def test_platform_transform_substack():
+    """Substack URL transforms to /feed suffix."""
+    result = RSSParser._try_platform_transform("https://example.substack.com")
+    assert result == "https://example.substack.com/feed"
+
+    result = RSSParser._try_platform_transform("https://my-newsletter.substack.com/")
+    assert result == "https://my-newsletter.substack.com/feed"
+
+
+def test_platform_transform_github():
+    """GitHub repo URL transforms to /releases.atom."""
+    result = RSSParser._try_platform_transform("https://github.com/anthropics/claude-code")
+    assert result == "https://github.com/anthropics/claude-code/releases.atom"
+
+
+def test_platform_transform_github_commits():
+    """GitHub commits URL transforms to /commits.atom."""
+    result = RSSParser._try_platform_transform(
+        "https://github.com/anthropics/claude-code/commits/main"
+    )
+    assert result == "https://github.com/anthropics/claude-code/commits.atom"
+
+
+def test_platform_transform_mastodon():
+    """Mastodon profile URL transforms to .rss suffix."""
+    result = RSSParser._try_platform_transform("https://mastodon.social/@user")
+    assert result == "https://mastodon.social/@user.rss"
+
+
+def test_platform_transform_medium():
+    """Medium publication URL transforms to /feed/ prefix."""
+    result = RSSParser._try_platform_transform("https://medium.com/towards-data-science")
+    assert result == "https://medium.com/feed/towards-data-science"
+
+
+def test_platform_transform_no_match():
+    """Non-platform URL returns None."""
+    assert RSSParser._try_platform_transform("https://www.grimper.com") is None
+
+
+# ─── Content-Type Helper Tests ───────────────────────────────────
+
+
+def test_is_feed_content_type():
+    """Content-type validation correctly filters HTML from XML feeds."""
+    resp = MagicMock()
+
+    resp.headers = {"content-type": "text/html; charset=utf-8"}
+    assert RSSParser._is_feed_content_type(resp) is False
+
+    resp.headers = {"content-type": "application/rss+xml"}
+    assert RSSParser._is_feed_content_type(resp) is True
+
+    resp.headers = {"content-type": "application/atom+xml"}
+    assert RSSParser._is_feed_content_type(resp) is True
+
+    resp.headers = {"content-type": "text/xml"}
+    assert RSSParser._is_feed_content_type(resp) is True
+
+    # Unknown type — allow feedparser to decide
+    resp.headers = {"content-type": "text/plain"}
+    assert RSSParser._is_feed_content_type(resp) is True
+
+    resp.headers = {}
+    assert RSSParser._is_feed_content_type(resp) is True
+
+
+def test_is_antibot_response():
+    """Anti-bot detection correctly identifies CAPTCHA/challenge responses."""
+    assert RSSParser._is_antibot_response(403, "") is True
+    assert RSSParser._is_antibot_response(200, "normal page content") is False
+    assert RSSParser._is_antibot_response(200, '<script src="captcha-delivery.com">') is True
+    assert RSSParser._is_antibot_response(200, "datadome challenge") is True
+
+
+# ─── <a href> Deep Scan Tests ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_tag_feed_scanning():
+    """Feed discovered via <a href> when no <link rel='alternate'> exists."""
+    parser = RSSParser()
+
+    html_content = """
+    <html>
+        <head><title>Grimper</title></head>
+        <body>
+            <a href="https://www.grimper.com/feed/all">
+                <img src="rss-icon.png"/>
+            </a>
+        </body>
+    </html>
+    """
+
+    main_response = MagicMock()
+    main_response.text = html_content
+    main_response.status_code = 200
+    main_response.raise_for_status = MagicMock()
+
+    feed_response = MagicMock()
+    feed_response.text = "<rss>valid</rss>"
+    feed_response.status_code = 200
+    feed_response.headers = {"content-type": "application/rss+xml"}
+
+    async def mock_get(url, **kwargs):
+        if "feed/all" in url:
+            return feed_response
+        return main_response
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        with patch(
+            "feedparser.parse",
+            side_effect=lambda c: MockFeed(title="Grimper RSS")
+            if "valid" in c
+            else BadFeed(),
+        ):
+            result = await parser.detect("https://www.grimper.com")
+
+    assert result.feed_url == "https://www.grimper.com/feed/all"
+    assert result.title == "Grimper RSS"
+
+
+@pytest.mark.asyncio
+async def test_a_tag_feed_scanning_by_text():
+    """Feed discovered via <a> with RSS-related text content."""
+    parser = RSSParser()
+
+    html_content = """
+    <html>
+        <body>
+            <a href="/custom-rss-path">Flux RSS</a>
+        </body>
+    </html>
+    """
+
+    main_response = MagicMock()
+    main_response.text = html_content
+    main_response.status_code = 200
+    main_response.raise_for_status = MagicMock()
+
+    feed_response = MagicMock()
+    feed_response.text = "<rss>valid</rss>"
+    feed_response.status_code = 200
+    feed_response.headers = {"content-type": "application/rss+xml"}
+
+    not_found = MagicMock()
+    not_found.status_code = 404
+    not_found.text = "Not found"
+    not_found.headers = {"content-type": "text/html"}
+
+    async def mock_get(url, **kwargs):
+        if "custom-rss-path" in url:
+            return feed_response
+        if any(s in url for s in ["/feed", "/rss", "/atom", "/index", "/blog", "/.rss"]):
+            return not_found
+        return main_response
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        with patch(
+            "feedparser.parse",
+            side_effect=lambda c: MockFeed(title="Custom Feed")
+            if "valid" in c
+            else BadFeed(),
+        ):
+            result = await parser.detect("https://example.com")
+
+    assert "custom-rss-path" in result.feed_url
+
+
+# ─── curl-cffi Fallback Tests ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_curl_cffi_fallback_on_403():
+    """When httpx gets 403/anti-bot, curl-cffi should be tried as fallback."""
+    parser = RSSParser()
+
+    blocked_response = MagicMock()
+    blocked_response.status_code = 403
+    blocked_response.text = '<html><script src="https://ct.captcha-delivery.com/i.js"></script></html>'
+    blocked_response.headers = {"content-type": "text/html"}
+
+    valid_html = """
+    <html><head>
+        <link rel="alternate" type="application/rss+xml" href="/rss.xml" />
+    </head><body>Content</body></html>
+    """
+
+    feed_response = MagicMock()
+    feed_response.text = "<rss>valid</rss>"
+    feed_response.status_code = 200
+    feed_response.headers = {"content-type": "application/rss+xml"}
+    feed_response.raise_for_status = MagicMock()
+
+    call_count = 0
+
+    async def mock_httpx_get(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return blocked_response
+        return feed_response
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_httpx_get):
+        with patch.object(parser, "_fetch_with_impersonation", return_value=valid_html):
+            with patch(
+                "feedparser.parse",
+                side_effect=lambda c: MockFeed(title="Recovered Feed")
+                if "valid" in c
+                else BadFeed(),
+            ):
+                result = await parser.detect("https://www.usine-digitale.fr")
+
+    assert result.feed_url == "https://www.usine-digitale.fr/rss.xml"
+
+
+@pytest.mark.asyncio
+async def test_curl_cffi_fallback_both_fail():
+    """When both httpx and curl-cffi fail, raise clear error."""
+    parser = RSSParser()
+
+    blocked_response = MagicMock()
+    blocked_response.status_code = 403
+    blocked_response.text = '<script src="captcha-delivery.com"></script>'
+    blocked_response.headers = {"content-type": "text/html"}
+
+    with patch("httpx.AsyncClient.get", return_value=blocked_response):
+        with patch.object(parser, "_fetch_with_impersonation", return_value=None):
+            with pytest.raises(ValueError, match="blocked automated access"):
+                await parser.detect("https://blocked-site.com")
+
+
+# ─── Expanded Suffix + Content-Type Tests ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_content_type_validation_skips_html_suffix():
+    """Suffix returning text/html should be skipped via Content-Type check."""
+    parser = RSSParser()
+
+    main_html = "<html><body>Site with no link tags</body></html>"
+    main_response = MagicMock()
+    main_response.text = main_html
+    main_response.status_code = 200
+    main_response.raise_for_status = MagicMock()
+    main_response.headers = {"content-type": "text/html"}
+
+    html_suffix_response = MagicMock()
+    html_suffix_response.text = "<html>Not a feed</html>"
+    html_suffix_response.status_code = 200
+    html_suffix_response.headers = {"content-type": "text/html; charset=UTF-8"}
+
+    rss_response = MagicMock()
+    rss_response.text = "<rss>valid</rss>"
+    rss_response.status_code = 200
+    rss_response.headers = {"content-type": "application/rss+xml"}
+
+    async def mock_get(url, **kwargs):
+        if url.endswith("/feed/all"):
+            return rss_response
+        if any(url.endswith(s) for s in ["/feed", "/rss", "/feed.xml", "/rss.xml",
+                                          "/atom.xml", "/index.xml", "/feed/rss",
+                                          "/blog/feed", "/.rss"]):
+            return html_suffix_response
+        return main_response
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        with patch(
+            "feedparser.parse",
+            side_effect=lambda c: MockFeed(title="Grimper Feed")
+            if "valid" in c
+            else BadFeed(),
+        ):
+            result = await parser.detect("https://www.grimper.com")
+
+    assert result.feed_url == "https://www.grimper.com/feed/all"
+
+
+# ─── Error Diagnostics Test ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_error_diagnostics_include_detection_log():
+    """Error message should include detection log details."""
+    parser = RSSParser()
+
+    html_content = "<html><body>No feeds here</body></html>"
+    mock_response = MagicMock()
+    mock_response.text = html_content
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock()
+    mock_response.headers = {"content-type": "text/html"}
+
+    not_found = MagicMock()
+    not_found.status_code = 404
+    not_found.text = "Not Found"
+    not_found.headers = {"content-type": "text/html"}
+
+    async def mock_get(url, **kwargs):
+        if url == "https://nofeed.example.com":
+            return mock_response
+        return not_found
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        with patch("feedparser.parse", return_value=BadFeed()):
+            with pytest.raises(ValueError) as exc_info:
+                await parser.detect("https://nofeed.example.com")
+
+    error_msg = str(exc_info.value)
+    assert "No RSS feed found" in error_msg
+    assert "Tried:" in error_msg
+    assert "direct_parse=fail" in error_msg
