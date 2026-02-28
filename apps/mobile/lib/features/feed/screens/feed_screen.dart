@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -443,19 +444,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
-                        // Calculer le childCount - TOUJOURS utiliser la formule normale
-                        // Le blocage est géré dans le builder, pas par le childCount
-                        final int effectiveChildCount = contents.length +
-                            1 +
-                            (showCaughtUp ? 1 : 0) +
-                            (showingNudge ? 1 : 0) +
-                            (showSavedNudge ? 1 : 0);
+                        // childCount constant pour éviter les recalculs de scroll geometry
+                        // quand showCaughtUp/showingNudge/showSavedNudge changent en cours de scroll.
+                        final int effectiveChildCount =
+                            contents.isEmpty ? 1 : contents.length + 4;
 
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           sliver: SliverList(
-                            // Key pour forcer rebuild complet quand showCaughtUp change
-                            key: ValueKey('feed_list_caught_up_$showCaughtUp'),
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final listIndex = index;
@@ -478,11 +474,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               .read(feedProvider.notifier)
                                               .loadMore();
                                         }));
-                                  }
-                                  if (listIndex > caughtUpPos) {
-                                    // Après la carte : afficher un espace puis rien (bloque visuellement)
-                                    // Mais on garde le childCount normal pour éviter les bugs
-                                    return const SizedBox.shrink();
                                   }
                                   // Avant la carte : continuer normalement
                                 }
@@ -617,8 +608,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 }
 
                                 return Padding(
-                                  key: ValueKey(
-                                      '${content.id}_${progressionTopic != null}'),
+                                  key: ValueKey(content.id),
                                   padding: const EdgeInsets.only(bottom: 16),
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
@@ -653,6 +643,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 );
                               },
                               childCount: effectiveChildCount,
+                              addAutomaticKeepAlives: false,
+                              addRepaintBoundaries: true,
                             ),
                           ),
                         );
