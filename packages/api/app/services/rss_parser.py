@@ -30,7 +30,7 @@ class RSSParser:
             timeout=7.0,
             follow_redirects=True,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 "Accept-Language": "en-US,en;q=0.9",
             },
             cookies={"CONSENT": "YES+cb.20210328-17-p0.en+FX+430"},
@@ -200,6 +200,7 @@ class RSSParser:
         reddit_match = re.match(
             r"https?://(?:www\.|old\.)?reddit\.com/r/([\w]+)/?", url
         )
+        logger.info("Reddit pattern check", url=url, matched=bool(reddit_match))
         if reddit_match:
             subreddit = reddit_match.group(1)
             rss_url = f"https://www.reddit.com/r/{subreddit}/.rss"
@@ -212,8 +213,16 @@ class RSSParser:
                 )
                 if len(reddit_feed.entries) > 0:
                     return await self._format_response(rss_url, reddit_feed)
+                logger.warning("Reddit RSS feed empty", subreddit=subreddit)
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    "Reddit RSS fetch HTTP error",
+                    subreddit=subreddit,
+                    status=e.response.status_code,
+                    error=str(e),
+                )
             except Exception as e:
-                logger.warning("Reddit RSS fetch failed", error=str(e))
+                logger.warning("Reddit RSS fetch failed", subreddit=subreddit, error=str(e))
             raise ValueError(
                 f"Could not fetch RSS feed for r/{subreddit}. The subreddit may not exist."
             )
