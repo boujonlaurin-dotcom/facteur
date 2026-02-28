@@ -247,8 +247,15 @@ class Content {
 
   /// Check if content supports in-app reading mode.
   /// Articles always use the native Facteur reader (with fallback CTA to original).
-  /// YouTube/Audio will be re-enabled in phase 2.
+  /// Non-article source types (YouTube, Reddit, podcast) skip the reader entirely.
+  /// YouTube/Audio native players will be re-enabled in phase 2.
   bool get hasInAppContent {
+    // Non-article sources should never use the in-app reader
+    if (source.type == SourceType.youtube ||
+        source.type == SourceType.reddit ||
+        source.type == SourceType.podcast) {
+      return false;
+    }
     switch (contentType) {
       case ContentType.article:
         return true; // Native Facteur reader with ArticleReaderWidget

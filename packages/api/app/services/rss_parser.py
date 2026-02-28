@@ -229,6 +229,25 @@ class RSSParser:
                 f"Could not fetch RSS feed for r/{subreddit}. The subreddit may not exist."
             )
 
+        # ── SPECIAL: YouTube feed URL (already resolved) ─────────
+        if "youtube.com/feeds/videos.xml" in url:
+            logger.info("YouTube feed URL detected, parsing directly", url=url)
+            try:
+                feed_resp = await self.client.get(url)
+                feed_resp.raise_for_status()
+                yt_feed = await loop.run_in_executor(
+                    None, feedparser.parse, feed_resp.text
+                )
+                if len(yt_feed.entries) > 0:
+                    return await self._format_response(url, yt_feed)
+            except Exception as e:
+                logger.warning(
+                    "Failed to parse YouTube feed URL",
+                    url=url,
+                    error=str(e),
+                )
+            raise ValueError("YouTube feed is empty or invalid.")
+
         # ── SPECIAL: YouTube URL detection ────────────────────────
         if "youtube.com" in url or "youtu.be" in url:
             logger.info("YouTube URL detected, resolving channel_id", url=url)
