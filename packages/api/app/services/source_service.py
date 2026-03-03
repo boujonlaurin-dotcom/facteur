@@ -46,7 +46,7 @@ class SourceService:
             .join(UserSource)
             .where(
                 UserSource.user_id == user_uuid,
-                not Source.is_curated,
+                ~Source.is_curated,
             )
             .distinct()
         )
@@ -138,7 +138,7 @@ class SourceService:
             select(Source, count_col)
             .join(UserSource)
             .where(Source.is_active)
-            .where(not Source.is_curated)
+            .where(~Source.is_curated)
             .group_by(Source.id)
             .order_by(count_col.desc())
             .limit(limit)

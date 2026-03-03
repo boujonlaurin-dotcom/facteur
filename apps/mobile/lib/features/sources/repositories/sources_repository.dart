@@ -42,7 +42,7 @@ class SourcesRepository {
     } catch (e) {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] getAllSources: $e');
-      return [];
+      rethrow;
     }
   }
 
