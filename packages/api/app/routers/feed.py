@@ -10,7 +10,7 @@ from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
 from app.schemas.content import FeedRefreshRequest
-from app.schemas.feed import FeedResponse, PaginationMeta
+from app.schemas.feed import ClusterInfo, FeedResponse, PaginationMeta
 from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
@@ -55,6 +55,26 @@ async def get_personalized_feed(
         source_id=source_id,
     )
 
+    # Epic 11: Build clusters from custom topics
+    from sqlalchemy import select as sa_select
+
+    from app.models.user_topic_profile import UserTopicProfile
+
+    user_custom_topics = list(
+        (
+            await db.scalars(
+                sa_select(UserTopicProfile).where(UserTopicProfile.user_id == user_uuid)
+            )
+        ).all()
+    )
+
+    clusters_data: list[ClusterInfo] = []
+    if user_custom_topics and not saved_only and not source_id:
+        feed_items, raw_clusters = RecommendationService.build_clusters(
+            feed_items, user_custom_topics
+        )
+        clusters_data = [ClusterInfo(**c) for c in raw_clusters]
+
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
     has_next = len(feed_items) >= limit
@@ -67,6 +87,7 @@ async def get_personalized_feed(
             total=0,  # Total unknown without additional query
             has_next=has_next,
         ),
+        clusters=clusters_data,
     )
 
 

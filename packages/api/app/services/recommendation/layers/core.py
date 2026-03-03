@@ -106,7 +106,8 @@ class CoreLayer(BaseScoringLayer):
             )
 
         # 3. Recency Decay (Base)
-        # Score = 30 / (hours_old/24 + 1)
+        # Score = recency_base / (hours_old/24 + 1)
+        # Epic 11: recency_base raised from 30→100 to compete with personalization.
         if content.published_at:
             published = content.published_at
             now = context.now
@@ -120,8 +121,7 @@ class CoreLayer(BaseScoringLayer):
             delta = now - published
             hours_old = max(0, delta.total_seconds() / 3600)
 
-            # Formule V1
-            recency_score = 30.0 / (hours_old / 24.0 + 1.0)
+            recency_score = ScoringWeights.recency_base / (hours_old / 24.0 + 1.0)
             score += recency_score
 
             # Diagnostic (optionnel, peut être verbeux)
