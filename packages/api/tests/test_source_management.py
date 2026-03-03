@@ -38,8 +38,11 @@ async def test_source_lifecycle_states(db_session: AsyncSession):
     # Verify retrieval
     from sqlalchemy import select
 
-    result = await db_session.execute(select(Source).where(Source.is_curated == True))
+    result = await db_session.execute(
+        select(Source).where(Source.is_curated == True, Source.name == "Curated Source")
+    )
     curated = result.scalars().first()
+    assert curated is not None
     assert curated.name == "Curated Source"
     assert curated.score_independence == 0.9
 

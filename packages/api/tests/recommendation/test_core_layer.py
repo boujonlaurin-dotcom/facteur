@@ -96,7 +96,8 @@ class TestCoreLayerThemeMatching:
         score = layer.score(content, context)
 
         assert score >= ScoringWeights.STANDARD_SOURCE
-        assert score < ScoringWeights.STANDARD_SOURCE + 40
+        # Upper bound: source + recency, no theme-match bonus
+        assert score < ScoringWeights.STANDARD_SOURCE + ScoringWeights.recency_base + 1
         reasons = context.reasons.get(content.id, [])
         theme_reasons = [r for r in reasons if "Thème" in r.get("details", "")]
         assert len(theme_reasons) == 0
@@ -109,7 +110,8 @@ class TestCoreLayerThemeMatching:
 
         score = layer.score(content, context)
 
-        assert score < ScoringWeights.THEME_MATCH
+        # No theme-match bonus; score is source + recency only
+        assert score < ScoringWeights.STANDARD_SOURCE + ScoringWeights.recency_base + 1
         reasons = context.reasons.get(content.id, [])
         theme_reasons = [r for r in reasons if "Thème" in r.get("details", "")]
         assert len(theme_reasons) == 0
@@ -123,7 +125,8 @@ class TestCoreLayerThemeMatching:
         score = layer.score(content, context)
 
         assert score >= ScoringWeights.STANDARD_SOURCE
-        assert score < ScoringWeights.STANDARD_SOURCE + 40
+        # Upper bound: source + recency, no theme-match bonus
+        assert score < ScoringWeights.STANDARD_SOURCE + ScoringWeights.recency_base + 1
 
     def test_all_valid_themes_matching(self):
         """Test exhaustif de tous les thèmes valides."""
