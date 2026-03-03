@@ -238,4 +238,19 @@ class Source {
         return theme![0].toUpperCase() + theme!.substring(1);
     }
   }
+
+  String getTypeLabel() {
+    switch (type) {
+      case SourceType.article:
+        return 'Article';
+      case SourceType.youtube:
+        return 'YouTube';
+      case SourceType.reddit:
+        return 'Reddit';
+      case SourceType.podcast:
+        return 'Podcast';
+      case SourceType.video:
+        return 'Video';
+    }
+  }
 }

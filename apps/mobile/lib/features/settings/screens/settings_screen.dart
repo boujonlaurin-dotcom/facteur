@@ -185,18 +185,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           context.pushNamed(RouteNames.myInterests);
                         },
                       ),
-                      _buildToggleTile(
-                        context,
-                        icon: PhosphorIcons.lock(PhosphorIconsStyle.regular),
-                        title: 'Masquer les articles payants',
-                        subtitle: 'Filtrer les contenus réservés aux abonnés',
-                        value: ref.watch(hidePaidContentProvider),
-                        onChanged: (value) {
-                          ref
-                              .read(hidePaidContentProvider.notifier)
-                              .toggle(value);
-                        },
-                      ),
+                      // TODO: Re-enable when paywall detection is reliable
+                      // _buildToggleTile(
+                      //   context,
+                      //   icon: PhosphorIcons.lock(PhosphorIconsStyle.regular),
+                      //   title: 'Masquer les articles payants',
+                      //   subtitle: 'Filtrer les contenus réservés aux abonnés',
+                      //   value: ref.watch(hidePaidContentProvider),
+                      //   onChanged: (value) {
+                      //     ref
+                      //         .read(hidePaidContentProvider.notifier)
+                      //         .toggle(value);
+                      //   },
+                      // ),
                     ],
                   ),
 

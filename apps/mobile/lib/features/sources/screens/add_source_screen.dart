@@ -23,6 +23,7 @@ class AddSourceScreen extends ConsumerStatefulWidget {
 
 class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   final _searchController = TextEditingController();
+  final _youtubeController = TextEditingController(text: 'youtube.com/@');
   int _currentTab = 0;
   bool _isLoading = false;
   Map<String, dynamic>? _previewData;
@@ -31,18 +32,22 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _youtubeController.dispose();
     super.dispose();
   }
 
   // ─── Shared Logic ──────────────────────────────────────────────
 
   Future<void> _detectOrSearchSource() async {
-    final query = _searchController.text.trim();
+    final controller = _currentTab == 1 ? _youtubeController : _searchController;
+    final query = controller.text.trim();
     if (query.isEmpty) return;
 
-    // Smart transform for Reddit tab
+    // Smart transform per tab
     String resolvedQuery = query;
-    if (_currentTab == 2) {
+    if (_currentTab == 1) {
+      resolvedQuery = _transformYouTubeInput(query);
+    } else if (_currentTab == 2) {
       resolvedQuery = _transformRedditInput(query);
     }
 
@@ -100,6 +105,33 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     return trimmed;
   }
 
+  String _transformYouTubeInput(String input) {
+    final trimmed = input.trim();
+
+    // Already a full URL
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+
+    // youtube.com/... without protocol
+    if (trimmed.startsWith('youtube.com/') ||
+        trimmed.startsWith('www.youtube.com/')) {
+      return 'https://$trimmed';
+    }
+
+    // @handle format
+    if (trimmed.startsWith('@')) {
+      return 'https://www.youtube.com/$trimmed';
+    }
+
+    // Plain channel name (no spaces, no special chars except dots/hyphens/underscores)
+    if (RegExp(r'^[\w.\-]+$').hasMatch(trimmed)) {
+      return 'https://www.youtube.com/@$trimmed';
+    }
+
+    return trimmed;
+  }
+
   Future<void> _confirmSourceFromPreview() async {
     if (_previewData == null) return;
 
@@ -146,6 +178,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   void _resetAll() {
     _resetResults();
     _searchController.clear();
+    _youtubeController.text = 'youtube.com/@';
   }
 
   void _openAtlasFlux() async {
@@ -384,9 +417,10 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildInputField(
-          hint: 'Coller le lien d\'une chaine YouTube...',
+          hint: 'Nom de la chaine...',
           icon: PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
           keyboardType: TextInputType.url,
+          controller: _youtubeController,
         ),
         const SizedBox(height: 16),
         if (_isLoading)
@@ -401,24 +435,15 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           ),
           const SizedBox(height: 16),
           _buildHelpCard(
-            title: 'Comment trouver le lien',
-            steps: const [
-              'Ouvrez YouTube',
-              'Allez sur la chaine souhaitee',
-              'Copiez l\'URL de la barre d\'adresse',
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildHelpCard(
             title: 'Exemples de chaines',
             examples: const [
-              'youtube.com/@ScienceEtonnante',
-              'youtube.com/@Heu7reka',
-              'youtube.com/@Fouloscopie',
-              'youtube.com/@HugoDecrypte',
+              'ScienceEtonnante',
+              'Heu7reka',
+              'Fouloscopie',
+              'HugoDecrypte',
             ],
             description:
-                'Facteur recupere les dernieres videos publiees sur la chaine.',
+                'Tapez le nom de la chaine apres youtube.com/@ puis appuyez sur Rechercher.',
           ),
         ],
         const SizedBox(height: 40),
@@ -505,9 +530,11 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     required String hint,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
+    TextEditingController? controller,
   }) {
+    final effectiveController = controller ?? _searchController;
     return TextField(
-      controller: _searchController,
+      controller: effectiveController,
       decoration: InputDecoration(
         hintText: hint,
         prefixIcon: Icon(icon),
