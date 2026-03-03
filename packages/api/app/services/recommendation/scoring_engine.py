@@ -31,6 +31,10 @@ class ScoringContext:
         muted_content_types: set[str] = None,
         custom_source_ids: set[UUID] = None,
         source_affinity_scores: dict[UUID, float] = None,
+        # Feed Refresh: impression data {content_id: (timestamp, is_manual)}
+        impression_data: dict[UUID, tuple] = None,
+        # Epic 11: Custom Topics
+        user_custom_topics: list = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -48,6 +52,12 @@ class ScoringContext:
         self.muted_themes = muted_themes or set()
         self.muted_topics = muted_topics or set()
         self.muted_content_types = muted_content_types or set()
+
+        # Feed Refresh: {content_id: (last_impressed_at, manually_impressed)}
+        self.impression_data = impression_data or {}
+
+        # Epic 11: Custom Topics
+        self.user_custom_topics = user_custom_topics or []
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

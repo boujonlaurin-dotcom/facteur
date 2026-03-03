@@ -22,6 +22,8 @@ class SourceListItem extends StatelessWidget {
     switch (source.type) {
       case SourceType.youtube:
         return PhosphorIcons.video(PhosphorIconsStyle.fill);
+      case SourceType.reddit:
+        return PhosphorIcons.redditLogo(PhosphorIconsStyle.fill);
       case SourceType.podcast:
         return PhosphorIcons.headphones(PhosphorIconsStyle.fill);
       case SourceType.video:

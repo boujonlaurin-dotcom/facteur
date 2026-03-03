@@ -4,6 +4,8 @@ import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
+import '../../feed/widgets/swipe_to_open_card.dart';
+import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -23,6 +25,9 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onSwipeDismiss;
+  final void Function(String sourceId)? onMuteSource;
+  final void Function(String topic)? onMuteTopic;
   final DigestMode mode;
   final bool isRegenerating;
 
@@ -37,6 +42,9 @@ class DigestBriefingSection extends StatefulWidget {
     this.onSave,
     this.onLike,
     this.onNotInterested,
+    this.onSwipeDismiss,
+    this.onMuteSource,
+    this.onMuteTopic,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
     this.onTapModeSelector,
@@ -49,6 +57,74 @@ class DigestBriefingSection extends StatefulWidget {
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
+
+  // --- Dismiss banner state ---
+  String? _activeDismissalId;
+  DigestItem? _activeDismissalItem;
+
+  void _handleLocalSwipeDismiss(DigestItem item) {
+    if (_activeDismissalId != null) {
+      _resolveActiveBanner();
+    }
+    setState(() {
+      _activeDismissalId = item.contentId;
+      _activeDismissalItem = item;
+    });
+  }
+
+  void _handleLocalUndo() {
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalItem = null;
+    });
+  }
+
+  void _handleLocalAutoResolve() {
+    final item = _activeDismissalItem;
+    if (item != null) {
+      widget.onSwipeDismiss?.call(item);
+    }
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalItem = null;
+    });
+  }
+
+  void _handleLocalMuteSource() {
+    final item = _activeDismissalItem;
+    if (item != null) {
+      widget.onSwipeDismiss?.call(item);
+      final sourceId = item.source?.id;
+      if (sourceId != null && sourceId.isNotEmpty) {
+        widget.onMuteSource?.call(sourceId);
+      }
+    }
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalItem = null;
+    });
+  }
+
+  void _handleLocalMuteTopic(String topic) {
+    final item = _activeDismissalItem;
+    if (item != null) {
+      widget.onSwipeDismiss?.call(item);
+      widget.onMuteTopic?.call(topic);
+    }
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalItem = null;
+    });
+  }
+
+  void _resolveActiveBanner() {
+    final item = _activeDismissalItem;
+    if (item != null) {
+      widget.onSwipeDismiss?.call(item);
+    }
+    _activeDismissalId = null;
+    _activeDismissalItem = null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -246,13 +322,15 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
   /// Flat layout: existing list of ranked cards (flat_v1 / legacy)
   Widget _buildFlatLayout(BuildContext context) {
+    final visibleItems =
+        widget.items.where((item) => !item.isDismissed).toList();
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: widget.items.length,
+      itemCount: visibleItems.length,
       separatorBuilder: (context, index) => const SizedBox(height: 5),
       itemBuilder: (context, index) {
-        final item = widget.items[index];
+        final item = visibleItems[index];
         return _buildRankedCard(context, item, index + 1);
       },
     );
@@ -271,6 +349,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         onLike: widget.onLike,
         onSave: widget.onSave,
         onNotInterested: widget.onNotInterested,
+        onSwipeDismiss: widget.onSwipeDismiss != null
+            ? _handleLocalSwipeDismiss
+            : null,
+        activeDismissalId: _activeDismissalId,
+        onDismissUndo: _handleLocalUndo,
+        onDismissAutoResolve: _handleLocalAutoResolve,
+        onDismissMuteSource: _handleLocalMuteSource,
+        onDismissMuteTopic: _handleLocalMuteTopic,
       ),
     );
   }
@@ -336,31 +422,50 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             ],
           ),
         ),
+        // Show dismiss banner if this card is being dismissed
+        if (_activeDismissalId == item.contentId)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            child: DismissBanner(
+              content: _convertToContent(item),
+              onUndo: _handleLocalUndo,
+              onMuteSource: _handleLocalMuteSource,
+              onMuteTopic: _handleLocalMuteTopic,
+              onAutoResolve: _handleLocalAutoResolve,
+            ),
+          )
+        else
         // The card with save/not interested actions and long-press for preview
-        Opacity(
-          opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
-          child: FeedCard(
-            boxShadow: const [],
-            content: _convertToContent(item),
-            onTap: () => widget.onItemTap(item),
-            onLongPressStart: (_) => ArticlePreviewOverlay.show(
-              context,
-              _convertToContent(item),
+        SwipeToOpenCard(
+          onSwipeOpen: () => widget.onItemTap(item),
+          onSwipeDismiss: widget.onSwipeDismiss != null
+              ? () => _handleLocalSwipeDismiss(item)
+              : null,
+          child: Opacity(
+            opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
+            child: FeedCard(
+              boxShadow: const [],
+              content: _convertToContent(item),
+              onTap: () => widget.onItemTap(item),
+              onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                context,
+                _convertToContent(item),
+              ),
+              onLongPressMoveUpdate: (details) =>
+                  ArticlePreviewOverlay.updateScroll(
+                details.localOffsetFromOrigin.dy,
+              ),
+              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+              onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
+              isLiked: item.isLiked,
+              onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
+              onSaveLongPress: () =>
+                  CollectionPickerSheet.show(context, item.contentId),
+              onNotInterested: widget.onNotInterested != null
+                  ? () => widget.onNotInterested!(item)
+                  : null,
+              isSaved: item.isSaved,
             ),
-            onLongPressMoveUpdate: (details) =>
-                ArticlePreviewOverlay.updateScroll(
-              details.localOffsetFromOrigin.dy,
-            ),
-            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-            onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
-            isLiked: item.isLiked,
-            onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
-            onSaveLongPress: () =>
-                CollectionPickerSheet.show(context, item.contentId),
-            onNotInterested: widget.onNotInterested != null
-                ? () => widget.onNotInterested!(item)
-                : null,
-            isSaved: item.isSaved,
           ),
         ),
       ],

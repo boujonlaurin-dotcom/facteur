@@ -89,6 +89,14 @@ class Content(Base):
     is_paid: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # In-App Reading: content quality signal ('full', 'partial', 'none')
+    content_quality: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default=None
+    )
+    # In-App Reading: last extraction attempt timestamp (prevents infinite retries)
+    extraction_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -160,6 +168,14 @@ class UserContentStatus(Base):
     note_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     note_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Feed refresh: timestamp of last time article was shown but not clicked
+    last_impressed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Manual "already seen" flag — permanent strong penalty, no time decay
+    manually_impressed: Mapped[bool] = mapped_column(
+        default=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow

@@ -23,10 +23,13 @@ from app.services.recommendation.filter_presets import (
 from app.services.recommendation.layers import (
     ArticleTopicLayer,
     BehavioralLayer,
+    ContentQualityLayer,
     CoreLayer,
+    ImpressionLayer,
     PersonalizationLayer,
     QualityLayer,
     StaticPreferenceLayer,
+    UserCustomTopicLayer,
     VisualLayer,
 )
 from app.services.recommendation.scoring_engine import ScoringContext, ScoringEngine
@@ -44,8 +47,11 @@ class RecommendationService:
                 BehavioralLayer(),
                 QualityLayer(),
                 VisualLayer(),
+                ContentQualityLayer(),
                 ArticleTopicLayer(),
                 PersonalizationLayer(),  # Story 4.7
+                ImpressionLayer(),  # Feed Refresh
+                UserCustomTopicLayer(),  # Epic 11
             ]
         )
 
@@ -264,6 +270,20 @@ class RecommendationService:
         # Compute source affinity from past interactions
         source_affinity_scores = await self._compute_source_affinity(user_id)
 
+        # Fetch impression data for candidates (Feed Refresh feature)
+        impression_data = await self.fetch_impression_data(user_id, candidates)
+
+        # Epic 11: Load user custom topics for scoring
+        from app.models.user_topic_profile import UserTopicProfile
+
+        user_custom_topics = list(
+            (
+                await self.session.scalars(
+                    select(UserTopicProfile).where(UserTopicProfile.user_id == user_id)
+                )
+            ).all()
+        )
+
         # Context creation
         context = ScoringContext(
             user_profile=user_profile,
@@ -281,6 +301,8 @@ class RecommendationService:
             muted_content_types=muted_content_types,
             custom_source_ids=custom_source_ids,
             source_affinity_scores=source_affinity_scores,
+            impression_data=impression_data,
+            user_custom_topics=user_custom_topics,
         )
 
         for content in candidates:
@@ -828,5 +850,111 @@ class RecommendationService:
 
         return {sid: score / max_score for sid, score in scores.items()}
 
+    async def fetch_impression_data(
+        self, user_id: UUID, candidates: list[Content]
+    ) -> dict[UUID, tuple]:
+        """Fetch impression timestamps for candidates (Feed Refresh).
+
+        Returns {content_id: (last_impressed_at, manually_impressed)} for
+        candidates that have been impressed at least once.
+        """
+        candidate_ids = [c.id for c in candidates]
+        if not candidate_ids:
+            return {}
+
+        stmt = select(
+            UserContentStatus.content_id,
+            UserContentStatus.last_impressed_at,
+            UserContentStatus.manually_impressed,
+        ).where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id.in_(candidate_ids),
+            UserContentStatus.last_impressed_at.isnot(None),
+        )
+
+        rows = (await self.session.execute(stmt)).all()
+        return {
+            row.content_id: (row.last_impressed_at, row.manually_impressed)
+            for row in rows
+        }
+
     # _calculate_user_bias and _get_opposing_biases moved to
     # app.services.recommendation.filter_presets (shared with DigestSelector)
+
+    @staticmethod
+    def build_clusters(
+        feed_items: list[Content],
+        user_custom_topics: list,
+        min_articles: int = 3,
+        max_clusters: int = 3,
+    ) -> tuple[list[Content], list[dict]]:
+        """Build clusters from feed items based on user's custom topics.
+
+        Groups articles by matching custom topic slug_parent. If a group
+        has >= min_articles, keeps only the first (best-scored) as representative
+        and removes the rest from the feed.
+
+        Args:
+            feed_items: Scored and sorted feed items.
+            user_custom_topics: User's custom topic profiles.
+            min_articles: Minimum articles to form a cluster.
+            max_clusters: Maximum clusters to return.
+
+        Returns:
+            (filtered_items, clusters) where filtered_items has hidden articles
+            removed and clusters contains metadata for the frontend.
+        """
+        if not user_custom_topics or not feed_items:
+            return feed_items, []
+
+        # Build a set of followed slug_parents with their names
+        topic_map = {t.slug_parent: t.topic_name for t in user_custom_topics}
+
+        # Group articles by matching custom topic slug
+        from collections import defaultdict
+
+        topic_articles: dict[str, list[Content]] = defaultdict(list)
+
+        for article in feed_items:
+            if not article.topics:
+                continue
+            article_topics = {t.lower().strip() for t in article.topics if t}
+            for slug in topic_map:
+                if slug in article_topics:
+                    topic_articles[slug].append(article)
+                    break  # Only assign to first matching topic
+
+        # Build clusters for topics with enough articles
+        clusters = []
+        hidden_ids = set()
+
+        for slug, articles in sorted(
+            topic_articles.items(), key=lambda x: len(x[1]), reverse=True
+        ):
+            if len(articles) < min_articles:
+                continue
+            if len(clusters) >= max_clusters:
+                break
+
+            representative = articles[0]  # Best scored (list is already sorted)
+            others = articles[1:]
+
+            clusters.append(
+                {
+                    "topic_slug": slug,
+                    "topic_name": topic_map[slug],
+                    "representative_id": representative.id,
+                    "hidden_count": len(others),
+                    "hidden_ids": [a.id for a in others],
+                }
+            )
+
+            hidden_ids.update(a.id for a in others)
+
+        # Remove hidden articles from feed items
+        if hidden_ids:
+            filtered_items = [a for a in feed_items if a.id not in hidden_ids]
+        else:
+            filtered_items = feed_items
+
+        return filtered_items, clusters

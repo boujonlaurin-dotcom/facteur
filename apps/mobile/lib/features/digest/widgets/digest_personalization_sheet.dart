@@ -28,35 +28,40 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     }
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
       padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Drag handle
-          _buildDragHandle(colors),
-          const SizedBox(height: 20),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Drag handle
+            _buildDragHandle(colors),
+            const SizedBox(height: 20),
 
-          // Header with icon, title and total score
-          _buildHeader(context, colors, reason),
-          const SizedBox(height: 24),
+            // Header with icon, title and total score
+            _buildHeader(context, colors, reason),
+            const SizedBox(height: 24),
 
-          // Breakdown list
-          ...reason.breakdown.map((contribution) =>
-              _buildContributionRow(context, colors, contribution)),
+            // Breakdown list
+            ...reason.breakdown.map((contribution) =>
+                _buildContributionRow(context, colors, contribution)),
 
-          // Divider and actions
-          if (item.source != null) ...[
-            const SizedBox(height: 16),
-            Divider(color: colors.border),
-            const SizedBox(height: 16),
-            _buildActions(context, ref, colors, item),
+            // Divider and actions
+            if (item.source != null) ...[
+              const SizedBox(height: 16),
+              Divider(color: colors.border),
+              const SizedBox(height: 16),
+              _buildActions(context, ref, colors, item),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -236,6 +241,26 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               },
               colors: colors,
             ),
+
+        // "Already seen" — permanent strong impression penalty
+        _buildActionOption(
+          context,
+          icon: PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
+          label: "J'ai déjà vu cet article",
+          onTap: () async {
+            Navigator.pop(context);
+            try {
+              await ref
+                  .read(feedProvider.notifier)
+                  .impressContentById(item.contentId);
+              NotificationService.showInfo('Article marqué comme déjà vu');
+            } catch (e) {
+              NotificationService.showError(
+                  'Erreur réseau — réessaie dans un instant');
+            }
+          },
+          colors: colors,
+        ),
       ],
     );
   }
@@ -275,12 +300,16 @@ class DigestPersonalizationSheet extends ConsumerWidget {
   Widget _buildNoReasonView(
       BuildContext context, WidgetRef ref, FacteurColors colors) {
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
       padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -325,6 +354,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             _buildActions(context, ref, colors, item),
           ],
         ],
+      ),
       ),
     );
   }

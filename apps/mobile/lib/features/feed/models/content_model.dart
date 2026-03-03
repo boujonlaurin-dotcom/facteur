@@ -89,6 +89,11 @@ class Content {
   final String? noteText;
   final DateTime? noteUpdatedAt;
 
+  // Epic 11: Cluster fields (populated by FeedRepository when clusters are present)
+  final String? clusterTopic;
+  final int clusterHiddenCount;
+  final List<Content> clusterHiddenArticles;
+
   Content({
     required this.id,
     required this.title,
@@ -110,6 +115,9 @@ class Content {
     this.recommendationReason,
     this.noteText,
     this.noteUpdatedAt,
+    this.clusterTopic,
+    this.clusterHiddenCount = 0,
+    this.clusterHiddenArticles = const [],
   });
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
@@ -138,6 +146,9 @@ class Content {
       recommendationReason: recommendationReason,
       noteText: null,
       noteUpdatedAt: null,
+      clusterTopic: clusterTopic,
+      clusterHiddenCount: clusterHiddenCount,
+      clusterHiddenArticles: clusterHiddenArticles,
     );
   }
 
@@ -220,6 +231,9 @@ class Content {
     RecommendationReason? recommendationReason,
     String? noteText,
     DateTime? noteUpdatedAt,
+    String? clusterTopic,
+    int? clusterHiddenCount,
+    List<Content>? clusterHiddenArticles,
   }) {
     return Content(
       id: id ?? this.id,
@@ -242,27 +256,32 @@ class Content {
       recommendationReason: recommendationReason ?? this.recommendationReason,
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
+      clusterTopic: clusterTopic ?? this.clusterTopic,
+      clusterHiddenCount: clusterHiddenCount ?? this.clusterHiddenCount,
+      clusterHiddenArticles:
+          clusterHiddenArticles ?? this.clusterHiddenArticles,
     );
   }
 
-  /// Story 5.2: Check if content has enough data for in-app reading
-  /// DEPRECATED (Story 4.3b): This logic is deprecated and always returns false.
-  /// We now always use WebView to display the full article to avoid ads/cookie banners.
-  /// This may be re-implemented in the future when ad/cookie bypass becomes a priority.
-  @Deprecated('Always returns false. Use WebView for all content types.')
+  /// Check if content supports in-app reading mode.
+  /// Articles always use the native Facteur reader (with fallback CTA to original).
+  /// Non-article source types (YouTube, Reddit, podcast) skip the reader entirely.
+  /// YouTube/Audio native players will be re-enabled in phase 2.
   bool get hasInAppContent {
-    return false; // DEPRECATED: Always use WebView
-
-    // Original logic (kept for reference):
-    // switch (contentType) {
-    //   case ContentType.article:
-    //     return (htmlContent?.length ?? 0) > 100;
-    //   case ContentType.audio:
-    //     return audioUrl != null && audioUrl!.isNotEmpty;
-    //   case ContentType.youtube:
-    //   case ContentType.video:
-    //     return true;
-    // }
+    // Non-article sources should never use the in-app reader
+    if (source.type == SourceType.youtube ||
+        source.type == SourceType.reddit ||
+        source.type == SourceType.podcast) {
+      return false;
+    }
+    switch (contentType) {
+      case ContentType.article:
+        return true; // Native Facteur reader with ArticleReaderWidget
+      case ContentType.audio:
+      case ContentType.youtube:
+      case ContentType.video:
+        return false; // Phase 2: re-enable native players
+    }
   }
 
   /// Story 8.0: Get the topic used for progression (granularity layer)
@@ -325,13 +344,45 @@ class DailyTop3Item {
   }
 }
 
+/// Epic 11: A topic cluster grouping related articles in the feed.
+class FeedCluster {
+  final String topicSlug;
+  final String topicName;
+  final String representativeId;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+
+  FeedCluster({
+    required this.topicSlug,
+    required this.topicName,
+    required this.representativeId,
+    this.hiddenCount = 0,
+    this.hiddenIds = const [],
+  });
+
+  factory FeedCluster.fromJson(Map<String, dynamic> json) {
+    return FeedCluster(
+      topicSlug: (json['topic_slug'] as String?) ?? '',
+      topicName: (json['topic_name'] as String?) ?? '',
+      representativeId: (json['representative_id'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 class FeedResponse {
   final List<Content> items;
   final Pagination pagination;
+  final List<FeedCluster> clusters;
 
   FeedResponse({
     required this.items,
     required this.pagination,
+    this.clusters = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -343,6 +394,11 @@ class FeedResponse {
       pagination: json['pagination'] != null
           ? Pagination.fromJson(json['pagination'] as Map<String, dynamic>)
           : Pagination(page: 1, perPage: 20, total: 0, hasNext: false),
+      clusters: (json['clusters'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => FeedCluster.fromJson(e))
+              .toList() ??
+          const [],
     );
   }
 }

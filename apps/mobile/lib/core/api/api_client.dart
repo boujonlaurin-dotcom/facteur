@@ -165,6 +165,22 @@ class ApiClient {
     return response.data;
   }
 
+  /// Helper PUT
+  Future<dynamic> put(
+    String path, {
+    dynamic body,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    final response = await _dio.put(
+      path,
+      data: body,
+      queryParameters: queryParameters,
+      options: options,
+    );
+    return response.data;
+  }
+
   /// Helper DELETE
   Future<dynamic> delete(
     String path, {

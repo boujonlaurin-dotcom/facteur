@@ -49,9 +49,11 @@ class ContentService:
             "title": content.title,
             "url": content.url,
             "thumbnail_url": content.thumbnail_url,
-            "description": content.description,
+            "description": content.description or None,
             "html_content": content.html_content,
             "audio_url": content.audio_url,
+            "content_quality": content.content_quality,
+            "extraction_attempted_at": content.extraction_attempted_at,
             "content_type": content.content_type,
             "duration_seconds": content.duration_seconds,
             "published_at": content.published_at,
@@ -337,12 +339,14 @@ class ContentService:
         user_id: UUID,
         content_id: UUID,
         is_hidden: bool,
-        reason: HiddenReason = None,
+        reason: HiddenReason | None = None,
     ) -> UserContentStatus:
-        """Met à jour l'état masqué d'un contenu."""
+        """Met à jour l'état masqué d'un contenu. Ajuste les subtopic weights si masqué."""
+        from app.services.recommendation.scoring_config import ScoringWeights
+
         now = datetime.utcnow()
 
-        values = {
+        values: dict = {
             "user_id": user_id,
             "content_id": content_id,
             "is_hidden": is_hidden,
@@ -353,6 +357,41 @@ class ContentService:
             values["hidden_reason"] = (
                 reason.value if hasattr(reason, "value") else reason
             )
+
+        stmt = (
+            insert(UserContentStatus)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_=values,
+            )
+            .returning(UserContentStatus)
+        )
+
+        result = await self.session.scalars(stmt)
+        status = result.one()
+
+        # Adjust subtopic weights on hide (negative signal for recommendation)
+        if is_hidden:
+            await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.DISMISS_TOPIC_PENALTY
+            )
+
+        return status
+
+    async def unset_hide_status(
+        self, user_id: UUID, content_id: UUID
+    ) -> UserContentStatus:
+        """Annule le masquage d'un contenu (undo swipe-dismiss)."""
+        now = datetime.utcnow()
+
+        values: dict = {
+            "user_id": user_id,
+            "content_id": content_id,
+            "is_hidden": False,
+            "hidden_reason": None,
+            "updated_at": now,
+        }
 
         stmt = (
             insert(UserContentStatus)

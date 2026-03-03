@@ -52,6 +52,7 @@ class DigestTopicArticle(BaseModel):
     url: str
     thumbnail_url: str | None = None
     description: str | None = None
+    html_content: str | None = None  # In-App Reading Mode
     topics: list[str] = []
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: int | None = None
@@ -112,6 +113,7 @@ class DigestItem(BaseModel):
     url: str
     thumbnail_url: str | None = None
     description: str | None = None
+    html_content: str | None = None  # In-App Reading Mode
     topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: int | None = None

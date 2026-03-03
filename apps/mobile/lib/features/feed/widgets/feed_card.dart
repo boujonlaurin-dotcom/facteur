@@ -1,4 +1,5 @@
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
@@ -17,6 +18,9 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onSaveLongPress;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
+  final VoidCallback? onPersonalize;
+  final Widget? topicChipWidget;
+  final Widget? clusterChipWidget;
   final bool isSaved;
   final bool isLiked;
   final bool isFollowedSource;
@@ -34,6 +38,9 @@ class FeedCard extends StatelessWidget {
     this.onSaveLongPress,
     this.onLike,
     this.onNotInterested,
+    this.onPersonalize,
+    this.topicChipWidget,
+    this.clusterChipWidget,
     this.isSaved = false,
     this.isLiked = false,
     this.isFollowedSource = false,
@@ -98,7 +105,7 @@ class FeedCard extends StatelessWidget {
                           content.description!.isNotEmpty) ...[
                         const SizedBox(height: FacteurSpacing.space2),
                         Text(
-                          content.description!,
+                          stripHtml(content.description!),
                           style: textTheme.bodySmall?.copyWith(
                             color: colors.textSecondary.withValues(alpha: 0.8),
                             height: 1.3,
@@ -210,6 +217,19 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
+                            // Personalize (i) button
+                            if (onPersonalize != null) ...[
+                              const SizedBox(width: 4),
+                              GestureDetector(
+                                onTap: onPersonalize,
+                                child: Icon(
+                                  PhosphorIcons.info(),
+                                  size: 16,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ],
+
                             // Paywall badge
                             if (content.isPaid) ...[
                               const SizedBox(width: FacteurSpacing.space2),
@@ -290,8 +310,13 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                          // NotInterested button
-                          if (onNotInterested != null)
+                          // Topic chip (replaces NotInterested when provided)
+                          if (topicChipWidget != null)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: topicChipWidget!,
+                            )
+                          else if (onNotInterested != null)
                             InkWell(
                               onTap: onNotInterested,
                               borderRadius: BorderRadius.circular(12),
@@ -309,6 +334,9 @@ class FeedCard extends StatelessWidget {
                     ],
                   ),
                 ),
+
+                // Cluster chip (below footer)
+                if (clusterChipWidget != null) clusterChipWidget!,
               ],
             ),
           ),

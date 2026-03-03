@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +25,7 @@ import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
+import '../../../widgets/design/facteur_thumbnail.dart';
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -63,6 +65,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showNoteWelcome = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  bool _showWebView = false;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -191,8 +194,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       if (mounted) {
         if (content != null) {
+          // Merge: preserve description/htmlContent from initial content
+          // if the API response has less data (e.g. on-demand enrichment failed)
+          // Guard against empty strings (not just null) to prevent losing initial data
+          final merged = content.copyWith(
+            description:
+                (content.description != null && content.description!.isNotEmpty)
+                    ? content.description
+                    : _content?.description,
+            htmlContent:
+                (content.htmlContent != null && content.htmlContent!.isNotEmpty)
+                    ? content.htmlContent
+                    : _content?.htmlContent,
+          );
           setState(() {
-            _content = content;
+            _content = merged;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
           if (_content!.hasInAppContent == true && !_isConsumed) {
@@ -289,7 +305,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   Future<void> _openNoteSheet() async {
     final content = _content;
-    if (content == null || content.isHidden) return;
+    if (content == null) return;
 
     // Capture state before opening sheet
     final wasAlreadySaved = content.isSaved;
@@ -489,15 +505,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Determine if we should use in-app reading or fallback to WebView
-
-    final useInAppReading = content.hasInAppContent;
+    final useInAppReading = content.hasInAppContent && !_showWebView;
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       body: Stack(
         children: [
-          // 1. Content Layer (Full screen, scrolled)
-          // Header height = SafeArea top + vertical padding (16*2) + content (~40)
           Builder(builder: (context) {
             final topInset = MediaQuery.of(context).padding.top;
             final headerHeight = topInset + 64;
@@ -510,18 +523,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               ),
             );
           }),
-
-          // 2. Header Layer (Overlay)
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: _buildHeader(context, content),
           ),
-
         ],
       ),
-      // FABs: External link (left) + Note (right) + optional welcome tooltip
+      // FABs
       floatingActionButton: _showFab
           ? ScaleTransition(
               scale: _fabAnimation,
@@ -536,31 +546,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // External link FAB (transparent)
-                      FloatingActionButton(
-                        mini: true,
-                        onPressed: _openOriginalUrl,
-                        backgroundColor: colors.surface.withValues(alpha: 0.45),
-                        foregroundColor: colors.textPrimary,
-                        elevation: 2,
-                        heroTag: 'original_fab',
-                        tooltip: _getFabLabel(),
-                        child: Icon(
-                          PhosphorIcons.arrowSquareOut(
-                              PhosphorIconsStyle.regular),
-                          size: 20,
+                      // External link FAB — hidden for articles unless WebView is shown
+                      if (content.contentType != ContentType.article || _showWebView) ...[
+                        FloatingActionButton(
+                          mini: true,
+                          onPressed: _openOriginalUrl,
+                          backgroundColor:
+                              colors.surface.withValues(alpha: 0.45),
+                          foregroundColor: colors.textPrimary,
+                          elevation: 2,
+                          heroTag: 'original_fab',
+                          tooltip: _getFabLabel(),
+                          child: Icon(
+                            PhosphorIcons.arrowSquareOut(
+                                PhosphorIconsStyle.regular),
+                            size: 20,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Note FAB (primary color, with bounce animation)
+                        const SizedBox(width: 8),
+                      ],
+                      // Note FAB (always primary, notes available on all articles)
                       ScaleTransition(
                         scale: _noteFabScaleAnimation,
                         child: FloatingActionButton(
                           mini: true,
-                          onPressed: content.isHidden ? null : _openNoteSheet,
-                          backgroundColor: content.isHidden
-                              ? colors.surfaceElevated
-                              : colors.primary,
+                          onPressed: _openNoteSheet,
+                          backgroundColor: colors.primary,
                           foregroundColor: Colors.white,
                           elevation: 4,
                           heroTag: 'note_fab',
@@ -833,10 +844,159 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     switch (content.contentType) {
       case ContentType.article:
+        final colors = context.facteurColors;
+        final textTheme = Theme.of(context).textTheme;
+        final articleText = content.htmlContent ?? content.description;
+        final isPartial = plainTextLength(articleText) < 500;
+
+        String? readingTime;
+        if (content.durationSeconds != null && content.durationSeconds! > 0) {
+          final minutes = (content.durationSeconds! / 60).ceil();
+          readingTime = '$minutes min de lecture';
+        }
+
         return ArticleReaderWidget(
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Hero thumbnail image (smooth integration)
+              if (content.thumbnailUrl != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(FacteurRadius.large),
+                  child: FacteurThumbnail(
+                    imageUrl: content.thumbnailUrl,
+                    aspectRatio: 16 / 9,
+                  ),
+                ),
+                const SizedBox(height: FacteurSpacing.space4),
+              ],
+              // "Aperçu" badge for partial content
+              if (isPartial) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(FacteurRadius.pill),
+                  ),
+                  child: Text(
+                    'Aperçu — contenu partiel',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.warning,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: FacteurSpacing.space3),
+              ],
+              // Title
+              Text(
+                content.title,
+                style: textTheme.displayLarge?.copyWith(fontSize: 24),
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              // Reading time
+              if (readingTime != null) ...[
+                Row(
+                  children: [
+                    Icon(
+                      PhosphorIcons.timer(PhosphorIconsStyle.regular),
+                      size: 14,
+                      color: colors.textTertiary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      readingTime,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: FacteurSpacing.space3),
+              ],
+              Divider(color: colors.border, height: 1),
+              const SizedBox(height: FacteurSpacing.space4),
+            ],
+          ),
+          footer: GestureDetector(
+            onTap: () => setState(() => _showWebView = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 16,
+              ),
+              decoration: BoxDecoration(
+                color: colors.surfaceElevated,
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+                border: Border.all(
+                  color: colors.border.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Row(
+                children: [
+                  if (content.source.logoUrl != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(
+                        imageUrl: content.source.logoUrl!,
+                        width: 28,
+                        height: 28,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: colors.surface,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            PhosphorIcons.newspaper(
+                                PhosphorIconsStyle.regular),
+                            size: 16,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: colors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+                        size: 16,
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Lire sur ${content.source.name}',
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                    size: 20,
+                    color: colors.textTertiary,
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
 
       case ContentType.audio:

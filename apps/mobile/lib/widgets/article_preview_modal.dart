@@ -1,4 +1,5 @@
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
@@ -284,7 +285,7 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
                                           const SizedBox(
                                               height: FacteurSpacing.space3),
                                           Text(
-                                            _stripHtml(content.description!),
+                                            stripHtml(content.description!),
                                             style: textTheme.bodyMedium
                                                 ?.copyWith(
                                               color: colors.textPrimary
@@ -394,25 +395,4 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
     return '$minutes min';
   }
 
-  /// Strip HTML tags and decode common entities from RSS descriptions.
-  static String _stripHtml(String html) {
-    // Remove HTML tags
-    var text = html.replaceAll(RegExp(r'<[^>]+>'), '');
-    // Decode common HTML entities
-    text = text
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"')
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&#8217;', '\u2019')
-        .replaceAll('&#8216;', '\u2018')
-        .replaceAll('&#8220;', '\u201C')
-        .replaceAll('&#8221;', '\u201D');
-    // Collapse multiple whitespace/newlines into single space
-    text = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return text;
-  }
 }

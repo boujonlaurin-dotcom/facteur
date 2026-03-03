@@ -3,6 +3,7 @@ import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../core/utils/html_utils.dart';
 
 /// Widget for rendering HTML article content in-app (Story 5.2)
 class ArticleReaderWidget extends StatelessWidget {
@@ -10,6 +11,7 @@ class ArticleReaderWidget extends StatelessWidget {
   final String? description;
   final String title;
   final VoidCallback? onLinkTap;
+  final Widget? header;
   final Widget? footer;
 
   const ArticleReaderWidget({
@@ -18,6 +20,7 @@ class ArticleReaderWidget extends StatelessWidget {
     this.description,
     required this.title,
     this.onLinkTap,
+    this.header,
     this.footer,
   });
 
@@ -26,31 +29,23 @@ class ArticleReaderWidget extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    // Use htmlContent if available, otherwise fall back to description
-    final content = htmlContent ?? description ?? '';
-
-    if (content.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(FacteurSpacing.space6),
-          child: Text(
-            'Contenu non disponible',
-            style: textTheme.bodyLarge?.copyWith(
-              color: colors.textSecondary,
-            ),
-          ),
-        ),
-      );
+    // Sanitize htmlContent, fallback to description if result is empty
+    String content = '';
+    if (htmlContent != null && htmlContent!.isNotEmpty) {
+      content = sanitizeArticleHtml(htmlContent!);
+    }
+    if (content.isEmpty && description != null && description!.isNotEmpty) {
+      content = sanitizeArticleHtml(description!);
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Html(
-            data: content,
-            style: {
+    final column = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (header != null) header!,
+        Html(
+          data: content,
+          style: {
               'body': Style(
                 fontSize: FontSize(17),
                 lineHeight: const LineHeight(1.7),
@@ -81,8 +76,8 @@ class ArticleReaderWidget extends StatelessWidget {
                 color: colors.textPrimary,
               ),
               'a': Style(
-                color: colors.primary,
-                textDecoration: TextDecoration.underline,
+                color: colors.textSecondary,
+                textDecoration: TextDecoration.none,
               ),
               'img': Style(
                 margin: Margins.symmetric(vertical: 16),
@@ -133,7 +128,11 @@ class ArticleReaderWidget extends StatelessWidget {
             const SizedBox(height: 32),
           ],
         ],
-      ),
+      );
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
+      child: column,
     );
   }
 }

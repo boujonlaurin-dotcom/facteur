@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
+from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
-from app.schemas.feed import FeedResponse, PaginationMeta
+from app.schemas.content import FeedRefreshRequest
+from app.schemas.feed import ClusterInfo, FeedResponse, PaginationMeta
 from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
@@ -53,6 +55,26 @@ async def get_personalized_feed(
         source_id=source_id,
     )
 
+    # Epic 11: Build clusters from custom topics
+    from sqlalchemy import select as sa_select
+
+    from app.models.user_topic_profile import UserTopicProfile
+
+    user_custom_topics = list(
+        (
+            await db.scalars(
+                sa_select(UserTopicProfile).where(UserTopicProfile.user_id == user_uuid)
+            )
+        ).all()
+    )
+
+    clusters_data: list[ClusterInfo] = []
+    if user_custom_topics and not saved_only and not source_id:
+        feed_items, raw_clusters = RecommendationService.build_clusters(
+            feed_items, user_custom_topics
+        )
+        clusters_data = [ClusterInfo(**c) for c in raw_clusters]
+
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
     has_next = len(feed_items) >= limit
@@ -65,7 +87,53 @@ async def get_personalized_feed(
             total=0,  # Total unknown without additional query
             has_next=has_next,
         ),
+        clusters=clusters_data,
     )
+
+
+@router.post("/refresh", status_code=200)
+async def refresh_feed(
+    body: FeedRefreshRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Marque les articles affichés comme 'déjà vus' pour le scoring.
+
+    Upsert user_content_status avec last_impressed_at = now().
+    Le status reste UNSEEN (pas d'exclusion du feed), seul le scoring
+    applique un malus temporel via ImpressionLayer.
+    """
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.enums import ContentStatus
+
+    user_uuid = UUID(current_user_id)
+    now = datetime.now(UTC)
+    refreshed = 0
+
+    for content_id in body.content_ids:
+        stmt = (
+            insert(UserContentStatus)
+            .values(
+                user_id=user_uuid,
+                content_id=content_id,
+                status=ContentStatus.UNSEEN.value,
+                last_impressed_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_={"last_impressed_at": now, "updated_at": now},
+            )
+        )
+        await db.execute(stmt)
+        refreshed += 1
+
+    await db.commit()
+    logger.info("feed_refresh", user_id=current_user_id, refreshed=refreshed)
+    return {"refreshed": refreshed}
 
 
 @router.post("/briefing/{content_id}/read", status_code=200)

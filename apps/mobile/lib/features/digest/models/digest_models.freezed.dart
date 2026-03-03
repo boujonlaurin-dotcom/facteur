@@ -648,6 +648,8 @@ mixin _$DigestItem {
   @JsonKey(name: 'thumbnail_url')
   String? get thumbnailUrl => throw _privateConstructorUsedError;
   String? get description => throw _privateConstructorUsedError;
+  @JsonKey(name: 'html_content')
+  String? get htmlContent => throw _privateConstructorUsedError;
   List<String> get topics => throw _privateConstructorUsedError;
   @JsonKey(
       name: 'content_type',
@@ -697,6 +699,7 @@ abstract class $DigestItemCopyWith<$Res> {
       String url,
       @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
       String? description,
+      @JsonKey(name: 'html_content') String? htmlContent,
       List<String> topics,
       @JsonKey(
           name: 'content_type',
@@ -740,6 +743,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? url = null,
     Object? thumbnailUrl = freezed,
     Object? description = freezed,
+    Object? htmlContent = freezed,
     Object? topics = null,
     Object? contentType = null,
     Object? durationSeconds = freezed,
@@ -776,6 +780,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
       description: freezed == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      htmlContent: freezed == htmlContent
+          ? _value.htmlContent
+          : htmlContent // ignore: cast_nullable_to_non_nullable
               as String?,
       topics: null == topics
           ? _value.topics
@@ -880,6 +888,7 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       String url,
       @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
       String? description,
+      @JsonKey(name: 'html_content') String? htmlContent,
       List<String> topics,
       @JsonKey(
           name: 'content_type',
@@ -923,6 +932,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? url = null,
     Object? thumbnailUrl = freezed,
     Object? description = freezed,
+    Object? htmlContent = freezed,
     Object? topics = null,
     Object? contentType = null,
     Object? durationSeconds = freezed,
@@ -959,6 +969,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
       description: freezed == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
+              as String?,
+      htmlContent: freezed == htmlContent
+          ? _value.htmlContent
+          : htmlContent // ignore: cast_nullable_to_non_nullable
               as String?,
       topics: null == topics
           ? _value._topics
@@ -1033,6 +1047,7 @@ class _$DigestItemImpl implements _DigestItem {
       this.url = '',
       @JsonKey(name: 'thumbnail_url') this.thumbnailUrl,
       this.description,
+      @JsonKey(name: 'html_content') this.htmlContent,
       final List<String> topics = const [],
       @JsonKey(
           name: 'content_type',
@@ -1071,6 +1086,9 @@ class _$DigestItemImpl implements _DigestItem {
   final String? thumbnailUrl;
   @override
   final String? description;
+  @override
+  @JsonKey(name: 'html_content')
+  final String? htmlContent;
   final List<String> _topics;
   @override
   @JsonKey()
@@ -1127,7 +1145,7 @@ class _$DigestItemImpl implements _DigestItem {
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText)';
   }
 
   @override
@@ -1143,6 +1161,8 @@ class _$DigestItemImpl implements _DigestItem {
                 other.thumbnailUrl == thumbnailUrl) &&
             (identical(other.description, description) ||
                 other.description == description) &&
+            (identical(other.htmlContent, htmlContent) ||
+                other.htmlContent == htmlContent) &&
             const DeepCollectionEquality().equals(other._topics, _topics) &&
             (identical(other.contentType, contentType) ||
                 other.contentType == contentType) &&
@@ -1176,6 +1196,7 @@ class _$DigestItemImpl implements _DigestItem {
         url,
         thumbnailUrl,
         description,
+        htmlContent,
         const DeepCollectionEquality().hash(_topics),
         contentType,
         durationSeconds,
@@ -1214,6 +1235,7 @@ abstract class _DigestItem implements DigestItem {
       final String url,
       @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
       final String? description,
+      @JsonKey(name: 'html_content') final String? htmlContent,
       final List<String> topics,
       @JsonKey(
           name: 'content_type',
@@ -1250,6 +1272,9 @@ abstract class _DigestItem implements DigestItem {
   String? get thumbnailUrl;
   @override
   String? get description;
+  @override
+  @JsonKey(name: 'html_content')
+  String? get htmlContent;
   @override
   List<String> get topics;
   @override

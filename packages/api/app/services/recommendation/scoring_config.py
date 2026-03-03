@@ -31,7 +31,14 @@ class ScoringWeights:
     CUSTOM_SOURCE_BONUS = 12.0
 
     # Base du score de fraîcheur (Recency).
-    recency_base = 30.0
+    # Epic 11: raised from 30→100 so fresh articles compete with personalization.
+    recency_base = 100.0
+
+    # --- CUSTOM TOPIC LAYER (Epic 11) ---
+
+    # Base bonus when an article matches a user's custom topic.
+    # Calibrated: 15 * 2.0 max = 30pts (competes with THEME_MATCH=50 without dominating).
+    CUSTOM_TOPIC_BASE_BONUS = 15.0
 
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
@@ -74,6 +81,15 @@ class ScoringWeights:
     # Boost pour les contenus possédant une image de couverture.
     # Augmenté de 10→12 pour encourager le contenu visuel.
     IMAGE_BOOST = 12.0
+
+    # --- CONTENT QUALITY LAYER (Lecture in-app) ---
+
+    # Boost pour les articles avec contenu riche (>500 chars texte brut).
+    # Favorise les articles lisibles dans le reader natif Facteur.
+    CONTENT_QUALITY_FULL_BOOST = 10.0
+
+    # Boost réduit pour les articles avec contenu partiel (100-500 chars).
+    CONTENT_QUALITY_PARTIAL_BOOST = 5.0
 
     # --- ARTICLE TOPIC LAYER (Topics Granulaires) ---
 
@@ -159,8 +175,24 @@ class ScoringWeights:
     # Weakest signal (implicit) — accumulates over many reads.
     READ_TOPIC_BOOST = 0.03
 
+    # Delta applied to user_subtopics.weight when dismissing (swipe-left) content.
+    # ~2 dismissals cancel 1 like. Progressive, not a kill switch.
+    DISMISS_TOPIC_PENALTY = -0.10
+
     # Learning rate applied to UserInterest.weight on like/bookmark.
     LIKE_INTEREST_RATE = 0.03
+
+    # --- IMPRESSION LAYER (Feed Refresh) ---
+    # Malus temporel par tiers : plus l'article a été affiché récemment, plus le malus est fort.
+    # Après 72h, le malus disparaît totalement (l'utilisateur a oublié l'article).
+
+    IMPRESSION_VERY_RECENT = -100.0  # < 1h  — invisible après refresh
+    IMPRESSION_RECENT = -70.0  # < 24h — très peu de chances de remonter
+    IMPRESSION_DAY = -40.0  # < 48h — remonte si très pertinent
+    IMPRESSION_OLD = -20.0  # < 72h — léger handicap
+    # > 72h : 0 pts (entièrement récupéré)
+
+    IMPRESSION_MANUAL = -120.0  # "J'ai déjà vu" — malus permanent, pas de decay
 
     # --- SOURCE AFFINITY (Learned from interactions) ---
 

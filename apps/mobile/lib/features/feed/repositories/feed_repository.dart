@@ -90,6 +90,40 @@ class FeedRepository {
 
           // Note: briefing is no longer parsed - digest moved to dedicated tab
           // The briefing field in response is ignored
+
+          // Epic 11: Parse clusters if present
+          final clustersRaw = data['clusters'];
+          if (clustersRaw is List) {
+            final clusters = <FeedCluster>[];
+            for (final c in clustersRaw) {
+              try {
+                if (c is Map<String, dynamic>) {
+                  clusters.add(FeedCluster.fromJson(c));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt cluster: $err');
+              }
+            }
+
+            // Annotate representative items with cluster metadata
+            if (clusters.isNotEmpty) {
+              final clusterMap = <String, FeedCluster>{};
+              for (final cluster in clusters) {
+                clusterMap[cluster.representativeId] = cluster;
+              }
+
+              itemsList = itemsList.map((item) {
+                final cluster = clusterMap[item.id];
+                if (cluster != null) {
+                  return item.copyWith(
+                    clusterTopic: cluster.topicSlug,
+                    clusterHiddenCount: cluster.hiddenCount,
+                  );
+                }
+                return item;
+              }).toList();
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];
@@ -191,15 +225,48 @@ class FeedRepository {
     }
   }
 
-  Future<void> hideContent(String contentId, HiddenReason reason) async {
+  Future<void> hideContent(String contentId, [HiddenReason? reason]) async {
     try {
       await _apiClient.dio.post<void>(
         'contents/$contentId/hide',
-        data: {'reason': reason.name},
+        data: reason != null ? {'reason': reason.name} : <String, dynamic>{},
       );
     } catch (e) {
       // ignore: avoid_print
       print('FeedRepository: [ERROR] hideContent: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> unhideContent(String contentId) async {
+    try {
+      await _apiClient.dio.delete<void>('contents/$contentId/hide');
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] unhideContent: $e');
+      rethrow;
+    }
+  }
+
+  /// Refresh feed: mark visible articles as "already shown" for scoring penalty.
+  Future<void> refreshFeed(List<String> contentIds) async {
+    try {
+      await _apiClient.dio.post<void>(
+        'feed/refresh',
+        data: {'content_ids': contentIds},
+      );
+    } catch (e) {
+      print('FeedRepository: [ERROR] refreshFeed: $e');
+      rethrow;
+    }
+  }
+
+  /// Mark a single article as "already seen" — permanent strong penalty.
+  Future<void> impressContent(String contentId) async {
+    try {
+      await _apiClient.dio.post<void>('contents/$contentId/impress');
+    } catch (e) {
+      print('FeedRepository: [ERROR] impressContent: $e');
       rethrow;
     }
   }

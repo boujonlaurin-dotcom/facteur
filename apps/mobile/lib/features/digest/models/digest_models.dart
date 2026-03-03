@@ -55,6 +55,7 @@ class DigestItem with _$DigestItem {
     @Default('') String url,
     @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
     String? description,
+    @JsonKey(name: 'html_content') String? htmlContent,
     @Default([]) List<String> topics,
     @JsonKey(
         name: 'content_type',

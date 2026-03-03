@@ -26,6 +26,8 @@ import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../widgets/swipe_to_open_card.dart';
+import '../widgets/dismiss_banner.dart';
+import '../providers/swipe_hint_provider.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -37,6 +39,9 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
+import '../../custom_topics/widgets/cluster_chip.dart';
+import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -60,6 +65,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   final int _itemsViewed = 0;
 
   bool _hasNudged = false;
+
+  // Swipe-left dismiss: active banner state (max 1 at a time)
+  String? _activeDismissalId;
+  Content? _activeDismissalContent;
+  int _activeDismissalIndex = 0;
+  bool _swipeHintSeen = false;
+  double _lastScrollPosition = 0;
+
+  // Feed Refresh: track timestamps of recent refreshes for anti-addiction
+  final List<DateTime> _refreshTimestamps = [];
 
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
@@ -197,8 +212,56 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     context.go(RoutePaths.feed);
   }
 
+  bool get _isRefreshCompulsive {
+    // 3+ refreshes in 10 minutes → suggest "Articles récents" mode
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 10));
+    final recent = _refreshTimestamps.where((t) => t.isAfter(cutoff)).length;
+    return recent >= 3;
+  }
+
   Future<void> _refresh() async {
-    return ref.read(feedProvider.notifier).refresh();
+    // On web, mark all displayed (non-consumed) articles as impressed and re-fetch.
+    // The CSS overscroll-behavior-y:contain prevents browser native pull-to-refresh,
+    // so Flutter's RefreshIndicator handles the gesture.
+    if (kIsWeb) {
+      // Use all currently displayed article IDs (web doesn't track _viewedIds reliably)
+      final feedState = ref.read(feedProvider).value;
+      if (feedState != null) {
+        final allIds = feedState.items
+            .where((c) => c.status != ContentStatus.consumed)
+            .map((c) => c.id)
+            .toSet();
+        if (allIds.isNotEmpty) {
+          await ref.read(feedProvider.notifier).refreshArticles(allIds);
+          return;
+        }
+      }
+      await ref.read(feedProvider.notifier).refresh();
+      return;
+    }
+
+    final colors = context.facteurColors;
+    final isCompulsive = _isRefreshCompulsive;
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _RefreshConfirmSheet(
+        isCompulsive: isCompulsive,
+        colors: colors,
+      ),
+    );
+
+    if (result == 'refresh') {
+      _refreshTimestamps.add(DateTime.now());
+      // Pass only the IDs of articles the user actually scrolled past
+      await ref.read(feedProvider.notifier).refreshArticles(_viewedIds);
+      _viewedIds.clear();
+    } else if (result == 'recent') {
+      // Redirect to "Articles récents" mode
+      ref.read(feedProvider.notifier).setFilter('recent');
+    }
   }
 
   void _showPersonalizationSheet(Content content) {
@@ -210,10 +273,86 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     );
   }
 
+  // --- Swipe-left dismiss handlers ---
+
+  void _handleSwipeDismiss(Content content, int contentIndex) {
+    // Auto-resolve previous banner if any
+    if (_activeDismissalId != null) {
+      _resolveActiveBanner();
+    }
+
+    setState(() {
+      _activeDismissalId = content.id;
+      _activeDismissalContent = content;
+      _activeDismissalIndex = contentIndex;
+    });
+  }
+
+  /// Undo dismiss for a specific content (captured in closure).
+  /// The backend hide is only sent on auto-resolve/mute, so undo just clears
+  /// the local banner state — no API call needed.
+  void _handleDismissUndo(Content content, int index) {
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Mute source for a specific content (captured in closure).
+  void _handleDismissMuteSource(Content content) {
+    ref.read(feedProvider.notifier).swipeDismissAndMuteSource(content);
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Mute topic for a specific content (captured in closure).
+  void _handleDismissMuteTopic(Content content, String topic) {
+    ref.read(feedProvider.notifier).swipeDismissAndMuteTopic(content, topic);
+    if (_activeDismissalId == content.id) {
+      setState(() {
+        _activeDismissalId = null;
+        _activeDismissalContent = null;
+      });
+    }
+  }
+
+  /// Auto-resolve for a specific content (captured in closure).
+  /// Guards against stale callback from an old banner timer.
+  void _handleDismissAutoResolve(Content content) {
+    // Only act if this banner is still the active one
+    if (_activeDismissalId != content.id) return;
+
+    ref.read(feedProvider.notifier).swipeDismiss(content);
+    setState(() {
+      _activeDismissalId = null;
+      _activeDismissalContent = null;
+    });
+  }
+
+  /// Resolves the active banner as hide-without-precision.
+  void _resolveActiveBanner() {
+    final content = _activeDismissalContent;
+    if (content != null) {
+      ref.read(feedProvider.notifier).swipeDismiss(content);
+    }
+    _activeDismissalId = null;
+    _activeDismissalContent = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+
+    // Swipe-left hint: check if already seen
+    final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
+    if (hintSeen) _swipeHintSeen = true;
 
     // Listen to scroll to top trigger
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
@@ -363,6 +502,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             );
                           }
 
+                          // Merge custom topics into filters
+                          final customTopics =
+                              ref.watch(customTopicsProvider).valueOrNull ?? [];
+                          final customTopicFilters = customTopics
+                              .where((t) => t.slugParent != null)
+                              .map((t) => FilterConfig(
+                                    key: t.slugParent!,
+                                    label: '\u{1F4CC} ${t.name}',
+                                    description:
+                                        'Articles sur ${t.name}',
+                                  ))
+                              .toList();
+
+                          // Merge: theme filters + custom topic filters (deduped)
+                          final themeKeys =
+                              themeFilters.map((f) => f.key).toSet();
+                          final uniqueCustomFilters = customTopicFilters
+                              .where((f) => !themeKeys.contains(f.key))
+                              .toList();
+                          final mergedFilters = [
+                            ...themeFilters,
+                            ...uniqueCustomFilters,
+                          ];
+
                           // No source active: show source chip + filter bar
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -376,7 +539,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 userBias: ref
                                     .watch(userBiasProvider)
                                     .valueOrNull,
-                                availableFilters: themeFilters,
+                                availableFilters: mergedFilters,
                                 sourceFilterChip: hasFollowedSources
                                     ? SourceFilterChip(
                                         onSourceChanged: (sourceId) {
@@ -546,9 +709,57 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
+                                // Show dismiss banner if this card is being dismissed
+                                if (_activeDismissalId == content.id &&
+                                    _activeDismissalContent != null) {
+                                  final capturedContent =
+                                      _activeDismissalContent!;
+                                  final capturedIndex =
+                                      _activeDismissalIndex;
+                                  return Padding(
+                                    key: ValueKey('dismiss_${content.id}'),
+                                    padding:
+                                        const EdgeInsets.only(bottom: 16),
+                                    child: AnimatedSize(
+                                      duration:
+                                          const Duration(milliseconds: 300),
+                                      child: DismissBanner(
+                                        content: capturedContent,
+                                        onUndo: () => _handleDismissUndo(
+                                            capturedContent,
+                                            capturedIndex),
+                                        onMuteSource: () =>
+                                            _handleDismissMuteSource(
+                                                capturedContent),
+                                        onMuteTopic: (topic) =>
+                                            _handleDismissMuteTopic(
+                                                capturedContent, topic),
+                                        onAutoResolve: () =>
+                                            _handleDismissAutoResolve(
+                                                capturedContent),
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                final showHint = !_swipeHintSeen &&
+                                    contentIndex <= 1;
+
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () =>
                                       _showArticleModal(content),
+                                  onSwipeDismiss: () =>
+                                      _handleSwipeDismiss(
+                                          content, contentIndex),
+                                  enableHintAnimation: showHint,
+                                  onHintAnimationComplete: () {
+                                    if (!_swipeHintSeen) {
+                                      _swipeHintSeen = true;
+                                      markSwipeLeftHintSeen();
+                                      ref.invalidate(
+                                          swipeLeftHintSeenProvider);
+                                    }
+                                  },
                                   child: AnimatedFeedCard(
                                     isConsumed: isConsumed,
                                     child: FeedCard(
@@ -592,8 +803,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      onNotInterested: () =>
+                                      onPersonalize: () =>
                                           _showPersonalizationSheet(content),
+                                      topicChipWidget:
+                                          TopicChip(content: content),
+                                      clusterChipWidget:
+                                          ClusterChip(content: content),
                                     ),
                                   ),
                                 );
@@ -772,6 +987,139 @@ class _NudgePulseWrapperState extends State<_NudgePulseWrapper>
         return Transform.scale(scale: scale, child: child);
       },
       child: widget.child,
+    );
+  }
+}
+
+/// Bottom sheet de confirmation pour le refresh du feed.
+/// Oriente vers le bien-être digital. Affiche un message alternatif
+/// si l'utilisateur refresh de manière compulsive (3+ en 10 min).
+class _RefreshConfirmSheet extends StatelessWidget {
+  final bool isCompulsive;
+  final FacteurColors colors;
+
+  const _RefreshConfirmSheet({
+    required this.isCompulsive,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(top: 24, bottom: 40, left: 20, right: 20),
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isCompulsive
+                    ? PhosphorIcons.heartbeat(PhosphorIconsStyle.bold)
+                    : PhosphorIcons.arrowsClockwise(PhosphorIconsStyle.bold),
+                color: colors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isCompulsive
+                      ? 'Prends un moment'
+                      : 'Rafraîchir l\'Explorer ?',
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isCompulsive
+                ? 'Tu as déjà rafraîchi plusieurs fois. '
+                  'As-tu vraiment besoin de plus d\'info maintenant ? '
+                  'Essaie plutôt les derniers articles publiés.'
+                : 'Les articles que tu n\'as pas lus seront déclassés '
+                  'et remplacés par de nouveaux contenus.',
+            style: TextStyle(
+              color: colors.textSecondary,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (isCompulsive) ...[
+            // Primary: redirect to "recent" mode
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, 'recent'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Voir les derniers articles',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            // Secondary: refresh anyway
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, 'refresh'),
+                child: Text('Rafraîchir quand même',
+                    style: TextStyle(color: colors.textSecondary)),
+              ),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(color: colors.border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text('Annuler',
+                        style: TextStyle(color: colors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, 'refresh'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Rafraîchir',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

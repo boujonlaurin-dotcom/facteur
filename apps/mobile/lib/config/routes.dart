@@ -21,6 +21,8 @@ import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/screens/digest_settings_screen.dart';
+import '../features/custom_topics/screens/my_interests_screen.dart';
+import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
 import '../features/progress/screens/quiz_screen.dart';
 import '../features/subscription/screens/paywall_screen.dart';
@@ -59,6 +61,8 @@ class RouteNames {
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
   static const String digestSettings = 'digest-settings';
+  static const String myInterests = 'my-interests';
+  static const String topicExplorer = 'topic-explorer';
 }
 
 /// Chemins des routes
@@ -81,6 +85,8 @@ class RoutePaths {
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
   static const String digestSettings = '/settings/digest';
+  static const String myInterests = '/settings/interests';
+  static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
@@ -340,9 +346,32 @@ final routerProvider = Provider<GoRouter>((ref) {
                   child: DigestSettingsScreen(),
                 ),
               ),
+              GoRoute(
+                path: 'interests', // /settings/interests
+                name: RouteNames.myInterests,
+                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+                  child: MyInterestsScreen(),
+                ),
+              ),
             ],
           ),
         ],
+      ),
+
+      // Topic Explorer (outside ShellRoute to hide bottom nav)
+      GoRoute(
+        path: RoutePaths.topicExplorer,
+        name: RouteNames.topicExplorer,
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return FullSwipeCupertinoPage(
+            child: TopicExplorerScreen(
+              topicSlug: extra['topicSlug'] as String? ?? '',
+              topicName: extra['topicName'] as String?,
+              initialArticles: extra['articles'] as List<Content>?,
+            ),
+          );
+        },
       ),
 
       // Digest Closure (outside ShellRoute to hide bottom nav)

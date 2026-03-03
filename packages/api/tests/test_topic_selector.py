@@ -135,6 +135,7 @@ class TestScoreClusters:
         _, score, _ = scored[0]
         # Should include trending bonus
         from app.services.recommendation.scoring_config import ScoringWeights
+
         assert score >= ScoringWeights.TOPIC_TRENDING_BONUS
 
     def test_serein_excludes_anxiogenic(self):
@@ -163,6 +164,7 @@ class TestScoreClusters:
         scored = selector._score_clusters([cluster], context, trending_ctx, "pour_vous")
         _, score, _ = scored[0]
         from app.services.recommendation.scoring_config import ScoringWeights
+
         assert score >= ScoringWeights.TOPIC_THEME_MATCH_BONUS
 
 
@@ -179,7 +181,9 @@ class TestSelectNTopics:
             cluster = make_cluster([content], theme=themes[i])
             clusters.append((cluster, 100 - i * 10, f"Reason {i}"))
 
-        selected = selector._select_n_topics(clusters, target_count=3, trending_context=None)
+        selected = selector._select_n_topics(
+            clusters, target_count=3, trending_context=None
+        )
         assert len(selected) == 3
 
     def test_multi_articles_prioritized(self):
@@ -202,7 +206,9 @@ class TestSelectNTopics:
             (multi_cluster, 100.0, "Multi"),
         ]
 
-        selected = selector._select_n_topics(scored, target_count=2, trending_context=None)
+        selected = selector._select_n_topics(
+            scored, target_count=2, trending_context=None
+        )
         # Both should be selected
         assert len(selected) == 2
         # Multi-article should be first
@@ -219,7 +225,9 @@ class TestSelectNTopics:
             cluster = make_cluster([content], theme="tech")
             clusters.append((cluster, 100 - i * 10, "Tech topic"))
 
-        selected = selector._select_n_topics(clusters, target_count=4, trending_context=None)
+        selected = selector._select_n_topics(
+            clusters, target_count=4, trending_context=None
+        )
         # Should only get 2 (max per theme)
         assert len(selected) == 2
 
@@ -246,7 +254,9 @@ class TestSelectNTopics:
             (trending, 50.0, "Trending"),
         ]
 
-        selected = selector._select_n_topics(scored, target_count=1, trending_context=trending_ctx)
+        selected = selector._select_n_topics(
+            scored, target_count=1, trending_context=trending_ctx
+        )
         # The trending cluster should have replaced the non-trending one
         assert len(selected) == 1
         assert selected[0][0] is trending
@@ -266,6 +276,141 @@ class TestSelectNTopics:
         assert len(selected) == 1
 
 
+class TestTopicMatchScoring:
+    """Tests for topic match bonus at cluster and article level."""
+
+    def test_cluster_topic_match_bonus(self):
+        """Cluster with article matching user_subtopics gets TOPIC_MATCH bonus."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["ai", "machine-learning"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context()
+        ctx.user_subtopics = {"ai"}
+        ctx.user_subtopic_weights = {"ai": 1.0}
+        trending_ctx = make_trending_context()
+
+        scored = selector._score_clusters([cluster], ctx, trending_ctx, "pour_vous")
+        assert len(scored) == 1
+        _, score, reason = scored[0]
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        assert score >= ScoringWeights.TOPIC_MATCH
+        assert "Sujet :" in reason
+
+    def test_cluster_no_topic_match_no_bonus(self):
+        """Cluster without matching topics does not get topic match bonus."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["cinema", "music"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context()
+        ctx.user_subtopics = {"ai", "politics"}
+        ctx.user_subtopic_weights = {}
+        trending_ctx = make_trending_context()
+
+        scored = selector._score_clusters([cluster], ctx, trending_ctx, "pour_vous")
+        _, score, reason = scored[0]
+        assert "Sujet :" not in reason
+
+    def test_article_topic_match_scoring(self):
+        """Article with topic in user_subtopics gets TOPIC_MATCH bonus."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["ai"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context()
+        ctx.user_subtopics = {"ai"}
+        ctx.user_subtopic_weights = {"ai": 1.0}
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        assert len(articles) == 1
+        breakdown_labels = [b.label for b in articles[0].breakdown]
+        assert any("Sujet :" in lbl for lbl in breakdown_labels)
+
+    def test_article_topic_match_with_weight(self):
+        """Weighted subtopic gets multiplied score and 'Renforcé' label."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["ai"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context()
+        ctx.user_subtopics = {"ai"}
+        ctx.user_subtopic_weights = {"ai": 1.5}
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        breakdown_labels = [b.label for b in articles[0].breakdown]
+        assert any("Renforcé" in lbl for lbl in breakdown_labels)
+        # Score should reflect weight multiplier
+        topic_bd = [b for b in articles[0].breakdown if "Renforcé" in b.label]
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        assert topic_bd[0].points == ScoringWeights.TOPIC_MATCH * 1.5
+
+    def test_article_topic_max_matches_cap(self):
+        """At most TOPIC_MAX_MATCHES topics count toward score."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["ai", "tech", "cybersecurity"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context()
+        ctx.user_subtopics = {"ai", "tech", "cybersecurity"}
+        ctx.user_subtopic_weights = {}
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        topic_breakdowns = [b for b in articles[0].breakdown if "Sujet :" in b.label]
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        assert len(topic_breakdowns) == ScoringWeights.TOPIC_MAX_MATCHES  # 2, not 3
+
+    def test_article_precision_bonus(self):
+        """Topic match + theme match triggers SUBTOPIC_PRECISION_BONUS."""
+        selector = TopicSelector()
+        src = make_source(theme="tech")
+        content = make_content(source=src, theme="tech")
+        content.topics = ["ai"]
+        cluster = make_cluster([content], theme="tech")
+
+        ctx = make_context(user_interests={"tech"})
+        ctx.user_subtopics = {"ai"}
+        ctx.user_subtopic_weights = {"ai": 1.0}
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        breakdown_labels = [b.label for b in articles[0].breakdown]
+        assert any("Précision" in lbl for lbl in breakdown_labels)
+
+    def test_article_no_precision_bonus_without_theme(self):
+        """Topic match without theme match does NOT trigger precision bonus."""
+        selector = TopicSelector()
+        src = make_source(theme="science")
+        content = make_content(source=src, theme="science")
+        content.topics = ["ai"]
+        cluster = make_cluster([content], theme="science")
+
+        ctx = make_context(user_interests={"tech"})  # tech != science
+        ctx.user_subtopics = {"ai"}
+        ctx.user_subtopic_weights = {"ai": 1.0}
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        breakdown_labels = [b.label for b in articles[0].breakdown]
+        assert not any("Précision" in lbl for lbl in breakdown_labels)
+
+
 class TestScoreAndSelectArticles:
     """Tests for _score_and_select_articles."""
 
@@ -281,6 +426,7 @@ class TestScoreAndSelectArticles:
 
         articles = selector._score_and_select_articles(cluster, context, trending_ctx)
         from app.services.recommendation.scoring_config import ScoringWeights
+
         assert len(articles) <= ScoringWeights.TOPIC_MAX_ARTICLES
 
     def test_source_diversity(self):
@@ -340,15 +486,21 @@ class TestSelectTopicsForUser:
         selector = TopicSelector()
 
         # Create diverse candidates
-        sources = [make_source(theme=t) for t in ["tech", "economy", "culture", "science", "politics"]]
+        sources = [
+            make_source(theme=t)
+            for t in ["tech", "economy", "culture", "science", "politics"]
+        ]
         candidates = []
         for src in sources:
             for i in range(3):
-                candidates.append(make_content(
-                    source=src,
-                    title=f"Article about {src.theme} topic {i}",
-                    published_at=datetime.now(timezone.utc) - timedelta(hours=i * 6),
-                ))
+                candidates.append(
+                    make_content(
+                        source=src,
+                        title=f"Article about {src.theme} topic {i}",
+                        published_at=datetime.now(timezone.utc)
+                        - timedelta(hours=i * 6),
+                    )
+                )
 
         context = make_context(
             followed_source_ids={sources[0].id, sources[1].id},

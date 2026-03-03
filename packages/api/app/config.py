@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Force load .env from the package directory to avoid shadowing by external env vars
-load_dotenv(Path(__file__).parent.parent / ".env", override=True)
+# Load .env for local dev; never override existing env vars (Railway injects them)
+load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 
 
 class Settings(BaseSettings):
@@ -94,16 +94,15 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # YouTube Data API v3
+    youtube_api_key: str = ""
+
     # ML Classification (Story 4.1d)
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key for LLM-based classification
 
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
-
-    # App Update (GitHub Releases)
-    github_token: str = ""  # Personal access token with repo read scope
-    github_repo: str = "boujonlaurin-dotcom/facteur"  # owner/repo
 
     @model_validator(mode="after")
     def auto_detect_railway_environment(self) -> "Settings":

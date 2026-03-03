@@ -16,9 +16,9 @@ from app.models.enums import (
 
 
 class HideContentRequest(BaseModel):
-    """Requête pour masquer un contenu."""
+    """Requête pour masquer un contenu. Reason optionnel (swipe-left sans précision)."""
 
-    reason: HiddenReason
+    reason: HiddenReason | None = None
 
 
 class NoteUpsertRequest(BaseModel):
@@ -88,6 +88,7 @@ class ContentResponse(BaseModel):
         None  # Topics ML granulaires (slugs), NULL si non classifié
     )
     is_paid: bool = False  # Paywall detection
+    content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
     recommendation_reason: RecommendationReason | None = None
     note_text: str | None = None
     note_updated_at: datetime | None = None
@@ -111,6 +112,8 @@ class ContentDetailResponse(BaseModel):
     description: str | None
     html_content: str | None = None  # Story 5.2: In-App Reading Mode
     audio_url: str | None = None  # Story 5.2: In-App Reading Mode
+    content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
+    extraction_attempted_at: datetime | None = None
     content_type: ContentType
     duration_seconds: int | None
     published_at: datetime
@@ -145,6 +148,12 @@ class DailyTop3Response(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FeedRefreshRequest(BaseModel):
+    """Requête pour rafraîchir le feed (marquer les articles visibles comme 'déjà affiché')."""
+
+    content_ids: list[UUID] = Field(..., max_length=200)
 
 
 class FeedResponse(BaseModel):

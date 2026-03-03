@@ -46,12 +46,11 @@ class FilterBar extends StatefulWidget {
 
 class _FilterBarState extends State<FilterBar> {
   final ScrollController _scrollController = ScrollController();
-  final Map<String, GlobalKey> _keys = {
-    'recent': GlobalKey(),
-    'inspiration': GlobalKey(),
-    'perspectives': GlobalKey(),
-    'deep_dive': GlobalKey(),
-  };
+  final Map<String, GlobalKey> _keys = {};
+
+  GlobalKey _keyFor(String filterKey) {
+    return _keys.putIfAbsent(filterKey, () => GlobalKey());
+  }
 
   double _descriptionAlignX = 0;
   String? _currentDescription;
@@ -70,6 +69,12 @@ class _FilterBarState extends State<FilterBar> {
         oldWidget.userBias != widget.userBias) {
       _updateDescription();
       _scrollToSelected();
+    }
+    // Clean up stale GlobalKeys for removed filters
+    if (widget.availableFilters != null) {
+      final currentFilterKeys =
+          widget.availableFilters!.map((f) => f.key).toSet();
+      _keys.removeWhere((key, _) => !currentFilterKeys.contains(key));
     }
   }
 
@@ -97,7 +102,9 @@ class _FilterBarState extends State<FilterBar> {
   void _updateAlignment() {
     if (!mounted || widget.selectedFilter == null) return;
 
-    final key = _keys[widget.selectedFilter];
+    final key = widget.selectedFilter != null
+        ? _keyFor(widget.selectedFilter!)
+        : null;
     final box = key?.currentContext?.findRenderObject() as RenderBox?;
     final parentBox = context.findRenderObject() as RenderBox?;
 
@@ -126,6 +133,7 @@ class _FilterBarState extends State<FilterBar> {
   }
 
   void _scrollToSelected() {
+    if (widget.selectedFilter == null) return;
     final key = _keys[widget.selectedFilter];
     if (key?.currentContext == null) return;
     if (!_scrollController.hasClients) return;
@@ -377,7 +385,7 @@ class _FilterBarState extends State<FilterBar> {
     final unselectedText = colorScheme.onSurface.withValues(alpha: 0.5);
 
     return Padding(
-      key: _keys[value],
+      key: _keyFor(value),
       padding: EdgeInsets.zero,
       child: ChoiceChip(
         label: Text(

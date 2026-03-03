@@ -66,10 +66,10 @@ def test_core_layer_theme_match_single_taxonomy(base_context):
         published_at=datetime.utcnow(),
         content_type=ContentType.ARTICLE
     )
-    
+
     layer = CoreLayer()
     score = layer.score(content, base_context)
-    
+
     # Theme Match (50) + Source Standard (15) + Recency (~30) = ~95
     assert score > 90.0
     assert "Thème: tech" in [r['details'] for r in base_context.reasons[content.id]]
