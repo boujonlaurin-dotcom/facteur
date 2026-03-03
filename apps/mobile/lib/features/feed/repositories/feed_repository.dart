@@ -90,6 +90,40 @@ class FeedRepository {
 
           // Note: briefing is no longer parsed - digest moved to dedicated tab
           // The briefing field in response is ignored
+
+          // Epic 11: Parse clusters if present
+          final clustersRaw = data['clusters'];
+          if (clustersRaw is List) {
+            final clusters = <FeedCluster>[];
+            for (final c in clustersRaw) {
+              try {
+                if (c is Map<String, dynamic>) {
+                  clusters.add(FeedCluster.fromJson(c));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt cluster: $err');
+              }
+            }
+
+            // Annotate representative items with cluster metadata
+            if (clusters.isNotEmpty) {
+              final clusterMap = <String, FeedCluster>{};
+              for (final cluster in clusters) {
+                clusterMap[cluster.representativeId] = cluster;
+              }
+
+              itemsList = itemsList.map((item) {
+                final cluster = clusterMap[item.id];
+                if (cluster != null) {
+                  return item.copyWith(
+                    clusterTopic: cluster.topicSlug,
+                    clusterHiddenCount: cluster.hiddenCount,
+                  );
+                }
+                return item;
+              }).toList();
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];

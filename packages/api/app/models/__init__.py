@@ -14,6 +14,7 @@ from app.models.source import Source, UserSource
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_personalization import UserPersonalization
+from app.models.user_topic_profile import UserTopicProfile
 
 __all__ = [
     # Enums
@@ -52,4 +53,6 @@ __all__ = [
     "CollectionItem",
     # Source Attempt Tracking (Epic 12)
     "FailedSourceAttempt",
+    # Custom Topics (Epic 11)
+    "UserTopicProfile",
 ]

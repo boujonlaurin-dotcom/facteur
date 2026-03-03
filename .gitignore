@@ -32,6 +32,7 @@ credentials.json
 .settings/
 
 # Environments and builds
+venv
 venv/
 .venv/
 env/

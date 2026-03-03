@@ -31,7 +31,14 @@ class ScoringWeights:
     CUSTOM_SOURCE_BONUS = 12.0
 
     # Base du score de fraîcheur (Recency).
-    recency_base = 30.0
+    # Epic 11: raised from 30→100 so fresh articles compete with personalization.
+    recency_base = 100.0
+
+    # --- CUSTOM TOPIC LAYER (Epic 11) ---
+
+    # Base bonus when an article matches a user's custom topic.
+    # Calibrated: 15 * 2.0 max = 30pts (competes with THEME_MATCH=50 without dominating).
+    CUSTOM_TOPIC_BASE_BONUS = 15.0
 
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest

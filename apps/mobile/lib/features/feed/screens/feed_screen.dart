@@ -39,6 +39,9 @@ import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
+import '../../custom_topics/widgets/cluster_chip.dart';
+import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -507,6 +510,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             );
                           }
 
+                          // Merge custom topics into filters
+                          final customTopics =
+                              ref.watch(customTopicsProvider).valueOrNull ?? [];
+                          final customTopicFilters = customTopics
+                              .where((t) => t.slugParent != null)
+                              .map((t) => FilterConfig(
+                                    key: t.slugParent!,
+                                    label: '\u{1F4CC} ${t.name}',
+                                    description:
+                                        'Articles sur ${t.name}',
+                                  ))
+                              .toList();
+
+                          // Merge: theme filters + custom topic filters (deduped)
+                          final themeKeys =
+                              themeFilters.map((f) => f.key).toSet();
+                          final uniqueCustomFilters = customTopicFilters
+                              .where((f) => !themeKeys.contains(f.key))
+                              .toList();
+                          final mergedFilters = [
+                            ...themeFilters,
+                            ...uniqueCustomFilters,
+                          ];
+
                           // No source active: show source chip + filter bar
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -520,7 +547,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 userBias: ref
                                     .watch(userBiasProvider)
                                     .valueOrNull,
-                                availableFilters: themeFilters,
+                                availableFilters: mergedFilters,
                                 sourceFilterChip: hasFollowedSources
                                     ? SourceFilterChip(
                                         onSourceChanged: (sourceId) {
@@ -784,8 +811,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      onNotInterested: () =>
+                                      onPersonalize: () =>
                                           _showPersonalizationSheet(content),
+                                      topicChipWidget:
+                                          TopicChip(content: content),
+                                      clusterChipWidget:
+                                          ClusterChip(content: content),
                                     ),
                                   ),
                                 );

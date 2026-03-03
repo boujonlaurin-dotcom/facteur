@@ -70,3 +70,84 @@ String getTopicLabel(String slug) {
   return topicSlugToLabel[slug.toLowerCase()] ??
       (slug.isNotEmpty ? slug[0].toUpperCase() + slug.substring(1) : slug);
 }
+
+/// Mapping slug → macro-theme group label.
+/// Used by MyInterestsScreen and TopicExplorerSheet to group topics.
+const Map<String, String> _slugToMacroTheme = {
+  // Tech & Science
+  'ai': 'Tech & Science',
+  'tech': 'Tech & Science',
+  'cybersecurity': 'Tech & Science',
+  'gaming': 'Tech & Science',
+  'space': 'Tech & Science',
+  'science': 'Tech & Science',
+  'privacy': 'Tech & Science',
+  // Societe
+  'politics': 'Societe',
+  'economy': 'Societe',
+  'work': 'Societe',
+  'education': 'Societe',
+  'health': 'Societe',
+  'justice': 'Societe',
+  'immigration': 'Societe',
+  'inequality': 'Societe',
+  'feminism': 'Societe',
+  'lgbtq': 'Societe',
+  'religion': 'Societe',
+  // Environnement
+  'climate': 'Environnement',
+  'environment': 'Environnement',
+  'energy': 'Environnement',
+  'biodiversity': 'Environnement',
+  'agriculture': 'Environnement',
+  'food': 'Environnement',
+  // Culture
+  'cinema': 'Culture',
+  'music': 'Culture',
+  'literature': 'Culture',
+  'art': 'Culture',
+  'media': 'Culture',
+  'fashion': 'Culture',
+  'design': 'Culture',
+  // Lifestyle
+  'travel': 'Lifestyle',
+  'gastronomy': 'Lifestyle',
+  'sport': 'Lifestyle',
+  'wellness': 'Lifestyle',
+  'family': 'Lifestyle',
+  'relationships': 'Lifestyle',
+  // Business
+  'startups': 'Business',
+  'finance': 'Business',
+  'realestate': 'Business',
+  'entrepreneurship': 'Business',
+  'marketing': 'Business',
+  // International
+  'geopolitics': 'International',
+  'europe': 'International',
+  'usa': 'International',
+  'africa': 'International',
+  'asia': 'International',
+  'middleeast': 'International',
+  // Autres
+  'history': 'Autres',
+  'philosophy': 'Autres',
+  'factcheck': 'Autres',
+};
+
+/// Ordered list of macro-theme group labels.
+const List<String> macroThemeOrder = [
+  'Tech & Science',
+  'Societe',
+  'Environnement',
+  'Culture',
+  'Lifestyle',
+  'Business',
+  'International',
+  'Autres',
+];
+
+/// Returns the macro-theme group label for a topic slug, or null if unknown.
+String? getTopicMacroTheme(String slug) {
+  return _slugToMacroTheme[slug.toLowerCase()];
+}
