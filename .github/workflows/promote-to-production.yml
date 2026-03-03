@@ -14,7 +14,7 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy to production
-        run: railway up --environment production
+        run: railway up --environment production --service Facteur
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
