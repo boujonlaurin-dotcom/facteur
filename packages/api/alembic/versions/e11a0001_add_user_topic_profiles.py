@@ -20,6 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if inspector.has_table("user_topic_profiles"):
+        return
+
     op.create_table(
         "user_topic_profiles",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
