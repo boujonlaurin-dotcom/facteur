@@ -134,10 +134,12 @@ class _FilterBarState extends State<FilterBar> {
 
   void _scrollToSelected() {
     if (widget.selectedFilter == null) return;
-    final key = _keyFor(widget.selectedFilter!);
-    if (key.currentContext == null) return;
+    final key = _keys[widget.selectedFilter];
+    if (key?.currentContext == null) return;
+    if (!_scrollController.hasClients) return;
 
-    final context = key.currentContext!;
+    final renderObject = key!.currentContext!.findRenderObject();
+    if (renderObject == null) return;
 
     // Déterminer l'alignement ciblé :
     // - 0.0 pour le premier item (bord gauche)
@@ -148,8 +150,10 @@ class _FilterBarState extends State<FilterBar> {
       alignment = 1.0;
     }
 
-    Scrollable.ensureVisible(
-      context,
+    // Utilise la position du ScrollController du FilterBar uniquement,
+    // pour ne pas remonter jusqu'au CustomScrollView parent (feed).
+    _scrollController.position.ensureVisible(
+      renderObject,
       alignment: alignment,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,

@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # YouTube Data API v3
+    youtube_api_key: str = ""
+
     # ML Classification (Story 4.1d)
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key for LLM-based classification

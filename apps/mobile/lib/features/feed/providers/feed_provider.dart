@@ -142,7 +142,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _hasNext = true;
     _isLoadingMore = false;
 
-    state = const AsyncLoading(); // Emitting loading state
+    // Ne pas émettre AsyncLoading — ça détruit le SliverList dans le screen
+    // et reset la position de scroll. Le RefreshIndicator gère déjà le feedback visuel.
 
     try {
       final response = await _fetchPage(page: 1);

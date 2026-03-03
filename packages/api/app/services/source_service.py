@@ -407,14 +407,6 @@ class SourceService:
 
     async def detect_source(self, url: str) -> SourceDetectResponse:
         """Détecte le type d'une URL source."""
-
-        # Decommission YouTube for now
-        if "youtube.com" in url or "youtu.be" in url:
-            raise ValueError(
-                "YouTube handles are currently disabled. Please use RSS feeds for newsletters or journals."
-            )
-
-        # Use new Smart Detect
         try:
             detected = await self.rss_parser.detect(url)
 
@@ -427,6 +419,7 @@ class SourceService:
                 ]
 
             # Map feed_type to valid SourceType
+            # "youtube" and "reddit" pass through as-is
             source_type = detected.feed_type
             if source_type in ("rss", "atom"):
                 source_type = "article"

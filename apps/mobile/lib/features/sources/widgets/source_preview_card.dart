@@ -36,6 +36,8 @@ class SourcePreviewCard extends StatelessWidget {
     IconData icon;
     if (detectedType == 'youtube') {
       icon = PhosphorIcons.youtubeLogo(PhosphorIconsStyle.fill);
+    } else if (detectedType == 'reddit') {
+      icon = PhosphorIcons.redditLogo(PhosphorIconsStyle.fill);
     } else if (detectedType == 'podcast') {
       icon = PhosphorIcons.microphone(PhosphorIconsStyle.fill);
     } else {
