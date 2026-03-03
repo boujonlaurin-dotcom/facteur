@@ -115,7 +115,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 .toList();
           }
 
-          // Split into 3 groups
+          // Split into 3 groups: custom (non-muted), curated (non-muted), muted
           final customSources = filteredSources
               .where((s) => s.isCustom && !s.isMuted)
               .toList();
@@ -204,6 +204,13 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 ),
               ),
 
+              // Theme filter chips
+              _buildThemeFilterRow(allSources, colors),
+              const SizedBox(height: 4),
+              // Type filter chips
+              _buildTypeFilterRow(allSources, colors),
+              const SizedBox(height: 8),
+
               Expanded(
                 child: noResults
                     ? Center(
@@ -234,6 +241,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                               },
                               child: const Text('Reinitialiser les filtres'),
                             ),
+                            ...mutedSources
+                                .map((source) => _buildSourceItem(source)),
                           ],
                         ),
                       )
