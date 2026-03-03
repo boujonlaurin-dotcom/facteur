@@ -413,7 +413,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
     try {
       final redirectUrl = kIsWeb
-          ? Uri(scheme: Uri.base.scheme, host: Uri.base.host, path: Uri.base.path).toString()
+          ? Uri.base.resolve('auth/callback').toString()
           : 'io.supabase.facteur://login-callback';
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
@@ -437,7 +437,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
     try {
       final redirectUrl = kIsWeb
-          ? Uri(scheme: Uri.base.scheme, host: Uri.base.host, path: Uri.base.path).toString()
+          ? Uri.base.resolve('facteur/auth/callback').toString()
           : 'io.supabase.facteur://login-callback';
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,

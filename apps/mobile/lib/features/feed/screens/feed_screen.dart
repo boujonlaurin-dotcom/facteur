@@ -183,14 +183,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     }
 
-    // Dismiss banner: auto-collapse on significant scroll
-    if (_activeDismissalId != null &&
-        (currentScroll - _lastScrollPosition).abs() > 100) {
-      _resolveActiveBanner();
-      setState(() {});
-    }
-    _lastScrollPosition = currentScroll;
-
     // Load more — skip when user is actively scrolling UP.
     // Triggering a state update + SliverList rebuild during an upward scroll
     // causes Flutter to recalculate scroll geometry mid-gesture, which snaps
