@@ -294,7 +294,11 @@ class RecommendationService:
 
         # 3. Score Candidates using ScoringEngine
         t3 = time.monotonic()
-        logger.info("feed_phase2_candidates", duration_ms=round((t3 - t2) * 1000), count=len(candidates))
+        logger.info(
+            "feed_phase2_candidates",
+            duration_ms=round((t3 - t2) * 1000),
+            count=len(candidates),
+        )
 
         scored_candidates = []
         now = datetime.datetime.now(datetime.UTC)
@@ -373,7 +377,11 @@ class RecommendationService:
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()
-        logger.info("feed_phase4_scoring", duration_ms=round((t5 - t4) * 1000), candidates=len(candidates))
+        logger.info(
+            "feed_phase4_scoring",
+            duration_ms=round((t5 - t4) * 1000),
+            candidates=len(candidates),
+        )
 
         # 4. Sort by score DESC
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -689,7 +697,9 @@ class RecommendationService:
                 content.status = st.status if st else ContentStatus.UNSEEN
 
         t_end = time.monotonic()
-        logger.info("feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result))
+        logger.info(
+            "feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result)
+        )
         return result
 
     async def _get_candidates(
