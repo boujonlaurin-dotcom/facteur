@@ -1,7 +1,7 @@
 """Worker asynchrone pour la classification ML des contenus via Mistral API.
 
 Batch-processes articles from the classification queue using the Mistral LLM API.
-Increased throughput: batch_size=20, interval=15s → ~4800 articles/hour.
+Batch-5 with enriched prompt for accurate classification.
 """
 
 import asyncio
@@ -27,15 +27,15 @@ settings = get_settings()
 class ClassificationWorker:
     """Worker qui traite la file d'attente de classification via Mistral API.
 
-    Traite les articles par batch pour maximiser le débit.
+    Traite les articles par batch de 5 pour maximiser la qualité de classification.
     """
 
-    def __init__(self, batch_size: int = 20, interval: int = 15):
+    def __init__(self, batch_size: int = 5, interval: int = 10):
         """Initialize the worker.
 
         Args:
-            batch_size: Nombre d'articles à traiter par lot (augmenté de 10→20)
-            interval: Intervalle en secondes entre chaque vérification (réduit de 60→15)
+            batch_size: Nombre d'articles à traiter par lot (réduit de 20→5 pour qualité)
+            interval: Intervalle en secondes entre chaque vérification (réduit de 15→10)
         """
         self.batch_size = batch_size
         self.interval = interval
@@ -164,24 +164,44 @@ class ClassificationWorker:
             batch_items: list[dict] = []
             batch_indices: list[int] = []  # Maps batch position → items index
 
-            for i, (item, content) in enumerate(zip(items, contents, strict=False)):
+            for i, (item, content, source) in enumerate(
+                zip(items, contents, sources, strict=False)
+            ):
                 if content and content.title:
                     batch_items.append(
                         {
                             "title": content.title or "",
                             "description": content.description or "",
+                            "source_name": source.name if source else "",
                         }
                     )
                     batch_indices.append(i)
 
             # Call Mistral API in batch
             classifier = self._get_classifier()
-            all_topics: list[list[str]] = []
+            all_results: list[dict] = []
 
             if classifier and classifier.is_ready() and batch_items:
-                all_topics = await classifier.classify_batch_async(batch_items)
+                all_results = await classifier.classify_batch_async(batch_items)
+
+                # Fallback: if batch returned all empty, try individual classification
+                if all_results and all(
+                    not r.get("topics") for r in all_results
+                ):
+                    logger.warning(
+                        "classification_worker.batch_all_empty_fallback",
+                        count=len(batch_items),
+                    )
+                    all_results = []
+                    for bi in batch_items:
+                        result = await classifier.classify_async(
+                            title=bi["title"],
+                            description=bi.get("description", ""),
+                            source_name=bi.get("source_name", ""),
+                        )
+                        all_results.append(result)
             else:
-                all_topics = [[] for _ in batch_items]
+                all_results = [{"topics": [], "serene": None} for _ in batch_items]
 
             # Process results
             batch_result_idx = 0
@@ -193,16 +213,19 @@ class ClassificationWorker:
                         await service.mark_completed_with_entities(item.id, [], [])
                         continue
 
-                    # Get topics from batch result
+                    # Get topics and serene from batch result
                     if i in batch_indices:
-                        topics = (
-                            all_topics[batch_result_idx]
-                            if batch_result_idx < len(all_topics)
-                            else []
+                        result = (
+                            all_results[batch_result_idx]
+                            if batch_result_idx < len(all_results)
+                            else {"topics": [], "serene": None}
                         )
                         batch_result_idx += 1
+                        topics = result.get("topics", [])
+                        is_serene = result.get("serene")
                     else:
                         topics = []
+                        is_serene = None
 
                     # Fallback: use source.granular_topics, but only valid slugs
                     if not topics and source and source.granular_topics:
@@ -210,7 +233,9 @@ class ClassificationWorker:
                             t for t in source.granular_topics if t in VALID_TOPIC_SLUGS
                         ]
 
-                    await service.mark_completed_with_entities(item.id, topics, [])
+                    await service.mark_completed_with_entities(
+                        item.id, topics, [], is_serene=is_serene
+                    )
 
                 except Exception as e:
                     await service.mark_failed(item.id, str(e)[:500])

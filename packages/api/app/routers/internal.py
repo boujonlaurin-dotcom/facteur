@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -42,3 +42,18 @@ async def get_queue_stats(
     service = ClassificationQueueService(session)
     stats = await service.get_queue_stats()
     return {"message": "Queue statistics", "stats": stats}
+
+
+@router.post("/admin/reclassify", status_code=status.HTTP_200_OK)
+async def trigger_reclassification(
+    hours_back: int = Query(default=48, ge=1, le=720),
+    session: AsyncSession = Depends(get_db),
+):
+    """Remet en file les articles récents pour reclassification ML.
+
+    Args:
+        hours_back: Nombre d'heures en arrière à reclassifier (default: 48, max: 720)
+    """
+    service = ClassificationQueueService(session)
+    count = await service.requeue_for_reclassification(hours_back=hours_back)
+    return {"message": "Reclassification queued", "articles_queued": count}

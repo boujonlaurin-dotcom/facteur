@@ -1,9 +1,9 @@
 """Service pour gérer la file de classification."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -107,13 +107,15 @@ class ClassificationQueueService:
         queue_id: UUID,
         topics: list[str],
         entities: list[dict],
+        is_serene: bool | None = None,
     ) -> None:
-        """Marque un élément comme complété avec topics ET entités extraites.
+        """Marque un élément comme complété avec topics, entités et sérénité.
 
         Args:
             queue_id: ID de l'élément dans la file
             topics: Liste des topics classifiés
             entities: Liste des entités extraites (format: [{"text": "...", "label": "..."}])
+            is_serene: True si article positif/neutre, False si négatif, None si inconnu
         """
         import structlog
 
@@ -125,7 +127,7 @@ class ClassificationQueueService:
             item.processed_at = datetime.utcnow()
             item.updated_at = datetime.utcnow()
 
-            # Mettre à jour le contenu avec topics, thème inféré et entités
+            # Mettre à jour le contenu avec topics, thème inféré, entités et sérénité
             from app.services.ml.topic_theme_mapper import infer_theme_from_topics
 
             content = await self.session.get(Content, item.content_id)
@@ -137,6 +139,15 @@ class ClassificationQueueService:
                     # Column may not exist yet during rolling deployment
                     logger.warning(
                         "theme_column_missing", error=str(e), content_id=str(content.id)
+                    )
+                try:
+                    content.is_serene = is_serene
+                except (AttributeError, Exception) as e:
+                    # Column may not exist yet during rolling deployment
+                    logger.warning(
+                        "is_serene_column_missing",
+                        error=str(e),
+                        content_id=str(content.id),
                     )
                 # Store entities as JSON strings in the array
                 if entities:
@@ -250,5 +261,45 @@ class ClassificationQueueService:
 
         if count > 0:
             await self.session.commit()
+
+        return count
+
+    async def requeue_for_reclassification(
+        self, hours_back: int = 48, priority: int = 5
+    ) -> int:
+        """Remet en file les articles récents pour reclassification.
+
+        Args:
+            hours_back: Nombre d'heures en arrière à reclassifier
+            priority: Priorité des articles remis en file (plus élevé = traité en premier)
+
+        Returns:
+            Nombre d'articles remis en file d'attente.
+        """
+        cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+
+        # Get content IDs published in the time window
+        content_ids_query = select(Content.id).where(
+            Content.published_at >= cutoff
+        )
+
+        # Update matching queue items
+        result = await self.session.execute(
+            update(ClassificationQueue)
+            .where(
+                ClassificationQueue.status.in_(["completed", "failed"]),
+                ClassificationQueue.content_id.in_(content_ids_query),
+            )
+            .values(
+                status="pending",
+                retry_count=0,
+                error_message=None,
+                processed_at=None,
+                priority=priority,
+                updated_at=datetime.utcnow(),
+            )
+        )
+        count = result.rowcount
+        await self.session.commit()
 
         return count
