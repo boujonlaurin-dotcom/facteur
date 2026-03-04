@@ -94,6 +94,7 @@ class DigestContext:
     hide_paid_content: bool = True
     user_bias_stance: BiasStance | None = None
     source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
+    source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -497,6 +498,20 @@ class DigestSelector:
             user_id
         )
 
+        # Source Weighting: load explicit priority multipliers
+        from app.models.source import UserSource
+
+        source_weight_rows = (
+            await self.session.execute(
+                select(UserSource.source_id, UserSource.priority_multiplier).where(
+                    UserSource.user_id == user_id
+                )
+            )
+        ).all()
+        source_priority_multipliers = {
+            row.source_id: row.priority_multiplier for row in source_weight_rows
+        }
+
         return DigestContext(
             user_id=user_id,
             user_profile=user_profile,
@@ -514,6 +529,7 @@ class DigestSelector:
             hide_paid_content=hide_paid_content,
             user_bias_stance=user_bias_stance,
             source_affinity_scores=source_affinity_scores,
+            source_priority_multipliers=source_priority_multipliers,
         )
 
     async def _get_candidates(
@@ -726,6 +742,7 @@ class DigestSelector:
             custom_source_ids=context.custom_source_ids,
             source_affinity_scores=context.source_affinity_scores,
             impression_data=impression_data,
+            source_priority_multipliers=context.source_priority_multipliers,
         )
 
         scored = []

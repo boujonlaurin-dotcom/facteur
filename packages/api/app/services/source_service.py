@@ -25,6 +25,17 @@ class SourceService:
         self.db = db
         self.rss_parser = RSSParser()
 
+    async def _load_user_source_multipliers(
+        self, user_id: UUID
+    ) -> dict[UUID, float]:
+        """Load priority_multiplier for all user sources."""
+        result = await self.db.execute(
+            select(UserSource.source_id, UserSource.priority_multiplier).where(
+                UserSource.user_id == user_id
+            )
+        )
+        return {row.source_id: row.priority_multiplier for row in result.all()}
+
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
         """Récupère toutes les sources (curées + custom)."""
         user_uuid = UUID(user_id)
@@ -39,6 +50,9 @@ class SourceService:
 
         # Sources curées
         curated = await self.get_curated_sources(user_id)
+
+        # Load priority multipliers
+        multipliers = await self._load_user_source_multipliers(user_uuid)
 
         # Sources custom de l'utilisateur (distinct au cas où doublons user_sources)
         query = (
@@ -66,6 +80,7 @@ class SourceService:
                 is_custom=True,
                 is_trusted=True,
                 is_muted=s.id in muted_source_ids,
+                priority_multiplier=multipliers.get(s.id, 1.0),
                 content_count=0,  # TODO
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -89,6 +104,7 @@ class SourceService:
 
         trusted_source_ids = set()
         muted_source_ids = set()
+        multipliers: dict[UUID, float] = {}
         if user_id:
             user_uuid = UUID(user_id)
             user_sources_query = select(UserSource.source_id).where(
@@ -96,6 +112,8 @@ class SourceService:
             )
             user_sources_result = await self.db.execute(user_sources_query)
             trusted_source_ids = set(user_sources_result.scalars().all())
+
+            multipliers = await self._load_user_source_multipliers(user_uuid)
 
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
@@ -118,6 +136,7 @@ class SourceService:
                 is_custom=False,
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
+                priority_multiplier=multipliers.get(s.id, 1.0),
                 content_count=0,  # TODO
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -156,6 +175,8 @@ class SourceService:
         user_sources_result = await self.db.execute(user_sources_query)
         trusted_source_ids = set(user_sources_result.scalars().all())
 
+        multipliers = await self._load_user_source_multipliers(user_uuid)
+
         muted_source_ids = set()
         personalization = await self.db.scalar(
             select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
@@ -176,6 +197,7 @@ class SourceService:
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
+                priority_multiplier=multipliers.get(s.id, 1.0),
                 content_count=0,
                 follower_count=follower_count,
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
@@ -208,12 +230,15 @@ class SourceService:
         # Load user context for is_trusted / is_muted flags
         trusted_source_ids = set()
         muted_source_ids = set()
+        multipliers: dict[UUID, float] = {}
         if user_id:
             user_uuid = UUID(user_id)
             user_sources_result = await self.db.execute(
                 select(UserSource.source_id).where(UserSource.user_id == user_uuid)
             )
             trusted_source_ids = set(user_sources_result.scalars().all())
+
+            multipliers = await self._load_user_source_multipliers(user_uuid)
 
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
@@ -236,6 +261,7 @@ class SourceService:
                 is_custom=not s.is_curated,
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
+                priority_multiplier=multipliers.get(s.id, 1.0),
                 content_count=0,
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -388,6 +414,70 @@ class SourceService:
 
         await self.db.flush()
         return True
+
+    async def update_source_weight(
+        self, user_id: str, source_id: str, priority_multiplier: float
+    ) -> SourceResponse | None:
+        """Met à jour le priority_multiplier d'une source suivie."""
+        user_uuid = UUID(user_id)
+        source_uuid = UUID(source_id)
+
+        user_source = await self.db.scalar(
+            select(UserSource).where(
+                UserSource.user_id == user_uuid,
+                UserSource.source_id == source_uuid,
+            )
+        )
+        if not user_source:
+            return None
+
+        user_source.priority_multiplier = priority_multiplier
+        await self.db.flush()
+
+        source = await self.db.scalar(
+            select(Source).where(Source.id == source_uuid)
+        )
+        if not source:
+            return None
+
+        # Load muted status
+        muted_source_ids = set()
+        personalization = await self.db.scalar(
+            select(UserPersonalization).where(
+                UserPersonalization.user_id == user_uuid
+            )
+        )
+        if personalization and personalization.muted_sources:
+            muted_source_ids = set(personalization.muted_sources)
+
+        logger.info(
+            "source_weight_updated",
+            user_id=user_id,
+            source_id=source_id,
+            multiplier=priority_multiplier,
+        )
+
+        return SourceResponse(
+            id=source.id,
+            name=source.name,
+            url=source.url,
+            type=source.type,
+            theme=source.theme,
+            description=source.description,
+            logo_url=source.logo_url,
+            is_curated=source.is_curated,
+            is_custom=user_source.is_custom,
+            is_trusted=True,
+            is_muted=source.id in muted_source_ids,
+            priority_multiplier=priority_multiplier,
+            content_count=0,
+            bias_stance=getattr(source.bias_stance, "value", "unknown"),
+            reliability_score=getattr(source.reliability_score, "value", "unknown"),
+            bias_origin=getattr(source.bias_origin, "value", "unknown"),
+            score_independence=source.score_independence,
+            score_rigor=source.score_rigor,
+            score_ux=source.score_ux,
+        )
 
     async def untrust_source(self, user_id: str, source_id: str) -> bool:
         """Retire une source des sources de confiance."""

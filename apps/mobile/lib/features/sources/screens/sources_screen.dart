@@ -22,7 +22,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   String _searchQuery = '';
   String? _selectedTheme;
   SourceType? _selectedType;
-
   // Collapsible section state (open by default)
   bool _customExpanded = true;
   bool _curatedExpanded = true;
@@ -102,7 +101,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             );
           }
 
-          // Apply theme + type filters for display
+          // Apply theme + type + weight filters for display
           var filteredSources = allSources.toList();
           if (_selectedTheme != null) {
             filteredSources = filteredSources
@@ -114,7 +113,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 .where((s) => s.type == _selectedType)
                 .toList();
           }
-
           // Split into 3 groups: custom (non-muted), curated (non-muted), muted
           final customSources = filteredSources
               .where((s) => s.isCustom && !s.isMuted)
@@ -203,13 +201,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   onTapOutside: (_) => FocusScope.of(context).unfocus(),
                 ),
               ),
-
-              // Theme filter chips
-              _buildThemeFilterRow(allSources, colors),
-              const SizedBox(height: 4),
-              // Type filter chips
-              _buildTypeFilterRow(allSources, colors),
-              const SizedBox(height: 8),
 
               Expanded(
                 child: noResults
@@ -477,6 +468,13 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             .read(userSourcesProvider.notifier)
             .toggleMute(source.id, source.isMuted);
       },
+      onWeightChanged: source.isTrusted && !source.isMuted
+          ? (multiplier) {
+              ref
+                  .read(userSourcesProvider.notifier)
+                  .updateWeight(source.id, multiplier);
+            }
+          : null,
     );
   }
 }

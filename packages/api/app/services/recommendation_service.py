@@ -284,6 +284,20 @@ class RecommendationService:
             ).all()
         )
 
+        # Source Weighting: load explicit priority multipliers
+        from app.models.source import UserSource
+
+        source_weight_rows = (
+            await self.session.execute(
+                select(UserSource.source_id, UserSource.priority_multiplier).where(
+                    UserSource.user_id == user_id
+                )
+            )
+        ).all()
+        source_priority_multipliers = {
+            row.source_id: row.priority_multiplier for row in source_weight_rows
+        }
+
         # Context creation
         context = ScoringContext(
             user_profile=user_profile,
@@ -303,6 +317,7 @@ class RecommendationService:
             source_affinity_scores=source_affinity_scores,
             impression_data=impression_data,
             user_custom_topics=user_custom_topics,
+            source_priority_multipliers=source_priority_multipliers,
         )
 
         for content in candidates:
