@@ -499,8 +499,6 @@ class DigestSelector:
         )
 
         # Source Weighting: load explicit priority multipliers
-        from app.models.source import UserSource
-
         source_weight_rows = (
             await self.session.execute(
                 select(UserSource.source_id, UserSource.priority_multiplier).where(
