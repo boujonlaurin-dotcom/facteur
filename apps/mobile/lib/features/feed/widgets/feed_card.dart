@@ -18,7 +18,6 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onSaveLongPress;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
-  final VoidCallback? onPersonalize;
   final Widget? topicChipWidget;
   final Widget? clusterChipWidget;
   final bool isSaved;
@@ -38,7 +37,6 @@ class FeedCard extends StatelessWidget {
     this.onSaveLongPress,
     this.onLike,
     this.onNotInterested,
-    this.onPersonalize,
     this.topicChipWidget,
     this.clusterChipWidget,
     this.isSaved = false,
@@ -217,19 +215,6 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                            // Personalize (i) button
-                            if (onPersonalize != null) ...[
-                              const SizedBox(width: 4),
-                              GestureDetector(
-                                onTap: onPersonalize,
-                                child: Icon(
-                                  PhosphorIcons.info(),
-                                  size: 16,
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                            ],
-
                             // Paywall badge
                             if (content.isPaid) ...[
                               const SizedBox(width: FacteurSpacing.space2),
@@ -329,6 +314,7 @@ class FeedCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+
                         ],
                       ),
                     ],

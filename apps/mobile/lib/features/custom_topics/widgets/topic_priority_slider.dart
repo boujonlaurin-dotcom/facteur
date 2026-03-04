@@ -11,8 +11,8 @@ const Color _terracotta = Color(0xFFE07A5F);
 ///
 /// Maps multiplier values to visual blocks:
 /// - 0.5 (Suivi):         [filled] [empty] [empty]
-/// - 1.0 (Interesse):     [filled] [filled] [empty]
-/// - 2.0 (Fort interet):  [filled] [filled] [filled]
+/// - 1.0 (Intéressé):     [filled] [filled] [empty]
+/// - 2.0 (Fort intérêt):  [filled] [filled] [filled]
 class TopicPrioritySlider extends StatefulWidget {
   final double currentMultiplier;
   final ValueChanged<double> onChanged;
@@ -46,9 +46,9 @@ class _TopicPrioritySliderState extends State<TopicPrioritySlider> {
       case 1:
         return 'Suivi';
       case 2:
-        return 'Interesse';
+        return 'Intéressé';
       case 3:
-        return 'Fort interet';
+        return 'Fort intérêt';
       default:
         return '';
     }
@@ -96,23 +96,27 @@ class _TopicPrioritySliderState extends State<TopicPrioritySlider> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Floating label with fade animation
-          AnimatedOpacity(
-            opacity: _showLabel ? 1.0 : 0.0,
+          // Floating label with fade + size animation
+          AnimatedSize(
             duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
             child: SizedBox(
-              height: 16,
-              child: Text(
-                _label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: _terracotta,
+              height: _showLabel ? 16.0 : 0.0,
+              child: AnimatedOpacity(
+                opacity: _showLabel ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Text(
+                  _label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: _terracotta,
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 2),
+          SizedBox(height: _showLabel ? 2.0 : 0.0),
           // 3 blocks with 44px min touch target
           GestureDetector(
             onTapDown: _handleTap,
