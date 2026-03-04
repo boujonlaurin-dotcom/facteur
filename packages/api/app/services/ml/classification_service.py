@@ -450,7 +450,11 @@ class ClassificationService:
                 if not isinstance(serene, bool):
                     serene = None
                 return {"topics": topics[:top_k], "serene": serene}
-            if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+            if (
+                isinstance(parsed, list)
+                and len(parsed) == 1
+                and isinstance(parsed[0], dict)
+            ):
                 item = parsed[0]
                 topics = [
                     s.strip().lower()
@@ -548,9 +552,7 @@ class ClassificationService:
         if len(results) < 2:
             return
 
-        primary_topics = [
-            r["topics"][0] for r in results if r.get("topics")
-        ]
+        primary_topics = [r["topics"][0] for r in results if r.get("topics")]
         if not primary_topics:
             return
 

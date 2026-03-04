@@ -185,9 +185,7 @@ class ClassificationWorker:
                 all_results = await classifier.classify_batch_async(batch_items)
 
                 # Fallback: if batch returned all empty, try individual classification
-                if all_results and all(
-                    not r.get("topics") for r in all_results
-                ):
+                if all_results and all(not r.get("topics") for r in all_results):
                     logger.warning(
                         "classification_worker.batch_all_empty_fallback",
                         count=len(batch_items),

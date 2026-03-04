@@ -279,9 +279,7 @@ class ClassificationQueueService:
         cutoff = datetime.utcnow() - timedelta(hours=hours_back)
 
         # Get content IDs published in the time window
-        content_ids_query = select(Content.id).where(
-            Content.published_at >= cutoff
-        )
+        content_ids_query = select(Content.id).where(Content.published_at >= cutoff)
 
         # Update matching queue items
         result = await self.session.execute(
