@@ -72,28 +72,41 @@ String getTopicLabel(String slug) {
 }
 
 /// Mapping slug → macro-theme group label.
-/// Used by MyInterestsScreen and TopicExplorerSheet to group topics.
+/// Aligné sur TOPIC_TO_THEME du backend (topic_theme_mapper.py).
+/// Source de vérité : packages/api/app/services/ml/topic_theme_mapper.py
 const Map<String, String> _slugToMacroTheme = {
-  // Tech & Science
-  'ai': 'Tech & Science',
-  'tech': 'Tech & Science',
-  'cybersecurity': 'Tech & Science',
-  'gaming': 'Tech & Science',
-  'space': 'Tech & Science',
-  'science': 'Tech & Science',
-  'privacy': 'Tech & Science',
-  // Societe
-  'politics': 'Societe',
-  'economy': 'Societe',
-  'work': 'Societe',
-  'education': 'Societe',
-  'health': 'Societe',
-  'justice': 'Societe',
-  'immigration': 'Societe',
-  'inequality': 'Societe',
-  'feminism': 'Societe',
-  'lgbtq': 'Societe',
-  'religion': 'Societe',
+  // Tech
+  'ai': 'Tech',
+  'tech': 'Tech',
+  'cybersecurity': 'Tech',
+  'gaming': 'Tech',
+  'privacy': 'Tech',
+  // Science
+  'space': 'Science',
+  'science': 'Science',
+  // Société
+  'work': 'Société',
+  'education': 'Société',
+  'health': 'Société',
+  'justice': 'Société',
+  'immigration': 'Société',
+  'inequality': 'Société',
+  'feminism': 'Société',
+  'lgbtq': 'Société',
+  'religion': 'Société',
+  'wellness': 'Société',
+  'family': 'Société',
+  'relationships': 'Société',
+  'factcheck': 'Société',
+  // Politique
+  'politics': 'Politique',
+  // Économie
+  'economy': 'Économie',
+  'startups': 'Économie',
+  'finance': 'Économie',
+  'realestate': 'Économie',
+  'entrepreneurship': 'Économie',
+  'marketing': 'Économie',
   // Environnement
   'climate': 'Environnement',
   'environment': 'Environnement',
@@ -109,19 +122,10 @@ const Map<String, String> _slugToMacroTheme = {
   'media': 'Culture',
   'fashion': 'Culture',
   'design': 'Culture',
-  // Lifestyle
-  'travel': 'Lifestyle',
-  'gastronomy': 'Lifestyle',
-  'sport': 'Lifestyle',
-  'wellness': 'Lifestyle',
-  'family': 'Lifestyle',
-  'relationships': 'Lifestyle',
-  // Business
-  'startups': 'Business',
-  'finance': 'Business',
-  'realestate': 'Business',
-  'entrepreneurship': 'Business',
-  'marketing': 'Business',
+  'travel': 'Culture',
+  'gastronomy': 'Culture',
+  'history': 'Culture',
+  'philosophy': 'Culture',
   // International
   'geopolitics': 'International',
   'europe': 'International',
@@ -129,22 +133,21 @@ const Map<String, String> _slugToMacroTheme = {
   'africa': 'International',
   'asia': 'International',
   'middleeast': 'International',
-  // Autres
-  'history': 'Autres',
-  'philosophy': 'Autres',
-  'factcheck': 'Autres',
+  // Sport
+  'sport': 'Sport',
 };
 
-/// Ordered list of macro-theme group labels.
+/// Ordered list of macro-theme group labels (9 thèmes backend).
 const List<String> macroThemeOrder = [
-  'Tech & Science',
-  'Societe',
+  'Tech',
+  'Science',
+  'Société',
+  'Politique',
+  'Économie',
   'Environnement',
   'Culture',
-  'Lifestyle',
-  'Business',
   'International',
-  'Autres',
+  'Sport',
 ];
 
 /// Returns the macro-theme group label for a topic slug, or null if unknown.

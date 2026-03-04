@@ -62,10 +62,16 @@ class ThemeToSourcesMapping {
       'Guerres de Business',
       'Les Échos',
     ],
+    'sport': [
+      "L'Équipe",
+      'RMC Sport',
+      'BasketUSA',
+    ],
   };
 
   /// Mapping optionnel Subtopic slug → Noms des sources spécialisées
   /// Pour raffiner la recommandation si l'utilisateur a choisi des sous-thèmes
+  /// Tous les slugs doivent être des VALID_TOPIC_SLUGS (source de vérité ML)
   static const Map<String, List<String>> bySubtopic = {
     // Tech subtopics
     'ai': ['ScienceEtonnante', 'Epsiloon'],
@@ -80,26 +86,24 @@ class ThemeToSourcesMapping {
     ],
     'europe': ['Politico Europe', 'Le Grand Continent'],
     'usa': ['Courrier International'],
-    'middle-east': ['Le Collimateur', 'Le Monde Diplomatique'],
+    'middleeast': ['Le Collimateur', 'Le Monde Diplomatique'],
     'asia': ['Le Dessous des Cartes'],
 
-    // Science subtopics
-    'physics': ['ScienceEtonnante', 'Epsiloon'],
-    'biology': ['Epsiloon', 'The Conversation'],
+    // Science subtopics (merged physics + biology)
+    'science': ['ScienceEtonnante', 'Epsiloon', 'The Conversation'],
     'space': ['ScienceEtonnante', 'Epsiloon'],
     'health': ['The Conversation'],
 
     // Culture subtopics
     'philosophy': ['Philosophie Magazine', 'Le 1 Hebdo'],
     'history': ['Le Dessous des Cartes', 'The Conversation'],
-    'arts': ['Le 1 Hebdo'],
+    'art': ['Le 1 Hebdo'],
 
-    // Politics subtopics
-    'french-politics': ['Le Monde', 'Mediapart', 'Le Figaro'],
-    'elections': ['Politico Europe', 'Le Monde'],
+    // Politics subtopics (merged french-politics + elections)
+    'politics': ['Le Monde', 'Mediapart', 'Le Figaro', 'Politico Europe'],
 
     // Society subtopics
-    'social-justice': ['Mediapart', 'Libération', 'Blast'],
+    'justice': ['Mediapart', 'Libération', 'Blast'],
     'education': ['The Conversation', 'France Inter'],
     'media': ['Mécaniques du Complot', 'Blast'],
 
@@ -108,10 +112,13 @@ class ThemeToSourcesMapping {
     'biodiversity': ['Reporterre'],
     'energy': ['Sismique', 'Bon Pote'],
 
-    // Economy subtopics
+    // Economy subtopics (merged macroeconomics)
     'finance': ['Heu?reka', 'Les Échos', 'Guerres de Business'],
-    'labor': ['Alternatives Économiques'],
-    'macroeconomics': ['Heu?reka', 'Nouveau Départ'],
+    'economy': ['Heu?reka', 'Nouveau Départ'],
+    'work': ['Alternatives Économiques'],
+
+    // Sport subtopics
+    'sport': ["L'Équipe", 'RMC Sport', 'BasketUSA'],
   };
 
   /// Calcule les sources recommandées en fonction des thèmes et sous-thèmes sélectionnés.

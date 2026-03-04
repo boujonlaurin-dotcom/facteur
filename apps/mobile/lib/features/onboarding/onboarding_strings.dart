@@ -139,6 +139,7 @@ class OnboardingStrings {
   static const String themeSociety = 'Société';
   static const String themeEnvironment = 'Environnement';
   static const String themeEconomy = 'Économie';
+  static const String themeSport = 'Sport';
 
   // Sources Reaction (after source selection)
   static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
