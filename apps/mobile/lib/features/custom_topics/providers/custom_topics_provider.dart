@@ -56,26 +56,36 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       return [];
     }
 
+    final sw = Stopwatch()..start();
     final repo = ref.read(topicRepositoryProvider);
-    return repo.getTopics();
+    final topics = await repo.getTopics();
+    sw.stop();
+    print('[PERF] customTopicsProvider.build(): ${sw.elapsedMilliseconds}ms (${topics.length} topics)');
+    return topics;
   }
 
   /// Follow a new topic by name.
   /// Optimistic: adds a placeholder immediately, replaces with server response.
-  Future<UserTopicProfile?> followTopic(String name) => _serialized(() async {
+  /// [slugParent] allows immediate slug matching before the API responds.
+  Future<UserTopicProfile?> followTopic(String name, {String? slugParent}) =>
+      _serialized(() async {
     final repo = ref.read(topicRepositoryProvider);
 
     // Snapshot current state for rollback
     final previousState = state;
 
-    // Optimistic: create a placeholder entry
+    // Optimistic: create a placeholder entry with slugParent for correct matching
     final placeholder = UserTopicProfile(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
+      slugParent: slugParent,
     );
 
     if (state.hasValue) {
       state = AsyncData([...state.value!, placeholder]);
+    } else {
+      // Provider still loading — start with placeholder so UI updates immediately
+      state = AsyncData([placeholder]);
     }
 
     try {
@@ -87,6 +97,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
             .map((t) => t.id == placeholder.id ? created : t)
             .toList();
         state = AsyncData(updated);
+      } else {
+        state = AsyncData([created]);
       }
       return created;
     } catch (e) {

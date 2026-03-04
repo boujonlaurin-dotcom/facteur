@@ -155,7 +155,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
 
       if (mounted) {
         NotificationService.showSuccess(
-            'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+            'Source ajoutée ! Ses contenus apparaîtront dans ton feed.');
         ref.invalidate(userSourcesProvider);
         context.pop();
       }
@@ -199,7 +199,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         await repository.trustSource(source.id);
         if (mounted) {
           NotificationService.showSuccess(
-              'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+              'Source ajoutée ! Ses contenus apparaîtront dans ton feed.');
         }
       }
       if (mounted && _searchResults != null) {

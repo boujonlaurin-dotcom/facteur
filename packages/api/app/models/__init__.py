@@ -4,6 +4,7 @@ from app.models.analytics import AnalyticsEvent
 from app.models.classification_queue import ClassificationQueue
 from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
+from app.models.curation import CurationAnnotation
 from app.models.daily_digest import DailyDigest
 from app.models.daily_top3 import DailyTop3
 from app.models.digest_completion import DigestCompletion
@@ -55,4 +56,6 @@ __all__ = [
     "FailedSourceAttempt",
     # Custom Topics (Epic 11)
     "UserTopicProfile",
+    # Curation (Backoffice)
+    "CurationAnnotation",
 ]

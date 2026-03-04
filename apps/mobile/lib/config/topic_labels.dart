@@ -72,18 +72,18 @@ String getTopicLabel(String slug) {
 }
 
 /// Mapping slug → macro-theme group label.
-/// Aligné sur TOPIC_TO_THEME du backend (topic_theme_mapper.py).
-/// Source de vérité : packages/api/app/services/ml/topic_theme_mapper.py
+/// Mirrors backend's TOPIC_TO_THEME (topic_theme_mapper.py).
+/// Labels match feed filter bar (_themeMetadata in theme_filters_provider.dart).
 const Map<String, String> _slugToMacroTheme = {
-  // Tech
-  'ai': 'Tech',
-  'tech': 'Tech',
-  'cybersecurity': 'Tech',
-  'gaming': 'Tech',
-  'privacy': 'Tech',
-  // Science
-  'space': 'Science',
-  'science': 'Science',
+  // Technologie
+  'ai': 'Technologie',
+  'tech': 'Technologie',
+  'cybersecurity': 'Technologie',
+  'gaming': 'Technologie',
+  'privacy': 'Technologie',
+  // Sciences
+  'space': 'Sciences',
+  'science': 'Sciences',
   // Société
   'work': 'Société',
   'education': 'Société',
@@ -126,31 +126,56 @@ const Map<String, String> _slugToMacroTheme = {
   'gastronomy': 'Culture',
   'history': 'Culture',
   'philosophy': 'Culture',
-  // International
-  'geopolitics': 'International',
-  'europe': 'International',
-  'usa': 'International',
-  'africa': 'International',
-  'asia': 'International',
-  'middleeast': 'International',
+  // Géopolitique
+  'geopolitics': 'Géopolitique',
+  'europe': 'Géopolitique',
+  'usa': 'Géopolitique',
+  'africa': 'Géopolitique',
+  'asia': 'Géopolitique',
+  'middleeast': 'Géopolitique',
   // Sport
   'sport': 'Sport',
 };
 
-/// Ordered list of macro-theme group labels (9 thèmes backend).
+/// Ordered list of macro-theme group labels (matches backend's 9 themes).
 const List<String> macroThemeOrder = [
-  'Tech',
-  'Science',
+  'Technologie',
+  'Sciences',
   'Société',
   'Politique',
   'Économie',
   'Environnement',
   'Culture',
-  'International',
+  'Géopolitique',
   'Sport',
 ];
 
 /// Returns the macro-theme group label for a topic slug, or null if unknown.
 String? getTopicMacroTheme(String slug) {
   return _slugToMacroTheme[slug.toLowerCase()];
+}
+
+/// Emoji for each macro-theme group label.
+const Map<String, String> _macroThemeEmoji = {
+  'Technologie': '💻',
+  'Sciences': '🔬',
+  'Société': '👥',
+  'Politique': '🏛️',
+  'Économie': '💰',
+  'Environnement': '🌿',
+  'Culture': '🎨',
+  'Géopolitique': '🌍',
+  'Sport': '⚽',
+};
+
+/// Returns the emoji for a macro-theme label, or empty string if unknown.
+String getMacroThemeEmoji(String macroThemeLabel) {
+  return _macroThemeEmoji[macroThemeLabel] ?? '';
+}
+
+/// Returns all topic slugs belonging to a given macro theme.
+List<String> getSlugsForMacroTheme(String macroTheme) {
+  return topicSlugToLabel.keys
+      .where((slug) => getTopicMacroTheme(slug) == macroTheme)
+      .toList();
 }

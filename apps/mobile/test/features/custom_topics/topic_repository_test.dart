@@ -18,7 +18,7 @@ void main() {
   group('getTopics', () {
     test('returns list of UserTopicProfile on success', () async {
       when(() => mockApiClient.get(
-            'personalization/topics',
+            'personalization/topics/',
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),
           )).thenAnswer((_) async => [
@@ -42,7 +42,7 @@ void main() {
 
     test('returns empty list when response is not a list', () async {
       when(() => mockApiClient.get(
-            'personalization/topics',
+            'personalization/topics/',
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),
           )).thenAnswer((_) async => {'error': 'unexpected format'});
@@ -53,7 +53,7 @@ void main() {
 
     test('returns empty list for empty array', () async {
       when(() => mockApiClient.get(
-            'personalization/topics',
+            'personalization/topics/',
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),
           )).thenAnswer((_) async => []);
@@ -64,7 +64,7 @@ void main() {
 
     test('rethrows DioException on API failure', () async {
       when(() => mockApiClient.get(
-            'personalization/topics',
+            'personalization/topics/',
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),
           )).thenThrow(DioException(
@@ -80,7 +80,7 @@ void main() {
   group('followTopic', () {
     test('returns LLM-enriched UserTopicProfile on success', () async {
       when(() => mockApiClient.post(
-            'personalization/topics',
+            'personalization/topics/',
             body: {'name': 'Mobilite douce'},
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),
@@ -104,7 +104,7 @@ void main() {
 
     test('rethrows DioException on 409 conflict (duplicate)', () async {
       when(() => mockApiClient.post(
-            'personalization/topics',
+            'personalization/topics/',
             body: {'name': 'IA'},
             queryParameters: any(named: 'queryParameters'),
             options: any(named: 'options'),

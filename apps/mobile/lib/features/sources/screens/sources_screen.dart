@@ -204,13 +204,6 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 ),
               ),
 
-              // Theme filter chips
-              _buildThemeFilterRow(allSources, colors),
-              const SizedBox(height: 4),
-              // Type filter chips
-              _buildTypeFilterRow(allSources, colors),
-              const SizedBox(height: 8),
-
               Expanded(
                 child: noResults
                     ? Center(
