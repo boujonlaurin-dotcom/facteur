@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     String,
@@ -139,6 +140,10 @@ class UserSource(Base):
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
+    )
+    # Source weighting: explicit priority multiplier (0.5=less, 1.0=normal, 2.0=more)
+    priority_multiplier: Mapped[float] = mapped_column(
+        Float, default=1.0, server_default="1.0"
     )
 
     # Relations
