@@ -82,9 +82,9 @@ class RecommendationService:
         # 1. Fetch user context in parallel using separate sessions
         # Each query gets its own session from the pool to avoid AsyncSession
         # concurrency issues while cutting ~800ms of sequential round-trips.
-        from sqlalchemy.orm import joinedload
-
         from datetime import date as date_module
+
+        from sqlalchemy.orm import joinedload
 
         from app.database import async_session_maker
         from app.models.daily_digest import DailyDigest
