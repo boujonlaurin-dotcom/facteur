@@ -116,7 +116,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Suivi'), findsOneWidget);
-      expect(find.text('Priorite :'), findsOneWidget);
+      expect(find.text('Priorité :'), findsOneWidget);
     });
 
     testWidgets('follow button calls followTopic on provider',
@@ -160,7 +160,7 @@ void main() {
 
       expect(find.text('Aucun article disponible'), findsOneWidget);
       expect(
-        find.textContaining('apparaitront ici'),
+        find.textContaining('apparaîtront ici'),
         findsOneWidget,
       );
     });

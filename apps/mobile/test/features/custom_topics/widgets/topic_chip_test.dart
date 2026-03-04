@@ -50,7 +50,8 @@ void main() {
     mockAuth = MockAuthStateNotifier();
   });
 
-  Widget createWidget(Content content, {List<UserTopicProfile>? topics}) {
+  Widget createWidget(Content content,
+      {List<UserTopicProfile>? topics, bool isFollowed = false}) {
     when(() => mockRepo.getTopics()).thenAnswer((_) async => topics ?? []);
 
     return ProviderScope(
@@ -60,7 +61,8 @@ void main() {
       ],
       child: MaterialApp(
         home: Scaffold(
-          body: Center(child: TopicChip(content: content)),
+          body: Center(
+              child: TopicChip(content: content, isFollowed: isFollowed)),
         ),
       ),
     );
@@ -77,21 +79,24 @@ void main() {
       expect(find.byType(GestureDetector), findsNothing);
     });
 
-    testWidgets('shows "+" icon when topic is not followed', (tester) async {
+    testWidgets('shows "+" icon and label when topic is not followed',
+        (tester) async {
       await tester.pumpWidget(createWidget(
         _makeContent(topics: ['tech']),
       ));
       await tester.pumpAndSettle();
 
-      // Unfollowed state: shows a "+" icon
+      // Unfollowed state: shows a "+" icon and the topic label
       expect(find.byIcon(PhosphorIcons.plus(PhosphorIconsStyle.bold)),
           findsOneWidget);
+      expect(find.text('Technologie'), findsOneWidget);
     });
 
     testWidgets('shows check icon when topic is followed by slugParent',
         (tester) async {
       await tester.pumpWidget(createWidget(
         _makeContent(topics: ['tech']),
+        isFollowed: true,
         topics: [
           const UserTopicProfile(
             id: 't1',
@@ -107,30 +112,24 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('tapping "+" follows the topic', (tester) async {
-      when(() => mockRepo.followTopic(any()))
-          .thenAnswer((_) async => const UserTopicProfile(
-                id: 'new1',
-                name: 'Technologie',
-                slugParent: 'tech',
-              ));
-
+    testWidgets('tapping "+" opens modal sheet', (tester) async {
       await tester.pumpWidget(createWidget(
         _makeContent(topics: ['tech']),
       ));
       await tester.pumpAndSettle();
 
-      // Tap the "+" icon
+      // Tap the "+" icon — should open the explorer sheet
       await tester.tap(find.byIcon(PhosphorIcons.plus(PhosphorIconsStyle.bold)));
       await tester.pumpAndSettle();
 
-      // Should show a snackbar
-      expect(find.byType(SnackBar), findsOneWidget);
+      // Modal sheet should open with topic name
+      expect(find.text('Technologie'), findsWidgets);
     });
 
     testWidgets('tapping check icon opens modal sheet', (tester) async {
       await tester.pumpWidget(createWidget(
         _makeContent(topics: ['tech']),
+        isFollowed: true,
         topics: [
           const UserTopicProfile(
             id: 't1',

@@ -1,4 +1,6 @@
+import asyncio
 import datetime
+import time
 from uuid import UUID
 
 import structlog
@@ -38,6 +40,7 @@ from app.services.recommendation.scoring_engine import ScoringContext, ScoringEn
 class RecommendationService:
     def __init__(self, session: AsyncSession):
         self.session = session
+        self.user_custom_topics: list = []  # Populated by get_feed() for reuse by caller
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -76,45 +79,80 @@ class RecommendationService:
         3. Appliquer la pénalité de fatigue de source (Diversité).
         4. Trier et paginer.
         """
-        # 1. Fetch user profile with interests and preferences
+        # 1. Fetch user context in parallel using separate sessions
+        # Each query gets its own session from the pool to avoid AsyncSession
+        # concurrency issues while cutting ~800ms of sequential round-trips.
         from sqlalchemy.orm import joinedload
 
+        from datetime import date as date_module
+
+        from app.database import async_session_maker
+        from app.models.daily_digest import DailyDigest
         from app.models.user_personalization import UserPersonalization
 
-        # Execute sequentially because SQLAlchemy AsyncSession is not thread-safe for concurrent operations
-        user_profile = await self.session.scalar(
+        t0 = time.monotonic()
+
+        profile_stmt = (
             select(UserProfile)
             .options(
                 joinedload(UserProfile.interests), joinedload(UserProfile.preferences)
             )
             .where(UserProfile.user_id == user_id)
         )
-
-        followed_sources_res = await self.session.execute(
-            select(UserSource.source_id, UserSource.is_custom).where(
-                UserSource.user_id == user_id
-            )
+        sources_stmt = select(UserSource.source_id, UserSource.is_custom).where(
+            UserSource.user_id == user_id
+        )
+        subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
+        personalization_stmt = select(UserPersonalization).where(
+            UserPersonalization.user_id == user_id
+        )
+        digest_stmt = select(DailyDigest).where(
+            DailyDigest.user_id == user_id,
+            DailyDigest.target_date == date_module.today(),
         )
 
-        # We need followed_source_ids, subtopics and personalization
+        async def _pread_scalar(stmt):
+            async with async_session_maker() as s:
+                return await s.scalar(stmt)
+
+        async def _pread_rows(stmt):
+            async with async_session_maker() as s:
+                return (await s.execute(stmt)).all()
+
+        async def _pread_scalars_all(stmt):
+            async with async_session_maker() as s:
+                return (await s.scalars(stmt)).all()
+
+        (
+            user_profile,
+            followed_sources_rows,
+            subtopics_rows,
+            personalization,
+            digest_row,
+        ) = await asyncio.gather(
+            _pread_scalar(profile_stmt),
+            _pread_rows(sources_stmt),
+            _pread_scalars_all(subtopics_stmt),
+            _pread_scalar(personalization_stmt),
+            _pread_scalar(digest_stmt),
+        )
+
+        t1 = time.monotonic()
+        logger.info("feed_phase1_context", duration_ms=round((t1 - t0) * 1000))
+
+        # Process results
         followed_source_ids = set()
         custom_source_ids = set()
-        for row in followed_sources_res:
+        for row in followed_sources_rows:
             followed_source_ids.add(row.source_id)
             if row.is_custom:
                 custom_source_ids.add(row.source_id)
 
         user_subtopics = set()
         user_subtopic_weights: dict[str, float] = {}
-        subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
-        subtopics_rows = (await self.session.scalars(subtopics_stmt)).all()
         for row in subtopics_rows:
             user_subtopics.add(row.topic_slug)
             user_subtopic_weights[row.topic_slug] = row.weight
-
-        personalization = await self.session.scalar(
-            select(UserPersonalization).where(UserPersonalization.user_id == user_id)
-        )
 
         user_interests = set()
         user_interest_weights = {}
@@ -171,19 +209,9 @@ class RecommendationService:
 
             return results
 
-        # 2. Get today's digest content_ids to exclude from feed (Story 10.20)
-        from datetime import date as date_module
-
-        from app.models.daily_digest import DailyDigest
-
+        # 2. Process digest exclusion (already fetched in Phase 1)
         digest_content_ids: list[UUID] = []
         try:
-            digest_row = await self.session.scalar(
-                select(DailyDigest).where(
-                    DailyDigest.user_id == user_id,
-                    DailyDigest.target_date == date_module.today(),
-                )
-            )
             if digest_row and digest_row.items:
                 digest_content_ids = [
                     UUID(item["content_id"]) for item in digest_row.items
@@ -221,9 +249,10 @@ class RecommendationService:
         # Convert source_id string to UUID if provided
         source_uuid = UUID(source_id) if source_id else None
 
+        t2 = time.monotonic()
         candidates = await self._get_candidates(
             user_id,
-            limit_candidates=500,
+            limit_candidates=200,
             content_type=content_type,
             mode=mode,
             followed_source_ids=followed_source_ids,
@@ -264,25 +293,59 @@ class RecommendationService:
             return paginated
 
         # 3. Score Candidates using ScoringEngine
+        t3 = time.monotonic()
+        logger.info("feed_phase2_candidates", duration_ms=round((t3 - t2) * 1000), count=len(candidates))
+
         scored_candidates = []
         now = datetime.datetime.now(datetime.UTC)
 
-        # Compute source affinity from past interactions
-        source_affinity_scores = await self._compute_source_affinity(user_id)
-
-        # Fetch impression data for candidates (Feed Refresh feature)
-        impression_data = await self.fetch_impression_data(user_id, candidates)
-
-        # Epic 11: Load user custom topics for scoring
+        # Phase 3: Parallel scoring context queries (separate sessions)
         from app.models.user_topic_profile import UserTopicProfile
 
-        user_custom_topics = list(
-            (
-                await self.session.scalars(
-                    select(UserTopicProfile).where(UserTopicProfile.user_id == user_id)
-                )
-            ).all()
+        source_affinity_stmt = self._source_affinity_stmt(user_id)
+        impression_ids = [c.id for c in candidates]
+        custom_topics_stmt = select(UserTopicProfile).where(
+            UserTopicProfile.user_id == user_id
         )
+
+        async def _pread_source_affinity():
+            async with async_session_maker() as s:
+                rows = (await s.execute(source_affinity_stmt)).all()
+                return self._normalize_affinity(rows)
+
+        async def _pread_impressions():
+            if not impression_ids:
+                return {}
+            async with async_session_maker() as s:
+                stmt = select(
+                    UserContentStatus.content_id,
+                    UserContentStatus.last_impressed_at,
+                    UserContentStatus.manually_impressed,
+                ).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.content_id.in_(impression_ids),
+                    UserContentStatus.last_impressed_at.isnot(None),
+                )
+                rows = (await s.execute(stmt)).all()
+                return {
+                    row.content_id: (row.last_impressed_at, row.manually_impressed)
+                    for row in rows
+                }
+
+        (
+            source_affinity_scores,
+            impression_data,
+            user_custom_topics_rows,
+        ) = await asyncio.gather(
+            _pread_source_affinity(),
+            _pread_impressions(),
+            _pread_scalars_all(custom_topics_stmt),
+        )
+        user_custom_topics = list(user_custom_topics_rows)
+        self.user_custom_topics = user_custom_topics  # Expose for caller reuse
+
+        t4 = time.monotonic()
+        logger.info("feed_phase3_scoring_context", duration_ms=round((t4 - t3) * 1000))
 
         # Context creation
         context = ScoringContext(
@@ -308,6 +371,9 @@ class RecommendationService:
         for content in candidates:
             score = self.scoring_engine.compute_score(content, context)
             scored_candidates.append((content, score))
+
+        t5 = time.monotonic()
+        logger.info("feed_phase4_scoring", duration_ms=round((t5 - t4) * 1000), candidates=len(candidates))
 
         # 4. Sort by score DESC
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -622,6 +688,8 @@ class RecommendationService:
                 content.hidden_reason = st.hidden_reason if st else None
                 content.status = st.status if st else ContentStatus.UNSEEN
 
+        t_end = time.monotonic()
+        logger.info("feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result))
         return result
 
     async def _get_candidates(
@@ -807,15 +875,11 @@ class RecommendationService:
 
         return candidates_list
 
-    async def _compute_source_affinity(self, user_id: UUID) -> dict[UUID, float]:
-        """Compute source affinity scores from past interactions.
-
-        Score brut = likes * 3 + saves * 2 + consumed * 1
-        Normalisé en 0.0-1.0 (min-max sur les sources de l'utilisateur).
-        """
+    def _source_affinity_stmt(self, user_id: UUID):
+        """Build the source affinity query statement (reusable for parallel execution)."""
         from sqlalchemy import case
 
-        stmt = (
+        return (
             select(
                 Content.source_id,
                 func.sum(
@@ -831,24 +895,29 @@ class RecommendationService:
             .group_by(Content.source_id)
         )
 
-        rows = (await self.session.execute(stmt)).all()
-
+    @staticmethod
+    def _normalize_affinity(rows) -> dict[UUID, float]:
+        """Normalize source affinity rows to 0.0-1.0 range."""
         if not rows:
             return {}
-
         scores = {
             row.source_id: float(row.raw_score) for row in rows if row.raw_score > 0
         }
-
         if not scores:
             return {}
-
-        # Normalisation min-max → 0.0 à 1.0
         max_score = max(scores.values())
         if max_score == 0:
             return {}
-
         return {sid: score / max_score for sid, score in scores.items()}
+
+    async def _compute_source_affinity(self, user_id: UUID) -> dict[UUID, float]:
+        """Compute source affinity scores from past interactions.
+
+        Score brut = likes * 3 + saves * 2 + consumed * 1
+        Normalisé en 0.0-1.0 (min-max sur les sources de l'utilisateur).
+        """
+        rows = (await self.session.execute(self._source_affinity_stmt(user_id))).all()
+        return self._normalize_affinity(rows)
 
     async def fetch_impression_data(
         self, user_id: UUID, candidates: list[Content]

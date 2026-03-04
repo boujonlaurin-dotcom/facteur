@@ -165,19 +165,19 @@ void main() {
       ));
       expect(find.text('Suivi'), findsOneWidget);
 
-      // Cran 2: "Interesse"
+      // Cran 2: "Intéressé"
       await tester.pumpWidget(createWidget(
         currentMultiplier: 1.0,
         onChanged: (_) {},
       ));
-      expect(find.text('Interesse'), findsOneWidget);
+      expect(find.text('Intéressé'), findsOneWidget);
 
-      // Cran 3: "Fort interet"
+      // Cran 3: "Fort intérêt"
       await tester.pumpWidget(createWidget(
         currentMultiplier: 2.0,
         onChanged: (_) {},
       ));
-      expect(find.text('Fort interet'), findsOneWidget);
+      expect(find.text('Fort intérêt'), findsOneWidget);
     });
 
     testWidgets('widget fits within 100px width constraint',
