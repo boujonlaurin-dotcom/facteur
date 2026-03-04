@@ -89,6 +89,8 @@ class Content(Base):
     is_paid: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # Sérénité: article positif/constructif détecté par ML
+    is_serene: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     # In-App Reading: content quality signal ('full', 'partial', 'none')
     content_quality: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default=None

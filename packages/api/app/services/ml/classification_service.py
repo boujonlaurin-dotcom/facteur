@@ -8,6 +8,7 @@ Benefits: ~3000+ articles/hour (vs ~150), better quality (contextual), no local 
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 import httpx
 import structlog
@@ -17,7 +18,7 @@ from app.config import get_settings
 log = structlog.get_logger()
 
 
-# 50 topic slugs in the Facteur taxonomy
+# 51 topic slugs in the Facteur taxonomy
 VALID_TOPIC_SLUGS: set[str] = {
     # Tech & Science
     "ai",
@@ -80,7 +81,7 @@ VALID_TOPIC_SLUGS: set[str] = {
     "factcheck",
 }
 
-# Slug -> French label for the LLM prompt
+# Slug -> French label (used by topic_selector, custom_topics, topic_enrichment)
 SLUG_TO_LABEL: dict[str, str] = {
     "ai": "Intelligence artificielle",
     "tech": "Technologie",
@@ -135,24 +136,101 @@ SLUG_TO_LABEL: dict[str, str] = {
     "factcheck": "Fact-checking",
 }
 
-# Build the topic list for the prompt (sorted for consistency)
-_TOPIC_LIST_FOR_PROMPT = "\n".join(
-    f"- {slug}: {label}" for slug, label in sorted(SLUG_TO_LABEL.items())
-)
+CLASSIFICATION_SYSTEM_PROMPT = """\
+Tu es un classificateur expert d'articles de presse francophone.
 
-CLASSIFICATION_SYSTEM_PROMPT = f"""Tu es un classificateur d'articles de presse francophone.
+## TACHE
+Pour chaque article, assigne 1 à 3 topics depuis la taxonomie ci-dessous.
+Utilise UNIQUEMENT les slugs anglais. Choisis le topic le PLUS SPECIFIQUE possible.
 
-Pour chaque article, tu dois assigner 1 à 3 topics parmi cette liste prédéfinie (utilise UNIQUEMENT les slugs) :
+## TAXONOMIE (51 topics groupés par thème)
 
-{_TOPIC_LIST_FOR_PROMPT}
+### Tech & Science
+- ai: Intelligence artificielle, machine learning, ChatGPT, LLM — PAS la tech en général
+- tech: Technologie, smartphones, apps, gadgets — PAS l'IA spécifiquement
+- cybersecurity: Hacking, ransomware, failles de sécurité
+- gaming: Jeux vidéo, consoles, esport
+- space: Espace, astronomie, NASA, fusées
+- science: Recherche scientifique, découvertes, biologie, physique — PAS le climat
+- privacy: RGPD, surveillance, vie privée numérique
 
-Règles :
-- Retourne UNIQUEMENT les slugs, séparés par des virgules (ex: "politics, economy, europe")
-- Maximum 3 topics par article
-- Choisis les topics les plus spécifiques et pertinents
-- Le premier topic doit être le plus pertinent
-- Ne retourne JAMAIS un slug qui n'est pas dans la liste ci-dessus
-- Réponds UNIQUEMENT avec les slugs, rien d'autre"""
+### Société
+- politics: Politique intérieure française, lois, partis — PAS relations internationales
+- economy: Macroéconomie, PIB, inflation, chômage — PAS finance perso ni startups
+- work: Emploi, télétravail, grèves, droit du travail
+- education: École, université, formation, Parcoursup
+- health: Santé publique, maladies, hôpitaux, médicaments, santé mentale
+- justice: Procès, tribunaux, police, droits fondamentaux
+- immigration: Immigration, migrants, réfugiés, politique migratoire — UNIQUEMENT si le sujet EST l'immigration
+- inequality: Inégalités sociales, pauvreté, précarité
+- feminism: Féminisme, égalité femmes-hommes, violences sexistes
+- lgbtq: Droits LGBTQ+, Pride, transidentité
+- religion: Religion, laïcité, spiritualité
+
+### Environnement
+- climate: Réchauffement climatique, CO2, GIEC — LE CLIMAT spécifiquement
+- environment: Pollution, déchets, écologie — PAS le climat spécifiquement
+- energy: Nucléaire, renouvelables, pétrole, transition énergétique
+- biodiversity: Espèces menacées, déforestation, écosystèmes
+- agriculture: Agriculture, PAC, pesticides, élevage
+- food: Alimentation, nutrition, sécurité alimentaire
+
+### Culture
+- cinema: Films, séries TV, Netflix, streaming vidéo, festivals
+- music: Artistes, concerts, albums
+- literature: Livres, romans, BD, manga
+- art: Art contemporain, expositions, musées
+- media: Journalisme, presse, audiovisuel, podcasts
+- fashion: Mode, haute couture, luxe
+- design: Design, architecture, urbanisme
+
+### Lifestyle
+- travel: Voyage, tourisme, destinations
+- gastronomy: Restaurants, chefs, recettes, vin
+- sport: TOUT le sport (football, JO, tennis, rugby, etc.)
+- wellness: Bien-être, méditation, yoga
+- family: Parentalité, enfants, natalité
+- relationships: Couple, rencontres, sexualité
+
+### Business
+- startups: Startups, levées de fonds, French Tech — PAS l'économie générale
+- finance: Bourse, investissement, crypto, épargne, banques
+- realestate: Immobilier, loyers, construction
+- entrepreneurship: Création d'entreprise, PME, management
+- marketing: Publicité, réseaux sociaux, influence
+
+### International (UNIQUEMENT quand la dimension internationale EST le sujet principal)
+- geopolitics: Conflits entre nations, guerres, diplomatie, ONU, OTAN — PAS un article qui mentionne un pays
+- europe: Union européenne, institutions EU, Brexit
+- usa: Politique/société américaine
+- africa: Actualité du continent africain
+- asia: Chine, Japon, Inde, Corée
+- middleeast: Israël-Palestine, Iran, Arabie saoudite
+
+### Autres
+- history: Histoire, commémorations, patrimoine
+- philosophy: Philosophie, éthique, débats d'idées
+- factcheck: Fact-checking, désinformation, fake news
+
+## SÉRÉNITÉ
+Pour chaque article, détermine "serene": true ou false.
+serene = true : sujet positif, neutre, culturel, scientifique, lifestyle, divertissement.
+serene = false : violence, guerre, attentat, meurtre, catastrophe, crise grave, agression, mort.
+En cas de doute, marque false.
+
+## RÈGLES CRITIQUES
+1. Article sur un produit tech (Samsung, iPhone) → "tech" PAS "asia"/"geopolitics"
+2. Article sur une série/film → "cinema" PAS "ai"/"tech"
+3. Article sur un sportif → "sport" PAS son pays d'origine
+4. Article médical → "health" PAS "science"
+5. "geopolitics" = UNIQUEMENT conflits/diplomatie entre nations
+6. Le nom de la source est un indice (L'Équipe → sport) mais le CONTENU prime
+7. Assigne 2-3 topics si l'article couvre clairement plusieurs sujets
+8. Le premier topic est le PLUS pertinent
+
+## FORMAT
+Réponds en JSON array. Chaque élément : {"topics": ["slug1", "slug2"], "serene": true/false}
+Pas de texte avant ou après."""
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
@@ -194,25 +272,24 @@ class ClassificationService:
         self,
         title: str,
         description: str = "",
+        source_name: str = "",
         top_k: int = 3,
-    ) -> list[str]:
+    ) -> dict:
         """
         Classifie un article basé sur son titre et sa description via Mistral API.
 
-        Args:
-            title: Titre de l'article
-            description: Description/résumé optionnel
-            top_k: Nombre maximum de topics à retourner
-
         Returns:
-            Liste des slugs de topics (ex: ['ai', 'tech', 'startups'])
+            Dict avec 'topics' (list[str]) et 'serene' (bool | None)
         """
         if not self._ready:
-            return []
+            return {"topics": [], "serene": None}
 
         text = f"{title}. {description}".strip() if description else title
         if not text:
-            return []
+            return {"topics": [], "serene": None}
+
+        if source_name:
+            text = f"[Source: {source_name}] {text}"
 
         try:
             client = self._get_client()
@@ -225,7 +302,7 @@ class ClassificationService:
                         {"role": "user", "content": text},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 50,
+                    "max_tokens": 100,
                 },
             )
             response.raise_for_status()
@@ -234,60 +311,51 @@ class ClassificationService:
             choices = data.get("choices") or []
             if not choices:
                 log.warning("classification_service.empty_choices", title=title[:100])
-                return []
+                return {"topics": [], "serene": None}
             raw_answer = (choices[0].get("message") or {}).get("content") or ""
             raw_answer = raw_answer.strip()
             if not raw_answer:
                 log.warning("classification_service.empty_content", title=title[:100])
-                return []
+                return {"topics": [], "serene": None}
 
-            topics = self._parse_topics(raw_answer, top_k)
+            result = self._parse_topics(raw_answer, top_k)
 
             log.debug(
                 "classification_service.classified",
                 text=text[:100],
                 raw=raw_answer,
-                topics=topics,
+                topics=result.get("topics"),
+                serene=result.get("serene"),
             )
 
-            return topics
+            return result
 
         except Exception as e:
             log.error(
                 "classification_service.classify_error", error=str(e), title=title[:100]
             )
-            return []
+            return {"topics": [], "serene": None}
 
     async def classify_batch_async(
         self,
         items: list[dict],
         top_k: int = 3,
-    ) -> list[list[str]]:
+    ) -> list[dict]:
         """
         Classifie un batch d'articles en un seul appel API.
 
         Args:
-            items: Liste de dicts avec 'title' et 'description'
+            items: Liste de dicts avec 'title', 'description', et optionnel 'source_name'
             top_k: Nombre maximum de topics par article
 
         Returns:
-            Liste de listes de slugs (même ordre que items)
+            Liste de dicts avec 'topics' (list[str]) et 'serene' (bool | None)
         """
+        empty_results = [{"topics": [], "serene": None} for _ in items]
         if not self._ready or not items:
-            return [[] for _ in items]
+            return empty_results
 
-        # Build batch prompt
-        articles_text = "\n\n".join(
-            f"[Article {i + 1}]\n{item['title']}. {item.get('description', '')}"
-            for i, item in enumerate(items)
-        )
-
-        batch_prompt = (
-            f"Classifie chacun de ces {len(items)} articles. "
-            "Réponds en JSON array, un élément par article, chaque élément étant "
-            'un array de slugs. Exemple pour 2 articles: [["politics", "europe"], ["ai", "tech"]]\n\n'
-            f"{articles_text}"
-        )
+        batch_prompt = self._build_batch_prompt(items)
 
         try:
             client = self._get_client()
@@ -300,7 +368,7 @@ class ClassificationService:
                         {"role": "user", "content": batch_prompt},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 30 * len(items),
+                    "max_tokens": 60 * len(items),
                 },
             )
             response.raise_for_status()
@@ -311,21 +379,23 @@ class ClassificationService:
                 log.warning(
                     "classification_service.batch_empty_choices", count=len(items)
                 )
-                return [[] for _ in items]
+                return empty_results
             raw_answer = (choices[0].get("message") or {}).get("content") or ""
             raw_answer = raw_answer.strip()
             if not raw_answer:
                 log.warning(
                     "classification_service.batch_empty_content", count=len(items)
                 )
-                return [[] for _ in items]
+                return empty_results
 
             results = self._parse_batch_response(raw_answer, len(items), top_k)
+
+            self._check_distribution(results)
 
             log.info(
                 "classification_service.batch_classified",
                 count=len(items),
-                successful=sum(1 for r in results if r),
+                successful=sum(1 for r in results if r.get("topics")),
             )
 
             return results
@@ -334,42 +404,135 @@ class ClassificationService:
             log.error(
                 "classification_service.batch_error", error=str(e), count=len(items)
             )
-            return [[] for _ in items]
+            return empty_results
 
-    def _parse_topics(self, raw: str, top_k: int) -> list[str]:
-        """Parse la réponse du LLM en liste de slugs validés."""
-        # Clean up common LLM artifacts
-        raw = raw.strip().strip('"').strip("'").strip("`")
+    def _build_batch_prompt(self, items: list[dict]) -> str:
+        """Build the user prompt for batch classification."""
+        parts = []
+        for i, item in enumerate(items):
+            title = item.get("title", "")
+            desc = item.get("description", "") or ""
+            if len(desc) > 200:
+                desc = desc[:200] + "..."
+            source_name = item.get("source_name", "")
 
-        slugs = [s.strip().lower() for s in raw.split(",")]
-        valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-        return valid[:top_k]
+            header = f"[{i + 1}]"
+            if source_name:
+                header += f" [Source: {source_name}]"
 
-    def _parse_batch_response(
-        self, raw: str, expected_count: int, top_k: int
-    ) -> list[list[str]]:
-        """Parse la réponse batch du LLM (JSON array of arrays)."""
+            text = f"{title}. {desc}".strip() if desc else title
+            parts.append(f"{header}\n{text}")
+
+        articles_text = "\n\n".join(parts)
+
+        return (
+            f"Classifie chacun de ces {len(items)} articles.\n"
+            f"Réponds en JSON array de exactement {len(items)} éléments.\n"
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false}, '
+            '{"topics": ["ai", "tech"], "serene": true}]\n\n'
+            f"{articles_text}"
+        )
+
+    def _parse_topics(self, raw: str, top_k: int) -> dict:
+        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics et serene."""
+        raw = raw.strip()
+
+        # Try JSON parse first (new format: single object or array with one element)
         try:
-            # Try JSON parse first
             parsed = json.loads(raw)
-            if isinstance(parsed, list) and len(parsed) == expected_count:
-                results = []
-                for item in parsed:
-                    if isinstance(item, list):
-                        valid = [
-                            s.strip().lower()
-                            for s in item
-                            if isinstance(s, str)
-                            and s.strip().lower() in VALID_TOPIC_SLUGS
-                        ]
-                        results.append(valid[:top_k])
-                    else:
-                        results.append([])
-                return results
+            if isinstance(parsed, dict) and "topics" in parsed:
+                topics = [
+                    s.strip().lower()
+                    for s in parsed["topics"]
+                    if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
+                ]
+                serene = parsed.get("serene")
+                if not isinstance(serene, bool):
+                    serene = None
+                return {"topics": topics[:top_k], "serene": serene}
+            if (
+                isinstance(parsed, list)
+                and len(parsed) == 1
+                and isinstance(parsed[0], dict)
+            ):
+                item = parsed[0]
+                topics = [
+                    s.strip().lower()
+                    for s in item.get("topics", [])
+                    if isinstance(s, str) and s.strip().lower() in VALID_TOPIC_SLUGS
+                ]
+                serene = item.get("serene")
+                if not isinstance(serene, bool):
+                    serene = None
+                return {"topics": topics[:top_k], "serene": serene}
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # Fallback: try line-by-line parsing
+        # Fallback: comma-separated slugs (old format)
+        clean = raw.strip('"').strip("'").strip("`")
+        slugs = [s.strip().lower() for s in clean.split(",")]
+        valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
+        return {"topics": valid[:top_k], "serene": None}
+
+    def _parse_batch_response(
+        self, raw: str, expected_count: int, top_k: int
+    ) -> list[dict]:
+        """Parse la réponse batch du LLM (JSON array of objects)."""
+        empty_results = [{"topics": [], "serene": None} for _ in range(expected_count)]
+
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                # Check count mismatch
+                if len(parsed) != expected_count:
+                    log.warning(
+                        "classification_service.batch_count_mismatch",
+                        expected=expected_count,
+                        got=len(parsed),
+                        raw=raw[:200],
+                    )
+                    return empty_results
+
+                # New format: array of objects with "topics" and "serene"
+                if parsed and isinstance(parsed[0], dict):
+                    results = []
+                    for item in parsed:
+                        if isinstance(item, dict) and "topics" in item:
+                            topics = [
+                                s.strip().lower()
+                                for s in item["topics"]
+                                if isinstance(s, str)
+                                and s.strip().lower() in VALID_TOPIC_SLUGS
+                            ]
+                            serene = item.get("serene")
+                            if not isinstance(serene, bool):
+                                serene = None
+                            results.append({"topics": topics[:top_k], "serene": serene})
+                        else:
+                            results.append({"topics": [], "serene": None})
+                    return results
+
+                # Fallback: old format (array of arrays), treat serene as None
+                if parsed and isinstance(parsed[0], list):
+                    log.info("classification_service.batch_old_format_fallback")
+                    results = []
+                    for item in parsed:
+                        if isinstance(item, list):
+                            valid = [
+                                s.strip().lower()
+                                for s in item
+                                if isinstance(s, str)
+                                and s.strip().lower() in VALID_TOPIC_SLUGS
+                            ]
+                            results.append({"topics": valid[:top_k], "serene": None})
+                        else:
+                            results.append({"topics": [], "serene": None})
+                    return results
+
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Fallback: line-by-line parsing
         log.warning("classification_service.batch_parse_fallback", raw=raw[:200])
         lines = [line.strip() for line in raw.strip().split("\n") if line.strip()]
         results = []
@@ -377,12 +540,33 @@ class ClassificationService:
             clean = line.strip("[]").strip()
             slugs = [s.strip().strip('"').strip("'").lower() for s in clean.split(",")]
             valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-            results.append(valid[:top_k])
+            results.append({"topics": valid[:top_k], "serene": None})
 
         while len(results) < expected_count:
-            results.append([])
+            results.append({"topics": [], "serene": None})
 
         return results
+
+    def _check_distribution(self, results: list[dict]) -> None:
+        """Log warning if >50% of batch shares the same primary topic."""
+        if len(results) < 2:
+            return
+
+        primary_topics = [r["topics"][0] for r in results if r.get("topics")]
+        if not primary_topics:
+            return
+
+        counts = Counter(primary_topics)
+        most_common_topic, most_common_count = counts.most_common(1)[0]
+
+        if most_common_count > len(results) / 2:
+            log.warning(
+                "classification_service.skewed_distribution",
+                topic=most_common_topic,
+                count=most_common_count,
+                total=len(results),
+                ratio=round(most_common_count / len(results), 2),
+            )
 
     def is_ready(self) -> bool:
         """Retourne True si le service est configuré et prêt."""

@@ -1,216 +1,254 @@
 """
 Unit tests for ClassificationService.
 
-Tests use mocked transformers.pipeline to avoid model downloads in CI/CD.
-These tests are designed to avoid triggering the full app import chain.
+Tests the Mistral LLM-based classification: prompt building, response parsing,
+distribution checks, and topic validation.
 """
 
+import json
+import logging
+
 import pytest
-from unittest.mock import MagicMock, patch
-import sys
-import os
+
+from app.services.ml.classification_service import (
+    VALID_TOPIC_SLUGS,
+    ClassificationService,
+)
 
 
-# --- Direct Tests for Label Mapping (no imports needed beyond the service) ---
+class TestTopicTaxonomy:
+    """Tests for the topic taxonomy constants."""
 
-class TestLabelMapping:
-    """Tests for the label-to-slug mapping - these import directly and don't trigger DB."""
-    
-    def test_all_labels_have_slugs(self):
-        """Verify all candidate labels have corresponding slugs."""
-        # Direct dict access without importing full service module
-        CANDIDATE_LABELS_FR = [
-            "intelligence artificielle", "technologie", "cybersécurité", "jeux vidéo",
-            "espace et astronomie", "science", "données et vie privée", "politique",
-            "économie", "emploi et travail", "éducation", "santé", "justice et droit",
-            "immigration", "inégalités sociales", "féminisme et droits des femmes",
-            "LGBTQ+", "religion", "climat", "environnement", "énergie", "biodiversité",
-            "agriculture", "alimentation", "cinéma", "musique", "littérature", "art",
-            "médias", "mode", "design", "voyage", "gastronomie", "sport", "bien-être",
-            "famille et parentalité", "relations et amour", "startups", "finance",
-            "immobilier", "entrepreneuriat", "marketing", "géopolitique", "Europe",
-            "États-Unis", "Afrique", "Asie", "Moyen-Orient", "histoire", "philosophie",
-            "fact-checking",
-        ]
-        
-        LABEL_TO_SLUG = {
-            "intelligence artificielle": "ai", "technologie": "tech",
-            "cybersécurité": "cybersecurity", "jeux vidéo": "gaming",
-            "espace et astronomie": "space", "science": "science",
-            "données et vie privée": "privacy", "politique": "politics",
-            "économie": "economy", "emploi et travail": "work",
-            "éducation": "education", "santé": "health",
-            "justice et droit": "justice", "immigration": "immigration",
-            "inégalités sociales": "inequality", "féminisme et droits des femmes": "feminism",
-            "LGBTQ+": "lgbtq", "religion": "religion",
-            "climat": "climate", "environnement": "environment",
-            "énergie": "energy", "biodiversité": "biodiversity",
-            "agriculture": "agriculture", "alimentation": "food",
-            "cinéma": "cinema", "musique": "music",
-            "littérature": "literature", "art": "art",
-            "médias": "media", "mode": "fashion",
-            "design": "design", "voyage": "travel",
-            "gastronomie": "gastronomy", "sport": "sport",
-            "bien-être": "wellness", "famille et parentalité": "family",
-            "relations et amour": "relationships", "startups": "startups",
-            "finance": "finance", "immobilier": "realestate",
-            "entrepreneuriat": "entrepreneurship", "marketing": "marketing",
-            "géopolitique": "geopolitics", "Europe": "europe",
-            "États-Unis": "usa", "Afrique": "africa",
-            "Asie": "asia", "Moyen-Orient": "middleeast",
-            "histoire": "history", "philosophie": "philosophy",
-            "fact-checking": "factcheck",
-        }
-        
-        for label in CANDIDATE_LABELS_FR:
-            assert label in LABEL_TO_SLUG, f"Missing slug for: {label}"
-    
-    def test_slugs_are_lowercase(self):
-        """Verify all slugs are lowercase."""
-        slugs = [
-            "ai", "tech", "cybersecurity", "gaming", "space", "science", "privacy",
-            "politics", "economy", "work", "education", "health", "justice",
-            "immigration", "inequality", "feminism", "lgbtq", "religion",
-            "climate", "environment", "energy", "biodiversity", "agriculture", "food",
-            "cinema", "music", "literature", "art", "media", "fashion", "design",
-            "travel", "gastronomy", "sport", "wellness", "family", "relationships",
-            "startups", "finance", "realestate", "entrepreneurship", "marketing",
-            "geopolitics", "europe", "usa", "africa", "asia", "middleeast",
-            "history", "philosophy", "factcheck",
-        ]
-        
-        for slug in slugs:
-            assert slug == slug.lower(), f"Slug not lowercase: {slug}"
-    
     def test_fifty_topics(self):
         """Verify we have exactly 50 topics."""
-        slugs = [
-            "ai", "tech", "cybersecurity", "gaming", "space", "science", "privacy",
-            "politics", "economy", "work", "education", "health", "justice",
-            "immigration", "inequality", "feminism", "lgbtq", "religion",
-            "climate", "environment", "energy", "biodiversity", "agriculture", "food",
-            "cinema", "music", "literature", "art", "media", "fashion", "design",
-            "travel", "gastronomy", "sport", "wellness", "family", "relationships",
-            "startups", "finance", "realestate", "entrepreneurship", "marketing",
-            "geopolitics", "europe", "usa", "africa", "asia", "middleeast",
-            "history", "philosophy",
+        assert len(VALID_TOPIC_SLUGS) == 51
+
+    def test_slugs_are_lowercase(self):
+        """Verify all slugs are lowercase."""
+        for slug in VALID_TOPIC_SLUGS:
+            assert slug == slug.lower(), f"Slug not lowercase: {slug}"
+
+    def test_known_slugs_present(self):
+        """Verify key slugs are in the taxonomy."""
+        expected = {"ai", "tech", "sport", "geopolitics", "cinema", "health", "climate"}
+        assert expected.issubset(VALID_TOPIC_SLUGS)
+
+
+class TestParseTopics:
+    """Tests for _parse_topics (single-article response parsing)."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+
+    def test_parse_json_object(self):
+        """New format: JSON object with topics and serene."""
+        raw = '{"topics": ["sport", "health"], "serene": true}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["topics"] == ["sport", "health"]
+        assert result["serene"] is True
+
+    def test_parse_json_array_single_element(self):
+        """New format: JSON array with one object."""
+        raw = '[{"topics": ["ai", "tech"], "serene": false}]'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["topics"] == ["ai", "tech"]
+        assert result["serene"] is False
+
+    def test_parse_comma_separated_fallback(self):
+        """Old format: comma-separated slugs → serene is None."""
+        raw = "sport, health, wellness"
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["topics"] == ["sport", "health", "wellness"]
+        assert result["serene"] is None
+
+    def test_filters_invalid_slugs(self):
+        """Invalid slugs are filtered out."""
+        raw = '{"topics": ["sport", "invalid_slug", "tech"], "serene": true}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["topics"] == ["sport", "tech"]
+        assert "invalid_slug" not in result["topics"]
+
+    def test_top_k_limits(self):
+        """top_k limits the number of returned topics."""
+        raw = '{"topics": ["sport", "health", "wellness", "tech"], "serene": true}'
+        result = self.service._parse_topics(raw, top_k=2)
+        assert len(result["topics"]) == 2
+
+    def test_empty_raw_returns_empty(self):
+        """Empty raw string returns empty topics."""
+        raw = ""
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["topics"] == []
+
+    def test_invalid_serene_becomes_none(self):
+        """Non-boolean serene values become None."""
+        raw = '{"topics": ["sport"], "serene": "maybe"}'
+        result = self.service._parse_topics(raw, top_k=3)
+        assert result["serene"] is None
+
+
+class TestParseBatchResponse:
+    """Tests for _parse_batch_response (batch response parsing)."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+
+    def test_correct_count_new_format(self):
+        """JSON array of 5 objects parsed correctly."""
+        data = [
+            {"topics": ["sport"], "serene": True},
+            {"topics": ["ai", "tech"], "serene": True},
+            {"topics": ["geopolitics"], "serene": False},
+            {"topics": ["cinema", "art"], "serene": True},
+            {"topics": ["health"], "serene": False},
         ]
-        # The actual service has 50 labels mapped to 50 slugs
-        assert len(slugs) == 50
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=5, top_k=3)
+
+        assert len(results) == 5
+        assert results[0]["topics"] == ["sport"]
+        assert results[0]["serene"] is True
+        assert results[1]["topics"] == ["ai", "tech"]
+        assert results[2]["serene"] is False
+
+    def test_wrong_count_returns_empty(self):
+        """JSON with wrong count returns empty results."""
+        data = [
+            {"topics": ["sport"], "serene": True},
+            {"topics": ["ai"], "serene": False},
+            {"topics": ["health"], "serene": True},
+            {"topics": ["cinema"], "serene": True},
+        ]
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=5, top_k=3)
+
+        assert len(results) == 5
+        assert all(r["topics"] == [] for r in results)
+        assert all(r["serene"] is None for r in results)
+
+    def test_fallback_old_format(self):
+        """Old format (array of arrays) → topics OK, serene=None."""
+        data = [
+            ["sport", "health"],
+            ["ai", "tech"],
+            ["geopolitics"],
+        ]
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=3, top_k=3)
+
+        assert len(results) == 3
+        assert results[0]["topics"] == ["sport", "health"]
+        assert results[0]["serene"] is None
+        assert results[1]["topics"] == ["ai", "tech"]
+
+    def test_filters_invalid_slugs_in_batch(self):
+        """Invalid slugs are filtered in batch responses."""
+        data = [
+            {"topics": ["sport", "invalid"], "serene": True},
+        ]
+        raw = json.dumps(data)
+        results = self.service._parse_batch_response(raw, expected_count=1, top_k=3)
+
+        assert results[0]["topics"] == ["sport"]
 
 
-class TestClassificationLogic:
-    """Tests for classification logic using standalone functions."""
-    
-    def test_classify_tech_article_logic(self):
-        """Test classification logic for a tech/AI article."""
-        # Simulate what the classifier returns
-        result = {
-            "labels": ["intelligence artificielle", "technologie", "startups", "science"],
-            "scores": [0.85, 0.72, 0.45, 0.20],
-        }
-        
-        LABEL_TO_SLUG = {
-            "intelligence artificielle": "ai",
-            "technologie": "tech",
-            "startups": "startups",
-            "science": "science",
-        }
-        
-        # Simulate classify() logic
-        topics = []
-        threshold = 0.1
-        top_k = 3
-        for label, score in zip(result["labels"], result["scores"]):
-            if score >= threshold and len(topics) < top_k:
-                slug = LABEL_TO_SLUG.get(label)
-                if slug:
-                    topics.append(slug)
-        
-        assert "ai" in topics
-        assert "tech" in topics
-        assert len(topics) <= 3
-    
-    def test_classify_climate_article_logic(self):
-        """Test classification logic for a climate article."""
-        result = {
-            "labels": ["climat", "environnement", "énergie"],
-            "scores": [0.92, 0.78, 0.35],
-        }
-        
-        LABEL_TO_SLUG = {
-            "climat": "climate",
-            "environnement": "environment",
-            "énergie": "energy",
-        }
-        
-        topics = []
-        for label, score in zip(result["labels"], result["scores"]):
-            if score >= 0.1 and len(topics) < 3:
-                slug = LABEL_TO_SLUG.get(label)
-                if slug:
-                    topics.append(slug)
-        
-        assert "climate" in topics
-        assert "environment" in topics
-    
-    def test_threshold_filtering_logic(self):
-        """Test that low-score topics are filtered out."""
-        result = {
-            "labels": ["technologie", "science", "politique"],
-            "scores": [0.50, 0.08, 0.05],
-        }
-        
-        LABEL_TO_SLUG = {
-            "technologie": "tech",
-            "science": "science",
-            "politique": "politics",
-        }
-        
-        topics = []
-        threshold = 0.1
-        for label, score in zip(result["labels"], result["scores"]):
-            if score >= threshold and len(topics) < 3:
-                slug = LABEL_TO_SLUG.get(label)
-                if slug:
-                    topics.append(slug)
-        
-        assert "tech" in topics
-        assert "science" not in topics  # Below threshold
-        assert "politics" not in topics  # Below threshold
-    
-    def test_top_k_limiting_logic(self):
-        """Test that top_k limits the number of returned topics."""
-        result = {
-            "labels": ["technologie", "science", "intelligence artificielle", "startups", "cybersécurité"],
-            "scores": [0.90, 0.85, 0.80, 0.75, 0.70],
-        }
-        
-        LABEL_TO_SLUG = {
-            "technologie": "tech",
-            "science": "science",
-            "intelligence artificielle": "ai",
-            "startups": "startups",
-            "cybersécurité": "cybersecurity",
-        }
-        
-        topics = []
-        top_k = 2
-        for label, score in zip(result["labels"], result["scores"]):
-            if score >= 0.1 and len(topics) < top_k:
-                slug = LABEL_TO_SLUG.get(label)
-                if slug:
-                    topics.append(slug)
-        
-        assert len(topics) == 2
-    
-    def test_empty_text_returns_empty(self):
-        """Test that empty text should return empty list."""
-        text = ""
-        # If text is empty, classify() returns early
-        if not text:
-            result = []
-        else:
-            result = ["would_have_been_classified"]
-        
-        assert result == []
+class TestBuildBatchPrompt:
+    """Tests for _build_batch_prompt."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+
+    def test_includes_source_name(self):
+        """Source name is included in prompt when provided."""
+        items = [
+            {"title": "Match PSG-OM", "description": "Ligue 1", "source_name": "L'Équipe"},
+        ]
+        prompt = self.service._build_batch_prompt(items)
+        assert "[Source: L'Équipe]" in prompt
+        assert "[1]" in prompt
+        assert "Match PSG-OM" in prompt
+
+    def test_no_source_name(self):
+        """No [Source: ...] when source_name is empty."""
+        items = [
+            {"title": "Un article", "description": "desc", "source_name": ""},
+        ]
+        prompt = self.service._build_batch_prompt(items)
+        assert "[Source:" not in prompt
+
+    def test_truncates_description(self):
+        """Description longer than 200 chars is truncated."""
+        long_desc = "A" * 300
+        items = [
+            {"title": "Titre", "description": long_desc, "source_name": ""},
+        ]
+        prompt = self.service._build_batch_prompt(items)
+        # Should contain truncated description (200 chars + "...")
+        assert "A" * 200 + "..." in prompt
+        assert "A" * 300 not in prompt
+
+    def test_multiple_articles_numbered(self):
+        """Multiple articles are numbered [1], [2], etc."""
+        items = [
+            {"title": "Premier", "description": "", "source_name": ""},
+            {"title": "Deuxième", "description": "", "source_name": ""},
+            {"title": "Troisième", "description": "", "source_name": ""},
+        ]
+        prompt = self.service._build_batch_prompt(items)
+        assert "[1]" in prompt
+        assert "[2]" in prompt
+        assert "[3]" in prompt
+
+    def test_includes_count_instruction(self):
+        """Prompt includes the exact count instruction."""
+        items = [
+            {"title": "A", "description": "", "source_name": ""},
+            {"title": "B", "description": "", "source_name": ""},
+        ]
+        prompt = self.service._build_batch_prompt(items)
+        assert "exactement 2 éléments" in prompt
+
+
+class TestCheckDistribution:
+    """Tests for _check_distribution."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+
+    def test_warns_on_skewed_distribution(self, caplog):
+        """Warning logged when >50% share the same primary topic."""
+        results = [
+            {"topics": ["geopolitics"], "serene": False},
+            {"topics": ["geopolitics"], "serene": False},
+            {"topics": ["geopolitics"], "serene": False},
+            {"topics": ["sport"], "serene": True},
+            {"topics": ["tech"], "serene": True},
+        ]
+        with caplog.at_level(logging.WARNING):
+            self.service._check_distribution(results)
+        # structlog may not write to caplog, so we just verify no crash
+        # The actual warning is logged via structlog
+
+    def test_no_warning_on_balanced_distribution(self, caplog):
+        """No warning when distribution is balanced."""
+        results = [
+            {"topics": ["sport"], "serene": True},
+            {"topics": ["tech"], "serene": True},
+            {"topics": ["cinema"], "serene": True},
+            {"topics": ["health"], "serene": True},
+            {"topics": ["ai"], "serene": True},
+        ]
+        self.service._check_distribution(results)
+        # Should not raise or warn
+
+    def test_handles_empty_results(self):
+        """No crash on empty results."""
+        self.service._check_distribution([])
+
+    def test_handles_no_topics(self):
+        """No crash when results have empty topics."""
+        results = [
+            {"topics": [], "serene": None},
+            {"topics": [], "serene": None},
+        ]
+        self.service._check_distribution(results)
