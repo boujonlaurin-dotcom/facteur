@@ -8,11 +8,10 @@ Benefits: ~3000+ articles/hour (vs ~150), better quality (contextual), no local 
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 import httpx
 import structlog
-
-from collections import Counter
 
 from app.config import get_settings
 
