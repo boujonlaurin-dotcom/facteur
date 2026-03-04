@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -100,7 +101,7 @@ class TopicExplorerScreen extends ConsumerWidget {
                       ),
                       const Spacer(),
                       Text(
-                        'Priorite :',
+                        'Priorité :',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -108,10 +109,27 @@ class TopicExplorerScreen extends ConsumerWidget {
                       const SizedBox(width: FacteurSpacing.space2),
                       TopicPrioritySlider(
                         currentMultiplier: matchedTopic.priorityMultiplier,
-                        onChanged: (multiplier) {
-                          ref
-                              .read(customTopicsProvider.notifier)
-                              .updatePriority(matchedTopic.id, multiplier);
+                        onChanged: (multiplier) async {
+                          try {
+                            await ref
+                                .read(customTopicsProvider.notifier)
+                                .updatePriority(
+                                    matchedTopic.id, multiplier);
+                          } on DioException catch (e) {
+                            if (context.mounted) {
+                              final detail = e.response?.data;
+                              final msg = (detail is Map &&
+                                      detail['detail'] is String)
+                                  ? detail['detail'] as String
+                                  : 'Erreur lors de la mise à jour';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(msg),
+                                  duration: const Duration(seconds: 3),
+                                ),
+                              );
+                            }
+                          }
                         },
                       ),
                     ],
@@ -198,7 +216,7 @@ class TopicExplorerScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: FacteurSpacing.space1),
                         Text(
-                          'Les articles sur ce sujet apparaitront ici.',
+                          'Les articles sur ce sujet apparaîtront ici.',
                           style: textTheme.bodySmall?.copyWith(
                             color: colors.textTertiary,
                           ),
@@ -236,34 +254,6 @@ class TopicExplorerScreen extends ConsumerWidget {
   }
 
   /// Get parent theme display label for the subtitle.
-  String? _getParentThemeLabel(String slug) {
-    const slugToMacro = {
-      'ai': 'Tech & Science',
-      'tech': 'Tech & Science',
-      'cybersecurity': 'Tech & Science',
-      'gaming': 'Tech & Science',
-      'space': 'Tech & Science',
-      'science': 'Tech & Science',
-      'privacy': 'Tech & Science',
-      'politics': 'Societe',
-      'economy': 'Societe',
-      'work': 'Societe',
-      'education': 'Societe',
-      'health': 'Societe',
-      'justice': 'Societe',
-      'climate': 'Environnement',
-      'environment': 'Environnement',
-      'energy': 'Environnement',
-      'cinema': 'Culture',
-      'music': 'Culture',
-      'literature': 'Culture',
-      'art': 'Culture',
-      'media': 'Culture',
-      'startups': 'Business',
-      'finance': 'Business',
-      'geopolitics': 'International',
-      'europe': 'International',
-    };
-    return slugToMacro[slug];
-  }
+  /// Uses the centralized mapping from topic_labels.dart.
+  String? _getParentThemeLabel(String slug) => getTopicMacroTheme(slug);
 }

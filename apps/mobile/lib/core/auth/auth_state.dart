@@ -325,7 +325,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     try {
       // Deep link pour native, URL web pour Flutter web
       final redirectUrl = kIsWeb
-          ? Uri.base.resolve('email-confirmation').toString()
+          ? Uri(scheme: Uri.base.scheme, host: Uri.base.host, path: Uri.base.path).toString()
           : 'io.supabase.facteur://login-callback';
 
       await _supabase.auth.signUp(
@@ -437,7 +437,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
     try {
       final redirectUrl = kIsWeb
-          ? Uri.base.resolve('facteur/auth/callback').toString()
+          ? Uri(scheme: Uri.base.scheme, host: Uri.base.host, path: Uri.base.path).toString()
           : 'io.supabase.facteur://login-callback';
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,

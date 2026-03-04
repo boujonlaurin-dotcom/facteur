@@ -72,28 +72,41 @@ String getTopicLabel(String slug) {
 }
 
 /// Mapping slug → macro-theme group label.
-/// Used by MyInterestsScreen and TopicExplorerSheet to group topics.
+/// Mirrors backend's TOPIC_TO_THEME (topic_theme_mapper.py).
+/// Labels match feed filter bar (_themeMetadata in theme_filters_provider.dart).
 const Map<String, String> _slugToMacroTheme = {
-  // Tech & Science
-  'ai': 'Tech & Science',
-  'tech': 'Tech & Science',
-  'cybersecurity': 'Tech & Science',
-  'gaming': 'Tech & Science',
-  'space': 'Tech & Science',
-  'science': 'Tech & Science',
-  'privacy': 'Tech & Science',
-  // Societe
-  'politics': 'Societe',
-  'economy': 'Societe',
-  'work': 'Societe',
-  'education': 'Societe',
-  'health': 'Societe',
-  'justice': 'Societe',
-  'immigration': 'Societe',
-  'inequality': 'Societe',
-  'feminism': 'Societe',
-  'lgbtq': 'Societe',
-  'religion': 'Societe',
+  // Technologie
+  'ai': 'Technologie',
+  'tech': 'Technologie',
+  'cybersecurity': 'Technologie',
+  'gaming': 'Technologie',
+  'privacy': 'Technologie',
+  // Sciences
+  'space': 'Sciences',
+  'science': 'Sciences',
+  // Société
+  'work': 'Société',
+  'education': 'Société',
+  'health': 'Société',
+  'justice': 'Société',
+  'immigration': 'Société',
+  'inequality': 'Société',
+  'feminism': 'Société',
+  'lgbtq': 'Société',
+  'religion': 'Société',
+  'wellness': 'Société',
+  'family': 'Société',
+  'relationships': 'Société',
+  'factcheck': 'Société',
+  // Politique
+  'politics': 'Politique',
+  // Économie
+  'economy': 'Économie',
+  'startups': 'Économie',
+  'finance': 'Économie',
+  'realestate': 'Économie',
+  'entrepreneurship': 'Économie',
+  'marketing': 'Économie',
   // Environnement
   'climate': 'Environnement',
   'environment': 'Environnement',
@@ -109,45 +122,60 @@ const Map<String, String> _slugToMacroTheme = {
   'media': 'Culture',
   'fashion': 'Culture',
   'design': 'Culture',
-  // Lifestyle
-  'travel': 'Lifestyle',
-  'gastronomy': 'Lifestyle',
-  'sport': 'Lifestyle',
-  'wellness': 'Lifestyle',
-  'family': 'Lifestyle',
-  'relationships': 'Lifestyle',
-  // Business
-  'startups': 'Business',
-  'finance': 'Business',
-  'realestate': 'Business',
-  'entrepreneurship': 'Business',
-  'marketing': 'Business',
-  // International
-  'geopolitics': 'International',
-  'europe': 'International',
-  'usa': 'International',
-  'africa': 'International',
-  'asia': 'International',
-  'middleeast': 'International',
-  // Autres
-  'history': 'Autres',
-  'philosophy': 'Autres',
-  'factcheck': 'Autres',
+  'travel': 'Culture',
+  'gastronomy': 'Culture',
+  'history': 'Culture',
+  'philosophy': 'Culture',
+  // Géopolitique
+  'geopolitics': 'Géopolitique',
+  'europe': 'Géopolitique',
+  'usa': 'Géopolitique',
+  'africa': 'Géopolitique',
+  'asia': 'Géopolitique',
+  'middleeast': 'Géopolitique',
+  // Sport
+  'sport': 'Sport',
 };
 
-/// Ordered list of macro-theme group labels.
+/// Ordered list of macro-theme group labels (matches backend's 9 themes).
 const List<String> macroThemeOrder = [
-  'Tech & Science',
-  'Societe',
+  'Technologie',
+  'Sciences',
+  'Société',
+  'Politique',
+  'Économie',
   'Environnement',
   'Culture',
-  'Lifestyle',
-  'Business',
-  'International',
-  'Autres',
+  'Géopolitique',
+  'Sport',
 ];
 
 /// Returns the macro-theme group label for a topic slug, or null if unknown.
 String? getTopicMacroTheme(String slug) {
   return _slugToMacroTheme[slug.toLowerCase()];
+}
+
+/// Emoji for each macro-theme group label.
+const Map<String, String> _macroThemeEmoji = {
+  'Technologie': '💻',
+  'Sciences': '🔬',
+  'Société': '👥',
+  'Politique': '🏛️',
+  'Économie': '💰',
+  'Environnement': '🌿',
+  'Culture': '🎨',
+  'Géopolitique': '🌍',
+  'Sport': '⚽',
+};
+
+/// Returns the emoji for a macro-theme label, or empty string if unknown.
+String getMacroThemeEmoji(String macroThemeLabel) {
+  return _macroThemeEmoji[macroThemeLabel] ?? '';
+}
+
+/// Returns all topic slugs belonging to a given macro theme.
+List<String> getSlugsForMacroTheme(String macroTheme) {
+  return topicSlugToLabel.keys
+      .where((slug) => getTopicMacroTheme(slug) == macroTheme)
+      .toList();
 }

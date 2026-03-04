@@ -51,13 +51,17 @@ class FeedRepository {
         queryParams['source_id'] = sourceId;
       }
 
+      final sw = Stopwatch()..start();
       final response = await _apiClient.dio.get<dynamic>(
         'feed/', // Trailing slash to avoid 307 redirect which strips auth header
         queryParameters: queryParams,
       );
+      sw.stop();
 
       if (response.statusCode == 200) {
         final data = response.data;
+        final responseSize = response.data.toString().length;
+        print('[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
 
         List<Content> itemsList = [];
 
@@ -118,6 +122,7 @@ class FeedRepository {
                   return item.copyWith(
                     clusterTopic: cluster.topicSlug,
                     clusterHiddenCount: cluster.hiddenCount,
+                    clusterHiddenIds: cluster.hiddenIds,
                   );
                 }
                 return item;

@@ -55,18 +55,8 @@ async def get_personalized_feed(
         source_id=source_id,
     )
 
-    # Epic 11: Build clusters from custom topics
-    from sqlalchemy import select as sa_select
-
-    from app.models.user_topic_profile import UserTopicProfile
-
-    user_custom_topics = list(
-        (
-            await db.scalars(
-                sa_select(UserTopicProfile).where(UserTopicProfile.user_id == user_uuid)
-            )
-        ).all()
-    )
+    # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)
+    user_custom_topics = service.user_custom_topics
 
     clusters_data: list[ClusterInfo] = []
     if user_custom_topics and not saved_only and not source_id:

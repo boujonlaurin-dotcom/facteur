@@ -748,6 +748,12 @@ class AvailableThemes {
       emoji: '📈',
       color: Colors.indigo,
     ),
+    const ThemeOption(
+      slug: 'sport',
+      label: OnboardingStrings.themeSport,
+      emoji: '⚽',
+      color: Colors.orange,
+    ),
   ];
 }
 

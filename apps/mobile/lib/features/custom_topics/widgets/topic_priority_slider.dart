@@ -23,7 +23,7 @@ class TopicPrioritySlider extends StatelessWidget {
       currentMultiplier: currentMultiplier,
       onChanged: onChanged,
       width: width,
-      labels: const ['Suivi', 'Interesse', 'Fort interet'],
+      labels: const ['Suivi', 'Intéressé', 'Fort intérêt'],
     );
   }
 }

@@ -178,8 +178,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       _buildTile(
                         context,
                         icon: PhosphorIcons.target(PhosphorIconsStyle.regular),
-                        title: 'Mes Interets',
-                        subtitle: 'Themes et sujets suivis',
+                        title: 'Mes Intérêts',
+                        subtitle: 'Thèmes et sujets suivis',
                         onTap: () {
                           context.pushNamed(RouteNames.myInterests);
                         },
