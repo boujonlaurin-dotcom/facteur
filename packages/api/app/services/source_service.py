@@ -25,9 +25,7 @@ class SourceService:
         self.db = db
         self.rss_parser = RSSParser()
 
-    async def _load_user_source_multipliers(
-        self, user_id: UUID
-    ) -> dict[UUID, float]:
+    async def _load_user_source_multipliers(self, user_id: UUID) -> dict[UUID, float]:
         """Load priority_multiplier for all user sources."""
         result = await self.db.execute(
             select(UserSource.source_id, UserSource.priority_multiplier).where(
@@ -434,18 +432,14 @@ class SourceService:
         user_source.priority_multiplier = priority_multiplier
         await self.db.flush()
 
-        source = await self.db.scalar(
-            select(Source).where(Source.id == source_uuid)
-        )
+        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
         if not source:
             return None
 
         # Load muted status
         muted_source_ids = set()
         personalization = await self.db.scalar(
-            select(UserPersonalization).where(
-                UserPersonalization.user_id == user_uuid
-            )
+            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
         )
         if personalization and personalization.muted_sources:
             muted_source_ids = set(personalization.muted_sources)
