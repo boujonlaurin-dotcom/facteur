@@ -105,6 +105,30 @@ class CoreLayer(BaseScoringLayer):
                 f"Affinité source: {affinity:.0%}",
             )
 
+        # 2c. Explicit Source Weight (user-set priority_multiplier)
+        source_multiplier = context.source_priority_multipliers.get(
+            content.source_id, 1.0
+        )
+        if source_multiplier != 1.0:
+            # Apply multiplier to source-related score components
+            # score so far = trusted_source + custom_bonus + affinity
+            multiplier_delta = score * (source_multiplier - 1.0)
+            score += multiplier_delta
+            if source_multiplier > 1.0:
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    multiplier_delta,
+                    "Source favorite",
+                )
+            else:
+                context.add_reason(
+                    content.id,
+                    self.name,
+                    multiplier_delta,
+                    "Source réduite",
+                )
+
         # 3. Recency Decay (Base)
         # Score = recency_base / (hours_old/24 + 1)
         # Epic 11: recency_base raised from 30→100 to compete with personalization.

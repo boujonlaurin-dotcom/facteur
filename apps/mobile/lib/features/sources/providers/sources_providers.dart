@@ -63,6 +63,30 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     }
   }
 
+  Future<void> updateWeight(String sourceId, double newMultiplier) async {
+    final repository = ref.read(sourcesRepositoryProvider);
+
+    // Optimistic Update
+    final previousState = state;
+    if (state.hasValue) {
+      state = AsyncValue.data([
+        for (final source in state.value!)
+          if (source.id == sourceId)
+            source.copyWith(priorityMultiplier: newMultiplier)
+          else
+            source
+      ]);
+    }
+
+    try {
+      await repository.updateSourceWeight(sourceId, newMultiplier);
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print('UserSourcesNotifier: [ERROR] updateWeight failed: $e\n$stack');
+      state = previousState;
+    }
+  }
+
   Future<void> toggleMute(String sourceId, bool currentlyMuted) async {
     final personalizationRepo = ref.read(personalizationRepositoryProvider);
 

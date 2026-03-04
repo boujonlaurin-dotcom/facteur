@@ -35,6 +35,8 @@ class ScoringContext:
         impression_data: dict[UUID, tuple] = None,
         # Epic 11: Custom Topics
         user_custom_topics: list = None,
+        # Source Weighting: explicit priority multipliers {source_id: 0.5|1.0|2.0}
+        source_priority_multipliers: dict[UUID, float] = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -58,6 +60,9 @@ class ScoringContext:
 
         # Epic 11: Custom Topics
         self.user_custom_topics = user_custom_topics or []
+
+        # Source Weighting: explicit priority multipliers
+        self.source_priority_multipliers = source_priority_multipliers or {}
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

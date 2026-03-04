@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../../widgets/design/priority_slider.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
+import '../../sources/providers/sources_providers.dart';
 import '../models/digest_models.dart';
 
 /// Bottom sheet widget showing "Pourquoi cet article?" with scoring breakdown
@@ -182,12 +186,16 @@ class DigestPersonalizationSheet extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
 
-        // Mute source action
+        // Source weight slider
+        if (source != null && source.id != null && source.id!.isNotEmpty)
+          _buildSourceWeightRow(context, ref, colors, source),
+
+        // Mute source (red destructive action)
         if (source != null && source.id != null && source.id!.isNotEmpty)
           _buildActionOption(
             context,
-            icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-            label: 'Moins de ${source.name}',
+            icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
+            label: 'Ne plus afficher ${source.name}',
             onTap: () async {
               Navigator.pop(context);
               try {
@@ -201,6 +209,29 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               }
             },
             colors: colors,
+            isDestructive: true,
+          ),
+
+        // "Gérer mes sources" CTA
+        if (source != null && source.id != null && source.id!.isNotEmpty)
+          Center(
+            child: TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.pushNamed(RouteNames.sources);
+              },
+              icon: Icon(
+                PhosphorIcons.gear(),
+                size: 14,
+                color: colors.textSecondary,
+              ),
+              label: Text(
+                'Gérer mes sources',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ),
           ),
 
         // Mute theme action
@@ -265,13 +296,87 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     );
   }
 
+  Widget _buildSourceWeightRow(
+    BuildContext context,
+    WidgetRef ref,
+    FacteurColors colors,
+    SourceMini source,
+  ) {
+    // Look up current multiplier from the full sources list
+    final sourcesAsync = ref.watch(userSourcesProvider);
+    final currentMultiplier = sourcesAsync.whenOrNull(
+          data: (sources) {
+            final match = sources.where((s) => s.id == source.id).firstOrNull;
+            return match?.priorityMultiplier;
+          },
+        ) ??
+        1.0;
+
+    // Only show slider if source is trusted (not muted)
+    final isTrusted = sourcesAsync.whenOrNull(
+          data: (sources) {
+            final match = sources.where((s) => s.id == source.id).firstOrNull;
+            return match?.isTrusted == true && match?.isMuted != true;
+          },
+        ) ??
+        false;
+
+    if (!isTrusted) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Row(
+        children: [
+          Icon(
+            currentMultiplier == 2.0
+                ? PhosphorIcons.star(PhosphorIconsStyle.fill)
+                : PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
+            color: colors.textPrimary,
+            size: 20,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              source.name,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            'Priorité :',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                ),
+          ),
+          const SizedBox(width: 8),
+          PrioritySlider(
+            currentMultiplier: currentMultiplier,
+            onChanged: (multiplier) {
+              ref
+                  .read(userSourcesProvider.notifier)
+                  .updateWeight(source.id!, multiplier);
+            },
+            labels: const ['Reduit', 'Normal', 'Favori'],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionOption(
     BuildContext context, {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
     required FacteurColors colors,
+    bool isDestructive = false,
   }) {
+    final color = isDestructive ? colors.error : colors.textPrimary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -279,13 +384,13 @@ class DigestPersonalizationSheet extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, color: colors.textPrimary, size: 20),
+            Icon(icon, color: color, size: 20),
             const SizedBox(width: 16),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
-                  color: colors.textPrimary,
+                  color: color,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                 ),

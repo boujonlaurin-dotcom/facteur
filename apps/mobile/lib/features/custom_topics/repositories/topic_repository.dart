@@ -9,10 +9,11 @@ class TopicRepository {
 
   TopicRepository(this._apiClient);
 
-  /// GET personalization/topics → list of [UserTopicProfile].
+  /// GET personalization/topics/ → list of [UserTopicProfile].
+  /// Trailing slash required: backend uses redirect_slashes=False.
   Future<List<UserTopicProfile>> getTopics() async {
     try {
-      final data = await _apiClient.get('personalization/topics');
+      final data = await _apiClient.get('personalization/topics/');
 
       if (data is List) {
         return data
@@ -28,11 +29,12 @@ class TopicRepository {
     }
   }
 
-  /// POST personalization/topics → UserTopicProfile (LLM-enriched)
+  /// POST personalization/topics/ → UserTopicProfile (LLM-enriched)
+  /// Trailing slash required: backend uses redirect_slashes=False.
   Future<UserTopicProfile> followTopic(String name) async {
     try {
       final data = await _apiClient.post(
-        'personalization/topics',
+        'personalization/topics/',
         body: {'name': name},
       );
       return UserTopicProfile.fromJson(data as Map<String, dynamic>);

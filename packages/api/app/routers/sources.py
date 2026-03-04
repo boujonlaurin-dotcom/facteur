@@ -17,6 +17,7 @@ from app.schemas.source import (
     SourceDetectResponse,
     SourceResponse,
     SourceSearchResponse,
+    UpdateSourceWeightRequest,
 )
 from app.services.source_service import SourceService
 
@@ -168,6 +169,28 @@ async def detect_source(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.put("/{source_id}/weight", response_model=SourceResponse)
+async def update_source_weight(
+    source_id: UUID,
+    data: UpdateSourceWeightRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceResponse:
+    """Mettre à jour le poids d'une source (0.5, 1.0, 2.0)."""
+    service = SourceService(db)
+    result = await service.update_source_weight(
+        user_id, str(source_id), data.priority_multiplier
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source not found or not followed by user",
+        )
+
+    return result
 
 
 @router.post("/{source_id}/trust")

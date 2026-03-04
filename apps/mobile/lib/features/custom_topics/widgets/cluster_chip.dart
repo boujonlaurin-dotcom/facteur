@@ -1,17 +1,15 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../feed/models/content_model.dart';
-import 'topic_chip.dart';
+import '../../feed/screens/cluster_view_screen.dart';
 
 /// Chip shown below a representative article when a topic cluster exists.
 ///
 /// Displays: `> N autres articles sur [Topic]`
-/// Tap opens the topic explorer modal sheet with blur backdrop.
+/// Tap opens an immersive cluster view showing all related articles.
 class ClusterChip extends StatelessWidget {
   final Content content;
 
@@ -31,24 +29,19 @@ class ClusterChip extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        showModalBottomSheet<void>(
-          context: context,
-          backgroundColor: Colors.transparent,
-          isScrollControlled: true,
-          barrierColor: Colors.black.withValues(alpha: 0.5),
-          builder: (ctx) => BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: TopicExplorerSheet(
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ClusterViewScreen(
               topicSlug: content.clusterTopic!,
-              topicLabel: topicName,
-              initialArticles: content.clusterHiddenArticles,
+              representativeArticle: content,
+              hiddenIds: content.clusterHiddenIds,
             ),
           ),
         );
       },
       child: Container(
         decoration: BoxDecoration(
-          color: colors.surface,
+          color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.03)!,
           border: Border(
             top: BorderSide(
               color: colors.textSecondary.withValues(alpha: 0.1),
@@ -70,7 +63,7 @@ class ClusterChip extends StatelessWidget {
             const SizedBox(width: FacteurSpacing.space2),
             Expanded(
               child: Text(
-                '${content.clusterHiddenCount} autres articles sur $topicName',
+                '${content.clusterHiddenCount} autres articles sur \u2022 $topicName',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: colors.textSecondary,
                     ),

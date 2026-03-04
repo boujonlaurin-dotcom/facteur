@@ -63,9 +63,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedSourceId = null;
 
     // Fetch initial page
+    final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);
-
-    // Check if we need to load more immediately? No.
+    sw.stop();
+    print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
     return FeedState(items: response.items);
   }

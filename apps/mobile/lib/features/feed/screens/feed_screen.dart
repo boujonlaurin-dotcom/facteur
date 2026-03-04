@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -20,7 +21,6 @@ import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/personalization_nudge.dart';
-import '../widgets/personalization_sheet.dart';
 import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
@@ -47,6 +47,7 @@ import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
+import 'cluster_view_screen.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -264,15 +265,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  void _showPersonalizationSheet(Content content) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => PersonalizationSheet(content: content),
-    );
-  }
-
   // --- Swipe-left dismiss handlers ---
 
   void _handleSwipeDismiss(Content content, int contentIndex) {
@@ -349,6 +341,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
     final colors = context.facteurColors;
+
+    // Pre-warm topics provider (single watch for all TopicChips)
+    final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
 
     // Swipe-left hint: check if already seen
     final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
@@ -509,21 +504,43 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .where((t) => t.slugParent != null)
                               .map((t) => FilterConfig(
                                     key: t.slugParent!,
-                                    label: '\u{1F4CC} ${t.name}',
+                                    label: '• ${t.name}',
                                     description:
                                         'Articles sur ${t.name}',
                                   ))
                               .toList();
 
-                          // Merge: theme filters + custom topic filters (deduped)
+                          // Merge: custom topics first (by priority), then theme filters
                           final themeKeys =
                               themeFilters.map((f) => f.key).toSet();
                           final uniqueCustomFilters = customTopicFilters
                               .where((f) => !themeKeys.contains(f.key))
                               .toList();
+
+                          // Sort custom topics by priority descending
+                          uniqueCustomFilters.sort((a, b) {
+                            final aPri = customTopics
+                                    .where((t) => t.slugParent == a.key)
+                                    .firstOrNull
+                                    ?.priorityMultiplier ??
+                                1.0;
+                            final bPri = customTopics
+                                    .where((t) => t.slugParent == b.key)
+                                    .firstOrNull
+                                    ?.priorityMultiplier ??
+                                1.0;
+                            return bPri.compareTo(aPri);
+                          });
+
+                          // "Derniers articles" always first, then custom topics, then other themes
+                          final recentFilter =
+                              themeFilters.where((f) => f.key == 'recent').toList();
+                          final otherThemeFilters =
+                              themeFilters.where((f) => f.key != 'recent').toList();
                           final mergedFilters = [
-                            ...themeFilters,
+                            ...recentFilter,
                             ...uniqueCustomFilters,
+                            ...otherThemeFilters,
                           ];
 
                           // No source active: show source chip + filter bar
@@ -560,7 +577,24 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       notifier.setFilter(null);
                                     }
                                   } else {
-                                    notifier.setTheme(filter);
+                                    // Navigate to filtered view with local articles
+                                    final feedState =
+                                        ref.read(feedProvider).valueOrNull;
+                                    if (feedState != null) {
+                                      final matchingArticles = feedState.items
+                                          .where((item) =>
+                                              item.topics.contains(filter) ||
+                                              item.clusterTopic == filter)
+                                          .toList();
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => ClusterViewScreen(
+                                            topicSlug: filter,
+                                            filteredArticles: matchingArticles,
+                                          ),
+                                        ),
+                                      );
+                                    }
                                   }
                                 },
                               ),
@@ -803,10 +837,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      onPersonalize: () =>
-                                          _showPersonalizationSheet(content),
-                                      topicChipWidget:
-                                          TopicChip(content: content),
+                                      topicChipWidget: TopicChip(
+                                        content: content,
+                                        isFollowed: content.topics.isNotEmpty &&
+                                            followedTopics.any((t) =>
+                                                t.slugParent == content.topics.first ||
+                                                t.name.toLowerCase() ==
+                                                    getTopicLabel(content.topics.first)
+                                                        .toLowerCase()),
+                                      ),
                                       clusterChipWidget:
                                           ClusterChip(content: content),
                                     ),

@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/facteur_stamp.dart';
+import '../../../widgets/design/priority_slider.dart';
 import '../models/source_model.dart';
 import 'source_detail_modal.dart';
 
@@ -10,12 +11,14 @@ class SourceListItem extends StatelessWidget {
   final Source source;
   final VoidCallback? onTap;
   final VoidCallback? onToggleMute;
+  final ValueChanged<double>? onWeightChanged;
 
   const SourceListItem({
     super.key,
     required this.source,
     this.onTap,
     this.onToggleMute,
+    this.onWeightChanged,
   });
 
   IconData get _typeIcon {
@@ -149,6 +152,25 @@ class SourceListItem extends StatelessWidget {
                 ),
               ),
 
+              // Priority slider for trusted, non-muted sources
+              if (!isMuted && isTrusted && onWeightChanged != null) ...[
+                const SizedBox(width: 8),
+                PrioritySlider(
+                  key: ValueKey(source.priorityMultiplier),
+                  currentMultiplier: source.priorityMultiplier,
+                  onChanged: onWeightChanged!,
+                  labels: const ['Reduit', 'Normal', 'Favori'],
+                ),
+              ],
+
+              // "+" icon for unfollowed sources
+              if (!isMuted && !isTrusted)
+                Icon(
+                  PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                  size: 20,
+                  color: colors.textTertiary,
+                ),
+
               // Muted Indicator
               if (isMuted)
                 FacteurStamp(
@@ -156,15 +178,9 @@ class SourceListItem extends StatelessWidget {
                   isNew: true,
                   color: colors.error,
                 ),
-              // Trusted Indicator
-              if (!isMuted && isTrusted)
-                FacteurStamp(
-                  text: 'SOURCE DE CONFIANCE',
-                  isNew: true,
-                  color: colors.primary,
-                ),
-              if (source.isCustom) ...[
-                if (isTrusted || isMuted) const SizedBox(width: 8),
+              // Custom source stamp (only when no slider shown)
+              if (source.isCustom && (isMuted || !isTrusted)) ...[
+                const SizedBox(width: 8),
                 FacteurStamp(
                   text: 'PERSO',
                   isNew: true,

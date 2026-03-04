@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/topic_models.dart';
@@ -27,10 +26,13 @@ class TopicRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            PhosphorIcons.pushPin(PhosphorIconsStyle.fill),
-            size: 14,
-            color: const Color(0xFFE07A5F),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE07A5F),
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: FacteurSpacing.space2),
           Expanded(
@@ -88,7 +90,7 @@ class DismissibleTopicRow extends StatelessWidget {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Ne plus suivre ce sujet ?'),
-            content: Text('${topic.name} sera retire de vos interets.'),
+            content: Text('${topic.name} sera retiré de vos intérêts.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),

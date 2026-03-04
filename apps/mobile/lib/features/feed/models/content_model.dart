@@ -92,6 +92,7 @@ class Content {
   // Epic 11: Cluster fields (populated by FeedRepository when clusters are present)
   final String? clusterTopic;
   final int clusterHiddenCount;
+  final List<String> clusterHiddenIds;
   final List<Content> clusterHiddenArticles;
 
   Content({
@@ -117,6 +118,7 @@ class Content {
     this.noteUpdatedAt,
     this.clusterTopic,
     this.clusterHiddenCount = 0,
+    this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
   });
 
@@ -148,6 +150,7 @@ class Content {
       noteUpdatedAt: null,
       clusterTopic: clusterTopic,
       clusterHiddenCount: clusterHiddenCount,
+      clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
     );
   }
@@ -233,6 +236,7 @@ class Content {
     DateTime? noteUpdatedAt,
     String? clusterTopic,
     int? clusterHiddenCount,
+    List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
   }) {
     return Content(
@@ -258,6 +262,7 @@ class Content {
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
       clusterTopic: clusterTopic ?? this.clusterTopic,
       clusterHiddenCount: clusterHiddenCount ?? this.clusterHiddenCount,
+      clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
     );

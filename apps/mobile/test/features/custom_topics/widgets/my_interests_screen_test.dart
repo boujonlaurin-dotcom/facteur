@@ -89,7 +89,7 @@ void main() {
       await tester.pumpWidget(createWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Ton algorithme, tes regles.'), findsOneWidget);
+      expect(find.text('Ton algorithme, tes règles.'), findsOneWidget);
       expect(
         find.textContaining('Facteur apprend de tes lectures'),
         findsOneWidget,
@@ -152,7 +152,7 @@ void main() {
       await tester.pumpWidget(createWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Mes Interets'), findsOneWidget);
+      expect(find.text('Mes Intérêts'), findsOneWidget);
     });
 
     testWidgets('slider calls updatePriority on provider',
@@ -239,6 +239,56 @@ void main() {
 
       // Topic should still be visible
       expect(find.text('IA'), findsOneWidget);
+    });
+
+    testWidgets('supplements suggestions with local slugs when API returns few',
+        (tester) async {
+      // Set up mocks manually (not via createWidget) to control suggestions
+      when(() => mockRepo.getTopics()).thenAnswer((_) async => [
+            const UserTopicProfile(
+              id: 't1',
+              name: 'Intelligence artificielle',
+              slugParent: 'ai',
+              priorityMultiplier: 1.0,
+            ),
+          ]);
+      when(() => mockRepo.getTopicSuggestions(theme: any(named: 'theme')))
+          .thenAnswer((_) async => ['Suggestion unique']);
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          topicRepositoryProvider.overrideWithValue(mockRepo),
+          app_auth.authStateProvider.overrideWith((ref) => mockAuth),
+        ],
+        child: const MaterialApp(home: MyInterestsScreen()),
+      ));
+      await tester.pumpAndSettle();
+
+      // Should show API suggestions (appears in multiple theme sections)
+      expect(find.text('Suggestion unique'), findsWidgets);
+
+      // Should show local fallback labels from Technologie macro theme
+      // 'ai' is followed, so other slugs like 'tech', 'cybersecurity' should appear
+      expect(find.text('Technologie'), findsWidgets);
+      expect(find.text('Cybersécurité'), findsWidgets);
+    });
+
+    testWidgets('displays topic with null slugParent using name fallback',
+        (tester) async {
+      await tester.pumpWidget(createWidget(
+        topics: [
+          const UserTopicProfile(
+            id: 't1',
+            name: 'Intelligence artificielle',
+            // slugParent is null — should derive 'ai' from name
+            priorityMultiplier: 1.0,
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      // Should find the topic name rendered
+      expect(find.text('Intelligence artificielle'), findsOneWidget);
     });
   });
 }

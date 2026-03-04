@@ -1,6 +1,6 @@
 """add_is_serene
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: c134526be6cd
 Revises: f6170e07e614
 Create Date: 2026-03-04 14:00:00.000000
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'is01'
+revision: str = 'c134526be6cd'
 down_revision: Union[str, Sequence[str], None] = 'f6170e07e614'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
