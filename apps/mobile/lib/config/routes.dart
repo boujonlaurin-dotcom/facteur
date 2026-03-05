@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -312,7 +311,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'add', // /settings/sources/add
                     name: RouteNames.addSource,
-                    pageBuilder: (context, state) => const FullSwipeCupertinoPage(
+                    pageBuilder: (context, state) =>
+                        const FullSwipeCupertinoPage(
                       child: AddSourceScreen(),
                     ),
                   ),

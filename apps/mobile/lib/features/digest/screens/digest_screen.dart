@@ -195,7 +195,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
   void _handleSwipeDismiss(DigestItem item) {
     HapticFeedback.lightImpact();
-    ref.read(digestProvider.notifier).applyAction(item.contentId, 'not_interested');
+    ref
+        .read(digestProvider.notifier)
+        .applyAction(item.contentId, 'not_interested');
   }
 
   @override
@@ -256,17 +258,17 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               controller: _scrollController,
               slivers: [
                 // Feed-style header with logo and streak
-                SliverToBoxAdapter(
+                const SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
+                    padding: EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space6,
                       vertical: FacteurSpacing.space3,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const StreakIndicator(),
-                        const FacteurLogo(size: 22),
+                        StreakIndicator(),
+                        FacteurLogo(size: 22),
                         UpdateButton(),
                       ],
                     ),
@@ -433,10 +435,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   onSave: _handleSave,
                                   onNotInterested: _handleNotInterested,
                                   onSwipeDismiss: _handleSwipeDismiss,
-                                  onMuteSource: (sourceId) =>
-                                      ref.read(feedProvider.notifier).muteSourceById(sourceId),
-                                  onMuteTopic: (topic) =>
-                                      ref.read(feedProvider.notifier).muteTopic(topic),
+                                  onMuteSource: (sourceId) => ref
+                                      .read(feedProvider.notifier)
+                                      .muteSourceById(sourceId),
+                                  onMuteTopic: (topic) => ref
+                                      .read(feedProvider.notifier)
+                                      .muteTopic(topic),
                                   mode: modeState.mode,
                                   isRegenerating: modeState.isRegenerating,
                                   onTapModeSelector: () {

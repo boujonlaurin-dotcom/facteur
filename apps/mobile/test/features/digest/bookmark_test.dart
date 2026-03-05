@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
 
-import '../../../lib/features/digest/providers/digest_provider.dart';
-import '../../../lib/features/saved/providers/saved_feed_provider.dart';
-import '../../../lib/features/feed/models/content_model.dart';
+import 'package:facteur/features/digest/providers/digest_provider.dart';
+import 'package:facteur/features/saved/providers/saved_feed_provider.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
 
 // TODO: Complete implementation of these tests
 // These test cases are required to validate bookmark functionality

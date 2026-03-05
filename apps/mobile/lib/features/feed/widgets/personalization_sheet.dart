@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -36,234 +35,232 @@ class PersonalizationSheet extends ConsumerWidget {
       ),
       child: SingleChildScrollView(
         child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header
-          Row(
-            children: [
-              Icon(PhosphorIcons.question(PhosphorIconsStyle.bold),
-                  color: colors.primary, size: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Pourquoi cet article ?',
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              if (reason != null && reason.scoreTotal > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(PhosphorIcons.question(PhosphorIconsStyle.bold),
+                    color: colors.primary, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Text(
-                    '${reason.scoreTotal.toInt()} pts',
+                    'Pourquoi cet article ?',
                     style: TextStyle(
-                      color: colors.primary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Breakdown
-          if (reason != null && reason.breakdown.isNotEmpty) ...[
-            ...reason.breakdown.map((contribution) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        contribution.isPositive
-                            ? PhosphorIcons.trendUp(PhosphorIconsStyle.bold)
-                            : PhosphorIcons.trendDown(PhosphorIconsStyle.bold),
-                        color: contribution.isPositive
-                            ? colors.success
-                            : colors.error,
-                        size: 16,
+                if (reason != null && reason.scoreTotal > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${reason.scoreTotal.toInt()} pts',
+                      style: TextStyle(
+                        color: colors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          contribution.label,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 15,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Breakdown
+            if (reason != null && reason.breakdown.isNotEmpty) ...[
+              ...reason.breakdown.map((contribution) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          contribution.isPositive
+                              ? PhosphorIcons.trendUp(PhosphorIconsStyle.bold)
+                              : PhosphorIcons.trendDown(
+                                  PhosphorIconsStyle.bold),
+                          color: contribution.isPositive
+                              ? colors.success
+                              : colors.error,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            contribution.label,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
-                      ),
-                      Text(
-                        '${contribution.points > 0 ? '+' : ''}${contribution.points.toInt()}',
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w500,
+                        Text(
+                          '${contribution.points > 0 ? '+' : ''}${contribution.points.toInt()}',
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                )),
-            const SizedBox(height: 16),
-            Divider(color: colors.border),
-            const SizedBox(height: 16),
-          ],
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: 16),
+              Divider(color: colors.border),
+              const SizedBox(height: 16),
+            ],
 
-          // Actions
-          Text(
-            'Personnaliser mon flux'.toUpperCase(),
-            style: TextStyle(
-              color: colors.textSecondary, // Use secondary for section title
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Source weight slider
-          if (content.source.name.isNotEmpty && content.source.isTrusted && !content.source.isMuted)
-            _buildSourceWeightRow(context, ref, colors),
-
-          // Mute source (red destructive action)
-          if (content.source.name.isNotEmpty)
-            _buildActionOption(
-              context,
-              icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
-              label: 'Ne plus afficher ${content.source.name}',
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  await ref.read(feedProvider.notifier).muteSource(content);
-                  NotificationService.showInfo(
-                      'Source ${content.source.name} masquée');
-                } catch (e) {
-                  NotificationService.showError(
-                      'Impossible de masquer la source');
-                }
-              },
-              colors: colors,
-              isDestructive: true,
-            ),
-
-          // "Gérer mes sources" CTA
-          if (content.source.name.isNotEmpty)
-            Center(
-              child: TextButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  context.pushNamed(RouteNames.sources);
-                },
-                icon: Icon(
-                  PhosphorIcons.gear(),
-                  size: 14,
-                  color: colors.textSecondary,
-                ),
-                label: Text(
-                  'Gérer mes sources',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                ),
+            // Actions
+            Text(
+              'Personnaliser mon flux'.toUpperCase(),
+              style: TextStyle(
+                color: colors.textSecondary, // Use secondary for section title
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
+            const SizedBox(height: 12),
 
-          if (theme != null && theme.isNotEmpty)
+            // Source weight slider
+            if (content.source.name.isNotEmpty &&
+                content.source.isTrusted &&
+                !content.source.isMuted)
+              _buildSourceWeightRow(context, ref, colors),
+
+            // Mute source (red destructive action)
+            if (content.source.name.isNotEmpty)
+              _buildActionOption(
+                context,
+                icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
+                label: 'Ne plus afficher ${content.source.name}',
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(feedProvider.notifier).muteSource(content);
+                    NotificationService.showInfo(
+                        'Source ${content.source.name} masquée');
+                  } catch (e) {
+                    NotificationService.showError(
+                        'Impossible de masquer la source');
+                  }
+                },
+                colors: colors,
+                isDestructive: true,
+              ),
+
+            // "Gérer mes sources" CTA
+            if (content.source.name.isNotEmpty)
+              Center(
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.pushNamed(RouteNames.sources);
+                  },
+                  icon: Icon(
+                    PhosphorIcons.gear(),
+                    size: 14,
+                    color: colors.textSecondary,
+                  ),
+                  label: Text(
+                    'Gérer mes sources',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ),
+              ),
+
+            if (theme != null && theme.isNotEmpty)
+              _buildActionOption(
+                context,
+                icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                label: 'Moins sur le thème "${_getThemeLabel(theme)}"',
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(feedProvider.notifier).muteTheme(theme);
+                    NotificationService.showInfo('Thème masqué');
+                  } catch (e) {
+                    NotificationService.showError(
+                        'Impossible de masquer le thème');
+                  }
+                },
+                colors: colors,
+              ),
+
+            if (topic != null &&
+                topic.isNotEmpty &&
+                _normalize(topic) != _normalize(theme ?? ''))
+              _buildActionOption(
+                context,
+                icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                label: 'Moins sur le sujet "${_getThemeLabel(topic)}"',
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(feedProvider.notifier).muteTopic(topic);
+                    NotificationService.showInfo('Sujet masqué');
+                  } catch (e) {
+                    NotificationService.showError(
+                        'Impossible de masquer le sujet');
+                  }
+                },
+                colors: colors,
+              ),
+
+            // Mute content type
+            if (content.contentType != ContentType.article)
+              _buildActionOption(
+                context,
+                icon: PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                label: 'Moins ${_getContentTypeLabel(content.contentType)}',
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(feedProvider.notifier).muteContentType(
+                        _getContentTypeSlug(content.contentType));
+                    NotificationService.showInfo('Type de contenu masqué');
+                  } catch (e) {
+                    NotificationService.showError(
+                        'Impossible de masquer ce type de contenu');
+                  }
+                },
+                colors: colors,
+              ),
+
+            // "Already seen" — permanent strong impression penalty
             _buildActionOption(
               context,
-              icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-              label: 'Moins sur le thème "${_getThemeLabel(theme)}"',
+              icon: PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
+              label: "J'ai déjà vu cet article",
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  await ref.read(feedProvider.notifier).muteTheme(theme);
-                  NotificationService.showInfo('Thème masqué');
+                  await ref.read(feedProvider.notifier).impressContent(content);
+                  NotificationService.showInfo('Article marqué comme déjà vu');
                 } catch (e) {
                   NotificationService.showError(
-                      'Impossible de masquer le thème');
+                      'Erreur réseau — réessaie dans un instant');
                 }
               },
               colors: colors,
             ),
 
-          if (topic != null &&
-              topic.isNotEmpty &&
-              _normalize(topic) != _normalize(theme ?? ''))
-            _buildActionOption(
-              context,
-              icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-              label: 'Moins sur le sujet "${_getThemeLabel(topic)}"',
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  await ref.read(feedProvider.notifier).muteTopic(topic);
-                  NotificationService.showInfo('Sujet masqué');
-                } catch (e) {
-                  NotificationService.showError(
-                      'Impossible de masquer le sujet');
-                }
-              },
-              colors: colors,
-            ),
-
-          // Mute content type
-          if (content.contentType != ContentType.article)
-            _buildActionOption(
-              context,
-              icon: PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-              label:
-                  'Moins ${_getContentTypeLabel(content.contentType)}',
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  await ref
-                      .read(feedProvider.notifier)
-                      .muteContentType(
-                          _getContentTypeSlug(content.contentType));
-                  NotificationService.showInfo('Type de contenu masqué');
-                } catch (e) {
-                  NotificationService.showError(
-                      'Impossible de masquer ce type de contenu');
-                }
-              },
-              colors: colors,
-            ),
-
-          // "Already seen" — permanent strong impression penalty
-          _buildActionOption(
-            context,
-            icon: PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
-            label: "J'ai déjà vu cet article",
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await ref
-                    .read(feedProvider.notifier)
-                    .impressContent(content);
-                NotificationService.showInfo('Article marqué comme déjà vu');
-              } catch (e) {
-                NotificationService.showError(
-                    'Erreur réseau — réessaie dans un instant');
-              }
-            },
-            colors: colors,
-          ),
-
-          const SizedBox(height: 8),
-        ],
-      ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSourceWeightRow(
-    BuildContext context, WidgetRef ref, FacteurColors colors) {
+      BuildContext context, WidgetRef ref, FacteurColors colors) {
     // Watch live multiplier from provider (not stale content snapshot)
     final sourcesAsync = ref.watch(userSourcesProvider);
     final liveMultiplier = sourcesAsync.whenOrNull(
