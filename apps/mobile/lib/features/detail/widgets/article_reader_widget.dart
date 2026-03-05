@@ -13,6 +13,7 @@ class ArticleReaderWidget extends StatelessWidget {
   final VoidCallback? onLinkTap;
   final Widget? header;
   final Widget? footer;
+  final bool shrinkWrap;
 
   const ArticleReaderWidget({
     super.key,
@@ -22,12 +23,12 @@ class ArticleReaderWidget extends StatelessWidget {
     this.onLinkTap,
     this.header,
     this.footer,
+    this.shrinkWrap = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
 
     // Sanitize htmlContent, fallback to description if result is empty
     String content = '';
@@ -129,6 +130,13 @@ class ArticleReaderWidget extends StatelessWidget {
           ],
         ],
       );
+
+    if (shrinkWrap) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
+        child: column,
+      );
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
