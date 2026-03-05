@@ -17,8 +17,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     supabase,
     onAuthError: (code) {
       if (code == 401) {
-        // Token invalide ou expiré -> Logout immédiat
-        ref.read(authStateProvider.notifier).signOut();
+        // Token invalide ou expiré → message friendly + redirect login
+        ref.read(authStateProvider.notifier).handleSessionExpired();
       } else if (code == 403) {
         // Email non confirmé (selon Backend) -> Force redirection vers confirmation
         // On ne déconnecte PAS. On change juste le flag pour que le Router redirige.
