@@ -25,6 +25,7 @@ class DigestScoreBreakdown(BaseModel):
     label: str  # ex: "Thème matché : Tech"
     points: float  # ex: 70.0
     is_positive: bool = True  # True pour bonus, False pour pénalités
+    pillar: str | None = None  # "pertinence" | "source" | "fraicheur" | "qualite" | "penalite"
 
 
 class DigestRecommendationReason(BaseModel):

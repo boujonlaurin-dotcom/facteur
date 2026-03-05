@@ -90,7 +90,7 @@ class BaseScoringLayer(ABC):
 
 
 class ScoringEngine:
-    """Moteur qui orchestre le calcul du score via plusieurs layers."""
+    """Moteur qui orchestre le calcul du score via plusieurs layers (v1 — legacy)."""
 
     def __init__(self, layers: list[BaseScoringLayer]):
         self.layers = layers
@@ -115,3 +115,112 @@ class ScoringEngine:
                 continue
 
         return total_score
+
+
+# ---------------------------------------------------------------------------
+# Pillar-based scoring engine (v2)
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass, field
+
+
+@dataclass
+class PillarScoreResult:
+    """Résultat complet du scoring par piliers pour un article."""
+
+    final_score: float  # Score combiné (0-100 base + pénalités)
+    pillar_scores: dict[str, float]  # {pillar_name: normalized_score}
+    contributions: list[dict[str, Any]]  # Flat list for reason hydration
+
+
+class PillarScoringEngine:
+    """Moteur v2 qui orchestre le scoring par piliers normalisés.
+
+    Architecture:
+    1. Chaque pilier score indépendamment (normalisé 0-100)
+    2. Combinaison pondérée des piliers
+    3. Application des pénalités absolues (mutes, impressions)
+
+    Le score final est sur une échelle ~0-100 (peut aller en négatif avec pénalités).
+    """
+
+    def __init__(self):
+        # Lazy imports to avoid circular deps at module level
+        from app.services.recommendation.pillars import (
+            FraicheurPillar,
+            PenaltyPass,
+            PertinencePillar,
+            QualitePillar,
+            SourcePillar,
+        )
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        self.pillars = [
+            PertinencePillar(),
+            SourcePillar(),
+            FraicheurPillar(),
+            QualitePillar(),
+        ]
+        self.penalty_pass = PenaltyPass()
+        self.weights = ScoringWeights.PILLAR_WEIGHTS
+
+    def compute_score(
+        self, content: Content, context: ScoringContext
+    ) -> PillarScoreResult:
+        """Compute pillar-based score for a content item."""
+        pillar_scores: dict[str, float] = {}
+        all_contributions: list[dict[str, Any]] = []
+
+        # Score each pillar
+        for pillar in self.pillars:
+            try:
+                result = pillar.score(content, context)
+                pillar_scores[pillar.name] = result.normalized_score
+
+                for contrib in result.contributions:
+                    all_contributions.append(
+                        {
+                            "pillar": pillar.name,
+                            "pillar_display": pillar.display_name,
+                            "label": contrib.label,
+                            "points": contrib.points,
+                            "is_positive": contrib.is_positive,
+                        }
+                    )
+            except Exception as e:
+                logger.error(
+                    "pillar_scoring_error", pillar=pillar.name, error=str(e)
+                )
+                pillar_scores[pillar.name] = 0.0
+
+        # Weighted combination
+        base_score = sum(
+            pillar_scores.get(name, 0.0) * weight
+            for name, weight in self.weights.items()
+        )
+
+        # Apply penalties
+        try:
+            penalty_score, penalty_contribs = self.penalty_pass.compute(
+                content, context
+            )
+            for contrib in penalty_contribs:
+                all_contributions.append(
+                    {
+                        "pillar": self.penalty_pass.name,
+                        "pillar_display": self.penalty_pass.display_name,
+                        "label": contrib.label,
+                        "points": contrib.points,
+                        "is_positive": contrib.is_positive,
+                    }
+                )
+        except Exception as e:
+            logger.error("penalty_pass_error", error=str(e))
+            penalty_score = 0.0
+
+        final_score = base_score + penalty_score
+
+        return PillarScoreResult(
+            final_score=final_score,
+            pillar_scores=pillar_scores,
+            contributions=all_contributions,
+        )

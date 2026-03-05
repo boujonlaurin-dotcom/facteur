@@ -199,3 +199,28 @@ class ScoringWeights:
     # Maximum bonus for a source with highest engagement.
     # Calibré pour être significatif mais pas dominant vs theme match (50 pts).
     SOURCE_AFFINITY_MAX_BONUS = 25.0
+
+    # --- PILLAR SCORING (v2 Architecture) ---
+
+    # Poids relatifs des piliers (doivent sommer à 1.0).
+    PILLAR_WEIGHTS = {
+        "pertinence": 0.40,
+        "source": 0.25,
+        "fraicheur": 0.20,
+        "qualite": 0.15,
+    }
+
+    # Expected max raw scores per pillar (for 0-100 normalization).
+    # Tuned from observed score distributions.
+    MAX_PERTINENCE_RAW = 130.0  # theme(50) + 2 subtopics(90) + precision(18) - overlap
+    MAX_SOURCE_RAW = 75.0  # trusted(35) + custom(12) + affinity(25) + curated(10)
+    MAX_FRAICHEUR_RAW = 115.0  # recency_base(100) + recency_pref(15)
+    MAX_QUALITE_RAW = 32.0  # thumbnail(12) + full_text(10) + curated(10)
+
+    # Randomization temperatures (Gumbel noise).
+    # 0.0 = deterministic, 0.15 = moderate discovery, 0.3 = high discovery.
+    FEED_RANDOMIZATION_TEMPERATURE = 0.15
+    DIGEST_RANDOMIZATION_TEMPERATURE = 0.08
+
+    # Scoring engine version: "layers_v1" (legacy) or "pillars_v1" (new).
+    SCORING_VERSION = "pillars_v1"
