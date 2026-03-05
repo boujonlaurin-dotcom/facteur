@@ -9,6 +9,7 @@ import '../providers/conclusion_notifier.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/animated_message_text.dart';
 import '../widgets/minimal_loader.dart';
+import '../widgets/notification_permission_bottom_sheet.dart';
 import '../widgets/theme_choice_bottom_sheet.dart';
 
 /// Écran d'animation de conclusion de l'onboarding
@@ -68,6 +69,11 @@ class _ConclusionAnimationScreenState
     // Proposer le choix du thème avant de naviguer
     if (mounted) {
       await showThemeChoiceBottomSheet(context, ref);
+    }
+
+    // Proposer l'activation des notifications (une seule fois, post-onboarding)
+    if (mounted) {
+      await showNotificationPermissionBottomSheet(context, ref);
     }
 
     // Naviguer vers le digest avec paramètre first pour welcome experience
