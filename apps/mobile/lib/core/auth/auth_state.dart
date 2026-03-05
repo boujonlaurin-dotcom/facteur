@@ -311,7 +311,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         isLoading: false,
         error: 'Une erreur est survenue',
       );
-    }
+    } 
   }
 
   Future<void> signUpWithEmail({
