@@ -43,7 +43,7 @@ RUN flutter build web --release \
 # ─────────────────────────────────────────────
 # Stage 2 — Serve avec nginx
 # ─────────────────────────────────────────────
-FROM nginx:1.25-alpine
+FROM nginx:alpine
 
 # Supprimer la conf par défaut
 RUN rm /etc/nginx/conf.d/default.conf
@@ -54,6 +54,5 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 COPY --from=builder /app/build/web /usr/share/nginx/html
 
-# Railway expose dynamiquement $PORT (pas forcément 80).
-# EXPOSE est documentaire — nginx écoute sur $PORT via envsubst au runtime.
+# Railway expose dynamiquement $PORT (pas forcément 80)
 EXPOSE 8080

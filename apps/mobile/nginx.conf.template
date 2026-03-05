@@ -1,22 +1,35 @@
 server {
     listen ${PORT};
+    server_name _;
 
     root /usr/share/nginx/html;
     index index.html;
 
-    # Flutter web SPA — renvoie index.html pour toutes les routes
+    # SPA fallback — toutes les routes vers index.html
     location / {
         try_files $uri $uri/ /index.html;
     }
 
-    # Cache agressif sur les assets hachés
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|woff|woff2|ttf|svg)$ {
+    # Compression
+    gzip on;
+    gzip_vary on;
+    gzip_types
+        text/plain
+        text/css
+        application/javascript
+        application/json
+        application/wasm
+        image/svg+xml;
+
+    # Cache long pour les assets Flutter (hash dans le nom)
+    location ~* \.(js|wasm|png|jpg|jpeg|gif|ico|svg|ttf|woff|woff2)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
 
-    # Pas de cache sur index.html (entry point de la SPA)
-    location = /index.html {
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    # Pas de cache pour index.html et flutter_bootstrap.js
+    location ~* (index\.html|flutter_bootstrap\.js|flutter_service_worker\.js)$ {
+        expires -1;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
     }
 }
