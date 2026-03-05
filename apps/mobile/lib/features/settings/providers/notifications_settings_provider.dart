@@ -45,20 +45,28 @@ class NotificationsSettingsNotifier
   }
 
   Future<void> setPushEnabled(bool value) async {
-    state = state.copyWith(pushEnabled: value);
     final box = await Hive.openBox<dynamic>(_boxName);
-    await box.put(_pushKey, value);
 
-    // Planifier ou annuler la notification de digest selon le toggle
     try {
       final pushService = PushNotificationService();
       if (value) {
+        // Demander la permission si l'utilisateur active les notifications
+        final granted = await pushService.requestPermission();
+        if (!granted) {
+          // Permission refusée, ne pas activer
+          debugPrint('NotificationsSettings: Permission denied, keeping OFF');
+          return;
+        }
+        await pushService.requestExactAlarmPermission();
         await pushService.scheduleDailyDigestNotification();
         debugPrint('NotificationsSettings: Digest notification scheduled');
       } else {
         await pushService.cancelDigestNotification();
         debugPrint('NotificationsSettings: Digest notification cancelled');
       }
+
+      state = state.copyWith(pushEnabled: value);
+      await box.put(_pushKey, value);
     } catch (e) {
       debugPrint('NotificationsSettings: Error toggling notification: $e');
     }

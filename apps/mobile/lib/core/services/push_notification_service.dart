@@ -163,61 +163,6 @@ class PushNotificationService {
     debugPrint('PushNotificationService: Digest notification cancelled');
   }
 
-  /// Retourne les infos de diagnostic sur les permissions et notifications planifiées.
-  Future<Map<String, dynamic>> getDiagnostics() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-
-    final bool notificationsEnabled;
-    final bool exactAlarmsGranted;
-
-    if (androidPlugin != null) {
-      notificationsEnabled =
-          await androidPlugin.areNotificationsEnabled() ?? false;
-      exactAlarmsGranted =
-          await androidPlugin.canScheduleExactNotifications() ?? false;
-    } else {
-      notificationsEnabled = true;
-      exactAlarmsGranted = true;
-    }
-
-    final pending = await _plugin.pendingNotificationRequests();
-    final digestScheduled = pending.any((n) => n.id == 0);
-
-    return {
-      'notificationsEnabled': notificationsEnabled,
-      'exactAlarmsGranted': exactAlarmsGranted,
-      'digestScheduled': digestScheduled,
-      'pendingCount': pending.length,
-    };
-  }
-
-  /// Envoie une notification test immédiate pour vérifier que le système fonctionne.
-  Future<void> sendTestNotification() async {
-    const androidDetails = AndroidNotificationDetails(
-      'digest_channel',
-      'Digest quotidien',
-      channelDescription:
-          'Notification quotidienne quand votre digest est prêt',
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: DarwinNotificationDetails(),
-    );
-
-    await _plugin.show(
-      id: 99,
-      title: 'Test notification',
-      body: 'Les notifications Facteur fonctionnent !',
-      notificationDetails: details,
-    );
-
-    debugPrint('PushNotificationService: Test notification sent');
-  }
-
   /// Calcule la prochaine occurrence de 8h00 Europe/Paris.
   tz.TZDateTime _nextInstanceOf8AM() {
     final paris = tz.getLocation('Europe/Paris');

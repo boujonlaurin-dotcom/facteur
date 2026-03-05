@@ -65,16 +65,14 @@ Future<void> main() async {
     debugPrint('Main: Hive supabase_session NOT FOUND in box.');
   }
 
-  // Initialiser les notifications push locales
+  // Initialiser les notifications push locales (sans forcer la permission)
   try {
     debugPrint('Main: Initializing push notifications...');
     final pushNotificationService = PushNotificationService();
     PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
     await pushNotificationService.init();
-    await pushNotificationService.requestPermission();
-    await pushNotificationService.requestExactAlarmPermission();
 
-    // Vérifier si les notifications sont activées dans Hive avant de planifier
+    // Planifier uniquement si l'utilisateur a déjà autorisé les notifications
     final settingsBox = Hive.box<dynamic>('settings');
     final pushEnabled = settingsBox.get('push_notifications_enabled',
         defaultValue: true) as bool;
