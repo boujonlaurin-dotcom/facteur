@@ -1,0 +1,22 @@
+server {
+    listen ${PORT};
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Flutter web SPA — renvoie index.html pour toutes les routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache agressif sur les assets hachés
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|woff|woff2|ttf|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Pas de cache sur index.html (entry point de la SPA)
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+}
