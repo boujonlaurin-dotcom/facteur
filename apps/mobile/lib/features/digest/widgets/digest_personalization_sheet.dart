@@ -54,8 +54,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // Breakdown list
-            ...reason.breakdown.map((contribution) =>
-                _buildContributionRow(context, colors, contribution)),
+            ..._buildBreakdown(reason.breakdown, colors),
 
             // Divider and actions
             if (item.source != null) ...[
@@ -126,8 +125,88 @@ class DigestPersonalizationSheet extends ConsumerWidget {
     );
   }
 
+  static const _pillarOrder = [
+    'pertinence',
+    'source',
+    'fraicheur',
+    'qualite',
+    'diversite',
+    'penalite',
+  ];
+
+  static const _pillarHeaders = {
+    'pertinence': "Vos centres d'intérêt",
+    'source': 'Vos sources',
+    'fraicheur': 'Actualité',
+    'qualite': 'Qualité du contenu',
+    'diversite': 'Diversité',
+  };
+
+  List<Widget> _buildBreakdown(
+      List<DigestScoreBreakdown> breakdown, FacteurColors colors) {
+    final hasPillars = breakdown.any((c) => c.pillar != null);
+    if (!hasPillars) {
+      // Fallback: flat list (legacy backend)
+      return breakdown
+          .map((c) => _buildContributionRow(colors, c))
+          .toList();
+    }
+
+    // Sort by absolute contribution, take top 6
+    final sorted = List.of(breakdown)
+      ..sort((a, b) => b.points.abs().compareTo(a.points.abs()));
+    final limited = sorted.take(6).toList();
+
+    // Group by pillar
+    final groups = <String?, List<DigestScoreBreakdown>>{};
+    for (final c in limited) {
+      groups.putIfAbsent(c.pillar, () => []).add(c);
+    }
+
+    final widgets = <Widget>[];
+    for (final key in _pillarOrder) {
+      if (!groups.containsKey(key)) continue;
+      final header = _pillarHeaders[key];
+      if (header != null) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            header,
+            style: TextStyle(
+              color: colors.textTertiary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ));
+      }
+      for (final c in groups[key]!) {
+        widgets.add(_buildContributionRow(colors, c));
+      }
+    }
+
+    // Any null-pillar items
+    if (groups.containsKey(null)) {
+      for (final c in groups[null]!) {
+        widgets.add(_buildContributionRow(colors, c));
+      }
+    }
+
+    if (breakdown.length > 6) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'et ${breakdown.length - 6} autre${breakdown.length - 6 > 1 ? 's' : ''} facteur${breakdown.length - 6 > 1 ? 's' : ''}…',
+          style: TextStyle(color: colors.textTertiary, fontSize: 13),
+        ),
+      ));
+    }
+
+    return widgets;
+  }
+
   Widget _buildContributionRow(
-    BuildContext context,
     FacteurColors colors,
     DigestScoreBreakdown contribution,
   ) {
