@@ -260,18 +260,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         ),
                       ),
                       const Spacer(),
-                      // Right: preference label + slider
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'Préférence :',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textSecondary,
-                            height: 1.0,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
+                      // Right: priority slider (self-labeled)
                       TopicPrioritySlider(
                         currentMultiplier: matchedTopic.priorityMultiplier,
                         onChanged: (multiplier) async {
@@ -587,18 +576,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             ),
                           ),
                         ),
-                        // Right: preference label + slider
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'Préférence :',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                              height: 1.0,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
+                        // Right: priority slider (self-labeled)
                         PrioritySlider(
                           currentMultiplier: currentMultiplier,
                           onChanged: (multiplier) {
@@ -609,11 +587,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                   multiplier,
                                 );
                           },
-                          labels: const [
-                            'Reduit',
-                            'Normal',
-                            'Favori',
-                          ],
                         ),
                       ],
                     ),

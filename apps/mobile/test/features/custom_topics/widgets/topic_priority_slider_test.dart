@@ -6,7 +6,6 @@ void main() {
   Widget createWidget({
     required double currentMultiplier,
     required ValueChanged<double> onChanged,
-    double width = 90,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -14,7 +13,6 @@ void main() {
           child: TopicPrioritySlider(
             currentMultiplier: currentMultiplier,
             onChanged: onChanged,
-            width: width,
           ),
         ),
       ),
@@ -29,14 +27,6 @@ void main() {
         onChanged: (_) {},
       ));
 
-      // Find the 3 Container blocks (28x12)
-      final containers = find.byWidgetPredicate((widget) =>
-          widget is Container &&
-          widget.constraints?.maxWidth == 28 &&
-          widget.constraints?.maxHeight == 12);
-
-      // We check via the decoration colors instead
-      // The widget should have 1 filled and 2 unfilled blocks
       expect(find.byType(TopicPrioritySlider), findsOneWidget);
     });
 
@@ -71,17 +61,17 @@ void main() {
       // Tap on the right side of the slider (3rd block area)
       final slider = find.byType(TopicPrioritySlider);
       final sliderBox = tester.getRect(slider);
-      // Tap near the right end
+      // Tap near the right end (blocks are the rightmost part)
       await tester.tapAt(Offset(
-        sliderBox.center.dx + 30,
-        sliderBox.center.dy + 10,
+        sliderBox.right - 10,
+        sliderBox.center.dy,
       ));
       await tester.pump();
 
       expect(changedValue, 2.0);
     });
 
-    testWidgets('tap on left area calls onChanged with 0.5',
+    testWidgets('tap on left block area calls onChanged with 0.5',
         (tester) async {
       double? changedValue;
       await tester.pumpWidget(createWidget(
@@ -89,12 +79,13 @@ void main() {
         onChanged: (v) => changedValue = v,
       ));
 
-      // Tap on the left side of the slider (1st block area)
+      // Tap on the first block (after the label text)
       final slider = find.byType(TopicPrioritySlider);
       final sliderBox = tester.getRect(slider);
+      // Blocks width = 28*3 + 3*2 = 90, so first block starts at right - 90
       await tester.tapAt(Offset(
-        sliderBox.center.dx - 30,
-        sliderBox.center.dy + 10,
+        sliderBox.right - 80,
+        sliderBox.center.dy,
       ));
       await tester.pump();
 
@@ -109,87 +100,52 @@ void main() {
         onChanged: (v) => changedValue = v,
       ));
 
-      // Tap in the center area (cran 2, already active)
+      // Tap in the middle block area (cran 2, already active)
       final slider = find.byType(TopicPrioritySlider);
       final sliderBox = tester.getRect(slider);
       await tester.tapAt(Offset(
-        sliderBox.center.dx,
-        sliderBox.center.dy + 10,
+        sliderBox.right - 45,
+        sliderBox.center.dy,
       ));
       await tester.pump();
 
       expect(changedValue, isNull);
     });
 
-    testWidgets('label shows on tap then fades out', (tester) async {
-      await tester.pumpWidget(createWidget(
-        currentMultiplier: 1.0,
-        onChanged: (_) {},
-      ));
-
-      // Initially label should be invisible (opacity 0)
-      final opacityBefore = tester.widget<AnimatedOpacity>(
-        find.byType(AnimatedOpacity),
-      );
-      expect(opacityBefore.opacity, 0.0);
-
-      // Tap to trigger label show
-      final slider = find.byType(TopicPrioritySlider);
-      final sliderBox = tester.getRect(slider);
-      await tester.tapAt(Offset(
-        sliderBox.center.dx + 30,
-        sliderBox.center.dy + 10,
-      ));
-      await tester.pump();
-
-      // After tap, label should be visible
-      final opacityAfter = tester.widget<AnimatedOpacity>(
-        find.byType(AnimatedOpacity),
-      );
-      expect(opacityAfter.opacity, 1.0);
-
-      // After 1.5 seconds, label should fade out
-      await tester.pump(const Duration(milliseconds: 1600));
-      final opacityLater = tester.widget<AnimatedOpacity>(
-        find.byType(AnimatedOpacity),
-      );
-      expect(opacityLater.opacity, 0.0);
-    });
-
-    testWidgets('shows correct label text for each cran',
+    testWidgets('shows correct label text for each cran always visible',
         (tester) async {
-      // Cran 1: "Suivi"
+      // Cran 1: "Moins" — always visible
       await tester.pumpWidget(createWidget(
         currentMultiplier: 0.5,
         onChanged: (_) {},
       ));
-      expect(find.text('Suivi'), findsOneWidget);
+      expect(find.text('Moins'), findsOneWidget);
 
-      // Cran 2: "Intéressé"
+      // Cran 2: "Normal" — always visible
       await tester.pumpWidget(createWidget(
         currentMultiplier: 1.0,
         onChanged: (_) {},
       ));
-      expect(find.text('Intéressé'), findsOneWidget);
+      expect(find.text('Normal'), findsOneWidget);
 
-      // Cran 3: "Fort intérêt"
+      // Cran 3: "Plus" — always visible
       await tester.pumpWidget(createWidget(
         currentMultiplier: 2.0,
         onChanged: (_) {},
       ));
-      expect(find.text('Fort intérêt'), findsOneWidget);
+      expect(find.text('Plus'), findsOneWidget);
     });
 
-    testWidgets('widget fits within 100px width constraint',
+    testWidgets('label is always visible without needing tap',
         (tester) async {
       await tester.pumpWidget(createWidget(
         currentMultiplier: 1.0,
         onChanged: (_) {},
-        width: 90,
       ));
 
-      final sliderBox = tester.getRect(find.byType(TopicPrioritySlider));
-      expect(sliderBox.width, lessThanOrEqualTo(100));
+      // Label should be visible immediately (no AnimatedOpacity)
+      expect(find.text('Normal'), findsOneWidget);
+      expect(find.byType(AnimatedOpacity), findsNothing);
     });
   });
 }
