@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.enums import SourceType
 
@@ -21,6 +21,7 @@ class SourceResponse(BaseModel):
     is_custom: bool = False
     is_trusted: bool = False
     is_muted: bool = False
+    priority_multiplier: float = 1.0
     content_count: int = 0
     follower_count: int = 0
     bias_stance: str = "unknown"
@@ -76,3 +77,19 @@ class SourceCatalogResponse(BaseModel):
 
     curated: list[SourceResponse]
     custom: list[SourceResponse]
+
+
+class UpdateSourceWeightRequest(BaseModel):
+    """Mise à jour du poids d'une source."""
+
+    priority_multiplier: float
+
+    @field_validator("priority_multiplier")
+    @classmethod
+    def validate_multiplier(cls, v: float) -> float:
+        allowed = {0.5, 1.0, 2.0}
+        if v not in allowed:
+            raise ValueError(
+                f"priority_multiplier doit être 0.5, 1.0 ou 2.0 (reçu: {v})"
+            )
+        return v

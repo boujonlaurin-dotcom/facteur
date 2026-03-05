@@ -168,6 +168,29 @@ Issus de bugs réels en production. **Lecture obligatoire**: [Safety Guardrails]
 | 1 | **Python Type Hints** | `list[]` (PAS `List[]` from typing) | [Guardrail #1](docs/agent-brain/safety-guardrails.md#python-type-hints) |
 | 2 | **Supabase Stale Token** | Jamais trust `email_confirmed_at` JWT seul | [Guardrail #2](docs/agent-brain/safety-guardrails.md#supabase-stale-token) |
 | 3 | **Worktree Isolation** | Un agent = un worktree = une branche | [Guardrail #3](docs/agent-brain/safety-guardrails.md#worktree-isolation) |
+| 4 | **Alembic Multi-Head** | Exactement 1 head, jamais de duplicate | [Guardrail #4](#guardrail-4--alembic-migrations) |
+
+### Guardrail #4 — Alembic Migrations
+
+**Règles BLOQUANTES** :
+1. **Jamais d'exécution Alembic sur Railway** — Les migrations SQL sont exécutées **manuellement dans Supabase SQL Editor**. Les fichiers Alembic servent uniquement de tracking de révision (le `CMD` du Dockerfile exécute `alembic upgrade head` au démarrage).
+2. **Exactement 1 head** — Avant chaque commit touchant `alembic/versions/`, vérifier :
+   ```bash
+   python3 -c "
+   import re; from pathlib import Path
+   d = Path('packages/api/alembic/versions'); revs={}; refs=set()
+   for f in d.glob('*.py'):
+       c=f.read_text()
+       r=re.search(r\"^revision\s*(?::\s*str)?\s*=\s*['\\\"]([^'\\\"]+)['\\\"]\", c, re.M)
+       dn=re.search(r\"^down_revision\s*(?:[^=]+)?\s*=\s*(.+?)\$\", c, re.M|re.S)
+       if r:
+           revs[r.group(1)]=[]; refs.update(re.findall(r\"['\\\"]([^'\\\"]+)['\\\"]\", dn.group(1)) if dn else [])
+   print('HEADS:', [h for h in revs if h not in refs])
+   "
+   ```
+   Résultat attendu : `HEADS: ['<un_seul_id>']`
+3. **Pas de migration dupliquée** — Si deux fichiers font la même opération SQL (ex: `add_column is_serene`), supprimer le doublon non appliqué en prod.
+4. **Nouveau fichier migration = merge des heads existantes** — Si le repo a N heads, la nouvelle migration doit avoir `down_revision = (head1, head2, ...)` pour les fusionner.
 
 **Zones à risque élevé** (Auth/Router/Infra/DB): Lis [Safety Protocols](docs/agent-brain/safety-guardrails.md#safety-protocols) AVANT toute modif.
 

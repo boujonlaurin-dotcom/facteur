@@ -254,34 +254,6 @@ class TopicExplorerScreen extends ConsumerWidget {
   }
 
   /// Get parent theme display label for the subtitle.
-  String? _getParentThemeLabel(String slug) {
-    const slugToMacro = {
-      'ai': 'Tech & Science',
-      'tech': 'Tech & Science',
-      'cybersecurity': 'Tech & Science',
-      'gaming': 'Tech & Science',
-      'space': 'Tech & Science',
-      'science': 'Tech & Science',
-      'privacy': 'Tech & Science',
-      'politics': 'Societe',
-      'economy': 'Societe',
-      'work': 'Societe',
-      'education': 'Societe',
-      'health': 'Societe',
-      'justice': 'Societe',
-      'climate': 'Environnement',
-      'environment': 'Environnement',
-      'energy': 'Environnement',
-      'cinema': 'Culture',
-      'music': 'Culture',
-      'literature': 'Culture',
-      'art': 'Culture',
-      'media': 'Culture',
-      'startups': 'Business',
-      'finance': 'Business',
-      'geopolitics': 'International',
-      'europe': 'International',
-    };
-    return slugToMacro[slug];
-  }
+  /// Uses the centralized mapping from topic_labels.dart.
+  String? _getParentThemeLabel(String slug) => getTopicMacroTheme(slug);
 }
