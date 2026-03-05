@@ -1,10 +1,12 @@
 [build]
 dockerfilePath = "Dockerfile"
 
-# API_BASE_URL doit être défini comme variable Railway dans chaque environnement
-# car elle est baked dans le build Flutter via --dart-define.
-# Staging  → API_BASE_URL = https://facteur-staging.up.railway.app/api/
-# Production → API_BASE_URL = https://facteur-production.up.railway.app/api/
+[build.buildArgs]
+API_BASE_URL = "${{API_BASE_URL}}"
+SUPABASE_URL = "${{SUPABASE_URL}}"
+SUPABASE_ANON_KEY = "${{SUPABASE_ANON_KEY}}"
+POSTHOG_API_KEY = "${{POSTHOG_API_KEY}}"
+APP_RELEASE_TAG = "${{APP_RELEASE_TAG}}"
 
 [deploy]
 healthcheckPath = "/"
