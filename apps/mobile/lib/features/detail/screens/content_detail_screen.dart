@@ -72,7 +72,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
-  double _webViewOpacity = 0.0;
   bool _isWebViewActive = false;
   bool _hapticTriggered = false;
   double _bridgeStartOffset = 0;
@@ -273,7 +272,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Scroll listener driving opacity, haptic, and WebView activation.
+  /// Scroll listener driving haptic and WebView activation.
   void _onScrollToSite() {
     if (!_offsetsComputed) {
       _computeScrollOffsets();
@@ -281,21 +280,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     final offset = _scrollController.offset;
-    final revealStart = _bridgeEndOffset;
-    final revealEnd = revealStart + 100;
 
-    // WebView opacity ramp
-    double newOpacity;
-    if (offset <= revealStart) {
-      newOpacity = 0.0;
-    } else if (offset >= revealEnd) {
-      newOpacity = 1.0;
-    } else {
-      newOpacity = ((offset - revealStart) / (revealEnd - revealStart))
-          .clamp(0.0, 1.0);
-    }
-
-    // Haptic at bridge zone entry
+    // Haptic at bridge zone entry (one-shot, resets when scrolling back)
     if (offset >= _bridgeStartOffset && !_hapticTriggered) {
       _hapticTriggered = true;
       HapticFeedback.lightImpact();
@@ -303,13 +289,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _hapticTriggered = false;
     }
 
-    // Activate WebView gestures when fully revealed
-    final shouldActivate = offset >= revealEnd;
+    // Activate WebView gestures when scrolled past the bridge zone
+    final shouldActivate = offset >= _bridgeEndOffset;
 
-    // Only setState if values actually changed
-    if (newOpacity != _webViewOpacity || shouldActivate != _isWebViewActive) {
+    if (shouldActivate != _isWebViewActive) {
       setState(() {
-        _webViewOpacity = newOpacity;
         _isWebViewActive = shouldActivate;
       });
     }
@@ -321,7 +305,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (!_offsetsComputed) return false;
 
       final offset = _scrollController.offset;
-      final revealEnd = _bridgeEndOffset + 100;
+      final revealEnd = _bridgeEndOffset;
 
       // Only snap if in the ambiguous zone
       if (offset > _bridgeStartOffset - 20 && offset < revealEnd) {
@@ -1008,8 +992,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Progressive scroll-to-site layout for articles.
-  /// Article content → gradient fade → bridge zone → WebView reveal.
+  /// Progressive scroll-to-site layout (inverted stack architecture).
+  /// WebView is fixed behind the scrollable article content.
+  /// The opaque article container hides the WebView; transparent spacer reveals it.
   Widget _buildScrollToSiteContent(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
@@ -1027,7 +1012,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       readingTime = '$minutes min de lecture';
     }
 
-    // Schedule offset computation after layout (reset if content changed)
+    // Schedule offset computation after layout
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _computeScrollOffsets();
@@ -1036,191 +1021,188 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScrollToSiteNotification,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        physics: _isWebViewActive
-            ? const NeverScrollableScrollPhysics()
-            : const ClampingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ZONE 1: Article content with gradient fade overlay
-            Stack(
-              key: _articleKey,
-              children: [
-                // Article content (shrinkWrap: no internal scroll)
-                ArticleReaderWidget(
-                  htmlContent: content.htmlContent,
-                  description: content.description,
-                  title: content.title,
-                  shrinkWrap: true,
-                  header: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (content.thumbnailUrl != null) ...[
-                        ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.large),
-                          child: FacteurThumbnail(
-                            imageUrl: content.thumbnailUrl,
-                            aspectRatio: 16 / 9,
-                          ),
-                        ),
-                        const SizedBox(height: FacteurSpacing.space4),
-                      ],
-                      if (isPartial) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.warning.withValues(alpha: 0.12),
-                            borderRadius:
-                                BorderRadius.circular(FacteurRadius.pill),
-                          ),
-                          child: Text(
-                            'Aperçu — contenu partiel',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.warning,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: FacteurSpacing.space3),
-                      ],
-                      Text(
-                        content.title,
-                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
-                      ),
-                      const SizedBox(height: FacteurSpacing.space2),
-                      if (readingTime != null) ...[
-                        Row(
+      child: Stack(
+        children: [
+          // LAYER 0: WebView — fixed in viewport, always rendered.
+          // Painted first so it appears visually behind the scrollable content.
+          Positioned.fill(
+            child: _buildWebViewLayer(),
+          ),
+
+          // LAYER 1: Scrollable article content with opaque background.
+          // IgnorePointer lets touches pass through to WebView when active.
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: _isWebViewActive,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                physics: _isWebViewActive
+                    ? const NeverScrollableScrollPhysics()
+                    : const ClampingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ZONE 1: Article content — opaque background hides WebView
+                    Container(
+                      key: _articleKey,
+                      color: colors.backgroundPrimary,
+                      child: ArticleReaderWidget(
+                        htmlContent: content.htmlContent,
+                        description: content.description,
+                        title: content.title,
+                        shrinkWrap: true,
+                        header: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              PhosphorIcons.timer(PhosphorIconsStyle.regular),
-                              size: 14,
-                              color: colors.textTertiary,
-                            ),
-                            const SizedBox(width: 4),
+                            if (content.thumbnailUrl != null) ...[
+                              ClipRRect(
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.large),
+                                child: FacteurThumbnail(
+                                  imageUrl: content.thumbnailUrl,
+                                  aspectRatio: 16 / 9,
+                                ),
+                              ),
+                              const SizedBox(height: FacteurSpacing.space4),
+                            ],
+                            if (isPartial) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      colors.warning.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(
+                                      FacteurRadius.pill),
+                                ),
+                                child: Text(
+                                  'Aperçu — contenu partiel',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.warning,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: FacteurSpacing.space3),
+                            ],
                             Text(
-                              readingTime,
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colors.textTertiary,
+                              content.title,
+                              style: textTheme.displayLarge
+                                  ?.copyWith(fontSize: 24),
+                            ),
+                            const SizedBox(height: FacteurSpacing.space2),
+                            if (readingTime != null) ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    PhosphorIcons.timer(
+                                        PhosphorIconsStyle.regular),
+                                    size: 14,
+                                    color: colors.textTertiary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    readingTime,
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: colors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: FacteurSpacing.space3),
+                            ],
+                            Divider(color: colors.border, height: 1),
+                            const SizedBox(height: FacteurSpacing.space4),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ZONE 2: Bridge zone banner (tappable to scroll to WebView)
+                    GestureDetector(
+                      onTap: () {
+                        if (_offsetsComputed) {
+                          _scrollController.animateTo(
+                            _bridgeEndOffset,
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOutCubic,
+                          );
+                        }
+                      },
+                      child: Container(
+                        key: _bridgeKey,
+                        height: 72,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space4,
+                          vertical: FacteurSpacing.space3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.surfaceElevated,
+                          border: Border(
+                            top: BorderSide(
+                                color:
+                                    colors.border.withValues(alpha: 0.5)),
+                            bottom: BorderSide(
+                                color:
+                                    colors.border.withValues(alpha: 0.5)),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            if (content.source.logoUrl != null)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: CachedNetworkImage(
+                                  imageUrl: content.source.logoUrl!,
+                                  width: 24,
+                                  height: 24,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) =>
+                                      _buildSourcePlaceholder(colors),
+                                ),
+                              )
+                            else
+                              _buildSourcePlaceholder(colors),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Article complet \u00B7 ${content.source.name}',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: FacteurSpacing.space3),
-                      ],
-                      Divider(color: colors.border, height: 1),
-                      const SizedBox(height: FacteurSpacing.space4),
-                    ],
-                  ),
-                ),
-                // Gradient fade overlay on last 30px (only last line fades)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 30,
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            colors.backgroundPrimary.withValues(alpha: 0.0),
-                            colors.backgroundPrimary,
+                            Icon(
+                              PhosphorIcons.caretDown(
+                                  PhosphorIconsStyle.regular),
+                              size: 18,
+                              color: colors.textTertiary,
+                            ),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
 
-            // ZONE 2: Bridge zone banner (tappable to scroll to WebView)
-            GestureDetector(
-              onTap: () {
-                if (_offsetsComputed) {
-                  _scrollController.animateTo(
-                    _bridgeEndOffset + 100,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeOutCubic,
-                  );
-                }
-              },
-              child: Container(
-                key: _bridgeKey,
-                height: 72,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: FacteurSpacing.space4,
-                  vertical: FacteurSpacing.space3,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.surfaceElevated,
-                  border: Border(
-                    top: BorderSide(
-                        color: colors.border.withValues(alpha: 0.5)),
-                    bottom: BorderSide(
-                        color: colors.border.withValues(alpha: 0.5)),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    if (content.source.logoUrl != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: CachedNetworkImage(
-                          imageUrl: content.source.logoUrl!,
-                          width: 24,
-                          height: 24,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) =>
-                              _buildSourcePlaceholder(colors),
-                        ),
-                      )
-                    else
-                      _buildSourcePlaceholder(colors),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Article complet \u00B7 ${content.source.name}',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Icon(
-                      PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
-                      size: 18,
-                      color: colors.textTertiary,
-                    ),
+                    // ZONE 3: Transparent spacer — reveals WebView behind
+                    SizedBox(height: availableHeight),
                   ],
                 ),
               ),
             ),
-
-            // ZONE 3: WebView reveal container
-            SizedBox(
-              height: availableHeight,
-              child: _buildWebViewReveal(content, colors),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  /// WebView reveal with opacity overlay driven by scroll position.
-  Widget _buildWebViewReveal(Content content, FacteurColors colors) {
-    if (kIsWeb) return _buildWebViewFallback(content);
+  /// WebView layer — fixed in viewport behind the scrollable content.
+  Widget _buildWebViewLayer() {
+    if (kIsWeb) return _buildWebViewFallback(_content!);
 
     // Initialize WebView if not already done (e.g. content loaded after init)
     if (_webViewController == null) {
@@ -1230,32 +1212,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return const SizedBox.shrink();
     }
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: WebViewWidget(
-            controller: _webViewController!,
-            gestureRecognizers: _isWebViewActive
-                ? {
-                    Factory<VerticalDragGestureRecognizer>(
-                        () => VerticalDragGestureRecognizer()),
-                    Factory<HorizontalDragGestureRecognizer>(
-                        () => HorizontalDragGestureRecognizer()),
-                  }
-                : const {},
-          ),
-        ),
-        // Opacity overlay that fades out as user scrolls into zone 3.
-        // When WebView is not active, this overlay also blocks touch events
-        // so the outer scroll keeps working.
-        if (!_isWebViewActive)
-          Positioned.fill(
-            child: Container(
-              color: colors.backgroundPrimary
-                  .withValues(alpha: 1.0 - _webViewOpacity),
-            ),
-          ),
-      ],
+    return WebViewWidget(
+      controller: _webViewController!,
+      gestureRecognizers: _isWebViewActive
+          ? {
+              Factory<VerticalDragGestureRecognizer>(
+                  () => VerticalDragGestureRecognizer()),
+              Factory<HorizontalDragGestureRecognizer>(
+                  () => HorizontalDragGestureRecognizer()),
+            }
+          : const {},
     );
   }
 

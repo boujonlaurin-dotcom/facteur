@@ -8,13 +8,11 @@ import '../../../widgets/design/priority_slider.dart';
 class TopicPrioritySlider extends StatelessWidget {
   final double currentMultiplier;
   final ValueChanged<double> onChanged;
-  final double width;
 
   const TopicPrioritySlider({
     super.key,
     required this.currentMultiplier,
     required this.onChanged,
-    this.width = 90,
   });
 
   @override
@@ -22,8 +20,7 @@ class TopicPrioritySlider extends StatelessWidget {
     return PrioritySlider(
       currentMultiplier: currentMultiplier,
       onChanged: onChanged,
-      width: width,
-      labels: const ['Suivi', 'Intéressé', 'Fort intérêt'],
+      labels: const ['Moins', 'Normal', 'Plus'],
     );
   }
 }
