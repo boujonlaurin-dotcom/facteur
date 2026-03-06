@@ -87,6 +87,33 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     }
   }
 
+  Future<void> toggleSubscription(
+      String sourceId, bool currentlySubscribed) async {
+    final repository = ref.read(sourcesRepositoryProvider);
+
+    // Optimistic Update
+    final previousState = state;
+    if (state.hasValue) {
+      state = AsyncValue.data([
+        for (final source in state.value!)
+          if (source.id == sourceId)
+            source.copyWith(hasSubscription: !currentlySubscribed)
+          else
+            source
+      ]);
+    }
+
+    try {
+      await repository.updateSourceSubscription(
+          sourceId, !currentlySubscribed);
+    } catch (e, stack) {
+      // ignore: avoid_print
+      print(
+          'UserSourcesNotifier: [ERROR] toggleSubscription failed: $e\n$stack');
+      state = previousState;
+    }
+  }
+
   Future<void> toggleMute(String sourceId, bool currentlyMuted) async {
     final personalizationRepo = ref.read(personalizationRepositoryProvider);
 

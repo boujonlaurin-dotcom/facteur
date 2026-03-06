@@ -49,6 +49,16 @@ class SourcePillar(BasePillar):
                         points=ScoringWeights.CUSTOM_SOURCE_BONUS,
                     )
                 )
+
+            # Subscription bonus (premium source)
+            if content.source_id in context.subscribed_source_ids:
+                score += ScoringWeights.SUBSCRIPTION_BONUS
+                contributions.append(
+                    PillarContribution(
+                        label="Source abonnée",
+                        points=ScoringWeights.SUBSCRIPTION_BONUS,
+                    )
+                )
         else:
             score += ScoringWeights.STANDARD_SOURCE
 

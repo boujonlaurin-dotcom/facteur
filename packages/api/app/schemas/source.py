@@ -22,6 +22,7 @@ class SourceResponse(BaseModel):
     is_trusted: bool = False
     is_muted: bool = False
     priority_multiplier: float = 1.0
+    has_subscription: bool = False
     content_count: int = 0
     follower_count: int = 0
     bias_stance: str = "unknown"
@@ -93,3 +94,9 @@ class UpdateSourceWeightRequest(BaseModel):
                 f"priority_multiplier doit être 0.5, 1.0 ou 2.0 (reçu: {v})"
             )
         return v
+
+
+class UpdateSourceSubscriptionRequest(BaseModel):
+    """Mise à jour de l'abonnement premium à une source."""
+
+    has_subscription: bool

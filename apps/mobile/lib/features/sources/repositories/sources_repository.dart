@@ -117,6 +117,20 @@ class SourcesRepository {
     }
   }
 
+  Future<void> updateSourceSubscription(
+      String sourceId, bool hasSubscription) async {
+    try {
+      await _apiClient.dio.put<dynamic>(
+        'sources/$sourceId/subscription',
+        data: {'has_subscription': hasSubscription},
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] updateSourceSubscription: $e');
+      rethrow;
+    }
+  }
+
   Future<void> addCustomSource(String url, {String? name}) async {
     try {
       await _apiClient.dio.post<dynamic>(

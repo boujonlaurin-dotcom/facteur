@@ -23,6 +23,7 @@ class FeedCard extends StatelessWidget {
   final bool isSaved;
   final bool isLiked;
   final bool isFollowedSource;
+  final bool isSourceSubscribed;
   final Color? backgroundColor;
   final List<BoxShadow>? boxShadow;
 
@@ -42,6 +43,7 @@ class FeedCard extends StatelessWidget {
     this.isSaved = false,
     this.isLiked = false,
     this.isFollowedSource = false,
+    this.isSourceSubscribed = false,
     this.backgroundColor,
     this.boxShadow,
   });
@@ -215,30 +217,41 @@ class FeedCard extends StatelessWidget {
                               ),
                             ),
 
-                            // Paywall badge
+                            // Paywall badge (green "Abonné" if subscribed, yellow "Payant" otherwise)
                             if (content.isPaid) ...[
                               const SizedBox(width: FacteurSpacing.space2),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: colors.warning.withValues(alpha: 0.15),
+                                  color: isSourceSubscribed
+                                      ? colors.success.withValues(alpha: 0.15)
+                                      : colors.warning.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      PhosphorIcons.lock(
-                                          PhosphorIconsStyle.fill),
+                                      isSourceSubscribed
+                                          ? PhosphorIcons.crown(
+                                              PhosphorIconsStyle.fill)
+                                          : PhosphorIcons.lock(
+                                              PhosphorIconsStyle.fill),
                                       size: 10,
-                                      color: colors.warning,
+                                      color: isSourceSubscribed
+                                          ? colors.success
+                                          : colors.warning,
                                     ),
                                     const SizedBox(width: 3),
                                     Text(
-                                      'Payant',
+                                      isSourceSubscribed
+                                          ? 'Abonné'
+                                          : 'Payant',
                                       style: TextStyle(
-                                        color: colors.warning,
+                                        color: isSourceSubscribed
+                                            ? colors.success
+                                            : colors.warning,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 10,
                                       ),

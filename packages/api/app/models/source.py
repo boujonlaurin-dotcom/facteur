@@ -145,6 +145,10 @@ class UserSource(Base):
     priority_multiplier: Mapped[float] = mapped_column(
         Float, default=1.0, server_default="1.0"
     )
+    # Premium source: user declares they have a subscription to this source
+    has_subscription: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
     # Relations
     source: Mapped["Source"] = relationship(back_populates="user_sources")

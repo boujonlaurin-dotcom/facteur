@@ -95,6 +95,7 @@ class DigestContext:
     user_bias_stance: BiasStance | None = None
     source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
     source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
+    subscribed_source_ids: set[UUID] = field(default_factory=set)
 
 
 @dataclass
@@ -432,10 +433,13 @@ class DigestSelector:
 
         followed_source_ids = set()
         custom_source_ids = set()
+        subscribed_source_ids = set()
         for us in user_sources:
             followed_source_ids.add(us.source_id)
             if us.is_custom:
                 custom_source_ids.add(us.source_id)
+            if us.has_subscription:
+                subscribed_source_ids.add(us.source_id)
 
         # Récupérer les sous-thèmes et poids
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
@@ -528,6 +532,7 @@ class DigestSelector:
             user_bias_stance=user_bias_stance,
             source_affinity_scores=source_affinity_scores,
             source_priority_multipliers=source_priority_multipliers,
+            subscribed_source_ids=subscribed_source_ids,
         )
 
     async def _get_candidates(
@@ -606,11 +611,19 @@ class DigestSelector:
                     Content.content_type.notin_(list(context.muted_content_types))
                 )
 
-            # Filtrage des articles payants (is_not(True) handles NULL rows)
+            # Filtrage des articles payants (allow subscribed sources)
             if context.hide_paid_content:
-                user_sources_query = user_sources_query.where(
-                    Content.is_paid.is_not(True)
-                )
+                if context.subscribed_source_ids:
+                    user_sources_query = user_sources_query.where(
+                        or_(
+                            Content.is_paid.is_not(True),
+                            Content.source_id.in_(list(context.subscribed_source_ids)),
+                        )
+                    )
+                else:
+                    user_sources_query = user_sources_query.where(
+                        Content.is_paid.is_not(True)
+                    )
 
             # Appliquer les filtres de mode sur les sources utilisateur
             if mode == DigestMode.SEREIN:
@@ -674,9 +687,17 @@ class DigestSelector:
                 Content.content_type.notin_(list(context.muted_content_types))
             )
 
-        # Filtrage des articles payants
+        # Filtrage des articles payants (allow subscribed sources)
         if context.hide_paid_content:
-            curated_query = curated_query.where(Content.is_paid.is_not(True))
+            if context.subscribed_source_ids:
+                curated_query = curated_query.where(
+                    or_(
+                        Content.is_paid.is_not(True),
+                        Content.source_id.in_(list(context.subscribed_source_ids)),
+                    )
+                )
+            else:
+                curated_query = curated_query.where(Content.is_paid.is_not(True))
 
         # Appliquer les filtres de mode
         if mode == DigestMode.SEREIN:
@@ -741,6 +762,7 @@ class DigestSelector:
             source_affinity_scores=context.source_affinity_scores,
             impression_data=impression_data,
             source_priority_multipliers=context.source_priority_multipliers,
+            subscribed_source_ids=context.subscribed_source_ids,
         )
 
         scored = []

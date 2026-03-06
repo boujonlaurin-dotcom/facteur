@@ -34,6 +34,15 @@ class SourceService:
         )
         return {row.source_id: row.priority_multiplier for row in result.all()}
 
+    async def _load_user_source_subscriptions(self, user_id: UUID) -> dict[UUID, bool]:
+        """Load has_subscription for all user sources."""
+        result = await self.db.execute(
+            select(UserSource.source_id, UserSource.has_subscription).where(
+                UserSource.user_id == user_id
+            )
+        )
+        return {row.source_id: row.has_subscription for row in result.all()}
+
     async def get_all_sources(self, user_id: str) -> SourceCatalogResponse:
         """Récupère toutes les sources (curées + custom)."""
         user_uuid = UUID(user_id)
@@ -49,8 +58,9 @@ class SourceService:
         # Sources curées
         curated = await self.get_curated_sources(user_id)
 
-        # Load priority multipliers
+        # Load priority multipliers and subscriptions
         multipliers = await self._load_user_source_multipliers(user_uuid)
+        subscriptions = await self._load_user_source_subscriptions(user_uuid)
 
         # Sources custom de l'utilisateur (distinct au cas où doublons user_sources)
         query = (
@@ -79,6 +89,7 @@ class SourceService:
                 is_trusted=True,
                 is_muted=s.id in muted_source_ids,
                 priority_multiplier=multipliers.get(s.id, 1.0),
+                has_subscription=subscriptions.get(s.id, False),
                 content_count=0,  # TODO
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -103,6 +114,7 @@ class SourceService:
         trusted_source_ids = set()
         muted_source_ids = set()
         multipliers: dict[UUID, float] = {}
+        subscriptions: dict[UUID, bool] = {}
         if user_id:
             user_uuid = UUID(user_id)
             user_sources_query = select(UserSource.source_id).where(
@@ -112,6 +124,7 @@ class SourceService:
             trusted_source_ids = set(user_sources_result.scalars().all())
 
             multipliers = await self._load_user_source_multipliers(user_uuid)
+            subscriptions = await self._load_user_source_subscriptions(user_uuid)
 
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
@@ -135,6 +148,7 @@ class SourceService:
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
                 priority_multiplier=multipliers.get(s.id, 1.0),
+                has_subscription=subscriptions.get(s.id, False),
                 content_count=0,  # TODO
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -174,6 +188,7 @@ class SourceService:
         trusted_source_ids = set(user_sources_result.scalars().all())
 
         multipliers = await self._load_user_source_multipliers(user_uuid)
+        subscriptions = await self._load_user_source_subscriptions(user_uuid)
 
         muted_source_ids = set()
         personalization = await self.db.scalar(
@@ -196,6 +211,7 @@ class SourceService:
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
                 priority_multiplier=multipliers.get(s.id, 1.0),
+                has_subscription=subscriptions.get(s.id, False),
                 content_count=0,
                 follower_count=follower_count,
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
@@ -229,6 +245,7 @@ class SourceService:
         trusted_source_ids = set()
         muted_source_ids = set()
         multipliers: dict[UUID, float] = {}
+        subscriptions: dict[UUID, bool] = {}
         if user_id:
             user_uuid = UUID(user_id)
             user_sources_result = await self.db.execute(
@@ -237,6 +254,7 @@ class SourceService:
             trusted_source_ids = set(user_sources_result.scalars().all())
 
             multipliers = await self._load_user_source_multipliers(user_uuid)
+            subscriptions = await self._load_user_source_subscriptions(user_uuid)
 
             personalization = await self.db.scalar(
                 select(UserPersonalization).where(
@@ -260,6 +278,7 @@ class SourceService:
                 is_trusted=s.id in trusted_source_ids,
                 is_muted=s.id in muted_source_ids,
                 priority_multiplier=multipliers.get(s.id, 1.0),
+                has_subscription=subscriptions.get(s.id, False),
                 content_count=0,
                 bias_stance=getattr(s.bias_stance, "value", "unknown"),
                 reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -464,6 +483,68 @@ class SourceService:
             is_trusted=True,
             is_muted=source.id in muted_source_ids,
             priority_multiplier=priority_multiplier,
+            has_subscription=user_source.has_subscription,
+            content_count=0,
+            bias_stance=getattr(source.bias_stance, "value", "unknown"),
+            reliability_score=getattr(source.reliability_score, "value", "unknown"),
+            bias_origin=getattr(source.bias_origin, "value", "unknown"),
+            score_independence=source.score_independence,
+            score_rigor=source.score_rigor,
+            score_ux=source.score_ux,
+        )
+
+    async def update_source_subscription(
+        self, user_id: str, source_id: str, has_subscription: bool
+    ) -> SourceResponse | None:
+        """Met à jour le has_subscription d'une source suivie."""
+        user_uuid = UUID(user_id)
+        source_uuid = UUID(source_id)
+
+        user_source = await self.db.scalar(
+            select(UserSource).where(
+                UserSource.user_id == user_uuid,
+                UserSource.source_id == source_uuid,
+            )
+        )
+        if not user_source:
+            return None
+
+        user_source.has_subscription = has_subscription
+        await self.db.flush()
+
+        source = await self.db.scalar(select(Source).where(Source.id == source_uuid))
+        if not source:
+            return None
+
+        # Load muted status
+        muted_source_ids = set()
+        personalization = await self.db.scalar(
+            select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+        )
+        if personalization and personalization.muted_sources:
+            muted_source_ids = set(personalization.muted_sources)
+
+        logger.info(
+            "source_subscription_updated",
+            user_id=user_id,
+            source_id=source_id,
+            has_subscription=has_subscription,
+        )
+
+        return SourceResponse(
+            id=source.id,
+            name=source.name,
+            url=source.url,
+            type=source.type,
+            theme=source.theme,
+            description=source.description,
+            logo_url=source.logo_url,
+            is_curated=source.is_curated,
+            is_custom=user_source.is_custom,
+            is_trusted=True,
+            is_muted=source.id in muted_source_ids,
+            priority_multiplier=user_source.priority_multiplier,
+            has_subscription=has_subscription,
             content_count=0,
             bias_stance=getattr(source.bias_stance, "value", "unknown"),
             reliability_score=getattr(source.reliability_score, "value", "unknown"),
