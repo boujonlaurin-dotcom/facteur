@@ -7,7 +7,7 @@ on:
       - 'packages/api/**'
       - '.github/workflows/build-docker.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, staging ]
     paths:
       - 'packages/api/**'
   workflow_dispatch:
