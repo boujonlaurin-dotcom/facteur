@@ -3,27 +3,31 @@ name: Promote to Production
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  deploy:
+  promote:
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-
-      - name: Deploy to production
-        run: railway up --environment production --service Facteur
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      - name: Merge staging into main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git merge origin/staging --ff-only
+          git push origin main
 
   smoke-test:
-    needs: deploy
+    needs: promote
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for deployment
-        run: sleep 30
+      - name: Wait for Railway deployment
+        run: sleep 60
 
       - name: Health check (liveness)
         run: |
