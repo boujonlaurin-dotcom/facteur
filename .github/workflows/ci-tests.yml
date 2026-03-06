@@ -2,7 +2,7 @@ name: API Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - 'packages/api/**'
       - '.github/workflows/ci-tests.yml'
