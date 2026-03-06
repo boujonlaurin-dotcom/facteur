@@ -612,6 +612,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       data: (state) {
                         final contents = state.items;
 
+                        final subscribedSources =
+                            ref.watch(userSourcesProvider).valueOrNull ?? [];
+                        final subscribedSourceIds = subscribedSources
+                            .where((s) => s.hasSubscription)
+                            .map((s) => s.id)
+                            .toSet();
+
                         final streakAsync = ref.watch(streakProvider);
                         final dailyCount =
                             streakAsync.valueOrNull?.weeklyCount ?? 0;
