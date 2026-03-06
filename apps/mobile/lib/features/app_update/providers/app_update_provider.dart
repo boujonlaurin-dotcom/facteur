@@ -23,13 +23,15 @@ class AppUpdateInfo {
 
   factory AppUpdateInfo.fromJson(Map<String, dynamic> json) {
     final latestTag = json['tag'] as String;
+    final hasApk = json['apk_asset_id'] != null;
     return AppUpdateInfo(
       latestTag: latestTag,
       name: json['name'] as String? ?? '',
       notes: json['notes'] as String? ?? '',
       publishedAt: json['published_at'] as String? ?? '',
       apkSize: json['apk_size'] as int?,
-      updateAvailable: _isNewer(latestTag, AppUpdateConstants.releaseTag),
+      updateAvailable:
+          hasApk && _isNewer(latestTag, AppUpdateConstants.releaseTag),
     );
   }
 

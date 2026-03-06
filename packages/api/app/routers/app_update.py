@@ -41,13 +41,15 @@ async def _fetch_latest_release() -> dict:
     }
 
     async with httpx.AsyncClient(timeout=10) as client:
+        # Use /releases (list) instead of /releases/latest because
+        # all Facteur releases are marked prerelease=true, and GitHub's
+        # /releases/latest endpoint ignores pre-releases by design.
         resp = await client.get(
-            f"https://api.github.com/repos/{settings.github_repo}/releases/latest",
+            f"https://api.github.com/repos/{settings.github_repo}/releases",
             headers=headers,
+            params={"per_page": 5},
         )
 
-    if resp.status_code == 404:
-        raise HTTPException(status_code=404, detail="No releases found")
     if resp.status_code != 200:
         logger.error(
             "github_api_error",
@@ -56,7 +58,19 @@ async def _fetch_latest_release() -> dict:
         )
         raise HTTPException(status_code=502, detail="Failed to fetch release info")
 
-    data = resp.json()
+    # Skip drafts (visible to authenticated users) and releases without APK
+    releases = resp.json()
+    data = next(
+        (
+            r
+            for r in releases
+            if not r.get("draft", False)
+            and any(a["name"].endswith(".apk") for a in r.get("assets", []))
+        ),
+        None,
+    )
+    if not data:
+        raise HTTPException(status_code=404, detail="No releases found")
 
     # Find the first .apk asset
     apk_asset = next(
