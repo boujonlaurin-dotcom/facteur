@@ -2,7 +2,6 @@
 ///
 /// Extrait de [ArticlePreviewOverlay._stripHtml] pour réutilisation
 /// dans les cards feed/digest et le reader in-app.
-library;
 
 /// Supprime les balises HTML et décode les entités HTML courantes.
 ///

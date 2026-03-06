@@ -83,14 +83,12 @@ class DigestModeSegmentedControl extends StatelessWidget {
                             : Colors.white.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(15),
                         border: Border.all(
-                          color:
-                              modeColor.withValues(alpha: isDark ? 0.30 : 0.45),
+                          color: modeColor.withValues(alpha: isDark ? 0.30 : 0.45),
                           width: 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: modeColor.withValues(
-                                alpha: isDark ? 0.15 : 0.20),
+                            color: modeColor.withValues(alpha: isDark ? 0.15 : 0.20),
                             blurRadius: 8,
                             spreadRadius: -1,
                           ),
@@ -101,7 +99,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
                   // Icon segments
                   Row(
                     children: [
-                      const SizedBox(width: _padding),
+                      SizedBox(width: _padding),
                       ...DigestMode.values.map((mode) {
                         final isSelected = mode == selectedMode;
                         return GestureDetector(
@@ -125,8 +123,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
                                   key: ValueKey('${mode.key}_$isSelected'),
                                   size: isSelected ? 17 : 15,
                                   color: isSelected
-                                      ? mode.effectiveColor(
-                                          const Color(0xFFC0392B))
+                                      ? mode.effectiveColor(const Color(0xFFC0392B))
                                       : unselectedColor,
                                 ),
                               ),
@@ -134,7 +131,7 @@ class DigestModeSegmentedControl extends StatelessWidget {
                           ),
                         );
                       }),
-                      const SizedBox(width: _padding),
+                      SizedBox(width: _padding),
                     ],
                   ),
                 ],

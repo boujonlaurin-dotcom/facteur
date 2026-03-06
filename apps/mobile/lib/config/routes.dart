@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,32 +93,16 @@ class RoutePaths {
   static const String emailConfirmation = '/email-confirmation';
 }
 
-/// Bridge Riverpod auth state changes to GoRouter's refreshListenable.
-/// GoRouter re-evaluates redirect() when this fires, WITHOUT being recreated.
-class _AuthRefreshNotifier extends ChangeNotifier {
-  /// Notify GoRouter to re-evaluate its redirect.
-  void refresh() => notifyListeners();
-}
-
 final routerProvider = Provider<GoRouter>((ref) {
-  // Create a notifier that triggers GoRouter redirect re-evaluation
-  final refreshNotifier = _AuthRefreshNotifier();
-  ref.listen<AuthState>(authStateProvider, (_, __) {
-    refreshNotifier.refresh();
-  });
-  ref.onDispose(() => refreshNotifier.dispose());
+  final authState = ref.watch(authStateProvider);
 
   return GoRouter(
     navigatorKey: NotificationService.navigatorKey,
     initialLocation: RoutePaths.splash,
     debugLogDiagnostics: true,
-    refreshListenable: refreshNotifier,
     redirect: (context, state) {
-      // Read current auth state (not watch — GoRouter is created once)
-      final authState = ref.read(authStateProvider);
-
-      // Afficher le splash uniquement pendant l'initialisation (cold start)
-      if (authState.isInitializing) {
+      // Attendre que l'auth state soit initialisé
+      if (authState.isLoading) {
         return RoutePaths.splash;
       }
 
@@ -327,8 +312,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'add', // /settings/sources/add
                     name: RouteNames.addSource,
-                    pageBuilder: (context, state) =>
-                        const FullSwipeCupertinoPage(
+                    pageBuilder: (context, state) => const FullSwipeCupertinoPage(
                       child: AddSourceScreen(),
                     ),
                   ),
