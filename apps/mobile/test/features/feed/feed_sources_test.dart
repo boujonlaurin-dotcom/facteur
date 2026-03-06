@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
 
-import '../../../lib/features/feed/providers/feed_provider.dart';
-import '../../../lib/features/feed/repositories/feed_repository.dart';
+import 'package:facteur/features/feed/providers/feed_provider.dart';
+import 'package:facteur/features/feed/repositories/feed_repository.dart';
 
 // TODO: Complete implementation of these tests
 // These test cases are required to validate feed source filtering

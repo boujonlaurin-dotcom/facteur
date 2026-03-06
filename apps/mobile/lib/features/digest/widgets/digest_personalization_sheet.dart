@@ -426,13 +426,6 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(
-            'Priorité :',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                ),
-          ),
-          const SizedBox(width: 8),
           PrioritySlider(
             currentMultiplier: currentMultiplier,
             onChanged: (multiplier) {
@@ -440,7 +433,6 @@ class DigestPersonalizationSheet extends ConsumerWidget {
                   .read(userSourcesProvider.notifier)
                   .updateWeight(source.id!, multiplier);
             },
-            labels: const ['Reduit', 'Normal', 'Favori'],
           ),
         ],
       ),

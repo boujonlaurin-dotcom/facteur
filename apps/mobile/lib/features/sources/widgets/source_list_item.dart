@@ -159,7 +159,6 @@ class SourceListItem extends StatelessWidget {
                   key: ValueKey(source.priorityMultiplier),
                   currentMultiplier: source.priorityMultiplier,
                   onChanged: onWeightChanged!,
-                  labels: const ['Reduit', 'Normal', 'Favori'],
                 ),
               ],
 
