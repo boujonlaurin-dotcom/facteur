@@ -7,7 +7,6 @@ Utilisé par le Feed et le Digest pour une cohérence des labels.
 from app.schemas.content import RecommendationReason, ScoreContribution
 from app.services.recommendation.scoring_engine import PillarScoreResult
 
-
 # Maximum de raisons affichées dans le breakdown
 MAX_BREAKDOWN_ITEMS = 6
 

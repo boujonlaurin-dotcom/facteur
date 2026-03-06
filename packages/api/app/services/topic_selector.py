@@ -30,7 +30,10 @@ from app.services.recommendation.filter_presets import (
     is_cluster_serein_compatible,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
-from app.services.recommendation.scoring_engine import PillarScoringEngine, ScoringContext
+from app.services.recommendation.scoring_engine import (
+    PillarScoringEngine,
+    ScoringContext,
+)
 
 logger = structlog.get_logger()
 

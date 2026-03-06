@@ -74,13 +74,23 @@ def make_context(
     """Create a minimal DigestContext mock."""
     ctx = Mock(spec=DigestContext)
     ctx.user_id = user_id or uuid.uuid4()
+    ctx.user_profile = None
     ctx.followed_source_ids = followed_source_ids or set()
+    ctx.custom_source_ids = set()
     ctx.user_interests = user_interests or set()
+    ctx.user_interest_weights = {}
+    ctx.user_prefs = {}
     ctx.user_bias_stance = user_bias_stance
     ctx.muted_source_ids = set()
+    ctx.muted_sources = set()
+    ctx.muted_themes = set()
+    ctx.muted_topics = set()
+    ctx.muted_content_types = set()
+    ctx.hide_paid_content = True
     ctx.history_content_ids = set()
     ctx.subtopic_weights = {}
     ctx.source_affinity_scores = {}
+    ctx.source_priority_multipliers = {}
     ctx.user_subtopics = set()
     ctx.user_subtopic_weights = {}
     return ctx

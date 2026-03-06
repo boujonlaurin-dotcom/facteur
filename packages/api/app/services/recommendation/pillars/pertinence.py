@@ -10,7 +10,6 @@ from app.services.recommendation.pillars.base import BasePillar, PillarContribut
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 
-
 # Mapping thèmes slugs -> Français
 THEME_LABELS = {
     "tech": "Tech & Innovation",
@@ -316,20 +315,22 @@ class PertinencePillar(BasePillar):
             return 0.0, []
 
         bonus = 0.0
-        if format_pref == "audio" and content.content_type == ContentType.PODCAST:
-            bonus = 20.0
-        elif format_pref == "video" and content.content_type == ContentType.VIDEO:
-            bonus = 20.0
-        elif (
-            format_pref == "short"
-            and content.duration_seconds
-            and content.duration_seconds <= 300
+        if (
+            (format_pref == "audio" and content.content_type == ContentType.PODCAST)
+            or (format_pref == "video" and content.content_type == ContentType.VIDEO)
         ):
-            bonus = 15.0
+            bonus = 20.0
         elif (
-            format_pref == "long"
-            and content.duration_seconds
-            and content.duration_seconds >= 900
+            (
+                format_pref == "short"
+                and content.duration_seconds
+                and content.duration_seconds <= 300
+            )
+            or (
+                format_pref == "long"
+                and content.duration_seconds
+                and content.duration_seconds >= 900
+            )
         ):
             bonus = 15.0
 

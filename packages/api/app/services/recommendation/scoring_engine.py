@@ -120,7 +120,7 @@ class ScoringEngine:
 # ---------------------------------------------------------------------------
 # Pillar-based scoring engine (v2)
 # ---------------------------------------------------------------------------
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

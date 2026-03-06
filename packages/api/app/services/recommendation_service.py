@@ -623,9 +623,7 @@ class RecommendationService:
                     return f"Votre sujet : {topic_name}"
                 except Exception:
                     return "Sujet personnalisé"
-            elif layer == "personalization":
-                return details
-            elif layer == "impression":
+            elif layer in ("personalization", "impression"):
                 return details
             else:
                 return details
