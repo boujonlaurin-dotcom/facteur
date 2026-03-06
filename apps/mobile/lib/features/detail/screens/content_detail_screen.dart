@@ -78,6 +78,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
   bool _isSnapping = false;
+  double _shadowOpacity = 1.0;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -253,10 +254,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Compute layout offsets for bridge zone after first frame.
+  /// Compute layout offsets for bridge zone.
+  /// Re-measures on every call to handle late HTML rendering (images, etc).
   void _computeScrollOffsets() {
-    if (_offsetsComputed) return;
-
     final articleBox =
         _articleKey.currentContext?.findRenderObject() as RenderBox?;
     final bridgeBox =
@@ -267,8 +267,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final articleHeight = articleBox.size.height;
     final bridgeHeight = bridgeBox.size.height;
 
-    _bridgeStartOffset = articleHeight;
-    _bridgeEndOffset = articleHeight + bridgeHeight;
+    // Update offsets if article height changed (handles late HTML rendering)
+    if ((articleHeight - _bridgeStartOffset).abs() > 1.0) {
+      _bridgeStartOffset = articleHeight;
+      _bridgeEndOffset = articleHeight + bridgeHeight;
+    }
+
     _offsetsComputed = true;
   }
 
@@ -278,6 +282,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _computeScrollOffsets();
       if (!_offsetsComputed) return;
     }
+
+    // Re-measure on every scroll to handle late HTML rendering
+    _computeScrollOffsets();
 
     final offset = _scrollController.offset;
 
@@ -292,9 +299,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Activate WebView gestures when scrolled past the bridge zone
     final shouldActivate = offset >= _bridgeEndOffset;
 
-    if (shouldActivate != _isWebViewActive) {
+    // Progressive shadow: fade 1.0→0.0 through bridge zone + 150px reveal
+    double newShadowOpacity;
+    if (offset < _bridgeStartOffset) {
+      newShadowOpacity = 1.0;
+    } else if (offset >= _bridgeEndOffset + 150) {
+      newShadowOpacity = 0.0;
+    } else {
+      final range = (_bridgeEndOffset + 150) - _bridgeStartOffset;
+      newShadowOpacity =
+          1.0 - ((offset - _bridgeStartOffset) / range).clamp(0.0, 1.0);
+    }
+
+    // Batch setState: WebView activation + shadow opacity
+    final activationChanged = shouldActivate != _isWebViewActive;
+    final shadowChanged = (newShadowOpacity - _shadowOpacity).abs() > 0.01;
+
+    if (activationChanged || shadowChanged) {
       setState(() {
-        _isWebViewActive = shouldActivate;
+        if (activationChanged) _isWebViewActive = shouldActivate;
+        if (shadowChanged) _shadowOpacity = newShadowOpacity;
       });
     }
   }
@@ -656,8 +680,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Determine display mode:
     // - Articles with in-app content: progressive scroll-to-site
     // - Non-articles or explicit WebView toggle: old behavior
+    // Skip scroll-to-site for articles with too little content
+    final articleText = content.htmlContent ?? content.description;
+    final hasEnoughContent = plainTextLength(articleText) >= 100;
     final useScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
+        hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
     final useInAppReading =
@@ -1028,6 +1056,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Positioned.fill(
             child: _buildWebViewLayer(),
           ),
+
+          // LAYER 0.5: Shadow overlay — fades as user scrolls to WebView
+          if (_shadowOpacity > 0.001)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color:
+                      Colors.black.withValues(alpha: _shadowOpacity * 0.6),
+                ),
+              ),
+            ),
 
           // LAYER 1: Scrollable article content with opaque background.
           // IgnorePointer lets touches pass through to WebView when active.
