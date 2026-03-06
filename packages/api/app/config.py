@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key for LLM-based classification
 
+    # GitHub (app update feature)
+    github_token: str = ""
+    github_repo: str = "boujonlaurin-dotcom/facteur"
+
     # Startup Checks
     skip_startup_checks: bool = False  # Set to True to skip migration checks (CI/Tests)
 
