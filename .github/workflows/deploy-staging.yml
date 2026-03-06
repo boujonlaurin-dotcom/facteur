@@ -1,18 +1,12 @@
-name: Deploy to Staging
+name: Staging Smoke Tests
 
 on:
-  # Auto-deploy quand CI passe sur une PR
-  workflow_run:
-    workflows: ["API Tests", "Build Docker Image"]
-    types: [completed]
+  # Runs after merge to staging (Railway auto-deploys via webhook)
+  push:
+    branches: [staging]
 
-  # Fallback manuel
+  # Manual trigger
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Branch or commit to deploy'
-        required: false
-        default: ''
 
 jobs:
   # Gate: ne déploie que si TOUTES les conditions sont remplies
@@ -80,16 +74,15 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy to staging
-        run: railway up --environment staging --service Facteur
+        run: railway up --environment staging --service WEB
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
   smoke-test:
-    needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for deployment
-        run: sleep 30
+      - name: Wait for Railway deployment
+        run: sleep 60
 
       - name: Health check (liveness)
         run: |
