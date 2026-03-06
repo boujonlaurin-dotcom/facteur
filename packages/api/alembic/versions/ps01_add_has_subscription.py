@@ -20,10 +20,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        'user_sources',
-        sa.Column('has_subscription', sa.Boolean(), server_default='false', nullable=False),
-    )
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [c['name'] for c in inspector.get_columns('user_sources')]
+    if 'has_subscription' not in columns:
+        op.add_column(
+            'user_sources',
+            sa.Column('has_subscription', sa.Boolean(), server_default='false', nullable=False),
+        )
 
 
 def downgrade() -> None:
