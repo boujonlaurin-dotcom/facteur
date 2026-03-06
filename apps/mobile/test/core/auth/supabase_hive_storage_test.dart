@@ -50,7 +50,7 @@ void main() {
 
     test('persistSession() sauvegarde la session et accessToken() la retourne',
         () async {
-      const fakeSession = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.test","refresh_token":"refresh_test","expires_in":3600}';
+      const fakeSession = '{"access_token":"fake-jwt.test","refresh_token":"refresh_test","expires_in":3600}';
 
       await SupabaseHiveStorage().persistSession(fakeSession);
 
@@ -72,7 +72,7 @@ void main() {
     test('la session persistée survit à une réouverture de box (simulation redémarrage)',
         () async {
       const fakeSession =
-          '{"access_token":"eyJhbGciOiJIUzI1NiJ9.survive","refresh_token":"r_survive","expires_in":3600}';
+          '{"access_token":"fake-jwt.survive","refresh_token":"r_survive","expires_in":3600}';
 
       await SupabaseHiveStorage().persistSession(fakeSession);
 
@@ -97,7 +97,7 @@ void main() {
     });
 
     test('hasAccessToken() retourne true après persistSession()', () async {
-      const fakeSession = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.test","refresh_token":"r_test","expires_in":3600}';
+      const fakeSession = '{"access_token":"fake-jwt.test","refresh_token":"r_test","expires_in":3600}';
       await SupabaseHiveStorage().persistSession(fakeSession);
 
       final has = await SupabaseHiveStorage().hasAccessToken();
@@ -117,7 +117,7 @@ void main() {
 
   group('SupabaseHiveStorage - removePersistedSession()', () {
     test('removePersistedSession() supprime la session existante', () async {
-      const fakeSession = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.delete_me","refresh_token":"r_del","expires_in":3600}';
+      const fakeSession = '{"access_token":"fake-jwt.delete_me","refresh_token":"r_del","expires_in":3600}';
       await SupabaseHiveStorage().persistSession(fakeSession);
 
       await SupabaseHiveStorage().removePersistedSession();
@@ -139,8 +139,8 @@ void main() {
     test(
         'removePersistedSession() + persistSession() fonctionne (cycle complet signOut/signIn)',
         () async {
-      const session1 = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.user1","refresh_token":"refresh_1","expires_in":3600}';
-      const session2 = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.user2","refresh_token":"refresh_2","expires_in":3600}';
+      const session1 = '{"access_token":"fake-jwt.user1","refresh_token":"refresh_1","expires_in":3600}';
+      const session2 = '{"access_token":"fake-jwt.user2","refresh_token":"refresh_2","expires_in":3600}';
 
       await SupabaseHiveStorage().persistSession(session1);
       await SupabaseHiveStorage().removePersistedSession();
@@ -156,7 +156,7 @@ void main() {
         () async {
       // On vérifie que les données sont immédiatement lisibles après persist
       // ce qui indique que flush() a bien été appelé.
-      const fakeSession = '{"access_token":"eyJhbGciOiJIUzI1NiJ9.flush_test","refresh_token":"r_flush","expires_in":3600}';
+      const fakeSession = '{"access_token":"fake-jwt.flush_test","refresh_token":"r_flush","expires_in":3600}';
       await SupabaseHiveStorage().persistSession(fakeSession);
 
       // Lecture directe depuis la box Hive (sans passer par le cache mémoire)
@@ -172,7 +172,7 @@ void main() {
         () async {
       // Ce test vérifie le chemin de fallback dans accessToken()
       // quand la box est ouverte via Hive directement mais pas via initialize()
-      const fakeSession = '{"access_token":"eyJ.fallback"}';
+      const fakeSession = '{"access_token":"fake-jwt.fallback"}';
       final box = Hive.box<String>('supabase_auth_persistence');
       await box.put('supabase_session', fakeSession);
 
