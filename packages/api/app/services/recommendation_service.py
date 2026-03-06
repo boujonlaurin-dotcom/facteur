@@ -526,31 +526,62 @@ class RecommendationService:
         }
 
         SUBTOPIC_TRANSLATIONS = {
-            "ai": "IA", "llm": "LLM", "crypto": "Crypto", "web3": "Web3",
-            "space": "Spatial", "biotech": "Biotech", "quantum": "Quantique",
-            "cybersecurity": "Cybersécurité", "robotics": "Robotique",
-            "gaming": "Gaming", "cleantech": "Cleantech", "data-privacy": "Données",
-            "social-justice": "Justice sociale", "feminism": "Féminisme",
-            "lgbtq": "LGBTQ+", "immigration": "Immigration", "health": "Santé",
-            "education": "Éducation", "urbanism": "Urbanisme", "housing": "Logement",
-            "work-reform": "Travail", "justice-system": "Justice",
-            "climate": "Climat", "biodiversity": "Biodiversité",
-            "energy-transition": "Transition énergétique", "pollution": "Pollution",
-            "circular-economy": "Économie circulaire", "agriculture": "Agriculture",
-            "oceans": "Océans", "forests": "Forêts",
-            "macro": "Macro-économie", "finance": "Finance", "startups": "Startups",
-            "venture-capital": "VC", "labor-market": "Emploi", "inflation": "Inflation",
-            "trade": "Commerce", "taxation": "Fiscalité",
-            "elections": "Élections", "institutions": "Institutions",
-            "local-politics": "Politique locale", "activism": "Activisme",
-            "democracy": "Démocratie", "philosophy": "Philosophie", "art": "Art",
-            "cinema": "Cinéma", "media-critics": "Critique des médias",
-            "fundamental-research": "Recherche", "applied-science": "Sciences appliquées",
+            "ai": "IA",
+            "llm": "LLM",
+            "crypto": "Crypto",
+            "web3": "Web3",
+            "space": "Spatial",
+            "biotech": "Biotech",
+            "quantum": "Quantique",
+            "cybersecurity": "Cybersécurité",
+            "robotics": "Robotique",
+            "gaming": "Gaming",
+            "cleantech": "Cleantech",
+            "data-privacy": "Données",
+            "social-justice": "Justice sociale",
+            "feminism": "Féminisme",
+            "lgbtq": "LGBTQ+",
+            "immigration": "Immigration",
+            "health": "Santé",
+            "education": "Éducation",
+            "urbanism": "Urbanisme",
+            "housing": "Logement",
+            "work-reform": "Travail",
+            "justice-system": "Justice",
+            "climate": "Climat",
+            "biodiversity": "Biodiversité",
+            "energy-transition": "Transition énergétique",
+            "pollution": "Pollution",
+            "circular-economy": "Économie circulaire",
+            "agriculture": "Agriculture",
+            "oceans": "Océans",
+            "forests": "Forêts",
+            "macro": "Macro-économie",
+            "finance": "Finance",
+            "startups": "Startups",
+            "venture-capital": "VC",
+            "labor-market": "Emploi",
+            "inflation": "Inflation",
+            "trade": "Commerce",
+            "taxation": "Fiscalité",
+            "elections": "Élections",
+            "institutions": "Institutions",
+            "local-politics": "Politique locale",
+            "activism": "Activisme",
+            "democracy": "Démocratie",
+            "philosophy": "Philosophie",
+            "art": "Art",
+            "cinema": "Cinéma",
+            "media-critics": "Critique des médias",
+            "fundamental-research": "Recherche",
+            "applied-science": "Sciences appliquées",
             "geopolitics": "Géopolitique",
         }
 
         def _get_theme_label(raw_theme: str) -> str:
-            return THEME_TRANSLATIONS.get(raw_theme.lower().strip(), raw_theme.capitalize())
+            return THEME_TRANSLATIONS.get(
+                raw_theme.lower().strip(), raw_theme.capitalize()
+            )
 
         def _get_subtopic_label(slug: str) -> str:
             return SUBTOPIC_TRANSLATIONS.get(slug.lower().strip(), slug.capitalize())
@@ -684,13 +715,21 @@ class RecommendationService:
                             label = "Source appréciée"
                     elif layer == "article_topic":
                         try:
-                            raw_part = details.split(": ")[1].split(" [")[0].replace(" (précis)", "")
+                            raw_part = (
+                                details.split(": ")[1]
+                                .split(" [")[0]
+                                .replace(" (précis)", "")
+                            )
                             topic_slugs = [t.strip() for t in raw_part.split(",")]
-                            topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
+                            topic_labels = [
+                                _get_subtopic_label(t) for t in topic_slugs[:2]
+                            ]
                             if "[liked:" in details:
                                 label = f"Renforcé par vos j'aime : {', '.join(topic_labels)}"
                             else:
-                                label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                                label = (
+                                    f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                                )
                         except Exception:
                             label = "Vos centres d'intérêt"
                     elif layer == "static_prefs":

@@ -187,9 +187,7 @@ class PillarScoringEngine:
                         }
                     )
             except Exception as e:
-                logger.error(
-                    "pillar_scoring_error", pillar=pillar.name, error=str(e)
-                )
+                logger.error("pillar_scoring_error", pillar=pillar.name, error=str(e))
                 pillar_scores[pillar.name] = 0.0
 
         # Weighted combination

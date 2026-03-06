@@ -520,9 +520,7 @@ class TopicSelector:
                 temperature=ScoringWeights.DIGEST_RANDOMIZATION_TEMPERATURE,
                 seed=seed,
             )
-            article_scores = [
-                (t[0], s, t[1], t[2]) for t, s in randomized
-            ]
+            article_scores = [(t[0], s, t[1], t[2]) for t, s in randomized]
 
             # Add randomization transparency
             for _content, _score, _reason, bd in article_scores:

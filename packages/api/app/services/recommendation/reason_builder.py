@@ -56,7 +56,8 @@ def _compute_top_label(
     from app.services.recommendation.scoring_config import ScoringWeights
 
     weighted_scores = {
-        name: result.pillar_scores.get(name, 0.0) * ScoringWeights.PILLAR_WEIGHTS.get(name, 0.0)
+        name: result.pillar_scores.get(name, 0.0)
+        * ScoringWeights.PILLAR_WEIGHTS.get(name, 0.0)
         for name in ScoringWeights.PILLAR_WEIGHTS
     }
     dominant_pillar = max(weighted_scores, key=weighted_scores.get)
@@ -89,7 +90,11 @@ def _compute_top_label(
         source_reasons = [r for r in breakdown if r.pillar == "source"]
         if source_reasons:
             top = source_reasons[0]
-            if top.label in ("Source suivie", "Source personnalisée", "Source appréciée"):
+            if top.label in (
+                "Source suivie",
+                "Source personnalisée",
+                "Source appréciée",
+            ):
                 return top.label
 
     return base_label

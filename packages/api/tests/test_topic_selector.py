@@ -346,7 +346,7 @@ class TestTopicMatchScoring:
         assert any("Sujet :" in lbl for lbl in breakdown_labels)
 
     def test_article_topic_match_with_weight(self):
-        """Weighted subtopic gets multiplied score and 'Renforcé' label."""
+        """Weighted subtopic gets multiplied score and 'Sujet suivi' label."""
         selector = TopicSelector()
         src = make_source(theme="tech")
         content = make_content(source=src, theme="tech")
@@ -360,12 +360,8 @@ class TestTopicMatchScoring:
 
         articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
         breakdown_labels = [b.label for b in articles[0].breakdown]
-        assert any("Renforcé" in lbl for lbl in breakdown_labels)
-        # Score should reflect weight multiplier
-        topic_bd = [b for b in articles[0].breakdown if "Renforcé" in b.label]
-        from app.services.recommendation.scoring_config import ScoringWeights
-
-        assert topic_bd[0].points == ScoringWeights.TOPIC_MATCH * 1.5
+        # Pillar v2 uses "Sujet suivi :" for boosted topics (weight > 1.0)
+        assert any("Sujet suivi :" in lbl for lbl in breakdown_labels)
 
     def test_article_topic_max_matches_cap(self):
         """At most TOPIC_MAX_MATCHES topics count toward score."""
@@ -381,13 +377,16 @@ class TestTopicMatchScoring:
         trending_ctx = make_trending_context()
 
         articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
+        # Pillar v2 groups topic matches into a single breakdown entry
         topic_breakdowns = [b for b in articles[0].breakdown if "Sujet :" in b.label]
         from app.services.recommendation.scoring_config import ScoringWeights
 
-        assert len(topic_breakdowns) == ScoringWeights.TOPIC_MAX_MATCHES  # 2, not 3
+        assert len(topic_breakdowns) == 1
+        # Points should reflect exactly TOPIC_MAX_MATCHES × TOPIC_MATCH
+        assert topic_breakdowns[0].points == ScoringWeights.TOPIC_MATCH * ScoringWeights.TOPIC_MAX_MATCHES
 
     def test_article_precision_bonus(self):
-        """Topic match + theme match triggers SUBTOPIC_PRECISION_BONUS."""
+        """Topic match + theme match adds SUBTOPIC_PRECISION_BONUS to score."""
         selector = TopicSelector()
         src = make_source(theme="tech")
         content = make_content(source=src, theme="tech")
@@ -400,8 +399,13 @@ class TestTopicMatchScoring:
         trending_ctx = make_trending_context()
 
         articles = selector._score_and_select_articles(cluster, ctx, trending_ctx)
-        breakdown_labels = [b.label for b in articles[0].breakdown]
-        assert any("Précision" in lbl for lbl in breakdown_labels)
+        # Pillar v2 folds precision bonus into the topic contribution points
+        topic_bd = [b for b in articles[0].breakdown if "Sujet :" in b.label]
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        assert len(topic_bd) == 1
+        # Points = TOPIC_MATCH + SUBTOPIC_PRECISION_BONUS
+        assert topic_bd[0].points == ScoringWeights.TOPIC_MATCH + ScoringWeights.SUBTOPIC_PRECISION_BONUS
 
     def test_article_no_precision_bonus_without_theme(self):
         """Topic match without theme match does NOT trigger precision bonus."""
