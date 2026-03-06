@@ -217,7 +217,9 @@ class ScoringWeights:
     # Expected max raw scores per pillar (for 0-100 normalization).
     # Tuned from observed score distributions.
     MAX_PERTINENCE_RAW = 130.0  # theme(50) + 2 subtopics(90) + precision(18) - overlap
-    MAX_SOURCE_RAW = 95.0  # trusted(35) + custom(12) + subscription(20) + affinity(25) + curated(10)
+    MAX_SOURCE_RAW = (
+        95.0  # trusted(35) + custom(12) + subscription(20) + affinity(25) + curated(10)
+    )
     MAX_FRAICHEUR_RAW = 115.0  # recency_base(100) + recency_pref(15)
     MAX_QUALITE_RAW = 32.0  # thumbnail(12) + full_text(10) + curated(10)
 
