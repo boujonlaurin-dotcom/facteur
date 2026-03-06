@@ -106,9 +106,9 @@ class RecommendationService:
             )
             .where(UserProfile.user_id == user_id)
         )
-        sources_stmt = select(UserSource.source_id, UserSource.is_custom).where(
-            UserSource.user_id == user_id
-        )
+        sources_stmt = select(
+            UserSource.source_id, UserSource.is_custom, UserSource.has_subscription
+        ).where(UserSource.user_id == user_id)
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
         personalization_stmt = select(UserPersonalization).where(
             UserPersonalization.user_id == user_id
@@ -150,10 +150,13 @@ class RecommendationService:
         # Process results
         followed_source_ids = set()
         custom_source_ids = set()
+        subscribed_source_ids = set()
         for row in followed_sources_rows:
             followed_source_ids.add(row.source_id)
             if row.is_custom:
                 custom_source_ids.add(row.source_id)
+            if row.has_subscription:
+                subscribed_source_ids.add(row.source_id)
 
         user_subtopics = set()
         user_subtopic_weights: dict[str, float] = {}
@@ -274,6 +277,8 @@ class RecommendationService:
             theme=theme,
             # Paywall filter
             hide_paid_content=hide_paid_content,
+            # Premium sources: allow paid content from subscribed sources
+            subscribed_source_ids=subscribed_source_ids,
             # Source filter
             source_id=source_uuid,
         )
@@ -390,6 +395,7 @@ class RecommendationService:
             impression_data=impression_data,
             user_custom_topics=user_custom_topics,
             source_priority_multipliers=source_priority_multipliers,
+            subscribed_source_ids=subscribed_source_ids,
         )
 
         use_pillars = ScoringWeights.SCORING_VERSION == "pillars_v1"
@@ -739,6 +745,7 @@ class RecommendationService:
         digest_content_ids: list[UUID] = None,
         theme: str | None = None,
         hide_paid_content: bool = True,
+        subscribed_source_ids: set[UUID] = None,
         source_id: UUID | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
@@ -845,8 +852,17 @@ class RecommendationService:
             query = query.where(Content.content_type.notin_(list(muted_content_types)))
 
         # Apply paywall filter (is_not(True) handles NULL rows)
+        # Allow paid content from subscribed sources
         if hide_paid_content:
-            query = query.where(Content.is_paid.is_not(True))
+            if subscribed_source_ids:
+                query = query.where(
+                    or_(
+                        Content.is_paid.is_not(True),
+                        Content.source_id.in_(list(subscribed_source_ids)),
+                    )
+                )
+            else:
+                query = query.where(Content.is_paid.is_not(True))
 
         # Apply Mode Logic (skip when filtering by specific source)
         if mode and not source_id:

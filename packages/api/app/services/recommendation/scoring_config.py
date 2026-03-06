@@ -30,6 +30,10 @@ class ScoringWeights:
     # S'ajoute au bonus TRUSTED_SOURCE. Augmenté de 10→12.
     CUSTOM_SOURCE_BONUS = 12.0
 
+    # Bonus pour une source à laquelle l'utilisateur est abonné (Premium).
+    # S'ajoute au bonus TRUSTED_SOURCE. Débloque aussi les articles payants.
+    SUBSCRIPTION_BONUS = 20.0
+
     # Base du score de fraîcheur (Recency).
     # Epic 11: raised from 30→100 so fresh articles compete with personalization.
     recency_base = 100.0
@@ -213,7 +217,7 @@ class ScoringWeights:
     # Expected max raw scores per pillar (for 0-100 normalization).
     # Tuned from observed score distributions.
     MAX_PERTINENCE_RAW = 130.0  # theme(50) + 2 subtopics(90) + precision(18) - overlap
-    MAX_SOURCE_RAW = 75.0  # trusted(35) + custom(12) + affinity(25) + curated(10)
+    MAX_SOURCE_RAW = 95.0  # trusted(35) + custom(12) + subscription(20) + affinity(25) + curated(10)
     MAX_FRAICHEUR_RAW = 115.0  # recency_base(100) + recency_pref(15)
     MAX_QUALITE_RAW = 32.0  # thumbnail(12) + full_text(10) + curated(10)
 

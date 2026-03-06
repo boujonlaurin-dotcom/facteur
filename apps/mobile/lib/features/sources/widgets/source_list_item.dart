@@ -178,6 +178,15 @@ class SourceListItem extends StatelessWidget {
                   isNew: true,
                   color: colors.error,
                 ),
+              // Subscription stamp
+              if (source.hasSubscription && !isMuted) ...[
+                const SizedBox(width: 8),
+                FacteurStamp(
+                  text: 'ABONNÉ',
+                  isNew: true,
+                  color: colors.success,
+                ),
+              ],
               // Custom source stamp (only when no slider shown)
               if (source.isCustom && (isMuted || !isTrusted)) ...[
                 const SizedBox(width: 8),

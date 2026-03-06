@@ -467,6 +467,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .toList();
                           final hasFollowedSources =
                               followedSources.isNotEmpty;
+                          final subscribedSourceIds = allSources
+                              .where((s) => s.hasSubscription)
+                              .map((s) => s.id)
+                              .toSet();
                           final selectedSourceId = notifier.selectedSourceId;
                           final selectedSourceName = selectedSourceId != null
                               ? followedSources
@@ -848,6 +852,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       ),
                                       clusterChipWidget:
                                           ClusterChip(content: content),
+                                      isSourceSubscribed:
+                                          subscribedSourceIds
+                                              .contains(content.source.id),
                                     ),
                                   ),
                                 );

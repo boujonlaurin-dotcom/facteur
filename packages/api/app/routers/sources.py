@@ -17,6 +17,7 @@ from app.schemas.source import (
     SourceDetectResponse,
     SourceResponse,
     SourceSearchResponse,
+    UpdateSourceSubscriptionRequest,
     UpdateSourceWeightRequest,
 )
 from app.services.source_service import SourceService
@@ -182,6 +183,28 @@ async def update_source_weight(
     service = SourceService(db)
     result = await service.update_source_weight(
         user_id, str(source_id), data.priority_multiplier
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source not found or not followed by user",
+        )
+
+    return result
+
+
+@router.put("/{source_id}/subscription", response_model=SourceResponse)
+async def update_source_subscription(
+    source_id: UUID,
+    data: UpdateSourceSubscriptionRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceResponse:
+    """Mettre à jour l'abonnement premium d'une source."""
+    service = SourceService(db)
+    result = await service.update_source_subscription(
+        user_id, str(source_id), data.has_subscription
     )
 
     if not result:

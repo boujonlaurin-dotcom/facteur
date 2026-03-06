@@ -37,6 +37,8 @@ class ScoringContext:
         user_custom_topics: list = None,
         # Source Weighting: explicit priority multipliers {source_id: 0.5|1.0|2.0}
         source_priority_multipliers: dict[UUID, float] = None,
+        # Premium Sources: source_ids where user has a subscription
+        subscribed_source_ids: set[UUID] = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -63,6 +65,9 @@ class ScoringContext:
 
         # Source Weighting: explicit priority multipliers
         self.source_priority_multipliers = source_priority_multipliers or {}
+
+        # Premium Sources
+        self.subscribed_source_ids = subscribed_source_ids or set()
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

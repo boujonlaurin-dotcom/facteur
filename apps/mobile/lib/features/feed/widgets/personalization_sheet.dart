@@ -99,6 +99,10 @@ class PersonalizationSheet extends ConsumerWidget {
           if (content.source.name.isNotEmpty && content.source.isTrusted && !content.source.isMuted)
             _buildSourceWeightRow(context, ref, colors),
 
+          // Subscription toggle (premium source)
+          if (content.source.name.isNotEmpty && content.source.isTrusted && !content.source.isMuted)
+            _buildSubscriptionToggle(context, ref, colors),
+
           // Mute source (red destructive action)
           if (content.source.name.isNotEmpty)
             _buildActionOption(
@@ -395,6 +399,54 @@ class PersonalizationSheet extends ConsumerWidget {
                   .updateWeight(content.source.id, multiplier);
             },
             labels: const ['Reduit', 'Normal', 'Favori'],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionToggle(
+      BuildContext context, WidgetRef ref, FacteurColors colors) {
+    final sourcesAsync = ref.watch(userSourcesProvider);
+    final isSubscribed = sourcesAsync.whenOrNull(
+          data: (sources) => sources
+              .where((s) => s.id == content.source.id)
+              .firstOrNull
+              ?.hasSubscription,
+        ) ??
+        content.source.hasSubscription;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: Row(
+        children: [
+          Icon(
+            isSubscribed
+                ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
+                : PhosphorIcons.crown(PhosphorIconsStyle.regular),
+            color: isSubscribed ? colors.primary : colors.textPrimary,
+            size: 20,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              "J'y suis abonné(e)",
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Switch.adaptive(
+            value: isSubscribed,
+            activeColor: colors.primary,
+            onChanged: (value) {
+              HapticFeedback.lightImpact();
+              ref
+                  .read(userSourcesProvider.notifier)
+                  .toggleSubscription(content.source.id, isSubscribed);
+            },
           ),
         ],
       ),
