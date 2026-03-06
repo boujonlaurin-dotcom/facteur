@@ -62,7 +62,8 @@ jobs:
 
       - name: Rename IPA
         run: |
-          mv apps/mobile/build/ios/ipa/facteur.ipa \
+          IPA_FILE=$(ls apps/mobile/build/ios/ipa/*.ipa)
+          mv "$IPA_FILE" \
              apps/mobile/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa
 
       - name: Create Beta Release
