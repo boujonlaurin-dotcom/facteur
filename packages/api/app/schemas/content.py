@@ -57,6 +57,7 @@ class ScoreContribution(BaseModel):
     label: str  # ex: "Thème : Tech"
     points: float  # ex: 70
     is_positive: bool = True
+    pillar: str | None = None  # "pertinence" | "source" | "fraicheur" | "qualite" | "penalite"
 
 
 class RecommendationReason(BaseModel):

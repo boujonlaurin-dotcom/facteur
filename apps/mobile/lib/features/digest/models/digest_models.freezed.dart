@@ -24,6 +24,7 @@ mixin _$DigestScoreBreakdown {
   double get points => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_positive')
   bool get isPositive => throw _privateConstructorUsedError;
+  String? get pillar => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -40,7 +41,8 @@ abstract class $DigestScoreBreakdownCopyWith<$Res> {
   $Res call(
       {String label,
       double points,
-      @JsonKey(name: 'is_positive') bool isPositive});
+      @JsonKey(name: 'is_positive') bool isPositive,
+      String? pillar});
 }
 
 /// @nodoc
@@ -60,6 +62,7 @@ class _$DigestScoreBreakdownCopyWithImpl<$Res,
     Object? label = null,
     Object? points = null,
     Object? isPositive = null,
+    Object? pillar = freezed,
   }) {
     return _then(_value.copyWith(
       label: null == label
@@ -74,6 +77,10 @@ class _$DigestScoreBreakdownCopyWithImpl<$Res,
           ? _value.isPositive
           : isPositive // ignore: cast_nullable_to_non_nullable
               as bool,
+      pillar: freezed == pillar
+          ? _value.pillar
+          : pillar // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -89,7 +96,8 @@ abstract class _$$DigestScoreBreakdownImplCopyWith<$Res>
   $Res call(
       {String label,
       double points,
-      @JsonKey(name: 'is_positive') bool isPositive});
+      @JsonKey(name: 'is_positive') bool isPositive,
+      String? pillar});
 }
 
 /// @nodoc
@@ -106,6 +114,7 @@ class __$$DigestScoreBreakdownImplCopyWithImpl<$Res>
     Object? label = null,
     Object? points = null,
     Object? isPositive = null,
+    Object? pillar = freezed,
   }) {
     return _then(_$DigestScoreBreakdownImpl(
       label: null == label
@@ -120,6 +129,10 @@ class __$$DigestScoreBreakdownImplCopyWithImpl<$Res>
           ? _value.isPositive
           : isPositive // ignore: cast_nullable_to_non_nullable
               as bool,
+      pillar: freezed == pillar
+          ? _value.pillar
+          : pillar // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -130,7 +143,8 @@ class _$DigestScoreBreakdownImpl implements _DigestScoreBreakdown {
   const _$DigestScoreBreakdownImpl(
       {required this.label,
       required this.points,
-      @JsonKey(name: 'is_positive') required this.isPositive});
+      @JsonKey(name: 'is_positive') required this.isPositive,
+      this.pillar});
 
   factory _$DigestScoreBreakdownImpl.fromJson(Map<String, dynamic> json) =>
       _$$DigestScoreBreakdownImplFromJson(json);
@@ -142,10 +156,12 @@ class _$DigestScoreBreakdownImpl implements _DigestScoreBreakdown {
   @override
   @JsonKey(name: 'is_positive')
   final bool isPositive;
+  @override
+  final String? pillar;
 
   @override
   String toString() {
-    return 'DigestScoreBreakdown(label: $label, points: $points, isPositive: $isPositive)';
+    return 'DigestScoreBreakdown(label: $label, points: $points, isPositive: $isPositive, pillar: $pillar)';
   }
 
   @override
@@ -156,12 +172,14 @@ class _$DigestScoreBreakdownImpl implements _DigestScoreBreakdown {
             (identical(other.label, label) || other.label == label) &&
             (identical(other.points, points) || other.points == points) &&
             (identical(other.isPositive, isPositive) ||
-                other.isPositive == isPositive));
+                other.isPositive == isPositive) &&
+            (identical(other.pillar, pillar) || other.pillar == pillar));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, label, points, isPositive);
+  int get hashCode =>
+      Object.hash(runtimeType, label, points, isPositive, pillar);
 
   @JsonKey(ignore: true)
   @override
@@ -181,10 +199,10 @@ class _$DigestScoreBreakdownImpl implements _DigestScoreBreakdown {
 
 abstract class _DigestScoreBreakdown implements DigestScoreBreakdown {
   const factory _DigestScoreBreakdown(
-          {required final String label,
-          required final double points,
-          @JsonKey(name: 'is_positive') required final bool isPositive}) =
-      _$DigestScoreBreakdownImpl;
+      {required final String label,
+      required final double points,
+      @JsonKey(name: 'is_positive') required final bool isPositive,
+      final String? pillar}) = _$DigestScoreBreakdownImpl;
 
   factory _DigestScoreBreakdown.fromJson(Map<String, dynamic> json) =
       _$DigestScoreBreakdownImpl.fromJson;
@@ -196,6 +214,8 @@ abstract class _DigestScoreBreakdown implements DigestScoreBreakdown {
   @override
   @JsonKey(name: 'is_positive')
   bool get isPositive;
+  @override
+  String? get pillar;
   @override
   @JsonKey(ignore: true)
   _$$DigestScoreBreakdownImplCopyWith<_$DigestScoreBreakdownImpl>

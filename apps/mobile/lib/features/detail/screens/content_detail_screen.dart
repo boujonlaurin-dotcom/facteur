@@ -1,6 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show Factory, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +10,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'dart:async';
 
 import '../../../config/theme.dart';
@@ -66,6 +67,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late DateTime _startTime;
   WebViewController? _webViewController;
   bool _showWebView = false;
+
+  // Progressive scroll-to-site state
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _articleKey = GlobalKey();
+  final GlobalKey _bridgeKey = GlobalKey();
+  double _webViewOpacity = 0.0;
+  bool _isWebViewActive = false;
+  bool _hapticTriggered = false;
+  double _bridgeStartOffset = 0;
+  double _bridgeEndOffset = 0;
+  bool _offsetsComputed = false;
+  bool _isSnapping = false;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -183,6 +196,152 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _noteFabBounceController.forward();
       }
     });
+
+    // Scroll-to-site: attach scroll listener
+    _scrollController.addListener(_onScrollToSite);
+
+    // Pre-load WebView for articles
+    _initScrollToSiteWebView();
+  }
+
+  /// Pre-load the WebView controller for progressive scroll-to-site.
+  void _initScrollToSiteWebView() {
+    final content = _content;
+    if (content == null || kIsWeb) return;
+    if (content.contentType != ContentType.article) return;
+    if (!content.hasInAppContent) return;
+
+    _webViewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) => _injectScrollBridgeScript(),
+      ))
+      ..addJavaScriptChannel('ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage)
+      ..loadRequest(Uri.parse(content.url));
+  }
+
+  /// Inject JS to detect overscroll at top of WebView (for bidirectional scroll).
+  Future<void> _injectScrollBridgeScript() async {
+    if (_webViewController == null) return;
+    await _webViewController!.runJavaScript('''
+      (function() {
+        var lastTouchY = 0;
+        document.addEventListener('touchstart', function(e) {
+          lastTouchY = e.touches[0].clientY;
+        }, { passive: true });
+        document.addEventListener('touchmove', function(e) {
+          var currentY = e.touches[0].clientY;
+          var isScrollingUp = currentY > lastTouchY;
+          if (isScrollingUp && window.scrollY <= 0) {
+            ScrollBridge.postMessage('overscroll_top');
+          }
+          lastTouchY = currentY;
+        }, { passive: true });
+      })();
+    ''');
+  }
+
+  /// Handle messages from the WebView JS bridge.
+  void _onScrollBridgeMessage(JavaScriptMessage message) {
+    if (message.message == 'overscroll_top' && _isWebViewActive) {
+      setState(() => _isWebViewActive = false);
+      _scrollController.animateTo(
+        _bridgeStartOffset - 50,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  /// Compute layout offsets for bridge zone after first frame.
+  void _computeScrollOffsets() {
+    if (_offsetsComputed) return;
+
+    final articleBox =
+        _articleKey.currentContext?.findRenderObject() as RenderBox?;
+    final bridgeBox =
+        _bridgeKey.currentContext?.findRenderObject() as RenderBox?;
+
+    if (articleBox == null || bridgeBox == null) return;
+
+    final articleHeight = articleBox.size.height;
+    final bridgeHeight = bridgeBox.size.height;
+
+    _bridgeStartOffset = articleHeight;
+    _bridgeEndOffset = articleHeight + bridgeHeight;
+    _offsetsComputed = true;
+  }
+
+  /// Scroll listener driving opacity, haptic, and WebView activation.
+  void _onScrollToSite() {
+    if (!_offsetsComputed) {
+      _computeScrollOffsets();
+      if (!_offsetsComputed) return;
+    }
+
+    final offset = _scrollController.offset;
+    final revealStart = _bridgeEndOffset;
+    final revealEnd = revealStart + 100;
+
+    // WebView opacity ramp
+    double newOpacity;
+    if (offset <= revealStart) {
+      newOpacity = 0.0;
+    } else if (offset >= revealEnd) {
+      newOpacity = 1.0;
+    } else {
+      newOpacity = ((offset - revealStart) / (revealEnd - revealStart))
+          .clamp(0.0, 1.0);
+    }
+
+    // Haptic at bridge zone entry
+    if (offset >= _bridgeStartOffset && !_hapticTriggered) {
+      _hapticTriggered = true;
+      HapticFeedback.lightImpact();
+    } else if (offset < _bridgeStartOffset) {
+      _hapticTriggered = false;
+    }
+
+    // Activate WebView gestures when fully revealed
+    final shouldActivate = offset >= revealEnd;
+
+    // Only setState if values actually changed
+    if (newOpacity != _webViewOpacity || shouldActivate != _isWebViewActive) {
+      setState(() {
+        _webViewOpacity = newOpacity;
+        _isWebViewActive = shouldActivate;
+      });
+    }
+  }
+
+  /// Snap behavior: snap back or forward when scroll ends in ambiguous zone.
+  bool _handleScrollToSiteNotification(ScrollNotification notification) {
+    if (notification is ScrollEndNotification && !_isSnapping) {
+      if (!_offsetsComputed) return false;
+
+      final offset = _scrollController.offset;
+      final revealEnd = _bridgeEndOffset + 100;
+
+      // Only snap if in the ambiguous zone
+      if (offset > _bridgeStartOffset - 20 && offset < revealEnd) {
+        final midpoint = (_bridgeStartOffset + revealEnd) / 2;
+        final targetOffset =
+            offset < midpoint ? _bridgeStartOffset - 50 : revealEnd;
+
+        _isSnapping = true;
+        _scrollController
+            .animateTo(
+          targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        )
+            .then((_) {
+          _isSnapping = false;
+        });
+      }
+    }
+    return false;
   }
 
   Future<void> _fetchContent() async {
@@ -213,6 +372,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           });
           if (_content!.hasInAppContent == true && !_isConsumed) {
             _startReadingTimer();
+          }
+          // Pre-load WebView if not already initialized
+          if (_webViewController == null) {
+            _initScrollToSiteWebView();
           }
         } else {
           // Show error and pop if content not found
@@ -365,6 +528,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _buttonPulseController.dispose();
     _bookmarkBounceController.dispose();
     _noteFabBounceController.dispose();
+    _scrollController.removeListener(_onScrollToSite);
+    _scrollController.dispose();
     super.dispose();
 
     // Track article read duration on close (restored from ArticleViewerModal)
@@ -504,8 +669,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Determine if we should use in-app reading or fallback to WebView
-    final useInAppReading = content.hasInAppContent && !_showWebView;
+    // Determine display mode:
+    // - Articles with in-app content: progressive scroll-to-site
+    // - Non-articles or explicit WebView toggle: old behavior
+    final useScrollToSite = content.hasInAppContent &&
+        content.contentType == ContentType.article &&
+        !_showWebView &&
+        !kIsWeb;
+    final useInAppReading =
+        content.hasInAppContent && !_showWebView && !useScrollToSite;
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -517,9 +689,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             return Positioned.fill(
               child: Padding(
                 padding: EdgeInsets.only(top: headerHeight),
-                child: useInAppReading
-                    ? _buildInAppContent(context, content)
-                    : _buildWebViewFallback(content),
+                child: useScrollToSite
+                    ? _buildScrollToSiteContent(context, content)
+                    : useInAppReading
+                        ? _buildInAppContent(context, content)
+                        : _buildWebViewFallback(content),
               ),
             );
           }),
@@ -546,8 +720,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // External link FAB — hidden for articles unless WebView is shown
-                      if (content.contentType != ContentType.article || _showWebView) ...[
+                      // External link FAB — hidden for articles unless WebView is active
+                      if (content.contentType != ContentType.article || _showWebView || _isWebViewActive) ...[
                         FloatingActionButton(
                           mini: true,
                           onPressed: _openOriginalUrl,
@@ -831,6 +1005,257 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         size: 14,
         color: colors.textTertiary,
       ),
+    );
+  }
+
+  /// Progressive scroll-to-site layout for articles.
+  /// Article content → gradient fade → bridge zone → WebView reveal.
+  Widget _buildScrollToSiteContent(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final viewportHeight = MediaQuery.of(context).size.height;
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + 64;
+    final availableHeight = viewportHeight - headerHeight;
+
+    final articleText = content.htmlContent ?? content.description;
+    final isPartial = plainTextLength(articleText) < 500;
+
+    String? readingTime;
+    if (content.durationSeconds != null && content.durationSeconds! > 0) {
+      final minutes = (content.durationSeconds! / 60).ceil();
+      readingTime = '$minutes min de lecture';
+    }
+
+    // Schedule offset computation after layout (reset if content changed)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _computeScrollOffsets();
+      }
+    });
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollToSiteNotification,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        physics: _isWebViewActive
+            ? const NeverScrollableScrollPhysics()
+            : const ClampingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ZONE 1: Article content with gradient fade overlay
+            Stack(
+              key: _articleKey,
+              children: [
+                // Article content (shrinkWrap: no internal scroll)
+                ArticleReaderWidget(
+                  htmlContent: content.htmlContent,
+                  description: content.description,
+                  title: content.title,
+                  shrinkWrap: true,
+                  header: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (content.thumbnailUrl != null) ...[
+                        ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(FacteurRadius.large),
+                          child: FacteurThumbnail(
+                            imageUrl: content.thumbnailUrl,
+                            aspectRatio: 16 / 9,
+                          ),
+                        ),
+                        const SizedBox(height: FacteurSpacing.space4),
+                      ],
+                      if (isPartial) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.warning.withValues(alpha: 0.12),
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.pill),
+                          ),
+                          child: Text(
+                            'Aperçu — contenu partiel',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colors.warning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: FacteurSpacing.space3),
+                      ],
+                      Text(
+                        content.title,
+                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+                      if (readingTime != null) ...[
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.timer(PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: colors.textTertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              readingTime,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: FacteurSpacing.space3),
+                      ],
+                      Divider(color: colors.border, height: 1),
+                      const SizedBox(height: FacteurSpacing.space4),
+                    ],
+                  ),
+                ),
+                // Gradient fade overlay on last 30px (only last line fades)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 30,
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            colors.backgroundPrimary.withValues(alpha: 0.0),
+                            colors.backgroundPrimary,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // ZONE 2: Bridge zone banner (tappable to scroll to WebView)
+            GestureDetector(
+              onTap: () {
+                if (_offsetsComputed) {
+                  _scrollController.animateTo(
+                    _bridgeEndOffset + 100,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOutCubic,
+                  );
+                }
+              },
+              child: Container(
+                key: _bridgeKey,
+                height: 72,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FacteurSpacing.space4,
+                  vertical: FacteurSpacing.space3,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.surfaceElevated,
+                  border: Border(
+                    top: BorderSide(
+                        color: colors.border.withValues(alpha: 0.5)),
+                    bottom: BorderSide(
+                        color: colors.border.withValues(alpha: 0.5)),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    if (content.source.logoUrl != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: CachedNetworkImage(
+                          imageUrl: content.source.logoUrl!,
+                          width: 24,
+                          height: 24,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              _buildSourcePlaceholder(colors),
+                        ),
+                      )
+                    else
+                      _buildSourcePlaceholder(colors),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Article complet \u00B7 ${content.source.name}',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(
+                      PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
+                      size: 18,
+                      color: colors.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ZONE 3: WebView reveal container
+            SizedBox(
+              height: availableHeight,
+              child: _buildWebViewReveal(content, colors),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// WebView reveal with opacity overlay driven by scroll position.
+  Widget _buildWebViewReveal(Content content, FacteurColors colors) {
+    if (kIsWeb) return _buildWebViewFallback(content);
+
+    // Initialize WebView if not already done (e.g. content loaded after init)
+    if (_webViewController == null) {
+      _initScrollToSiteWebView();
+    }
+    if (_webViewController == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: WebViewWidget(
+            controller: _webViewController!,
+            gestureRecognizers: _isWebViewActive
+                ? {
+                    Factory<VerticalDragGestureRecognizer>(
+                        () => VerticalDragGestureRecognizer()),
+                    Factory<HorizontalDragGestureRecognizer>(
+                        () => HorizontalDragGestureRecognizer()),
+                  }
+                : const {},
+          ),
+        ),
+        // Opacity overlay that fades out as user scrolls into zone 3.
+        // When WebView is not active, this overlay also blocks touch events
+        // so the outer scroll keeps working.
+        if (!_isWebViewActive)
+          Positioned.fill(
+            child: Container(
+              color: colors.backgroundPrimary
+                  .withValues(alpha: 1.0 - _webViewOpacity),
+            ),
+          ),
+      ],
     );
   }
 

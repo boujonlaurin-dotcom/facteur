@@ -30,6 +30,7 @@ from app.services.recommendation.filter_presets import (
     is_cluster_serein_compatible,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import PillarScoringEngine, ScoringContext
 
 logger = structlog.get_logger()
 
@@ -70,6 +71,7 @@ class TopicSelector:
     def __init__(self):
         self.importance_detector = ImportanceDetector()
         self._perspective_service = PerspectiveService()
+        self._pillar_engine = PillarScoringEngine()
 
     async def select_topics_for_user(
         self,
@@ -408,6 +410,26 @@ class TopicSelector:
 
         return topic_groups
 
+    def _build_scoring_context(self, context: DigestContext) -> ScoringContext:
+        """Convert DigestContext to ScoringContext for pillar engine."""
+        return ScoringContext(
+            user_profile=context.user_profile,
+            user_interests=context.user_interests,
+            user_interest_weights=context.user_interest_weights,
+            followed_source_ids=context.followed_source_ids,
+            user_prefs=context.user_prefs,
+            now=datetime.datetime.now(datetime.UTC),
+            user_subtopics=context.user_subtopics,
+            user_subtopic_weights=context.user_subtopic_weights,
+            muted_sources=context.muted_sources,
+            muted_themes=context.muted_themes,
+            muted_topics=context.muted_topics,
+            muted_content_types=context.muted_content_types,
+            custom_source_ids=context.custom_source_ids,
+            source_affinity_scores=context.source_affinity_scores,
+            source_priority_multipliers=context.source_priority_multipliers,
+        )
+
     def _score_and_select_articles(
         self,
         cluster: TopicCluster,
@@ -416,154 +438,101 @@ class TopicSelector:
     ) -> list[ScoredArticle]:
         """Score et sélectionne 1-3 articles d'un cluster avec diversité de sources.
 
-        Scoring simplifié (pas de DB) : recency + source suivie + trending/une.
-        Contrainte : sources différentes entre les articles sélectionnés.
+        Utilise PillarScoringEngine (v2) pour le scoring de base,
+        puis applique les bonus digest-spécifiques (trending/une) en post-pilier.
         """
         max_articles = ScoringWeights.TOPIC_MAX_ARTICLES
-        now = datetime.datetime.now(datetime.UTC)
+        scoring_context = self._build_scoring_context(context)
+
+        # Post-pillar digest bonuses (normalized to 0-100 scale)
+        TRENDING_BONUS = 15.0  # ~45/300 from old scale
+        UNE_BONUS = 12.0  # ~35/300 from old scale
 
         article_scores: list[
             tuple[Content, float, str, list[DigestScoreBreakdown]]
         ] = []
 
         for content in cluster.contents:
+            # 1. Pillar scoring (0-100 base + penalties)
+            pillar_result = self._pillar_engine.compute_score(content, scoring_context)
+            score = pillar_result.final_score
+
+            # Convert pillar contributions to DigestScoreBreakdown
             breakdown: list[DigestScoreBreakdown] = []
-            score = 0.0
-
-            # Recency
-            published = content.published_at
-            if published and published.tzinfo is None:
-                published = published.replace(tzinfo=datetime.UTC)
-            if published:
-                hours_old = (now - published).total_seconds() / 3600
-                recency_bonus = self._recency_bonus(hours_old)
-                if recency_bonus > 0:
-                    score += recency_bonus
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label=self._recency_label(hours_old),
-                            points=recency_bonus,
-                            is_positive=True,
-                        )
-                    )
-
-            # Source suivie
-            is_followed = content.source_id in context.followed_source_ids
-            if is_followed:
-                score += ScoringWeights.TRUSTED_SOURCE
+            for contrib in pillar_result.contributions:
                 breakdown.append(
                     DigestScoreBreakdown(
-                        label="Source de confiance",
-                        points=ScoringWeights.TRUSTED_SOURCE,
-                        is_positive=True,
+                        label=contrib["label"],
+                        points=contrib["points"],
+                        is_positive=contrib["is_positive"],
+                        pillar=contrib["pillar"],
                     )
                 )
 
-            # Source affinity bonus (learned from interactions)
-            affinity = context.source_affinity_scores.get(content.source_id, 0.0)
-            if affinity > 0:
-                affinity_bonus = affinity * ScoringWeights.SOURCE_AFFINITY_MAX_BONUS
-                score += affinity_bonus
-                breakdown.append(
-                    DigestScoreBreakdown(
-                        label=f"Source appréciée ({affinity:.0%})",
-                        points=affinity_bonus,
-                        is_positive=True,
-                    )
-                )
-
-            # Thème matche
-            content_theme = getattr(content, "theme", None)
-            source_theme = content.source.theme if content.source else None
-            theme = content_theme or source_theme
-            if theme and theme in context.user_interests:
-                score += ScoringWeights.THEME_MATCH
-                breakdown.append(
-                    DigestScoreBreakdown(
-                        label=f"Thème matché : {theme}",
-                        points=ScoringWeights.THEME_MATCH,
-                        is_positive=True,
-                    )
-                )
-
-            # Topic match (ML topics ∩ user_subtopics)
-            if content.topics and context.user_subtopics:
-                matched_topics = 0
-                for topic in content.topics:
-                    topic_lower = topic.lower()
-                    if (
-                        topic_lower in context.user_subtopics
-                        and matched_topics < ScoringWeights.TOPIC_MAX_MATCHES
-                    ):
-                        w = context.user_subtopic_weights.get(topic_lower, 1.0)
-                        points = ScoringWeights.TOPIC_MATCH * w
-                        topic_label = SLUG_TO_LABEL.get(topic_lower, topic.capitalize())
-                        if w > 1.0:
-                            label = f"Renforcé par vos j'aime : {topic_label}"
-                        else:
-                            label = f"Sujet : {topic_label}"
-                        score += points
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label=label,
-                                points=points,
-                                is_positive=True,
-                            )
-                        )
-                        matched_topics += 1
-
-                # Precision bonus if topic + theme both match
-                if matched_topics > 0 and theme and theme in context.user_interests:
-                    score += ScoringWeights.SUBTOPIC_PRECISION_BONUS
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Précision thématique",
-                            points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
-                            is_positive=True,
-                        )
-                    )
-
-            # Trending/Une bonus
+            # 2. Digest-specific post-pillar bonuses
             if trending_context:
                 if content.id in trending_context.trending_content_ids:
-                    score += ScoringWeights.DIGEST_TRENDING_BONUS
+                    score += TRENDING_BONUS
                     breakdown.append(
                         DigestScoreBreakdown(
                             label="Sujet du jour",
-                            points=ScoringWeights.DIGEST_TRENDING_BONUS,
+                            points=TRENDING_BONUS,
                             is_positive=True,
+                            pillar="pertinence",
                         )
                     )
                 if content.id in trending_context.une_content_ids:
-                    score += ScoringWeights.DIGEST_UNE_BONUS
+                    score += UNE_BONUS
                     breakdown.append(
                         DigestScoreBreakdown(
                             label="À la une",
-                            points=ScoringWeights.DIGEST_UNE_BONUS,
+                            points=UNE_BONUS,
                             is_positive=True,
+                            pillar="pertinence",
                         )
                     )
 
-            # Source curated
-            if content.source and content.source.is_curated:
-                score += ScoringWeights.CURATED_SOURCE
-                breakdown.append(
+            # Build reason
+            reason = self._article_reason(content, context, breakdown)
+            article_scores.append((content, score, reason, breakdown))
+
+        # Sort by score desc
+        article_scores.sort(key=lambda x: x[1], reverse=True)
+
+        # 3. Randomization (Gumbel with daily seed — stable within the day)
+        if ScoringWeights.DIGEST_RANDOMIZATION_TEMPERATURE > 0:
+            from app.services.recommendation.randomization import (
+                compute_seed,
+                randomized_sort,
+            )
+
+            seed = compute_seed(str(context.user_id), granularity="daily")
+            # Wrap full tuples for randomized_sort: T = (content, reason, breakdown)
+            wrapped = [
+                ((content, reason, breakdown), score)
+                for content, score, reason, breakdown in article_scores
+            ]
+            randomized = randomized_sort(
+                wrapped,
+                temperature=ScoringWeights.DIGEST_RANDOMIZATION_TEMPERATURE,
+                seed=seed,
+            )
+            article_scores = [
+                (t[0], s, t[1], t[2]) for t, s in randomized
+            ]
+
+            # Add randomization transparency
+            for _content, _score, _reason, bd in article_scores:
+                bd.append(
                     DigestScoreBreakdown(
-                        label="Source qualitative",
-                        points=ScoringWeights.CURATED_SOURCE,
+                        label="Hasard pour diversifier",
+                        points=0,
                         is_positive=True,
+                        pillar="diversite",
                     )
                 )
 
-            # Build reason
-            reason = self._article_reason(content, context, breakdown)
-
-            article_scores.append((content, score, reason, breakdown))
-
-        # Trier par score desc
-        article_scores.sort(key=lambda x: x[1], reverse=True)
-
-        # Sélectionner avec diversité de sources
+        # 4. Source diversity filter (max 1 article per source intra-topic)
         selected: list[ScoredArticle] = []
         used_sources: set[UUID] = set()
 
