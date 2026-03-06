@@ -447,9 +447,7 @@ async def get_perspectives(
             )
         # Fallback to DOMAIN_BIAS_MAP if DB bias is unknown
         if source_bias_stance == "unknown" and source_domain:
-            source_bias_stance = DOMAIN_BIAS_MAP.get(
-                source_domain, "unknown"
-            )
+            source_bias_stance = DOMAIN_BIAS_MAP.get(source_domain, "unknown")
 
     # Search perspectives with exclusions
     service = PerspectiveService(db=db)
