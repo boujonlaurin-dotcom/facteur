@@ -450,27 +450,18 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 // Source card (slider + mute inside)
                 Builder(builder: (context) {
                   final sourcesAsync = ref.watch(userSourcesProvider);
-                  final currentMultiplier = sourcesAsync.whenOrNull(
-                        data: (sources) {
-                          final match = sources
-                              .where(
-                                  (s) => s.id == widget.content.source.id)
-                              .firstOrNull;
-                          return match?.priorityMultiplier;
-                        },
-                      ) ??
-                      1.0;
-                  final isTrustedAndActive = sourcesAsync.whenOrNull(
-                        data: (sources) {
-                          final match = sources
-                              .where(
-                                  (s) => s.id == widget.content.source.id)
-                              .firstOrNull;
-                          return match?.isTrusted == true &&
-                              match?.isMuted != true;
-                        },
-                      ) ??
-                      false;
+                  final sourceMatch = sourcesAsync.whenOrNull(
+                    data: (sources) => sources
+                        .where((s) => s.id == widget.content.source.id)
+                        .firstOrNull,
+                  );
+                  final currentMultiplier =
+                      sourceMatch?.priorityMultiplier ?? 1.0;
+                  final isTrustedAndActive =
+                      sourceMatch?.isTrusted == true &&
+                          sourceMatch?.isMuted != true;
+                  final isSubscribed =
+                      sourceMatch?.hasSubscription ?? false;
 
                   if (!isTrustedAndActive) {
                     // Not trusted: standalone mute button
@@ -511,82 +502,134 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         color: _terracotta.withValues(alpha: 0.2),
                       ),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Left: dot + "Suivie" / mute link
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: const BoxDecoration(
-                                    color: _terracotta,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Suivie',
-                                  style:
-                                      textTheme.labelMedium?.copyWith(
-                                    color: _terracotta,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '/',
-                                  style:
-                                      textTheme.labelSmall?.copyWith(
-                                    color: colors.textTertiary,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                GestureDetector(
-                                  onTap: () async {
-                                    Navigator.pop(context);
-                                    try {
-                                      await ref
-                                          .read(feedProvider.notifier)
-                                          .muteSource(widget.content);
-                                      NotificationService.showInfo(
-                                        'Source ${widget.content.source.name} masquée',
-                                      );
-                                    } catch (e) {
-                                      NotificationService.showError(
-                                        'Impossible de masquer la source',
-                                      );
-                                    }
-                                  },
-                                  child: Text(
-                                    'Masquer',
-                                    style: textTheme.labelSmall
-                                        ?.copyWith(
-                                      color: colors.error,
-                                      fontWeight: FontWeight.w500,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // Left: dot + "Suivie" / mute link
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        color: _terracotta,
+                                        shape: BoxShape.circle,
+                                      ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Suivie',
+                                      style: textTheme.labelMedium
+                                          ?.copyWith(
+                                        color: _terracotta,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '/',
+                                      style: textTheme.labelSmall
+                                          ?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        try {
+                                          await ref
+                                              .read(
+                                                  feedProvider.notifier)
+                                              .muteSource(
+                                                  widget.content);
+                                          NotificationService.showInfo(
+                                            'Source ${widget.content.source.name} masquée',
+                                          );
+                                        } catch (e) {
+                                          NotificationService
+                                              .showError(
+                                            'Impossible de masquer la source',
+                                          );
+                                        }
+                                      },
+                                      child: Text(
+                                        'Masquer',
+                                        style: textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: colors.error,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                            // Right: priority slider (self-labeled)
+                            PrioritySlider(
+                              currentMultiplier: currentMultiplier,
+                              onChanged: (multiplier) {
+                                ref
+                                    .read(userSourcesProvider.notifier)
+                                    .updateWeight(
+                                      widget.content.source.id,
+                                      multiplier,
+                                    );
+                              },
+                            ),
+                          ],
                         ),
-                        // Right: priority slider (self-labeled)
-                        PrioritySlider(
-                          currentMultiplier: currentMultiplier,
-                          onChanged: (multiplier) {
-                            ref
-                                .read(userSourcesProvider.notifier)
-                                .updateWeight(
-                                  widget.content.source.id,
-                                  multiplier,
-                                );
-                          },
+                        // Subscription toggle
+                        Divider(
+                          color: _terracotta.withValues(alpha: 0.15),
+                          height: 1,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              isSubscribed
+                                  ? PhosphorIcons.crown(
+                                      PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.crown(
+                                      PhosphorIconsStyle.regular),
+                              size: 18,
+                              color: isSubscribed
+                                  ? colorScheme.primary
+                                  : colors.textSecondary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "J'y suis abonné(e)",
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: isSubscribed,
+                              onChanged: (value) {
+                                ref
+                                    .read(userSourcesProvider.notifier)
+                                    .toggleSubscription(
+                                      widget.content.source.id,
+                                      isSubscribed,
+                                    );
+                              },
+                              activeTrackColor: colorScheme.primary,
+                            ),
+                          ],
                         ),
                       ],
                     ),
