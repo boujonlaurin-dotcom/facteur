@@ -62,8 +62,13 @@ jobs:
 
       - name: Rename IPA
         run: |
-          mv apps/mobile/build/ios/ipa/facteur.ipa \
-             apps/mobile/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa
+          ls -la apps/mobile/build/ios/ipa/
+          IPA_FILE=$(ls apps/mobile/build/ios/ipa/*.ipa 2>/dev/null | head -1)
+          if [ -z "$IPA_FILE" ]; then
+            echo "::error::No IPA file found in apps/mobile/build/ios/ipa/"
+            exit 1
+          fi
+          mv "$IPA_FILE" "apps/mobile/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa"
 
       - name: Create Beta Release
         if: github.event.inputs.create_release != 'false'
