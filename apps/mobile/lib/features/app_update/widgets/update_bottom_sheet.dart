@@ -59,10 +59,12 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
         });
       }
     } catch (e) {
+      // ignore: avoid_print
+      print('AppUpdate: download failed: $e');
       if (mounted) {
         setState(() {
           _state = _UpdateState.error;
-          _errorMessage = e.toString();
+          _errorMessage = 'Le telechargement a echoue. Verifiez votre connexion.';
         });
       }
     }
