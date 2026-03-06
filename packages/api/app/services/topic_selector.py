@@ -30,7 +30,10 @@ from app.services.recommendation.filter_presets import (
     is_cluster_serein_compatible,
 )
 from app.services.recommendation.scoring_config import ScoringWeights
-from app.services.recommendation.scoring_engine import PillarScoringEngine, ScoringContext
+from app.services.recommendation.scoring_engine import (
+    PillarScoringEngine,
+    ScoringContext,
+)
 
 logger = structlog.get_logger()
 
@@ -517,9 +520,7 @@ class TopicSelector:
                 temperature=ScoringWeights.DIGEST_RANDOMIZATION_TEMPERATURE,
                 seed=seed,
             )
-            article_scores = [
-                (t[0], s, t[1], t[2]) for t, s in randomized
-            ]
+            article_scores = [(t[0], s, t[1], t[2]) for t, s in randomized]
 
             # Add randomization transparency
             for _content, _score, _reason, bd in article_scores:

@@ -6,12 +6,9 @@ Utilise le Gumbel-max trick pour shuffler les articles à scores proches,
 
 import math
 import random
-from typing import TypeVar
-
-T = TypeVar("T")
 
 
-def randomized_sort(
+def randomized_sort[T](
     scored_items: list[tuple[T, float]],
     temperature: float = 0.15,
     seed: int | None = None,
@@ -72,9 +69,9 @@ def compute_seed(user_id: str, granularity: str = "hourly") -> int:
     Returns:
         Integer seed.
     """
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if granularity == "daily":
         time_key = now.strftime("%Y-%m-%d")

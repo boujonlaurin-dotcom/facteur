@@ -77,7 +77,9 @@ class FraicheurPillar(BasePillar):
             bonus = 10.0
             score += bonus
             contributions.append(
-                PillarContribution(label="Préférence : contenu intemporel", points=bonus)
+                PillarContribution(
+                    label="Préférence : contenu intemporel", points=bonus
+                )
             )
 
         return score, contributions

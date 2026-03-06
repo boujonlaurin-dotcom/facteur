@@ -10,7 +10,6 @@ from app.services.recommendation.pillars.base import BasePillar, PillarContribut
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 
-
 # Mapping thèmes slugs -> Français
 THEME_LABELS = {
     "tech": "Tech & Innovation",
@@ -178,7 +177,9 @@ class PertinencePillar(BasePillar):
             matched = set(content.source.secondary_themes) & context.user_interests
             if matched:
                 theme = sorted(matched)[0]
-                bonus = ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+                bonus = (
+                    ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+                )
                 label = f"Thème secondaire : {_theme_label(theme)}"
                 return bonus, PillarContribution(label=label, points=bonus)
 
@@ -216,7 +217,9 @@ class PertinencePillar(BasePillar):
         if hasattr(content, "theme") and content.theme:
             has_theme_match = content.theme.lower().strip() in user_interests_lower
         if not has_theme_match and content.source and content.source.theme:
-            has_theme_match = content.source.theme.lower().strip() in user_interests_lower
+            has_theme_match = (
+                content.source.theme.lower().strip() in user_interests_lower
+            )
         if (
             not has_theme_match
             and content.source
@@ -296,7 +299,9 @@ class PertinencePillar(BasePillar):
                         break
 
             if matched:
-                topic_score = ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * tp.priority_multiplier
+                topic_score = (
+                    ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * tp.priority_multiplier
+                )
                 if topic_score > best_score:
                     best_score = topic_score
                     best_topic_name = tp.topic_name
@@ -316,17 +321,15 @@ class PertinencePillar(BasePillar):
             return 0.0, []
 
         bonus = 0.0
-        if format_pref == "audio" and content.content_type == ContentType.PODCAST:
-            bonus = 20.0
-        elif format_pref == "video" and content.content_type == ContentType.VIDEO:
+        if (format_pref == "audio" and content.content_type == ContentType.PODCAST) or (
+            format_pref == "video" and content.content_type == ContentType.VIDEO
+        ):
             bonus = 20.0
         elif (
             format_pref == "short"
             and content.duration_seconds
             and content.duration_seconds <= 300
-        ):
-            bonus = 15.0
-        elif (
+        ) or (
             format_pref == "long"
             and content.duration_seconds
             and content.duration_seconds >= 900
