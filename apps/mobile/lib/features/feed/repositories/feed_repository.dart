@@ -326,11 +326,13 @@ class PerspectivesResponse {
   final List<PerspectiveData> perspectives;
   final List<String> keywords;
   final Map<String, int> biasDistribution;
+  final String sourceBiasStance;
 
   PerspectivesResponse({
     required this.perspectives,
     required this.keywords,
     required this.biasDistribution,
+    this.sourceBiasStance = 'unknown',
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -356,6 +358,8 @@ class PerspectivesResponse {
       perspectives: perspectivesList,
       keywords: keywordsList,
       biasDistribution: biasMap,
+      sourceBiasStance:
+          (json['source_bias_stance'] as String?) ?? 'unknown',
     );
   }
 }

@@ -358,6 +358,11 @@ async def delete_note(
     return {"status": "ok"}
 
 
+# In-memory cache for perspectives responses (TTL 2h)
+_perspectives_cache: dict[str, tuple[dict, float]] = {}
+_CACHE_TTL = 7200  # 2 hours
+
+
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
 async def get_perspectives(
     content_id: UUID,
@@ -366,77 +371,138 @@ async def get_perspectives(
 ):
     """
     Récupère des perspectives alternatives sur un contenu via Google News.
-    MVP: Recherche live basée sur les mots-clés du titre.
+    Recherche live basée sur les mots-clés du titre, avec cache in-memory (2h TTL).
     """
+    import time
+
     import structlog
     from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
 
     from app.models.content import Content
     from app.services.perspective_service import PerspectiveService
 
     logger = structlog.get_logger(__name__)
 
+    cache_key = str(content_id)
+    now = time.time()
+
+    # Check cache
+    if cache_key in _perspectives_cache:
+        cached_response, cached_at = _perspectives_cache[cache_key]
+        if now - cached_at < _CACHE_TTL:
+            logger.info(
+                "perspectives_cache_hit",
+                content_id=cache_key,
+            )
+            return cached_response
+
     logger.info(
         "perspectives_endpoint_start",
-        content_id=str(content_id),
+        content_id=cache_key,
         user_id=current_user_id,
     )
 
-    # Get the content title
-    result = await db.execute(select(Content).where(Content.id == content_id))
+    # Get the content with its source (for bias + domain exclusion)
+    result = await db.execute(
+        select(Content)
+        .options(joinedload(Content.source))
+        .where(Content.id == content_id)
+    )
     content = result.scalars().first()
 
     if not content:
         logger.warning(
             "perspectives_content_not_found",
-            content_id=str(content_id),
+            content_id=cache_key,
         )
         raise HTTPException(status_code=404, detail="Content not found")
 
     logger.info(
         "perspectives_content_found",
-        content_id=str(content_id),
+        content_id=cache_key,
         title=content.title[:50] if content.title else "N/A",
     )
 
+    # Extract the source domain for exclusion and bias
+    source_domain = None
+    source_bias_stance = "unknown"
+    if content.source:
+        from urllib.parse import urlparse
+
+        from app.services.perspective_service import DOMAIN_BIAS_MAP
+
+        try:
+            parsed = urlparse(content.source.url)
+            source_domain = parsed.netloc
+            if source_domain and source_domain.startswith("www."):
+                source_domain = source_domain[4:]
+        except Exception:
+            pass
+        if content.source.bias_stance:
+            source_bias_stance = (
+                content.source.bias_stance.value
+                if hasattr(content.source.bias_stance, "value")
+                else str(content.source.bias_stance)
+            )
+        # Fallback to DOMAIN_BIAS_MAP if DB bias is unknown
+        if source_bias_stance == "unknown" and source_domain:
+            source_bias_stance = DOMAIN_BIAS_MAP.get(
+                source_domain, "unknown"
+            )
+
     # Search perspectives with exclusions
-    service = PerspectiveService()
+    service = PerspectiveService(db=db)
     keywords = service.extract_keywords(content.title)
 
     if not keywords:
         logger.warning(
             "perspectives_no_keywords",
-            content_id=str(content_id),
+            content_id=cache_key,
             title=content.title,
         )
-        return {"content_id": str(content_id), "perspectives": [], "keywords": []}
+        empty_response = {
+            "content_id": cache_key,
+            "perspectives": [],
+            "keywords": [],
+            "source_bias_stance": source_bias_stance,
+            "bias_distribution": {},
+        }
+        return empty_response
 
     perspectives = await service.search_perspectives(
-        keywords, exclude_url=content.url, exclude_title=content.title
+        keywords,
+        exclude_url=content.url,
+        exclude_title=content.title,
+        exclude_domain=source_domain,
     )
 
-    # Calculate bias distribution
+    # Filter out unknown perspectives — they don't add value to political comparison
+    perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
+
+    # Calculate bias distribution (without "unknown")
     bias_distribution = {
         "left": 0,
         "center-left": 0,
         "center": 0,
         "center-right": 0,
         "right": 0,
-        "unknown": 0,
     }
     for p in perspectives:
-        bias_distribution[p.bias_stance] = bias_distribution.get(p.bias_stance, 0) + 1
+        if p.bias_stance in bias_distribution:
+            bias_distribution[p.bias_stance] += 1
 
     logger.info(
         "perspectives_endpoint_success",
-        content_id=str(content_id),
+        content_id=cache_key,
         perspectives_count=len(perspectives),
         keywords=keywords,
     )
 
-    return {
-        "content_id": str(content_id),
+    response = {
+        "content_id": cache_key,
         "keywords": keywords,
+        "source_bias_stance": source_bias_stance,
         "perspectives": [
             {
                 "title": p.title,
@@ -450,3 +516,8 @@ async def get_perspectives(
         ],
         "bias_distribution": bias_distribution,
     }
+
+    # Store in cache
+    _perspectives_cache[cache_key] = (response, now)
+
+    return response
