@@ -373,6 +373,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_content!.hasInAppContent == true && !_isConsumed) {
             _startReadingTimer();
           }
+          // Pre-load WebView if not already initialized
+          if (_webViewController == null) {
+            _initScrollToSiteWebView();
+          }
         } else {
           // Show error and pop if content not found
           NotificationService.showError('Contenu introuvable',
@@ -1023,9 +1027,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       readingTime = '$minutes min de lecture';
     }
 
-    // Schedule offset computation after layout
+    // Schedule offset computation after layout (reset if content changed)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_offsetsComputed) {
+      if (mounted) {
         _computeScrollOffsets();
       }
     });
@@ -1114,12 +1118,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ],
                   ),
                 ),
-                // Gradient fade overlay on last 80px
+                // Gradient fade overlay on last 30px (only last line fades)
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  height: 80,
+                  height: 30,
                   child: IgnorePointer(
                     child: Container(
                       decoration: BoxDecoration(
@@ -1138,57 +1142,68 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               ],
             ),
 
-            // ZONE 2: Bridge zone banner
-            Container(
-              key: _bridgeKey,
-              height: 72,
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space4,
-                vertical: FacteurSpacing.space3,
-              ),
-              decoration: BoxDecoration(
-                color: colors.surfaceElevated,
-                border: Border(
-                  top: BorderSide(
-                      color: colors.border.withValues(alpha: 0.5)),
-                  bottom: BorderSide(
-                      color: colors.border.withValues(alpha: 0.5)),
+            // ZONE 2: Bridge zone banner (tappable to scroll to WebView)
+            GestureDetector(
+              onTap: () {
+                if (_offsetsComputed) {
+                  _scrollController.animateTo(
+                    _bridgeEndOffset + 100,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOutCubic,
+                  );
+                }
+              },
+              child: Container(
+                key: _bridgeKey,
+                height: 72,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FacteurSpacing.space4,
+                  vertical: FacteurSpacing.space3,
                 ),
-              ),
-              child: Row(
-                children: [
-                  if (content.source.logoUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: CachedNetworkImage(
-                        imageUrl: content.source.logoUrl!,
-                        width: 24,
-                        height: 24,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            _buildSourcePlaceholder(colors),
+                decoration: BoxDecoration(
+                  color: colors.surfaceElevated,
+                  border: Border(
+                    top: BorderSide(
+                        color: colors.border.withValues(alpha: 0.5)),
+                    bottom: BorderSide(
+                        color: colors.border.withValues(alpha: 0.5)),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    if (content.source.logoUrl != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: CachedNetworkImage(
+                          imageUrl: content.source.logoUrl!,
+                          width: 24,
+                          height: 24,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              _buildSourcePlaceholder(colors),
+                        ),
+                      )
+                    else
+                      _buildSourcePlaceholder(colors),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Article complet \u00B7 ${content.source.name}',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    )
-                  else
-                    _buildSourcePlaceholder(colors),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Article complet \u00B7 ${content.source.name}',
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Icon(
-                    PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
-                    size: 18,
-                    color: colors.textTertiary,
-                  ),
-                ],
+                    Icon(
+                      PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
+                      size: 18,
+                      color: colors.textTertiary,
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -1223,19 +1238,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             gestureRecognizers: _isWebViewActive
                 ? {
                     Factory<VerticalDragGestureRecognizer>(
-                        () => VerticalDragGestureRecognizer())
+                        () => VerticalDragGestureRecognizer()),
+                    Factory<HorizontalDragGestureRecognizer>(
+                        () => HorizontalDragGestureRecognizer()),
                   }
                 : const {},
           ),
         ),
-        // Opacity overlay that fades out as user scrolls into zone 3
-        if (_webViewOpacity < 1.0)
+        // Opacity overlay that fades out as user scrolls into zone 3.
+        // When WebView is not active, this overlay also blocks touch events
+        // so the outer scroll keeps working.
+        if (!_isWebViewActive)
           Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                color: colors.backgroundPrimary
-                    .withValues(alpha: 1.0 - _webViewOpacity),
-              ),
+            child: Container(
+              color: colors.backgroundPrimary
+                  .withValues(alpha: 1.0 - _webViewOpacity),
             ),
           ),
       ],
