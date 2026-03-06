@@ -6,6 +6,8 @@ from urllib.parse import quote
 
 import httpx
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -24,16 +26,27 @@ DOMAIN_BIAS_MAP = {
     "bonpote.com": "left",
     "reporterre.net": "left",
     "lareleve.fr": "left",
+    "bastamag.net": "left",
+    "regards.fr": "left",
+    "frontpopulaire.fr": "left",
     # CENTER-LEFT
     "lemonde.fr": "center-left",
     "francetvinfo.fr": "center-left",
     "franceinter.fr": "center-left",
+    "franceinfo.fr": "center-left",
     "telerama.fr": "center-left",
     "slate.fr": "center-left",
     "france24.com": "center-left",
     "rfi.fr": "center-left",
     "nouvelobs.com": "center-left",
     "marianne.net": "center-left",  # Sovereignist but left-leaning on social issues
+    "arte.tv": "center-left",
+    "radiofrance.fr": "center-left",
+    "philomag.com": "center-left",
+    "philosophiemagazine.com": "center-left",
+    "linforme.com": "center-left",
+    "alternatives-economiques.fr": "center-left",
+    "francebleu.fr": "center-left",
     # CENTER
     "20minutes.fr": "center",
     "ouest-france.fr": "center",
@@ -45,6 +58,11 @@ DOMAIN_BIAS_MAP = {
     "courrierinternational.com": "center",
     "legrandcontinent.eu": "center",
     "theconversation.com": "center",
+    "tf1info.fr": "center",
+    "publicsenat.fr": "center",
+    "actu.fr": "center",
+    "la-croix.com": "center",
+    "vie-publique.fr": "center",
     # CENTER-RIGHT
     "lesechos.fr": "center-right",
     "latribune.fr": "center-right",
@@ -53,6 +71,10 @@ DOMAIN_BIAS_MAP = {
     "lepoint.fr": "center-right",
     "lejdd.fr": "center-right",
     "challenges.fr": "center-right",
+    "lci.fr": "center-right",
+    "parismatch.com": "center-right",
+    "parismatch.fr": "center-right",
+    "capital.fr": "center-right",
     # RIGHT
     "lefigaro.fr": "right",
     "valeursactuelles.com": "right",
@@ -83,15 +105,77 @@ import certifi
 class PerspectiveService:
     """Service for fetching perspectives via Google News RSS."""
 
-    def __init__(self, timeout: float = 10.0, max_results: int = 10):
+    def __init__(
+        self,
+        db: AsyncSession | None = None,
+        timeout: float = 10.0,
+        max_results: int = 10,
+    ):
+        self.db = db
         self.timeout = timeout
         self.max_results = max_results
+        # Cache for DB bias lookups within a single request
+        self._bias_cache: dict[str, str] = {}
+
+    async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
+        """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
+        # 1. Check hardcoded map (fast)
+        bias = DOMAIN_BIAS_MAP.get(domain)
+        if bias:
+            return bias
+
+        # 2. Check in-memory cache from prior DB lookups
+        cache_key = domain or source_name or ""
+        if cache_key in self._bias_cache:
+            return self._bias_cache[cache_key]
+
+        # 3. DB lookup if session available
+        if self.db:
+            try:
+                from app.models.source import Source
+
+                # 3a. Try domain match on source URL
+                if domain:
+                    stmt = select(Source.bias_stance).where(
+                        Source.url.ilike(f"%{domain}%"),
+                        Source.is_active.is_(True),
+                    )
+                    result = await self.db.execute(stmt)
+                    source_bias = result.scalar_one_or_none()
+
+                    if source_bias and source_bias != "unknown":
+                        self._bias_cache[cache_key] = source_bias
+                        return source_bias
+
+                # 3b. Fallback: fuzzy match by source name (Google News source name)
+                if source_name and source_name != "Unknown":
+                    stmt = select(Source.bias_stance).where(
+                        Source.name.ilike(f"%{source_name}%"),
+                        Source.is_active.is_(True),
+                    )
+                    result = await self.db.execute(stmt)
+                    source_bias = result.scalar_one_or_none()
+
+                    if source_bias and source_bias != "unknown":
+                        self._bias_cache[cache_key] = source_bias
+                        return source_bias
+            except Exception as e:
+                logger.warning(
+                    "resolve_bias_db_error",
+                    domain=domain,
+                    source_name=source_name,
+                    error=str(e),
+                )
+
+        self._bias_cache[cache_key] = "unknown"
+        return "unknown"
 
     async def search_perspectives(
         self,
         keywords: list[str],
         exclude_url: str | None = None,
         exclude_title: str | None = None,
+        exclude_domain: str | None = None,
     ) -> list[Perspective]:
         """
         Search for perspectives using Google News RSS.
@@ -132,8 +216,8 @@ class PerspectiveService:
                     )
                     return []
 
-                perspectives = self._parse_rss(
-                    response.content, exclude_url, exclude_title
+                perspectives = await self._parse_rss(
+                    response.content, exclude_url, exclude_title, exclude_domain
                 )
                 logger.info(
                     "perspectives_search_success",
@@ -167,11 +251,12 @@ class PerspectiveService:
             )
             return []
 
-    def _parse_rss(
+    async def _parse_rss(
         self,
         content: bytes,
         exclude_url: str | None = None,
         exclude_title: str | None = None,
+        exclude_domain: str | None = None,
     ) -> list[Perspective]:
         """Parse Google News RSS feed."""
         try:
@@ -219,13 +304,17 @@ class PerspectiveService:
                 # Extract domain from source URL
                 domain = self._extract_domain(source_url)
 
+                # 3. Filter out perspectives from the same domain as the source article
+                if exclude_domain and domain == exclude_domain:
+                    continue
+
                 # Skip duplicates from same domain
                 if domain in seen_domains:
                     continue
                 seen_domains.add(domain)
 
-                # Get bias
-                bias = DOMAIN_BIAS_MAP.get(domain, "unknown")
+                # Get bias (DB-first fallback, then name match)
+                bias = await self.resolve_bias(domain, source_name=source_name)
 
                 perspectives.append(
                     Perspective(

@@ -1,9 +1,11 @@
 import pytest
 from app.services.perspective_service import PerspectiveService
 
-def test_perspective_filtering_logic():
+
+@pytest.mark.asyncio
+async def test_perspective_filtering_logic():
     service = PerspectiveService()
-    
+
     # Mock RSS content with 3 items
     mock_rss = b"""<?xml version="1.0" encoding="UTF-8"?>
     <rss version="2.0">
@@ -25,21 +27,21 @@ def test_perspective_filtering_logic():
         </item>
     </channel>
     </rss>"""
-    
+
     # 1. Test without exclusion
-    results = service._parse_rss(mock_rss)
+    results = await service._parse_rss(mock_rss)
     assert len(results) == 3
-    
+
     # 2. Test with URL exclusion
-    results_url = service._parse_rss(mock_rss, exclude_url="http://lemonde.fr/article1")
+    results_url = await service._parse_rss(mock_rss, exclude_url="http://lemonde.fr/article1")
     assert len(results_url) == 2
     assert results_url[0].title == "Autre Article - Figaro"
-    
+
     # 3. Test with Title exclusion (similarity check)
     # The logic splits by " - " and compares
-    results_title = service._parse_rss(mock_rss, exclude_title="Doublon Titre")
+    results_title = await service._parse_rss(mock_rss, exclude_title="Doublon Titre")
     assert len(results_title) == 2
-    assert results_title[1].title == "Autre Article - Figaro" # Order might change due to set, but here list
+    assert results_title[1].title == "Autre Article - Figaro"  # Order might change due to set, but here list
     # Actually Liberation was the 3rd one.
     titles = [r.title for r in results_title]
     assert "Doublon Titre - Libe" not in titles

@@ -19,6 +19,7 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../feed/widgets/perspectives_pill.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -89,6 +90,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   Content? _content;
 
+  // Perspectives pill state
+  PerspectivesResponse? _perspectivesResponse;
+  bool _perspectivesLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -99,6 +104,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     // Always fetch fresh content to accept latest metadata/status/theme
     _fetchContent();
+
+    // Auto-fetch perspectives for articles
+    if (_content?.contentType == ContentType.article) {
+      _fetchPerspectives();
+    }
 
     _fabController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -385,6 +395,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_webViewController == null) {
             _initScrollToSiteWebView();
           }
+          // Auto-fetch perspectives if not yet loaded
+          if (_perspectivesResponse == null &&
+              !_perspectivesLoading &&
+              _content!.contentType == ContentType.article) {
+            _fetchPerspectives();
+          }
         } else {
           // Show error and pop if content not found
           NotificationService.showError('Contenu introuvable',
@@ -576,12 +592,46 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Show perspectives bottom sheet (restored from ArticleViewerModal)
+  /// Pre-fetch perspectives for the pill widget
+  Future<void> _fetchPerspectives() async {
+    final content = _content;
+    if (content == null) return;
+
+    setState(() => _perspectivesLoading = true);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+
+      final response = await repository.getPerspectives(content.id);
+
+      if (mounted) {
+        setState(() {
+          _perspectivesResponse = response;
+          _perspectivesLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error pre-fetching perspectives: $e');
+      if (mounted) {
+        setState(() => _perspectivesLoading = false);
+      }
+    }
+  }
+
+  /// Show perspectives bottom sheet — uses pre-loaded data if available
   Future<void> _showPerspectives(BuildContext context) async {
     final content = _content;
     if (content == null) return;
 
-    // Show loading indicator
+    // If data already pre-loaded, show directly
+    if (_perspectivesResponse != null) {
+      _showPerspectivesSheet(context, _perspectivesResponse!);
+      return;
+    }
+
+    // Otherwise fetch with loading indicator
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -606,40 +656,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
 
     try {
-      // Get the repository from provider
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
       final repository = FeedRepository(apiClient);
 
-      // Fetch perspectives
       final response = await repository.getPerspectives(content.id);
 
-      // Close loading dialog
       if (context.mounted) Navigator.pop(context);
 
-      // Show perspectives bottom sheet
       if (context.mounted) {
-        showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (ctx) => PerspectivesBottomSheet(
-            perspectives: response.perspectives
-                .map(
-                  (PerspectiveData p) => Perspective(
-                    title: p.title,
-                    url: p.url,
-                    sourceName: p.sourceName,
-                    sourceDomain: p.sourceDomain,
-                    biasStance: p.biasStance,
-                    publishedAt: p.publishedAt,
-                  ),
-                )
-                .toList(),
-            biasDistribution: response.biasDistribution,
-            keywords: response.keywords,
-          ),
-        );
+        setState(() => _perspectivesResponse = response);
+        _showPerspectivesSheet(context, response);
       }
     } catch (e) {
       debugPrint('Error fetching perspectives: $e');
@@ -649,6 +676,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             context: context);
       }
     }
+  }
+
+  void _showPerspectivesSheet(
+      BuildContext context, PerspectivesResponse response) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => PerspectivesBottomSheet(
+        perspectives: response.perspectives
+            .map(
+              (PerspectiveData p) => Perspective(
+                title: p.title,
+                url: p.url,
+                sourceName: p.sourceName,
+                sourceDomain: p.sourceDomain,
+                biasStance: p.biasStance,
+                publishedAt: p.publishedAt,
+              ),
+            )
+            .toList(),
+        biasDistribution: response.biasDistribution,
+        keywords: response.keywords,
+        sourceBiasStance: response.sourceBiasStance,
+      ),
+    );
   }
 
   @override
@@ -715,6 +768,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             right: 0,
             child: _buildHeader(context, content),
           ),
+          // Perspectives pill (articles only)
+          if (content.contentType == ContentType.article)
+            Positioned(
+              bottom: 100,
+              right: 16,
+              child: PerspectivesPill(
+                biasDistribution:
+                    _perspectivesResponse?.biasDistribution ?? {},
+                isLoading: _perspectivesLoading,
+                isEmpty: !_perspectivesLoading &&
+                    _perspectivesResponse != null &&
+                    _perspectivesResponse!.perspectives.isEmpty,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _showPerspectives(context);
+                },
+              ),
+            ),
         ],
       ),
       // FABs
