@@ -12,6 +12,7 @@ _$DigestScoreBreakdownImpl _$$DigestScoreBreakdownImplFromJson(
       label: json['label'] as String,
       points: (json['points'] as num).toDouble(),
       isPositive: json['is_positive'] as bool,
+      pillar: json['pillar'] as String?,
     );
 
 Map<String, dynamic> _$$DigestScoreBreakdownImplToJson(
@@ -20,6 +21,7 @@ Map<String, dynamic> _$$DigestScoreBreakdownImplToJson(
       'label': instance.label,
       'points': instance.points,
       'is_positive': instance.isPositive,
+      'pillar': instance.pillar,
     };
 
 _$DigestRecommendationReasonImpl _$$DigestRecommendationReasonImplFromJson(

@@ -221,6 +221,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                 const SizedBox(height: 40),
 
+                // Banner session expirée (après inactivité prolongée)
+                if (authState.sessionExpired) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: colors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.schedule, color: colors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Ta session a expiré. Reconnecte-toi pour continuer.',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: colors.textPrimary,
+                                    ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 if (_isSignUp) ...[
                   Row(
                     children: [

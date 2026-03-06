@@ -78,39 +78,7 @@ class PersonalizationSheet extends ConsumerWidget {
 
           // Breakdown
           if (reason != null && reason.breakdown.isNotEmpty) ...[
-            ...reason.breakdown.map((contribution) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        contribution.isPositive
-                            ? PhosphorIcons.trendUp(PhosphorIconsStyle.bold)
-                            : PhosphorIcons.trendDown(PhosphorIconsStyle.bold),
-                        color: contribution.isPositive
-                            ? colors.success
-                            : colors.error,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          contribution.label,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${contribution.points > 0 ? '+' : ''}${contribution.points.toInt()}',
-                        style: TextStyle(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
+            ..._buildBreakdown(reason.breakdown, colors),
             const SizedBox(height: 16),
             Divider(color: colors.border),
             const SizedBox(height: 16),
@@ -258,6 +226,120 @@ class PersonalizationSheet extends ConsumerWidget {
           const SizedBox(height: 8),
         ],
       ),
+      ),
+    );
+  }
+
+  static const _pillarOrder = [
+    'pertinence',
+    'source',
+    'fraicheur',
+    'qualite',
+    'diversite',
+    'penalite',
+  ];
+
+  static const _pillarHeaders = {
+    'pertinence': "Vos centres d'intérêt",
+    'source': 'Vos sources',
+    'fraicheur': 'Actualité',
+    'qualite': 'Qualité du contenu',
+    'diversite': 'Diversité',
+  };
+
+  List<Widget> _buildBreakdown(
+      List<ScoreContribution> breakdown, FacteurColors colors) {
+    final hasPillars = breakdown.any((c) => c.pillar != null);
+    if (!hasPillars) {
+      // Fallback: flat list (legacy backend)
+      return breakdown.map((c) => _buildContributionRow(c, colors)).toList();
+    }
+
+    // Sort by absolute contribution, take top 6
+    final sorted = List.of(breakdown)
+      ..sort((a, b) => b.points.abs().compareTo(a.points.abs()));
+    final limited = sorted.take(6).toList();
+
+    // Group by pillar
+    final groups = <String?, List<ScoreContribution>>{};
+    for (final c in limited) {
+      groups.putIfAbsent(c.pillar, () => []).add(c);
+    }
+
+    final widgets = <Widget>[];
+    for (final key in _pillarOrder) {
+      if (!groups.containsKey(key)) continue;
+      final header = _pillarHeaders[key];
+      if (header != null) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            header,
+            style: TextStyle(
+              color: colors.textTertiary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ));
+      }
+      for (final c in groups[key]!) {
+        widgets.add(_buildContributionRow(c, colors));
+      }
+    }
+
+    // Any null-pillar items
+    if (groups.containsKey(null)) {
+      for (final c in groups[null]!) {
+        widgets.add(_buildContributionRow(c, colors));
+      }
+    }
+
+    if (breakdown.length > 6) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'et ${breakdown.length - 6} autre${breakdown.length - 6 > 1 ? 's' : ''} facteur${breakdown.length - 6 > 1 ? 's' : ''}…',
+          style: TextStyle(color: colors.textTertiary, fontSize: 13),
+        ),
+      ));
+    }
+
+    return widgets;
+  }
+
+  Widget _buildContributionRow(
+      ScoreContribution contribution, FacteurColors colors) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(
+            contribution.isPositive
+                ? PhosphorIcons.trendUp(PhosphorIconsStyle.bold)
+                : PhosphorIcons.trendDown(PhosphorIconsStyle.bold),
+            color: contribution.isPositive ? colors.success : colors.error,
+            size: 16,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              contribution.label,
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          Text(
+            '${contribution.points > 0 ? '+' : ''}${contribution.points.toInt()}',
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

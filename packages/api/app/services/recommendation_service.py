@@ -34,7 +34,12 @@ from app.services.recommendation.layers import (
     UserCustomTopicLayer,
     VisualLayer,
 )
-from app.services.recommendation.scoring_engine import ScoringContext, ScoringEngine
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_engine import (
+    PillarScoringEngine,
+    ScoringContext,
+    ScoringEngine,
+)
 
 
 class RecommendationService:
@@ -57,6 +62,8 @@ class RecommendationService:
                 UserCustomTopicLayer(),  # Epic 11
             ]
         )
+        # Pillar-based scoring engine (v2)
+        self.pillar_engine = PillarScoringEngine()
 
     async def get_feed(
         self,
@@ -385,8 +392,18 @@ class RecommendationService:
             source_priority_multipliers=source_priority_multipliers,
         )
 
+        use_pillars = ScoringWeights.SCORING_VERSION == "pillars_v1"
+
+        # Store pillar results for reason hydration (v2 only)
+        pillar_results: dict = {}  # {content_id: PillarScoreResult}
+
         for content in candidates:
-            score = self.scoring_engine.compute_score(content, context)
+            if use_pillars:
+                pillar_result = self.pillar_engine.compute_score(content, context)
+                score = pillar_result.final_score
+                pillar_results[content.id] = pillar_result
+            else:
+                score = self.scoring_engine.compute_score(content, context)
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()
@@ -394,6 +411,7 @@ class RecommendationService:
             "feed_phase4_scoring",
             duration_ms=round((t5 - t4) * 1000),
             candidates=len(candidates),
+            engine="pillars_v1" if use_pillars else "layers_v1",
         )
 
         # 4. Sort by score DESC
@@ -419,6 +437,16 @@ class RecommendationService:
         # Sort again with diversity penalties applied to find the new Top-N
         final_list.sort(key=lambda x: x[1], reverse=True)
 
+        # 4c. Randomization (v2 only — Gumbel noise for discovery)
+        if use_pillars and ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+            from app.services.recommendation.randomization import randomized_sort
+
+            final_list = randomized_sort(
+                final_list,
+                temperature=ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE,
+                seed=None,  # Random per request for feed discovery
+            )
+
         # 5. Paginate
         scored_candidates = final_list
         start = offset
@@ -430,264 +458,28 @@ class RecommendationService:
         result = [item[0] for item in scored_candidates[start:end]]
 
         # 5.5 Hydrate Recommendation Reason (Transparency)
-        for content in result:
-            reasons_list = context.reasons.get(content.id, [])
-            if reasons_list:
-                # Mapping des 8 thèmes macro -> Français
-                THEME_TRANSLATIONS = {
-                    "tech": "Tech & Innovation",
-                    "society": "Société",
-                    "environment": "Environnement",
-                    "economy": "Économie",
-                    "politics": "Politique",
-                    "culture": "Culture & Idées",
-                    "science": "Sciences",
-                    "international": "Géopolitique",
-                    # Legacy/synonymes pour rétrocompatibilité
-                    "geopolitics": "Géopolitique",
-                    "society_climate": "Société",
-                    "culture_ideas": "Culture & Idées",
-                }
+        if use_pillars:
+            # v2: Use reason_builder with pillar results
+            from app.services.recommendation.reason_builder import (
+                build_recommendation_reason,
+            )
 
-                # Mapping des 50 sous-thèmes -> Français
-                SUBTOPIC_TRANSLATIONS = {
-                    # Tech (12)
-                    "ai": "IA",
-                    "llm": "LLM",
-                    "crypto": "Crypto",
-                    "web3": "Web3",
-                    "space": "Spatial",
-                    "biotech": "Biotech",
-                    "quantum": "Quantique",
-                    "cybersecurity": "Cybersécurité",
-                    "robotics": "Robotique",
-                    "gaming": "Gaming",
-                    "cleantech": "Cleantech",
-                    "data-privacy": "Données",
-                    # Society (10)
-                    "social-justice": "Justice sociale",
-                    "feminism": "Féminisme",
-                    "lgbtq": "LGBTQ+",
-                    "immigration": "Immigration",
-                    "health": "Santé",
-                    "education": "Éducation",
-                    "urbanism": "Urbanisme",
-                    "housing": "Logement",
-                    "work-reform": "Travail",
-                    "justice-system": "Justice",
-                    # Environment (8)
-                    "climate": "Climat",
-                    "biodiversity": "Biodiversité",
-                    "energy-transition": "Transition énergétique",
-                    "pollution": "Pollution",
-                    "circular-economy": "Économie circulaire",
-                    "agriculture": "Agriculture",
-                    "oceans": "Océans",
-                    "forests": "Forêts",
-                    # Economy (8)
-                    "macro": "Macro-économie",
-                    "finance": "Finance",
-                    "startups": "Startups",
-                    "venture-capital": "VC",
-                    "labor-market": "Emploi",
-                    "inflation": "Inflation",
-                    "trade": "Commerce",
-                    "taxation": "Fiscalité",
-                    # Politics (5)
-                    "elections": "Élections",
-                    "institutions": "Institutions",
-                    "local-politics": "Politique locale",
-                    "activism": "Activisme",
-                    "democracy": "Démocratie",
-                    # Culture (4)
-                    "philosophy": "Philosophie",
-                    "art": "Art",
-                    "cinema": "Cinéma",
-                    "media-critics": "Critique des médias",
-                    # Science (2)
-                    "fundamental-research": "Recherche",
-                    "applied-science": "Sciences appliquées",
-                    # International (1)
-                    "geopolitics": "Géopolitique",
-                }
-
-                def _get_theme_label(raw_theme: str) -> str:
-                    raw_theme = raw_theme.lower().strip()
-                    return THEME_TRANSLATIONS.get(raw_theme, raw_theme.capitalize())
-
-                def _get_subtopic_label(slug: str) -> str:
-                    slug = slug.lower().strip()
-                    return SUBTOPIC_TRANSLATIONS.get(slug, slug.capitalize())
-
-                def _reason_to_label(reason: dict) -> str:
-                    """Convert a reason dict to a human-readable French label."""
-                    layer = reason["layer"]
-                    details = reason["details"]
-
-                    if layer == "core_v1":
-                        if "Theme match" in details:
-                            try:
-                                theme_slug = details.split(": ")[1]
-                                return f"Thème : {_get_theme_label(theme_slug)}"
-                            except Exception:
-                                return "Thème matché"
-                        elif "confiance" in details.lower():
-                            return "Source de confiance"
-                        elif "personnalisée" in details.lower():
-                            return "Ta source personnalisée"
-                        elif "affinit" in details.lower():
-                            return "Source appréciée"
-                        elif "Recency" in details:
-                            return "Récence"
-                        else:
-                            return details
-                    elif layer == "article_topic":
-                        try:
-                            # "Topic match: ai, crypto (précis)" -> "Sous-thèmes : IA, Crypto"
-                            raw = details.split(": ")[1]
-                            # Remove "(précis)" suffix if present
-                            raw = raw.replace(" (précis)", "")
-                            slugs = [t.strip() for t in raw.split(",")]
-                            labels = [_get_subtopic_label(s) for s in slugs[:2]]
-                            return f"Sous-thèmes : {', '.join(labels)}"
-                        except Exception:
-                            return "Sous-thèmes matchés"
-                    elif layer == "static_prefs":
-                        if "Recent" in details:
-                            return "Très récent"
-                        elif "format" in details.lower():
-                            return "Format préféré"
-                        else:
-                            return "Préférence"
-                    elif layer == "behavioral":
-                        if "High interest" in details:
-                            try:
-                                theme_slug = details.split(": ")[1].split(" ")[0]
-                                return (
-                                    f"Engagement élevé : {_get_theme_label(theme_slug)}"
-                                )
-                            except Exception:
-                                return "Engagement élevé"
-                        else:
-                            return "Engagement"
-                    elif layer == "quality":
-                        if "qualitative" in details.lower():
-                            return "Source qualitative"
-                        elif "Low" in details:
-                            return "Fiabilité basse"
-                        else:
-                            return "Qualité source"
-                    elif layer == "visual":
-                        return "Aperçu disponible"
-                    else:
-                        return details
-
-                # Build breakdown list
-                breakdown = []
-                score_total = 0.0
-
-                for reason in reasons_list:
-                    try:
-                        pts = reason.get("score_contribution", 0.0)
-                        score_total += pts
-                        breakdown.append(
+            for content in result:
+                pr = pillar_results.get(content.id)
+                if pr:
+                    content.recommendation_reason = build_recommendation_reason(pr)
+                    if ScoringWeights.FEED_RANDOMIZATION_TEMPERATURE > 0:
+                        content.recommendation_reason.breakdown.append(
                             ScoreContribution(
-                                label=_reason_to_label(reason),
-                                points=pts,
-                                is_positive=(pts >= 0),
+                                label="Hasard pour diversifier",
+                                points=0,
+                                is_positive=True,
+                                pillar="diversite",
                             )
                         )
-                    except Exception as e:
-                        logger.warning(
-                            "reason_breakdown_failed",
-                            error=str(e),
-                            content_id=str(content.id),
-                        )
-                        continue
-
-                # Sort by absolute contribution (highest first)
-                breakdown.sort(key=lambda x: abs(x.points), reverse=True)
-
-                # Determine top label (for the tag)
-                # Prioritize granular topics over broad themes
-                reasons_list.sort(
-                    key=lambda x: (
-                        x.get("layer") == "article_topic",
-                        x.get("score_contribution", 0.0),
-                    ),
-                    reverse=True,
-                )
-
-                label = "Recommandé pour vous"  # Fallback
-
-                if reasons_list:
-                    top = reasons_list[0]
-
-                    try:
-                        layer = top.get("layer")
-                        details = top.get("details", "")
-
-                        if layer == "core_v1":
-                            if "Theme match" in details:
-                                try:
-                                    theme_slug = details.split(": ")[1]
-                                    theme_fr = _get_theme_label(theme_slug)
-                                    label = f"Vos intérêts : {theme_fr}"
-                                except Exception:
-                                    label = "Vos intérêts"
-                            elif "confiance" in details.lower():
-                                label = "Source suivie"
-                            elif "affinit" in details.lower():
-                                label = "Source appréciée"
-                            elif "Recency" in details:
-                                label = "À la une"
-                        elif layer == "article_topic":
-                            try:
-                                raw_part = (
-                                    details.split(": ")[1]
-                                    .split(" [")[0]
-                                    .replace(" (précis)", "")
-                                )
-                                topic_slugs = [t.strip() for t in raw_part.split(",")]
-                                topic_labels = [
-                                    _get_subtopic_label(t) for t in topic_slugs[:2]
-                                ]
-                                if "[liked:" in details:
-                                    label = f"Renforcé par vos j'aime : {', '.join(topic_labels)}"
-                                else:
-                                    label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
-                            except Exception:
-                                label = "Vos centres d'intérêt"
-                        elif layer == "static_prefs":
-                            if "Recent" in details:
-                                label = "Très récent"
-                            elif "format" in details or "Pref" in details:
-                                label = "Format préféré"
-                        elif layer == "behavioral":
-                            if "High interest" in details:
-                                try:
-                                    theme_slug = details.split(": ")[1].split(" ")[0]
-                                    theme_fr = _get_theme_label(theme_slug)
-                                    label = f"Sujet passionnant : {theme_fr}"
-                                except Exception:
-                                    label = "Sujet passionnant"
-                        elif layer == "quality":
-                            if "qualitative" in details.lower():
-                                label = "Source de Confiance"
-                            elif "Low" in details:
-                                label = "Source Controversée"
-                        elif layer == "visual":
-                            label = "Aperçu disponible"
-                    except Exception as e:
-                        logger.warning(
-                            "top_reason_label_failed",
-                            error=str(e),
-                            content_id=str(content.id),
-                        )
-
-                content.recommendation_reason = RecommendationReason(
-                    label=label, score_total=score_total, breakdown=breakdown
-                )
+        else:
+            # v1: Legacy reason hydration from context.reasons
+            self._hydrate_legacy_reasons(result, context)
 
         # 6. Hydrate with User Status (is_saved, etc)
         content_ids = [c.id for c in result]
@@ -714,6 +506,224 @@ class RecommendationService:
             "feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result)
         )
         return result
+
+    def _hydrate_legacy_reasons(
+        self, result: list[Content], context: ScoringContext
+    ) -> None:
+        """Legacy reason hydration (v1 layers)."""
+        THEME_TRANSLATIONS = {
+            "tech": "Tech & Innovation",
+            "society": "Société",
+            "environment": "Environnement",
+            "economy": "Économie",
+            "politics": "Politique",
+            "culture": "Culture & Idées",
+            "science": "Sciences",
+            "international": "Géopolitique",
+            "geopolitics": "Géopolitique",
+            "society_climate": "Société",
+            "culture_ideas": "Culture & Idées",
+        }
+
+        SUBTOPIC_TRANSLATIONS = {
+            "ai": "IA", "llm": "LLM", "crypto": "Crypto", "web3": "Web3",
+            "space": "Spatial", "biotech": "Biotech", "quantum": "Quantique",
+            "cybersecurity": "Cybersécurité", "robotics": "Robotique",
+            "gaming": "Gaming", "cleantech": "Cleantech", "data-privacy": "Données",
+            "social-justice": "Justice sociale", "feminism": "Féminisme",
+            "lgbtq": "LGBTQ+", "immigration": "Immigration", "health": "Santé",
+            "education": "Éducation", "urbanism": "Urbanisme", "housing": "Logement",
+            "work-reform": "Travail", "justice-system": "Justice",
+            "climate": "Climat", "biodiversity": "Biodiversité",
+            "energy-transition": "Transition énergétique", "pollution": "Pollution",
+            "circular-economy": "Économie circulaire", "agriculture": "Agriculture",
+            "oceans": "Océans", "forests": "Forêts",
+            "macro": "Macro-économie", "finance": "Finance", "startups": "Startups",
+            "venture-capital": "VC", "labor-market": "Emploi", "inflation": "Inflation",
+            "trade": "Commerce", "taxation": "Fiscalité",
+            "elections": "Élections", "institutions": "Institutions",
+            "local-politics": "Politique locale", "activism": "Activisme",
+            "democracy": "Démocratie", "philosophy": "Philosophie", "art": "Art",
+            "cinema": "Cinéma", "media-critics": "Critique des médias",
+            "fundamental-research": "Recherche", "applied-science": "Sciences appliquées",
+            "geopolitics": "Géopolitique",
+        }
+
+        def _get_theme_label(raw_theme: str) -> str:
+            return THEME_TRANSLATIONS.get(raw_theme.lower().strip(), raw_theme.capitalize())
+
+        def _get_subtopic_label(slug: str) -> str:
+            return SUBTOPIC_TRANSLATIONS.get(slug.lower().strip(), slug.capitalize())
+
+        def _reason_to_label(reason: dict) -> str:
+            layer = reason["layer"]
+            details = reason["details"]
+            if layer == "core_v1":
+                if "Thème" in details:
+                    try:
+                        theme_slug = details.split(": ")[1]
+                        return f"Thème : {_get_theme_label(theme_slug)}"
+                    except Exception:
+                        return "Thème matché"
+                elif "confiance" in details.lower():
+                    return "Source de confiance"
+                elif "personnalisée" in details.lower():
+                    return "Ta source personnalisée"
+                elif "Affinité" in details or "affinit" in details.lower():
+                    return "Source appréciée"
+                elif "favorite" in details.lower():
+                    return "Source favorite"
+                elif "réduite" in details.lower():
+                    return "Source réduite"
+                else:
+                    return details
+            elif layer == "article_topic":
+                try:
+                    raw = details.split(": ")[1].replace(" (précis)", "")
+                    slugs = [t.strip() for t in raw.split(",")]
+                    labels = [_get_subtopic_label(s) for s in slugs[:2]]
+                    return f"Sous-thèmes : {', '.join(labels)}"
+                except Exception:
+                    return "Sous-thèmes matchés"
+            elif layer == "static_prefs":
+                if "Recent" in details:
+                    return "Très récent"
+                elif "format" in details.lower():
+                    return "Format préféré"
+                else:
+                    return "Préférence"
+            elif layer == "behavioral":
+                if "High interest" in details:
+                    try:
+                        theme_slug = details.split(": ")[1].split(" ")[0]
+                        return f"Engagement élevé : {_get_theme_label(theme_slug)}"
+                    except Exception:
+                        return "Engagement élevé"
+                else:
+                    return "Engagement"
+            elif layer == "quality":
+                if "qualitative" in details.lower():
+                    return "Source qualitative"
+                elif "Low" in details:
+                    return "Fiabilité basse"
+                else:
+                    return "Qualité source"
+            elif layer == "visual":
+                return "Aperçu disponible"
+            elif layer == "content_quality":
+                if "Rich" in details or "full" in details.lower():
+                    return "Lecture complète dans Facteur"
+                elif "Partial" in details or "partial" in details.lower():
+                    return "Lecture partielle disponible"
+                else:
+                    return details
+            elif layer == "user_custom_topic":
+                try:
+                    topic_name = details.split(": ")[1].split(" (")[0]
+                    return f"Votre sujet : {topic_name}"
+                except Exception:
+                    return "Sujet personnalisé"
+            elif layer == "personalization":
+                return details
+            elif layer == "impression":
+                return details
+            else:
+                return details
+
+        for content in result:
+            reasons_list = context.reasons.get(content.id, [])
+            if not reasons_list:
+                continue
+
+            breakdown = []
+            score_total = 0.0
+
+            for reason in reasons_list:
+                try:
+                    pts = reason.get("score_contribution", 0.0)
+                    score_total += pts
+                    breakdown.append(
+                        ScoreContribution(
+                            label=_reason_to_label(reason),
+                            points=pts,
+                            is_positive=(pts >= 0),
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "reason_breakdown_failed",
+                        error=str(e),
+                        content_id=str(content.id),
+                    )
+                    continue
+
+            breakdown.sort(key=lambda x: abs(x.points), reverse=True)
+
+            reasons_list.sort(
+                key=lambda x: (
+                    x.get("layer") == "article_topic",
+                    x.get("score_contribution", 0.0),
+                ),
+                reverse=True,
+            )
+
+            label = "Recommandé pour vous"
+            if reasons_list:
+                top = reasons_list[0]
+                try:
+                    layer = top.get("layer")
+                    details = top.get("details", "")
+                    if layer == "core_v1":
+                        if "Thème" in details:
+                            try:
+                                theme_slug = details.split(": ")[1]
+                                label = f"Vos intérêts : {_get_theme_label(theme_slug)}"
+                            except Exception:
+                                label = "Vos intérêts"
+                        elif "confiance" in details.lower():
+                            label = "Source suivie"
+                        elif "affinit" in details.lower():
+                            label = "Source appréciée"
+                    elif layer == "article_topic":
+                        try:
+                            raw_part = details.split(": ")[1].split(" [")[0].replace(" (précis)", "")
+                            topic_slugs = [t.strip() for t in raw_part.split(",")]
+                            topic_labels = [_get_subtopic_label(t) for t in topic_slugs[:2]]
+                            if "[liked:" in details:
+                                label = f"Renforcé par vos j'aime : {', '.join(topic_labels)}"
+                            else:
+                                label = f"Vos centres d'intérêt : {', '.join(topic_labels)}"
+                        except Exception:
+                            label = "Vos centres d'intérêt"
+                    elif layer == "static_prefs":
+                        if "Recent" in details:
+                            label = "Très récent"
+                        elif "format" in details or "Pref" in details:
+                            label = "Format préféré"
+                    elif layer == "behavioral":
+                        if "High interest" in details:
+                            try:
+                                theme_slug = details.split(": ")[1].split(" ")[0]
+                                label = f"Sujet passionnant : {_get_theme_label(theme_slug)}"
+                            except Exception:
+                                label = "Sujet passionnant"
+                    elif layer == "quality":
+                        if "qualitative" in details.lower():
+                            label = "Source de Confiance"
+                        elif "Low" in details:
+                            label = "Source Controversée"
+                    elif layer == "visual":
+                        label = "Aperçu disponible"
+                except Exception as e:
+                    logger.warning(
+                        "top_reason_label_failed",
+                        error=str(e),
+                        content_id=str(content.id),
+                    )
+
+            content.recommendation_reason = RecommendationReason(
+                label=label, score_total=score_total, breakdown=breakdown
+            )
 
     async def _get_candidates(
         self,

@@ -19,11 +19,13 @@ class ScoreContribution {
   final String label;
   final double points;
   final bool isPositive;
+  final String? pillar;
 
   ScoreContribution({
     required this.label,
     required this.points,
     this.isPositive = true,
+    this.pillar,
   });
 
   factory ScoreContribution.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class ScoreContribution {
       label: (json['label'] as String?) ?? 'Facteur',
       points: (json['points'] as num?)?.toDouble() ?? 0.0,
       isPositive: (json['is_positive'] as bool?) ?? true,
+      pillar: json['pillar'] as String?,
     );
   }
 }

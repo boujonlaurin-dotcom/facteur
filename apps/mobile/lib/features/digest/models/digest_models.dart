@@ -12,6 +12,7 @@ class DigestScoreBreakdown with _$DigestScoreBreakdown {
     required String label,
     required double points,
     @JsonKey(name: 'is_positive') required bool isPositive,
+    String? pillar,
   }) = _DigestScoreBreakdown;
 
   factory DigestScoreBreakdown.fromJson(Map<String, dynamic> json) =>
