@@ -43,7 +43,11 @@ jobs:
 
       - name: Environment check
         run: |
-          ENV=$(curl -s https://facteur-staging.up.railway.app/api/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
+          RESPONSE=$(curl -sf https://facteur-staging.up.railway.app/api/health) || {
+            echo "FAIL: Could not reach health endpoint"
+            exit 1
+          }
+          ENV=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
           if [ "$ENV" = "staging" ]; then
             echo "Environment correctly reports: staging"
           else
