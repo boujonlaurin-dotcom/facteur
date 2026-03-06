@@ -76,12 +76,6 @@ jobs:
           name: facteur-ios-release
           path: apps/mobile/build/ios/ipa/*.ipa
 
-      - name: Rename IPA
-        run: |
-          IPA_FILE=$(ls apps/mobile/build/ios/ipa/*.ipa)
-          mv "$IPA_FILE" \
-             apps/mobile/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa
-
       - name: Create Beta Release
         if: github.event.inputs.create_release != 'false'
         uses: softprops/action-gh-release@v2
