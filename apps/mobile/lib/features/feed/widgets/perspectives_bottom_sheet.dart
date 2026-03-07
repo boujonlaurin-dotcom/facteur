@@ -66,29 +66,92 @@ class Perspective {
         return '?';
     }
   }
+
+  /// Map detailed bias to simplified 3-segment group
+  String get biasGroup {
+    switch (biasStance) {
+      case 'left':
+      case 'center-left':
+        return 'gauche';
+      case 'center':
+        return 'centre';
+      case 'center-right':
+      case 'right':
+        return 'droite';
+      default:
+        return 'centre';
+    }
+  }
+}
+
+/// Map a detailed bias stance to a simplified 3-segment group
+String _toBarGroup(String stance) {
+  switch (stance) {
+    case 'left':
+    case 'center-left':
+      return 'gauche';
+    case 'center':
+      return 'centre';
+    case 'center-right':
+    case 'right':
+      return 'droite';
+    default:
+      return 'centre';
+  }
 }
 
 /// Bottom sheet to display alternative perspectives
-class PerspectivesBottomSheet extends StatelessWidget {
+class PerspectivesBottomSheet extends StatefulWidget {
   final List<Perspective> perspectives;
   final Map<String, int> biasDistribution;
   final List<String> keywords;
+  final String sourceBiasStance;
+  final String sourceName;
 
   const PerspectivesBottomSheet({
     super.key,
     required this.perspectives,
     required this.biasDistribution,
     required this.keywords,
+    this.sourceBiasStance = 'unknown',
+    this.sourceName = '',
   });
+
+  @override
+  State<PerspectivesBottomSheet> createState() =>
+      _PerspectivesBottomSheetState();
+}
+
+class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
+  /// Active filter: 'gauche', 'centre', 'droite', or null (show all)
+  String? _activeBiasFilter;
+
+  List<Perspective> get _filteredPerspectives {
+    if (_activeBiasFilter == null) return widget.perspectives;
+    return widget.perspectives
+        .where((p) => p.biasGroup == _activeBiasFilter)
+        .toList();
+  }
+
+  /// Compute merged 3-segment distribution from the 5-segment API data
+  Map<String, int> get _mergedDistribution {
+    final dist = widget.biasDistribution;
+    return {
+      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
+      'centre': dist['center'] ?? 0,
+      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final filtered = _filteredPerspectives;
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.75,
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       decoration: BoxDecoration(
         color: colors.backgroundPrimary,
@@ -131,7 +194,7 @@ class PerspectivesBottomSheet extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'Mots-clés: ${keywords.join(", ")}',
+                        'Sur le même sujet (${widget.keywords.join(", ")})',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -148,22 +211,22 @@ class PerspectivesBottomSheet extends StatelessWidget {
             ),
           ),
 
-          // Bias Bar
-          _buildBiasBar(context, colors),
+          // Bias Bar (hidden when empty)
+          if (widget.perspectives.isNotEmpty) _buildBiasBar(context, colors),
 
           const Divider(height: 1),
 
           // Perspectives List
           Flexible(
-            child: perspectives.isEmpty
+            child: filtered.isEmpty
                 ? _buildEmptyState(context, colors, textTheme)
                 : ListView.separated(
                     shrinkWrap: true,
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: perspectives.length,
+                    itemCount: filtered.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      return _PerspectiveCard(perspective: perspectives[index]);
+                      return _PerspectiveCard(perspective: filtered[index]);
                     },
                   ),
           ),
@@ -173,102 +236,161 @@ class PerspectivesBottomSheet extends StatelessWidget {
   }
 
   Widget _buildBiasBar(BuildContext context, FacteurColors colors) {
-    // Liste ordonnée des biais pour la barre
-    final orderedBiases = [
-      'left',
-      'center-left',
-      'center',
-      'center-right',
-      'right'
+    // 3 simplified segments: Gauche (left+center-left), Centre, Droite (center-right+right)
+    final segments = [
+      ('gauche', 'Gauche', colors.biasLeft),
+      ('centre', 'Centre', colors.biasCenter),
+      ('droite', 'Droite', colors.biasRight),
     ];
+
+    final merged = _mergedDistribution;
+    final total = merged.values.fold<int>(0, (sum, v) => sum + v);
+
+    // Compute proportional flex values
+    final flexValues = <int>[];
+    for (final seg in segments) {
+      final count = merged[seg.$1] ?? 0;
+      if (count > 0 && total > 0) {
+        final proportion = count / total;
+        flexValues.add((proportion * 100).round().clamp(15, 100));
+      } else {
+        flexValues.add(15); // Minimum width for empty segments
+      }
+    }
+
+    // Find the source's segment index for the marker
+    final sourceGroup = _toBarGroup(widget.sourceBiasStance);
+    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
-          // Barre de segments fixes
+          // Interactive 3-segment bias bar
           Row(
-            children: orderedBiases.map((bias) {
-              final count = biasDistribution[bias] ?? 0;
-              final Color baseColor;
-              switch (bias) {
-                case 'left':
-                  baseColor = colors.biasLeft;
-                  break;
-                case 'center-left':
-                  baseColor = colors.biasCenterLeft;
-                  break;
-                case 'center':
-                  baseColor = colors.biasCenter;
-                  break;
-                case 'center-right':
-                  baseColor = colors.biasCenterRight;
-                  break;
-                case 'right':
-                  baseColor = colors.biasRight;
-                  break;
-                default:
-                  baseColor = colors.biasUnknown;
-              }
+            children: List.generate(segments.length, (i) {
+              final seg = segments[i];
+              final count = merged[seg.$1] ?? 0;
+              final isSelected = _activeBiasFilter == seg.$1;
+              final hasFilter = _activeBiasFilter != null;
 
               return Expanded(
-                child: Container(
-                  height: 8,
-                  margin: const EdgeInsets.symmetric(
-                      horizontal: 1.0), // 2px total gap
-                  decoration: BoxDecoration(
-                    // Approche Expert : Saturation progressive + Gaps nets
-                    // Évite l'effet "cheap" des bordures tout en préservant l'identité colorimétrique
-                    color: count > 0
-                        ? baseColor.withValues(
-                            alpha: count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
-                        : baseColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(4),
-                    // Bordure sombre subtile pour faire ressortir les blocs actifs
-                    border: count > 0
-                        ? Border.all(
-                            color: Colors.black.withValues(alpha: 0.25),
-                            width: 0.8,
-                          )
-                        : null,
+                flex: flexValues[i],
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_activeBiasFilter == seg.$1) {
+                        _activeBiasFilter = null;
+                      } else {
+                        _activeBiasFilter = seg.$1;
+                      }
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    height: isSelected ? 18 : 12,
+                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                    decoration: BoxDecoration(
+                      color: count > 0
+                          ? seg.$3.withValues(
+                              alpha: hasFilter && !isSelected
+                                  ? 0.3
+                                  : (count == 1
+                                      ? 0.55
+                                      : (count == 2 ? 0.8 : 1.0)))
+                          : seg.$3.withValues(
+                              alpha: hasFilter && !isSelected ? 0.1 : 0.25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: count > 0
+                          ? Border.all(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              width: 0.8,
+                            )
+                          : null,
+                    ),
                   ),
                 ),
               );
-            }).toList(),
+            }),
           ),
-          const SizedBox(height: 8),
-          // Labels alignés sur les segments extrêmes et centre
+
+          // "Votre source" marker
+          if (sourceIndex >= 0 &&
+              widget.sourceBiasStance != 'unknown') ...[
+            const SizedBox(height: 4),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final totalFlex =
+                    flexValues.fold<int>(0, (sum, f) => sum + f);
+                double offsetFraction = 0;
+                for (int i = 0; i < sourceIndex; i++) {
+                  offsetFraction += flexValues[i] / totalFlex;
+                }
+                // Center on the segment
+                offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
+
+                final markerX = constraints.maxWidth * offsetFraction;
+                final sourceColor = segments[sourceIndex].$3;
+
+                final displayName = widget.sourceName.isNotEmpty
+                    ? widget.sourceName
+                    : segments[sourceIndex].$2;
+
+                return SizedBox(
+                  height: 28,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        left: markerX - 7,
+                        top: 0,
+                        child: CustomPaint(
+                          size: const Size(14, 8),
+                          painter: _TrianglePainter(color: sourceColor),
+                        ),
+                      ),
+                      Positioned(
+                        left: (markerX - 50)
+                            .clamp(0.0, constraints.maxWidth - 100),
+                        top: 10,
+                        child: SizedBox(
+                          width: 100,
+                          child: Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: sourceColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+
+          const SizedBox(height: 4),
+          // Labels
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Gauche',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: (biasDistribution['left'] ?? 0) > 0
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      color: (biasDistribution['left'] ?? 0) > 0
-                          ? colors.biasLeft
-                          : colors.textTertiary)),
-              Text('Centre',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: (biasDistribution['center'] ?? 0) > 0
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      color: (biasDistribution['center'] ?? 0) > 0
-                          ? colors.biasCenter
-                          : colors.textTertiary)),
-              Text('Droite',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: (biasDistribution['right'] ?? 0) > 0
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      color: (biasDistribution['right'] ?? 0) > 0
-                          ? colors.biasRight
-                          : colors.textTertiary)),
-            ],
+            children: segments.map((seg) {
+              final count = merged[seg.$1] ?? 0;
+              return Text(
+                seg.$2,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: count > 0 ? FontWeight.bold : FontWeight.normal,
+                  color: count > 0 ? seg.$3 : colors.textTertiary,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -277,24 +399,64 @@ class PerspectivesBottomSheet extends StatelessWidget {
 
   Widget _buildEmptyState(
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    // If filtered to empty but there are perspectives, show filter message
+    if (_activeBiasFilter != null && widget.perspectives.isNotEmpty) {
+      final labels = {
+        'gauche': 'Gauche',
+        'centre': 'Centre',
+        'droite': 'Droite',
+      };
+      final label = labels[_activeBiasFilter] ?? _activeBiasFilter!;
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.funnel(PhosphorIconsStyle.duotone),
+              size: 48,
+              color: colors.textSecondary.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Aucune perspective "$label"',
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tape sur la barre pour voir toutes les perspectives.',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.duotone),
+            PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
             size: 48,
             color: colors.textSecondary.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           Text(
-            'Aucune perspective trouvée',
-            style: textTheme.titleSmall?.copyWith(color: colors.textSecondary),
+            'Sujet peu couvert',
+            style: textTheme.titleSmall?.copyWith(
+              color: colors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Sujet probablement pas d\'actualité / un peu trop "niche"',
+            'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
             style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             textAlign: TextAlign.center,
           ),
@@ -302,6 +464,31 @@ class PerspectivesBottomSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Triangle painter for the "Votre source" marker
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+
+  _TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(0, size.height)
+      ..lineTo(size.width, size.height)
+      ..close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _PerspectiveCard extends StatelessWidget {
