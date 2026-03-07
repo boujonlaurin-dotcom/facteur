@@ -74,10 +74,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   bool _isWebViewActive = false;
+  bool _ctaTapped = false;
   double _bridgeStartOffset = 0;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
-  double _shadowOpacity = 1.0;
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
@@ -252,14 +252,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
-    if (message.message == 'overscroll_top' && _isWebViewActive) {
-      setState(() => _isWebViewActive = false);
-      _scrollController.animateTo(
-        _bridgeStartOffset - 50,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutCubic,
-      );
-    }
+    // One-way transition: no return to article after CTA tap
   }
 
   /// Compute layout offsets for bridge zone.
@@ -286,10 +279,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
-    if (!_offsetsComputed) {
-      _computeScrollOffsets();
-      if (!_offsetsComputed) return;
-    }
+    if (!_ctaTapped || !_offsetsComputed) return;
 
     // Re-measure on every scroll to handle late HTML rendering
     _computeScrollOffsets();
@@ -297,26 +287,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
-    // Progressive shadow: fade 1.0→0.0 through bridge zone + 150px reveal
-    double newShadowOpacity;
-    if (offset < _bridgeStartOffset) {
-      newShadowOpacity = 1.0;
-    } else if (offset >= _bridgeEndOffset + 150) {
-      newShadowOpacity = 0.0;
-    } else {
-      final range = (_bridgeEndOffset + 150) - _bridgeStartOffset;
-      newShadowOpacity =
-          1.0 - ((offset - _bridgeStartOffset) / range).clamp(0.0, 1.0);
-    }
-
-    // Batch setState: WebView activation + shadow opacity
-    final activationChanged = shouldActivate != _isWebViewActive;
-    final shadowChanged = (newShadowOpacity - _shadowOpacity).abs() > 0.01;
-
-    if (activationChanged || shadowChanged) {
+    if (shouldActivate != _isWebViewActive) {
       setState(() {
-        if (activationChanged) _isWebViewActive = shouldActivate;
-        if (shadowChanged) _shadowOpacity = newShadowOpacity;
+        _isWebViewActive = shouldActivate;
       });
     }
   }
@@ -1060,6 +1033,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
     final headerHeight = topInset + 64;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
     final articleText = content.htmlContent ?? content.description;
@@ -1085,17 +1059,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Positioned.fill(
             child: _buildWebViewLayer(),
           ),
-
-          // LAYER 0.5: Shadow overlay — fades as user scrolls to WebView
-          if (_shadowOpacity > 0.001)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(
-                  color:
-                      Colors.black.withValues(alpha: _shadowOpacity * 0.6),
-                ),
-              ),
-            ),
 
           // LAYER 1: Scrollable article content with opaque background.
           // IgnorePointer lets touches pass through to WebView when active.
@@ -1189,22 +1152,36 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
 
                     // ZONE 2: CTA button — intentional transition to WebView
-                    Padding(
-                      key: _bridgeKey,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                        vertical: FacteurSpacing.space3,
-                      ),
-                      child: GestureDetector(
-                        onTap: () {
-                          if (_offsetsComputed) {
-                            _scrollController.animateTo(
-                              _bridgeEndOffset,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            );
-                          }
-                        },
+                    Container(
+                      color: colors.backgroundPrimary,
+                      child: Padding(
+                        key: _bridgeKey,
+                        padding: EdgeInsets.only(
+                          left: FacteurSpacing.space4,
+                          right: FacteurSpacing.space4,
+                          top: FacteurSpacing.space3,
+                          bottom: FacteurSpacing.space3 + bottomInset,
+                        ),
+                        child: GestureDetector(
+                          onTap: () {
+                            if (_offsetsComputed && !_ctaTapped) {
+                              setState(() {
+                                _ctaTapped = true;
+                              });
+                              WidgetsBinding.instance
+                                  .addPostFrameCallback((_) {
+                                if (mounted) {
+                                  _scrollController.animateTo(
+                                    _scrollController
+                                        .position.maxScrollExtent,
+                                    duration:
+                                        const Duration(milliseconds: 500),
+                                    curve: Curves.easeInOutCubic,
+                                  );
+                                }
+                              });
+                            }
+                          },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
@@ -1279,11 +1256,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ],
                           ),
                         ),
+                        ),
                       ),
                     ),
 
-                    // ZONE 3: Transparent spacer — reveals WebView behind
-                    SizedBox(height: availableHeight),
+                    // ZONE 3: Viewport filler — opaque before CTA tap, transparent after
+                    if (_ctaTapped)
+                      SizedBox(height: availableHeight)
+                    else
+                      Container(
+                        height: availableHeight,
+                        color: colors.backgroundPrimary,
+                      ),
                   ],
                 ),
               ),
