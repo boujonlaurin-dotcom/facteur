@@ -106,6 +106,7 @@ class PerspectivesBottomSheet extends StatefulWidget {
   final Map<String, int> biasDistribution;
   final List<String> keywords;
   final String sourceBiasStance;
+  final String sourceName;
 
   const PerspectivesBottomSheet({
     super.key,
@@ -113,6 +114,7 @@ class PerspectivesBottomSheet extends StatefulWidget {
     required this.biasDistribution,
     required this.keywords,
     this.sourceBiasStance = 'unknown',
+    this.sourceName = '',
   });
 
   @override
@@ -192,7 +194,7 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
                         ),
                       ),
                       Text(
-                        'Mots-clés: ${widget.keywords.join(", ")}',
+                        'Sur le même sujet (${widget.keywords.join(", ")})',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -331,8 +333,12 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
                 final markerX = constraints.maxWidth * offsetFraction;
                 final sourceColor = segments[sourceIndex].$3;
 
+                final displayName = widget.sourceName.isNotEmpty
+                    ? widget.sourceName
+                    : segments[sourceIndex].$2;
+
                 return SizedBox(
-                  height: 36,
+                  height: 28,
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -345,32 +351,21 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
                         ),
                       ),
                       Positioned(
-                        left: (markerX - 45)
-                            .clamp(0.0, constraints.maxWidth - 90),
+                        left: (markerX - 50)
+                            .clamp(0.0, constraints.maxWidth - 100),
                         top: 10,
                         child: SizedBox(
-                          width: 90,
-                          child: Column(
-                            children: [
-                              Text(
-                                'Votre source',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: sourceColor,
-                                ),
-                              ),
-                              Text(
-                                segments[sourceIndex].$2,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  color: sourceColor.withValues(alpha: 0.7),
-                                ),
-                              ),
-                            ],
+                          width: 100,
+                          child: Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: sourceColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
