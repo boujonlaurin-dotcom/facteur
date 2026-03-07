@@ -700,6 +700,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         biasDistribution: response.biasDistribution,
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
+        sourceName: _content?.source.name ?? '',
       ),
     );
   }
