@@ -19,7 +19,7 @@ jobs:
         run: |
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              https://facteur-staging.up.railway.app/api/health)
+              https://api-staging-40d3.up.railway.app/api/health)
             if [ "$STATUS" = "200" ]; then
               echo "Liveness check passed"
               exit 0
@@ -33,7 +33,7 @@ jobs:
       - name: Readiness check (database)
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://facteur-staging.up.railway.app/api/health/ready)
+            https://api-staging-40d3.up.railway.app/api/health/ready)
           if [ "$STATUS" = "200" ]; then
             echo "Readiness check passed (DB connected)"
           else
@@ -43,7 +43,7 @@ jobs:
 
       - name: Environment check
         run: |
-          RESPONSE=$(curl -sf https://facteur-staging.up.railway.app/api/health) || {
+          RESPONSE=$(curl -sf https://api-staging-40d3.up.railway.app/api/health) || {
             echo "FAIL: Could not reach health endpoint"
             exit 1
           }
