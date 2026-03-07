@@ -44,7 +44,7 @@ jobs:
         id: version
         run: echo "version=ios-beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build IPA
+      - name: Build iOS archive
         run: |
           cd apps/mobile
           flutter build ipa --release --no-codesign \
@@ -54,16 +54,27 @@ jobs:
             --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
             --dart-define="APP_RELEASE_TAG=${{ steps.version.outputs.version }}"
 
+      - name: Create unsigned IPA from xcarchive
+        run: |
+          cd apps/mobile
+          mkdir -p build/ios/ipa
+          ARCHIVE_PATH=$(find build/ios/archive -name "*.xcarchive" -maxdepth 1 | head -1)
+          if [ -z "$ARCHIVE_PATH" ]; then
+            echo "ERROR: No xcarchive found"
+            exit 1
+          fi
+          APP_PATH="$ARCHIVE_PATH/Products/Applications/Runner.app"
+          mkdir -p /tmp/Payload
+          cp -r "$APP_PATH" /tmp/Payload/
+          cd /tmp && zip -r -q "$OLDPWD/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa" Payload
+          rm -rf /tmp/Payload
+          echo "IPA created: $(ls -la $OLDPWD/build/ios/ipa/*.ipa)"
+
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4
         with:
           name: facteur-ios-release
           path: apps/mobile/build/ios/ipa/*.ipa
-
-      - name: Rename IPA
-        run: |
-          mv apps/mobile/build/ios/ipa/facteur.ipa \
-             apps/mobile/build/ios/ipa/Facteur-${{ steps.version.outputs.version }}.ipa
 
       - name: Create Beta Release
         if: github.event.inputs.create_release != 'false'

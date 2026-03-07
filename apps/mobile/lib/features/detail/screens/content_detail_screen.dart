@@ -632,6 +632,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         biasDistribution: response.biasDistribution,
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
+        sourceName: _content?.source.name ?? '',
       ),
     );
   }
@@ -1032,6 +1033,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
     final headerHeight = topInset + 64;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
     final articleText = content.htmlContent ?? content.description;

@@ -70,7 +70,7 @@ class _PerspectivesPillState extends State<PerspectivesPill>
         child: GestureDetector(
           onTap: widget.onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: widget.isEmpty
                   ? colors.surface.withValues(alpha: 0.7)
@@ -97,7 +97,7 @@ class _PerspectivesPillState extends State<PerspectivesPill>
 
   Widget _buildLoading(FacteurColors colors) {
     return SizedBox(
-      width: 48,
+      width: 56,
       height: 12,
       child: LinearProgressIndicator(
         borderRadius: BorderRadius.circular(6),
@@ -135,8 +135,8 @@ class _PerspectivesPillState extends State<PerspectivesPill>
     }
 
     return SizedBox(
-      width: 48,
-      height: 8,
+      width: 56,
+      height: 10,
       child: Row(
         children: segments.map((seg) {
           final fraction =
