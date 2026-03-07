@@ -178,6 +178,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
             biasDistribution: response.biasDistribution,
             keywords: response.keywords,
             sourceBiasStance: response.sourceBiasStance,
+            sourceName: widget.content.source.name,
           ),
         );
       }
