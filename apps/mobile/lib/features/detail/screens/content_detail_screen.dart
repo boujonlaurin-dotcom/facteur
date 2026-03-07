@@ -1156,11 +1156,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       color: colors.backgroundPrimary,
                       child: Padding(
                         key: _bridgeKey,
-                        padding: EdgeInsets.only(
-                          left: FacteurSpacing.space4,
-                          right: FacteurSpacing.space4,
-                          top: FacteurSpacing.space3,
-                          bottom: FacteurSpacing.space3 + bottomInset,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space4,
+                          vertical: FacteurSpacing.space3,
                         ),
                         child: GestureDetector(
                           onTap: () {
@@ -1260,14 +1258,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     ),
 
-                    // ZONE 3: Viewport filler — opaque before CTA tap, transparent after
-                    if (_ctaTapped)
-                      SizedBox(height: availableHeight)
-                    else
-                      Container(
-                        height: availableHeight,
-                        color: colors.backgroundPrimary,
-                      ),
+                    // ZONE 3: Transparent spacer — reveals WebView behind
+                    if (_ctaTapped) SizedBox(height: availableHeight),
                   ],
                 ),
               ),
