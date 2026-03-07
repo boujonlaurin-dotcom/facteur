@@ -77,7 +77,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   double _bridgeStartOffset = 0;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
-  bool _isSnapping = false;
   double _shadowOpacity = 1.0;
 
   Timer? _readingTimer;
