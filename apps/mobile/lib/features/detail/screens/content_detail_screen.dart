@@ -69,12 +69,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   WebViewController? _webViewController;
   bool _showWebView = false;
 
-  // Progressive scroll-to-site state
+  // Scroll-to-site state
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   bool _isWebViewActive = false;
-  bool _hapticTriggered = false;
   double _bridgeStartOffset = 0;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
@@ -286,7 +285,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Scroll listener driving haptic and WebView activation.
+  /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
     if (!_offsetsComputed) {
       _computeScrollOffsets();
@@ -298,15 +297,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     final offset = _scrollController.offset;
 
-    // Haptic at bridge zone entry (one-shot, resets when scrolling back)
-    if (offset >= _bridgeStartOffset && !_hapticTriggered) {
-      _hapticTriggered = true;
-      HapticFeedback.lightImpact();
-    } else if (offset < _bridgeStartOffset) {
-      _hapticTriggered = false;
-    }
-
-    // Activate WebView gestures when scrolled past the bridge zone
+    final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
     // Progressive shadow: fade 1.0→0.0 through bridge zone + 150px reveal
@@ -331,35 +322,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         if (shadowChanged) _shadowOpacity = newShadowOpacity;
       });
     }
-  }
-
-  /// Snap behavior: snap back or forward when scroll ends in ambiguous zone.
-  bool _handleScrollToSiteNotification(ScrollNotification notification) {
-    if (notification is ScrollEndNotification && !_isSnapping) {
-      if (!_offsetsComputed) return false;
-
-      final offset = _scrollController.offset;
-      final revealEnd = _bridgeEndOffset;
-
-      // Only snap if in the ambiguous zone
-      if (offset > _bridgeStartOffset - 20 && offset < revealEnd) {
-        final midpoint = (_bridgeStartOffset + revealEnd) / 2;
-        final targetOffset =
-            offset < midpoint ? _bridgeStartOffset - 50 : revealEnd;
-
-        _isSnapping = true;
-        _scrollController
-            .animateTo(
-          targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        )
-            .then((_) {
-          _isSnapping = false;
-        });
-      }
-    }
-    return false;
   }
 
   Future<void> _fetchContent() async {
@@ -1119,9 +1081,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    return NotificationListener<ScrollNotification>(
-      onNotification: _handleScrollToSiteNotification,
-      child: Stack(
+    return Stack(
         children: [
           // LAYER 0: WebView — fixed in viewport, always rendered.
           // Painted first so it appears visually behind the scrollable content.
@@ -1231,70 +1191,96 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     ),
 
-                    // ZONE 2: Bridge zone banner (tappable to scroll to WebView)
-                    GestureDetector(
-                      onTap: () {
-                        if (_offsetsComputed) {
-                          _scrollController.animateTo(
-                            _bridgeEndOffset,
-                            duration: const Duration(milliseconds: 400),
-                            curve: Curves.easeOutCubic,
-                          );
-                        }
-                      },
-                      child: Container(
-                        key: _bridgeKey,
-                        height: 72,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space4,
-                          vertical: FacteurSpacing.space3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceElevated,
-                          border: Border(
-                            top: BorderSide(
-                                color:
-                                    colors.border.withValues(alpha: 0.5)),
-                            bottom: BorderSide(
-                                color:
-                                    colors.border.withValues(alpha: 0.5)),
+                    // ZONE 2: CTA button — intentional transition to WebView
+                    Padding(
+                      key: _bridgeKey,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
+                        vertical: FacteurSpacing.space3,
+                      ),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (_offsetsComputed) {
+                            _scrollController.animateTo(
+                              _bridgeEndOffset,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            );
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 16,
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            if (content.source.logoUrl != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: CachedNetworkImage(
-                                  imageUrl: content.source.logoUrl!,
-                                  width: 24,
-                                  height: 24,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) =>
-                                      _buildSourcePlaceholder(colors),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceElevated,
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.large),
+                            border: Border.all(
+                              color: colors.border.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (content.source.logoUrl != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: CachedNetworkImage(
+                                    imageUrl: content.source.logoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: colors.surface,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        PhosphorIcons.newspaper(
+                                            PhosphorIconsStyle.regular),
+                                        size: 16,
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: colors.surface,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    PhosphorIcons.newspaper(
+                                        PhosphorIconsStyle.regular),
+                                    size: 16,
+                                    color: colors.textTertiary,
+                                  ),
                                 ),
-                              )
-                            else
-                              _buildSourcePlaceholder(colors),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Article complet \u00B7 ${content.source.name}',
-                                style: textTheme.bodyMedium?.copyWith(
-                                  color: colors.textSecondary,
-                                  fontWeight: FontWeight.w500,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Lire sur ${content.source.name}',
+                                  style: textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: colors.textPrimary,
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            Icon(
-                              PhosphorIcons.caretDown(
-                                  PhosphorIconsStyle.regular),
-                              size: 18,
-                              color: colors.textTertiary,
-                            ),
-                          ],
+                              Icon(
+                                PhosphorIcons.arrowRight(
+                                    PhosphorIconsStyle.regular),
+                                size: 20,
+                                color: colors.textTertiary,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -1307,7 +1293,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ),
         ],
-      ),
     );
   }
 
