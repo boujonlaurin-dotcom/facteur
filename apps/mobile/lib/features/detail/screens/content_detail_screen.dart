@@ -296,8 +296,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _computeScrollOffsets();
 
     final offset = _scrollController.offset;
-
-    final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
     // Progressive shadow: fade 1.0→0.0 through bridge zone + 150px reveal
