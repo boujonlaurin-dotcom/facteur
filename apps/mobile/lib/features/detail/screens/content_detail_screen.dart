@@ -1032,6 +1032,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
     final headerHeight = topInset + 64;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
     final articleText = content.htmlContent ?? content.description;
@@ -1154,9 +1155,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       color: colors.backgroundPrimary,
                       child: Padding(
                         key: _bridgeKey,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space4,
-                          vertical: FacteurSpacing.space3,
+                        padding: EdgeInsets.only(
+                          left: FacteurSpacing.space4,
+                          right: FacteurSpacing.space4,
+                          top: FacteurSpacing.space3,
+                          bottom: FacteurSpacing.space3 + bottomInset,
                         ),
                         child: GestureDetector(
                           onTap: () {
@@ -1256,8 +1259,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     ),
 
-                    // ZONE 3: Transparent spacer — reveals WebView behind
-                    if (_ctaTapped) SizedBox(height: availableHeight),
+                    // ZONE 3: Viewport filler — opaque before CTA tap, transparent after
+                    if (_ctaTapped)
+                      SizedBox(height: availableHeight)
+                    else
+                      Container(
+                        height: availableHeight,
+                        color: colors.backgroundPrimary,
+                      ),
                   ],
                 ),
               ),
