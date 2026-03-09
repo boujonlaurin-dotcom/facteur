@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -94,13 +93,19 @@ class RoutePaths {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
+  // Use refreshListenable instead of ref.watch() to avoid recreating
+  // the entire GoRouter on auth state changes (which resets to initialLocation).
+  final authChangeNotifier = ref.watch(authChangeNotifierProvider);
 
   return GoRouter(
     navigatorKey: NotificationService.navigatorKey,
     initialLocation: RoutePaths.splash,
     debugLogDiagnostics: true,
+    refreshListenable: authChangeNotifier,
     redirect: (context, state) {
+      // Read current auth state without causing provider invalidation
+      final authState = ref.read(authStateProvider);
+
       // Attendre que l'auth state soit initialisé
       if (authState.isLoading) {
         return RoutePaths.splash;
