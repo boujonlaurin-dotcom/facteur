@@ -8,6 +8,7 @@ import '../widgets/onboarding_progress_bar.dart';
 import '../widgets/reaction_screen.dart';
 import '../onboarding_strings.dart';
 import '../../sources/screens/add_source_screen.dart';
+import '../../sources/providers/sources_providers.dart';
 import 'questions/objective_question.dart';
 import 'questions/age_question.dart';
 import 'questions/approach_question.dart';
@@ -199,7 +200,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 }
 
 /// Widget dédié pour l'écran sources reaction avec compteur de sources ajoutées
-class _SourcesReactionScreen extends StatefulWidget {
+class _SourcesReactionScreen extends ConsumerStatefulWidget {
   final VoidCallback onContinue;
 
   const _SourcesReactionScreen({
@@ -208,10 +209,12 @@ class _SourcesReactionScreen extends StatefulWidget {
   });
 
   @override
-  State<_SourcesReactionScreen> createState() => _SourcesReactionScreenState();
+  ConsumerState<_SourcesReactionScreen> createState() =>
+      _SourcesReactionScreenState();
 }
 
-class _SourcesReactionScreenState extends State<_SourcesReactionScreen> {
+class _SourcesReactionScreenState
+    extends ConsumerState<_SourcesReactionScreen> {
   int _addedCount = 0;
   static const _recommendedCount = 3;
 
@@ -225,6 +228,16 @@ class _SourcesReactionScreenState extends State<_SourcesReactionScreen> {
     if (mounted) {
       setState(() => _addedCount++);
     }
+  }
+
+  void _openPremiumSelection() {
+    final colors = context.facteurColors;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _PremiumSourcesSheet(colors: colors),
+    );
   }
 
   @override
@@ -258,6 +271,27 @@ class _SourcesReactionScreenState extends State<_SourcesReactionScreen> {
             ),
           ),
           const SizedBox(height: FacteurSpacing.space3),
+          OutlinedButton.icon(
+            onPressed: _openPremiumSelection,
+            icon: Icon(
+              PhosphorIcons.star(PhosphorIconsStyle.fill),
+              size: 18,
+            ),
+            label: const Text('Indiquer vos abonnements presse'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 14,
+              ),
+              side: BorderSide(
+                color: colors.primary.withValues(alpha: 0.3),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space3),
           Text(
             _addedCount >= _recommendedCount
                 ? '$_addedCount source${_addedCount > 1 ? 's' : ''} ajoutée${_addedCount > 1 ? 's' : ''}'
@@ -268,6 +302,136 @@ class _SourcesReactionScreenState extends State<_SourcesReactionScreen> {
                       : colors.textTertiary,
                 ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet listing trusted sources with premium toggle switches
+class _PremiumSourcesSheet extends ConsumerWidget {
+  final FacteurColors colors;
+
+  const _PremiumSourcesSheet({required this.colors});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sourcesAsync = ref.watch(userSourcesProvider);
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vos abonnements presse',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Indiquez les sources pour lesquelles vous avez un abonnement payant.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 16),
+          Flexible(
+            child: sourcesAsync.when(
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (err, _) => Center(child: Text('Erreur: $err')),
+              data: (sources) {
+                final trustedSources = sources
+                    .where((s) => s.isTrusted && !s.isMuted)
+                    .toList()
+                  ..sort((a, b) => a.name.toLowerCase().compareTo(
+                      b.name.toLowerCase()));
+
+                if (trustedSources.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'Ajoutez d\'abord des sources de confiance.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: trustedSources.length,
+                  separatorBuilder: (_, __) => Divider(
+                    color: colors.border,
+                    height: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final source = trustedSources[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: colors.backgroundSecondary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: source.logoUrl != null
+                            ? Image.network(
+                                source.logoUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  PhosphorIcons.article(),
+                                  color: colors.secondary,
+                                  size: 18,
+                                ),
+                              )
+                            : Icon(
+                                PhosphorIcons.article(),
+                                color: colors.secondary,
+                                size: 18,
+                              ),
+                      ),
+                      title: Text(
+                        source.name,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: colors.textPrimary,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: SizedBox(
+                        height: 28,
+                        child: Switch.adaptive(
+                          value: source.hasSubscription,
+                          onChanged: (_) {
+                            ref
+                                .read(userSourcesProvider.notifier)
+                                .toggleSubscription(
+                                    source.id, source.hasSubscription);
+                          },
+                          activeTrackColor: colors.primary,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
       ),
     );
