@@ -1033,7 +1033,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
     final headerHeight = topInset + 64;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
     final articleText = content.htmlContent ?? content.description;
@@ -1061,11 +1061,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
 
           // LAYER 1: Scrollable article content with opaque background.
+          // Container color hides WebView entirely before CTA tap;
+          // becomes transparent after tap so spacer reveals WebView.
           // IgnorePointer lets touches pass through to WebView when active.
           Positioned.fill(
             child: IgnorePointer(
               ignoring: _isWebViewActive,
-              child: SingleChildScrollView(
+              child: ColoredBox(
+                color: _ctaTapped
+                    ? const Color(0x00000000)
+                    : colors.backgroundPrimary,
+                child: SingleChildScrollView(
                 controller: _scrollController,
                 physics: _isWebViewActive
                     ? const NeverScrollableScrollPhysics()
@@ -1260,18 +1266,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                     ),
 
-                    // ZONE 3: Viewport filler — opaque before CTA tap, transparent after
+                    // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
                     if (_ctaTapped)
-                      SizedBox(height: availableHeight)
-                    else
-                      Container(
-                        height: availableHeight,
-                        color: colors.backgroundPrimary,
-                      ),
+                      SizedBox(height: availableHeight),
                   ],
                 ),
               ),
             ),
+          ),
           ),
         ],
     );
