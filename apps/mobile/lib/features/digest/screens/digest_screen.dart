@@ -247,12 +247,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         ),
         Scaffold(
           backgroundColor: Colors.transparent,
-          body: RefreshIndicator(
-            onRefresh: () async {
-              await ref.read(digestProvider.notifier).refreshDigest();
-            },
-            color: colors.primary,
-            child: CustomScrollView(
+          body: SafeArea(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                await ref.read(digestProvider.notifier).refreshDigest();
+              },
+              color: colors.primary,
+              child: CustomScrollView(
               controller: _scrollController,
               slivers: [
                 // Feed-style header with logo and streak
@@ -464,6 +465,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                 ),
               ],
             ),
+          ),
           ),
         ),
         // Welcome modal overlay for first-time users
