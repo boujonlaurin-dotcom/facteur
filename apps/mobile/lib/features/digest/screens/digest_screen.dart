@@ -16,9 +16,11 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
 import '../providers/digest_format_provider.dart';
@@ -151,8 +153,26 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   }
 
   void _openArticle(DigestItem item) async {
-    // Navigate to article detail first
     HapticFeedback.mediumImpact();
+
+    // Premium source → open in external browser for authenticated access
+    final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
+    final isPremium = item.source?.id != null &&
+        sources.any((s) => s.id == item.source!.id && s.hasSubscription);
+    if (isPremium && item.url.isNotEmpty) {
+      final uri = Uri.tryParse(item.url);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!item.isRead && !item.isDismissed) {
+          ref
+              .read(digestProvider.notifier)
+              .applyAction(item.contentId, 'read');
+        }
+        return;
+      }
+    }
+
+    // Navigate to article detail
     final content = _convertToContent(item);
     final updated = await context
         .push<Content?>('/feed/content/${item.contentId}', extra: content);

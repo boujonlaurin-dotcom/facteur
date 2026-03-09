@@ -33,6 +33,7 @@ import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
+import '../../sources/providers/sources_providers.dart';
 import 'dart:math' as math;
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
@@ -113,7 +114,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       });
     }
 
-    // 2. Navigation
+    // 2. Premium source → open in external browser for authenticated access
+    final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
+    final isPremium = sources.any(
+        (s) => s.id == content.source.id && s.hasSubscription);
+    if (isPremium && content.url.isNotEmpty) {
+      final uri = Uri.tryParse(content.url);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    // 3. Navigation
     if (!kIsWeb &&
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       launchUrl(Uri.parse(content.url));
