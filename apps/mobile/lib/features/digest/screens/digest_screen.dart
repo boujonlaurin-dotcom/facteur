@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -15,6 +16,8 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
+import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
+import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
@@ -39,6 +42,7 @@ class DigestScreen extends ConsumerStatefulWidget {
 class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _showWelcome = false;
   bool _hasCheckedWelcome = false;
+  bool _notifBannerDismissed = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -60,8 +64,29 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   @override
   void initState() {
     super.initState();
+    _checkNotifBannerDismissed();
     // Note: _checkFirstTimeWelcome moved to didChangeDependencies()
     // because GoRouterState.of(context) requires mounted context
+  }
+
+  void _checkNotifBannerDismissed() {
+    final box = Hive.box<dynamic>('settings');
+    final dismissedAt = box.get('notif_banner_dismissed_at') as int?;
+    if (dismissedAt != null) {
+      final elapsed = DateTime.now().millisecondsSinceEpoch - dismissedAt;
+      // Re-show after 7 days
+      if (elapsed < const Duration(days: 7).inMilliseconds) {
+        _notifBannerDismissed = true;
+      }
+    }
+  }
+
+  void _dismissNotifBanner() {
+    final box = Hive.box<dynamic>('settings');
+    box.put('notif_banner_dismissed_at', DateTime.now().millisecondsSinceEpoch);
+    setState(() {
+      _notifBannerDismissed = true;
+    });
   }
 
   @override
@@ -271,6 +296,94 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         UpdateButton(),
                       ],
                     ),
+                  ),
+                ),
+
+                // Notification activation banner (when not enabled & not dismissed)
+                SliverToBoxAdapter(
+                  child: Builder(
+                    builder: (context) {
+                      final notifSettings =
+                          ref.watch(notificationsSettingsProvider);
+                      if (notifSettings.pushEnabled || _notifBannerDismissed) {
+                        return const SizedBox.shrink();
+                      }
+                      return Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => showNotificationPermissionBottomSheet(
+                                context, ref),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    PhosphorIcons.bellRinging(
+                                        PhosphorIconsStyle.fill),
+                                    color: colors.primary,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Activer les notifications',
+                                          style: TextStyle(
+                                            color: colors.textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Facteur ne t\'enverra qu\'1 notification par jour, pour te fournir l\'Essentiel.',
+                                          style: TextStyle(
+                                            color: colors.textSecondary,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _dismissNotifBanner,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(4),
+                                      child: Icon(
+                                        PhosphorIcons.x(),
+                                        color: colors.textTertiary,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
 

@@ -72,8 +72,8 @@ class _NotificationPermissionContent extends StatelessWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            'Recevez une notification à 8h quand votre '
-            'Essentiel du Jour est prêt.',
+            'Facteur ne t\'enverra qu\'1 notification par jour, '
+            'pour te fournir l\'Essentiel.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),

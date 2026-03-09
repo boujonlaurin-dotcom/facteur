@@ -114,8 +114,15 @@ class PushNotificationService {
   /// Planifie la notification quotidienne de digest à 8h Europe/Paris.
   /// Utilise alarmClock (le plus fiable) avec fallback sur inexactAllowWhileIdle.
   Future<void> scheduleDailyDigestNotification() async {
-    // Vérifier la permission d'alarmes exactes
-    final canUseExact = await requestExactAlarmPermission();
+    // Vérifier silencieusement si les alarmes exactes sont disponibles
+    // Ne JAMAIS demander la permission ici — uniquement sur action utilisateur
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    bool canUseExact = true;
+    if (androidPlugin != null) {
+      canUseExact =
+          await androidPlugin.canScheduleExactNotifications() ?? false;
+    }
 
     const androidDetails = AndroidNotificationDetails(
       'digest_channel',
