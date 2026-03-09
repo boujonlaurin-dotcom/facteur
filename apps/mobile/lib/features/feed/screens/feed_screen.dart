@@ -33,7 +33,6 @@ import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
-import '../../sources/providers/sources_providers.dart';
 import 'dart:math' as math;
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
