@@ -1,0 +1,17 @@
+# Editorial Pipeline Configuration — Story 10.23
+# Paramètres du pipeline de curation éditorialisée.
+
+pipeline:
+  subjects_count: 3              # Nombre de sujets dans le digest
+  cluster_input_limit: 15        # Top N clusters envoyés au LLM
+  deep_candidates_prefilter: 10  # Top N candidats deep avant LLM
+  deep_required: false           # Sujet peut exister sans deep match
+  actu_max_age_hours: 24         # Age max des articles actu
+  deep_jaccard_threshold: 0.10   # Seuil Jaccard pour pré-filtre deep (plus bas que clustering)
+
+feature_flags:
+  editorial_enabled: false       # Master switch — OFF par défaut
+  editorial_user_ids: []         # Whitelist UUID pour test progressif
+
+cost:
+  max_llm_calls_per_batch: 10   # Safety cap LLM calls

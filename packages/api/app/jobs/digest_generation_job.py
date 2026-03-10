@@ -115,6 +115,23 @@ class DigestGenerationJob:
                 logger.error("digest_generation_global_context_failed", error=str(e))
                 # Graceful degradation: continue without trending
 
+            # 1.6 Pre-compute editorial global context (Story 10.23)
+            # This avoids redundant LLM calls when generating editorial digests
+            # for multiple users in the same batch.
+            # TODO(10.23): Pass editorial_global_ctx to DigestSelector to avoid
+            # per-user recomputation. For now, editorial pipeline handles caching
+            # internally via on-demand computation in digest_selector.py.
+            try:
+                from app.services.editorial.config import load_editorial_config
+
+                editorial_config = load_editorial_config()
+                if editorial_config.feature_flags.editorial_enabled:
+                    logger.info("digest_generation_editorial_enabled")
+            except Exception as e:
+                logger.warning(
+                    "digest_generation_editorial_config_failed", error=str(e)
+                )
+
             # 2. Traiter par batches pour limiter la charge mémoire
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i : i + self.batch_size]
