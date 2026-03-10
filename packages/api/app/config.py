@@ -97,12 +97,9 @@ class Settings(BaseSettings):
     # YouTube Data API v3
     youtube_api_key: str = ""
 
-    # ML Classification (Story 4.1d)
+    # ML Classification (Story 4.1d) + Editorial Pipeline (Story 10.23)
     ml_enabled: bool = False  # Set to True to enable classification worker
-    mistral_api_key: str = ""  # Mistral API key for LLM-based classification
-
-    # Editorial Pipeline (Story 10.23)
-    anthropic_api_key: str = ""  # Anthropic API key for editorial curation
+    mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)
 
     # GitHub (app update feature)
     github_token: str = ""

@@ -37,7 +37,7 @@ class PromptConfig:
     """LLM prompt template."""
 
     system: str
-    model: str = "claude-sonnet-4-6"
+    model: str = "mistral-large-latest"
     temperature: float = 0.3
     max_tokens: int = 1000
 

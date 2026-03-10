@@ -21,7 +21,7 @@ from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
 from app.services.editorial.curation import CurationService
 from app.services.editorial.deep_matcher import DeepMatcher
-from app.services.editorial.llm_client import AnthropicClient
+from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
     EditorialGlobalContext,
     EditorialPipelineResult,
@@ -37,7 +37,7 @@ class EditorialPipelineService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.config = load_editorial_config()
-        self.llm = AnthropicClient()
+        self.llm = EditorialLLMClient()
         self.curation = CurationService(self.llm, self.config)
         self.actu_matcher = ActuMatcher(
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours

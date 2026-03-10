@@ -12,7 +12,7 @@ import structlog
 
 from app.services.briefing.importance_detector import TopicCluster
 from app.services.editorial.config import EditorialConfig
-from app.services.editorial.llm_client import AnthropicClient
+from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import ClusterSummary, SelectedTopic
 
 logger = structlog.get_logger()
@@ -36,7 +36,7 @@ DEFAULT_DEEP_ANGLE = "Les dynamiques structurelles et systemiques de ce sujet"
 class CurationService:
     """Selects 3 editorial topics from topic clusters via LLM."""
 
-    def __init__(self, llm: AnthropicClient, config: EditorialConfig) -> None:
+    def __init__(self, llm: EditorialLLMClient, config: EditorialConfig) -> None:
         self._llm = llm
         self._config = config
 
@@ -106,7 +106,15 @@ class CurationService:
             max_tokens=prompt_cfg.max_tokens,
         )
 
-        if not raw or not isinstance(raw, list):
+        if not raw:
+            logger.warning("curation.llm_empty_response")
+            return None
+
+        # Extract topics array — Mistral json_object returns {"topics": [...]}
+        topics_list = raw
+        if isinstance(raw, dict):
+            topics_list = raw.get("topics", [])
+        if not isinstance(topics_list, list):
             logger.warning("curation.llm_invalid_response", raw_type=type(raw).__name__)
             return None
 
@@ -114,7 +122,7 @@ class CurationService:
         valid_topic_ids = {c.cluster_id for c in clusters}
         selected: list[SelectedTopic] = []
 
-        for item in raw[:count]:
+        for item in topics_list[:count]:
             try:
                 topic = SelectedTopic(**item)
                 # Validate topic_id exists in our clusters

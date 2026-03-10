@@ -1,6 +1,7 @@
-"""Thin Anthropic Messages API client via httpx.
+"""Mistral LLM client for editorial pipeline via httpx.
 
-Pattern follows classification_service.py (Mistral via httpx).
+Uses mistral-large-latest (most capable model) for editorial curation.
+Reuses the existing MISTRAL_API_KEY from classification_service.
 """
 
 from __future__ import annotations
@@ -14,23 +15,22 @@ from app.config import get_settings
 
 logger = structlog.get_logger()
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
-class AnthropicClient:
-    """Async client for Anthropic Claude API."""
+class EditorialLLMClient:
+    """Async Mistral client for editorial pipeline."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._api_key = settings.anthropic_api_key
+        self._api_key = settings.mistral_api_key
         self._ready = bool(self._api_key)
         self._client: httpx.AsyncClient | None = None
 
         if not self._ready:
             logger.warning(
-                "anthropic_client.no_api_key",
-                message="ANTHROPIC_API_KEY not set. Editorial pipeline unavailable.",
+                "editorial_llm.no_api_key",
+                message="MISTRAL_API_KEY not set. Editorial pipeline unavailable.",
             )
 
     @property
@@ -42,9 +42,8 @@ class AnthropicClient:
             self._client = httpx.AsyncClient(
                 timeout=30.0,
                 headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": ANTHROPIC_VERSION,
-                    "content-type": "application/json",
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
                 },
             )
         return self._client
@@ -53,38 +52,40 @@ class AnthropicClient:
         self,
         system: str,
         user_message: str,
-        model: str = "claude-sonnet-4-6",
+        model: str = "mistral-large-latest",
         temperature: float = 0.3,
         max_tokens: int = 1000,
     ) -> dict | list | None:
-        """Send a message to Claude and parse JSON response.
+        """Send a message to Mistral and parse JSON response.
 
         Returns parsed JSON (dict or list) on success, None on failure.
         """
         if not self._ready:
-            logger.warning("anthropic_client.not_ready")
+            logger.warning("editorial_llm.not_ready")
             return None
 
         client = self._get_client()
         payload = {
             "model": model,
-            "max_tokens": max_tokens,
             "temperature": temperature,
-            "system": system,
-            "messages": [{"role": "user", "content": user_message}],
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
         }
 
         try:
-            response = await client.post(ANTHROPIC_API_URL, json=payload)
+            response = await client.post(MISTRAL_API_URL, json=payload)
             response.raise_for_status()
 
             data = response.json()
-            text = data["content"][0]["text"]
+            text = data["choices"][0]["message"]["content"]
 
             # Strip markdown code fences if present
             text = text.strip()
             if text.startswith("```"):
-                # Remove first line (```json or ```) and last line (```)
                 lines = text.split("\n")
                 text = "\n".join(
                     lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
@@ -94,29 +95,29 @@ class AnthropicClient:
             parsed = json.loads(text)
 
             logger.info(
-                "anthropic_client.success",
+                "editorial_llm.success",
                 model=model,
-                input_tokens=data.get("usage", {}).get("input_tokens"),
-                output_tokens=data.get("usage", {}).get("output_tokens"),
+                prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+                completion_tokens=data.get("usage", {}).get("completion_tokens"),
             )
             return parsed
 
         except httpx.HTTPStatusError as e:
             logger.error(
-                "anthropic_client.http_error",
+                "editorial_llm.http_error",
                 status_code=e.response.status_code,
                 body=e.response.text[:500],
             )
             return None
         except json.JSONDecodeError as e:
             logger.error(
-                "anthropic_client.json_parse_error",
+                "editorial_llm.json_parse_error",
                 error=str(e),
                 raw_text=text[:500] if "text" in dir() else "no_text",
             )
             return None
         except Exception as e:
-            logger.error("anthropic_client.unexpected_error", error=str(e))
+            logger.error("editorial_llm.unexpected_error", error=str(e))
             return None
 
     async def close(self) -> None:

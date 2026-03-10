@@ -20,7 +20,7 @@ from app.models.content import Content
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector
 from app.services.editorial.config import EditorialConfig
-from app.services.editorial.llm_client import AnthropicClient
+from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import MatchedDeepArticle, SelectedTopic
 
 logger = structlog.get_logger()
@@ -32,7 +32,7 @@ class DeepMatcher:
     def __init__(
         self,
         session: AsyncSession,
-        llm: AnthropicClient,
+        llm: EditorialLLMClient,
         config: EditorialConfig,
     ) -> None:
         self._session = session

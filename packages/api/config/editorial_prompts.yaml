@@ -21,9 +21,9 @@ curation:
     - deep_angle : 1 phrase decrivant quel angle systemique/structurel chercher
       dans des sources d'analyse (pas de l'actualite chaude, mais du recul)
 
-    Reponds UNIQUEMENT en JSON valide : un array de {subjects_count} objets.
-    Pas de texte avant ou apres le JSON.
-  model: claude-sonnet-4-6
+    Reponds en JSON valide : un objet avec une cle "topics" contenant un array de {subjects_count} objets.
+    Exemple : {{"topics": [{{...}}, {{...}}, {{...}}]}}
+  model: mistral-large-latest
   temperature: 0.3
   max_tokens: 1000
 
@@ -46,6 +46,6 @@ deep_matching:
     - Si aucun ne convient : {{"selected_index": null, "reason": "1 phrase"}}
 
     N est l'index (0-based) du candidat dans la liste.
-  model: claude-sonnet-4-6
+  model: mistral-large-latest
   temperature: 0.2
   max_tokens: 300
