@@ -1,562 +1,333 @@
-# Design Doc — Frontend Digest Éditorialisé
+# Design Doc — Frontend : Delta depuis l'existant
 
-**Version:** 1.0
+**Version:** 2.0
 **Date:** 10 mars 2026
 **Auteur:** Brainstorm Laurin + Claude
-**Statut:** Draft — En attente validation
+**Statut:** Draft — Chaque modification est challengeable individuellement
 
 ---
 
-## 1. Vue d'ensemble
+## Principe
 
-### 1.1 Changements UI
+Ce document décrit **uniquement ce qui change** par rapport aux stories existantes de l'Epic 10.
+Chaque modification est numérotée et indépendante pour faciliter la validation.
 
-Le digest passe du format `topics_v1` (topic clusters avec horizontal scroll) au format `editorial_v1` :
-
-| Avant (topics_v1) | Après (editorial_v1) |
-|-------------------|---------------------|
-| Header "L'Essentiel du jour — 3/5" | Header éditorialisé dynamique |
-| Topic sections avec PageView horizontal | Blocs éditoriaux avec swipe actu/deep |
-| Reason badges algorithmiques | Badges sémantiques (🔴 🔭 🍀 💚) |
-| Pas de texte entre les cartes | Texte édito + transitions entre chaque bloc |
-| Closure = progression complète | Closure = texte éditorial + CTA feedback |
-
-### 1.2 Ce qui ne change pas
-
-- Container `DigestBriefingSection` (gradient, border, shadow)
-- `FacteurCard` base widget (tap scale animation)
-- `FacteurThumbnail` pour les images
-- Swipe mechanics (`SwipeToOpenCard`)
-- Mode selector (segmented control) — mais modes ajustés
-- Design tokens (couleurs, typo, spacing, radius)
-- Dismiss banner + mute flow
+**Convention :** `✅ Conservé` = rien à faire | `🔀 Modifié` = delta | `🆕 Nouveau` = widget/feature à créer
 
 ---
 
-## 2. Nouveau format de données
+## 1. Impact sur Story 10.9 — Écran Digest Flutter
 
-### 2.1 DigestResponse (editorial_v1)
+> **Fichier existant :** `digest/widgets/digest_briefing_section.dart`
+> **Réf story :** [10.9.ecran-digest-flutter.story.md](10.9.ecran-digest-flutter.story.md)
 
-```dart
-class EditorialDigestResponse {
-  final String digestId;
-  final String userId;
-  final String targetDate;
-  final String formatVersion; // "editorial_v1"
-  final String mode; // "pour_vous", "serein"
-  final String headerText;
-  final List<EditorialSubject> subjects; // 3 sujets
-  final EditorialSlot pepite;
-  final EditorialSlot coupDeCoeur;
-  final String closureText;
-  final String ctaText;
-  final bool isCompleted;
-  final DateTime? completedAt;
-  final int completionThreshold;
-  final DateTime generatedAt;
-}
-```
+### ✅ Ce qui ne change pas
 
-### 2.2 EditorialSubject
+- Container `DigestBriefingSection` (gradient animé, border, shadow, border radius 24px)
+- Scaffold avec Riverpod consumer
+- États gérés : loading (shimmer), error (retry), empty
+- Pull-to-refresh
+- Scroll vertical (ListView)
 
-```dart
-class EditorialSubject {
-  final String topicId;
-  final String label;
-  final int rank; // 1, 2, 3
-  final String introText; // 2-3 phrases édito
-  final String? transitionText; // null pour le dernier sujet
-  final DigestItem actuArticle; // 🔴 L'actu du jour
-  final DigestItem? deepArticle; // 🔭 Le pas de recul (nullable)
-  final bool isUserSource; // true si actu = source suivie
-}
-```
+### 🔀 Modification D1 — Header dynamique
 
-### 2.3 EditorialSlot
+| Avant | Après |
+|-------|-------|
+| Texte fixe "L'Essentiel du jour" (23px, w800) + compteur segmenté "3/5" | Texte dynamique venant de l'API (`headerText`), ex: "☀️ Ce matin, 3 sujets à retenir" |
 
-```dart
-class EditorialSlot {
-  final DigestItem article;
-  final String badge; // "pepite" | "coup_de_coeur"
-  final String? miniEditorial; // 1-2 phrases (pépite)
-  final int? communitySaves; // nombre de saves (coup de cœur)
-}
-```
+**Fichier impacté :** `digest_briefing_section.dart` (header section)
+**Ce qui change :** le titre statique est remplacé par `digest.headerText` (String renvoyé par l'API).
+**Typo :** même `FacteurTypography.displayLarge` (28px, w700) — pas de changement de style.
+
+### 🔀 Modification D2 — Mode selector réduit à 2 modes
+
+| Avant | Après |
+|-------|-------|
+| 3 modes : Pour vous / Serein / Ouvrir son point de vue | 2 modes : Pour vous / Serein |
+
+**Fichier impacté :** `digest_mode_tab_selector.dart`, `digest_mode.dart`
+**Ce qui change :** retrait du mode `perspective` de l'enum et du segmented control.
+
+### 🔀 Modification D3 — Layout branche sur `format_version`
+
+| Avant | Après |
+|-------|-------|
+| Branchement `flat_v1` / `topics_v1` | Ajout branche `editorial_v1` |
+
+**Fichier impacté :** `digest_briefing_section.dart`
+**Ce qui change :** un `switch` sur `formatVersion` rend le layout `editorial_v1` si présent, sinon fallback sur `topics_v1` existant. **Rétrocompatibilité totale.**
 
 ---
 
-## 3. Layout complet
+## 2. Impact sur Story 10.10 — Carte Digest
 
-### 3.1 Structure verticale du digest
+> **Fichier existant :** `digest/widgets/digest_card.dart`
+> **Réf story :** [10.10.carte-digest.story.md](10.10.carte-digest.story.md)
 
-```
-┌─ DigestBriefingSection (container existant) ───────────┐
-│                                                         │
-│  ┌─ EditorialHeader ─────────────────────────────────┐  │
-│  │  headerText (dynamique, LLM)                      │  │
-│  │  Mode selector (segmented control)                │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  ┌─ EditorialSubjectBlock (×3) ──────────────────────┐  │
-│  │                                                    │  │
-│  │  ┌─ IntroText ─────────────────────────────────┐  │  │
-│  │  │  "📌 Trump menace de couper..."              │  │  │
-│  │  └─────────────────────────────────────────────┘  │  │
-│  │                                                    │  │
-│  │  ┌─ ArticlePairView (PageView) ────────────────┐  │  │
-│  │  │  Page 1: ActuCard (🔴)                       │  │  │
-│  │  │  Page 2: DeepCard (🔭) — si dispo            │  │  │
-│  │  │  [dot indicators]                            │  │  │
-│  │  └─────────────────────────────────────────────┘  │  │
-│  │                                                    │  │
-│  │  ┌─ TransitionText ────────────────────────────┐  │  │
-│  │  │  "Pendant ce temps, côté tech…"              │  │  │
-│  │  └─────────────────────────────────────────────┘  │  │
-│  │                                                    │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                         │
-│  ┌─ SectionDivider ("Et aussi…") ────────────────────┐  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  ┌─ PepiteBlock ─────────────────────────────────────┐  │
-│  │  Mini-édito (1 phrase)                             │  │
-│  │  PepiteCard (🍀)                                   │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  ┌─ CoupDeCoeurBlock ────────────────────────────────┐  │
-│  │  CoupDeCoeurCard (💚) + "Gardé par N lecteurs"    │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-│  ┌─ ClosureBlock ────────────────────────────────────┐  │
-│  │  closureText + ctaText + feedback button           │  │
-│  └───────────────────────────────────────────────────┘  │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
+### ✅ Ce qui ne change pas
 
-### 3.2 Responsive et scroll
+- Layout carte : thumbnail (FacteurThumbnail) + body (titre, description, durée) + footer (source logo, nom, recency)
+- FacteurCard wrapper (tap scale animation, no shadow)
+- Overlays de statut (top-right : "Lu"/"Masqué")
+- Interaction : tap = ouvrir article
+- Swipe droit/gauche (SwipeToOpenCard) avec haptic feedback
 
-- Le digest entier est un **scroll vertical** (ListView ou SingleChildScrollView)
-- Chaque `EditorialSubjectBlock` contient un **PageView horizontal** pour le swipe actu/deep
-- Les blocs Pépite et Coup de cœur sont des cartes simples (pas de swipe)
-- Le scroll vertical est naturel et continu — pas de pagination entre les sujets
+### 🔀 Modification D4 — Badge sémantique remplace le reason badge
+
+| Avant | Après |
+|-------|-------|
+| Badge `reason` algorithmique en body ("Sujet tendance", "À la Une", "Thème favori") | Badge sémantique éditorial |
+| Couleur dynamique par type de reason | 4 badges fixes avec couleurs définies |
+
+**Badges :**
+
+| Badge | Label | Couleur background |
+|-------|-------|--------------------|
+| 🔴 | L'actu du jour | `FacteurColors.primary` @ 10% (light) / 15% (dark) |
+| 🔭 | Le pas de recul | `FacteurColors.info` @ 10% / 15% |
+| 🍀 | Pépite du jour | `FacteurColors.success` @ 10% / 15% |
+| 💚 | Coup de cœur | `FacteurColors.success` @ 10% / 15% |
+
+**Fichier impacté :** `digest_card.dart` (section reason badge)
+**Ce qui change :** le badge `reason` affiche un des 4 badges fixes au lieu d'un texte algorithmique. Le badge est un champ `badge` (enum) dans le modèle `DigestItem`. Style existant (`FacteurTypography.labelSmall`, `FacteurRadius.small`, padding 8h/3v) conservé.
+
+**Mode serein :** les badges 🔴 et 🔭 perdent leur emoji (juste le texte). Badges 🍀 et 💚 inchangés.
+
+### 🔀 Modification D5 — Rank badge retiré
+
+| Avant | Après |
+|-------|-------|
+| Cercle 28x28 top-left avec "#1", "#2", etc. | Pas de rank badge — le contexte est donné par l'édito |
+
+**Fichier impacté :** `digest_card.dart` (overlay top-left)
+**Ce qui change :** le rank badge n'est pas affiché en mode `editorial_v1`. Conservé pour les anciens formats.
 
 ---
 
-## 4. Widgets détaillés
+## 3. Impact sur Story 10.11 — Barre de progression
 
-### 4.1 EditorialHeader
+> **Fichier existant :** `digest/widgets/digest_briefing_section.dart` (progress segmenté dans le header)
+> **Réf story :** [10.11.barre-progression.story.md](10.11.barre-progression.story.md)
 
-Remplace le header actuel "L'Essentiel du jour — 3/5".
+### 🔀 Modification D6 — Progression simplifiée
 
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│  ☀️ Ce matin, 3 sujets à retenir             │
-│     + tes pépites                             │
-│                                               │
-│  [Pour vous]  [Serein]          ← segmented   │
-│                                               │
-└───────────────────────────────────────────────┘
-```
+| Avant | Après |
+|-------|-------|
+| Barre segmentée "3/5" dans le header + messages contextuels ("Bon début", "Encore un peu...") | Indicateur discret intégré dans le header (ex: 3 dots remplis / 5 total) |
 
-**Specs :**
-- Titre : `FacteurTypography.displayLarge` (28px, w700, DM Sans)
-- Couleur : `FacteurColors.textPrimary`
-- Padding : `FacteurSpacing.space4` (16px) horizontal, `space3` (12px) vertical
-- Le titre vient du `headerText` de l'API (dynamique)
-- Mode selector : composant existant `DigestModeTabSelector`, mais avec seulement 2 modes : "Pour vous" et "Serein" (le mode "Ouvrir son point de vue" est retiré en V1)
+**Rationale :** la progression numérique "3/5" entre en conflit avec l'expérience éditoriale. Le digest doit se lire comme un journal, pas comme une checklist. L'indicateur reste présent mais plus subtil.
 
-### 4.2 IntroText (texte éditorial)
+**Ce qui change :** le `DigestProgressBar` segmenté est remplacé par des dots discrets sous le header en mode `editorial_v1`. Le seuil de completion (`completionThreshold`) reste identique côté backend.
 
-Nouveau widget. Affiche le texte d'intro LLM entre le header de sujet et les cartes.
-
-```
-┌───────────────────────────────────────────────┐
-│ 📌 Trump menace de couper les réseaux sociaux │
-│ en Europe. Pas réaliste à date — mais ça      │
-│ révèle la guerre numérique qui oppose les     │
-│ deux blocs depuis 20 ans. The Conversation    │
-│ décrypte comment on en est arrivé là.         │
-└───────────────────────────────────────────────┘
-```
-
-**Specs :**
-- Police : `FacteurTypography.bodyLarge` (17px, w400, DM Sans)
-- Couleur : `FacteurColors.textPrimary`
-- Line height : 1.5 (aéré pour la lecture)
-- Padding : `space4` (16px) horizontal, `space2` (8px) top, `space3` (12px) bottom
-- Les emojis (📌, 🔴) font partie du texte renvoyé par l'API
-
-### 4.3 ArticlePairView (swipe actu/deep)
-
-Réutilise la mécanique `PageView` existante du `TopicSection`.
-
-**Avec deep article :**
-
-```
-┌──────────────────────┐  ┌──────────────────────┐
-│ ┌──────────────────┐ │  │ ┌──────────────────┐ │
-│ │   [thumbnail]    │ │  │ │   [thumbnail]    │ │
-│ │                  │ │  │ │                  │ │
-│ └──────────────────┘ │  │ └──────────────────┘ │
-│ 🔴 L'actu du jour    │  │ 🔭 Le pas de recul   │
-│                      │  │                      │
-│ "Trump brandit la    │  │ "Souveraineté        │
-│  menace d'un blocage │  │  numérique : 20 ans  │
-│  des réseaux en UE"  │  │  de dépendance       │
-│                      │  │  européenne"          │
-│ Le Monde · 3 min     │  │ The Conversation     │
-│ Aujourd'hui          │  │ · 8 min              │
-└──────────────────────┘  └──────────────────────┘
-         ●  ○              ← dot indicators
-```
-
-**Sans deep article :**
-
-```
-┌──────────────────────────────────────────────┐
-│ ┌──────────────────────────────────────────┐ │
-│ │            [thumbnail]                   │ │
-│ └──────────────────────────────────────────┘ │
-│ 🔴 L'actu du jour                            │
-│                                              │
-│ "Apple passe à l'USB-C en Europe"            │
-│                                              │
-│ France Info · 3 min · Aujourd'hui            │
-└──────────────────────────────────────────────┘
-         (pas de dots — carte unique pleine largeur)
-```
-
-**Specs PageView :**
-- `viewportFraction: 0.88` (existant — 12% de la carte suivante visible)
-- Hauteur fixe : thumbnail 16:9 aspect ratio + 170px body/footer (existant)
-- Dot indicators : active = 16px wide, inactive = 6px (existant)
-- Animation : 200ms smooth transition (existant)
-
-### 4.4 Badge Article
-
-Nouveau widget. Remplace le `reason` badge actuel par un badge sémantique.
-
-```
-┌────────────────────────┐
-│ 🔴 L'actu du jour      │    ← mode normal
-└────────────────────────┘
-
-┌────────────────────────┐
-│ L'actu du jour         │    ← mode serein (pas d'emoji)
-└────────────────────────┘
-
-┌────────────────────────┐
-│ 🔭 Le pas de recul     │    ← deep article
-└────────────────────────┘
-```
-
-**Specs :**
-- Conteneur : `FacteurRadius.small` (8px), padding 8px horiz / 3px vert (existant)
-- Background :
-  - 🔴 L'actu du jour : `FacteurColors.primary.withOpacity(0.10)` (light) / `0.15` (dark)
-  - 🔭 Le pas de recul : `FacteurColors.info.withOpacity(0.10)` (light) / `0.15` (dark)
-  - 🍀 Pépite : `FacteurColors.success.withOpacity(0.10)` (light) / `0.15` (dark)
-  - 💚 Coup de cœur : `FacteurColors.success.withOpacity(0.10)` (light) / `0.15` (dark)
-- Texte : `FacteurTypography.labelSmall` (11px, w500, 0.5 letter-spacing)
-- Couleur texte : même couleur que le background mais pleine opacité
-
-### 4.5 TransitionText
-
-Nouveau widget. Court texte de liaison entre les sujets.
-
-```
-───────────────────────────────────────
-  Pendant ce temps, côté tech…
-───────────────────────────────────────
-```
-
-**Specs :**
-- Police : `FacteurTypography.bodySmall` (13px, w400) en italique
-- Couleur : `FacteurColors.textSecondary`
-- Padding : `space6` (24px) vertical
-- Séparateur : ligne fine 1px, `FacteurColors.textTertiary.withOpacity(0.2)`, margin `space4` (16px) horizontal
-- Le texte est centré
-
-### 4.6 SectionDivider ("Et aussi…")
-
-Marque la transition entre les 3 sujets principaux et les pépites.
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            Et aussi…
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-**Specs :**
-- Texte : `FacteurTypography.displaySmall` (18px, w600)
-- Couleur : `FacteurColors.textPrimary`
-- Centré horizontalement
-- Padding : `space8` (32px) top, `space4` (16px) bottom
-- Ligne décorative : 2px, `FacteurColors.primary.withOpacity(0.3)`, 60px de large, centrée
-
-### 4.7 PepiteBlock
-
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│  Un prof de maths japonais a résolu un        │
-│  problème ouvert depuis 50 ans. La            │
-│  démonstration tient en 3 pages. Magnifique.  │
-│                                               │
-│  ┌───────────────────────────────────────┐    │
-│  │ 🍀 Pépite du jour                     │    │
-│  │                                       │    │
-│  │ "La preuve la plus élégante de        │    │
-│  │  l'année"                              │    │
-│  │                                       │    │
-│  │ Slate · 6 min                          │    │
-│  └───────────────────────────────────────┘    │
-│                                               │
-└───────────────────────────────────────────────┘
-```
-
-**Specs :**
-- Mini-édito : même style que `IntroText` mais plus court
-- Carte : `DigestCard` standard avec badge 🍀
-- Pas de swipe — carte unique pleine largeur
-
-### 4.8 CoupDeCoeurBlock
-
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│  ┌───────────────────────────────────────┐    │
-│  │ 💚 Coup de cœur                       │    │
-│  │ Gardé par 47 lecteurs                 │    │
-│  │                                       │    │
-│  │ "Et si on repensait la ville à       │    │
-│  │  partir du silence ?"                 │    │
-│  │                                       │    │
-│  │ Usbek & Rica · 10 min                │    │
-│  └───────────────────────────────────────┘    │
-│                                               │
-└───────────────────────────────────────────────┘
-```
-
-**Specs :**
-- Badge 💚 + sous-badge "Gardé par {n} lecteurs"
-- Sous-badge : `FacteurTypography.labelSmall`, `FacteurColors.textSecondary`
-- Carte : `DigestCard` standard avec badge 💚
-- Pas de mini-édito (le signal communautaire suffit)
-
-### 4.9 ClosureBlock
-
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│        ✅ T'es à jour. Bonne journée !        │
-│                                               │
-│     Un truc t'a marqué ? Dis-moi 👋          │
-│                                               │
-│         ┌──────────────────────┐              │
-│         │   Donner un retour   │              │
-│         └──────────────────────┘              │
-│                                               │
-└───────────────────────────────────────────────┘
-```
-
-**Specs :**
-- Closure text : `FacteurTypography.displaySmall` (18px, w600), centré
-- CTA text : `FacteurTypography.bodySmall` (13px), `FacteurColors.textSecondary`, centré
-- Bouton feedback : `OutlinedButton`, `FacteurRadius.pill` (100px), `FacteurColors.primary`
-- Padding : `space8` (32px) top, `space6` (24px) bottom
-- Animation d'apparition : fade-in 400ms quand le bloc entre dans le viewport
+**Fichier impacté :** header section de `digest_briefing_section.dart`
 
 ---
 
-## 5. Mode Serein — Ajustements UI
+## 4. Impact sur Story 10.12 — Closure
 
-| Élément | Normal | Serein |
-|---------|--------|--------|
-| Gradient container | Ambre/sunset (existant pourVous) | Vert/lotus (existant serein) |
-| Badge 🔴 L'actu | Avec emoji | Sans emoji : "L'actu du jour" |
-| Badge 🔭 Le pas de recul | Avec emoji | Sans emoji : "Le pas de recul" |
-| Badge 🍀 Pépite | Avec emoji | Avec emoji (pas anxiogène) |
-| Badge 💚 Coup de cœur | Avec emoji | Avec emoji (pas anxiogène) |
-| Intro text | Ton direct, punchy | Ton calme, neutre |
-| Header | "3 sujets à retenir" | "3 sujets pour bien démarrer" |
-| Closure | "T'es à jour. Bonne journée !" | "T'es à jour. Prends soin de toi !" |
+> **Fichier existant :** closure intégrée dans le digest flow
+> **Réf story :** [10.12.ecran-closure.story.md](10.12.ecran-closure.story.md)
 
-L'API renvoie le `mode` dans la réponse. Le frontend applique les variations d'affichage en fonction.
+### 🔀 Modification D7 — Closure inline au lieu de full-screen
 
----
+| Avant | Après |
+|-------|-------|
+| Full-screen overlay ClosureScreen (confettis, stats, "Tu es informé !") | Bloc inline en bas du digest (texte closure + CTA feedback) |
 
-## 6. Interactions
+**Rationale :** la closure full-screen casse le flow de lecture. En mode éditorial, le digest se finit naturellement par le texte de closure généré par le LLM — c'est un paragraphe, pas un écran.
 
-### 6.1 Swipe actu/deep
+**Ce qui change :**
+- Le `ClosureBlock` est un widget inline en fin de scroll (pas un écran séparé)
+- Texte : `closureText` de l'API ("✅ T'es à jour. Bonne journée !")
+- CTA : `ctaText` de l'API ("Un truc t'a marqué ? Dis-moi 👋")
+- Un bouton "Donner un retour" (OutlinedButton, pill radius)
+- Animation : fade-in + scale léger quand le bloc entre dans le viewport
+- **Les stats (streak, articles lus) et confettis sont retirés** de ce flow — le streak reste visible dans le profil/settings
 
-- **Swipe horizontal** (PageView existant) : navigation entre carte actu et carte deep
-- **Swipe droit** sur une carte (SwipeToOpenCard existant) : ouvrir l'article
-- **Swipe gauche** sur une carte : dismiss (existant)
-- Les deux directions de swipe coexistent : horizontal = navigation, diagonal/vertical = action
-
-**Gestion du conflit de gestes :**
-- Le PageView capte les swipes strictement horizontaux
-- Le SwipeToOpenCard capte les swipes avec composante diagonale (existant : seuil 25% largeur écran)
-- Pas de conflit si les seuils sont bien calibrés (à tester)
-
-### 6.2 Actions utilisateur
-
-| Action | Geste | Feedback | Backend |
-|--------|-------|----------|---------|
-| Lire un article | Tap sur carte | Ouvre WebView/in-app | `POST /digest/{id}/action` (read) |
-| Ouvrir un article | Swipe droit | Haptic medium | `POST /digest/{id}/action` (read) |
-| Dismiss article | Swipe gauche | Slide off + haptic | `POST /digest/{id}/action` (not_interested) |
-| Swipe actu → deep | Swipe horizontal | Page snap | Pas d'appel (navigation locale) |
-| Donner feedback | Tap bouton closure | Ouvre bottom sheet | Nouveau endpoint ou formulaire |
-
-### 6.3 Progression et completion
-
-- **Compteur** : chaque article lu/sauvé/dismissé compte comme 1 interaction
-- **Seuil** : `completionThreshold` (configurable, ex: 5 sur 7 articles potentiels)
-- Articles potentiels : 3 actu + jusqu'à 3 deep + pépite + coup de cœur = 5 à 8
-- **Completion automatique** quand seuil atteint → closure apparaît avec animation
-
-### 6.4 Feedback CTA
-
-Le bouton "Donner un retour" ouvre un bottom sheet simple :
-
-```
-┌───────────────────────────────────────────────┐
-│                                               │
-│  Comment c'était ce matin ?                   │
-│                                               │
-│  😍  Top       😊  Bien      😐  Bof         │
-│                                               │
-│  Un commentaire ? (optionnel)                 │
-│  ┌───────────────────────────────────────┐    │
-│  │                                       │    │
-│  └───────────────────────────────────────┘    │
-│                                               │
-│         ┌──────────────────────┐              │
-│         │      Envoyer         │              │
-│         └──────────────────────┘              │
-│                                               │
-└───────────────────────────────────────────────┘
-```
-
-**Specs :**
-- 3 emojis tap-to-select (un seul sélectionnable)
-- TextField optionnel (max 280 caractères)
-- Données envoyées à un endpoint feedback (nouveau) ou stockées localement pour v1
+**Impact fichiers :** nouveau widget `closure_block.dart`, modification du flow de completion dans `digest_provider.dart` (ne navigue plus vers un écran séparé)
 
 ---
 
-## 7. Animations
+## 5. Impact sur Story 10.15 — Push notification
 
-| Élément | Animation | Durée | Easing |
-|---------|-----------|-------|--------|
-| Header apparition | Fade-in + slide down | 400ms | easeOutCubic |
-| IntroText apparition | Fade-in | 300ms | easeOut |
-| Card PageView | Spring snap | 200ms | (existant) |
-| TransitionText | Fade-in | 250ms | easeOut |
-| ClosureBlock | Fade-in + scale (0.95→1.0) | 400ms | easeOutBack |
-| Feedback emoji select | Scale bounce (1.0→1.2→1.0) | 200ms | easeOutBack |
-| Badge apparition | Fade-in | `FacteurDurations.fast` (150ms) | linear |
+> **Réf story :** [10.15.notification-push.story.md](10.15.notification-push.story.md)
 
-Les animations sont déclenchées au scroll (visibility detection) — pas au chargement initial.
+### 🔀 Modification D8 — Texte de push revu
+
+| Avant | Après |
+|-------|-------|
+| "Ton essentiel du jour est prêt" | "Ton Essentiel est prêt — 5 min pour être à jour" |
+
+**Ce qui change :** juste le texte. Logique de scheduling identique.
 
 ---
 
-## 8. Arbre des widgets (résumé)
+## 6. Widgets entièrement nouveaux (pas de delta)
 
-```
-DigestBriefingSection (existant, étendu)
-├── EditorialHeader (nouveau)
-│   ├── Text(headerText)
-│   └── DigestModeTabSelector (existant, 2 modes)
-│
-├── ListView.builder(subjects)
-│   └── EditorialSubjectBlock (nouveau) ×3
-│       ├── IntroText (nouveau)
-│       ├── ArticlePairView (nouveau, basé sur TopicSection PageView)
-│       │   ├── ActuCard (DigestCard + badge 🔴)
-│       │   └── DeepCard? (DigestCard + badge 🔭, nullable)
-│       └── TransitionText? (nouveau, nullable pour dernier sujet)
-│
-├── SectionDivider (nouveau)
-│
-├── PepiteBlock (nouveau)
-│   ├── Text(miniEditorial)
-│   └── DigestCard + badge 🍀
-│
-├── CoupDeCoeurBlock (nouveau)
-│   └── DigestCard + badge 💚 + sous-badge saves
-│
-└── ClosureBlock (nouveau)
-    ├── Text(closureText)
-    ├── Text(ctaText)
-    └── FeedbackButton → FeedbackBottomSheet
-```
+Ces widgets n'existaient pas. Ils sont créés from scratch pour le format `editorial_v1`.
+
+### 🆕 N1 — IntroText
+
+Affiche le texte éditorial (2-3 phrases) au-dessus des cartes pour chaque sujet.
+
+- **Contenu :** `subject.introText` (String venant de l'API, généré par LLM)
+- **Typo :** `FacteurTypography.bodyLarge` (17px, w400), line height 1.5
+- **Couleur :** `FacteurColors.textPrimary`
+- **Padding :** 16px horizontal, 8px top, 12px bottom
+- **Fichier :** `digest/widgets/intro_text.dart`
+
+### 🆕 N2 — TransitionText
+
+Court texte de liaison entre 2 sujets ("Pendant ce temps, côté tech…").
+
+- **Contenu :** `subject.transitionText` (nullable — absent après le dernier sujet)
+- **Typo :** `FacteurTypography.bodySmall` (13px, w400), italique
+- **Couleur :** `FacteurColors.textSecondary`
+- **Séparateur :** ligne 1px `textTertiary @ 20%` au-dessus et en-dessous
+- **Padding :** 24px vertical
+- **Fichier :** `digest/widgets/transition_text.dart`
+
+### 🆕 N3 — ArticlePairView
+
+Conteneur PageView pour le swipe horizontal entre carte actu et carte deep.
+
+- **Basé sur :** la mécanique `PageView` existante de `TopicSection` (viewportFraction: 0.88, dot indicators, 200ms animation)
+- **Comportement :**
+  - Si deep article présent : 2 pages (actu → deep), dot indicators
+  - Si pas de deep : 1 page, pleine largeur, pas de dots
+- **Fichier :** `digest/widgets/article_pair_view.dart`
+- **Conflit de gestes :** le swipe horizontal (PageView) coexiste avec le swipe droit/gauche (SwipeToOpenCard). À tester : le PageView capte les gestes strictement horizontaux, le SwipeToOpenCard les gestes diagonaux (seuil 25% existant).
+
+### 🆕 N4 — SectionDivider
+
+Séparateur visuel "Et aussi…" entre les 3 sujets et les pépites.
+
+- **Typo :** `FacteurTypography.displaySmall` (18px, w600), centré
+- **Décor :** ligne 2px `primary @ 30%`, 60px, centrée
+- **Padding :** 32px top, 16px bottom
+- **Fichier :** `digest/widgets/section_divider.dart`
+
+### 🆕 N5 — PepiteBlock & CoupDeCoeurBlock
+
+Wrappers simples autour de `DigestCard` avec contexte éditorial.
+
+- **PepiteBlock :** `IntroText` (mini-édito 1 phrase) + `DigestCard` badge 🍀
+- **CoupDeCoeurBlock :** `DigestCard` badge 💚 + sous-badge "Gardé par {n} lecteurs" (`labelSmall`, `textSecondary`)
+- **Fichiers :** `digest/widgets/pepite_block.dart`, `digest/widgets/coup_de_coeur_block.dart`
+
+### 🆕 N6 — FeedbackBottomSheet
+
+Bottom sheet post-closure pour le CTA feedback.
+
+- 3 emojis sélectionnables (😍 Top / 😊 Bien / 😐 Bof)
+- TextField optionnel (280 chars max)
+- Bouton "Envoyer"
+- **Fichier :** `digest/widgets/feedback_bottom_sheet.dart`
+- **Backend :** endpoint feedback à définir (ou stockage local en V1)
 
 ---
 
-## 9. Compatibilité format_version
+## 7. Impact sur les modèles de données
 
-Le frontend détecte `format_version` et rend le layout approprié :
+### 🔀 Modification D9 — DigestResponse étendu
 
-```dart
-Widget build(BuildContext context) {
-  final digest = ref.watch(digestProvider);
+**Fichier :** `digest/models/digest_models.dart`
 
-  return switch (digest.formatVersion) {
-    'editorial_v1' => EditorialDigestLayout(digest: digest),
-    'topics_v1' => TopicsDigestLayout(digest: digest), // existant
-    'flat_v1' => FlatDigestLayout(digest: digest),     // legacy
-    _ => TopicsDigestLayout(digest: digest),            // fallback
-  };
-}
-```
+Ajout de champs au modèle existant `DigestResponse` (ou sous-modèle conditionnel si `format_version == "editorial_v1"`) :
 
-**Rétrocompatibilité totale** : les anciens digests restent affichables.
+| Champ nouveau | Type | Description |
+|---------------|------|-------------|
+| `headerText` | `String` | Titre éditorialisé du digest |
+| `closureText` | `String` | Texte de closure LLM |
+| `ctaText` | `String` | CTA feedback |
+| `subjects` | `List<EditorialSubject>` | 3 blocs sujet (intro + actu + deep) |
+| `pepite` | `EditorialSlot?` | Slot pépite avec mini-édito |
+| `coupDeCoeur` | `EditorialSlot?` | Slot coup de cœur avec community_saves |
+
+**`EditorialSubject`** (nouveau) :
+- `topicId`, `label`, `rank`
+- `introText` (2-3 phrases)
+- `transitionText?` (null pour le dernier)
+- `actuArticle` (DigestItem existant + `badge: "actu"`)
+- `deepArticle?` (DigestItem existant + `badge: "pas_de_recul"`, nullable)
+- `isUserSource` (bool)
+
+**`EditorialSlot`** (nouveau) :
+- `article` (DigestItem)
+- `badge` ("pepite" | "coup_de_coeur")
+- `miniEditorial?` (String, pépite uniquement)
+- `communitySaves?` (int, coup de cœur uniquement)
+
+### 🔀 Modification D10 — DigestMode réduit
+
+**Fichier :** `digest/models/digest_mode.dart`
+
+Retrait de `perspective` de l'enum `DigestMode`. Seuls `pourVous` et `serein` restent.
 
 ---
 
-## 10. Fichiers impactés
+## 8. Récapitulatif des modifications (checklist challengeable)
+
+### Modifications de l'existant (deltas)
+
+| # | Story impactée | Modification | Fichier(s) | Challengeable ? |
+|---|---------------|-------------|-----------|:---:|
+| D1 | 10.9 | Header dynamique (API text) | `digest_briefing_section.dart` | Oui |
+| D2 | 10.9 | Mode selector 3→2 modes | `digest_mode_tab_selector.dart`, `digest_mode.dart` | Oui |
+| D3 | 10.9 | Branchement `editorial_v1` layout | `digest_briefing_section.dart` | Non (structurel) |
+| D4 | 10.10 | Badge sémantique remplace reason | `digest_card.dart` | Oui |
+| D5 | 10.10 | Rank badge retiré | `digest_card.dart` | Oui |
+| D6 | 10.11 | Progression simplifiée (dots) | `digest_briefing_section.dart` | Oui |
+| D7 | 10.12 | Closure inline vs full-screen | Nouveau `closure_block.dart` | Oui |
+| D8 | 10.15 | Texte push revu | Config notification | Oui |
+| D9 | Modèles | DigestResponse + nouveaux types | `digest_models.dart` | Non (structurel) |
+| D10 | Modèles | DigestMode 3→2 | `digest_mode.dart` | Oui |
 
 ### Nouveaux widgets
 
-| Fichier | Widget |
-|---------|--------|
-| `digest/widgets/editorial_header.dart` | EditorialHeader |
-| `digest/widgets/editorial_subject_block.dart` | EditorialSubjectBlock |
-| `digest/widgets/intro_text.dart` | IntroText |
-| `digest/widgets/article_pair_view.dart` | ArticlePairView |
-| `digest/widgets/transition_text.dart` | TransitionText |
-| `digest/widgets/section_divider.dart` | SectionDivider |
-| `digest/widgets/pepite_block.dart` | PepiteBlock |
-| `digest/widgets/coup_de_coeur_block.dart` | CoupDeCoeurBlock |
-| `digest/widgets/closure_block.dart` | ClosureBlock |
-| `digest/widgets/article_badge.dart` | ArticleBadge |
-| `digest/widgets/feedback_bottom_sheet.dart` | FeedbackBottomSheet |
-
-### Widgets modifiés
-
-| Fichier | Changement |
-|---------|-----------|
-| `digest/widgets/digest_briefing_section.dart` | Branchement `editorial_v1` layout |
-| `digest/widgets/digest_card.dart` | Support des nouveaux badges |
-
-### Modèles modifiés
-
-| Fichier | Changement |
-|---------|-----------|
-| `digest/models/digest_models.dart` | Nouveaux modèles editorial_v1 |
-| `digest/models/digest_mode.dart` | Retrait mode "perspective" en V1 |
-
-### Providers modifiés
-
-| Fichier | Changement |
-|---------|-----------|
-| `digest/providers/digest_provider.dart` | Parsing editorial_v1 |
+| # | Widget | Dépend de |
+|---|--------|-----------|
+| N1 | IntroText | D3 (layout editorial) |
+| N2 | TransitionText | D3 |
+| N3 | ArticlePairView | D3, D4 (badges) |
+| N4 | SectionDivider | D3 |
+| N5 | PepiteBlock + CoupDeCoeurBlock | D3, D4 |
+| N6 | FeedbackBottomSheet | D7 (closure inline) |
 
 ---
 
-*Voir aussi : [01-pipeline.md](01-pipeline.md) — Pipeline backend, [02-editorial.md](02-editorial.md) — Ligne éditoriale*
+## 9. Arbre widget final (editorial_v1)
+
+```
+DigestBriefingSection (existant, modifié D1/D3)
+├── EditorialHeader (D1: headerText dynamique + D2: 2 modes)
+│   ├── Text(digest.headerText)              ← D1
+│   ├── ProgressDots(3/5)                    ← D6
+│   └── DigestModeTabSelector(2 modes)       ← D2
+│
+├── for subject in subjects:                 ← D3 branchement
+│   └── Column
+│       ├── IntroText(subject.introText)     ← N1
+│       ├── ArticlePairView                  ← N3
+│       │   ├── DigestCard(actu, badge 🔴)   ← D4
+│       │   └── DigestCard(deep?, badge 🔭)  ← D4
+│       └── TransitionText?(...)             ← N2
+│
+├── SectionDivider("Et aussi…")              ← N4
+│
+├── PepiteBlock                              ← N5
+│   ├── IntroText(pepite.miniEditorial)
+│   └── DigestCard(badge 🍀)                 ← D4
+│
+├── CoupDeCoeurBlock                         ← N5
+│   └── DigestCard(badge 💚) + saves count   ← D4
+│
+└── ClosureBlock                             ← D7
+    ├── Text(digest.closureText)
+    ├── Text(digest.ctaText)
+    └── FeedbackButton → FeedbackBottomSheet ← N6
+```
+
+---
+
+*Réf design : [01-pipeline.md](01-pipeline.md) (backend), [02-editorial.md](02-editorial.md) (ton & prompts)*
