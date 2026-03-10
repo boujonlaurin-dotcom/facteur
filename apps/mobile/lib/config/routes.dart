@@ -93,17 +93,22 @@ class RoutePaths {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
-  // Use refreshListenable instead of ref.watch() to avoid recreating
-  // the entire GoRouter on auth state changes (which resets to initialLocation).
-  final authChangeNotifier = ref.watch(authChangeNotifierProvider);
+  // Use ref.listen() (not ref.watch()) so auth state changes trigger
+  // GoRouter's refreshListenable WITHOUT recreating the entire router.
+  // ref.watch() would invalidate this provider and create a new GoRouter
+  // with initialLocation: /splash, losing the user's current route.
+  final refreshNotifier = AuthChangeNotifier();
+  ref.listen(authStateProvider, (_, __) {
+    refreshNotifier.notify();
+  });
+  ref.onDispose(() => refreshNotifier.dispose());
 
   return GoRouter(
     navigatorKey: NotificationService.navigatorKey,
     initialLocation: RoutePaths.splash,
     debugLogDiagnostics: true,
-    refreshListenable: authChangeNotifier,
+    refreshListenable: refreshNotifier,
     redirect: (context, state) {
-      // Read current auth state without causing provider invalidation
       final authState = ref.read(authStateProvider);
 
       // Attendre que l'auth state soit initialisé
