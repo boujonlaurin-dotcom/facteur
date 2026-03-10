@@ -276,6 +276,40 @@ graph TD
 2. **Filtrage digest/feed** — Exclure les articles du digest du feed "Explorer plus"
 3. **Bookmark = objectif** — Le bookmark valide l'objectif du jour + écran "Sauvegardés"
 
+### Phase 5 — Digest Éditorialisé (10.22-10.28)
+
+> **Design docs complets :** [`docs/design/editorial-digest/`](../../../design/editorial-digest/README.md)
+> **Origine :** Brainstorm CEO + Claude, 10/03/2026
+> **Objectif :** Transformer le digest en expérience éditoriale avec pont actu → deep
+
+**Changement de paradigme :** Le digest passe de "voilà l'actu" à "voilà pourquoi c'est important — et voici comment comprendre en profondeur". Chaque sujet chaud est accompagné d'un "pas de recul" (article deep/systémique). La sélection et la rédaction sont pilotées par LLM avec prompts configurables.
+
+| # | Story | Priorité | Type | Impacte |
+|---|-------|----------|------|---------|
+| 10.22 | Sources deep — Intégration pool 20 sources curated `source_tier: "deep"` | P0 | Backend | Source model, sources_master.csv |
+| 10.23 | Pipeline éditoriale — Curation LLM (sélection 3 sujets + matching actu/deep) | P0 | Backend | DigestSelector (10.2), DigestService, nouveau `EditorialPipelineService` |
+| 10.24 | Pipeline éditoriale — Rédaction LLM (éditos, transitions, closure) | P0 | Backend | Nouveau service, config YAML prompts |
+| 10.25 | Format `editorial_v1` — Modèles + endpoint | P0 | Backend/Frontend | DailyDigest model, DigestResponse, digest_models.dart (D9) |
+| 10.26 | Écran digest éditorial — Layout, header dynamique, blocs sujets | P0 | Frontend | digest_briefing_section.dart (D1, D3), nouveaux widgets (N1-N4) |
+| 10.27 | Cartes éditoriales — Badges sémantiques, ArticlePairView, pépite/coup de cœur | P0 | Frontend | digest_card.dart (D4, D5), nouveaux widgets (N3, N5) |
+| 10.28 | Closure éditoriale + feedback — Inline closure, CTA, bottom sheet feedback | P1 | Frontend | closure flow (D7), nouveaux widgets (N6) |
+
+**Modifications de l'existant (deltas détaillés dans [03-frontend.md](../../../design/editorial-digest/03-frontend.md)) :**
+
+| ID | Modification | Story impactée | Challengeable |
+|----|-------------|----------------|:---:|
+| D1 | Header dynamique (API text) | 10.9 | Oui |
+| D2 | Mode selector 3→2 modes (retrait "Perspective") | 10.9 | Oui |
+| D3 | Branchement layout `editorial_v1` | 10.9 | Non (structurel) |
+| D4 | Badge sémantique remplace reason algo | 10.10 | Oui |
+| D5 | Rank badge retiré | 10.10 | Oui |
+| D6 | Progression simplifiée (dots discrets) | 10.11 | Oui |
+| D7 | Closure inline vs full-screen | 10.12 | Oui |
+| D8 | Texte push revu | 10.15 | Oui |
+| D10 | DigestMode 3→2 | Modèles | Oui |
+
+**Dépendances :** 10.22 → 10.23 → 10.24 → 10.25 → 10.26/10.27 (parallèle) → 10.28
+
 ---
 
 ## Change Log
@@ -284,3 +318,4 @@ graph TD
 |------|---------|-------------|--------|
 | 31/01/2026 | 1.0 | Création Epic suite session BMad | BMad Master |
 | 09/02/2026 | 2.0 | Alignement BMAD avec implémentation GSD (Phases 01-03). Ajout Phase 4 (stories 10.19-10.21). Décisions validées (decay, analytics, notifications). | BMad Master |
+| 10/03/2026 | 3.0 | Ajout Phase 5 — Digest Éditorialisé (stories 10.22-10.28). Design docs dans docs/design/editorial-digest/. | Brainstorm Laurin + Claude |
