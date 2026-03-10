@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key for LLM-based classification
 
+    # Editorial Pipeline (Story 10.23)
+    anthropic_api_key: str = ""  # Anthropic API key for editorial curation
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"

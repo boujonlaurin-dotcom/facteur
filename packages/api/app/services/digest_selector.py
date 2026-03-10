@@ -242,6 +242,69 @@ class DigestSelector:
                 duration_ms=round(candidates_time * 1000, 2),
             )
 
+            # === EDITORIAL FORMAT: delegate to EditorialPipelineService ===
+            if output_format == "editorial":
+                from app.services.editorial.config import load_editorial_config
+                from app.services.editorial.pipeline import EditorialPipelineService
+
+                config = load_editorial_config()
+                if not config.is_enabled_for_user(str(user_id)):
+                    logger.info(
+                        "digest_editorial_not_enabled",
+                        user_id=str(user_id),
+                    )
+                    output_format = "topics"  # Fallback
+                else:
+                    try:
+                        step_start = time.time()
+                        pipeline = EditorialPipelineService(self.session)
+
+                        if not pipeline.llm.is_ready:
+                            logger.warning("digest_editorial_no_api_key")
+                            output_format = "topics"
+                        else:
+                            # Compute global context (clustering + curation + deep)
+                            global_ctx = await pipeline.compute_global_context(
+                                candidates
+                            )
+                            if not global_ctx:
+                                logger.warning("digest_editorial_global_ctx_failed")
+                                output_format = "topics"
+                            else:
+                                # Build clusters for actu matching
+                                clusters = self.importance_detector.build_topic_clusters(
+                                    candidates
+                                )
+                                # Per-user actu matching
+                                # Candidates are already filtered by _get_candidates
+                                # so excluded_content_ids is empty here
+                                result = pipeline.run_for_user(
+                                    global_ctx=global_ctx,
+                                    clusters=clusters,
+                                    user_source_ids=set(
+                                        context.followed_source_ids
+                                    ),
+                                    excluded_content_ids=set(),
+                                )
+                                editorial_time = time.time() - step_start
+                                total_time = time.time() - start_time
+                                logger.info(
+                                    "digest_editorial_completed",
+                                    user_id=str(user_id),
+                                    subjects=len(result.subjects),
+                                    actu_hits=result.metadata.get("actu_hits", 0),
+                                    deep_hits=result.metadata.get("deep_hits", 0),
+                                    editorial_ms=round(editorial_time * 1000, 2),
+                                    total_ms=round(total_time * 1000, 2),
+                                )
+                                return result
+                    except Exception:
+                        logger.exception(
+                            "digest_editorial_failed_fallback_topics",
+                            user_id=str(user_id),
+                        )
+                        output_format = "topics"
+
             # === TOPIC FORMAT: delegate to TopicSelector ===
             if output_format == "topics":
                 from app.services.topic_selector import TopicSelector
