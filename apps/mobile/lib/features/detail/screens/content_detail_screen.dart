@@ -1172,11 +1172,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       color: colors.backgroundPrimary,
                       child: Padding(
                         key: _bridgeKey,
-                        padding: EdgeInsets.only(
-                          left: FacteurSpacing.space4,
-                          right: FacteurSpacing.space4,
-                          top: FacteurSpacing.space3,
-                          bottom: FacteurSpacing.space3 + bottomInset,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space4,
+                          vertical: FacteurSpacing.space3,
                         ),
                         child: GestureDetector(
                           onTap: () {
