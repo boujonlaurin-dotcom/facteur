@@ -32,6 +32,7 @@ class _CollectionPickerSheetState
     extends ConsumerState<CollectionPickerSheet> {
   final Set<String> _selectedIds = {};
   bool _isCreating = false;
+  bool _hasPreSelected = false;
   final _createController = TextEditingController();
   final _createFocus = FocusNode();
 
@@ -40,6 +41,17 @@ class _CollectionPickerSheetState
     _createController.dispose();
     _createFocus.dispose();
     super.dispose();
+  }
+
+  void _preSelectDefault(List<Collection> collections) {
+    if (_hasPreSelected) return;
+    _hasPreSelected = true;
+    for (final col in collections) {
+      if (col.isDefault) {
+        _selectedIds.add(col.id);
+        break;
+      }
+    }
   }
 
   @override
@@ -94,8 +106,10 @@ class _CollectionPickerSheetState
 
             // Collections list
             collectionsAsync.when(
-              data: (collections) =>
-                  _buildCollectionsList(collections, colors),
+              data: (collections) {
+                _preSelectDefault(collections);
+                return _buildCollectionsList(collections, colors);
+              },
               loading: () => const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator.adaptive()),

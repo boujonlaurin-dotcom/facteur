@@ -28,6 +28,7 @@ import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
+import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
@@ -57,12 +58,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin {
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
-  late AnimationController _buttonPulseController;
-  late Animation<double> _buttonScaleAnimation;
   late AnimationController _bookmarkBounceController;
   late Animation<double> _bookmarkScaleAnimation;
   late AnimationController _noteFabBounceController;
   late Animation<double> _noteFabScaleAnimation;
+  late AnimationController _fabReappearController;
+  late Animation<double> _fabReappearScale;
 
   bool _showFab = false;
   bool _showNoteWelcome = false;
@@ -83,6 +84,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
+  Timer? _scrollStopTimer;
+  double _fabOpacity = 0.12;
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
   static const int _consumptionThreshold = 30; // seconds
@@ -118,24 +121,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       parent: _fabController,
       curve: Curves.easeOut,
     );
-
-    // Pulse animation for the Compare button
-    _buttonPulseController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    );
-    _buttonScaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.05)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 40,
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.05, end: 1.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
-        weight: 60,
-      ),
-    ]).animate(_buttonPulseController);
 
     // Bookmark bounce animation (triggered on first note character)
     _bookmarkBounceController = AnimationController(
@@ -173,10 +158,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_noteFabBounceController);
 
-    // Show FAB after a short delay for smooth appearance
-    Future.delayed(const Duration(milliseconds: 500), () {
+    // Scroll reappear: subtle scale-up when FABs fade back in
+    _fabReappearController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      value: 1.0, // Start at end so initial scale is 1.0
+      vsync: this,
+    );
+    _fabReappearScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.85, end: 1.05)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 60,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.05, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 40,
+      ),
+    ]).animate(_fabReappearController);
+
+    // Show FAB after delay — start transparent, fade+scale in after 2s
+    Future.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) {
-        setState(() => _showFab = true);
+        setState(() {
+          _showFab = true;
+          _fabOpacity = 1.0;
+        });
         _fabController.forward();
       }
     });
@@ -185,13 +192,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     NoteWelcomeTooltip.shouldShow().then((show) {
       if (mounted && show) {
         setState(() => _showNoteWelcome = true);
-      }
-    });
-
-    // Trigger button pulse after a delay to catch user's attention
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        _buttonPulseController.forward();
       }
     });
 
@@ -209,6 +209,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
+
 
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
@@ -294,6 +295,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _isWebViewActive = shouldActivate;
       });
     }
+  }
+
+  /// Fade FABs to near-transparent during scroll, restore on stop.
+  void _onScrollFabOpacity() {
+    if (_fabOpacity != 0.12) {
+      setState(() => _fabOpacity = 0.12);
+    }
+    _scrollStopTimer?.cancel();
+    _scrollStopTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() => _fabOpacity = 1.0);
+        _fabReappearController.forward(from: 0);
+      }
+    });
   }
 
   Future<void> _fetchContent() async {
@@ -397,11 +412,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       final repository = FeedRepository(apiClient);
       await repository.toggleSave(content.id, newSaved);
       if (mounted && newSaved) {
-        NotificationService.showInfo(
-          'Sauvegardé',
-          actionLabel: 'Ajouter à une collection',
-          onAction: () => CollectionPickerSheet.show(context, content.id),
-        );
+        // Auto-add to default collection
+        final defaultCol = ref.read(defaultCollectionProvider);
+        if (defaultCol != null) {
+          final colRepo = ref.read(collectionsRepositoryProvider);
+          await colRepo.addToCollection(defaultCol.id, content.id);
+          ref.invalidate(collectionsProvider);
+        }
+        CollectionPickerSheet.show(context, content.id);
       }
     } catch (e) {
       // Rollback on error
@@ -482,11 +500,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void dispose() {
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
+    _scrollStopTimer?.cancel();
     _fabController.dispose();
-    _buttonPulseController.dispose();
     _bookmarkBounceController.dispose();
     _noteFabBounceController.dispose();
+    _fabReappearController.dispose();
     _scrollController.removeListener(_onScrollToSite);
+
     _scrollController.dispose();
     super.dispose();
 
@@ -716,104 +736,147 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       backgroundColor: colors.backgroundPrimary,
       body: Stack(
         children: [
-          Builder(builder: (context) {
-            final topInset = MediaQuery.of(context).padding.top;
-            final headerHeight = topInset + 64;
-            return Positioned.fill(
-              child: Padding(
-                padding: EdgeInsets.only(top: headerHeight),
-                child: useScrollToSite
-                    ? _buildScrollToSiteContent(context, content)
-                    : useInAppReading
-                        ? _buildInAppContent(context, content)
-                        : _buildWebViewFallback(content),
-              ),
-            );
-          }),
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is ScrollUpdateNotification) {
+                _onScrollFabOpacity();
+              }
+              return false;
+            },
+            child: Builder(builder: (context) {
+              final topInset = MediaQuery.of(context).padding.top;
+              final headerHeight = topInset + 64;
+              return Positioned.fill(
+                child: Padding(
+                  padding: EdgeInsets.only(top: headerHeight),
+                  child: useScrollToSite
+                      ? _buildScrollToSiteContent(context, content)
+                      : useInAppReading
+                          ? _buildInAppContent(context, content)
+                          : _buildWebViewFallback(content),
+                ),
+              );
+            }),
+          ),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: _buildHeader(context, content),
           ),
-          // Perspectives pill (articles only)
-          if (content.contentType == ContentType.article)
-            Positioned(
-              bottom: 100,
-              right: 16,
-              child: PerspectivesPill(
-                biasDistribution:
-                    _perspectivesResponse?.biasDistribution ?? {},
-                isLoading: _perspectivesLoading,
-                isEmpty: !_perspectivesLoading &&
-                    _perspectivesResponse != null &&
-                    _perspectivesResponse!.perspectives.isEmpty,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  _showPerspectives(context);
-                },
-              ),
-            ),
         ],
       ),
-      // FABs
+      // FABs — vertical column with immersive scroll opacity
       floatingActionButton: _showFab
-          ? ScaleTransition(
-              scale: _fabAnimation,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  if (_showNoteWelcome)
-                    NoteWelcomeTooltip(
-                      onDismiss: () => setState(() => _showNoteWelcome = false),
-                    ),
-                  Row(
+          ? AnimatedOpacity(
+              opacity: _fabOpacity,
+              duration: Duration(milliseconds: _fabOpacity < 1.0 ? 150 : 300),
+              child: ScaleTransition(
+                scale: _fabAnimation,
+                child: ScaleTransition(
+                  scale: _fabReappearScale,
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // External link FAB — hidden for articles unless WebView is active
-                      if (content.contentType != ContentType.article || _showWebView || _isWebViewActive) ...[
-                        FloatingActionButton(
-                          mini: true,
-                          onPressed: _openOriginalUrl,
-                          backgroundColor:
-                              colors.surface.withValues(alpha: 0.45),
-                          foregroundColor: colors.textPrimary,
-                          elevation: 2,
-                          heroTag: 'original_fab',
-                          tooltip: _getFabLabel(),
-                          child: Icon(
-                            PhosphorIcons.arrowSquareOut(
-                                PhosphorIconsStyle.regular),
-                            size: 20,
-                          ),
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Perspectives pill (articles only) — always just above FABs
+                    if (content.contentType == ContentType.article) ...[
+                      PerspectivesPill(
+                        biasDistribution:
+                            _perspectivesResponse?.biasDistribution ?? {},
+                        isLoading: _perspectivesLoading,
+                        isEmpty: !_perspectivesLoading &&
+                            _perspectivesResponse != null &&
+                            _perspectivesResponse!.perspectives.isEmpty,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          _showPerspectives(context);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (_showNoteWelcome)
+                      NoteWelcomeTooltip(
+                        onDismiss: () =>
+                            setState(() => _showNoteWelcome = false),
+                      ),
+                    // External link FAB — hidden for articles unless WebView is active
+                    if (content.contentType != ContentType.article ||
+                        _showWebView ||
+                        _isWebViewActive) ...[
+                      FloatingActionButton(
+                        mini: true,
+                        onPressed: _openOriginalUrl,
+                        backgroundColor: Colors.white,
+                        foregroundColor: colors.textPrimary,
+                        elevation: 2,
+                        heroTag: 'original_fab',
+                        tooltip: _getFabLabel(),
+                        child: Icon(
+                          PhosphorIcons.arrowSquareOut(
+                              PhosphorIconsStyle.regular),
+                          size: 20,
                         ),
-                        const SizedBox(width: 8),
-                      ],
-                      // Note FAB (always primary, notes available on all articles)
-                      ScaleTransition(
-                        scale: _noteFabScaleAnimation,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // Bookmark FAB (long-press for collection picker)
+                    GestureDetector(
+                      onLongPress: () {
+                        HapticFeedback.mediumImpact();
+                        CollectionPickerSheet.show(context, content.id);
+                      },
+                      child: ScaleTransition(
+                        scale: _bookmarkScaleAnimation,
                         child: FloatingActionButton(
                           mini: true,
-                          onPressed: _openNoteSheet,
-                          backgroundColor: colors.primary,
-                          foregroundColor: Colors.white,
-                          elevation: 4,
-                          heroTag: 'note_fab',
-                          tooltip: 'Nouvelle note',
+                          onPressed: _toggleBookmark,
+                          backgroundColor: content.isSaved
+                              ? colors.primary
+                              : Colors.white,
+                          foregroundColor:
+                              content.isSaved ? Colors.white : colors.textPrimary,
+                          elevation: content.isSaved ? 4 : 2,
+                          heroTag: 'bookmark_fab',
+                          tooltip: 'Sauvegarder',
                           child: Icon(
-                            content.hasNote
-                                ? PhosphorIcons.pencilLine(
+                            content.isSaved
+                                ? PhosphorIcons.bookmarkSimple(
                                     PhosphorIconsStyle.fill)
-                                : PhosphorIcons.pencilLine(
+                                : PhosphorIcons.bookmarkSimple(
                                     PhosphorIconsStyle.regular),
                             size: 20,
                           ),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Note FAB (always visible)
+                    ScaleTransition(
+                      scale: _noteFabScaleAnimation,
+                      child: FloatingActionButton(
+                        mini: true,
+                        onPressed: _openNoteSheet,
+                        backgroundColor:
+                            content.hasNote ? colors.primary : Colors.white,
+                        foregroundColor:
+                            content.hasNote ? Colors.white : colors.textPrimary,
+                        elevation: content.hasNote ? 4 : 2,
+                        heroTag: 'note_fab',
+                        tooltip: 'Nouvelle note',
+                        child: Icon(
+                          content.hasNote
+                              ? PhosphorIcons.pencilLine(
+                                  PhosphorIconsStyle.fill)
+                              : PhosphorIcons.pencilLine(
+                                  PhosphorIconsStyle.regular),
+                          size: 20,
+                        ),
+                      ),
+                    ),
                     ],
                   ),
-                ],
+                ),
               ),
             )
           : null,
@@ -946,94 +1009,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
                   ),
 
-                  // Bookmark toggle (with bounce animation)
-                  // Long-press opens collection picker
-                  GestureDetector(
-                    onLongPress: () {
-                      HapticFeedback.mediumImpact();
-                      CollectionPickerSheet.show(context, content.id);
-                    },
-                    child: ScaleTransition(
-                      scale: _bookmarkScaleAnimation,
-                      child: IconButton(
-                        padding: const EdgeInsets.all(4),
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(),
-                        onPressed: _toggleBookmark,
-                        icon: Icon(
-                          content.isSaved
-                              ? PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.fill)
-                              : PhosphorIcons.bookmarkSimple(
-                                  PhosphorIconsStyle.regular),
-                          size: 22,
-                          color: content.isSaved
-                              ? colors.primary
-                              : colors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-
-                  // Comparer button
-                  if (content.contentType == ContentType.article) ...[
-                    ScaleTransition(
-                      scale: _buttonScaleAnimation,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: colors.primary.withValues(alpha: 0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: TextButton(
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            _showPerspectives(context);
-                          },
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            minimumSize: const Size(0, 36),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            backgroundColor: colors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                PhosphorIcons.scales(PhosphorIconsStyle.fill),
-                                size: 18,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Comparer',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

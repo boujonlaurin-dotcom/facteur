@@ -29,8 +29,8 @@ import '../widgets/swipe_to_open_card.dart';
 import '../widgets/dismiss_banner.dart';
 import '../providers/swipe_hint_provider.dart';
 import '../../../widgets/article_preview_modal.dart';
-import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
+import '../../saved/providers/collections_provider.dart';
 import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
 import 'dart:math' as math;
@@ -840,20 +840,23 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             .toggleLike(content);
                                       },
                                       isLiked: content.isLiked,
-                                      onSave: () {
+                                      onSave: () async {
                                         final wasSaved = content.isSaved;
                                         ref
                                             .read(feedProvider.notifier)
                                             .toggleSave(content);
                                         if (!wasSaved) {
-                                          NotificationService.showInfo(
-                                            'Sauvegardé',
-                                            actionLabel:
-                                                'Ajouter à une collection',
-                                            onAction: () =>
-                                                CollectionPickerSheet.show(
-                                                    context, content.id),
-                                          );
+                                          // Auto-add to default collection
+                                          final defaultCol = ref.read(defaultCollectionProvider);
+                                          if (defaultCol != null) {
+                                            final colRepo = ref.read(collectionsRepositoryProvider);
+                                            await colRepo.addToCollection(defaultCol.id, content.id);
+                                            ref.invalidate(collectionsProvider);
+                                          }
+                                          if (context.mounted) {
+                                            CollectionPickerSheet.show(
+                                                context, content.id);
+                                          }
                                         }
                                       },
                                       isSaved: content.isSaved,

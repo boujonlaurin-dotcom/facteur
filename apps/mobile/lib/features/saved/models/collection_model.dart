@@ -3,6 +3,7 @@ class Collection {
   final String id;
   final String name;
   final int position;
+  final bool isDefault;
   final int itemCount;
   final int readCount;
   final List<String?> thumbnails;
@@ -12,6 +13,7 @@ class Collection {
     required this.id,
     required this.name,
     this.position = 0,
+    this.isDefault = false,
     this.itemCount = 0,
     this.readCount = 0,
     this.thumbnails = const [],
@@ -23,6 +25,7 @@ class Collection {
       id: (json['id'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
       position: (json['position'] as int?) ?? 0,
+      isDefault: (json['is_default'] as bool?) ?? false,
       itemCount: (json['item_count'] as int?) ?? 0,
       readCount: (json['read_count'] as int?) ?? 0,
       thumbnails: (json['thumbnails'] as List<dynamic>?)
