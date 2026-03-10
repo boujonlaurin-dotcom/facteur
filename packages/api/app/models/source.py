@@ -113,6 +113,12 @@ class Source(Base):
     # Paywall detection config (per-source patterns)
     paywall_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Editorial digest: source tier (Story 10.22)
+    # "mainstream" (default) or "deep" (fond/systémique sources for "pas de recul")
+    source_tier: Mapped[str] = mapped_column(
+        String(20), default="mainstream", server_default="mainstream"
+    )
+
     # Relations
     contents: Mapped[list["Content"]] = relationship(
         "Content", back_populates="source", cascade="all, delete-orphan"

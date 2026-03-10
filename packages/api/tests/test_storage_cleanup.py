@@ -18,6 +18,10 @@ async def test_cleanup_deletes_old_articles():
     mock_count_preserved = MagicMock()
     mock_count_preserved.scalar_one.return_value = 10
 
+    # Mock count query (preserved deep): 5 deep source articles preserved
+    mock_count_deep = MagicMock()
+    mock_count_deep.scalar_one.return_value = 5
+
     # Mock delete result: 150 rows deleted
     mock_delete_result = MagicMock()
     mock_delete_result.rowcount = 150
@@ -25,6 +29,7 @@ async def test_cleanup_deletes_old_articles():
     mock_session.execute.side_effect = [
         mock_count_to_delete,
         mock_count_preserved,
+        mock_count_deep,
         mock_delete_result
     ]
 
@@ -58,7 +63,11 @@ async def test_cleanup_skips_when_no_old_articles():
     mock_count_preserved = MagicMock()
     mock_count_preserved.scalar_one.return_value = 5
 
-    mock_session.execute.side_effect = [mock_count_to_delete, mock_count_preserved]
+    # Mock count query (preserved deep): 2 deep source articles preserved
+    mock_count_deep = MagicMock()
+    mock_count_deep.scalar_one.return_value = 2
+
+    mock_session.execute.side_effect = [mock_count_to_delete, mock_count_preserved, mock_count_deep]
 
     mock_session_maker = MagicMock()
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -83,12 +92,23 @@ async def test_cleanup_rollback_on_error():
     """Verify cleanup rolls back on database error."""
     mock_session = AsyncMock()
 
-    # Mock count query succeeds
-    mock_count_result = MagicMock()
-    mock_count_result.scalar_one.return_value = 50
+    # Mock count queries succeed
+    mock_count_to_delete = MagicMock()
+    mock_count_to_delete.scalar_one.return_value = 50
+
+    mock_count_preserved = MagicMock()
+    mock_count_preserved.scalar_one.return_value = 5
+
+    mock_count_deep = MagicMock()
+    mock_count_deep.scalar_one.return_value = 2
 
     # Mock delete raises an error
-    mock_session.execute.side_effect = [mock_count_result, Exception("DB connection lost")]
+    mock_session.execute.side_effect = [
+        mock_count_to_delete,
+        mock_count_preserved,
+        mock_count_deep,
+        Exception("DB connection lost"),
+    ]
 
     mock_session_maker = MagicMock()
     mock_session_maker.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -140,12 +160,16 @@ async def test_cleanup_logs_statistics():
     mock_count_preserved = MagicMock()
     mock_count_preserved.scalar_one.return_value = 15
 
+    mock_count_deep = MagicMock()
+    mock_count_deep.scalar_one.return_value = 3
+
     mock_delete_result = MagicMock()
     mock_delete_result.rowcount = 100
 
     mock_session.execute.side_effect = [
         mock_count_to_delete,
         mock_count_preserved,
+        mock_count_deep,
         mock_delete_result
     ]
 
@@ -179,12 +203,16 @@ async def test_cleanup_preserves_bookmarked_articles():
     mock_count_preserved = MagicMock()
     mock_count_preserved.scalar_one.return_value = 50
 
+    mock_count_deep = MagicMock()
+    mock_count_deep.scalar_one.return_value = 8
+
     mock_delete_result = MagicMock()
     mock_delete_result.rowcount = 150
 
     mock_session.execute.side_effect = [
         mock_count_to_delete,
         mock_count_preserved,
+        mock_count_deep,
         mock_delete_result
     ]
 
@@ -202,5 +230,6 @@ async def test_cleanup_preserves_bookmarked_articles():
     # Verify bookmarks were preserved
     assert result["deleted_count"] == 150  # Only non-bookmarked deleted
     assert result["preserved_bookmarks"] == 50  # Bookmarks kept
+    assert result["preserved_deep"] == 8  # Deep source articles kept
     assert result["retention_days"] == 20
     mock_session.commit.assert_called_once()
