@@ -113,7 +113,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       });
     }
 
-    // 2. Navigation
+    // 2. Premium source → open in external browser for authenticated access
+    final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
+    final isPremium = sources.any(
+        (s) => s.id == content.source.id && s.hasSubscription);
+    if (isPremium && content.url.isNotEmpty) {
+      final uri = Uri.tryParse(content.url);
+      if (uri != null) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    // 3. Navigation
     if (!kIsWeb &&
         (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
       launchUrl(Uri.parse(content.url));

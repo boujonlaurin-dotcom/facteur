@@ -12,6 +12,7 @@ class SourceListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onToggleMute;
   final ValueChanged<double>? onWeightChanged;
+  final VoidCallback? onToggleSubscription;
 
   const SourceListItem({
     super.key,
@@ -19,6 +20,7 @@ class SourceListItem extends StatelessWidget {
     this.onTap,
     this.onToggleMute,
     this.onWeightChanged,
+    this.onToggleSubscription,
   });
 
   IconData get _typeIcon {
@@ -52,6 +54,7 @@ class SourceListItem extends StatelessWidget {
             source: source,
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
+            onToggleSubscription: onToggleSubscription,
           ),
         );
       },

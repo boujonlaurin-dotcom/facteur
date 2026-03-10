@@ -19,6 +19,7 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
@@ -65,6 +66,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   bool _showFab = false;
   bool _showNoteWelcome = false;
+  bool _premiumRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
   bool _showWebView = false;
@@ -659,6 +661,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
         body: Center(
           child: CircularProgressIndicator(color: colors.primary),
+        ),
+      );
+    }
+
+    // Premium source → redirect to external browser for authenticated access
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? [];
+    final isPremiumSource = userSources
+        .any((s) => s.id == content.source.id && s.hasSubscription);
+    if (isPremiumSource && content.url.isNotEmpty && !_premiumRedirectScheduled) {
+      _premiumRedirectScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final uri = Uri.tryParse(content.url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        if (mounted) context.pop();
+      });
+      return Scaffold(
+        backgroundColor: colors.backgroundPrimary,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: colors.primary),
+              const SizedBox(height: 16),
+              Text(
+                'Ouverture dans votre navigateur...',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ],
+          ),
         ),
       );
     }
