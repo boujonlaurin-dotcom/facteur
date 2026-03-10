@@ -201,7 +201,11 @@ class DeepMatcher:
             )
             return None
 
-        if not isinstance(selected_index, int) or selected_index < 0 or selected_index >= len(candidates):
+        if (
+            not isinstance(selected_index, int)
+            or selected_index < 0
+            or selected_index >= len(candidates)
+        ):
             logger.warning(
                 "deep_matcher.llm_invalid_index",
                 index=selected_index,

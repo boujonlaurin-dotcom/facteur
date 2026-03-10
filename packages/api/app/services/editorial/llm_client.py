@@ -86,7 +86,9 @@ class AnthropicClient:
             if text.startswith("```"):
                 # Remove first line (```json or ```) and last line (```)
                 lines = text.split("\n")
-                text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                text = "\n".join(
+                    lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+                )
                 text = text.strip()
 
             parsed = json.loads(text)

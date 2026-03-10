@@ -131,8 +131,10 @@ class ActuMatcher:
 
         # Pick best: user source preferred, then any
         best = (
-            candidates_user[0] if candidates_user
-            else candidates_other[0] if candidates_other
+            candidates_user[0]
+            if candidates_user
+            else candidates_other[0]
+            if candidates_other
             else None
         )
 

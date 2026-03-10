@@ -272,8 +272,10 @@ class DigestSelector:
                                 output_format = "topics"
                             else:
                                 # Build clusters for actu matching
-                                clusters = self.importance_detector.build_topic_clusters(
-                                    candidates
+                                clusters = (
+                                    self.importance_detector.build_topic_clusters(
+                                        candidates
+                                    )
                                 )
                                 # Per-user actu matching
                                 # Candidates are already filtered by _get_candidates
@@ -281,9 +283,7 @@ class DigestSelector:
                                 result = pipeline.run_for_user(
                                     global_ctx=global_ctx,
                                     clusters=clusters,
-                                    user_source_ids=set(
-                                        context.followed_source_ids
-                                    ),
+                                    user_source_ids=set(context.followed_source_ids),
                                     excluded_content_ids=set(),
                                 )
                                 editorial_time = time.time() - step_start

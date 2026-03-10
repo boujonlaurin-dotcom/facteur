@@ -241,7 +241,8 @@ class DigestService:
             user_id=str(user_id),
             is_editorial=is_editorial_format,
             is_topics=is_topics_format,
-            item_type=type(digest_items).__name__ if is_editorial_format
+            item_type=type(digest_items).__name__
+            if is_editorial_format
             else (type(digest_items[0]).__name__ if digest_items else "empty"),
         )
 
@@ -1176,10 +1177,17 @@ class DigestService:
 
                 action_state = action_states_map.get(
                     content_id,
-                    {"is_read": False, "is_saved": False, "is_liked": False, "is_dismissed": False},
+                    {
+                        "is_read": False,
+                        "is_saved": False,
+                        "is_liked": False,
+                        "is_dismissed": False,
+                    },
                 )
 
-                reason = art_data.get("match_reason") or subject.get("selection_reason", "")
+                reason = art_data.get("match_reason") or subject.get(
+                    "selection_reason", ""
+                )
 
                 topic_article = DigestTopicArticle(
                     content_id=content_id,
@@ -1219,7 +1227,9 @@ class DigestService:
                         content_type=content.content_type,
                         duration_seconds=content.duration_seconds,
                         published_at=content.published_at,
-                        is_paid=content.is_paid if hasattr(content, "is_paid") else False,
+                        is_paid=content.is_paid
+                        if hasattr(content, "is_paid")
+                        else False,
                         source=content.source,
                         rank=global_rank,
                         reason=reason,

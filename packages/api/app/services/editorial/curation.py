@@ -58,9 +58,9 @@ class CurationService:
         limit = self._config.pipeline.cluster_input_limit
 
         # Take top clusters by source count
-        top_clusters = sorted(
-            clusters, key=lambda c: len(c.source_ids), reverse=True
-        )[:limit]
+        top_clusters = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)[
+            :limit
+        ]
 
         if len(top_clusters) < count:
             logger.warning(
@@ -166,9 +166,7 @@ class CurationService:
             if cluster.theme in used_themes and len(selected) < count - 1:
                 continue
 
-            deep_angle = THEME_DEEP_ANGLES.get(
-                cluster.theme or "", DEFAULT_DEEP_ANGLE
-            )
+            deep_angle = THEME_DEEP_ANGLES.get(cluster.theme or "", DEFAULT_DEEP_ANGLE)
             selected.append(
                 SelectedTopic(
                     topic_id=cluster.cluster_id,
