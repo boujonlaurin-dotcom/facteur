@@ -49,6 +49,7 @@ async def create_collection(
             "id": collection.id,
             "name": collection.name,
             "position": collection.position,
+            "is_default": collection.is_default,
             "item_count": 0,
             "read_count": 0,
             "thumbnails": [],
@@ -83,6 +84,13 @@ async def update_collection(
     user_uuid = UUID(current_user_id)
 
     try:
+        # Guard: cannot rename default collection
+        existing = await service._get_user_collection(user_uuid, collection_id)
+        if existing.is_default:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Impossible de renommer la collection par défaut",
+            )
         collection = await service.update_collection(
             user_uuid, collection_id, data.name
         )
@@ -105,6 +113,13 @@ async def delete_collection(
     user_uuid = UUID(current_user_id)
 
     try:
+        # Guard: cannot delete default collection
+        existing = await service._get_user_collection(user_uuid, collection_id)
+        if existing.is_default:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Impossible de supprimer la collection par défaut",
+            )
         await service.delete_collection(user_uuid, collection_id)
         await db.commit()
         return {"status": "ok"}

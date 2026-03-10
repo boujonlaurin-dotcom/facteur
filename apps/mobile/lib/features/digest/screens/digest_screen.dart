@@ -29,8 +29,8 @@ import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
-import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
+import '../../saved/providers/collections_provider.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 7 articles
 /// Uses DigestBriefingSection with Feed-style header and segmented progress bar
@@ -203,20 +203,24 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         );
   }
 
-  void _handleSave(DigestItem item) {
+  void _handleSave(DigestItem item) async {
     final wasSaved = item.isSaved;
     HapticFeedback.lightImpact();
     ref.read(digestProvider.notifier).applyAction(
           item.contentId,
           wasSaved ? 'unsave' : 'save',
         );
-    // Show snackbar with collection CTA when saving (not unsaving)
     if (!wasSaved) {
-      NotificationService.showInfo(
-        'Sauvegardé',
-        actionLabel: 'Ajouter à une collection',
-        onAction: () => CollectionPickerSheet.show(context, item.contentId),
-      );
+      // Auto-add to default collection
+      final defaultCol = ref.read(defaultCollectionProvider);
+      if (defaultCol != null) {
+        final colRepo = ref.read(collectionsRepositoryProvider);
+        await colRepo.addToCollection(defaultCol.id, item.contentId);
+        ref.invalidate(collectionsProvider);
+      }
+      if (mounted) {
+        CollectionPickerSheet.show(context, item.contentId);
+      }
     }
   }
 

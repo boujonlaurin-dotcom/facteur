@@ -14,14 +14,54 @@ from app.models.enums import ContentStatus
 logger = structlog.get_logger()
 
 MAX_COLLECTIONS_PER_USER = 50
+DEFAULT_COLLECTION_NAME = "À consulter plus tard"
 
 
 class CollectionService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def ensure_default_collection(self, user_id: UUID) -> Collection:
+        """Crée la collection par défaut si elle n'existe pas (lazy creation)."""
+        stmt = select(Collection).where(
+            Collection.user_id == user_id,
+            Collection.is_default.is_(True),
+        )
+        existing = await self.session.scalar(stmt)
+        if existing:
+            return existing
+
+        # Shift existing collections positions by +1
+        shift_stmt = (
+            select(Collection)
+            .where(Collection.user_id == user_id)
+            .order_by(Collection.position)
+        )
+        result = await self.session.execute(shift_stmt)
+        for col in result.scalars().all():
+            col.position += 1
+
+        collection = Collection(
+            user_id=user_id,
+            name=DEFAULT_COLLECTION_NAME,
+            position=0,
+            is_default=True,
+        )
+        self.session.add(collection)
+        await self.session.flush()
+
+        logger.info(
+            "default_collection_created",
+            user_id=str(user_id),
+            collection_id=str(collection.id),
+        )
+        return collection
+
     async def list_collections(self, user_id: UUID) -> list[dict]:
         """Liste les collections avec count, read_count et 4 thumbnail URLs."""
+        # Ensure default collection exists
+        await self.ensure_default_collection(user_id)
+
         # Fetch collections
         stmt = (
             select(Collection)
@@ -73,6 +113,7 @@ class CollectionService:
                     "id": col.id,
                     "name": col.name,
                     "position": col.position,
+                    "is_default": col.is_default,
                     "item_count": item_count,
                     "read_count": read_count,
                     "thumbnails": thumbnails,
@@ -84,6 +125,10 @@ class CollectionService:
 
     async def create_collection(self, user_id: UUID, name: str) -> Collection:
         """Crée une collection. Valide unicité du nom et limite max."""
+        # Block reserved name
+        if name.strip().lower() == DEFAULT_COLLECTION_NAME.lower():
+            raise ValueError("Ce nom est réservé pour la collection par défaut")
+
         # Check limit
         count_stmt = (
             select(func.count())
