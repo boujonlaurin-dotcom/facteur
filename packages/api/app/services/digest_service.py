@@ -40,6 +40,7 @@ from app.schemas.digest import (
     DigestTopicArticle,
 )
 from app.services.digest_selector import DigestSelector
+from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import TopicGroup
 
@@ -228,13 +229,21 @@ class DigestService:
             duration_ms=round(selection_time * 1000, 2),
         )
 
-        # Check if result is topic-based (list of TopicGroup)
-        is_topics_format = digest_items and isinstance(digest_items[0], TopicGroup)
+        # Check result format
+        is_editorial_format = isinstance(digest_items, EditorialPipelineResult)
+        is_topics_format = (
+            not is_editorial_format
+            and digest_items
+            and isinstance(digest_items[0], TopicGroup)
+        )
         logger.info(
             "digest_format_check",
             user_id=str(user_id),
+            is_editorial=is_editorial_format,
             is_topics=is_topics_format,
-            item_type=type(digest_items[0]).__name__ if digest_items else "empty",
+            item_type=type(digest_items).__name__
+            if is_editorial_format
+            else (type(digest_items[0]).__name__ if digest_items else "empty"),
         )
 
         # Emergency Fallback: If standard selection returns nothing, grab from user's sources first
@@ -264,7 +273,11 @@ class DigestService:
 
         # 4. Store in database
         step_start = time.time()
-        if is_topics_format:
+        if is_editorial_format:
+            digest = await self._create_digest_record_editorial(
+                user_id, target_date, digest_items, mode=effective_mode
+            )
+        elif is_topics_format:
             digest = await self._create_digest_record_topics(
                 user_id, target_date, digest_items, mode=effective_mode
             )
@@ -831,6 +844,75 @@ class DigestService:
 
         return digest
 
+    async def _create_digest_record_editorial(
+        self,
+        user_id: UUID,
+        target_date: date,
+        result: EditorialPipelineResult,
+        mode: str | None = None,
+    ) -> DailyDigest:
+        """Create a new DailyDigest in editorial_v1 format."""
+        items_json = {
+            "format_version": "editorial_v1",
+            "header_text": None,  # Populated in Story 10.24
+            "mode": mode or "pour_vous",
+            "subjects": [
+                {
+                    "rank": s.rank,
+                    "topic_id": s.topic_id,
+                    "label": s.label,
+                    "selection_reason": s.selection_reason,
+                    "deep_angle": s.deep_angle,
+                    "intro_text": s.intro_text,  # None until Story 10.24
+                    "transition_text": s.transition_text,  # None until Story 10.24
+                    "actu_article": {
+                        "content_id": str(s.actu_article.content_id),
+                        "title": s.actu_article.title,
+                        "source_name": s.actu_article.source_name,
+                        "source_id": str(s.actu_article.source_id),
+                        "is_user_source": s.actu_article.is_user_source,
+                        "badge": "actu",
+                        "published_at": s.actu_article.published_at.isoformat(),
+                    }
+                    if s.actu_article
+                    else None,
+                    "deep_article": {
+                        "content_id": str(s.deep_article.content_id),
+                        "title": s.deep_article.title,
+                        "source_name": s.deep_article.source_name,
+                        "source_id": str(s.deep_article.source_id),
+                        "badge": "pas_de_recul",
+                        "match_reason": s.deep_article.match_reason,
+                        "published_at": s.deep_article.published_at.isoformat(),
+                    }
+                    if s.deep_article
+                    else None,
+                }
+                for s in result.subjects
+            ],
+            "pepite": None,  # Story 10.24
+            "coup_de_coeur": None,  # Story 10.24
+            "closure_text": None,  # Story 10.24
+            "cta_text": None,  # Story 10.24
+            "generated_at": datetime.utcnow().isoformat(),
+            "metadata": result.metadata,
+        }
+
+        digest = DailyDigest(
+            id=uuid4(),
+            user_id=user_id,
+            target_date=target_date,
+            items=items_json,
+            mode=mode or "pour_vous",
+            format_version="editorial_v1",
+            generated_at=datetime.utcnow(),
+        )
+
+        self.session.add(digest)
+        await self.session.flush()
+
+        return digest
+
     def _determine_top_reason(self, breakdown: list[DigestScoreBreakdown]) -> str:
         """Extract the most significant positive reason for the label.
 
@@ -893,6 +975,8 @@ class DigestService:
         - topics_v1: grouped topics + flat items fallback
         - flat_v1 / None: legacy flat list
         """
+        if digest.format_version == "editorial_v1":
+            return await self._build_editorial_response(digest, user_id)
         if digest.format_version == "topics_v1":
             return await self._build_topics_response(digest, user_id)
 
@@ -1025,6 +1109,163 @@ class DigestService:
             items=items,
             topics=[],
             completion_threshold=DiversityConstraints.COMPLETION_THRESHOLD,
+            is_completed=completion is not None,
+            completed_at=completion.completed_at if completion else None,
+        )
+
+    async def _build_editorial_response(
+        self,
+        digest: DailyDigest,
+        user_id: UUID,
+    ) -> DigestResponse:
+        """Build DigestResponse from an editorial_v1 JSONB record.
+
+        Maps editorial subjects to topics + flat items for backward compatibility
+        with existing mobile clients.
+        """
+        items_data = digest.items if isinstance(digest.items, dict) else {}
+        subjects_data = items_data.get("subjects", [])
+
+        # Collect all content_ids (actu + deep)
+        all_content_ids: list[UUID] = []
+        for subject in subjects_data:
+            if subject.get("actu_article"):
+                all_content_ids.append(UUID(subject["actu_article"]["content_id"]))
+            if subject.get("deep_article"):
+                all_content_ids.append(UUID(subject["deep_article"]["content_id"]))
+
+        # Batch queries
+        completion = await self.session.scalar(
+            select(DigestCompletion).where(
+                and_(
+                    DigestCompletion.user_id == user_id,
+                    DigestCompletion.target_date == digest.target_date,
+                )
+            )
+        )
+
+        content_stmt = (
+            select(Content)
+            .options(selectinload(Content.source))
+            .where(Content.id.in_(all_content_ids))
+        )
+        content_result = await self.session.execute(content_stmt)
+        content_map = {c.id: c for c in content_result.scalars().all()}
+
+        action_states_map = await self._get_batch_action_states(
+            user_id, all_content_ids
+        )
+
+        # Build topics (one topic per subject) + flat items
+        response_topics: list[DigestTopic] = []
+        flat_items: list[DigestItem] = []
+        global_rank = 0
+
+        for subject in subjects_data:
+            topic_articles: list[DigestTopicArticle] = []
+
+            # Process actu article
+            for art_key in ("actu_article", "deep_article"):
+                art_data = subject.get(art_key)
+                if not art_data:
+                    continue
+
+                content_id = UUID(art_data["content_id"])
+                content = content_map.get(content_id)
+                if not content or not content.source:
+                    continue
+
+                action_state = action_states_map.get(
+                    content_id,
+                    {
+                        "is_read": False,
+                        "is_saved": False,
+                        "is_liked": False,
+                        "is_dismissed": False,
+                    },
+                )
+
+                reason = art_data.get("match_reason") or subject.get(
+                    "selection_reason", ""
+                )
+
+                topic_article = DigestTopicArticle(
+                    content_id=content_id,
+                    title=content.title,
+                    url=content.url,
+                    thumbnail_url=content.thumbnail_url,
+                    description=content.description or None,
+                    html_content=content.html_content,
+                    topics=content.topics or [],
+                    content_type=content.content_type,
+                    duration_seconds=content.duration_seconds,
+                    published_at=content.published_at,
+                    is_paid=content.is_paid if hasattr(content, "is_paid") else False,
+                    source=content.source,
+                    rank=1 if art_key == "actu_article" else 2,
+                    reason=reason,
+                    is_followed_source=art_data.get("is_user_source", False),
+                    recommendation_reason=None,
+                    is_read=action_state["is_read"],
+                    is_saved=action_state["is_saved"],
+                    is_liked=action_state["is_liked"],
+                    is_dismissed=action_state["is_dismissed"],
+                )
+                topic_articles.append(topic_article)
+
+                # Flat item for backward compat
+                global_rank += 1
+                flat_items.append(
+                    DigestItem(
+                        content_id=content_id,
+                        title=content.title,
+                        url=content.url,
+                        thumbnail_url=content.thumbnail_url,
+                        description=content.description or None,
+                        html_content=content.html_content,
+                        topics=content.topics or [],
+                        content_type=content.content_type,
+                        duration_seconds=content.duration_seconds,
+                        published_at=content.published_at,
+                        is_paid=content.is_paid
+                        if hasattr(content, "is_paid")
+                        else False,
+                        source=content.source,
+                        rank=global_rank,
+                        reason=reason,
+                        recommendation_reason=None,
+                        is_read=action_state["is_read"],
+                        is_saved=action_state["is_saved"],
+                        is_liked=action_state["is_liked"],
+                        is_dismissed=action_state["is_dismissed"],
+                    )
+                )
+
+            response_topics.append(
+                DigestTopic(
+                    topic_id=subject.get("topic_id", ""),
+                    label=subject.get("label", ""),
+                    rank=subject.get("rank", 0),
+                    reason=subject.get("selection_reason", ""),
+                    is_trending=False,
+                    is_une=False,
+                    theme=None,
+                    topic_score=0.0,
+                    subjects=[subject.get("deep_angle", "")],
+                    articles=topic_articles,
+                )
+            )
+
+        return DigestResponse(
+            digest_id=digest.id,
+            user_id=digest.user_id,
+            target_date=digest.target_date,
+            generated_at=digest.generated_at,
+            mode=digest.mode or "pour_vous",
+            format_version="editorial_v1",
+            items=flat_items,
+            topics=response_topics,
+            completion_threshold=len(response_topics),
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
         )
@@ -1449,7 +1690,17 @@ class DigestService:
             )
         )
         value = result.scalar_one_or_none()
-        return value if value in ("topics", "flat") else "topics"
+        if value in ("topics", "flat", "editorial"):
+            return value
+
+        # Auto-select editorial for whitelisted users when feature is enabled
+        from app.services.editorial.config import load_editorial_config
+
+        editorial_config = load_editorial_config()
+        if editorial_config.is_enabled_for_user(str(user_id)):
+            return "editorial"
+
+        return "topics"
 
     async def _get_user_focus_theme(self, user_id: UUID) -> str | None:
         """Lit la préférence digest_focus_theme depuis user_preferences."""

@@ -10,6 +10,7 @@ class SourceDetailModal extends StatelessWidget {
   final VoidCallback onToggleTrust;
   final VoidCallback? onToggleMute;
   final VoidCallback? onCopyFeedUrl;
+  final VoidCallback? onToggleSubscription;
 
   const SourceDetailModal({
     super.key,
@@ -17,6 +18,7 @@ class SourceDetailModal extends StatelessWidget {
     required this.onToggleTrust,
     this.onToggleMute,
     this.onCopyFeedUrl,
+    this.onToggleSubscription,
   });
 
   @override
@@ -201,6 +203,22 @@ class SourceDetailModal extends StatelessWidget {
                   ? PhosphorIcons.check()
                   : PhosphorIcons.shieldCheck(),
             ),
+            if (onToggleSubscription != null) ...[
+              const SizedBox(height: 8),
+              FacteurButton(
+                onPressed: () {
+                  onToggleSubscription!();
+                  Navigator.pop(context);
+                },
+                label: source.hasSubscription
+                    ? 'Ne plus marquer comme Premium'
+                    : 'J\'ai un abonnement',
+                type: FacteurButtonType.secondary,
+                icon: source.hasSubscription
+                    ? PhosphorIcons.star(PhosphorIconsStyle.regular)
+                    : PhosphorIcons.star(PhosphorIconsStyle.fill),
+              ),
+            ],
             if (onToggleMute != null) ...[
               const SizedBox(height: 8),
               // Mute button

@@ -615,3 +615,9 @@ final authStateProvider = StateNotifierProvider<AuthStateNotifier, AuthState>((
 ) {
   return AuthStateNotifier();
 });
+
+/// Listenable that GoRouter can use to re-evaluate redirects
+/// without recreating the entire router instance.
+class AuthChangeNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
+}

@@ -75,6 +75,17 @@ class CollectionsNotifier extends AsyncNotifier<List<Collection>> {
   }
 }
 
+// Default collection provider (convenience accessor)
+final defaultCollectionProvider = Provider<Collection?>((ref) {
+  final collections = ref.watch(collectionsProvider).valueOrNull;
+  if (collections == null || collections.isEmpty) return null;
+  try {
+    return collections.firstWhere((c) => c.isDefault);
+  } catch (_) {
+    return null;
+  }
+});
+
 // Collection detail provider (articles in a specific collection)
 final collectionDetailProvider = AsyncNotifierProvider.family<
     CollectionDetailNotifier, List<Content>, String>(() {

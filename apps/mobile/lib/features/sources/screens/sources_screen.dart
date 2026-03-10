@@ -23,6 +23,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   String? _selectedTheme;
   SourceType? _selectedType;
   // Collapsible section state (open by default)
+  bool _premiumExpanded = true;
   bool _customExpanded = true;
   bool _curatedExpanded = true;
   bool _mutedExpanded = true;
@@ -113,7 +114,10 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                 .where((s) => s.type == _selectedType)
                 .toList();
           }
-          // Split into 3 groups: custom (non-muted), curated (non-muted), muted
+          // Split into 4 groups: premium, custom (non-muted), curated (non-muted), muted
+          final premiumSources = filteredSources
+              .where((s) => s.hasSubscription && !s.isMuted)
+              .toList();
           final customSources = filteredSources
               .where((s) => s.isCustom && !s.isMuted)
               .toList();
@@ -241,6 +245,18 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                         padding:
                             const EdgeInsets.symmetric(horizontal: 16),
                         children: [
+                          if (premiumSources.isNotEmpty)
+                            _buildCollapsibleSection(
+                              title: 'Mes abonnements Premium',
+                              count: premiumSources.length,
+                              isExpanded: _premiumExpanded,
+                              onToggle: () => setState(
+                                  () => _premiumExpanded = !_premiumExpanded),
+                              sources: premiumSources,
+                              colors: colors,
+                              icon: PhosphorIcons.star(
+                                  PhosphorIconsStyle.fill),
+                            ),
                           if (customSources.isNotEmpty)
                             _buildCollapsibleSection(
                               title: 'Mes sources personnalisees',
@@ -475,6 +491,11 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   .updateWeight(source.id, multiplier);
             }
           : null,
+      onToggleSubscription: () {
+        ref
+            .read(userSourcesProvider.notifier)
+            .toggleSubscription(source.id, source.hasSubscription);
+      },
     );
   }
 }

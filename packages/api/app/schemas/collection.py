@@ -24,6 +24,7 @@ class CollectionResponse(BaseModel):
     id: UUID
     name: str
     position: int
+    is_default: bool = False
     item_count: int = 0
     read_count: int = 0
     thumbnails: list[str | None] = []

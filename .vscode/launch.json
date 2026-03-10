@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Facteur Mobile (Chrome)",
+       "name": "Facteur Mobile (Chrome)",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",

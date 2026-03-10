@@ -109,6 +109,21 @@ CURATED_FEED_FALLBACKS = {
     "https://www.rts.ch/": "https://www.rts.ch/info/suisse?format=rss/news",
     "https://www.lecho.be/": "https://www.lecho.be/rss/actualite.xml",
     "https://rmc.bfmtv.com/": "https://rmc.bfmtv.com/rss/info/flux-rss/flux-toutes-les-actualites/",
+    # --- Deep sources (Story 10.22) ---
+    "https://vert.eco/": "https://vert.eco/feed",
+    "https://www.novethic.fr/": "https://www.novethic.fr/feed/rss2",
+    "https://basta.media/": "https://basta.media/spip.php?page=backend",
+    "https://next.ink/": "https://next.ink/feed/",
+    "https://aoc.media/": "https://aoc.media/feed/",
+    "https://mrmondialisation.org/": "https://mrmondialisation.org/feed/",
+    "https://usbeketrica.com/": "https://usbeketrica.com/fr/rss",
+    "https://www.lemonde.fr/les-decodeurs/": "https://www.lemonde.fr/les-decodeurs/rss_full.xml",
+    "https://www.radiofrance.fr/franceculture": "https://www.radiofrance.fr/franceculture/rss",
+    "https://www.la-croix.com/a-vif/": "https://www.la-croix.com/rss",
+    "https://www.courrierinternational.com/feed/all/": "https://www.courrierinternational.com/feed/all/rss.xml",
+    "https://www.slate.fr/explainers/": "https://www.slate.fr/rss.xml",
+    "https://www.numerama.com/decryptage/": "https://www.numerama.com/feed/",
+    "https://www.francetvinfo.fr/vrai-ou-fake/": "https://www.francetvinfo.fr/vrai-ou-fake.rss",
 }
 
 # Standard Chrome User-Agent to avoid being blocked
@@ -215,6 +230,9 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
     
     # Parse granular_topics (Story 4.1c Part 2/3)
     granular_topics = parse_granular_topics(source_data.get("granular_topics", ""), name)
+
+    # Source tier (Story 10.22 — Editorial digest deep sources)
+    source_tier = source_data.get("source_tier", "").strip().lower() or "mainstream"
     
     # Scores: Read from CSV, fallback to heuristics ONLY if missing
     def parse_score(val):
@@ -276,6 +294,8 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
         existing_source.is_active = True # Revive if inactive
         # Story 4.1c Part 2/3: Update granular_topics
         existing_source.granular_topics = granular_topics if granular_topics else None
+        # Story 10.22: Update source_tier
+        existing_source.source_tier = source_tier
     else:
         print(f"✨ Creating new source: {name} ([{status}] Curated: {is_curated})")
         new_source = Source(
@@ -290,7 +310,9 @@ async def process_source(source_data: Dict[str, str], session: AsyncSession, cli
             score_rigor=score_rigor,
             score_ux=score_ux,
             # Story 4.1c Part 2/3: Set granular_topics
-            granular_topics=granular_topics if granular_topics else None
+            granular_topics=granular_topics if granular_topics else None,
+            # Story 10.22: Set source_tier
+            source_tier=source_tier,
         )
         session.add(new_source)
 
