@@ -621,12 +621,3 @@ final authStateProvider = StateNotifierProvider<AuthStateNotifier, AuthState>((
 class AuthChangeNotifier extends ChangeNotifier {
   void notify() => notifyListeners();
 }
-
-final authChangeNotifierProvider =
-    ChangeNotifierProvider<AuthChangeNotifier>((ref) {
-  final notifier = AuthChangeNotifier();
-  ref.listen(authStateProvider, (_, __) {
-    notifier.notify();
-  });
-  return notifier;
-});
