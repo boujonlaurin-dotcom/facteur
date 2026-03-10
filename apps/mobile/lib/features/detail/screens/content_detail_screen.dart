@@ -68,6 +68,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showFab = false;
   bool _showNoteWelcome = false;
   bool _premiumRedirectScheduled = false;
+  bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
   bool _showWebView = false;
@@ -731,6 +732,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !kIsWeb;
     final useInAppReading =
         content.hasInAppContent && !_showWebView && !useScrollToSite;
+
+    // Web: no WebView available — auto-redirect to original URL
+    if (kIsWeb && !useScrollToSite && !useInAppReading &&
+        content.url.isNotEmpty && !_webFallbackRedirectScheduled) {
+      _webFallbackRedirectScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final uri = Uri.tryParse(content.url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        if (mounted) context.pop();
+      });
+      return Scaffold(
+        backgroundColor: colors.backgroundPrimary,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: colors.primary),
+              const SizedBox(height: 16),
+              Text(
+                'Ouverture dans votre navigateur...',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -1403,7 +1435,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ],
           ),
           footer: GestureDetector(
-            onTap: () => setState(() => _showWebView = true),
+            onTap: kIsWeb ? _openOriginalUrl : () => setState(() => _showWebView = true),
             child: Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24,
@@ -1500,49 +1532,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    // WebView not supported on web platform - show fallback UI
+    // Legacy web fallback — unreachable since build() auto-redirects
+    // and footer CTA opens externally on web. Kept as safety net.
     if (kIsWeb) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(FacteurSpacing.space6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                PhosphorIcons.globe(PhosphorIconsStyle.duotone),
-                size: 64,
-                color: colors.textTertiary,
-              ),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Contenu non disponible en aperçu',
-                style: textTheme.titleMedium?.copyWith(
-                  color: colors.textPrimary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              Text(
-                'Cliquez sur le bouton ci-dessous pour lire l\'article original.',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: FacteurSpacing.space6),
-              ElevatedButton.icon(
-                onPressed: _openOriginalUrl,
-                icon: Icon(
-                    PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular)),
-                label: const Text('Ouvrir l\'article'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ),
+        child: CircularProgressIndicator(color: colors.primary),
       );
     }
 
