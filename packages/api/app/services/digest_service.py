@@ -1179,7 +1179,6 @@ class DigestService:
                     {"is_read": False, "is_saved": False, "is_liked": False, "is_dismissed": False},
                 )
 
-                badge = art_data.get("badge", art_key.replace("_article", ""))
                 reason = art_data.get("match_reason") or subject.get("selection_reason", "")
 
                 topic_article = DigestTopicArticle(

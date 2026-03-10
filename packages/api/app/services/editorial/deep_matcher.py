@@ -10,8 +10,6 @@ No time limit on deep articles (can be months old).
 from __future__ import annotations
 
 import asyncio
-import json
-from uuid import UUID
 
 import structlog
 from sqlalchemy import select
@@ -87,7 +85,7 @@ class DeepMatcher:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             matches: dict[str, MatchedDeepArticle | None] = {}
-            for topic, result in zip(selected_topics, results):
+            for topic, result in zip(selected_topics, results, strict=False):
                 if isinstance(result, Exception):
                     logger.error(
                         "deep_matcher.llm_error",

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.content import Content
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
-from app.services.editorial.config import EditorialConfig, load_editorial_config
+from app.services.editorial.config import load_editorial_config
 from app.services.editorial.curation import CurationService
 from app.services.editorial.deep_matcher import DeepMatcher
 from app.services.editorial.llm_client import AnthropicClient
