@@ -135,7 +135,8 @@ class Content {
     if (status == ContentStatus.unseen) return null;
     if (readingProgress >= 90) return 'Lu jusqu\'au bout';
     if (readingProgress >= 30) return 'Lu';
-    if (readingProgress > 0 || status == ContentStatus.consumed) return 'Parcouru';
+    if (readingProgress > 0) return 'Parcouru';
+    // Consumed via 30s timer but no scroll tracking (e.g. video, or partial content)
     if (status == ContentStatus.consumed) return 'Lu';
     return null;
   }

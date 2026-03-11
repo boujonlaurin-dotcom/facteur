@@ -285,25 +285,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       final pct = int.tryParse(msg.substring(9));
       if (pct != null && pct > _webViewProgress) {
         _webViewProgress = pct;
-        final normalized = pct / 100.0;
+        // For partial content: WebView scroll maps to 25%-100% of total progress
+        // For full content: WebView scroll maps to the full 0%-100%
+        final double normalized;
+        if (_isPartialContent) {
+          normalized = 0.25 + (pct / 100.0) * 0.75;
+        } else {
+          normalized = pct / 100.0;
+        }
         if (normalized > _maxReadingProgress) {
           setState(() {
-            _maxReadingProgress = normalized;
+            _maxReadingProgress = normalized.clamp(0.0, 1.0);
           });
         }
       }
     }
   }
 
+  /// Whether the current article has only partial in-app content.
+  bool get _isPartialContent {
+    final c = _content;
+    if (c == null) return false;
+    final articleText = c.htmlContent ?? c.description;
+    return plainTextLength(articleText) < 500;
+  }
+
   /// Track in-app scroll depth for reading progress.
+  /// For partial content, in-app scroll caps at 25% — WebView fills the rest.
   void _onScrollReadingProgress() {
     if (!_scrollController.hasClients) return;
     final maxExtent = _scrollController.position.maxScrollExtent;
     if (maxExtent <= 0) return;
-    final progress = _scrollController.offset / maxExtent;
+    final rawProgress = _scrollController.offset / maxExtent;
+    // Partial content: in-app scroll represents only ~25% of the full article
+    final progress = _isPartialContent
+        ? (rawProgress * 0.25).clamp(0.0, 0.25)
+        : rawProgress.clamp(0.0, 1.0);
     if (progress > _maxReadingProgress) {
       setState(() {
-        _maxReadingProgress = progress.clamp(0.0, 1.0);
+        _maxReadingProgress = progress;
       });
     }
   }
@@ -836,6 +856,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
                 _onScrollFabOpacity();
+                // Track reading progress from any scrollable (including in-app reader)
+                final metrics = notification.metrics;
+                if (metrics.maxScrollExtent > 0) {
+                  final progress = metrics.pixels / metrics.maxScrollExtent;
+                  final capped = _isPartialContent
+                      ? (progress * 0.25).clamp(0.0, 0.25)
+                      : progress.clamp(0.0, 1.0);
+                  if (capped > _maxReadingProgress) {
+                    setState(() {
+                      _maxReadingProgress = capped;
+                    });
+                  }
+                }
               }
               return false;
             },
