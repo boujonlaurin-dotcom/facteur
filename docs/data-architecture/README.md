@@ -35,6 +35,7 @@ Du point de vue data, cela implique :
 | [Data Pipeline](data-pipeline.md) | Flux end-to-end : ingestion → classification → digest |
 | [Recommendation Engine](recommendation-engine.md) | Scoring v2 (4 piliers), signaux d'apprentissage, taxonomie |
 | [Scheduled Jobs](scheduled-jobs.md) | Jobs background, schedules, workers |
+| [Backoffice & Monitoring](backoffice-agent.md) | Dashboard Streamlit, agent IA analyste, queries, alertes |
 
 ## Fichiers clés du code
 

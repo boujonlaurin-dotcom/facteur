@@ -24,6 +24,7 @@ Documentation complète de l'architecture data pour les ingénieurs data/backend
 - [Data Pipeline](docs/data-architecture/data-pipeline.md) — Ingestion RSS → Classification ML → Digest
 - [Recommendation Engine](docs/data-architecture/recommendation-engine.md) — Scoring, apprentissage, taxonomie
 - [Scheduled Jobs](docs/data-architecture/scheduled-jobs.md) — Jobs background et workers
+- [Backoffice & Monitoring](docs/data-architecture/backoffice-agent.md) — Dashboard Streamlit, agent IA analyste, alertes
 
 ## 🛠 Tech Stack
 
