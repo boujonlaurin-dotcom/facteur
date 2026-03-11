@@ -1,6 +1,7 @@
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/feed/widgets/reading_badge.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
@@ -55,8 +56,9 @@ class FeedCard extends StatelessWidget {
 
     final isConsumed = content.status == ContentStatus.consumed;
 
+    final hasBeenRead = isConsumed || content.readingProgress > 0;
     return Opacity(
-      opacity: isConsumed ? 0.6 : 1.0,
+      opacity: hasBeenRead ? 0.6 : 1.0,
       child: Stack(
         children: [
           FacteurCard(
@@ -377,43 +379,11 @@ class FeedCard extends StatelessWidget {
                 ),
               ),
             ),
-          if (isConsumed)
+          if (isConsumed || content.readingProgress > 0)
             Positioned(
               top: 12,
               right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: colors.success,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.check,
-                      size: 12,
-                      color: Colors.white,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      'Lu',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              child: ReadingBadge(content: content),
             ),
         ],
       ),

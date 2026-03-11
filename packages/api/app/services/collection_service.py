@@ -243,6 +243,7 @@ class CollectionService:
                     "is_liked": user_status.is_liked if user_status else False,
                     "is_hidden": user_status.is_hidden if user_status else False,
                     "hidden_reason": user_status.hidden_reason if user_status else None,
+                    "reading_progress": user_status.reading_progress if user_status else 0,
                 }
             )
 
