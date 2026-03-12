@@ -1,4 +1,36 @@
 {
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/post-edit-python-guardrails.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/post-edit-alembic-heads.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/post-edit-reminders.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/pre-edit-alembic-deploy.sh"
+          }
+        ]
+      }
+    ]
+  },
   "mcpServers": {
     "sentry": {
       "type": "stdio",
