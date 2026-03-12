@@ -23,7 +23,7 @@ jobs:
           docker build \
             -f packages/api/Dockerfile \
             -t facteur-api:test \
-            packages/api
+            .
 
       - name: Verify image structure
         run: |
