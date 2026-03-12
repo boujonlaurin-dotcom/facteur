@@ -10,6 +10,8 @@ RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 # Copy application AND required configs/scripts
 COPY app/ app/
 COPY alembic.ini .
+# Bust the BuildKit cache for alembic on every commit (Railway sets this automatically)
+ARG RAILWAY_GIT_COMMIT_SHA
 COPY alembic/ alembic/
 COPY scripts/ scripts/
 
