@@ -92,6 +92,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   static const int _consumptionThreshold = 30; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
+  // Reading progress tracking (0.0 - 1.0)
+  double _maxReadingProgress = 0.0;
+  int _webViewProgress = 0; // from WebView JS bridge (0-100)
+
   Content? _content;
 
   // Perspectives pill state
@@ -211,6 +215,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
 
+    // Reading progress: track scroll depth
+    _scrollController.addListener(_onScrollReadingProgress);
 
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
@@ -233,12 +239,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
   }
 
-  /// Inject JS to detect overscroll at top of WebView (for bidirectional scroll).
+  /// Inject JS to detect overscroll at top + track reading progress.
   Future<void> _injectScrollBridgeScript() async {
     if (_webViewController == null) return;
     await _webViewController!.runJavaScript('''
       (function() {
         var lastTouchY = 0;
+        var lastProgress = 0;
         document.addEventListener('touchstart', function(e) {
           lastTouchY = e.touches[0].clientY;
         }, { passive: true });
@@ -250,13 +257,75 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
           lastTouchY = currentY;
         }, { passive: true });
+        // Reading progress tracking (throttled to every 500ms)
+        var progressTimer = null;
+        window.addEventListener('scroll', function() {
+          if (progressTimer) return;
+          progressTimer = setTimeout(function() {
+            progressTimer = null;
+            var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+            if (maxScroll > 0) {
+              var pct = Math.round((window.scrollY / maxScroll) * 100);
+              pct = Math.min(100, Math.max(0, pct));
+              if (pct > lastProgress) {
+                lastProgress = pct;
+                ScrollBridge.postMessage('progress:' + pct);
+              }
+            }
+          }, 500);
+        }, { passive: true });
       })();
     ''');
   }
 
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
-    // One-way transition: no return to article after CTA tap
+    final msg = message.message;
+    if (msg.startsWith('progress:')) {
+      final pct = int.tryParse(msg.substring(9));
+      if (pct != null && pct > _webViewProgress) {
+        _webViewProgress = pct;
+        // For partial content: WebView scroll maps to 25%-100% of total progress
+        // For full content: WebView scroll maps to the full 0%-100%
+        final double normalized;
+        if (_isPartialContent) {
+          normalized = 0.25 + (pct / 100.0) * 0.75;
+        } else {
+          normalized = pct / 100.0;
+        }
+        if (normalized > _maxReadingProgress) {
+          setState(() {
+            _maxReadingProgress = normalized.clamp(0.0, 1.0);
+          });
+        }
+      }
+    }
+  }
+
+  /// Whether the current article has only partial in-app content.
+  bool get _isPartialContent {
+    final c = _content;
+    if (c == null) return false;
+    final articleText = c.htmlContent ?? c.description;
+    return plainTextLength(articleText) < 500;
+  }
+
+  /// Track in-app scroll depth for reading progress.
+  /// For partial content, in-app scroll caps at 25% — WebView fills the rest.
+  void _onScrollReadingProgress() {
+    if (!_scrollController.hasClients) return;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    if (maxExtent <= 0) return;
+    final rawProgress = _scrollController.offset / maxExtent;
+    // Partial content: in-app scroll represents only ~25% of the full article
+    final progress = _isPartialContent
+        ? (rawProgress * 0.25).clamp(0.0, 0.25)
+        : rawProgress.clamp(0.0, 1.0);
+    if (progress > _maxReadingProgress) {
+      setState(() {
+        _maxReadingProgress = progress;
+      });
+    }
   }
 
   /// Compute layout offsets for bridge zone.
@@ -509,14 +578,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _fabReappearController.dispose();
     _fabOpacity.dispose();
     _scrollController.removeListener(_onScrollToSite);
+    _scrollController.removeListener(_onScrollReadingProgress);
 
     _scrollController.dispose();
-    super.dispose();
 
-    // Track article read duration on close (restored from ArticleViewerModal)
+    // Persist reading progress + analytics on close
     try {
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
+        final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
+
+        // Persist reading progress via status endpoint
+        if (progressPct > 0) {
+          final supabase = Supabase.instance.client;
+          final apiClient = ApiClient(supabase);
+          final repository = FeedRepository(apiClient);
+          repository.updateContentStatusWithProgress(
+            _content!.id,
+            progressPct,
+          );
+        }
+
+        // Track article read duration
         ref.read(analyticsServiceProvider).trackArticleRead(
               _content!.id,
               _content!.source.id,
@@ -524,8 +607,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             );
       }
     } catch (e) {
-      debugPrint('Error tracking analytics on dispose: $e');
+      debugPrint('Error tracking on dispose: $e');
     }
+    super.dispose();
   }
 
   Future<void> _openOriginalUrl() async {
@@ -774,6 +858,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
                 _onScrollFabOpacity();
+                // Track reading progress from any scrollable (including in-app reader)
+                final metrics = notification.metrics;
+                if (metrics.maxScrollExtent > 0) {
+                  final progress = metrics.pixels / metrics.maxScrollExtent;
+                  final capped = _isPartialContent
+                      ? (progress * 0.25).clamp(0.0, 0.25)
+                      : progress.clamp(0.0, 1.0);
+                  if (capped > _maxReadingProgress) {
+                    setState(() {
+                      _maxReadingProgress = capped;
+                    });
+                  }
+                }
               }
               return false;
             },
@@ -796,7 +893,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             top: 0,
             left: 0,
             right: 0,
-            child: _buildHeader(context, content),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(context, content),
+                // Reading progress bar — thin line below header
+                if (content.hasInAppContent || _isWebViewActive)
+                  _buildReadingProgressBar(colors),
+              ],
+            ),
           ),
         ],
       ),
@@ -1052,6 +1157,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReadingProgressBar(FacteurColors colors) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      height: 2.5,
+      child: LinearProgressIndicator(
+        value: _maxReadingProgress.clamp(0.0, 1.0),
+        backgroundColor: colors.border.withValues(alpha: 0.3),
+        valueColor: AlwaysStoppedAnimation<Color>(
+          colors.primary.withValues(alpha: 0.7),
+        ),
+        minHeight: 2.5,
       ),
     );
   }

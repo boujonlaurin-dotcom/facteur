@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -170,6 +171,10 @@ class UserContentStatus(Base):
     note_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     note_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Reading progress: scroll depth percentage (0-100), max ever reached
+    reading_progress: Mapped[int] = mapped_column(
+        SmallInteger, default=0, server_default="0"
     )
     # Feed refresh: timestamp of last time article was shown but not clicked
     last_impressed_at: Mapped[datetime | None] = mapped_column(
