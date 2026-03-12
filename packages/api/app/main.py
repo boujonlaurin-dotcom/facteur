@@ -59,6 +59,7 @@ from app.routers import (
     streaks,
     subscription,
     users,
+    waitlist,
     webhooks,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
@@ -227,6 +228,7 @@ app.include_router(
     tags=["CustomTopics"],
 )
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
+app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 
 
 @app.exception_handler(Exception)
