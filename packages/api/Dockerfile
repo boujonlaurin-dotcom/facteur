@@ -1,18 +1,18 @@
 # Facteur API Dockerfile
-# Build context: repo root (Railway uses repo root when railway.json is at root)
+# Build context: packages/api/ (Railway rootDirectory = /packages/api)
 FROM python:3.12-slim
 
 WORKDIR /app
 
 # Install dependencies
-COPY packages/api/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 
 # Copy application AND required configs/scripts
-COPY packages/api/app/ app/
-COPY packages/api/alembic.ini .
-COPY packages/api/alembic/ alembic/
-COPY packages/api/scripts/ scripts/
+COPY app/ app/
+COPY alembic.ini .
+COPY alembic/ alembic/
+COPY scripts/ scripts/
 
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
