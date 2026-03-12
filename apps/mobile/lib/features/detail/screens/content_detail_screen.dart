@@ -89,11 +89,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.12);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
+  bool _endNudgeShown = false;
   static const int _consumptionThreshold = 30; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
   // Reading progress tracking (0.0 - 1.0)
-  double _maxReadingProgress = 0.0;
+  // Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
+  final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
   int _webViewProgress = 0; // from WebView JS bridge (0-100)
 
   Content? _content;
@@ -218,6 +220,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Reading progress: track scroll depth
     _scrollController.addListener(_onScrollReadingProgress);
 
+    // End-of-article nudge: show contextual action when progress >= 90%
+    _readingProgress.addListener(_onReadingProgressNudge);
+
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
   }
@@ -293,10 +298,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         } else {
           normalized = pct / 100.0;
         }
-        if (normalized > _maxReadingProgress) {
-          setState(() {
-            _maxReadingProgress = normalized.clamp(0.0, 1.0);
-          });
+        if (normalized > _readingProgress.value) {
+          _readingProgress.value = normalized.clamp(0.0, 1.0);
         }
       }
     }
@@ -307,7 +310,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final c = _content;
     if (c == null) return false;
     final articleText = c.htmlContent ?? c.description;
-    return plainTextLength(articleText) < 500;
+    return isPartialContent(articleText);
   }
 
   /// Track in-app scroll depth for reading progress.
@@ -321,10 +324,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final progress = _isPartialContent
         ? (rawProgress * 0.25).clamp(0.0, 0.25)
         : rawProgress.clamp(0.0, 1.0);
-    if (progress > _maxReadingProgress) {
-      setState(() {
-        _maxReadingProgress = progress;
-      });
+    if (progress > _readingProgress.value) {
+      _readingProgress.value = progress;
+    }
+  }
+
+  /// Show a contextual nudge when user reads >= 90% of the article.
+  void _onReadingProgressNudge() {
+    if (_endNudgeShown || _readingProgress.value < 0.9) return;
+    _endNudgeShown = true;
+    final content = _content;
+    if (content == null || !mounted) return;
+
+    if (!content.hasNote) {
+      NotificationService.showInfo(
+        'Bravo, article terminé !',
+        actionLabel: 'Ajouter une note',
+        onAction: _openNoteSheet,
+      );
+    } else if (!content.isSaved) {
+      NotificationService.showInfo(
+        'Bravo, article terminé !',
+        actionLabel: 'Enregistrer',
+        onAction: _toggleBookmark,
+      );
     }
   }
 
@@ -569,6 +592,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   @override
   void dispose() {
+    // Capture progress value before disposing ValueNotifier
+    final progressPct = (_readingProgress.value * 100).round().clamp(0, 100);
+
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
@@ -577,16 +603,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _noteFabBounceController.dispose();
     _fabReappearController.dispose();
     _fabOpacity.dispose();
+    _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
 
     _scrollController.dispose();
+    super.dispose();
 
     // Persist reading progress + analytics on close
     try {
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
-        final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
 
         // Persist reading progress via status endpoint
         if (progressPct > 0) {
@@ -609,7 +637,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
     }
-    super.dispose();
   }
 
   Future<void> _openOriginalUrl() async {
@@ -865,10 +892,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   final capped = _isPartialContent
                       ? (progress * 0.25).clamp(0.0, 0.25)
                       : progress.clamp(0.0, 1.0);
-                  if (capped > _maxReadingProgress) {
-                    setState(() {
-                      _maxReadingProgress = capped;
-                    });
+                  if (capped > _readingProgress.value) {
+                    _readingProgress.value = capped;
                   }
                 }
               }
@@ -1162,17 +1187,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      height: 2.5,
-      child: LinearProgressIndicator(
-        value: _maxReadingProgress.clamp(0.0, 1.0),
-        backgroundColor: colors.border.withValues(alpha: 0.3),
-        valueColor: AlwaysStoppedAnimation<Color>(
-          colors.primary.withValues(alpha: 0.7),
-        ),
-        minHeight: 2.5,
-      ),
+    return ValueListenableBuilder<double>(
+      valueListenable: _readingProgress,
+      builder: (context, progress, _) {
+        // Only show after 5% to avoid flashing on open
+        if (progress < 0.05) return const SizedBox.shrink();
+        return SizedBox(
+          height: 1.5,
+          child: LinearProgressIndicator(
+            value: progress.clamp(0.0, 1.0),
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(colors.success),
+            minHeight: 1.5,
+          ),
+        );
+      },
     );
   }
 
@@ -1205,7 +1234,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final availableHeight = viewportHeight - headerHeight;
 
     final articleText = content.htmlContent ?? content.description;
-    final isPartial = plainTextLength(articleText) < 500;
+    final isPartial = isPartialContent(articleText);
 
     String? readingTime;
     if (content.durationSeconds != null && content.durationSeconds! > 0) {
@@ -1483,7 +1512,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         final colors = context.facteurColors;
         final textTheme = Theme.of(context).textTheme;
         final articleText = content.htmlContent ?? content.description;
-        final isPartial = plainTextLength(articleText) < 500;
+        final isPartial = isPartialContent(articleText);
 
         String? readingTime;
         if (content.durationSeconds != null && content.durationSeconds! > 0) {

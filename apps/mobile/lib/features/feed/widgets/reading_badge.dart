@@ -34,10 +34,10 @@ class ReadingBadge extends StatelessWidget {
       fgColor = Colors.white;
       icon = PhosphorIcons.checks(PhosphorIconsStyle.bold);
     } else if (progress >= 30) {
-      // Lu — green + single check
+      // Lu — green + check circle (warmer than bare checkmark)
       bgColor = colors.success;
       fgColor = Colors.white;
-      icon = Icons.check;
+      icon = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
     } else {
       // Parcouru — neutral gray
       bgColor = colors.textSecondary.withValues(alpha: 0.7);

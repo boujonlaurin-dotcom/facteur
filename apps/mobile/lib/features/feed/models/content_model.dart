@@ -131,8 +131,10 @@ class Content {
 
   /// Reading badge label based on reading_progress.
   /// Returns null if article hasn't been interacted with.
+  /// readingProgress > 0 always takes priority over consumed status,
+  /// because the 30s timer can mark consumed before meaningful scroll.
   String? get readingLabel {
-    if (status == ContentStatus.unseen) return null;
+    if (status == ContentStatus.unseen && readingProgress == 0) return null;
     if (readingProgress >= 90) return 'Lu jusqu\'au bout';
     if (readingProgress >= 30) return 'Lu';
     if (readingProgress > 0) return 'Parcouru';
