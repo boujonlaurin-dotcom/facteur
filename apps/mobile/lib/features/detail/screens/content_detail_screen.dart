@@ -86,7 +86,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
-  double _fabOpacity = 0.12;
+  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.12);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
   static const int _consumptionThreshold = 30; // seconds
@@ -183,8 +183,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (mounted) {
         setState(() {
           _showFab = true;
-          _fabOpacity = 1.0;
         });
+        _fabOpacity.value = 1.0;
         _fabController.forward();
       }
     });
@@ -299,14 +299,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Fade FABs to near-transparent during scroll, restore on stop.
+  /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
   void _onScrollFabOpacity() {
-    if (_fabOpacity != 0.12) {
-      setState(() => _fabOpacity = 0.12);
+    if (_fabOpacity.value != 0.12) {
+      _fabOpacity.value = 0.12;
     }
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted) {
-        setState(() => _fabOpacity = 1.0);
+        _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
       }
     });
@@ -506,6 +507,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _bookmarkBounceController.dispose();
     _noteFabBounceController.dispose();
     _fabReappearController.dispose();
+    _fabOpacity.dispose();
     _scrollController.removeListener(_onScrollToSite);
 
     _scrollController.dispose();
@@ -799,10 +801,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ],
       ),
       // FABs — vertical column with immersive scroll opacity
+      // ValueListenableBuilder isolates FAB opacity rebuilds from the main widget tree.
       floatingActionButton: _showFab
-          ? AnimatedOpacity(
-              opacity: _fabOpacity,
-              duration: Duration(milliseconds: _fabOpacity < 1.0 ? 150 : 300),
+          ? ValueListenableBuilder<double>(
+              valueListenable: _fabOpacity,
+              builder: (context, opacity, child) => AnimatedOpacity(
+              opacity: opacity,
+              duration: Duration(milliseconds: opacity < 1.0 ? 150 : 300),
               child: ScaleTransition(
                 scale: _fabAnimation,
                 child: ScaleTransition(
@@ -910,7 +915,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ),
               ),
-            )
+            ),
+          )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
