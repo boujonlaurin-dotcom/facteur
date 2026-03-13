@@ -10,6 +10,7 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'digest_card.dart';
 
 /// A single topic section in the digest topics layout.
 ///
@@ -29,6 +30,8 @@ class TopicSection extends StatefulWidget {
   final VoidCallback? onDismissAutoResolve;
   final VoidCallback? onDismissMuteSource;
   final void Function(String topic)? onDismissMuteTopic;
+  final bool editorialMode;
+  final bool isSerene;
 
   const TopicSection({
     super.key,
@@ -43,6 +46,8 @@ class TopicSection extends StatefulWidget {
     this.onDismissAutoResolve,
     this.onDismissMuteSource,
     this.onDismissMuteTopic,
+    this.editorialMode = false,
+    this.isSerene = false,
   });
 
   @override
@@ -73,6 +78,9 @@ class _TopicSectionState extends State<TopicSection> {
   /// Footer: border (1) + padding (8) + row with buttons (32) = 41
   /// Small buffer for content variation = 5
   static const double _bodyFooterHeight = 170.0;
+
+  /// DigestCard is taller than FeedCard (has action bar + badge row).
+  static const double _editorialBodyFooterHeight = 210.0;
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +113,10 @@ class _TopicSectionState extends State<TopicSection> {
                     a.thumbnailUrl != null && a.thumbnailUrl!.isNotEmpty);
                 final imageHeight =
                     hasAnyImage ? cardWidth / (16 / 9) : 0.0;
-                final computedHeight = imageHeight + _bodyFooterHeight;
+                final bodyHeight = widget.editorialMode
+                    ? _editorialBodyFooterHeight
+                    : _bodyFooterHeight;
+                final computedHeight = imageHeight + bodyHeight;
 
                 return SizedBox(
                   height: computedHeight,
@@ -140,6 +151,36 @@ class _TopicSectionState extends State<TopicSection> {
         ? const Color(0x33FFFFFF)
         : const Color(0x332C1E10);
     final isSingleton = topic.articles.length == 1;
+
+    // Editorial mode: simplified header (no rank, no trending badges)
+    if (widget.editorialMode) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _computeSubjects(topic) ?? _simplifyReason(topic.reason),
+                style: TextStyle(
+                  color: labelColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  letterSpacing: 0.3,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (topic.isCovered)
+              Icon(
+                PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                size: 16,
+                color: colors.success,
+              ),
+          ],
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -248,7 +289,7 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
-  Widget _buildSingleArticle(DigestItem article) {
+  Widget _buildSingleArticle(DigestItem article, {int index = 0}) {
     // Show dismiss banner if this article is being dismissed
     if (widget.activeDismissalId == article.contentId) {
       return AnimatedSize(
@@ -259,6 +300,23 @@ class _TopicSectionState extends State<TopicSection> {
           onMuteSource: widget.onDismissMuteSource ?? () {},
           onMuteTopic: widget.onDismissMuteTopic ?? (_) {},
           onAutoResolve: widget.onDismissAutoResolve ?? () {},
+        ),
+      );
+    }
+
+    // Editorial mode: render DigestCard with semantic badges
+    if (widget.editorialMode) {
+      final badgedArticle = _withEditorialBadge(article, index);
+      return SwipeToOpenCard(
+        onSwipeOpen: () => widget.onArticleTap(article),
+        onSwipeDismiss: widget.onSwipeDismiss != null
+            ? () => widget.onSwipeDismiss!(article)
+            : null,
+        child: DigestCard(
+          item: badgedArticle,
+          isSerene: widget.isSerene,
+          onTap: () => widget.onArticleTap(article),
+          onAction: _handleDigestCardAction(article),
         ),
       );
     }
@@ -302,28 +360,35 @@ class _TopicSectionState extends State<TopicSection> {
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
-            child: FeedCard(
-              boxShadow: const [],
-              content: _convertToContent(article),
-              onTap: () => widget.onArticleTap(article),
-              onLongPressStart: (_) =>
-                  ArticlePreviewOverlay.show(context, _convertToContent(article)),
-              onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-                  details.localOffsetFromOrigin.dy),
-              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike:
-                  widget.onLike != null ? () => widget.onLike!(article) : null,
-              isLiked: article.isLiked,
-              onSave:
-                  widget.onSave != null ? () => widget.onSave!(article) : null,
-              onSaveLongPress: () =>
-                  CollectionPickerSheet.show(context, article.contentId),
-              isSaved: article.isSaved,
-              onNotInterested: widget.onNotInterested != null
-                  ? () => widget.onNotInterested!(article)
-                  : null,
-              isFollowedSource: article.isFollowedSource,
-            ),
+            child: widget.editorialMode
+                ? DigestCard(
+                    item: _withEditorialBadge(article, index),
+                    isSerene: widget.isSerene,
+                    onTap: () => widget.onArticleTap(article),
+                    onAction: _handleDigestCardAction(article),
+                  )
+                : FeedCard(
+                    boxShadow: const [],
+                    content: _convertToContent(article),
+                    onTap: () => widget.onArticleTap(article),
+                    onLongPressStart: (_) =>
+                        ArticlePreviewOverlay.show(context, _convertToContent(article)),
+                    onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
+                        details.localOffsetFromOrigin.dy),
+                    onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+                    onLike:
+                        widget.onLike != null ? () => widget.onLike!(article) : null,
+                    isLiked: article.isLiked,
+                    onSave:
+                        widget.onSave != null ? () => widget.onSave!(article) : null,
+                    onSaveLongPress: () =>
+                        CollectionPickerSheet.show(context, article.contentId),
+                    isSaved: article.isSaved,
+                    onNotInterested: widget.onNotInterested != null
+                        ? () => widget.onNotInterested!(article)
+                        : null,
+                    isFollowedSource: article.isFollowedSource,
+                  ),
           ),
         );
       },
@@ -349,6 +414,30 @@ class _TopicSectionState extends State<TopicSection> {
         );
       }),
     );
+  }
+
+  /// Assigns editorial badge based on article index if not already set.
+  /// Index 0 = "actu" (main article), index 1+ = "pas_de_recul" (deep).
+  DigestItem _withEditorialBadge(DigestItem article, int index) {
+    if (article.badge != null) return article;
+    final badge = index == 0 ? 'actu' : 'pas_de_recul';
+    return article.copyWith(badge: badge);
+  }
+
+  /// Maps DigestCard action strings to existing callbacks.
+  ValueChanged<String>? _handleDigestCardAction(DigestItem article) {
+    return (String action) {
+      switch (action) {
+        case 'like':
+          widget.onLike?.call(article);
+        case 'save':
+          widget.onSave?.call(article);
+        case 'not_interested':
+          widget.onNotInterested?.call(article);
+        case 'read':
+          widget.onArticleTap(article);
+      }
+    };
   }
 
   /// Converts DigestItem to Content for FeedCard compatibility
