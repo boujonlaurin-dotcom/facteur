@@ -64,9 +64,7 @@ class DeepMatcher:
             expansion_results = await asyncio.gather(
                 *expansion_tasks, return_exceptions=True
             )
-            for topic, result in zip(
-                selected_topics, expansion_results, strict=False
-            ):
+            for topic, result in zip(selected_topics, expansion_results, strict=False):
                 if isinstance(result, set):
                     expanded_tokens[topic.topic_id] = result
                     logger.info(
