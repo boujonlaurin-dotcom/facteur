@@ -17,6 +17,7 @@ from app.models.user import UserInterest, UserPreference, UserProfile, UserStrea
 from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.waitlist import WaitlistEntry
+from app.models.waitlist_survey import WaitlistSurveyResponse
 
 __all__ = [
     # Enums
@@ -61,4 +62,5 @@ __all__ = [
     "CurationAnnotation",
     # Waitlist (Landing Page)
     "WaitlistEntry",
+    "WaitlistSurveyResponse",
 ]
