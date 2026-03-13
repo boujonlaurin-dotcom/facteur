@@ -28,8 +28,6 @@ class DigestModeCard extends StatelessWidget {
         return 'Votre sélection personnalisée, équilibrée entre vos thèmes et sources.';
       case DigestMode.serein:
         return 'Pas de politique, pas de faits divers ni de sujets anxiogènes. Zen.';
-      case DigestMode.perspective:
-        return 'Découvrez des points de vue opposés à vos habitudes de lecture.';
     }
   }
 
