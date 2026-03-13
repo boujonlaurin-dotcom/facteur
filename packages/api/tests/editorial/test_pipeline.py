@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -144,10 +144,14 @@ class TestComputeGlobalContext:
             mock_dependencies["curation"].select_topics.return_value = topics
 
             # Mock deep matching
+            deep_1 = MagicMock(spec=MatchedDeepArticle)
+            deep_1.content_id = UUID("00000000-0000-0000-0000-000000000001")
+            deep_3 = MagicMock(spec=MatchedDeepArticle)
+            deep_3.content_id = UUID("00000000-0000-0000-0000-000000000003")
             mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": MagicMock(spec=MatchedDeepArticle),
+                "c1": deep_1,
                 "c2": None,
-                "c3": MagicMock(spec=MatchedDeepArticle),
+                "c3": deep_3,
             }
 
             contents = [_make_content_mock() for _ in range(10)]
