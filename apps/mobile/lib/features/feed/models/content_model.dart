@@ -89,6 +89,7 @@ class Content {
   final bool isPaid;
   final List<String> topics;
   final RecommendationReason? recommendationReason;
+  final int readingProgress; // 0-100 scroll depth percentage
   final String? noteText;
   final DateTime? noteUpdatedAt;
 
@@ -117,6 +118,7 @@ class Content {
     this.isPaid = false,
     this.topics = const [],
     this.recommendationReason,
+    this.readingProgress = 0,
     this.noteText,
     this.noteUpdatedAt,
     this.clusterTopic,
@@ -126,6 +128,20 @@ class Content {
   });
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
+
+  /// Reading badge label based on reading_progress.
+  /// Returns null if article hasn't been interacted with.
+  /// readingProgress > 0 always takes priority over consumed status,
+  /// because the 30s timer can mark consumed before meaningful scroll.
+  String? get readingLabel {
+    if (status == ContentStatus.unseen && readingProgress == 0) return null;
+    if (readingProgress >= 90) return 'Lu jusqu\'au bout';
+    if (readingProgress >= 30) return 'Lu';
+    if (readingProgress > 0) return 'Parcouru';
+    // Consumed via 30s timer but no scroll tracking (e.g. video, or partial content)
+    if (status == ContentStatus.consumed) return 'Lu';
+    return null;
+  }
 
   /// Returns a copy with note fields explicitly set to null.
   /// Needed because copyWith uses ?? which can't set nullable fields to null.
@@ -149,6 +165,7 @@ class Content {
       isPaid: isPaid,
       topics: topics,
       recommendationReason: recommendationReason,
+      readingProgress: readingProgress,
       noteText: null,
       noteUpdatedAt: null,
       clusterTopic: clusterTopic,
@@ -196,6 +213,7 @@ class Content {
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)
             : null,
+        readingProgress: (json['reading_progress'] as int?) ?? 0,
         noteText: json['note_text'] as String?,
         noteUpdatedAt: json['note_updated_at'] != null
             ? DateTime.tryParse(json['note_updated_at'] as String)
@@ -235,6 +253,7 @@ class Content {
     bool? isPaid,
     List<String>? topics,
     RecommendationReason? recommendationReason,
+    int? readingProgress,
     String? noteText,
     DateTime? noteUpdatedAt,
     String? clusterTopic,
@@ -261,6 +280,7 @@ class Content {
       isPaid: isPaid ?? this.isPaid,
       topics: topics ?? this.topics,
       recommendationReason: recommendationReason ?? this.recommendationReason,
+      readingProgress: readingProgress ?? this.readingProgress,
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
       clusterTopic: clusterTopic ?? this.clusterTopic,

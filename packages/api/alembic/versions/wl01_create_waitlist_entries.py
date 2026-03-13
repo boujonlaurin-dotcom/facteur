@@ -19,8 +19,6 @@ CREATE INDEX ix_waitlist_entries_email ON waitlist_entries (email);
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
 
 
 # revision identifiers, used by Alembic.
@@ -31,14 +29,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'waitlist_entries',
-        sa.Column('id', UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('email', sa.String(255), nullable=False, unique=True),
-        sa.Column('source', sa.String(50), server_default='landing'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()')),
-    )
-    op.create_index('ix_waitlist_entries_email', 'waitlist_entries', ['email'])
+    # Use IF NOT EXISTS: table may have been created manually in Supabase
+    # before this migration was tracked in alembic_version.
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS waitlist_entries (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email VARCHAR(255) NOT NULL UNIQUE,
+            source VARCHAR(50) DEFAULT 'landing',
+            created_at TIMESTAMPTZ DEFAULT now()
+        )
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS ix_waitlist_entries_email ON waitlist_entries (email)
+    """)
 
 
 def downgrade() -> None:

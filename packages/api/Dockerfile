@@ -1,19 +1,19 @@
 # Facteur API Dockerfile
+# Build context: repo root (Railway uses repo root for Dockerfile builds)
 FROM python:3.12-slim
 
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
+COPY packages/api/requirements.txt .
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 
 # Copy application AND required configs/scripts
-COPY app/ app/
-COPY alembic.ini .
+COPY packages/api/app/ app/
+COPY packages/api/alembic.ini .
 # Bust the BuildKit cache for alembic on every commit (Railway sets this automatically)
 ARG RAILWAY_GIT_COMMIT_SHA
-COPY alembic/ alembic/
-COPY scripts/ scripts/
+COPY packages/api/alembic/ alembic/
 
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser

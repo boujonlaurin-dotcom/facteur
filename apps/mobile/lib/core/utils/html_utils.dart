@@ -2,6 +2,7 @@
 ///
 /// Extrait de [ArticlePreviewOverlay._stripHtml] pour réutilisation
 /// dans les cards feed/digest et le reader in-app.
+library;
 
 /// Supprime les balises HTML et décode les entités HTML courantes.
 ///
@@ -76,4 +77,27 @@ String sanitizeArticleHtml(String html) {
 int plainTextLength(String? html) {
   if (html == null || html.isEmpty) return 0;
   return stripHtml(html).length;
+}
+
+/// Common RSS truncation patterns indicating partial/teaser content.
+final _truncationPatterns = [
+  RegExp(r'\(\.\.\.\)\s*$'),               // ends with (...)
+  RegExp(r'\.\.\.\s*$'),                    // ends with ...
+  RegExp(r'\[\.\.\.]\s*$'),                 // ends with [...]
+  RegExp(r'Lire la suite', caseSensitive: false),
+  RegExp(r'Read more', caseSensitive: false),
+  RegExp(r'Continue reading', caseSensitive: false),
+  RegExp(r"L['']article .+ est apparu en premier sur", caseSensitive: false),
+  RegExp(r'Cet article .+ est publié sur', caseSensitive: false),
+  RegExp(r'The post .+ appeared first on', caseSensitive: false),
+];
+
+/// Detects whether HTML content is likely a partial/truncated RSS excerpt.
+///
+/// Combines length check (< 500 chars) with common RSS truncation patterns.
+bool isPartialContent(String? html) {
+  if (html == null || html.isEmpty) return true;
+  final text = stripHtml(html);
+  if (text.length < 500) return true;
+  return _truncationPatterns.any((p) => p.hasMatch(text));
 }

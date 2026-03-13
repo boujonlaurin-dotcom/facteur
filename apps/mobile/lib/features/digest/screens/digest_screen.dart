@@ -341,7 +341,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   ),
                 ),
 
-
                 // Notification activation banner (when not enabled & not dismissed)
                 SliverToBoxAdapter(
                   child: Builder(

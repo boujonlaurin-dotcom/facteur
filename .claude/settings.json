@@ -51,6 +51,10 @@
         "RAILWAY_PROJECT_ID": "${RAILWAY_PROJECT_ID}",
         "RAILWAY_SERVICE_ID": "${RAILWAY_SERVICE_ID}"
       }
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve"
     }
   }
 }
