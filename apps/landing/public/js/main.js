@@ -47,23 +47,39 @@
         surveyContent.hidden = false;
         surveyDone.hidden = true;
         surveyForm.reset();
+        surveyForm.querySelectorAll('.survey-option.is-checked').forEach(function (el) {
+            el.classList.remove('is-checked');
+        });
         painOrder = [];
         document.querySelectorAll('.pain-item').forEach(function (item) {
             item.classList.remove('selected');
             item.querySelector('.pain-rank').textContent = '';
         });
+        surveyModal.style.display = '';
         surveyModal.classList.add('is-open');
         document.body.style.overflow = 'hidden';
     }
 
     function closeSurvey() {
         surveyModal.classList.remove('is-open');
+        surveyModal.style.display = 'none';
         document.body.style.overflow = '';
     }
 
     surveyClose.addEventListener('click', closeSurvey);
     surveyModal.addEventListener('click', function (e) {
         if (e.target === surveyModal) closeSurvey();
+    });
+
+    // ── Radio highlight (Q1/Q3) ─────────────────
+    surveyForm.querySelectorAll('input[type="radio"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+            var name = radio.getAttribute('name');
+            surveyForm.querySelectorAll('input[name="' + name + '"]').forEach(function (r) {
+                r.closest('.survey-option').classList.remove('is-checked');
+            });
+            radio.closest('.survey-option').classList.add('is-checked');
+        });
     });
 
     // ── Pain Ranking (Q2) ───────────────────────
