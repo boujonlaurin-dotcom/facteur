@@ -324,6 +324,23 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                   ),
                 ),
 
+                // Progress bar (visible when digest has data)
+                SliverToBoxAdapter(
+                  child: Builder(
+                    builder: (context) {
+                      final digest = digestAsync.valueOrNull;
+                      if (digest == null || (digest.items.isEmpty && digest.topics.isEmpty)) {
+                        return const SizedBox.shrink();
+                      }
+                      final notifier = ref.read(digestProvider.notifier);
+                      return DigestProgressBar(
+                        processedCount: notifier.processedCount,
+                        totalCount: notifier.totalCount,
+                      );
+                    },
+                  ),
+                ),
+
                 // Notification activation banner (when not enabled & not dismissed)
                 SliverToBoxAdapter(
                   child: Builder(

@@ -64,6 +64,7 @@ class ContentService:
             "is_hidden": user_status.is_hidden if user_status else False,
             "hidden_reason": user_status.hidden_reason if user_status else None,
             "time_spent_seconds": user_status.time_spent_seconds if user_status else 0,
+            "reading_progress": user_status.reading_progress if user_status else 0,
             "note_text": user_status.note_text if user_status else None,
             "note_updated_at": user_status.note_updated_at if user_status else None,
         }
@@ -93,13 +94,23 @@ class ContentService:
         if update_data.time_spent_seconds is not None:
             values["time_spent_seconds"] = update_data.time_spent_seconds
 
+        if update_data.reading_progress is not None:
+            values["reading_progress"] = update_data.reading_progress
+
+        # Build conflict update set — for reading_progress, keep the max
+        conflict_set = dict(values)
+        if update_data.reading_progress is not None:
+            conflict_set["reading_progress"] = func.greatest(
+                UserContentStatus.reading_progress, update_data.reading_progress
+            )
+
         # Upsert statement
         stmt = (
             insert(UserContentStatus)
             .values(**values)
             .on_conflict_do_update(
                 index_elements=["user_id", "content_id"],
-                set_=values,
+                set_=conflict_set,
             )
             .returning(UserContentStatus)
         )

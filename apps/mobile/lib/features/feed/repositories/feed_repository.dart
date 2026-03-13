@@ -276,6 +276,19 @@ class FeedRepository {
     }
   }
 
+  /// Fire-and-forget: persist reading progress on article close.
+  Future<void> updateContentStatusWithProgress(
+      String contentId, int readingProgress) async {
+    try {
+      await _apiClient.dio.post<void>(
+        'contents/$contentId/status',
+        data: {'reading_progress': readingProgress},
+      );
+    } catch (e) {
+      print('FeedRepository: [ERROR] updateContentStatusWithProgress: $e');
+    }
+  }
+
   Future<void> updateContentStatus(
       String contentId, ContentStatus status) async {
     try {
