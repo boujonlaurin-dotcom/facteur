@@ -57,6 +57,30 @@ class DeepMatcher:
 
         logger.info("deep_matcher.pool_loaded", count=len(deep_articles))
 
+        # Query expansion: enrich search tokens via small LLM (parallel)
+        expanded_tokens: dict[str, set[str]] = {}
+        if self._llm.is_ready:
+            expansion_tasks = [self._expand_query(t) for t in selected_topics]
+            expansion_results = await asyncio.gather(
+                *expansion_tasks, return_exceptions=True
+            )
+            for topic, result in zip(
+                selected_topics, expansion_results, strict=False
+            ):
+                if isinstance(result, set):
+                    expanded_tokens[topic.topic_id] = result
+                    logger.info(
+                        "deep_matcher.query_expanded",
+                        topic_id=topic.topic_id,
+                        extra_tokens=len(result),
+                    )
+                else:
+                    logger.warning(
+                        "deep_matcher.expansion_failed",
+                        topic_id=topic.topic_id,
+                        error=str(result),
+                    )
+
         # Pass 1: Pre-filter per topic
         prefilter_limit = self._config.pipeline.deep_candidates_prefilter
         threshold = self._config.pipeline.deep_jaccard_threshold
@@ -68,6 +92,7 @@ class DeepMatcher:
                 articles=deep_articles,
                 limit=prefilter_limit,
                 threshold=threshold,
+                extra_tokens=expanded_tokens.get(topic.topic_id, set()),
             )
             candidates_per_topic[topic.topic_id] = candidates
             logger.info(
@@ -120,10 +145,28 @@ class DeepMatcher:
                 Content.is_paid.is_(False),
             )
             .order_by(Content.published_at.desc())
-            .limit(500)  # Safety cap
+            .limit(2000)  # Safety cap
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def _expand_query(self, topic: SelectedTopic) -> set[str]:
+        """Generate semantically adjacent keywords via small LLM."""
+        prompt_cfg = self._config.query_expansion_prompt
+        raw = await self._llm.chat_json(
+            system=prompt_cfg.system,
+            user_message=f"Sujet: {topic.label}\nAngle: {topic.deep_angle}",
+            model=prompt_cfg.model,
+            temperature=prompt_cfg.temperature,
+            max_tokens=prompt_cfg.max_tokens,
+        )
+        if raw and isinstance(raw, dict):
+            keywords = raw.get("keywords", [])
+            if isinstance(keywords, list):
+                return self._detector.normalize_title(
+                    " ".join(str(k) for k in keywords)
+                )
+        return set()
 
     def _prefilter(
         self,
@@ -131,21 +174,26 @@ class DeepMatcher:
         articles: list[Content],
         limit: int,
         threshold: float,
+        extra_tokens: set[str] | None = None,
     ) -> list[tuple[Content, float]]:
         """Pass 1: Jaccard similarity pre-filter."""
         # Tokenize topic label + deep_angle
         topic_tokens = self._detector.normalize_title(
             f"{topic.label} {topic.deep_angle}"
         )
+        if extra_tokens:
+            topic_tokens |= extra_tokens
         if not topic_tokens:
             return []
 
         scored: list[tuple[Content, float]] = []
         for article in articles:
-            # Tokenize article title + topics
+            # Tokenize article title + topics + description excerpt
             article_text = article.title
             if article.topics:
                 article_text += " " + " ".join(article.topics)
+            if article.description:
+                article_text += " " + article.description[:200]
             article_tokens = self._detector.normalize_title(article_text)
 
             similarity = self._detector.jaccard_similarity(topic_tokens, article_tokens)

@@ -49,3 +49,14 @@ deep_matching:
   model: mistral-large-latest
   temperature: 0.2
   max_tokens: 300
+
+query_expansion:
+  system: |
+    Tu recois un sujet d'actualite et un angle d'analyse.
+    Genere 10-15 mots-cles francais semantiquement adjacents pour une recherche documentaire.
+    Inclus : synonymes, concepts lies, termes techniques du domaine, acronymes.
+    Exclus : mots vides, verbes d'action, termes trop generiques ("analyse", "comprendre").
+    Reponds en JSON : {{"keywords": ["mot1", "mot2", ...]}}
+  model: mistral-small-latest
+  temperature: 0.3
+  max_tokens: 150

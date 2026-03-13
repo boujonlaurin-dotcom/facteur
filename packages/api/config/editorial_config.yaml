@@ -7,7 +7,7 @@ pipeline:
   deep_candidates_prefilter: 10  # Top N candidats deep avant LLM
   deep_required: false           # Sujet peut exister sans deep match
   actu_max_age_hours: 24         # Age max des articles actu
-  deep_jaccard_threshold: 0.10   # Seuil Jaccard pour pré-filtre deep (plus bas que clustering)
+  deep_jaccard_threshold: 0.04   # Seuil Jaccard pour pré-filtre deep (bas pour maximiser les candidats LLM)
 
 feature_flags:
   editorial_enabled: false       # Master switch — OFF par défaut
