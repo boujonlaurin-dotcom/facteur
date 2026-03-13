@@ -55,7 +55,7 @@
             item.classList.remove('selected');
             item.querySelector('.pain-rank').textContent = '';
         });
-        surveyModal.style.display = '';
+        surveyModal.style.display = 'flex';
         surveyModal.classList.add('is-open');
         document.body.style.overflow = 'hidden';
     }
