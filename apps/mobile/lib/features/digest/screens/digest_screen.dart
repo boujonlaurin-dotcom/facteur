@@ -28,6 +28,7 @@ import '../providers/digest_mode_provider.dart';
 import '../providers/digest_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
+import '../widgets/digest_progress_bar.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
