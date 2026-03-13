@@ -187,18 +187,22 @@
                     return res.json();
                 })
                 .then(function (data) {
+                    console.log('[Facteur] waitlist response:', JSON.stringify(data));
                     input.value = '';
                     btn.textContent = 'Rejoindre la waitlist';
                     btn.disabled = true;
 
                     // Show survey unless backend explicitly says duplicate
                     if (data.is_new === false) {
+                        console.log('[Facteur] duplicate email, showing success');
                         success.hidden = false;
                     } else {
+                        console.log('[Facteur] new email, opening survey');
                         openSurvey(email);
                     }
                 })
                 .catch(function (err) {
+                    console.error('[Facteur] waitlist error:', err);
                     error.textContent = err.message === 'Erreur'
                         ? 'Une erreur est survenue. Réessaie.'
                         : err.message;
