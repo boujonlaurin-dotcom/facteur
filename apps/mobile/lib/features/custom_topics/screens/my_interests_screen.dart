@@ -122,14 +122,14 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Ton algorithme, tes règles.',
+                        'Vos centres d\'intérêt',
                         style: textTheme.displaySmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: FacteurSpacing.space2),
                       Text(
-                        'Facteur apprend de tes lectures. Ajuste tes sujets pour un feed qui te ressemble.',
+                        'Vos centres d\'intérêt influencent le digest et le mode Pour vous.',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),
