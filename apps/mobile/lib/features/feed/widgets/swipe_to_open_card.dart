@@ -4,11 +4,11 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
-/// Wraps a card to allow swiping right to open and optionally left to dismiss.
+/// Wraps a card to allow swiping right to open and optionally left to adjust.
 ///
 /// Right swipe: reveals a blue "Lire" background. Past threshold → [onSwipeOpen].
-/// Left swipe: reveals a gray "Masquer" background. Past threshold → card slides
-/// out and [onSwipeDismiss] fires. Left swipe only active when [onSwipeDismiss]
+/// Left swipe: reveals a gray "Régler" background. Past threshold → card snaps
+/// back and [onSwipeDismiss] fires. Left swipe only active when [onSwipeDismiss]
 /// is non-null (backwards compatible).
 ///
 /// [enableHintAnimation]: plays a subtle micro-slide to hint at left-swipe
@@ -38,7 +38,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
   double _dragExtent = 0;
   bool _dragUnderway = false;
   bool _hasTriggered = false;
-  bool _isDismissing = false;
+  final bool _isDismissing = false;
 
   late AnimationController _resetController;
   double _resetStartExtent = 0;
@@ -126,16 +126,17 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
     });
   }
 
-  double _dismissStartExtent = 0;
+  final double _dismissStartExtent = 0;
 
   void _onHintTick() {
     if (!_dragUnderway && !_isDismissing) {
       setState(() {
         // Sine wave: 0 → -20 → 0
         final t = _hintController.value;
-        _dragExtent = -40.0 * Curves.easeInOut.transform(
-          t <= 0.5 ? t * 2 : (1.0 - t) * 2,
-        );
+        _dragExtent = -40.0 *
+            Curves.easeInOut.transform(
+              t <= 0.5 ? t * 2 : (1.0 - t) * 2,
+            );
       });
     }
   }
@@ -172,7 +173,8 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
     final ratio = _dragExtent / screenWidth;
 
     // Right swipe: open
-    if (!_hasTriggered && _dragExtent > 0 &&
+    if (!_hasTriggered &&
+        _dragExtent > 0 &&
         (ratio > _threshold || velocity > _flingVelocity)) {
       _hasTriggered = true;
       HapticFeedback.mediumImpact();
@@ -182,18 +184,15 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
       return;
     }
 
-    // Left swipe: dismiss
-    if (!_hasTriggered && _dragExtent < 0 && widget.onSwipeDismiss != null &&
+    // Left swipe: snap back and fire callback (Epic 12: opens bottom sheet)
+    if (!_hasTriggered &&
+        _dragExtent < 0 &&
+        widget.onSwipeDismiss != null &&
         (ratio < -_threshold || velocity < -_flingVelocity)) {
       _hasTriggered = true;
-      _isDismissing = true;
       HapticFeedback.mediumImpact();
-      _dismissStartExtent = _dragExtent;
-      _dismissController.forward(from: 0).then((_) {
-        if (mounted) {
-          widget.onSwipeDismiss!();
-        }
-      });
+      _snapBack();
+      widget.onSwipeDismiss!();
       return;
     }
 
@@ -278,7 +277,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Masquer',
+                        'Régler',
                         style: TextStyle(
                           color: colors.textSecondary.withValues(alpha: 0.5),
                           fontWeight: FontWeight.w600,
@@ -287,7 +286,8 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                       ),
                       const SizedBox(width: 8),
                       Icon(
-                        PhosphorIcons.x(PhosphorIconsStyle.bold),
+                        PhosphorIcons.slidersHorizontal(
+                            PhosphorIconsStyle.bold),
                         color: colors.textSecondary.withValues(alpha: 0.5),
                         size: 22,
                       ),

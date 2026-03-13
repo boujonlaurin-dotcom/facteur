@@ -287,24 +287,56 @@ class RecommendationService:
         # Candidates are already sorted by published_at DESC from _get_candidates
         if source_uuid or mode == FeedFilterMode.RECENT:
             paginated = candidates[offset : offset + limit]
-            content_ids = [c.id for c in paginated]
-            if content_ids:
-                stmt = select(UserContentStatus).where(
-                    UserContentStatus.user_id == user_id,
-                    UserContentStatus.content_id.in_(content_ids),
-                )
-                statuses = await self.session.scalars(stmt)
-                status_map = {s.content_id: s for s in statuses}
-                for content in paginated:
-                    st = status_map.get(content.id)
-                    content.is_saved = st.is_saved if st else False
-                    content.is_liked = st.is_liked if st else False
-                    content.is_hidden = st.is_hidden if st else False
-                    content.hidden_reason = st.hidden_reason if st else None
-                    content.status = st.status if st else ContentStatus.UNSEEN
+            await self._hydrate_user_status(paginated, user_id)
             return paginated
 
-        # 3. Score Candidates using ScoringEngine
+        # Load source priority multipliers (needed for both chrono and scoring paths)
+        source_weight_rows = (
+            await self.session.execute(
+                select(UserSource.source_id, UserSource.priority_multiplier).where(
+                    UserSource.user_id == user_id
+                )
+            )
+        ).all()
+        source_priority_multipliers = {
+            row.source_id: row.priority_multiplier for row in source_weight_rows
+        }
+
+        # Epic 12: Chronological diversified mode (new default)
+        # mode=None means no chip selected → chronological diversified
+        if mode is None or mode == FeedFilterMode.CHRONOLOGICAL:
+            t3 = time.monotonic()
+            logger.info(
+                "feed_phase2_candidates",
+                duration_ms=round((t3 - t2) * 1000),
+                count=len(candidates),
+                mode="chronological",
+            )
+
+            result = self._apply_chronological_diversification(
+                candidates, source_priority_multipliers, limit, offset
+            )
+            await self._hydrate_user_status(result, user_id)
+
+            # Load custom topics for cluster building (reuse by caller)
+            from app.models.user_topic_profile import UserTopicProfile
+
+            custom_topics_stmt = select(UserTopicProfile).where(
+                UserTopicProfile.user_id == user_id
+            )
+            user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
+            self.user_custom_topics = user_custom_topics
+
+            t_end = time.monotonic()
+            logger.info(
+                "feed_total",
+                duration_ms=round((t_end - t0) * 1000),
+                items=len(result),
+                mode="chronological",
+            )
+            return result
+
+        # 3. Score Candidates using ScoringEngine (POUR_VOUS + other modes)
         t3 = time.monotonic()
         logger.info(
             "feed_phase2_candidates",
@@ -362,18 +394,6 @@ class RecommendationService:
 
         t4 = time.monotonic()
         logger.info("feed_phase3_scoring_context", duration_ms=round((t4 - t3) * 1000))
-
-        # Source Weighting: load explicit priority multipliers
-        source_weight_rows = (
-            await self.session.execute(
-                select(UserSource.source_id, UserSource.priority_multiplier).where(
-                    UserSource.user_id == user_id
-                )
-            )
-        ).all()
-        source_priority_multipliers = {
-            row.source_id: row.priority_multiplier for row in source_weight_rows
-        }
 
         # Context creation
         context = ScoringContext(
@@ -488,30 +508,95 @@ class RecommendationService:
             self._hydrate_legacy_reasons(result, context)
 
         # 6. Hydrate with User Status (is_saved, etc)
-        content_ids = [c.id for c in result]
-        if content_ids:
-            # Fetch statuses for these contents
-            stmt = select(UserContentStatus).where(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id.in_(content_ids),
-            )
-            statuses = await self.session.scalars(stmt)
-            status_map = {s.content_id: s for s in statuses}
-
-            for content in result:
-                st = status_map.get(content.id)
-                # Attach temporary attributes for Pydantic serialization
-                content.is_saved = st.is_saved if st else False
-                content.is_liked = st.is_liked if st else False
-                content.is_hidden = st.is_hidden if st else False
-                content.hidden_reason = st.hidden_reason if st else None
-                content.status = st.status if st else ContentStatus.UNSEEN
+        await self._hydrate_user_status(result, user_id)
 
         t_end = time.monotonic()
         logger.info(
             "feed_total", duration_ms=round((t_end - t0) * 1000), items=len(result)
         )
         return result
+
+    async def _hydrate_user_status(
+        self, items: list[Content], user_id: UUID
+    ) -> None:
+        """Hydrate content items with user-specific status (is_saved, is_liked, etc.)."""
+        content_ids = [c.id for c in items]
+        if not content_ids:
+            return
+        stmt = select(UserContentStatus).where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id.in_(content_ids),
+        )
+        statuses = await self.session.scalars(stmt)
+        status_map = {s.content_id: s for s in statuses}
+        for content in items:
+            st = status_map.get(content.id)
+            content.is_saved = st.is_saved if st else False
+            content.is_liked = st.is_liked if st else False
+            content.is_hidden = st.is_hidden if st else False
+            content.hidden_reason = st.hidden_reason if st else None
+            content.status = st.status if st else ContentStatus.UNSEEN
+
+    @staticmethod
+    def _apply_chronological_diversification(
+        candidates: list[Content],
+        source_priority_multipliers: dict[UUID, float],
+        limit: int,
+        offset: int,
+    ) -> list[Content]:
+        """
+        Epic 12: Algorithme "Ratio Normalisé" — chronological feed with source diversification.
+
+        Pipeline:
+        1. Group by source, compute relative frequency
+        2. Compute quota per source: ceil(frequency × limit × priority_multiplier), min 1
+        3. Keep the N most recent articles per source (up to quota)
+        4. Sort all retained articles by published_at DESC
+        5. Paginate with offset
+        """
+        from math import ceil
+
+        if not candidates:
+            return []
+
+        # PASS 1: Group by source and compute frequencies
+        by_source: dict[UUID, list[Content]] = {}
+        for article in candidates:
+            by_source.setdefault(article.source_id, []).append(article)
+
+        total = len(candidates)
+
+        # PASS 2: Compute quotas with user multipliers
+        quotas: dict[UUID, int] = {}
+        for source_id, articles_src in by_source.items():
+            ratio = len(articles_src) / total
+            multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
+            quota = max(1, ceil(ratio * limit * multiplier))
+            quotas[source_id] = quota
+
+        # PASS 2b: Normalize quotas so total ≈ limit (prevent overflow
+        # when multipliers push sum(quotas) well beyond requested limit)
+        total_quota = sum(quotas.values())
+        if total_quota > limit:
+            scale = limit / total_quota
+            quotas = {
+                sid: max(1, ceil(q * scale))
+                for sid, q in quotas.items()
+            }
+
+        # PASS 3: Select articles to retain (most recent per source, up to quota)
+        # Candidates from _get_candidates are already sorted by published_at DESC,
+        # so each source's list preserves that order.
+        retained: list[Content] = []
+        for source_id, articles_src in by_source.items():
+            quota = quotas[source_id]
+            retained.extend(articles_src[:quota])
+
+        # PASS 4: Final chronological sort
+        retained.sort(key=lambda a: a.published_at, reverse=True)
+
+        # PASS 5: Paginate
+        return retained[offset : offset + limit]
 
     def _hydrate_legacy_reasons(
         self, result: list[Content], context: ScoringContext
