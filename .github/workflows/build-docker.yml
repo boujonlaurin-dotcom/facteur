@@ -30,7 +30,6 @@ jobs:
           # Check that critical files exist in the image
           docker run --rm facteur-api:test ls -la /app/alembic.ini
           docker run --rm facteur-api:test ls -la /app/alembic/
-          docker run --rm facteur-api:test ls -la /app/scripts/
           echo "✅ All critical files present in Docker image"
 
       - name: Test image starts

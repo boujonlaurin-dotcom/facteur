@@ -12,7 +12,6 @@ RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 COPY packages/api/app/ app/
 COPY packages/api/alembic.ini .
 COPY packages/api/alembic/ alembic/
-COPY packages/api/scripts/ scripts/
 
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
