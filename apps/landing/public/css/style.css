@@ -232,17 +232,17 @@ img {
     flex-shrink: 0;
 }
 
-/* Notch hint at top */
+/* Notch hint at top — minimal to avoid hiding content */
 .phone-mockup::before {
     content: '';
     position: absolute;
     top: 0;
     left: 50%;
     transform: translateX(-50%);
-    width: 35%;
-    height: 14px;
+    width: 25%;
+    height: 5px;
     background: #1a1a1a;
-    border-radius: 0 0 12px 12px;
+    border-radius: 0 0 6px 6px;
     z-index: 2;
 }
 
@@ -417,6 +417,7 @@ img {
     background: var(--color-bg-alt);
 }
 
+
 .testimonial-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -502,18 +503,44 @@ img {
 }
 
 .testimonial-card__avatar {
-    display: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+}
+
+.testimonial-card:nth-child(2) .testimonial-card__avatar {
+    background: #8b6f47;
+}
+.testimonial-card:nth-child(3) .testimonial-card__avatar {
+    background: #5a7a6b;
+}
+.testimonial-card:nth-child(4) .testimonial-card__avatar {
+    background: #7a5a8b;
+}
+
+.testimonial-card__identity {
+    display: flex;
+    flex-direction: column;
 }
 
 .testimonial-card__name {
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text);
     letter-spacing: 0.02em;
 }
 
-.testimonial-card__name::before {
-    content: '\2014\00a0';
+.testimonial-card__context {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
 }
 
 /* ═══════════════════════════════════════════
@@ -701,6 +728,7 @@ img {
         width: 200px;
     }
 
+
     .testimonial-grid {
         grid-template-columns: 1fr;
     }
@@ -754,6 +782,249 @@ img {
 
     .waitlist-form__btn {
         width: 100%;
+    }
+}
+
+/* ═══════════════════════════════════════════
+   Survey Modal
+   ═══════════════════════════════════════════ */
+
+.survey-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-lg);
+    backdrop-filter: blur(4px);
+}
+
+.survey-overlay.is-open {
+    display: flex;
+    animation: fadeIn var(--duration-fast) var(--ease-out);
+}
+
+.survey-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-xl);
+    padding: var(--space-2xl) var(--space-xl);
+    max-width: 640px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.25);
+    animation: fadeUp var(--duration-normal) var(--ease-out);
+}
+
+.survey-close {
+    position: absolute;
+    top: var(--space-md);
+    right: var(--space-md);
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    line-height: 1;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    transition: color var(--duration-fast), background var(--duration-fast);
+}
+
+.survey-close:hover {
+    color: var(--color-text);
+    background: var(--color-bg-alt);
+}
+
+.survey-title {
+    font-size: var(--font-size-2xl);
+    font-weight: 700;
+    margin-bottom: var(--space-xs);
+}
+
+.survey-subtitle {
+    font-size: var(--font-size-base);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-xl);
+}
+
+.survey-question {
+    border: none;
+    padding: 0;
+    margin-bottom: var(--space-xl);
+}
+
+.survey-question legend {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-sm);
+    color: var(--color-text);
+}
+
+.survey-hint {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-sm);
+}
+
+.survey-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.125rem;
+    margin-bottom: 8px;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background var(--duration-fast), border-color var(--duration-fast);
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+}
+
+.survey-option:hover {
+    background: var(--color-bg-alt);
+    border-color: var(--color-text-muted);
+}
+
+.survey-option:has(input:checked) {
+    background: var(--color-accent-light);
+    border-color: var(--color-accent);
+}
+
+.survey-option input[type="radio"] {
+    accent-color: var(--color-accent);
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+}
+
+/* ── Pain Ranking (Q2) ─────────────────── */
+
+.pain-ranking {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pain-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.125rem;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: background var(--duration-fast), border-color var(--duration-fast), transform 100ms;
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+    text-align: left;
+}
+
+.pain-item:hover {
+    background: var(--color-bg-alt);
+    border-color: var(--color-text-muted);
+}
+
+.pain-item.selected {
+    background: var(--color-accent-light);
+    border-color: var(--color-accent);
+}
+
+.pain-item:active {
+    transform: scale(0.98);
+}
+
+.pain-rank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--color-bg-alt);
+    color: var(--color-text-muted);
+    font-weight: 700;
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+    transition: background var(--duration-fast), color var(--duration-fast);
+}
+
+.pain-item.selected .pain-rank {
+    background: var(--color-accent);
+    color: #fff;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+}
+
+.pain-ranking.shake {
+    animation: shake 0.5s var(--ease-out);
+}
+
+/* ── Survey Submit & Done ────────────── */
+
+.survey-submit {
+    width: 100%;
+    padding: 1rem;
+    background: var(--color-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: var(--font-family);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--duration-fast), transform var(--duration-fast);
+    margin-top: var(--space-sm);
+}
+
+.survey-submit:hover {
+    background: var(--color-accent-hover);
+    transform: translateY(-1px);
+}
+
+.survey-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.survey-done {
+    text-align: center;
+    padding: var(--space-2xl) 0;
+}
+
+.survey-done p {
+    font-size: var(--font-size-xl);
+    color: var(--color-text);
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+    .survey-overlay {
+        padding: var(--space-sm);
+        align-items: flex-end;
+    }
+
+    .survey-card {
+        padding: var(--space-lg) var(--space-md);
+        max-height: 92vh;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    }
+
+    .survey-title {
+        font-size: var(--font-size-xl);
     }
 }
 
