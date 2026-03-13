@@ -1,0 +1,16 @@
+# Exclude everything except the API package
+# Build context is repo root (Railway uses repo root for root-level railway.json)
+apps/
+docs/
+sources/
+.bmad-core/
+.claude-hooks/
+.claude/
+.context/
+.github/
+.git/
+*.md
+!README.md
+
+# Keep only what the API Dockerfile needs
+# packages/api/** is included by default (not excluded above)

@@ -1,9 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:facteur/features/detail/screens/content_detail_screen.dart';
-import 'package:facteur/core/ui/notification_service.dart';
 
 // TODO: Complete implementation of these tests
 // These test cases are required to validate notification suppression

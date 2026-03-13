@@ -63,6 +63,11 @@ class EditorialConfig:
     pepite_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.5, max_tokens=500)
     )
+    query_expansion_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
+        )
+    )
 
     def is_enabled_for_user(self, user_id: str) -> bool:
         """Check if editorial pipeline is enabled for a specific user."""
@@ -87,6 +92,9 @@ def load_editorial_config() -> EditorialConfig:
     writing_prompt = PromptConfig(system="", temperature=0.7, max_tokens=1500)
     writing_serene_prompt = PromptConfig(system="", temperature=0.7, max_tokens=1500)
     pepite_prompt = PromptConfig(system="", temperature=0.5, max_tokens=500)
+    query_expansion_prompt = PromptConfig(
+        system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
+    )
 
     # Load pipeline config
     if config_path.exists():
@@ -113,6 +121,8 @@ def load_editorial_config() -> EditorialConfig:
                 writing_serene_prompt = PromptConfig(**raw["writing_serene"])
             if raw and "pepite" in raw:
                 pepite_prompt = PromptConfig(**raw["pepite"])
+            if raw and "query_expansion" in raw:
+                query_expansion_prompt = PromptConfig(**raw["query_expansion"])
         except Exception:
             logger.exception("editorial_prompts_load_failed", path=str(prompts_path))
 
@@ -124,4 +134,5 @@ def load_editorial_config() -> EditorialConfig:
         writing_prompt=writing_prompt,
         writing_serene_prompt=writing_serene_prompt,
         pepite_prompt=pepite_prompt,
+        query_expansion_prompt=query_expansion_prompt,
     )

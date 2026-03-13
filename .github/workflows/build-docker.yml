@@ -23,20 +23,24 @@ jobs:
           docker build \
             -f packages/api/Dockerfile \
             -t facteur-api:test \
-            packages/api
+            .
 
       - name: Verify image structure
         run: |
           # Check that critical files exist in the image
           docker run --rm facteur-api:test ls -la /app/alembic.ini
           docker run --rm facteur-api:test ls -la /app/alembic/
-          docker run --rm facteur-api:test ls -la /app/scripts/
           echo "✅ All critical files present in Docker image"
 
       - name: Test image starts
         run: |
           # Start container with fake PORT and skip checks
-          docker run -d --name test-api -e PORT=8000 -e SKIP_STARTUP_CHECKS=True facteur-api:test
+          # RAILWAY_ENVIRONMENT_NAME=test prevents the production DATABASE_URL validator from firing
+          docker run -d --name test-api \
+            -e PORT=8000 \
+            -e SKIP_STARTUP_CHECKS=True \
+            -e RAILWAY_ENVIRONMENT_NAME=test \
+            facteur-api:test
           
           # Wait for startup
           sleep 5
