@@ -35,7 +35,7 @@ class _BottomNavBar extends ConsumerWidget {
     // Tab 0: Essentiel (Digest)
     if (location.startsWith(RoutePaths.digest)) return 0;
 
-    // Tab 1: Explorer (Feed)
+    // Tab 1: Mon flux (Feed)
     if (location.startsWith(RoutePaths.feed)) return 1;
     // Saved screen: show as part of settings (nearest logical tab)
     if (location.startsWith(RoutePaths.saved)) return 2;
@@ -121,9 +121,9 @@ class _BottomNavBar extends ConsumerWidget {
                 isSelected: selectedIndex == 0,
                 onTap: () => _onItemTapped(context, ref, 0, selectedIndex),
               ),
-              // Tab 1: Explorer (Feed)
+              // Tab 1: Mon flux (Feed) — Epic 12
               _NavItem(
-                label: 'Explorer',
+                label: 'Mon flux',
                 isSelected: selectedIndex == 1,
                 onTap: () => _onItemTapped(context, ref, 1, selectedIndex),
               ),

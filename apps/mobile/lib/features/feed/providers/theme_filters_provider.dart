@@ -51,25 +51,25 @@ final themeFiltersProvider =
         );
       }).toList();
 
-      // "Derniers articles" toujours en 1ère position
-      const recentFilter = FilterConfig(
-        key: 'recent',
-        label: 'Derniers articles',
-        description: 'Articles récents de vos sources, sans algo',
+      // Epic 12: "Pour vous" chip (ancien scoring, maintenant secondaire)
+      const pourVousFilter = FilterConfig(
+        key: 'pour_vous',
+        label: 'Pour vous',
+        description: 'Sélection personnalisée par notre algorithme transparent',
       );
 
-      return [recentFilter, ...themeFilters];
+      return [pourVousFilter, ...themeFilters];
     }
   } catch (_) {
     // Fallback silencieux — pas de thèmes affichés si l'API échoue
   }
 
-  // Même en cas d'erreur API, afficher le filtre "Derniers articles"
+  // Même en cas d'erreur API, afficher le filtre "Pour vous"
   return const [
     FilterConfig(
-      key: 'recent',
-      label: 'Derniers articles',
-      description: 'Articles récents de vos sources, sans algo',
+      key: 'pour_vous',
+      label: 'Pour vous',
+      description: 'Sélection personnalisée par notre algorithme transparent',
     ),
   ];
 });

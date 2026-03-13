@@ -75,7 +75,9 @@ class BiasOrigin(StrEnum):
 class FeedFilterMode(StrEnum):
     """Mode de filtrage du feed (Intent-based)."""
 
-    RECENT = "recent"
+    RECENT = "recent"  # Deprecated: chrono pur sans diversification
+    CHRONOLOGICAL = "chronological"  # Epic 12: chrono diversifié (nouveau défaut)
+    POUR_VOUS = "pour_vous"  # Epic 12: ancien scoring 4-piliers
     INSPIRATION = "inspiration"
     PERSPECTIVES = "perspectives"
     DEEP_DIVE = "deep_dive"
