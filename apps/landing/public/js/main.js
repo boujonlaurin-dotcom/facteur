@@ -22,6 +22,11 @@
         observer.observe(el);
     });
 
+    // ── Testimonial card paper entrance stagger ──
+    document.querySelectorAll('.testimonial-card').forEach(function (card, i) {
+        card.style.transitionDelay = (i * 120) + 'ms';
+    });
+
     // ── Waitlist Forms ────────────────────────────
     document.querySelectorAll('.waitlist-form').forEach(function (form) {
         form.addEventListener('submit', function (e) {
