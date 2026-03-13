@@ -144,14 +144,10 @@ class TestComputeGlobalContext:
             mock_dependencies["curation"].select_topics.return_value = topics
 
             # Mock deep matching
-            deep_c1 = MagicMock(spec=MatchedDeepArticle)
-            deep_c1.content_id = uuid4()
-            deep_c3 = MagicMock(spec=MatchedDeepArticle)
-            deep_c3.content_id = uuid4()
             mock_dependencies["deep"].match_for_topics.return_value = {
-                "c1": deep_c1,
+                "c1": MagicMock(spec=MatchedDeepArticle),
                 "c2": None,
-                "c3": deep_c3,
+                "c3": MagicMock(spec=MatchedDeepArticle),
             }
 
             contents = [_make_content_mock() for _ in range(10)]
