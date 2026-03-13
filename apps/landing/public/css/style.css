@@ -417,71 +417,6 @@ img {
     background: var(--color-bg-alt);
 }
 
-/* Crowd — people appearing on scroll */
-.crowd {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: var(--space-lg);
-    min-height: 48px;
-}
-
-.crowd__person {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--color-accent);
-    color: #fff;
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transform: scale(0) translateY(12px);
-    transition: opacity 0.4s var(--ease-out), transform 0.5s var(--ease-out);
-}
-
-/* Alternating warm colors for variety */
-.crowd__person:nth-child(3n+1) { background: var(--color-accent); }
-.crowd__person:nth-child(3n+2) { background: #c47a3a; }
-.crowd__person:nth-child(3n+3) { background: #a06030; }
-
-/* Visible state — triggered by JS */
-.crowd__person.visible {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-}
-
-/* Subtle float after appearing */
-@keyframes crowdFloat {
-    0%, 100% { transform: scale(1) translateY(0); }
-    50% { transform: scale(1) translateY(-3px); }
-}
-
-.crowd__person.visible {
-    animation: crowdFloat 3s ease-in-out infinite;
-}
-
-/* Stagger the float so they don't all bob in sync */
-.crowd__person:nth-child(1) { animation-delay: 0s; }
-.crowd__person:nth-child(2) { animation-delay: 0.2s; }
-.crowd__person:nth-child(3) { animation-delay: 0.4s; }
-.crowd__person:nth-child(4) { animation-delay: 0.6s; }
-.crowd__person:nth-child(5) { animation-delay: 0.8s; }
-.crowd__person:nth-child(6) { animation-delay: 1.0s; }
-.crowd__person:nth-child(7) { animation-delay: 1.2s; }
-.crowd__person:nth-child(8) { animation-delay: 0.1s; }
-.crowd__person:nth-child(9) { animation-delay: 0.3s; }
-.crowd__person:nth-child(10) { animation-delay: 0.5s; }
-.crowd__person:nth-child(11) { animation-delay: 0.7s; }
-.crowd__person:nth-child(12) { animation-delay: 0.9s; }
-.crowd__person:nth-child(13) { animation-delay: 1.1s; }
-.crowd__person:nth-child(14) { animation-delay: 0.15s; }
-.crowd__person:nth-child(15) { animation-delay: 0.35s; }
-
 .testimonial-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -567,42 +502,18 @@ img {
 }
 
 .testimonial-card__avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--color-accent);
-    color: #fff;
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-/* Alternate avatar colors to match crowd */
-.testimonial-card:nth-child(2) .testimonial-card__avatar { background: #c47a3a; }
-.testimonial-card:nth-child(3) .testimonial-card__avatar { background: #a06030; }
-.testimonial-card:nth-child(4) .testimonial-card__avatar { background: var(--color-accent); }
-
-.testimonial-card__identity {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
+    display: none;
 }
 
 .testimonial-card__name {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    color: var(--color-text);
-    letter-spacing: 0.01em;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    letter-spacing: 0.02em;
 }
 
-.testimonial-card__context {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    font-weight: 400;
+.testimonial-card__name::before {
+    content: '\2014\00a0';
 }
 
 /* ═══════════════════════════════════════════
@@ -788,16 +699,6 @@ img {
 
     .hero__visual .phone-mockup {
         width: 200px;
-    }
-
-    .crowd {
-        gap: 8px;
-    }
-
-    .crowd__person {
-        width: 32px;
-        height: 32px;
-        font-size: var(--font-size-xs);
     }
 
     .testimonial-grid {
