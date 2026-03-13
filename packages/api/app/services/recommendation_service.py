@@ -517,9 +517,7 @@ class RecommendationService:
         )
         return result
 
-    async def _hydrate_user_status(
-        self, items: list[Content], user_id: UUID
-    ) -> None:
+    async def _hydrate_user_status(self, items: list[Content], user_id: UUID) -> None:
         """Hydrate content items with user-specific status (is_saved, is_liked, etc.)."""
         content_ids = [c.id for c in items]
         if not content_ids:
@@ -580,10 +578,7 @@ class RecommendationService:
         total_quota = sum(quotas.values())
         if total_quota > limit:
             scale = limit / total_quota
-            quotas = {
-                sid: max(1, ceil(q * scale))
-                for sid, q in quotas.items()
-            }
+            quotas = {sid: max(1, ceil(q * scale)) for sid, q in quotas.items()}
 
         # PASS 3: Select articles to retain (most recent per source, up to quota)
         # Candidates from _get_candidates are already sorted by published_at DESC,
