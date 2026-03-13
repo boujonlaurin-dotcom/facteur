@@ -20,6 +20,9 @@ class WaitlistEntry(Base):
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     source: Mapped[str] = mapped_column(String(50), default="landing")
+    utm_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    utm_medium: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    utm_campaign: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
