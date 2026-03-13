@@ -10,7 +10,9 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
+import 'coup_de_coeur_block.dart';
 import 'digest_mode_tab_selector.dart';
+import 'pepite_block.dart';
 import 'topic_section.dart';
 
 /// Digest Briefing Section with premium design.
@@ -30,6 +32,9 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(String topic)? onMuteTopic;
   final DigestMode mode;
   final bool isRegenerating;
+  final bool usesEditorial;
+  final PepiteResponse? pepite;
+  final CoupDeCoeurResponse? coupDeCoeur;
 
   /// Called when the user taps the disabled mode selector (navigate to settings).
   final VoidCallback? onTapModeSelector;
@@ -47,6 +52,9 @@ class DigestBriefingSection extends StatefulWidget {
     this.onMuteTopic,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
+    this.usesEditorial = false,
+    this.pepite,
+    this.coupDeCoeur,
     this.onTapModeSelector,
   });
 
@@ -247,8 +255,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
               const SizedBox(height: 10),
 
-              // Layout branching: topics or flat
-              if (_usesTopics)
+              // Layout branching: editorial, topics, or flat
+              if (widget.usesEditorial && _usesTopics)
+                _buildEditorialLayout()
+              else if (_usesTopics)
                 _buildTopicsLayout()
               else
                 _buildFlatLayout(context),
@@ -297,6 +307,71 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         onDismissMuteSource: _handleLocalMuteSource,
         onDismissMuteTopic: _handleLocalMuteTopic,
       ),
+    );
+  }
+
+  /// Editorial layout: topics with DigestCards + pépite + coup de cœur
+  Widget _buildEditorialLayout() {
+    final isSerene = widget.mode == DigestMode.serein;
+    final sections = <Widget>[];
+
+    // Topics with editorial DigestCards
+    for (int i = 0; i < widget.topics!.length; i++) {
+      sections.add(
+        TopicSection(
+          topic: widget.topics![i],
+          editorialMode: true,
+          isSerene: isSerene,
+          onArticleTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+          onSwipeDismiss: widget.onSwipeDismiss != null
+              ? _handleLocalSwipeDismiss
+              : null,
+          activeDismissalId: _activeDismissalId,
+          onDismissUndo: _handleLocalUndo,
+          onDismissAutoResolve: _handleLocalAutoResolve,
+          onDismissMuteSource: _handleLocalMuteSource,
+          onDismissMuteTopic: _handleLocalMuteTopic,
+        ),
+      );
+    }
+
+    // Pépite block
+    if (widget.pepite != null) {
+      sections.add(
+        PepiteBlock(
+          pepite: widget.pepite!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+        ),
+      );
+    }
+
+    // Coup de cœur block
+    if (widget.coupDeCoeur != null) {
+      sections.add(
+        CoupDeCoeurBlock(
+          coupDeCoeur: widget.coupDeCoeur!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sections.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (_, i) => sections[i],
     );
   }
 
