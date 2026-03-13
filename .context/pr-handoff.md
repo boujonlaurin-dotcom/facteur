@@ -1,142 +1,215 @@
-# Handoff — Reading Progress Feature: Ajustements Post-Test
+# Handoff — Story 10.26 : Layout éditorial + widgets texte
 
 ## Contexte
 
-La feature "reading progress" a été implémentée sur la branche `claude/add-rich-content-feature-iMo58` (2 commits: `21c9363`, `f1605d7`). Le user a testé et identifié 6 ajustements nécessaires, classés par priorité.
+Les stories 10.22 (sources deep), 10.23 (pipeline curation), 10.24 (rédaction LLM) et 10.25 (format editorial_v1 + endpoint API + modèles Dart) sont mergées/prêtes. Le backend renvoie maintenant un `DigestResponse` complet avec tous les champs éditoriaux. Les modèles Dart parsent correctement le nouveau format. **Mais l'UI mobile affiche encore le layout `topics_v1` pour les digests éditoriaux.**
 
-## Branche de travail
+**Story 10.26 = rendre le layout éditorial visible dans l'app** : header dynamique, textes d'intro/transition entre les sujets, section divider, et progression simplifiée (dots).
 
-`claude/add-rich-content-feature-iMo58` — continuer dessus.
+## Objectif
 
-## Ce qui existe déjà (NE PAS refaire)
+1. **Brancher le layout `editorial_v1`** dans `DigestBriefingSection` (D3)
+2. **Header dynamique** : remplacer "L'Essentiel du jour" par `headerText` de l'API (D1)
+3. **Progression simplifiée** : dots discrets au lieu de la barre segmentée (D6)
+4. **Créer 3 nouveaux widgets** : `IntroText` (N1), `TransitionText` (N2), `SectionDivider` (N4)
+5. **Créer le conteneur `EditorialSubjectBlock`** qui assemble intro + cartes + transition par sujet
 
-- **Backend complet** : champ `reading_progress` sur `UserContentStatus`, migration Alembic (`rp01`), schemas, services avec `GREATEST()`, collection_service, recommendation_service
-- **Mobile** : modèle `Content.readingProgress`, `ReadingBadge` widget, `FeedCard` intégration, progress bar dans le reader, scroll tracking via `NotificationListener<ScrollNotification>`, WebView JS bridge, persistence au `dispose()`
-- **Migration SQL** (à appliquer manuellement) : `ALTER TABLE user_content_status ADD COLUMN reading_progress SMALLINT NOT NULL DEFAULT 0;`
+## Design doc de référence
 
----
+**LECTURE OBLIGATOIRE** :
+- `docs/design/editorial-digest/03-frontend.md` — sections D1, D3, D6, N1, N2, N4 et **arbre widget final (§9)**
+- `docs/design/editorial-digest/implementation-plan.md` — ÉTAPE 6
 
-## Issues à résoudre (par priorité)
+## Architecture actuelle (ce qui existe après 10.25)
 
-### 1. [CRITIQUE] Scroll très lent sur les longs articles — Performance ruinée
+### DigestResponse (modèle Dart — `digest_models.dart`)
 
-**Symptôme** : L'app est très ralentie au scroll, surtout sur les longs articles.
-
-**Cause probable** : Le `NotificationListener<ScrollNotification>` à la ligne 855 de `content_detail_screen.dart` appelle `setState()` à chaque `ScrollUpdateNotification`, ce qui reconstruit tout le widget tree à chaque pixel de scroll.
-
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` (lignes 855-874)
-
-**Piste de fix** :
-- Ne PAS appeler `setState()` pour chaque scroll event. Utiliser un `ValueNotifier<double>` pour `_maxReadingProgress` et un `ValueListenableBuilder` uniquement sur la progress bar
-- Ou throttler les updates (ex: ne mettre à jour que si delta > 1%)
-- La progress bar elle-même peut utiliser `RepaintBoundary` pour isoler les repaints
-- Vérifier aussi que `_onScrollFabOpacity()` (ligne 858) n'appelle pas `setState()` trop fréquemment
-
+Les champs suivants sont disponibles et parsés :
 ```dart
-// Problème actuel (ligne 866-869):
-if (capped > _maxReadingProgress) {
-  setState(() {        // <-- reconstruit TOUT le widget tree
-    _maxReadingProgress = capped;
-  });
-}
+// Sur DigestResponse
+String? headerText;      // "☀️ Ce matin, 3 sujets à retenir"
+String? closureText;     // "✅ T'es à jour. Bonne journée !"
+String? ctaText;         // "Un truc t'a marqué ? Dis-moi 👋"
+bool get usesEditorial;  // formatVersion == 'editorial_v1'
+bool get usesTopics;     // true pour topics_v1 ET editorial_v1
+PepiteResponse? pepite;
+CoupDeCoeurResponse? coupDeCoeur;
+
+// Sur DigestTopic (= 1 sujet éditorial)
+String? introText;       // "Le gouvernement dévoile..." (2-3 phrases)
+String? transitionText;  // "Pendant ce temps, côté tech…"
+
+// Sur DigestItem / DigestTopicArticle
+String? badge;           // "actu", "pas_de_recul", "pepite", "coup_de_coeur"
 ```
 
-### 2. [IMPORTANT] Détection de contenu partiel insuffisante
+### DigestBriefingSection (`digest_briefing_section.dart`)
 
-**Symptôme** : La détection `plainTextLength(articleText) < 500` est trop basique.
+C'est le widget principal qui rend le contenu du digest. Actuellement il gère :
+- `topics_v1` : affiche des `TopicSection` avec PageView horizontal par topic
+- `flat_v1` : affiche les `DigestItem` en liste plate
 
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` (lignes 306-310)
+**Il n'y a pas encore de branche `editorial_v1`.** Les digests éditoriaux passent par le chemin `usesTopics == true` et s'affichent comme des topics classiques sans les textes édito.
 
-**Amélioration demandée** : Compléter la détection avec des patterns récurrents de contenu tronqué dans les flux RSS :
-- Article finissant par `(...)`
-- Article finissant par `...`
-- Contenu contenant `Lire la suite sur...` / `Lire la suite`
-- Contenu contenant `L'article [...] est apparu en premier sur [...]`
-- `Read more on...` / `Continue reading`
-- Article finissant par `[...]`
+### DigestProgressBar (`digest_progress_bar.dart`)
 
-**Fichier util existant** : `apps/mobile/lib/core/utils/html_utils.dart` (contient déjà `plainTextLength()`) — ajouter une fonction `isPartialContent(String htmlContent)` qui combine la longueur + les patterns.
+Barre segmentée actuelle. En mode `editorial_v1`, elle doit être remplacée par des dots discrets.
 
-### 3. [IMPORTANT] Design de la progress bar — "pas assez visible et trop visible"
+### DigestMode (2 modes)
 
-**Symptôme** : La barre est à la fois trop discrète (on ne la remarque pas) et visuellement dérangeante quand on la voit.
+Déjà réduit à `pourVous` + `serein` (le mode `perspective` a été supprimé en 10.25).
 
-**Fichier** : `content_detail_screen.dart` lignes 1158-1171
+## Spécification technique des widgets
 
-**État actuel** : `LinearProgressIndicator` de 2.5px, couleur `primary` à 0.7 alpha, fond `border` à 0.3 alpha.
+### N1 — IntroText (`digest/widgets/intro_text.dart`)
 
-**Pistes de redesign** :
-- Passer à une barre de **1.5-2px** mais avec une couleur plus nette (alpha 1.0) et un fond transparent → plus subtile mais plus lisible
-- Utiliser la couleur `success` (vert) plutôt que `primary` pour donner un sentiment positif de progression
-- Animation smooth avec `Curves.easeOut`
-- Optionnel : la barre n'apparaît qu'après 5% de scroll (pas dès l'ouverture)
+Texte éditorial (2-3 phrases) au-dessus des cartes pour chaque sujet.
+- **Input** : `String introText`
+- **Typo** : `FacteurTypography.bodyLarge` (17px, w400), line height 1.5
+- **Couleur** : `FacteurColors.textPrimary`
+- **Padding** : 16px horizontal, 8px top, 12px bottom
+- **Si `introText` est null** : ne pas afficher le widget
 
-### 4. [IMPORTANT] Badge affiche "Lu" après seulement 10% de lecture
+### N2 — TransitionText (`digest/widgets/transition_text.dart`)
 
-**Symptôme** : Après avoir scrollé ~10% dans le reader, le badge passe à "Lu" au lieu de "Parcouru".
+Court texte de liaison entre 2 sujets.
+- **Input** : `String transitionText`
+- **Typo** : `FacteurTypography.bodySmall` (13px, w400), _italique_
+- **Couleur** : `FacteurColors.textSecondary`
+- **Séparateur** : ligne 1px `textTertiary @ 20%` au-dessus et en-dessous
+- **Padding** : 24px vertical
+- **Si `transitionText` est null** (dernier sujet) : ne pas afficher
 
-**Cause probable** : Le `readingLabel` getter dans `content_model.dart` (ligne 134-141) fonctionne correctement en théorie (< 30% → "Parcouru"), MAIS le problème vient probablement du fait que l'article est marqué `ContentStatus.consumed` par le timer de 30s (`_startViewTimer`), et le getter retourne "Lu" pour `consumed` sans `readingProgress > 0` (ligne 140). Vérifier aussi que le `readingProgress` persisté est correct.
+### N4 — SectionDivider (`digest/widgets/section_divider.dart`)
 
-**Fichier** : `apps/mobile/lib/features/feed/models/content_model.dart` (lignes 134-141)
+Séparateur "Et aussi…" entre les 3 sujets principaux et les sections pépite/coup de coeur.
+- **Typo** : `FacteurTypography.displaySmall` (18px, w600), centré
+- **Décor** : ligne 2px `primary @ 30%`, 60px wide, centrée
+- **Padding** : 32px top, 16px bottom
 
-**Fix** : Le statut `consumed` ne devrait PAS overrider le label basé sur le `readingProgress` quand celui-ci est > 0. Ajuster la logique :
-```dart
-String? get readingLabel {
-  if (status == ContentStatus.unseen && readingProgress == 0) return null;
-  if (readingProgress >= 90) return 'Lu jusqu\'au bout';
-  if (readingProgress >= 30) return 'Lu';
-  if (readingProgress > 0) return 'Parcouru';
-  if (status == ContentStatus.consumed) return 'Lu';
-  return null;
-}
+### D1 — Header dynamique
+
+Dans `DigestBriefingSection`, remplacer le titre statique "L'Essentiel du jour" par `digest.headerText` quand non null.
+- **Fallback** : si `headerText` est null, garder "L'Essentiel du jour"
+- **Typo** : même style existant `FacteurTypography.displayLarge` (28px, w700)
+
+### D3 — Branchement layout
+
+Dans `DigestBriefingSection`, ajouter une branche quand `digest.usesEditorial` :
 ```
-Vérifier aussi que le progress est bien persisté ET rechargé côté feed (le `readingProgress` est-il bien renvoyé par l'API dans le feed listing ?).
+if (digest.usesEditorial) → renderEditorialLayout()
+else if (digest.usesTopics) → renderTopicsLayout() (existant)
+else → renderFlatLayout() (existant)
+```
 
-### 5. [NICE-TO-HAVE] Badge "Lu" pas assez positif
+Le layout éditorial assemble les sujets via un `EditorialSubjectBlock` :
+```
+for subject in topics:
+  Column(
+    IntroText(subject.introText),
+    [cartes articles existantes — garder le rendu actuel des TopicSection],
+    TransitionText(subject.transitionText),  // null pour le dernier
+  )
 
-**Fichier** : `apps/mobile/lib/features/feed/widgets/reading_badge.dart`
+SectionDivider("Et aussi…")
 
-**Suggestion** : Remplacer le texte/icône du badge "Lu" (30-89%) pour le rendre plus engageant. Exemples :
-- Icône : `PhosphorIcons.bookOpen` ou `PhosphorIcons.checkCircle` au lieu de `Icons.check`
-- Texte alternatif : "Bien lu" ou garder "Lu" avec une icône plus chaleureuse
-- Cohérence icônes : utiliser uniquement PhosphorIcons (pas mixer avec Material Icons)
+// Pépite + Coup de coeur = cartes normales pour l'instant
+// (les widgets PepiteBlock et CoupDeCoeurBlock arrivent en 10.27)
+```
 
-### 6. [NICE-TO-HAVE] Nudges en fin d'article
+### D6 — Progression dots
 
-**Contexte** : Fonctionnalités P2 discutées mais non encore implémentées.
+En mode `editorial_v1`, remplacer la `DigestProgressBar` par des dots discrets :
+- N dots (= nombre de sujets + slots pepite/cdc)
+- Dot rempli si le sujet est "couvert" (`isCovered`)
+- Style : 6x6 cercles, spacing 6px, couleur `primary` (rempli) / `border @ 40%` (vide)
+- Position : sous le header text, même row que le mode selector si possible
 
-**Demande** : Ajouter des nudges contextuels quand `readingProgress >= 90%` :
-- **"Ajouter une note"** — si l'article n'a pas de note
-- **"Enregistrer l'article"** — si l'article n'est pas dans une collection
+## Arbre widget attendu (editorial_v1)
 
-**Emplacement** : En bas de l'article dans le reader, ou via un subtle bottom sheet/snackbar après quelques secondes à >= 90%.
+```
+DigestBriefingSection (modifié D1/D3)
+├── Header
+│   ├── Text(digest.headerText ?? "L'Essentiel du jour")  ← D1
+│   ├── ProgressDots(processedCount / totalCount)          ← D6
+│   └── DigestModeTabSelector(2 modes)                     ← existant
+│
+├── for topic in digest.topics:
+│   └── EditorialSubjectBlock
+│       ├── IntroText(topic.introText)                     ← N1
+│       ├── [cartes articles — rendu TopicSection existant]
+│       └── TransitionText(topic.transitionText)           ← N2
+│
+├── SectionDivider("Et aussi…")                            ← N4
+│
+├── [Pépite carte — rendu simple pour l'instant]
+├── [Coup de coeur carte — rendu simple pour l'instant]
+│
+└── [Closure block — sera ajouté en Story 10.28]
+```
 
-**Fichiers concernés** : `content_detail_screen.dart` (détection du seuil), nouveau widget ou intégration dans le flow existant des notes/collections.
+## Ce qui NE FAIT PAS partie de cette story
 
----
+- **Badges sémantiques (D4)** → Story 10.27
+- **Rank badge retiré (D5)** → Story 10.27
+- **ArticlePairView swipe horizontal (N3)** → Story 10.27
+- **PepiteBlock et CoupDeCoeurBlock (N5)** → Story 10.27
+- **ClosureBlock (D7)** → Story 10.28
+- **FeedbackBottomSheet (N6)** → Story 10.28
 
-## Fichiers principaux à modifier
+Pour cette story, les cartes articles gardent leur rendu actuel. La pépite et le coup de coeur sont rendus comme des cartes normales en fin de liste. Le focus est sur le **layout et les textes édito**.
 
-| Fichier | Issues |
-|---------|--------|
-| `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` | #1, #2, #3, #6 |
-| `apps/mobile/lib/features/feed/models/content_model.dart` | #4 |
-| `apps/mobile/lib/features/feed/widgets/reading_badge.dart` | #5 |
-| `apps/mobile/lib/core/utils/html_utils.dart` | #2 |
+## Fichiers à modifier
+
+| Fichier | Changement |
+|---------|------------|
+| `apps/mobile/lib/features/digest/widgets/digest_briefing_section.dart` | Branchement D3, header dynamique D1, progression dots D6 |
+| `apps/mobile/lib/features/digest/widgets/intro_text.dart` | **NOUVEAU** — Widget N1 |
+| `apps/mobile/lib/features/digest/widgets/transition_text.dart` | **NOUVEAU** — Widget N2 |
+| `apps/mobile/lib/features/digest/widgets/section_divider.dart` | **NOUVEAU** — Widget N4 |
+| `apps/mobile/lib/features/digest/widgets/editorial_subject_block.dart` | **NOUVEAU** — Conteneur qui assemble intro + cartes + transition |
+| `apps/mobile/lib/features/digest/widgets/progress_dots.dart` | **NOUVEAU** — Dots de progression (remplace DigestProgressBar en editorial_v1) |
+
+## Dépendances code existant
+
+| Composant | Fichier | Usage |
+|-----------|---------|-------|
+| `DigestBriefingSection` | `digest_briefing_section.dart` | Widget principal — à modifier |
+| `DigestProgressBar` | `digest_progress_bar.dart` | Barre actuelle — garder pour flat_v1/topics_v1, ajouter ProgressDots pour editorial_v1 |
+| `TopicSection` | `digest_briefing_section.dart` (ou widget séparé) | Rendu des cartes par topic — réutiliser dans EditorialSubjectBlock |
+| `DigestCard` | `digest_card.dart` | Carte article — réutiliser tel quel |
+| `FacteurTypography` | `core/theme/` | Typography tokens |
+| `FacteurColors` | `core/theme/` | Color tokens |
+| `digest_provider.dart` | provider | `processedCount`, `totalCount`, `progress` — déjà mis à jour en 10.25 |
+
+## Fallbacks
+
+- Si `headerText` est null → afficher "L'Essentiel du jour" (texte statique existant)
+- Si `introText` est null → pas de bloc texte au-dessus des cartes (espace direct vers les cartes)
+- Si `transitionText` est null → pas de transition (normal pour le dernier sujet)
+- Si `pepite`/`coupDeCoeur` est null → ne pas afficher le SectionDivider ni les sections correspondantes
+- Si un digest est `topics_v1` → zéro changement, le layout actuel est conservé
+
+## Critères de validation
+
+1. Un digest `editorial_v1` affiche le header dynamique (`headerText`)
+2. Chaque sujet montre son `introText` au-dessus des cartes
+3. Les transitions `transitionText` apparaissent entre les sujets (pas après le dernier)
+4. Le SectionDivider "Et aussi…" apparaît avant pépite/cdc
+5. Les dots de progression reflètent le nombre de sujets couverts
+6. Un digest `topics_v1` ou `flat_v1` **n'est pas affecté** (rétrocompatibilité)
+7. `flutter analyze` + `flutter test` passent
+8. Le scroll est fluide (pas de jank) avec les nouveaux widgets texte
+
+## Risques
+
+- **Conflit de layout** : `DigestBriefingSection` est un widget complexe (~400+ lignes). Bien comprendre le flow existant avant de toucher au layout.
+- **FacteurTypography / FacteurColors** : vérifier que les tokens existent (`displayLarge`, `bodyLarge`, `bodySmall`, `displaySmall`, `textPrimary`, `textSecondary`, `textTertiary`). Si non, utiliser les équivalents les plus proches du design system.
+- **TopicSection réutilisation** : le rendu des cartes par topic est peut-être intimement lié au layout topics_v1. Si c'est le cas, extraire la logique de cartes dans un widget partagé plutôt que dupliquer.
 
 ## Contraintes techniques
 
-- **Python 3.12 only** (pas 3.13+)
-- **`list[]` natif** (pas `List` de typing)
-- **Alembic migrations via Supabase SQL Editor** (pas CLI)
 - **Flutter SDK >=3.0.0 <4.0.0**
-- **Riverpod 2.5** pour le state management
-
-## Ordre d'implémentation recommandé
-
-1. **#1 Performance** (critique, doit être fait en premier — l'app est inutilisable sinon)
-2. **#4 Badge "Lu" à 10%** (bug logique, fix rapide)
-3. **#3 Redesign progress bar** (UX)
-4. **#2 Détection partielle** (amélioration fonctionnelle)
-5. **#5 Badge plus positif** (polish)
-6. **#6 Nudges** (nouvelle mini-feature)
+- **Riverpod 2.5** (code gen, build_runner)
+- **Python 3.12 only** côté backend (pas touché dans cette story)
+- Après modification des widgets Freezed : `dart run build_runner build --delete-conflicting-outputs`

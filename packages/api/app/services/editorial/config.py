@@ -55,10 +55,14 @@ class EditorialConfig:
         default_factory=lambda: PromptConfig(system="", temperature=0.2, max_tokens=300)
     )
     writing_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(system="", temperature=0.7, max_tokens=1500)
+        default_factory=lambda: PromptConfig(
+            system="", temperature=0.7, max_tokens=1500
+        )
     )
     writing_serene_prompt: PromptConfig = field(
-        default_factory=lambda: PromptConfig(system="", temperature=0.7, max_tokens=1500)
+        default_factory=lambda: PromptConfig(
+            system="", temperature=0.7, max_tokens=1500
+        )
     )
     pepite_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.5, max_tokens=500)

@@ -247,9 +247,7 @@ class EditorialWriterService:
 
         # Build exclusion filter
         exclusion_filter = (
-            Content.id.notin_(excluded_content_ids)
-            if excluded_content_ids
-            else True
+            Content.id.notin_(excluded_content_ids) if excluded_content_ids else True
         )
 
         stmt = (
@@ -289,9 +287,7 @@ class EditorialWriterService:
         content = content_result.scalar_one_or_none()
 
         source_name = (
-            content.source.name
-            if content and content.source
-            else "Source inconnue"
+            content.source.name if content and content.source else "Source inconnue"
         )
 
         return CoupDeCoeurArticle(

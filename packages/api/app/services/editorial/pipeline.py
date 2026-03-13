@@ -168,18 +168,14 @@ class EditorialPipelineService:
                     s.intro_text = sw.intro_text
                     s.transition_text = sw.transition_text
         elif isinstance(writing_raw, Exception):
-            logger.error(
-                "editorial_pipeline.writing_exception", error=str(writing_raw)
-            )
+            logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
 
         # Handle pépite
         pepite: PepiteArticle | None = None
         if isinstance(pepite_raw, PepiteArticle):
             pepite = pepite_raw
         elif isinstance(pepite_raw, Exception):
-            logger.error(
-                "editorial_pipeline.pepite_exception", error=str(pepite_raw)
-            )
+            logger.error("editorial_pipeline.pepite_exception", error=str(pepite_raw))
 
         # Handle coup de coeur
         coup_de_coeur: CoupDeCoeurArticle | None = None
