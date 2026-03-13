@@ -265,7 +265,7 @@ class DigestSelector:
                         else:
                             # Compute global context (clustering + curation + deep)
                             global_ctx = await pipeline.compute_global_context(
-                                candidates
+                                candidates, mode=mode
                             )
                             if not global_ctx:
                                 logger.warning("digest_editorial_global_ctx_failed")

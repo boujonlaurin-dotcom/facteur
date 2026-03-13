@@ -66,6 +66,7 @@ class DigestTopicArticle(BaseModel):
     reason: str
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
+    badge: str | None = None  # "actu" | "pas_de_recul"
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
@@ -94,6 +95,8 @@ class DigestTopic(BaseModel):
         default_factory=list, description="Clustering keywords for display"
     )
     articles: list[DigestTopicArticle] = Field(default_factory=list)
+    intro_text: str | None = None
+    transition_text: str | None = None
 
     class Config:
         from_attributes = True
@@ -134,6 +137,7 @@ class DigestItem(BaseModel):
     recommendation_reason: DigestRecommendationReason | None = Field(
         None, description="Detailed scoring breakdown with contributions"
     )
+    badge: str | None = None  # "actu" | "pas_de_recul" | "pepite" | "coup_de_coeur"
 
     # User action tracking (default: no action yet)
     is_read: bool = False
@@ -143,6 +147,39 @@ class DigestItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PepiteResponse(BaseModel):
+    """Pépite article in the editorial digest — a surprise pick by the LLM."""
+
+    content_id: UUID
+    mini_editorial: str
+    badge: str = "pepite"
+    title: str
+    url: str
+    thumbnail_url: str | None = None
+    source: SourceMini
+    is_read: bool = False
+    is_saved: bool = False
+    is_liked: bool = False
+    is_dismissed: bool = False
+
+
+class CoupDeCoeurResponse(BaseModel):
+    """Coup de coeur article — most saved by the community."""
+
+    content_id: UUID
+    title: str
+    source_name: str
+    save_count: int
+    badge: str = "coup_de_coeur"
+    url: str
+    thumbnail_url: str | None = None
+    source: SourceMini
+    is_read: bool = False
+    is_saved: bool = False
+    is_liked: bool = False
+    is_dismissed: bool = False
 
 
 class DigestResponse(BaseModel):
@@ -178,6 +215,13 @@ class DigestResponse(BaseModel):
     )
     is_completed: bool = False
     completed_at: datetime | None = None
+
+    # Editorial fields (populated when format_version="editorial_v1")
+    header_text: str | None = None
+    closure_text: str | None = None
+    cta_text: str | None = None
+    pepite: PepiteResponse | None = None
+    coup_de_coeur: CoupDeCoeurResponse | None = None
 
     class Config:
         from_attributes = True

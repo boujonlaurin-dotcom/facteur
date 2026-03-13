@@ -1,99 +1,215 @@
-# Handoff — Section "Tu n'es pas seul·e" : Animation communauté + citations incarnées
+# Handoff — Story 10.26 : Layout éditorial + widgets texte
 
 ## Contexte
 
-La landing page Facteur (`apps/landing/public/`) a une section témoignages (Section 2 — "Tu n'es pas seul·e") qui manque de vie et d'émotion. L'objectif est double :
+Les stories 10.22 (sources deep), 10.23 (pipeline curation), 10.24 (rédaction LLM) et 10.25 (format editorial_v1 + endpoint API + modèles Dart) sont mergées/prêtes. Le backend renvoie maintenant un `DigestResponse` complet avec tous les champs éditoriaux. Les modèles Dart parsent correctement le nouveau format. **Mais l'UI mobile affiche encore le layout `topics_v1` pour les digests éditoriaux.**
 
-1. **Animation "communauté"** : quand l'utilisateur scrolle vers cette section, des silhouettes/avatars/icônes de personnes se "peuplent" progressivement, donnant un vrai sentiment de "on est nombreux à ressentir ça". L'effet doit être **moderne, créatif, et marquant** — pas juste des ronds qui pop.
-2. **Citations plus incarnées** : les témoignages actuels ont juste un prénom ("Sandrine A."). Ça fait anonyme et détaché. Il faut rattacher chaque citation à un être humain crédible — via un avatar visuel (initiale colorée) et l'âge de la personne (sans métier).
+**Story 10.26 = rendre le layout éditorial visible dans l'app** : header dynamique, textes d'intro/transition entre les sujets, section divider, et progression simplifiée (dots).
 
----
+## Objectif
 
-## Serveur local
+1. **Brancher le layout `editorial_v1`** dans `DigestBriefingSection` (D3)
+2. **Header dynamique** : remplacer "L'Essentiel du jour" par `headerText` de l'API (D1)
+3. **Progression simplifiée** : dots discrets au lieu de la barre segmentée (D6)
+4. **Créer 3 nouveaux widgets** : `IntroText` (N1), `TransitionText` (N2), `SectionDivider` (N4)
+5. **Créer le conteneur `EditorialSubjectBlock`** qui assemble intro + cartes + transition par sujet
 
-```bash
-cd apps/landing/public && python3 -m http.server 8090
-```
-→ `http://localhost:8090` (un serveur tourne peut-être déjà)
+## Design doc de référence
 
-**Branche** : `claude/update-landing-page-2`
+**LECTURE OBLIGATOIRE** :
+- `docs/design/editorial-digest/03-frontend.md` — sections D1, D3, D6, N1, N2, N4 et **arbre widget final (§9)**
+- `docs/design/editorial-digest/implementation-plan.md` — ÉTAPE 6
 
----
+## Architecture actuelle (ce qui existe après 10.25)
 
-## 1. Animation communauté au scroll (la partie créative)
+### DigestResponse (modèle Dart — `digest_models.dart`)
 
-**Section cible** : `<section id="testimonials">` (index.html l.63-109)
+Les champs suivants sont disponibles et parsés :
+```dart
+// Sur DigestResponse
+String? headerText;      // "☀️ Ce matin, 3 sujets à retenir"
+String? closureText;     // "✅ T'es à jour. Bonne journée !"
+String? ctaText;         // "Un truc t'a marqué ? Dis-moi 👋"
+bool get usesEditorial;  // formatVersion == 'editorial_v1'
+bool get usesTopics;     // true pour topics_v1 ET editorial_v1
+PepiteResponse? pepite;
+CoupDeCoeurResponse? coupDeCoeur;
 
-**Objectif** : à mesure que la section entre dans le viewport, des "personnes" apparaissent progressivement au-dessus du titre, créant un effet de foule qui grandit. L'utilisateur doit *sentir* qu'il n'est pas seul.
+// Sur DigestTopic (= 1 sujet éditorial)
+String? introText;       // "Le gouvernement dévoile..." (2-3 phrases)
+String? transitionText;  // "Pendant ce temps, côté tech…"
 
-**Contraintes techniques** :
-- Stack : HTML/CSS/JS vanilla uniquement (pas de librairie externe)
-- Le JS existant utilise `IntersectionObserver` pour le reveal (voir `main.js` l.10-23)
-- L'animation doit être **scroll-driven** : les éléments se peuplent progressivement à mesure que l'utilisateur scrolle, PAS d'un seul coup quand la section devient visible
-- Responsive : doit fonctionner sur mobile (<768px) et desktop
-- Performance : pas de jank, utiliser `transform`/`opacity` uniquement
-
-**Direction créative — sois ambitieux** :
-- Pense au-delà des simples ronds avec initiales. Explore des idées comme :
-  - Des silhouettes SVG minimalistes style "personnages" (tête + épaules) qui montent depuis le bas
-  - Un effet "assemblée" où les gens arrivent par groupes, certains plus grands (plus proches), certains plus petits (plus loin) → effet de profondeur
-  - Des micro-animations individuelles (un personnage qui tourne légèrement la tête, un qui fait un petit wave)
-  - Un compteur subtil "+ de 200 personnes ressentent la même chose" qui s'incrémente pendant le scroll
-  - Des positions organiques (pas une grille rigide) pour un rendu naturel
-- Utilise la palette Facteur : `--color-accent: #d4652a`, `--color-accent-light: #fdf0e9`, `--color-bg-alt: #f0ece6`
-- L'animation doit être **fluide** et donner une émotion — pas un gadget technique
-
-**Fichiers concernés** :
-- `apps/landing/public/css/style.css` : nouveaux styles (section Testimonials commence l.412)
-- `apps/landing/public/index.html` : nouveau HTML au-dessus du `<h2>` titre (l.64-65)
-- `apps/landing/public/js/main.js` : logique scroll-driven (attention à ne pas casser l'IntersectionObserver existant)
-
----
-
-## 2. Citations plus incarnées (sans métier)
-
-**État actuel** : chaque `.testimonial-card` a un `.testimonial-card__header` avec juste `<span class="testimonial-card__name">Prénom X.</span>`. L'avatar (`.testimonial-card__avatar`) existe dans le CSS mais est `display: none`.
-
-**Changements** :
-
-### HTML (`index.html`)
-Transformer chaque header de card pour inclure un avatar initial + l'âge :
-```html
-<div class="testimonial-card__header">
-    <span class="testimonial-card__avatar">S</span>
-    <div class="testimonial-card__identity">
-        <span class="testimonial-card__name">Sandrine A.</span>
-        <span class="testimonial-card__context">34 ans</span>
-    </div>
-</div>
+// Sur DigestItem / DigestTopicArticle
+String? badge;           // "actu", "pas_de_recul", "pepite", "coup_de_coeur"
 ```
 
-Données pour chaque personne :
-- Sandrine A. → initiale S, 34 ans
-- Margaux R. → initiale M, 27 ans
-- Romain B. → initiale R, 41 ans
-- Sana H. → initiale S, 30 ans
+### DigestBriefingSection (`digest_briefing_section.dart`)
 
-### CSS (`style.css`)
-- `.testimonial-card__avatar` : afficher comme cercle coloré (36px, `border-radius: 50%`, blanc sur fond `--color-accent`) avec l'initiale centrée. Alterner les couleurs entre les cards pour varier.
-- `.testimonial-card__identity` : flex column, contient name + context
-- `.testimonial-card__name` : passer en `font-weight: 600`, `font-size: var(--font-size-sm)`, `color: var(--color-text)`. Retirer le `::before` avec le tiret cadratin.
-- `.testimonial-card__context` : `font-size: var(--font-size-xs)`, `color: var(--color-text-muted)`
+C'est le widget principal qui rend le contenu du digest. Actuellement il gère :
+- `topics_v1` : affiche des `TopicSection` avec PageView horizontal par topic
+- `flat_v1` : affiche les `DigestItem` en liste plate
 
----
+**Il n'y a pas encore de branche `editorial_v1`.** Les digests éditoriaux passent par le chemin `usesTopics == true` et s'affichent comme des topics classiques sans les textes édito.
 
-## Fichiers concernés (résumé)
+### DigestProgressBar (`digest_progress_bar.dart`)
 
-| Fichier | Changements |
+Barre segmentée actuelle. En mode `editorial_v1`, elle doit être remplacée par des dots discrets.
+
+### DigestMode (2 modes)
+
+Déjà réduit à `pourVous` + `serein` (le mode `perspective` a été supprimé en 10.25).
+
+## Spécification technique des widgets
+
+### N1 — IntroText (`digest/widgets/intro_text.dart`)
+
+Texte éditorial (2-3 phrases) au-dessus des cartes pour chaque sujet.
+- **Input** : `String introText`
+- **Typo** : `FacteurTypography.bodyLarge` (17px, w400), line height 1.5
+- **Couleur** : `FacteurColors.textPrimary`
+- **Padding** : 16px horizontal, 8px top, 12px bottom
+- **Si `introText` est null** : ne pas afficher le widget
+
+### N2 — TransitionText (`digest/widgets/transition_text.dart`)
+
+Court texte de liaison entre 2 sujets.
+- **Input** : `String transitionText`
+- **Typo** : `FacteurTypography.bodySmall` (13px, w400), _italique_
+- **Couleur** : `FacteurColors.textSecondary`
+- **Séparateur** : ligne 1px `textTertiary @ 20%` au-dessus et en-dessous
+- **Padding** : 24px vertical
+- **Si `transitionText` est null** (dernier sujet) : ne pas afficher
+
+### N4 — SectionDivider (`digest/widgets/section_divider.dart`)
+
+Séparateur "Et aussi…" entre les 3 sujets principaux et les sections pépite/coup de coeur.
+- **Typo** : `FacteurTypography.displaySmall` (18px, w600), centré
+- **Décor** : ligne 2px `primary @ 30%`, 60px wide, centrée
+- **Padding** : 32px top, 16px bottom
+
+### D1 — Header dynamique
+
+Dans `DigestBriefingSection`, remplacer le titre statique "L'Essentiel du jour" par `digest.headerText` quand non null.
+- **Fallback** : si `headerText` est null, garder "L'Essentiel du jour"
+- **Typo** : même style existant `FacteurTypography.displayLarge` (28px, w700)
+
+### D3 — Branchement layout
+
+Dans `DigestBriefingSection`, ajouter une branche quand `digest.usesEditorial` :
+```
+if (digest.usesEditorial) → renderEditorialLayout()
+else if (digest.usesTopics) → renderTopicsLayout() (existant)
+else → renderFlatLayout() (existant)
+```
+
+Le layout éditorial assemble les sujets via un `EditorialSubjectBlock` :
+```
+for subject in topics:
+  Column(
+    IntroText(subject.introText),
+    [cartes articles existantes — garder le rendu actuel des TopicSection],
+    TransitionText(subject.transitionText),  // null pour le dernier
+  )
+
+SectionDivider("Et aussi…")
+
+// Pépite + Coup de coeur = cartes normales pour l'instant
+// (les widgets PepiteBlock et CoupDeCoeurBlock arrivent en 10.27)
+```
+
+### D6 — Progression dots
+
+En mode `editorial_v1`, remplacer la `DigestProgressBar` par des dots discrets :
+- N dots (= nombre de sujets + slots pepite/cdc)
+- Dot rempli si le sujet est "couvert" (`isCovered`)
+- Style : 6x6 cercles, spacing 6px, couleur `primary` (rempli) / `border @ 40%` (vide)
+- Position : sous le header text, même row que le mode selector si possible
+
+## Arbre widget attendu (editorial_v1)
+
+```
+DigestBriefingSection (modifié D1/D3)
+├── Header
+│   ├── Text(digest.headerText ?? "L'Essentiel du jour")  ← D1
+│   ├── ProgressDots(processedCount / totalCount)          ← D6
+│   └── DigestModeTabSelector(2 modes)                     ← existant
+│
+├── for topic in digest.topics:
+│   └── EditorialSubjectBlock
+│       ├── IntroText(topic.introText)                     ← N1
+│       ├── [cartes articles — rendu TopicSection existant]
+│       └── TransitionText(topic.transitionText)           ← N2
+│
+├── SectionDivider("Et aussi…")                            ← N4
+│
+├── [Pépite carte — rendu simple pour l'instant]
+├── [Coup de coeur carte — rendu simple pour l'instant]
+│
+└── [Closure block — sera ajouté en Story 10.28]
+```
+
+## Ce qui NE FAIT PAS partie de cette story
+
+- **Badges sémantiques (D4)** → Story 10.27
+- **Rank badge retiré (D5)** → Story 10.27
+- **ArticlePairView swipe horizontal (N3)** → Story 10.27
+- **PepiteBlock et CoupDeCoeurBlock (N5)** → Story 10.27
+- **ClosureBlock (D7)** → Story 10.28
+- **FeedbackBottomSheet (N6)** → Story 10.28
+
+Pour cette story, les cartes articles gardent leur rendu actuel. La pépite et le coup de coeur sont rendus comme des cartes normales en fin de liste. Le focus est sur le **layout et les textes édito**.
+
+## Fichiers à modifier
+
+| Fichier | Changement |
 |---------|------------|
-| `apps/landing/public/css/style.css` | #1 animation crowd CSS, #2 avatar + identity styles |
-| `apps/landing/public/index.html` | #1 crowd HTML, #2 avatar+age dans headers |
-| `apps/landing/public/js/main.js` | #1 scroll-driven logic pour l'animation |
+| `apps/mobile/lib/features/digest/widgets/digest_briefing_section.dart` | Branchement D3, header dynamique D1, progression dots D6 |
+| `apps/mobile/lib/features/digest/widgets/intro_text.dart` | **NOUVEAU** — Widget N1 |
+| `apps/mobile/lib/features/digest/widgets/transition_text.dart` | **NOUVEAU** — Widget N2 |
+| `apps/mobile/lib/features/digest/widgets/section_divider.dart` | **NOUVEAU** — Widget N4 |
+| `apps/mobile/lib/features/digest/widgets/editorial_subject_block.dart` | **NOUVEAU** — Conteneur qui assemble intro + cartes + transition |
+| `apps/mobile/lib/features/digest/widgets/progress_dots.dart` | **NOUVEAU** — Dots de progression (remplace DigestProgressBar en editorial_v1) |
 
-## Vérification
+## Dépendances code existant
 
-1. Refresh `http://localhost:8090`
-2. Scroller lentement vers la section "Tu n'es pas seul·e" — les personnages doivent se peupler **progressivement au scroll**, pas d'un coup
-3. Les 4 citations doivent montrer un avatar rond coloré + prénom + âge
-4. Tester responsive < 768px
-5. Pas de jank visible (ouvrir DevTools Performance si doute)
+| Composant | Fichier | Usage |
+|-----------|---------|-------|
+| `DigestBriefingSection` | `digest_briefing_section.dart` | Widget principal — à modifier |
+| `DigestProgressBar` | `digest_progress_bar.dart` | Barre actuelle — garder pour flat_v1/topics_v1, ajouter ProgressDots pour editorial_v1 |
+| `TopicSection` | `digest_briefing_section.dart` (ou widget séparé) | Rendu des cartes par topic — réutiliser dans EditorialSubjectBlock |
+| `DigestCard` | `digest_card.dart` | Carte article — réutiliser tel quel |
+| `FacteurTypography` | `core/theme/` | Typography tokens |
+| `FacteurColors` | `core/theme/` | Color tokens |
+| `digest_provider.dart` | provider | `processedCount`, `totalCount`, `progress` — déjà mis à jour en 10.25 |
+
+## Fallbacks
+
+- Si `headerText` est null → afficher "L'Essentiel du jour" (texte statique existant)
+- Si `introText` est null → pas de bloc texte au-dessus des cartes (espace direct vers les cartes)
+- Si `transitionText` est null → pas de transition (normal pour le dernier sujet)
+- Si `pepite`/`coupDeCoeur` est null → ne pas afficher le SectionDivider ni les sections correspondantes
+- Si un digest est `topics_v1` → zéro changement, le layout actuel est conservé
+
+## Critères de validation
+
+1. Un digest `editorial_v1` affiche le header dynamique (`headerText`)
+2. Chaque sujet montre son `introText` au-dessus des cartes
+3. Les transitions `transitionText` apparaissent entre les sujets (pas après le dernier)
+4. Le SectionDivider "Et aussi…" apparaît avant pépite/cdc
+5. Les dots de progression reflètent le nombre de sujets couverts
+6. Un digest `topics_v1` ou `flat_v1` **n'est pas affecté** (rétrocompatibilité)
+7. `flutter analyze` + `flutter test` passent
+8. Le scroll est fluide (pas de jank) avec les nouveaux widgets texte
+
+## Risques
+
+- **Conflit de layout** : `DigestBriefingSection` est un widget complexe (~400+ lignes). Bien comprendre le flow existant avant de toucher au layout.
+- **FacteurTypography / FacteurColors** : vérifier que les tokens existent (`displayLarge`, `bodyLarge`, `bodySmall`, `displaySmall`, `textPrimary`, `textSecondary`, `textTertiary`). Si non, utiliser les équivalents les plus proches du design system.
+- **TopicSection réutilisation** : le rendu des cartes par topic est peut-être intimement lié au layout topics_v1. Si c'est le cas, extraire la logique de cartes dans un widget partagé plutôt que dupliquer.
+
+## Contraintes techniques
+
+- **Flutter SDK >=3.0.0 <4.0.0**
+- **Riverpod 2.5** (code gen, build_runner)
+- **Python 3.12 only** côté backend (pas touché dans cette story)
+- Après modification des widgets Freezed : `dart run build_runner build --delete-conflicting-outputs`

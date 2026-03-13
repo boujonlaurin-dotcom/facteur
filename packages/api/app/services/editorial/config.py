@@ -54,6 +54,19 @@ class EditorialConfig:
     deep_matching_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.2, max_tokens=300)
     )
+    writing_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", temperature=0.7, max_tokens=1500
+        )
+    )
+    writing_serene_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", temperature=0.7, max_tokens=1500
+        )
+    )
+    pepite_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(system="", temperature=0.5, max_tokens=500)
+    )
     query_expansion_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(
             system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
@@ -80,6 +93,9 @@ def load_editorial_config() -> EditorialConfig:
     feature_flags = FeatureFlags()
     curation_prompt = PromptConfig(system="")
     deep_matching_prompt = PromptConfig(system="", temperature=0.2, max_tokens=300)
+    writing_prompt = PromptConfig(system="", temperature=0.7, max_tokens=1500)
+    writing_serene_prompt = PromptConfig(system="", temperature=0.7, max_tokens=1500)
+    pepite_prompt = PromptConfig(system="", temperature=0.5, max_tokens=500)
     query_expansion_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
     )
@@ -103,6 +119,12 @@ def load_editorial_config() -> EditorialConfig:
                 curation_prompt = PromptConfig(**raw["curation"])
             if raw and "deep_matching" in raw:
                 deep_matching_prompt = PromptConfig(**raw["deep_matching"])
+            if raw and "writing" in raw:
+                writing_prompt = PromptConfig(**raw["writing"])
+            if raw and "writing_serene" in raw:
+                writing_serene_prompt = PromptConfig(**raw["writing_serene"])
+            if raw and "pepite" in raw:
+                pepite_prompt = PromptConfig(**raw["pepite"])
             if raw and "query_expansion" in raw:
                 query_expansion_prompt = PromptConfig(**raw["query_expansion"])
         except Exception:
@@ -113,5 +135,8 @@ def load_editorial_config() -> EditorialConfig:
         feature_flags=feature_flags,
         curation_prompt=curation_prompt,
         deep_matching_prompt=deep_matching_prompt,
+        writing_prompt=writing_prompt,
+        writing_serene_prompt=writing_serene_prompt,
+        pepite_prompt=pepite_prompt,
         query_expansion_prompt=query_expansion_prompt,
     )
