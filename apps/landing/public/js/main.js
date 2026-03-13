@@ -27,6 +27,29 @@
         card.style.transitionDelay = (i * 120) + 'ms';
     });
 
+    // ── Crowd scroll animation — people appear progressively ──
+    var crowdPeople = document.querySelectorAll('.crowd__person');
+    var crowdSection = document.querySelector('.testimonials');
+    var crowdRevealed = 0;
+
+    if (crowdSection && crowdPeople.length > 0) {
+        var crowdObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (entry.isIntersecting) {
+                    // Start revealing people with stagger
+                    crowdPeople.forEach(function (person, i) {
+                        setTimeout(function () {
+                            person.classList.add('visible');
+                        }, i * 80);
+                    });
+                    crowdObserver.disconnect();
+                }
+            });
+        }, { threshold: 0.05 });
+
+        crowdObserver.observe(crowdSection);
+    }
+
     // ── Waitlist Forms ────────────────────────────
     document.querySelectorAll('.waitlist-form').forEach(function (form) {
         form.addEventListener('submit', function (e) {
