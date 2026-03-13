@@ -72,7 +72,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Content? _activeDismissalContent;
   int _activeDismissalIndex = 0;
   bool _swipeHintSeen = false;
-  double _lastScrollPosition = 0;
+  final double _lastScrollPosition = 0;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -115,8 +115,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
     // 2. Premium source → open in external browser for authenticated access
     final sources = ref.read(userSourcesProvider).valueOrNull ?? [];
-    final isPremium = sources.any(
-        (s) => s.id == content.source.id && s.hasSubscription);
+    final isPremium =
+        sources.any((s) => s.id == content.source.id && s.hasSubscription);
     if (isPremium && content.url.isNotEmpty) {
       final uri = Uri.tryParse(content.url);
       if (uri != null) {
@@ -477,8 +477,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .where((s) =>
                                   (s.isTrusted || s.isCustom) && !s.isMuted)
                               .toList();
-                          final hasFollowedSources =
-                              followedSources.isNotEmpty;
+                          final hasFollowedSources = followedSources.isNotEmpty;
                           final subscribedSourceIds = allSources
                               .where((s) => s.hasSubscription)
                               .map((s) => s.id)
@@ -521,8 +520,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .map((t) => FilterConfig(
                                     key: t.slugParent!,
                                     label: '• ${t.name}',
-                                    description:
-                                        'Articles sur ${t.name}',
+                                    description: 'Articles sur ${t.name}',
                                   ))
                               .toList();
 
@@ -549,10 +547,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           });
 
                           // "Derniers articles" always first, then custom topics, then other themes
-                          final recentFilter =
-                              themeFilters.where((f) => f.key == 'recent').toList();
-                          final otherThemeFilters =
-                              themeFilters.where((f) => f.key != 'recent').toList();
+                          final recentFilter = themeFilters
+                              .where((f) => f.key == 'recent')
+                              .toList();
+                          final otherThemeFilters = themeFilters
+                              .where((f) => f.key != 'recent')
+                              .toList();
                           final mergedFilters = [
                             ...recentFilter,
                             ...uniqueCustomFilters,
@@ -569,9 +569,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     notifier.selectedFilter == 'recent'
                                         ? 'recent'
                                         : notifier.selectedTheme,
-                                userBias: ref
-                                    .watch(userBiasProvider)
-                                    .valueOrNull,
+                                userBias:
+                                    ref.watch(userBiasProvider).valueOrNull,
                                 availableFilters: mergedFilters,
                                 sourceFilterChip: hasFollowedSources
                                     ? SourceFilterChip(
@@ -730,7 +729,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   final savedNudgeEffectivePos =
                                       savedNudgePos + contentOffset;
                                   if (listIndex == savedNudgeEffectivePos) {
-                                    final count = savedSummary!.unreadCount;
+                                    final count = savedSummary.unreadCount;
                                     return SavedNudge(
                                       key: const ValueKey('saved_nudge'),
                                       message:
@@ -771,20 +770,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     _activeDismissalContent != null) {
                                   final capturedContent =
                                       _activeDismissalContent!;
-                                  final capturedIndex =
-                                      _activeDismissalIndex;
+                                  final capturedIndex = _activeDismissalIndex;
                                   return Padding(
                                     key: ValueKey('dismiss_${content.id}'),
-                                    padding:
-                                        const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.only(bottom: 16),
                                     child: AnimatedSize(
                                       duration:
                                           const Duration(milliseconds: 300),
                                       child: DismissBanner(
                                         content: capturedContent,
                                         onUndo: () => _handleDismissUndo(
-                                            capturedContent,
-                                            capturedIndex),
+                                            capturedContent, capturedIndex),
                                         onMuteSource: () =>
                                             _handleDismissMuteSource(
                                                 capturedContent),
@@ -799,30 +795,26 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   );
                                 }
 
-                                final showHint = !_swipeHintSeen &&
-                                    contentIndex <= 1;
+                                final showHint =
+                                    !_swipeHintSeen && contentIndex <= 1;
 
                                 Widget cardWidget = SwipeToOpenCard(
-                                  onSwipeOpen: () =>
-                                      _showArticleModal(content),
-                                  onSwipeDismiss: () =>
-                                      _handleSwipeDismiss(
-                                          content, contentIndex),
+                                  onSwipeOpen: () => _showArticleModal(content),
+                                  onSwipeDismiss: () => _handleSwipeDismiss(
+                                      content, contentIndex),
                                   enableHintAnimation: showHint,
                                   onHintAnimationComplete: () {
                                     if (!_swipeHintSeen) {
                                       _swipeHintSeen = true;
                                       markSwipeLeftHintSeen();
-                                      ref.invalidate(
-                                          swipeLeftHintSeenProvider);
+                                      ref.invalidate(swipeLeftHintSeenProvider);
                                     }
                                   },
                                   child: AnimatedFeedCard(
                                     isConsumed: isConsumed,
                                     child: FeedCard(
                                       content: content,
-                                      onTap: () =>
-                                          _showArticleModal(content),
+                                      onTap: () => _showArticleModal(content),
                                       onLongPressStart: (_) =>
                                           ArticlePreviewOverlay.show(
                                         context,
@@ -847,10 +839,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             .toggleSave(content);
                                         if (!wasSaved) {
                                           // Auto-add to default collection
-                                          final defaultCol = ref.read(defaultCollectionProvider);
+                                          final defaultCol = ref
+                                              .read(defaultCollectionProvider);
                                           if (defaultCol != null) {
-                                            final colRepo = ref.read(collectionsRepositoryProvider);
-                                            await colRepo.addToCollection(defaultCol.id, content.id);
+                                            final colRepo = ref.read(
+                                                collectionsRepositoryProvider);
+                                            await colRepo.addToCollection(
+                                                defaultCol.id, content.id);
                                             ref.invalidate(collectionsProvider);
                                           }
                                           if (context.mounted) {
@@ -867,16 +862,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         content: content,
                                         isFollowed: content.topics.isNotEmpty &&
                                             followedTopics.any((t) =>
-                                                t.slugParent == content.topics.first ||
+                                                t.slugParent ==
+                                                    content.topics.first ||
                                                 t.name.toLowerCase() ==
-                                                    getTopicLabel(content.topics.first)
+                                                    getTopicLabel(content
+                                                            .topics.first)
                                                         .toLowerCase()),
                                       ),
                                       clusterChipWidget:
                                           ClusterChip(content: content),
-                                      isSourceSubscribed:
-                                          subscribedSourceIds
-                                              .contains(content.source.id),
+                                      isSourceSubscribed: subscribedSourceIds
+                                          .contains(content.source.id),
                                     ),
                                   ),
                                 );
@@ -1111,10 +1107,10 @@ class _RefreshConfirmSheet extends StatelessWidget {
           Text(
             isCompulsive
                 ? 'Tu as déjà rafraîchi plusieurs fois. '
-                  'As-tu vraiment besoin de plus d\'info maintenant ? '
-                  'Essaie plutôt les derniers articles publiés.'
+                    'As-tu vraiment besoin de plus d\'info maintenant ? '
+                    'Essaie plutôt les derniers articles publiés.'
                 : 'Les articles que tu n\'as pas lus seront déclassés '
-                  'et remplacés par de nouveaux contenus.',
+                    'et remplacés par de nouveaux contenus.',
             style: TextStyle(
               color: colors.textSecondary,
               fontSize: 15,

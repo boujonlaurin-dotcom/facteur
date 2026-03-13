@@ -70,7 +70,7 @@ class SupabaseConstants {
   /// Valide et nettoie l'URL Supabase
   /// Détecte les erreurs courantes comme l'URL du dashboard au lieu de l'URL API
   static String _validateAndCleanSupabaseUrl(String value) {
-    String cleaned = _cleanEnvVar(value);
+    final String cleaned = _cleanEnvVar(value);
 
     if (cleaned.isEmpty) return cleaned;
 
@@ -218,8 +218,7 @@ class AppUpdateConstants {
   AppUpdateConstants._();
 
   /// Release tag injected by CI (e.g. "beta-20260221-1430")
-  static const String releaseTag =
-      String.fromEnvironment('APP_RELEASE_TAG');
+  static const String releaseTag = String.fromEnvironment('APP_RELEASE_TAG');
 
   /// Whether this is a CI-built release (not a dev build)
   static bool get isReleaseBuild => releaseTag.isNotEmpty;

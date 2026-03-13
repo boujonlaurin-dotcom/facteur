@@ -1,9 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mocktail/mocktail.dart';
-
-import 'package:facteur/features/digest/providers/digest_provider.dart';
-import 'package:facteur/features/digest/models/digest_models.dart';
 
 // TODO: Complete implementation of these tests
 // These test cases are required to validate the digest completion flow

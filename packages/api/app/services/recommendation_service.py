@@ -213,6 +213,7 @@ class RecommendationService:
                 content.is_hidden = st.is_hidden
                 content.hidden_reason = st.hidden_reason
                 content.status = st.status
+                content.reading_progress = st.reading_progress
                 content.note_text = st.note_text
                 content.note_updated_at = st.note_updated_at
                 results.append(content)
@@ -302,6 +303,7 @@ class RecommendationService:
                     content.is_hidden = st.is_hidden if st else False
                     content.hidden_reason = st.hidden_reason if st else None
                     content.status = st.status if st else ContentStatus.UNSEEN
+                    content.reading_progress = st.reading_progress if st else 0
             return paginated
 
         # 3. Score Candidates using ScoringEngine
@@ -506,6 +508,7 @@ class RecommendationService:
                 content.is_hidden = st.is_hidden if st else False
                 content.hidden_reason = st.hidden_reason if st else None
                 content.status = st.status if st else ContentStatus.UNSEEN
+                content.reading_progress = st.reading_progress if st else 0
 
         t_end = time.monotonic()
         logger.info(

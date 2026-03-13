@@ -93,6 +93,7 @@ class ContentResponse(BaseModel):
     is_paid: bool = False  # Paywall detection
     content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
     recommendation_reason: RecommendationReason | None = None
+    reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
 
@@ -127,6 +128,7 @@ class ContentDetailResponse(BaseModel):
     is_hidden: bool = False
     hidden_reason: str | None = None
     time_spent_seconds: int = 0
+    reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
 
@@ -139,6 +141,7 @@ class ContentStatusUpdate(BaseModel):
 
     status: ContentStatus | None = None
     time_spent_seconds: int | None = None
+    reading_progress: int | None = Field(None, ge=0, le=100)
 
 
 class DailyTop3Response(BaseModel):
