@@ -889,7 +889,7 @@ img {
     border-color: var(--color-text-muted);
 }
 
-.survey-option:has(input:checked) {
+.survey-option.is-checked {
     background: var(--color-accent-light);
     border-color: var(--color-accent);
 }
