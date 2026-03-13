@@ -198,28 +198,21 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: title + progress bar
+                  // Left: title
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "L'Essentiel du jour",
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
-                              ?.copyWith(
-                                fontSize: 23,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.5,
-                                color: textPrimary,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 6),
-                        _buildSegmentedProgressBar(colors, isDark),
-                      ],
+                    child: Text(
+                      "L'Essentiel du jour",
+                      style: Theme.of(context)
+                          .textTheme
+                          .displaySmall
+                          ?.copyWith(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: textPrimary,
+                          ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   // Right: segmented control (disabled) + CTA label
@@ -263,60 +256,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildSegmentedProgressBar(
-      FacteurColors colors, bool isDark) {
-    final int processedCount;
-    final int totalCount;
-
-    if (_usesTopics) {
-      totalCount = widget.topics!.length;
-      processedCount = widget.topics!.where((t) => t.isCovered).length;
-    } else {
-      totalCount = widget.items.length;
-      processedCount = widget.items
-          .where((item) => item.isRead || item.isDismissed || item.isSaved)
-          .length;
-    }
-
-    final isDone = processedCount >= totalCount;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$processedCount/$totalCount',
-          style: TextStyle(
-            color: isDone ? colors.success : colors.primary,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(totalCount, (index) {
-            final isFilled = index < processedCount;
-            return Container(
-              width: 8,
-              height: 4,
-              margin: EdgeInsets.only(
-                right: index < totalCount - 1 ? 2 : 0,
-              ),
-              decoration: BoxDecoration(
-                color: isFilled
-                    ? (isDone ? colors.success : colors.primary)
-                    : isDark
-                        ? Colors.white.withValues(alpha: 0.15)
-                        : Colors.black.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            );
-          }),
-        ),
-      ],
     );
   }
 

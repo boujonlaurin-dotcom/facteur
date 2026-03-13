@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_deployed_db(self) -> "Settings":
         """Empêche l'utilisation de localhost en production/staging."""
+        if self.skip_startup_checks:
+            return self
         if self.environment in ("production", "staging") and not os.environ.get(
             "DATABASE_URL"
         ):

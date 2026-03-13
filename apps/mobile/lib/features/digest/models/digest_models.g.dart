@@ -95,6 +95,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : DigestRecommendationReason.fromJson(
               json['recommendation_reason'] as Map<String, dynamic>),
       noteText: json['note_text'] as String?,
+      badge: json['badge'] as String?,
     );
 
 Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
@@ -120,6 +121,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
       'note_text': instance.noteText,
+      'badge': instance.badge,
     };
 
 _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
@@ -140,6 +142,8 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => DigestItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      introText: json['intro_text'] as String?,
+      transitionText: json['transition_text'] as String?,
     );
 
 Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
@@ -154,6 +158,8 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'topic_score': instance.topicScore,
       'subjects': instance.subjects,
       'articles': instance.articles,
+      'intro_text': instance.introText,
+      'transition_text': instance.transitionText,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
@@ -177,6 +183,16 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
       completedAt: json['completed_at'] == null
           ? null
           : DateTime.parse(json['completed_at'] as String),
+      headerText: json['header_text'] as String?,
+      closureText: json['closure_text'] as String?,
+      ctaText: json['cta_text'] as String?,
+      pepite: json['pepite'] == null
+          ? null
+          : PepiteResponse.fromJson(json['pepite'] as Map<String, dynamic>),
+      coupDeCoeur: json['coup_de_coeur'] == null
+          ? null
+          : CoupDeCoeurResponse.fromJson(
+              json['coup_de_coeur'] as Map<String, dynamic>),
     );
 
 Map<String, dynamic> _$$DigestResponseImplToJson(
@@ -193,6 +209,80 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'completion_threshold': instance.completionThreshold,
       'is_completed': instance.isCompleted,
       'completed_at': instance.completedAt?.toIso8601String(),
+      'header_text': instance.headerText,
+      'closure_text': instance.closureText,
+      'cta_text': instance.ctaText,
+      'pepite': instance.pepite,
+      'coup_de_coeur': instance.coupDeCoeur,
+    };
+
+_$PepiteResponseImpl _$$PepiteResponseImplFromJson(Map<String, dynamic> json) =>
+    _$PepiteResponseImpl(
+      contentId: json['content_id'] as String,
+      miniEditorial: json['mini_editorial'] as String? ?? '',
+      badge: json['badge'] as String? ?? 'pepite',
+      title: json['title'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      thumbnailUrl: json['thumbnail_url'] as String?,
+      source: json['source'] == null
+          ? null
+          : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
+      isRead: json['is_read'] as bool? ?? false,
+      isSaved: json['is_saved'] as bool? ?? false,
+      isLiked: json['is_liked'] as bool? ?? false,
+      isDismissed: json['is_dismissed'] as bool? ?? false,
+    );
+
+Map<String, dynamic> _$$PepiteResponseImplToJson(
+        _$PepiteResponseImpl instance) =>
+    <String, dynamic>{
+      'content_id': instance.contentId,
+      'mini_editorial': instance.miniEditorial,
+      'badge': instance.badge,
+      'title': instance.title,
+      'url': instance.url,
+      'thumbnail_url': instance.thumbnailUrl,
+      'source': instance.source,
+      'is_read': instance.isRead,
+      'is_saved': instance.isSaved,
+      'is_liked': instance.isLiked,
+      'is_dismissed': instance.isDismissed,
+    };
+
+_$CoupDeCoeurResponseImpl _$$CoupDeCoeurResponseImplFromJson(
+        Map<String, dynamic> json) =>
+    _$CoupDeCoeurResponseImpl(
+      contentId: json['content_id'] as String,
+      title: json['title'] as String? ?? '',
+      sourceName: json['source_name'] as String? ?? '',
+      saveCount: (json['save_count'] as num?)?.toInt() ?? 0,
+      badge: json['badge'] as String? ?? 'coup_de_coeur',
+      url: json['url'] as String? ?? '',
+      thumbnailUrl: json['thumbnail_url'] as String?,
+      source: json['source'] == null
+          ? null
+          : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
+      isRead: json['is_read'] as bool? ?? false,
+      isSaved: json['is_saved'] as bool? ?? false,
+      isLiked: json['is_liked'] as bool? ?? false,
+      isDismissed: json['is_dismissed'] as bool? ?? false,
+    );
+
+Map<String, dynamic> _$$CoupDeCoeurResponseImplToJson(
+        _$CoupDeCoeurResponseImpl instance) =>
+    <String, dynamic>{
+      'content_id': instance.contentId,
+      'title': instance.title,
+      'source_name': instance.sourceName,
+      'save_count': instance.saveCount,
+      'badge': instance.badge,
+      'url': instance.url,
+      'thumbnail_url': instance.thumbnailUrl,
+      'source': instance.source,
+      'is_read': instance.isRead,
+      'is_saved': instance.isSaved,
+      'is_liked': instance.isLiked,
+      'is_dismissed': instance.isDismissed,
     };
 
 _$DigestCompletionResponseImpl _$$DigestCompletionResponseImplFromJson(

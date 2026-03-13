@@ -213,6 +213,7 @@ class RecommendationService:
                 content.is_hidden = st.is_hidden
                 content.hidden_reason = st.hidden_reason
                 content.status = st.status
+                content.reading_progress = st.reading_progress
                 content.note_text = st.note_text
                 content.note_updated_at = st.note_updated_at
                 results.append(content)

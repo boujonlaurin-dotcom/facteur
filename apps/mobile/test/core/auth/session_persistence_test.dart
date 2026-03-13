@@ -65,7 +65,8 @@ void main() {
       final rememberMe = box2.get('remember_me', defaultValue: true) as bool;
 
       expect(rememberMe, isFalse,
-          reason: 'La préférence remember_me=false doit survivre au redémarrage');
+          reason:
+              'La préférence remember_me=false doit survivre au redémarrage');
     });
 
     test('remember_me sauvegardé à true doit persister entre redémarrages',
@@ -80,7 +81,8 @@ void main() {
       expect(rememberMe, isTrue);
     });
 
-    test('suppression de remember_me → valeur par défaut true au prochain démarrage',
+    test(
+        'suppression de remember_me → valeur par défaut true au prochain démarrage',
         () async {
       final box = Hive.box<dynamic>('auth_prefs');
       await box.put('remember_me', false);
@@ -88,8 +90,7 @@ void main() {
 
       final rememberMe = box.get('remember_me', defaultValue: true) as bool;
       expect(rememberMe, isTrue,
-          reason:
-              'Après signOut (qui supprime remember_me), le prochain login'
+          reason: 'Après signOut (qui supprime remember_me), le prochain login'
               ' doit partir avec remember_me=true par défaut');
     });
 
@@ -102,7 +103,7 @@ void main() {
       const hasSession = true;
 
       // Comportement attendu : l'utilisateur DOIT être déconnecté
-      final shouldSignOut = !rememberMe && hasSession;
+      const shouldSignOut = !rememberMe && hasSession;
       expect(shouldSignOut, isTrue,
           reason:
               'Quand remember_me=false, la session doit être effacée au cold start');
@@ -114,7 +115,7 @@ void main() {
       const rememberMe = true;
       const hasSession = true;
 
-      final shouldSignOut = !rememberMe && hasSession;
+      const shouldSignOut = !rememberMe && hasSession;
       expect(shouldSignOut, isFalse,
           reason:
               'Quand remember_me=true, la session doit être restaurée sans demander re-login');
@@ -125,7 +126,7 @@ void main() {
   // GROUPE 2 : AuthState - session restore (CAUSE 2, 3, 4)
   // ---------------------------------------------------------------------------
   group('AuthState - session restore logic', () {
-    User _makeUser({
+    User makeUser({
       String id = 'user-123',
       String? emailConfirmedAt,
       List<String> providers = const ['email'],
@@ -151,7 +152,7 @@ void main() {
     });
 
     test('isAuthenticated = true quand user est présent', () {
-      final user = _makeUser(emailConfirmedAt: DateTime.now().toIso8601String());
+      final user = makeUser(emailConfirmedAt: DateTime.now().toIso8601String());
       final state = AuthState(user: user, isLoading: false);
       expect(state.isAuthenticated, isTrue);
     });
@@ -171,7 +172,7 @@ void main() {
     test(
         'session restaurée avec email confirmé → isAuthenticated et isEmailConfirmed',
         () {
-      final user = _makeUser(
+      final user = makeUser(
         emailConfirmedAt: DateTime.now().toIso8601String(),
         providers: ['email'],
       );
@@ -179,13 +180,14 @@ void main() {
 
       expect(state.isAuthenticated, isTrue);
       expect(state.isEmailConfirmed, isTrue,
-          reason: 'Utilisateur avec email confirmé doit accéder à l\'app sans re-login');
+          reason:
+              'Utilisateur avec email confirmé doit accéder à l\'app sans re-login');
     });
 
     test(
         'session restaurée avec provider social (Google) → toujours confirmé même sans emailConfirmedAt',
         () {
-      final user = _makeUser(
+      final user = makeUser(
         emailConfirmedAt: null, // Supabase peut ne pas setter ça pour OAuth
         providers: ['google'],
       );
@@ -200,7 +202,7 @@ void main() {
     test(
         'forceUnconfirmed = true empêche l\'accès même si la session est valide (bug 403)',
         () {
-      final user = _makeUser(
+      final user = makeUser(
         emailConfirmedAt: DateTime.now().toIso8601String(),
       );
       final state = AuthState(
@@ -216,10 +218,9 @@ void main() {
               ' l\'écran de confirmation (guard contre stale JWT 403)');
     });
 
-    test(
-        'forceUnconfirmed reset à false après confirmation → accès rétabli',
+    test('forceUnconfirmed reset à false après confirmation → accès rétabli',
         () {
-      final user = _makeUser(
+      final user = makeUser(
         emailConfirmedAt: DateTime.now().toIso8601String(),
       );
       // Simuler le reset : forceUnconfirmed = false
@@ -235,7 +236,7 @@ void main() {
     });
 
     test('copyWith préserve les valeurs non modifiées', () {
-      final user = _makeUser(emailConfirmedAt: DateTime.now().toIso8601String());
+      final user = makeUser(emailConfirmedAt: DateTime.now().toIso8601String());
       final state = AuthState(
         user: user,
         isLoading: false,
@@ -311,8 +312,7 @@ void main() {
       return null;
     }
 
-    test(
-        'COLD START: isLoading=true → redirect vers /splash (pas vers /login)',
+    test('COLD START: isLoading=true → redirect vers /splash (pas vers /login)',
         () {
       final redirect = simulateRedirect(
         isLoading: true,
@@ -450,13 +450,13 @@ void main() {
               ' sans attendre la DB (évite un redirect vers /onboarding inattendu)');
     });
 
-    test('onboarding_completed absente du cache → null (pas de décision hâtive)',
+    test(
+        'onboarding_completed absente du cache → null (pas de décision hâtive)',
         () async {
       final box = Hive.box<dynamic>('user_profile');
       final cachedCompleted = box.get('onboarding_completed') as bool?;
       expect(cachedCompleted, isNull,
-          reason:
-              'Un cache vide doit retourner null, pas false, pour ne pas'
+          reason: 'Un cache vide doit retourner null, pas false, pour ne pas'
               ' forcer l\'onboarding à tort au premier démarrage');
     });
 

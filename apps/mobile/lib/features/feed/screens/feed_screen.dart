@@ -69,6 +69,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   bool _hasNudged = false;
 
   bool _swipeHintSeen = false;
+  final double _lastScrollPosition = 0;
 
   // Feed Refresh: track timestamps of recent refreshes for anti-addiction
   final List<DateTime> _refreshTimestamps = [];
@@ -518,11 +519,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           });
 
                           // Epic 12: "Pour vous" after custom topics, then theme filters
+                          // "Derniers articles" always first, then custom topics, then other themes
                           final pourVousFilter = themeFilters
                               .where((f) => f.key == 'pour_vous')
                               .toList();
                           final otherThemeFilters = themeFilters
-                              .where((f) => f.key != 'pour_vous')
+                              .where((f) => f.key != 'pour_vous' && f.key != 'recent')
                               .toList();
                           final mergedFilters = [
                             ...pourVousFilter,
@@ -736,6 +738,36 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     .isContentConsumed(content.id);
                                 final progressionTopic =
                                     _activeProgressions[content.id];
+
+                                // Show dismiss banner if this card is being dismissed
+                                if (_activeDismissalId == content.id &&
+                                    _activeDismissalContent != null) {
+                                  final capturedContent =
+                                      _activeDismissalContent!;
+                                  final capturedIndex = _activeDismissalIndex;
+                                  return Padding(
+                                    key: ValueKey('dismiss_${content.id}'),
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: AnimatedSize(
+                                      duration:
+                                          const Duration(milliseconds: 300),
+                                      child: DismissBanner(
+                                        content: capturedContent,
+                                        onUndo: () => _handleDismissUndo(
+                                            capturedContent, capturedIndex),
+                                        onMuteSource: () =>
+                                            _handleDismissMuteSource(
+                                                capturedContent),
+                                        onMuteTopic: (topic) =>
+                                            _handleDismissMuteTopic(
+                                                capturedContent, topic),
+                                        onAutoResolve: () =>
+                                            _handleDismissAutoResolve(
+                                                capturedContent),
+                                      ),
+                                    ),
+                                  );
+                                }
 
                                 final showHint =
                                     !_swipeHintSeen && contentIndex <= 1;
