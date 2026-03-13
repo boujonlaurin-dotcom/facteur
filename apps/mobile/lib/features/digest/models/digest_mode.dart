@@ -43,24 +43,6 @@ enum DigestMode {
     lightGradientStart: Color(0xFF8CC9A5),
     lightGradientEnd: Color(0xFF72BD90),
     lightBackgroundColor: Color(0xFF7ABF98),
-  ),
-  perspective(
-    key: 'perspective',
-    label: 'Ouvrir son point de vue',
-    subtitle: "Découvrir l'autre bord politique",
-    emoji: '🧭',
-    // Tons bleu nuit/indigo — "horizon, ouverture"
-    color: Color(0xFF6B8FBF),
-    glowColor: Color(0xFF6B8FBF),
-    // Dark mode
-    gradientStart: Color(0xFF0E1526),
-    gradientEnd: Color(0xFF0A101E),
-    backgroundColor: Color(0xFF0C1220),
-    cardGlowColor: Color(0x306B8FBF),
-    // Light mode — bleu acier saturé, gradient visible sur fond crème
-    lightGradientStart: Color(0xFF8AADCF),
-    lightGradientEnd: Color(0xFF739DC4),
-    lightBackgroundColor: Color(0xFF7DA4C8),
   );
 
   const DigestMode({
@@ -124,8 +106,6 @@ enum DigestMode {
         return PhosphorIcons.sunDim(PhosphorIconsStyle.fill);
       case DigestMode.serein:
         return PhosphorIcons.flowerLotus(PhosphorIconsStyle.fill);
-      case DigestMode.perspective:
-        return PhosphorIcons.detective(PhosphorIconsStyle.fill);
     }
   }
 
