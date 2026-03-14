@@ -32,12 +32,20 @@ class ClusterInfo(BaseModel):
     hidden_ids: list[UUID]
 
 
+class SourceOverflowInfo(BaseModel):
+    """Metadata d'overflow: articles filtrés par diversification pour une source."""
+
+    source_id: UUID
+    hidden_count: int
+
+
 class FeedResponse(BaseModel):
     """Réponse feed paginé."""
 
     items: list[FeedItemResponse]
     pagination: PaginationMeta
     clusters: list[ClusterInfo] = []
+    source_overflow: list[SourceOverflowInfo] = []
 
 
 class FeedFilters(BaseModel):
