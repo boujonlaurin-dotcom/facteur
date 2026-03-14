@@ -10,7 +10,7 @@ pipeline:
   deep_jaccard_threshold: 0.04   # Seuil Jaccard pour pré-filtre deep (bas pour maximiser les candidats LLM)
 
 feature_flags:
-  editorial_enabled: true        # ON pour test local — remettre false avant merge prod
+  editorial_enabled: false       # OFF par défaut — activer via whitelist pour rollout progressif
   editorial_user_ids: []         # Whitelist UUID pour test progressif (ajouter UUID local ici)
 
 cost:

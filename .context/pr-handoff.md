@@ -1,151 +1,47 @@
-# Handoff: Quota amorti (cap 4x) + CTA source avec logo — Epic 12 Diversification
+# PR — Story 10.27 : Cartes éditoriales (badges sémantiques, ArticlePairView, Pépite/Coup de cœur)
 
-## Contexte
+## Quoi
+Implémentation de la couche visuelle éditorialisée pour les digests `editorial_v1`. Les cartes affichent maintenant des badges sémantiques (actu/pas_de_recul/pépite/coup de cœur) au lieu du badge reason algorithmique, le rank badge circulaire est masqué en mode éditorial, et deux nouveaux blocs encadrent pépite et coup de cœur.
 
-Branch `boujonlaurin-dotcom/digest-fixes-features`. La diversification chrono actuelle est **proportionnelle au volume** de publication : une source prolific (ex: Contrepoints, 20 articles/jour) monopolise le feed avec jusqu'à 14 articles sur 20. L'utilisateur a validé un **cap à 4x** : aucune source ne peut avoir plus de 4x le quota de la source la moins représentée. Le surplus alimente un CTA overflow renforcé (avec logo source).
+## Pourquoi
+Story 10.26 avait posé le layout éditorial (header, introText, transitionText, dots). Il manquait l'éditorialisation des cartes elles-mêmes. Le backend ne peuple pas encore le champ `badge` — tout est implémenté avec fallback `null` (rétrocompatibilité totale).
 
-## Décisions produit validées
+## Fichiers modifiés
+**Mobile :**
+- `digest/widgets/digest_card.dart` — D4 (badge sémantique) + D5 (rank badge conditionnel)
+- `digest/widgets/topic_section.dart` — N3 (editorialMode : DigestCard au lieu de FeedCard, header simplifié)
+- `digest/widgets/digest_briefing_section.dart` — N5c (editorial layout method, nouveaux params pepite/coupDeCoeur)
+- `digest/screens/digest_screen.dart` — N5d (wiring usesEditorial/pepite/coupDeCoeur)
 
-| Décision | Valeur | Justification |
-|----------|--------|---------------|
-| Cap max quota | **4 × min_quota** | Compromis diversité/remplissage (cf. simulations ci-dessous) |
-| Seuil CTA | **overflow >= 3** | En-dessous = bruit visuel |
-| `priority_multiplier` outrepasse le cap | **Oui** | Cap effectif = `4 × min_quota × multiplier` |
-| Feed sous-rempli acceptable | **Oui** | Cohérent Slow Media, CTA compense |
-| Logo source dans le CTA | **Oui** | Rendre le CTA plus attractif |
+**Nouveaux fichiers :**
+- `digest/widgets/pepite_block.dart` — N5a
+- `digest/widgets/coup_de_coeur_block.dart` — N5b
 
-## Simulations validées
+## Zones à risque
+- **`digest_card.dart`** : le conditionnel `if (item.badge == null)` sur le rank badge — s'assurer que les formats `flat_v1` et `topics_v1` n'ont pas de `badge` peuplé côté backend (sinon le rank badge disparaît)
+- **`topic_section.dart`** : `_editorialBodyFooterHeight = 210.0` est une estimation pour le calcul de hauteur du PageView. Si DigestCard est plus haute qu'estimé, les cartes seront tronquées en bas. À valider visuellement.
+- **`_handleDigestCardAction`** dans `topic_section.dart` : mapping des action strings vers les callbacks. Le case `'read'` appelle `onArticleTap` — vérifier que c'est cohérent avec `ArticleActionBar`.
 
-### Profil A — peu de sources, 1 prolific (5 sources, feed 20 slots)
+## Points d'attention pour le reviewer
+1. **Rétrocompatibilité** : `flat_v1` et `topics_v1` ne passent jamais par `_buildEditorialLayout()` (guard `widget.usesEditorial && _usesTopics`). `DigestCard` avec `item.badge == null` se comporte exactement comme avant.
+2. **Conversion PepiteResponse/CoupDeCoeurResponse → DigestItem** : les helpers dans `pepite_block.dart` et `coup_de_coeur_block.dart` passent uniquement les champs disponibles. Le `reason` de DigestItem a un `@Default('')` donc pas de crash, mais le fallback reason badge affichera "" → "Environnement" — non visible car `badge` est toujours non-null pour ces items.
+3. **`_withEditorialBadge`** dans `topic_section.dart` : assign badge par index (0 = actu, 1+ = pas_de_recul) uniquement si `article.badge == null`. Quand le backend peuplera ce champ, l'assignation par index sera skippée automatiquement.
+4. **Mode serein** : la logique emoji est dans `DigestCard._buildBadge()`. La valeur `isSerene` est passée via chain de params (digest_screen → DigestBriefingSection → TopicSection → DigestCard), pas via provider.
 
-| Source | Articles | Quota actuel | Quota cap 4x |
-|--------|----------|-------------|--------------|
-| Contrepoints | 20 | 14 | **4** (+16 overflow → CTA) |
-| Le Monde | 4 | 3 | 4 |
-| Mediapart | 2 | 2 | 2 |
-| France Inter | 2 | 2 | 2 |
-| The Conversation | 1 | 1 | 1 |
-| **Total affiché** | | **20** | **13** |
+## Ce qui N'A PAS changé (mais pourrait sembler affecté)
+- `_buildTopicsLayout()` dans `digest_briefing_section.dart` : inchangé, `editorialMode: false` implicite
+- Le dismiss flow (DismissBanner, SwipeToOpenCard) : conservé en editorial mode dans `_buildSingleArticle`
+- `ArticleActionBar` : non modifié, toujours appelé via `onAction` dans DigestCard
+- Aucun test widget ne couvre ces widgets dans le repo — pas de risque de régression test
 
-### Profil B — varié, 2 prolific (10 sources, feed 20 slots)
-
-| Source | Articles | Quota actuel | Quota cap 4x |
-|--------|----------|-------------|--------------|
-| Le Figaro | 12 | 6 | **4** (+8 overflow → CTA) |
-| Libération | 10 | 5 | **4** (+6 overflow → CTA) |
-| France 24 | 4 | 2 | 2 |
-| Arte | 3 | 2 | 2 |
-| Courrier Inter | 2 | 1 | 1 |
-| Les Echos | 2 | 1 | 1 |
-| Blast | 2 | 1 | 1 |
-| Reporterre | 1 | 1 | 1 |
-| AOC | 1 | 1 | 1 |
-| Vert | 1 | 1 | 1 |
-| **Total affiché** | | **20** | **18** |
-
----
-
-## Changements à implémenter
-
-### 1. Backend — Quota amorti dans `_apply_chronological_diversification()`
-
-**Fichier** : `packages/api/app/services/recommendation_service.py` (lignes 570-617)
-
-**Modifier le PASS 2** — après le calcul des quotas proportionnels, ajouter un cap basé sur le min_quota. Le `priority_multiplier` est appliqué au cap (pas au quota brut) pour permettre à l'utilisateur d'outrepasser :
-
-```python
-# PASS 2: Compute quotas with user multipliers (EXISTANT — inchangé)
-quotas: dict[UUID, int] = {}
-for source_id, articles_src in by_source.items():
-    ratio = len(articles_src) / total
-    multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
-    quota = max(1, ceil(ratio * limit * multiplier))
-    quotas[source_id] = quota
-
-# --- NOUVEAU: PASS 2b — Diversity cap ---
-# No source gets more than MAX_SOURCE_RATIO × min_quota (× its own multiplier)
-MAX_SOURCE_RATIO = 4
-min_quota = min(quotas.values())  # Toujours >= 1
-for source_id in quotas:
-    multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
-    cap = max(1, ceil(MAX_SOURCE_RATIO * min_quota * multiplier))
-    quotas[source_id] = min(quotas[source_id], cap)
-
-# PASS 2c: Normalize if sum > limit (EXISTANT — renommé de 2b à 2c)
-```
-
-**Modifier le PASS 3** — filtrer l'overflow avec seuil >= 3 pour ne pas polluer le feed avec des CTAs pour 1-2 articles :
-
-```python
-# PASS 3: Select articles + compute overflow (MODIFIÉ)
-MIN_OVERFLOW_FOR_CTA = 3
-retained: list[Content] = []
-source_overflow: dict[UUID, int] = {}
-for source_id, articles_src in by_source.items():
-    quota = quotas[source_id]
-    retained.extend(articles_src[:quota])
-    overflow_count = len(articles_src) - quota
-    if overflow_count >= MIN_OVERFLOW_FOR_CTA:
-        source_overflow[source_id] = overflow_count
-```
-
-### 2. Mobile — Logo source dans le CTA overflow
-
-**Fichier** : `apps/mobile/lib/features/feed/widgets/source_overflow_chip.dart`
-
-Ajouter le logo 16×16 de la source dans le Row, entre l'icône caretRight et le texte. Réutiliser le pattern existant de `feed_card.dart` (lignes 160-179) :
-
-```dart
-// Ajout import
-import '../../../widgets/design/facteur_image.dart';
-
-// Dans le Row children, après le caretRight Icon + SizedBox :
-if (content.source.logoUrl != null &&
-    content.source.logoUrl!.isNotEmpty) ...[
-  ClipRRect(
-    borderRadius: BorderRadius.circular(4),
-    child: FacteurImage(
-      imageUrl: content.source.logoUrl!,
-      width: 16,
-      height: 16,
-      fit: BoxFit.cover,
-      errorWidget: (context) => const SizedBox(width: 16, height: 16),
-    ),
-  ),
-  const SizedBox(width: FacteurSpacing.space1),
-],
-```
-
-### 3. Aucun changement requis sur
-
-- **Schemas** (`feed.py`) : `SourceOverflowInfo` inchangé
-- **Router** (`feed.py`) : passage overflow inchangé
-- **Mobile repo** (`feed_repository.dart`) : parsing overflow inchangé (seuil géré backend)
-- **Mobile model** (`content_model.dart`) : `sourceOverflowCount` inchangé
-
----
-
-## Fichiers modifiés (résumé)
-
-| Fichier | Changement |
-|---------|-----------|
-| `packages/api/app/services/recommendation_service.py` | PASS 2b: cap `4 × min_quota × multiplier`, PASS 3: seuil overflow >= 3 |
-| `apps/mobile/lib/features/feed/widgets/source_overflow_chip.dart` | Ajout logo source (`FacteurImage` 16×16) dans le Row |
-
-## Vérification
-
-1. `ruff check && ruff format --check` sur `recommendation_service.py`
-2. `flutter analyze` sur le projet mobile
-3. Test manuel :
-   - Utilisateur avec source prolific → **max 4 articles** de cette source dans le feed
-   - CTA "N autres articles de [Source]" avec **logo visible** sur la dernière carte
-   - CTA **n'apparaît PAS** si overflow < 3
-   - Utilisateur ayant boosté une source (multiplier > 1) → cap relevé proportionnellement
-   - Tap CTA → filtre par source → X pour revenir au feed normal
-
-## Contraintes rappel
-
-- Python 3.12, `list[]` natif (pas `List` de typing)
-- `ruff check && ruff format` (backend)
-- `flutter analyze` (mobile)
-- `FacteurImage` pour les images réseau (cross-platform web/mobile)
+## Comment tester
+1. **flat_v1 / topics_v1 inchangés** :
+   - Ouvrir un digest non-éditorial → vérifier rank badge visible, reason badge présent
+2. **editorial_v1 badges** :
+   - `editorial_enabled: true` dans `packages/api/config/editorial_config.yaml` (déjà activé en dev local)
+   - Badge "🔴 L'actu du jour" sur première carte de chaque topic
+   - Badge "🔭 Le pas de recul" sur deuxième carte (si deep article présent)
+   - Absence du cercle rank (#1, #2) en top-left des cartes
+3. **Mode serein** : switcher en mode Serein → badges actu/pas_de_recul sans emoji
+4. **Pépite & Coup de cœur** : blocs visibles uniquement si le backend renvoie `pepite`/`coup_de_coeur` dans la réponse `editorial_v1` — à connecter quand le backend peuplera ces champs
+5. `flutter analyze` — 0 nouvelles erreurs (vérifié)
