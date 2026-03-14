@@ -4,6 +4,7 @@ class Collection {
   final String name;
   final int position;
   final bool isDefault;
+  final bool isLikedCollection;
   final int itemCount;
   final int readCount;
   final List<String?> thumbnails;
@@ -14,6 +15,7 @@ class Collection {
     required this.name,
     this.position = 0,
     this.isDefault = false,
+    this.isLikedCollection = false,
     this.itemCount = 0,
     this.readCount = 0,
     this.thumbnails = const [],
@@ -26,6 +28,7 @@ class Collection {
       name: (json['name'] as String?) ?? '',
       position: (json['position'] as int?) ?? 0,
       isDefault: (json['is_default'] as bool?) ?? false,
+      isLikedCollection: (json['is_liked_collection'] as bool?) ?? false,
       itemCount: (json['item_count'] as int?) ?? 0,
       readCount: (json['read_count'] as int?) ?? 0,
       thumbnails: (json['thumbnails'] as List<dynamic>?)

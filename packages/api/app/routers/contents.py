@@ -197,8 +197,9 @@ async def like_content(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Ajoute un like sur un contenu."""
+    """Ajoute un like sur un contenu. Auto-bookmark + ajout à 'Contenus likés'."""
     service = ContentService(db)
+    collection_service = CollectionService(db)
     user_uuid = UUID(current_user_id)
 
     await service.set_like_status(
@@ -207,8 +208,19 @@ async def like_content(
         is_liked=True,
     )
 
+    # Auto-bookmark
+    await service.set_save_status(
+        user_id=user_uuid,
+        content_id=content_id,
+        is_saved=True,
+    )
+
+    # Auto-add to liked collection
+    liked_col = await collection_service.ensure_liked_collection(user_uuid)
+    await collection_service.add_to_collection(user_uuid, liked_col.id, content_id)
+
     await db.commit()
-    return {"status": "ok", "is_liked": True}
+    return {"status": "ok", "is_liked": True, "is_saved": True}
 
 
 @router.delete("/{content_id}/like", status_code=status.HTTP_200_OK)
@@ -217,8 +229,9 @@ async def unlike_content(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Retire le like d'un contenu."""
+    """Retire le like d'un contenu. Retire de 'Contenus likés' (article reste bookmarké)."""
     service = ContentService(db)
+    collection_service = CollectionService(db)
     user_uuid = UUID(current_user_id)
 
     await service.set_like_status(
@@ -226,6 +239,10 @@ async def unlike_content(
         content_id=content_id,
         is_liked=False,
     )
+
+    # Remove from liked collection (article stays saved)
+    liked_col = await collection_service.ensure_liked_collection(user_uuid)
+    await collection_service.remove_from_collection(user_uuid, liked_col.id, content_id)
 
     await db.commit()
     return {"status": "ok", "is_liked": False}

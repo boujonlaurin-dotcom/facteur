@@ -86,6 +86,17 @@ final defaultCollectionProvider = Provider<Collection?>((ref) {
   }
 });
 
+// Liked collection provider (convenience accessor)
+final likedCollectionProvider = Provider<Collection?>((ref) {
+  final collections = ref.watch(collectionsProvider).valueOrNull;
+  if (collections == null || collections.isEmpty) return null;
+  try {
+    return collections.firstWhere((c) => c.isLikedCollection);
+  } catch (_) {
+    return null;
+  }
+});
+
 // Collection detail provider (articles in a specific collection)
 final collectionDetailProvider = AsyncNotifierProvider.family<
     CollectionDetailNotifier, List<Content>, String>(() {

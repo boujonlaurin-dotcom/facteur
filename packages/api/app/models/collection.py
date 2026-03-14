@@ -37,6 +37,9 @@ class Collection(Base):
     is_default: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    is_liked_collection: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
