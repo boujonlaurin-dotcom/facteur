@@ -16,18 +16,21 @@ class DigestCard extends StatelessWidget {
   final DigestItem item;
   final VoidCallback? onTap;
   final ValueChanged<String>? onAction;
+  final bool isSerene;
 
   const DigestCard({
     super.key,
     required this.item,
     this.onTap,
     this.onAction,
+    this.isSerene = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final isProcessed = item.isRead || item.isDismissed;
     final badgeText = item.isRead ? 'Lu' : (item.isDismissed ? 'Masqué' : null);
@@ -62,27 +65,8 @@ class DigestCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Selection reason badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _simplifyReason(item.reason),
-                          style: TextStyle(
-                            color: colors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+                      // Badge: editorial semantic badge or fallback reason badge
+                      _buildBadge(colors, isDark),
                       const SizedBox(height: FacteurSpacing.space2),
 
                       // Title
@@ -245,7 +229,8 @@ class DigestCard extends StatelessWidget {
             ),
           ),
 
-          // Rank badge (top-left)
+          // Rank badge (top-left) — hidden in editorial mode
+          if (item.badge == null)
           Positioned(
             top: 12,
             left: 12,
@@ -365,6 +350,93 @@ class DigestCard extends StatelessWidget {
     );
   }
 
+  /// Builds the editorial semantic badge or falls back to the reason badge.
+  Widget _buildBadge(FacteurColors colors, bool isDark) {
+    if (item.badge != null) {
+      final config = _badgeConfig(item.badge!, isDark, colors);
+      if (config != null) {
+        final showEmoji = !isSerene ||
+            item.badge == 'pepite' ||
+            item.badge == 'coup_de_coeur';
+        final label = showEmoji
+            ? '${config.emoji} ${config.label}'
+            : config.label;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: config.backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: config.textColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }
+    }
+    // Fallback: algorithmic reason badge
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        _simplifyReason(item.reason),
+        style: TextStyle(
+          color: colors.primary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  static _BadgeConfig? _badgeConfig(
+      String badge, bool isDark, FacteurColors colors) {
+    final alpha = isDark ? 0.15 : 0.10;
+    switch (badge) {
+      case 'actu':
+        return _BadgeConfig(
+          emoji: '🔴',
+          label: "L'actu du jour",
+          backgroundColor: colors.primary.withValues(alpha: alpha),
+          textColor: colors.primary,
+        );
+      case 'pas_de_recul':
+        return _BadgeConfig(
+          emoji: '🔭',
+          label: 'Le pas de recul',
+          backgroundColor: colors.info.withValues(alpha: alpha),
+          textColor: colors.info,
+        );
+      case 'pepite':
+        return _BadgeConfig(
+          emoji: '🍀',
+          label: 'Pépite du jour',
+          backgroundColor: colors.success.withValues(alpha: alpha),
+          textColor: colors.success,
+        );
+      case 'coup_de_coeur':
+        return _BadgeConfig(
+          emoji: '💚',
+          label: 'Coup de cœur',
+          backgroundColor: colors.success.withValues(alpha: alpha),
+          textColor: colors.success,
+        );
+      default:
+        return null;
+    }
+  }
+
   Widget _buildSourcePlaceholder(FacteurColors colors) {
     return Container(
       width: 16,
@@ -432,4 +504,18 @@ class DigestCard extends StatelessWidget {
     final minutes = (seconds / 60).ceil();
     return '$minutes min';
   }
+}
+
+class _BadgeConfig {
+  final String emoji;
+  final String label;
+  final Color backgroundColor;
+  final Color textColor;
+
+  const _BadgeConfig({
+    required this.emoji,
+    required this.label,
+    required this.backgroundColor,
+    required this.textColor,
+  });
 }

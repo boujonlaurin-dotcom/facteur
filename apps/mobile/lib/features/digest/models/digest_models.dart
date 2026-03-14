@@ -78,7 +78,7 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
     @JsonKey(name: 'note_text') String? noteText,
-    String? badge,
+    String? badge, // "actu", "pas_de_recul", "pepite", "coup_de_coeur"
   }) = _DigestItem;
 
   factory DigestItem.fromJson(Map<String, dynamic> json) =>
@@ -133,26 +133,70 @@ class DigestResponse with _$DigestResponse {
     @JsonKey(name: 'completion_threshold') @Default(5) int completionThreshold,
     @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
     @JsonKey(name: 'completed_at') DateTime? completedAt,
+    // Editorial fields (populated when format_version="editorial_v1")
     @JsonKey(name: 'header_text') String? headerText,
     @JsonKey(name: 'closure_text') String? closureText,
     @JsonKey(name: 'cta_text') String? ctaText,
-    DigestItem? pepite,
-    @JsonKey(name: 'coup_de_coeur') DigestItem? coupDeCoeur,
+    PepiteResponse? pepite,
+    @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur,
   }) = _DigestResponse;
 
-  /// Whether this digest uses the editorial layout
-  bool get usesEditorial => formatVersion == 'editorial_v1' && topics.isNotEmpty;
-
-  /// Whether this digest uses the topics layout (includes editorial_v1)
+  /// Whether this digest uses the topics layout
   bool get usesTopics =>
       (formatVersion == 'topics_v1' || formatVersion == 'editorial_v1') &&
       topics.isNotEmpty;
+
+  /// Whether this digest uses the editorial layout
+  bool get usesEditorial => formatVersion == 'editorial_v1';
 
   /// Number of covered topics (for progress tracking)
   int get coveredTopicCount => topics.where((t) => t.isCovered).length;
 
   factory DigestResponse.fromJson(Map<String, dynamic> json) =>
       _$DigestResponseFromJson(json);
+}
+
+/// Pépite article — a surprise pick by the LLM
+@freezed
+class PepiteResponse with _$PepiteResponse {
+  const factory PepiteResponse({
+    @JsonKey(name: 'content_id') required String contentId,
+    @JsonKey(name: 'mini_editorial') @Default('') String miniEditorial,
+    @Default('pepite') String badge,
+    @Default('') String title,
+    @Default('') String url,
+    @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+    SourceMini? source,
+    @JsonKey(name: 'is_read') @Default(false) bool isRead,
+    @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
+    @JsonKey(name: 'is_liked') @Default(false) bool isLiked,
+    @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
+  }) = _PepiteResponse;
+
+  factory PepiteResponse.fromJson(Map<String, dynamic> json) =>
+      _$PepiteResponseFromJson(json);
+}
+
+/// Coup de coeur article — most saved by the community
+@freezed
+class CoupDeCoeurResponse with _$CoupDeCoeurResponse {
+  const factory CoupDeCoeurResponse({
+    @JsonKey(name: 'content_id') required String contentId,
+    @Default('') String title,
+    @JsonKey(name: 'source_name') @Default('') String sourceName,
+    @JsonKey(name: 'save_count') @Default(0) int saveCount,
+    @Default('coup_de_coeur') String badge,
+    @Default('') String url,
+    @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+    SourceMini? source,
+    @JsonKey(name: 'is_read') @Default(false) bool isRead,
+    @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
+    @JsonKey(name: 'is_liked') @Default(false) bool isLiked,
+    @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
+  }) = _CoupDeCoeurResponse;
+
+  factory CoupDeCoeurResponse.fromJson(Map<String, dynamic> json) =>
+      _$CoupDeCoeurResponseFromJson(json);
 }
 
 /// Model representing the digest completion response from API

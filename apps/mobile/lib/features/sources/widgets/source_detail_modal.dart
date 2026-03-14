@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
+import '../../../widgets/design/priority_slider.dart';
 import '../models/source_model.dart';
 import '../../../widgets/design/facteur_button.dart';
 
@@ -11,6 +12,7 @@ class SourceDetailModal extends StatelessWidget {
   final VoidCallback? onToggleMute;
   final VoidCallback? onCopyFeedUrl;
   final VoidCallback? onToggleSubscription;
+  final ValueChanged<double>? onPriorityChanged; // Epic 12: frequency slider
 
   const SourceDetailModal({
     super.key,
@@ -19,6 +21,7 @@ class SourceDetailModal extends StatelessWidget {
     this.onToggleMute,
     this.onCopyFeedUrl,
     this.onToggleSubscription,
+    this.onPriorityChanged,
   });
 
   @override
@@ -133,6 +136,42 @@ class SourceDetailModal extends StatelessWidget {
               ],
             ),
           ),
+          // Epic 12: Priority slider (only for trusted/followed sources)
+          if (onPriorityChanged != null && source.isTrusted) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: colors.backgroundSecondary,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: colors.textTertiary.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
+                    size: 18,
+                    color: colors.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Fréquence',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const Spacer(),
+                  PrioritySlider(
+                    key: ValueKey(source.id),
+                    currentMultiplier: source.priorityMultiplier,
+                    onChanged: onPriorityChanged!,
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
 
           // Explanation Card

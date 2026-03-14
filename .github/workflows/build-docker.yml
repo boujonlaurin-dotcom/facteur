@@ -2,12 +2,12 @@ name: Build Docker Image
 
 on:
   push:
-    branches: [ main ]
+    branches: [ staging, main ]
     paths:
       - 'packages/api/**'
       - '.github/workflows/build-docker.yml'
   pull_request:
-    branches: [ main, staging ]
+    branches: [ staging, main ]
     paths:
       - 'packages/api/**'
   workflow_dispatch:

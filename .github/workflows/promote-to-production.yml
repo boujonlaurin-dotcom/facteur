@@ -1,29 +1,15 @@
-name: Promote to Production
+name: Production Smoke Tests
 
 on:
+  # Runs after merge to main (Railway auto-deploys via webhook)
+  push:
+    branches: [main]
+
+  # Manual trigger for ad-hoc verification
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  promote:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Merge staging into main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout main
-          git merge origin/staging --ff-only
-          git push origin main
-
   smoke-test:
-    needs: promote
     runs-on: ubuntu-latest
     steps:
       - name: Wait for Railway deployment
@@ -53,4 +39,17 @@ jobs:
           else
             echo "WARNING: Readiness check returned $STATUS (DB may not be ready)"
             exit 1
+          fi
+
+      - name: Environment check
+        run: |
+          RESPONSE=$(curl -sf https://facteur-production.up.railway.app/api/health) || {
+            echo "FAIL: Could not reach health endpoint"
+            exit 1
+          }
+          ENV=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('environment','unknown'))")
+          if [ "$ENV" = "production" ]; then
+            echo "Environment correctly reports: production"
+          else
+            echo "WARNING: Environment reports '$ENV' instead of 'production'"
           fi

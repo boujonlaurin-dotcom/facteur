@@ -1807,16 +1807,17 @@ mixin _$DigestResponse {
   @JsonKey(name: 'is_completed')
   bool get isCompleted => throw _privateConstructorUsedError;
   @JsonKey(name: 'completed_at')
-  DateTime? get completedAt => throw _privateConstructorUsedError;
+  DateTime? get completedAt =>
+      throw _privateConstructorUsedError; // Editorial fields (populated when format_version="editorial_v1")
   @JsonKey(name: 'header_text')
   String? get headerText => throw _privateConstructorUsedError;
   @JsonKey(name: 'closure_text')
   String? get closureText => throw _privateConstructorUsedError;
   @JsonKey(name: 'cta_text')
   String? get ctaText => throw _privateConstructorUsedError;
-  DigestItem? get pepite => throw _privateConstructorUsedError;
+  PepiteResponse? get pepite => throw _privateConstructorUsedError;
   @JsonKey(name: 'coup_de_coeur')
-  DigestItem? get coupDeCoeur => throw _privateConstructorUsedError;
+  CoupDeCoeurResponse? get coupDeCoeur => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -1845,11 +1846,11 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'header_text') String? headerText,
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
-      DigestItem? pepite,
-      @JsonKey(name: 'coup_de_coeur') DigestItem? coupDeCoeur});
+      PepiteResponse? pepite,
+      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur});
 
-  $DigestItemCopyWith<$Res>? get pepite;
-  $DigestItemCopyWith<$Res>? get coupDeCoeur;
+  $PepiteResponseCopyWith<$Res>? get pepite;
+  $CoupDeCoeurResponseCopyWith<$Res>? get coupDeCoeur;
 }
 
 /// @nodoc
@@ -1942,34 +1943,34 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
       pepite: freezed == pepite
           ? _value.pepite
           : pepite // ignore: cast_nullable_to_non_nullable
-              as DigestItem?,
+              as PepiteResponse?,
       coupDeCoeur: freezed == coupDeCoeur
           ? _value.coupDeCoeur
           : coupDeCoeur // ignore: cast_nullable_to_non_nullable
-              as DigestItem?,
+              as CoupDeCoeurResponse?,
     ) as $Val);
   }
 
   @override
   @pragma('vm:prefer-inline')
-  $DigestItemCopyWith<$Res>? get pepite {
+  $PepiteResponseCopyWith<$Res>? get pepite {
     if (_value.pepite == null) {
       return null;
     }
 
-    return $DigestItemCopyWith<$Res>(_value.pepite!, (value) {
+    return $PepiteResponseCopyWith<$Res>(_value.pepite!, (value) {
       return _then(_value.copyWith(pepite: value) as $Val);
     });
   }
 
   @override
   @pragma('vm:prefer-inline')
-  $DigestItemCopyWith<$Res>? get coupDeCoeur {
+  $CoupDeCoeurResponseCopyWith<$Res>? get coupDeCoeur {
     if (_value.coupDeCoeur == null) {
       return null;
     }
 
-    return $DigestItemCopyWith<$Res>(_value.coupDeCoeur!, (value) {
+    return $CoupDeCoeurResponseCopyWith<$Res>(_value.coupDeCoeur!, (value) {
       return _then(_value.copyWith(coupDeCoeur: value) as $Val);
     });
   }
@@ -1998,13 +1999,13 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'header_text') String? headerText,
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
-      DigestItem? pepite,
-      @JsonKey(name: 'coup_de_coeur') DigestItem? coupDeCoeur});
+      PepiteResponse? pepite,
+      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur});
 
   @override
-  $DigestItemCopyWith<$Res>? get pepite;
+  $PepiteResponseCopyWith<$Res>? get pepite;
   @override
-  $DigestItemCopyWith<$Res>? get coupDeCoeur;
+  $CoupDeCoeurResponseCopyWith<$Res>? get coupDeCoeur;
 }
 
 /// @nodoc
@@ -2095,11 +2096,11 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
       pepite: freezed == pepite
           ? _value.pepite
           : pepite // ignore: cast_nullable_to_non_nullable
-              as DigestItem?,
+              as PepiteResponse?,
       coupDeCoeur: freezed == coupDeCoeur
           ? _value.coupDeCoeur
           : coupDeCoeur // ignore: cast_nullable_to_non_nullable
-              as DigestItem?,
+              as CoupDeCoeurResponse?,
     ));
   }
 }
@@ -2176,6 +2177,7 @@ class _$DigestResponseImpl extends _DigestResponse {
   @override
   @JsonKey(name: 'completed_at')
   final DateTime? completedAt;
+// Editorial fields (populated when format_version="editorial_v1")
   @override
   @JsonKey(name: 'header_text')
   final String? headerText;
@@ -2186,10 +2188,10 @@ class _$DigestResponseImpl extends _DigestResponse {
   @JsonKey(name: 'cta_text')
   final String? ctaText;
   @override
-  final DigestItem? pepite;
+  final PepiteResponse? pepite;
   @override
   @JsonKey(name: 'coup_de_coeur')
-  final DigestItem? coupDeCoeur;
+  final CoupDeCoeurResponse? coupDeCoeur;
 
   @override
   String toString() {
@@ -2267,23 +2269,23 @@ class _$DigestResponseImpl extends _DigestResponse {
 
 abstract class _DigestResponse extends DigestResponse {
   const factory _DigestResponse(
-          {@JsonKey(name: 'digest_id') required final String digestId,
-          @JsonKey(name: 'user_id') required final String userId,
-          @JsonKey(name: 'target_date') required final DateTime targetDate,
-          @JsonKey(name: 'generated_at') required final DateTime generatedAt,
-          @JsonKey(defaultValue: 'pour_vous') final String mode,
-          @JsonKey(name: 'format_version') final String formatVersion,
-          final List<DigestItem> items,
-          final List<DigestTopic> topics,
-          @JsonKey(name: 'completion_threshold') final int completionThreshold,
-          @JsonKey(name: 'is_completed') final bool isCompleted,
-          @JsonKey(name: 'completed_at') final DateTime? completedAt,
-          @JsonKey(name: 'header_text') final String? headerText,
-          @JsonKey(name: 'closure_text') final String? closureText,
-          @JsonKey(name: 'cta_text') final String? ctaText,
-          final DigestItem? pepite,
-          @JsonKey(name: 'coup_de_coeur') final DigestItem? coupDeCoeur}) =
-      _$DigestResponseImpl;
+      {@JsonKey(name: 'digest_id') required final String digestId,
+      @JsonKey(name: 'user_id') required final String userId,
+      @JsonKey(name: 'target_date') required final DateTime targetDate,
+      @JsonKey(name: 'generated_at') required final DateTime generatedAt,
+      @JsonKey(defaultValue: 'pour_vous') final String mode,
+      @JsonKey(name: 'format_version') final String formatVersion,
+      final List<DigestItem> items,
+      final List<DigestTopic> topics,
+      @JsonKey(name: 'completion_threshold') final int completionThreshold,
+      @JsonKey(name: 'is_completed') final bool isCompleted,
+      @JsonKey(name: 'completed_at') final DateTime? completedAt,
+      @JsonKey(name: 'header_text') final String? headerText,
+      @JsonKey(name: 'closure_text') final String? closureText,
+      @JsonKey(name: 'cta_text') final String? ctaText,
+      final PepiteResponse? pepite,
+      @JsonKey(name: 'coup_de_coeur')
+      final CoupDeCoeurResponse? coupDeCoeur}) = _$DigestResponseImpl;
   const _DigestResponse._() : super._();
 
   factory _DigestResponse.fromJson(Map<String, dynamic> json) =
@@ -2320,7 +2322,7 @@ abstract class _DigestResponse extends DigestResponse {
   @override
   @JsonKey(name: 'completed_at')
   DateTime? get completedAt;
-  @override
+  @override // Editorial fields (populated when format_version="editorial_v1")
   @JsonKey(name: 'header_text')
   String? get headerText;
   @override
@@ -2330,13 +2332,825 @@ abstract class _DigestResponse extends DigestResponse {
   @JsonKey(name: 'cta_text')
   String? get ctaText;
   @override
-  DigestItem? get pepite;
+  PepiteResponse? get pepite;
   @override
   @JsonKey(name: 'coup_de_coeur')
-  DigestItem? get coupDeCoeur;
+  CoupDeCoeurResponse? get coupDeCoeur;
   @override
   @JsonKey(ignore: true)
   _$$DigestResponseImplCopyWith<_$DigestResponseImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+PepiteResponse _$PepiteResponseFromJson(Map<String, dynamic> json) {
+  return _PepiteResponse.fromJson(json);
+}
+
+/// @nodoc
+mixin _$PepiteResponse {
+  @JsonKey(name: 'content_id')
+  String get contentId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'mini_editorial')
+  String get miniEditorial => throw _privateConstructorUsedError;
+  String get badge => throw _privateConstructorUsedError;
+  String get title => throw _privateConstructorUsedError;
+  String get url => throw _privateConstructorUsedError;
+  @JsonKey(name: 'thumbnail_url')
+  String? get thumbnailUrl => throw _privateConstructorUsedError;
+  SourceMini? get source => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_read')
+  bool get isRead => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_saved')
+  bool get isSaved => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_liked')
+  bool get isLiked => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_dismissed')
+  bool get isDismissed => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $PepiteResponseCopyWith<PepiteResponse> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $PepiteResponseCopyWith<$Res> {
+  factory $PepiteResponseCopyWith(
+          PepiteResponse value, $Res Function(PepiteResponse) then) =
+      _$PepiteResponseCopyWithImpl<$Res, PepiteResponse>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'content_id') String contentId,
+      @JsonKey(name: 'mini_editorial') String miniEditorial,
+      String badge,
+      String title,
+      String url,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+      SourceMini? source,
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
+
+  $SourceMiniCopyWith<$Res>? get source;
+}
+
+/// @nodoc
+class _$PepiteResponseCopyWithImpl<$Res, $Val extends PepiteResponse>
+    implements $PepiteResponseCopyWith<$Res> {
+  _$PepiteResponseCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? contentId = null,
+    Object? miniEditorial = null,
+    Object? badge = null,
+    Object? title = null,
+    Object? url = null,
+    Object? thumbnailUrl = freezed,
+    Object? source = freezed,
+    Object? isRead = null,
+    Object? isSaved = null,
+    Object? isLiked = null,
+    Object? isDismissed = null,
+  }) {
+    return _then(_value.copyWith(
+      contentId: null == contentId
+          ? _value.contentId
+          : contentId // ignore: cast_nullable_to_non_nullable
+              as String,
+      miniEditorial: null == miniEditorial
+          ? _value.miniEditorial
+          : miniEditorial // ignore: cast_nullable_to_non_nullable
+              as String,
+      badge: null == badge
+          ? _value.badge
+          : badge // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      thumbnailUrl: freezed == thumbnailUrl
+          ? _value.thumbnailUrl
+          : thumbnailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as SourceMini?,
+      isRead: null == isRead
+          ? _value.isRead
+          : isRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isSaved: null == isSaved
+          ? _value.isSaved
+          : isSaved // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isDismissed: null == isDismissed
+          ? _value.isDismissed
+          : isDismissed // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
+  }
+
+  @override
+  @pragma('vm:prefer-inline')
+  $SourceMiniCopyWith<$Res>? get source {
+    if (_value.source == null) {
+      return null;
+    }
+
+    return $SourceMiniCopyWith<$Res>(_value.source!, (value) {
+      return _then(_value.copyWith(source: value) as $Val);
+    });
+  }
+}
+
+/// @nodoc
+abstract class _$$PepiteResponseImplCopyWith<$Res>
+    implements $PepiteResponseCopyWith<$Res> {
+  factory _$$PepiteResponseImplCopyWith(_$PepiteResponseImpl value,
+          $Res Function(_$PepiteResponseImpl) then) =
+      __$$PepiteResponseImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'content_id') String contentId,
+      @JsonKey(name: 'mini_editorial') String miniEditorial,
+      String badge,
+      String title,
+      String url,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+      SourceMini? source,
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
+
+  @override
+  $SourceMiniCopyWith<$Res>? get source;
+}
+
+/// @nodoc
+class __$$PepiteResponseImplCopyWithImpl<$Res>
+    extends _$PepiteResponseCopyWithImpl<$Res, _$PepiteResponseImpl>
+    implements _$$PepiteResponseImplCopyWith<$Res> {
+  __$$PepiteResponseImplCopyWithImpl(
+      _$PepiteResponseImpl _value, $Res Function(_$PepiteResponseImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? contentId = null,
+    Object? miniEditorial = null,
+    Object? badge = null,
+    Object? title = null,
+    Object? url = null,
+    Object? thumbnailUrl = freezed,
+    Object? source = freezed,
+    Object? isRead = null,
+    Object? isSaved = null,
+    Object? isLiked = null,
+    Object? isDismissed = null,
+  }) {
+    return _then(_$PepiteResponseImpl(
+      contentId: null == contentId
+          ? _value.contentId
+          : contentId // ignore: cast_nullable_to_non_nullable
+              as String,
+      miniEditorial: null == miniEditorial
+          ? _value.miniEditorial
+          : miniEditorial // ignore: cast_nullable_to_non_nullable
+              as String,
+      badge: null == badge
+          ? _value.badge
+          : badge // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      thumbnailUrl: freezed == thumbnailUrl
+          ? _value.thumbnailUrl
+          : thumbnailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as SourceMini?,
+      isRead: null == isRead
+          ? _value.isRead
+          : isRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isSaved: null == isSaved
+          ? _value.isSaved
+          : isSaved // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isDismissed: null == isDismissed
+          ? _value.isDismissed
+          : isDismissed // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$PepiteResponseImpl implements _PepiteResponse {
+  const _$PepiteResponseImpl(
+      {@JsonKey(name: 'content_id') required this.contentId,
+      @JsonKey(name: 'mini_editorial') this.miniEditorial = '',
+      this.badge = 'pepite',
+      this.title = '',
+      this.url = '',
+      @JsonKey(name: 'thumbnail_url') this.thumbnailUrl,
+      this.source,
+      @JsonKey(name: 'is_read') this.isRead = false,
+      @JsonKey(name: 'is_saved') this.isSaved = false,
+      @JsonKey(name: 'is_liked') this.isLiked = false,
+      @JsonKey(name: 'is_dismissed') this.isDismissed = false});
+
+  factory _$PepiteResponseImpl.fromJson(Map<String, dynamic> json) =>
+      _$$PepiteResponseImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'content_id')
+  final String contentId;
+  @override
+  @JsonKey(name: 'mini_editorial')
+  final String miniEditorial;
+  @override
+  @JsonKey()
+  final String badge;
+  @override
+  @JsonKey()
+  final String title;
+  @override
+  @JsonKey()
+  final String url;
+  @override
+  @JsonKey(name: 'thumbnail_url')
+  final String? thumbnailUrl;
+  @override
+  final SourceMini? source;
+  @override
+  @JsonKey(name: 'is_read')
+  final bool isRead;
+  @override
+  @JsonKey(name: 'is_saved')
+  final bool isSaved;
+  @override
+  @JsonKey(name: 'is_liked')
+  final bool isLiked;
+  @override
+  @JsonKey(name: 'is_dismissed')
+  final bool isDismissed;
+
+  @override
+  String toString() {
+    return 'PepiteResponse(contentId: $contentId, miniEditorial: $miniEditorial, badge: $badge, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, source: $source, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$PepiteResponseImpl &&
+            (identical(other.contentId, contentId) ||
+                other.contentId == contentId) &&
+            (identical(other.miniEditorial, miniEditorial) ||
+                other.miniEditorial == miniEditorial) &&
+            (identical(other.badge, badge) || other.badge == badge) &&
+            (identical(other.title, title) || other.title == title) &&
+            (identical(other.url, url) || other.url == url) &&
+            (identical(other.thumbnailUrl, thumbnailUrl) ||
+                other.thumbnailUrl == thumbnailUrl) &&
+            (identical(other.source, source) || other.source == source) &&
+            (identical(other.isRead, isRead) || other.isRead == isRead) &&
+            (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
+            (identical(other.isLiked, isLiked) || other.isLiked == isLiked) &&
+            (identical(other.isDismissed, isDismissed) ||
+                other.isDismissed == isDismissed));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, contentId, miniEditorial, badge,
+      title, url, thumbnailUrl, source, isRead, isSaved, isLiked, isDismissed);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$PepiteResponseImplCopyWith<_$PepiteResponseImpl> get copyWith =>
+      __$$PepiteResponseImplCopyWithImpl<_$PepiteResponseImpl>(
+          this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$PepiteResponseImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _PepiteResponse implements PepiteResponse {
+  const factory _PepiteResponse(
+          {@JsonKey(name: 'content_id') required final String contentId,
+          @JsonKey(name: 'mini_editorial') final String miniEditorial,
+          final String badge,
+          final String title,
+          final String url,
+          @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
+          final SourceMini? source,
+          @JsonKey(name: 'is_read') final bool isRead,
+          @JsonKey(name: 'is_saved') final bool isSaved,
+          @JsonKey(name: 'is_liked') final bool isLiked,
+          @JsonKey(name: 'is_dismissed') final bool isDismissed}) =
+      _$PepiteResponseImpl;
+
+  factory _PepiteResponse.fromJson(Map<String, dynamic> json) =
+      _$PepiteResponseImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'content_id')
+  String get contentId;
+  @override
+  @JsonKey(name: 'mini_editorial')
+  String get miniEditorial;
+  @override
+  String get badge;
+  @override
+  String get title;
+  @override
+  String get url;
+  @override
+  @JsonKey(name: 'thumbnail_url')
+  String? get thumbnailUrl;
+  @override
+  SourceMini? get source;
+  @override
+  @JsonKey(name: 'is_read')
+  bool get isRead;
+  @override
+  @JsonKey(name: 'is_saved')
+  bool get isSaved;
+  @override
+  @JsonKey(name: 'is_liked')
+  bool get isLiked;
+  @override
+  @JsonKey(name: 'is_dismissed')
+  bool get isDismissed;
+  @override
+  @JsonKey(ignore: true)
+  _$$PepiteResponseImplCopyWith<_$PepiteResponseImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+CoupDeCoeurResponse _$CoupDeCoeurResponseFromJson(Map<String, dynamic> json) {
+  return _CoupDeCoeurResponse.fromJson(json);
+}
+
+/// @nodoc
+mixin _$CoupDeCoeurResponse {
+  @JsonKey(name: 'content_id')
+  String get contentId => throw _privateConstructorUsedError;
+  String get title => throw _privateConstructorUsedError;
+  @JsonKey(name: 'source_name')
+  String get sourceName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'save_count')
+  int get saveCount => throw _privateConstructorUsedError;
+  String get badge => throw _privateConstructorUsedError;
+  String get url => throw _privateConstructorUsedError;
+  @JsonKey(name: 'thumbnail_url')
+  String? get thumbnailUrl => throw _privateConstructorUsedError;
+  SourceMini? get source => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_read')
+  bool get isRead => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_saved')
+  bool get isSaved => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_liked')
+  bool get isLiked => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_dismissed')
+  bool get isDismissed => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $CoupDeCoeurResponseCopyWith<CoupDeCoeurResponse> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $CoupDeCoeurResponseCopyWith<$Res> {
+  factory $CoupDeCoeurResponseCopyWith(
+          CoupDeCoeurResponse value, $Res Function(CoupDeCoeurResponse) then) =
+      _$CoupDeCoeurResponseCopyWithImpl<$Res, CoupDeCoeurResponse>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'content_id') String contentId,
+      String title,
+      @JsonKey(name: 'source_name') String sourceName,
+      @JsonKey(name: 'save_count') int saveCount,
+      String badge,
+      String url,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+      SourceMini? source,
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
+
+  $SourceMiniCopyWith<$Res>? get source;
+}
+
+/// @nodoc
+class _$CoupDeCoeurResponseCopyWithImpl<$Res, $Val extends CoupDeCoeurResponse>
+    implements $CoupDeCoeurResponseCopyWith<$Res> {
+  _$CoupDeCoeurResponseCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? contentId = null,
+    Object? title = null,
+    Object? sourceName = null,
+    Object? saveCount = null,
+    Object? badge = null,
+    Object? url = null,
+    Object? thumbnailUrl = freezed,
+    Object? source = freezed,
+    Object? isRead = null,
+    Object? isSaved = null,
+    Object? isLiked = null,
+    Object? isDismissed = null,
+  }) {
+    return _then(_value.copyWith(
+      contentId: null == contentId
+          ? _value.contentId
+          : contentId // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceName: null == sourceName
+          ? _value.sourceName
+          : sourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      saveCount: null == saveCount
+          ? _value.saveCount
+          : saveCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      badge: null == badge
+          ? _value.badge
+          : badge // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      thumbnailUrl: freezed == thumbnailUrl
+          ? _value.thumbnailUrl
+          : thumbnailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as SourceMini?,
+      isRead: null == isRead
+          ? _value.isRead
+          : isRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isSaved: null == isSaved
+          ? _value.isSaved
+          : isSaved // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isDismissed: null == isDismissed
+          ? _value.isDismissed
+          : isDismissed // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
+  }
+
+  @override
+  @pragma('vm:prefer-inline')
+  $SourceMiniCopyWith<$Res>? get source {
+    if (_value.source == null) {
+      return null;
+    }
+
+    return $SourceMiniCopyWith<$Res>(_value.source!, (value) {
+      return _then(_value.copyWith(source: value) as $Val);
+    });
+  }
+}
+
+/// @nodoc
+abstract class _$$CoupDeCoeurResponseImplCopyWith<$Res>
+    implements $CoupDeCoeurResponseCopyWith<$Res> {
+  factory _$$CoupDeCoeurResponseImplCopyWith(_$CoupDeCoeurResponseImpl value,
+          $Res Function(_$CoupDeCoeurResponseImpl) then) =
+      __$$CoupDeCoeurResponseImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'content_id') String contentId,
+      String title,
+      @JsonKey(name: 'source_name') String sourceName,
+      @JsonKey(name: 'save_count') int saveCount,
+      String badge,
+      String url,
+      @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+      SourceMini? source,
+      @JsonKey(name: 'is_read') bool isRead,
+      @JsonKey(name: 'is_saved') bool isSaved,
+      @JsonKey(name: 'is_liked') bool isLiked,
+      @JsonKey(name: 'is_dismissed') bool isDismissed});
+
+  @override
+  $SourceMiniCopyWith<$Res>? get source;
+}
+
+/// @nodoc
+class __$$CoupDeCoeurResponseImplCopyWithImpl<$Res>
+    extends _$CoupDeCoeurResponseCopyWithImpl<$Res, _$CoupDeCoeurResponseImpl>
+    implements _$$CoupDeCoeurResponseImplCopyWith<$Res> {
+  __$$CoupDeCoeurResponseImplCopyWithImpl(_$CoupDeCoeurResponseImpl _value,
+      $Res Function(_$CoupDeCoeurResponseImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? contentId = null,
+    Object? title = null,
+    Object? sourceName = null,
+    Object? saveCount = null,
+    Object? badge = null,
+    Object? url = null,
+    Object? thumbnailUrl = freezed,
+    Object? source = freezed,
+    Object? isRead = null,
+    Object? isSaved = null,
+    Object? isLiked = null,
+    Object? isDismissed = null,
+  }) {
+    return _then(_$CoupDeCoeurResponseImpl(
+      contentId: null == contentId
+          ? _value.contentId
+          : contentId // ignore: cast_nullable_to_non_nullable
+              as String,
+      title: null == title
+          ? _value.title
+          : title // ignore: cast_nullable_to_non_nullable
+              as String,
+      sourceName: null == sourceName
+          ? _value.sourceName
+          : sourceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      saveCount: null == saveCount
+          ? _value.saveCount
+          : saveCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      badge: null == badge
+          ? _value.badge
+          : badge // ignore: cast_nullable_to_non_nullable
+              as String,
+      url: null == url
+          ? _value.url
+          : url // ignore: cast_nullable_to_non_nullable
+              as String,
+      thumbnailUrl: freezed == thumbnailUrl
+          ? _value.thumbnailUrl
+          : thumbnailUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as SourceMini?,
+      isRead: null == isRead
+          ? _value.isRead
+          : isRead // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isSaved: null == isSaved
+          ? _value.isSaved
+          : isSaved // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLiked: null == isLiked
+          ? _value.isLiked
+          : isLiked // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isDismissed: null == isDismissed
+          ? _value.isDismissed
+          : isDismissed // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$CoupDeCoeurResponseImpl implements _CoupDeCoeurResponse {
+  const _$CoupDeCoeurResponseImpl(
+      {@JsonKey(name: 'content_id') required this.contentId,
+      this.title = '',
+      @JsonKey(name: 'source_name') this.sourceName = '',
+      @JsonKey(name: 'save_count') this.saveCount = 0,
+      this.badge = 'coup_de_coeur',
+      this.url = '',
+      @JsonKey(name: 'thumbnail_url') this.thumbnailUrl,
+      this.source,
+      @JsonKey(name: 'is_read') this.isRead = false,
+      @JsonKey(name: 'is_saved') this.isSaved = false,
+      @JsonKey(name: 'is_liked') this.isLiked = false,
+      @JsonKey(name: 'is_dismissed') this.isDismissed = false});
+
+  factory _$CoupDeCoeurResponseImpl.fromJson(Map<String, dynamic> json) =>
+      _$$CoupDeCoeurResponseImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'content_id')
+  final String contentId;
+  @override
+  @JsonKey()
+  final String title;
+  @override
+  @JsonKey(name: 'source_name')
+  final String sourceName;
+  @override
+  @JsonKey(name: 'save_count')
+  final int saveCount;
+  @override
+  @JsonKey()
+  final String badge;
+  @override
+  @JsonKey()
+  final String url;
+  @override
+  @JsonKey(name: 'thumbnail_url')
+  final String? thumbnailUrl;
+  @override
+  final SourceMini? source;
+  @override
+  @JsonKey(name: 'is_read')
+  final bool isRead;
+  @override
+  @JsonKey(name: 'is_saved')
+  final bool isSaved;
+  @override
+  @JsonKey(name: 'is_liked')
+  final bool isLiked;
+  @override
+  @JsonKey(name: 'is_dismissed')
+  final bool isDismissed;
+
+  @override
+  String toString() {
+    return 'CoupDeCoeurResponse(contentId: $contentId, title: $title, sourceName: $sourceName, saveCount: $saveCount, badge: $badge, url: $url, thumbnailUrl: $thumbnailUrl, source: $source, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$CoupDeCoeurResponseImpl &&
+            (identical(other.contentId, contentId) ||
+                other.contentId == contentId) &&
+            (identical(other.title, title) || other.title == title) &&
+            (identical(other.sourceName, sourceName) ||
+                other.sourceName == sourceName) &&
+            (identical(other.saveCount, saveCount) ||
+                other.saveCount == saveCount) &&
+            (identical(other.badge, badge) || other.badge == badge) &&
+            (identical(other.url, url) || other.url == url) &&
+            (identical(other.thumbnailUrl, thumbnailUrl) ||
+                other.thumbnailUrl == thumbnailUrl) &&
+            (identical(other.source, source) || other.source == source) &&
+            (identical(other.isRead, isRead) || other.isRead == isRead) &&
+            (identical(other.isSaved, isSaved) || other.isSaved == isSaved) &&
+            (identical(other.isLiked, isLiked) || other.isLiked == isLiked) &&
+            (identical(other.isDismissed, isDismissed) ||
+                other.isDismissed == isDismissed));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      contentId,
+      title,
+      sourceName,
+      saveCount,
+      badge,
+      url,
+      thumbnailUrl,
+      source,
+      isRead,
+      isSaved,
+      isLiked,
+      isDismissed);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$CoupDeCoeurResponseImplCopyWith<_$CoupDeCoeurResponseImpl> get copyWith =>
+      __$$CoupDeCoeurResponseImplCopyWithImpl<_$CoupDeCoeurResponseImpl>(
+          this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$CoupDeCoeurResponseImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _CoupDeCoeurResponse implements CoupDeCoeurResponse {
+  const factory _CoupDeCoeurResponse(
+          {@JsonKey(name: 'content_id') required final String contentId,
+          final String title,
+          @JsonKey(name: 'source_name') final String sourceName,
+          @JsonKey(name: 'save_count') final int saveCount,
+          final String badge,
+          final String url,
+          @JsonKey(name: 'thumbnail_url') final String? thumbnailUrl,
+          final SourceMini? source,
+          @JsonKey(name: 'is_read') final bool isRead,
+          @JsonKey(name: 'is_saved') final bool isSaved,
+          @JsonKey(name: 'is_liked') final bool isLiked,
+          @JsonKey(name: 'is_dismissed') final bool isDismissed}) =
+      _$CoupDeCoeurResponseImpl;
+
+  factory _CoupDeCoeurResponse.fromJson(Map<String, dynamic> json) =
+      _$CoupDeCoeurResponseImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'content_id')
+  String get contentId;
+  @override
+  String get title;
+  @override
+  @JsonKey(name: 'source_name')
+  String get sourceName;
+  @override
+  @JsonKey(name: 'save_count')
+  int get saveCount;
+  @override
+  String get badge;
+  @override
+  String get url;
+  @override
+  @JsonKey(name: 'thumbnail_url')
+  String? get thumbnailUrl;
+  @override
+  SourceMini? get source;
+  @override
+  @JsonKey(name: 'is_read')
+  bool get isRead;
+  @override
+  @JsonKey(name: 'is_saved')
+  bool get isSaved;
+  @override
+  @JsonKey(name: 'is_liked')
+  bool get isLiked;
+  @override
+  @JsonKey(name: 'is_dismissed')
+  bool get isDismissed;
+  @override
+  @JsonKey(ignore: true)
+  _$$CoupDeCoeurResponseImplCopyWith<_$CoupDeCoeurResponseImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 

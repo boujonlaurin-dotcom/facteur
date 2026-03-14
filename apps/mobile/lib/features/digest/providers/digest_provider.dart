@@ -208,9 +208,21 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return topic.copyWith(articles: updatedArticles);
     }).toList();
 
+    // Also update pepite/coup_de_coeur if contentId matches (editorial_v1)
+    final updatedPepite = currentDigest.pepite != null &&
+            currentDigest.pepite!.contentId == contentId
+        ? _applyActionToPepite(currentDigest.pepite!, action)
+        : currentDigest.pepite;
+    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+            currentDigest.coupDeCoeur!.contentId == contentId
+        ? _applyActionToCoupDeCoeur(currentDigest.coupDeCoeur!, action)
+        : currentDigest.coupDeCoeur;
+
     final updatedDigest = currentDigest.copyWith(
       items: updatedItems,
       topics: updatedTopics,
+      pepite: updatedPepite,
+      coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
     // Optimistically update cache so navigating away and back reflects the action
@@ -269,9 +281,21 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return topic.copyWith(articles: topic.articles.map(updateItem).toList());
     }).toList();
 
+    // Also sync pepite/coup_de_coeur
+    final updatedPepite = currentDigest.pepite != null &&
+            currentDigest.pepite!.contentId == contentId
+        ? currentDigest.pepite!.copyWith(isSaved: isSaved)
+        : currentDigest.pepite;
+    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+            currentDigest.coupDeCoeur!.contentId == contentId
+        ? currentDigest.coupDeCoeur!.copyWith(isSaved: isSaved)
+        : currentDigest.coupDeCoeur;
+
     final updatedDigest = currentDigest.copyWith(
       items: updatedItems,
       topics: updatedTopics,
+      pepite: updatedPepite,
+      coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
     _updateCache(updatedDigest);
@@ -340,11 +364,67 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
+  /// Apply an action mutation to a PepiteResponse's flags.
+  PepiteResponse _applyActionToPepite(PepiteResponse p, String action) {
+    switch (action) {
+      case 'like':
+        return p.copyWith(isLiked: true);
+      case 'unlike':
+        return p.copyWith(isLiked: false);
+      case 'read':
+        return p.copyWith(isRead: true, isDismissed: false);
+      case 'save':
+        return p.copyWith(isSaved: true);
+      case 'unsave':
+        return p.copyWith(isSaved: false);
+      case 'not_interested':
+        return p.copyWith(isDismissed: true, isRead: false);
+      case 'undo':
+        return p.copyWith(
+            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+      default:
+        return p;
+    }
+  }
+
+  /// Apply an action mutation to a CoupDeCoeurResponse's flags.
+  CoupDeCoeurResponse _applyActionToCoupDeCoeur(
+      CoupDeCoeurResponse c, String action) {
+    switch (action) {
+      case 'like':
+        return c.copyWith(isLiked: true);
+      case 'unlike':
+        return c.copyWith(isLiked: false);
+      case 'read':
+        return c.copyWith(isRead: true, isDismissed: false);
+      case 'save':
+        return c.copyWith(isSaved: true);
+      case 'unsave':
+        return c.copyWith(isSaved: false);
+      case 'not_interested':
+        return c.copyWith(isDismissed: true, isRead: false);
+      case 'undo':
+        return c.copyWith(
+            isRead: false, isSaved: false, isLiked: false, isDismissed: false);
+      default:
+        return c;
+    }
+  }
+
   /// Get the count of processed units (topics covered OR items processed)
   int get processedCount {
     final digest = state.value;
     if (digest == null) return 0;
-    if (digest.usesTopics) return digest.coveredTopicCount;
+    if (digest.usesTopics) {
+      var count = digest.coveredTopicCount;
+      if (digest.usesEditorial) {
+        final p = digest.pepite;
+        if (p != null && (p.isRead || p.isSaved || p.isDismissed)) count++;
+        final c = digest.coupDeCoeur;
+        if (c != null && (c.isRead || c.isSaved || c.isDismissed)) count++;
+      }
+      return count;
+    }
     return digest.items
         .where((item) => item.isRead || item.isDismissed || item.isSaved)
         .length;
@@ -354,7 +434,14 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   int get totalCount {
     final digest = state.value;
     if (digest == null) return 0;
-    if (digest.usesTopics) return digest.topics.length;
+    if (digest.usesTopics) {
+      var count = digest.topics.length;
+      if (digest.usesEditorial) {
+        if (digest.pepite != null) count++;
+        if (digest.coupDeCoeur != null) count++;
+      }
+      return count;
+    }
     return digest.items.length;
   }
 
@@ -499,9 +586,31 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return topic.copyWith(articles: updatedArticles);
     }).toList();
 
+    // Also update pepite/coup_de_coeur
+    final updatedPepite = currentDigest.pepite != null &&
+            currentDigest.pepite!.contentId == contentId
+        ? currentDigest.pepite!.copyWith(
+            isRead: isRead ?? currentDigest.pepite!.isRead,
+            isSaved: isSaved ?? currentDigest.pepite!.isSaved,
+            isLiked: isLiked ?? currentDigest.pepite!.isLiked,
+            isDismissed: isDismissed ?? currentDigest.pepite!.isDismissed,
+          )
+        : currentDigest.pepite;
+    final updatedCoupDeCoeur = currentDigest.coupDeCoeur != null &&
+            currentDigest.coupDeCoeur!.contentId == contentId
+        ? currentDigest.coupDeCoeur!.copyWith(
+            isRead: isRead ?? currentDigest.coupDeCoeur!.isRead,
+            isSaved: isSaved ?? currentDigest.coupDeCoeur!.isSaved,
+            isLiked: isLiked ?? currentDigest.coupDeCoeur!.isLiked,
+            isDismissed: isDismissed ?? currentDigest.coupDeCoeur!.isDismissed,
+          )
+        : currentDigest.coupDeCoeur;
+
     final updatedDigest = currentDigest.copyWith(
       items: updatedItems,
       topics: updatedTopics,
+      pepite: updatedPepite,
+      coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
     _updateCache(updatedDigest);

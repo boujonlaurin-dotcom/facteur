@@ -10,11 +10,14 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
+import 'closure_block.dart';
+import 'coup_de_coeur_block.dart';
 import 'digest_mode_tab_selector.dart';
-import 'editorial_subject_block.dart';
-import 'progress_dots.dart';
+import 'intro_text.dart';
+import 'pepite_block.dart';
 import 'section_divider.dart';
 import 'topic_section.dart';
+import 'transition_text.dart';
 
 /// Digest Briefing Section with premium design.
 /// Container smoothly animates its background color, border, and glow
@@ -34,6 +37,12 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(String topic)? onMuteTopic;
   final DigestMode mode;
   final bool isRegenerating;
+  final bool usesEditorial;
+  final PepiteResponse? pepite;
+  final CoupDeCoeurResponse? coupDeCoeur;
+  final String? headerText;
+  final String? closureText;
+  final String? ctaText;
 
   /// Called when the user taps the disabled mode selector (navigate to settings).
   final VoidCallback? onTapModeSelector;
@@ -52,6 +61,12 @@ class DigestBriefingSection extends StatefulWidget {
     this.onMuteTopic,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
+    this.usesEditorial = false,
+    this.pepite,
+    this.coupDeCoeur,
+    this.headerText,
+    this.closureText,
+    this.ctaText,
     this.onTapModeSelector,
   });
 
@@ -205,34 +220,23 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: title + optional progress dots
+                  // Left: title (dynamic in editorial mode)
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.digest?.headerText ?? "L'Essentiel du jour",
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
-                              ?.copyWith(
-                                fontSize: 23,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.5,
-                                color: textPrimary,
-                              ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (_usesEditorial) ...[
-                          const SizedBox(height: 8),
-                          ProgressDots(
-                            processedCount:
-                                widget.digest!.coveredTopicCount,
-                            totalCount: widget.digest!.topics.length,
+                    child: Text(
+                      widget.usesEditorial && widget.headerText != null
+                          ? widget.headerText!
+                          : "L'Essentiel du jour",
+                      style: Theme.of(context)
+                          .textTheme
+                          .displaySmall
+                          ?.copyWith(
+                            fontSize: 23,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: textPrimary,
                           ),
-                        ],
-                      ],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   // Right: segmented control (disabled) + CTA label
@@ -268,8 +272,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               const SizedBox(height: 10),
 
               // Layout branching: editorial, topics, or flat
-              if (_usesEditorial)
-                _buildEditorialLayout(context)
+              if (widget.usesEditorial && _usesTopics)
+                _buildEditorialLayout()
               else if (_usesTopics)
                 _buildTopicsLayout()
               else
@@ -322,87 +326,96 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     );
   }
 
-  /// Editorial layout: intro text + cards + transitions (editorial_v1)
-  Widget _buildEditorialLayout(BuildContext context) {
-    final digest = widget.digest!;
-    final topics = digest.topics;
-    final hasPepiteOrCdc = digest.pepite != null || digest.coupDeCoeur != null;
+  /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
+  Widget _buildEditorialLayout() {
+    final isSerene = widget.mode == DigestMode.serein;
+    final sections = <Widget>[];
 
-    return Column(
-      children: [
-        for (var i = 0; i < topics.length; i++)
-          EditorialSubjectBlock(
-            topic: topics[i],
-            isLast: i == topics.length - 1,
-            onArticleTap: widget.onItemTap,
-            onLike: widget.onLike,
-            onSave: widget.onSave,
-            onNotInterested: widget.onNotInterested,
-            onSwipeDismiss: widget.onSwipeDismiss != null
-                ? _handleLocalSwipeDismiss
-                : null,
-            activeDismissalId: _activeDismissalId,
-            onDismissUndo: _handleLocalUndo,
-            onDismissAutoResolve: _handleLocalAutoResolve,
-            onDismissMuteSource: _handleLocalMuteSource,
-            onDismissMuteTopic: _handleLocalMuteTopic,
-          ),
-        if (hasPepiteOrCdc) ...[
-          const DigestSectionDivider(),
-          if (digest.pepite != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _buildSimpleCard(context, digest.pepite!),
-            ),
-          if (digest.coupDeCoeur != null)
-            _buildSimpleCard(context, digest.coupDeCoeur!),
-        ],
-      ],
-    );
-  }
+    // Topics with intro text, editorial DigestCards, and transition text
+    for (int i = 0; i < widget.topics!.length; i++) {
+      final topic = widget.topics![i];
 
-  /// Simple card without rank label (used for pepite/coup de coeur in editorial)
-  Widget _buildSimpleCard(BuildContext context, DigestItem item) {
-    if (_activeDismissalId == item.contentId) {
-      return AnimatedSize(
-        duration: const Duration(milliseconds: 300),
-        child: DismissBanner(
-          content: _convertToContent(item),
-          onUndo: _handleLocalUndo,
-          onMuteSource: _handleLocalMuteSource,
-          onMuteTopic: _handleLocalMuteTopic,
-          onAutoResolve: _handleLocalAutoResolve,
+      // Intro text above the topic
+      if (topic.introText != null) {
+        sections.add(IntroText(text: topic.introText!));
+      }
+
+      // Topic section with editorial cards
+      sections.add(
+        TopicSection(
+          topic: topic,
+          editorialMode: true,
+          isSerene: isSerene,
+          onArticleTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+          onSwipeDismiss: widget.onSwipeDismiss != null
+              ? _handleLocalSwipeDismiss
+              : null,
+          activeDismissalId: _activeDismissalId,
+          onDismissUndo: _handleLocalUndo,
+          onDismissAutoResolve: _handleLocalAutoResolve,
+          onDismissMuteSource: _handleLocalMuteSource,
+          onDismissMuteTopic: _handleLocalMuteTopic,
+        ),
+      );
+
+      // Transition text between topics (not after last one)
+      if (topic.transitionText != null && i < widget.topics!.length - 1) {
+        sections.add(TransitionText(text: topic.transitionText!));
+      }
+    }
+
+    // Section divider before special picks
+    if (widget.pepite != null || widget.coupDeCoeur != null) {
+      sections.add(const SectionDivider());
+    }
+
+    // Pépite block
+    if (widget.pepite != null) {
+      sections.add(
+        PepiteBlock(
+          pepite: widget.pepite!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
         ),
       );
     }
-    return SwipeToOpenCard(
-      onSwipeOpen: () => widget.onItemTap(item),
-      onSwipeDismiss: widget.onSwipeDismiss != null
-          ? () => _handleLocalSwipeDismiss(item)
-          : null,
-      child: FeedCard(
-        boxShadow: const [],
-        content: _convertToContent(item),
-        onTap: () => widget.onItemTap(item),
-        onLongPressStart: (_) => ArticlePreviewOverlay.show(
-          context,
-          _convertToContent(item),
+
+    // Coup de cœur block
+    if (widget.coupDeCoeur != null) {
+      sections.add(
+        CoupDeCoeurBlock(
+          coupDeCoeur: widget.coupDeCoeur!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
         ),
-        onLongPressMoveUpdate: (details) =>
-            ArticlePreviewOverlay.updateScroll(
-          details.localOffsetFromOrigin.dy,
+      );
+    }
+
+    // Closure block
+    if (widget.closureText != null) {
+      sections.add(
+        ClosureBlock(
+          closureText: widget.closureText!,
+          ctaText: widget.ctaText,
         ),
-        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-        onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
-        isLiked: item.isLiked,
-        onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
-        onSaveLongPress: () =>
-            CollectionPickerSheet.show(context, item.contentId),
-        onNotInterested: widget.onNotInterested != null
-            ? () => widget.onNotInterested!(item)
-            : null,
-        isSaved: item.isSaved,
-      ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sections.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (_, i) => sections[i],
     );
   }
 
