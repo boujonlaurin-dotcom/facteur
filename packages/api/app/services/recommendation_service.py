@@ -1074,7 +1074,6 @@ class RecommendationService:
         if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
 
-<<<<<<< staging
         if _use_two_phase:
             # Two-phase candidate pool (mirrors digest_selector.py)
             # Phase 1: User's followed sources (prioritaires)
@@ -1098,13 +1097,6 @@ class RecommendationService:
             curated_candidates = list(curated_result.all())
 
             candidates_list = user_candidates + curated_candidates
-=======
-        # Apply topic filter (granular topic from Content.topics array)
-        if topic and not source_id:
-            query = query.where(Content.topics.any(topic))
-
-        query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
->>>>>>> main
 
             logger.info(
                 "feed_candidates_two_phase",
