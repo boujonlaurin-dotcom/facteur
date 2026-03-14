@@ -54,3 +54,43 @@ jobs:
             echo "FAIL: Environment reports '$ENV' instead of 'staging'"
             exit 1
           fi
+
+  promote-to-production:
+    name: Open PR staging → main
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or update PR staging → main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if a PR already exists
+          EXISTING=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists — staging smoke tests passed ✅"
+          else
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "chore: promote staging → production" \
+              --body "$(cat <<'EOF'
+## Promote staging → production
+
+Staging smoke tests passed ✅ — ready to merge.
+
+**Checklist before merging:**
+- [ ] Smoke tests green (auto-checked above)
+- [ ] Manual test on staging if needed
+- [ ] SQL migrations applied in Supabase (if any new alembic files)
+
+🤖 Auto-created after staging smoke tests passed.
+EOF
+)"
+            echo "PR created: staging → main"
+          fi
