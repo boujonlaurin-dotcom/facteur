@@ -1,9 +1,12 @@
 """Routes utilisateur."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -172,10 +175,6 @@ async def get_top_themes(
 
     Themes with no recent articles (last 14 days) are excluded.
     """
-    from datetime import datetime, timedelta, timezone
-
-    from sqlalchemy import func, select as sa_select
-
     from app.models.content import Content
 
     service = UserService(db)
@@ -185,7 +184,7 @@ async def get_top_themes(
         return []
 
     # Count recent articles per theme (last 14 days) in a single query
-    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    cutoff = datetime.now(UTC) - timedelta(days=14)
     slugs = [i.interest_slug for i in interests]
     count_rows = (
         await db.execute(
