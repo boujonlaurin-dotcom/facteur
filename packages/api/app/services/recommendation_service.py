@@ -892,7 +892,9 @@ class RecommendationService:
         # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
-        explicit_filter = source_id is not None or theme is not None or topic is not None
+        explicit_filter = (
+            source_id is not None or theme is not None or topic is not None
+        )
 
         if explicit_filter:
             # Relaxed: only exclude explicitly hidden articles

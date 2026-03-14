@@ -28,7 +28,8 @@ async def get_personalized_feed(
         None, description="Theme slug to filter by (e.g. 'tech', 'science')"
     ),
     topic: str | None = Query(
-        None, description="Topic slug to filter by (e.g. 'startups', 'entrepreneurship')"
+        None,
+        description="Topic slug to filter by (e.g. 'startups', 'entrepreneurship')",
     ),
     saved_only: bool = Query(False, alias="saved"),
     has_note: bool = Query(False, alias="has_note"),
