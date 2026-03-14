@@ -11,6 +11,9 @@ import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
 import 'digest_mode_tab_selector.dart';
+import 'editorial_subject_block.dart';
+import 'progress_dots.dart';
+import 'section_divider.dart';
 import 'topic_section.dart';
 
 /// Digest Briefing Section with premium design.
@@ -21,6 +24,7 @@ import 'topic_section.dart';
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
   final List<DigestTopic>? topics;
+  final DigestResponse? digest;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
@@ -38,6 +42,7 @@ class DigestBriefingSection extends StatefulWidget {
     super.key,
     required this.items,
     this.topics,
+    this.digest,
     required this.onItemTap,
     this.onSave,
     this.onLike,
@@ -55,6 +60,8 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
+  bool get _usesEditorial => widget.digest?.usesEditorial == true;
+
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
@@ -198,21 +205,34 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: title
+                  // Left: title + optional progress dots
                   Expanded(
-                    child: Text(
-                      "L'Essentiel du jour",
-                      style: Theme.of(context)
-                          .textTheme
-                          .displaySmall
-                          ?.copyWith(
-                            fontSize: 23,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            color: textPrimary,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.digest?.headerText ?? "L'Essentiel du jour",
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                fontSize: 23,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color: textPrimary,
+                              ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_usesEditorial) ...[
+                          const SizedBox(height: 8),
+                          ProgressDots(
+                            processedCount:
+                                widget.digest!.coveredTopicCount,
+                            totalCount: widget.digest!.topics.length,
                           ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                        ],
+                      ],
                     ),
                   ),
                   // Right: segmented control (disabled) + CTA label
@@ -247,8 +267,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
               const SizedBox(height: 10),
 
-              // Layout branching: topics or flat
-              if (_usesTopics)
+              // Layout branching: editorial, topics, or flat
+              if (_usesEditorial)
+                _buildEditorialLayout(context)
+              else if (_usesTopics)
                 _buildTopicsLayout()
               else
                 _buildFlatLayout(context),
@@ -296,6 +318,90 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         onDismissAutoResolve: _handleLocalAutoResolve,
         onDismissMuteSource: _handleLocalMuteSource,
         onDismissMuteTopic: _handleLocalMuteTopic,
+      ),
+    );
+  }
+
+  /// Editorial layout: intro text + cards + transitions (editorial_v1)
+  Widget _buildEditorialLayout(BuildContext context) {
+    final digest = widget.digest!;
+    final topics = digest.topics;
+    final hasPepiteOrCdc = digest.pepite != null || digest.coupDeCoeur != null;
+
+    return Column(
+      children: [
+        for (var i = 0; i < topics.length; i++)
+          EditorialSubjectBlock(
+            topic: topics[i],
+            isLast: i == topics.length - 1,
+            onArticleTap: widget.onItemTap,
+            onLike: widget.onLike,
+            onSave: widget.onSave,
+            onNotInterested: widget.onNotInterested,
+            onSwipeDismiss: widget.onSwipeDismiss != null
+                ? _handleLocalSwipeDismiss
+                : null,
+            activeDismissalId: _activeDismissalId,
+            onDismissUndo: _handleLocalUndo,
+            onDismissAutoResolve: _handleLocalAutoResolve,
+            onDismissMuteSource: _handleLocalMuteSource,
+            onDismissMuteTopic: _handleLocalMuteTopic,
+          ),
+        if (hasPepiteOrCdc) ...[
+          const DigestSectionDivider(),
+          if (digest.pepite != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _buildSimpleCard(context, digest.pepite!),
+            ),
+          if (digest.coupDeCoeur != null)
+            _buildSimpleCard(context, digest.coupDeCoeur!),
+        ],
+      ],
+    );
+  }
+
+  /// Simple card without rank label (used for pepite/coup de coeur in editorial)
+  Widget _buildSimpleCard(BuildContext context, DigestItem item) {
+    if (_activeDismissalId == item.contentId) {
+      return AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        child: DismissBanner(
+          content: _convertToContent(item),
+          onUndo: _handleLocalUndo,
+          onMuteSource: _handleLocalMuteSource,
+          onMuteTopic: _handleLocalMuteTopic,
+          onAutoResolve: _handleLocalAutoResolve,
+        ),
+      );
+    }
+    return SwipeToOpenCard(
+      onSwipeOpen: () => widget.onItemTap(item),
+      onSwipeDismiss: widget.onSwipeDismiss != null
+          ? () => _handleLocalSwipeDismiss(item)
+          : null,
+      child: FeedCard(
+        boxShadow: const [],
+        content: _convertToContent(item),
+        onTap: () => widget.onItemTap(item),
+        onLongPressStart: (_) => ArticlePreviewOverlay.show(
+          context,
+          _convertToContent(item),
+        ),
+        onLongPressMoveUpdate: (details) =>
+            ArticlePreviewOverlay.updateScroll(
+          details.localOffsetFromOrigin.dy,
+        ),
+        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+        onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
+        isLiked: item.isLiked,
+        onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
+        onSaveLongPress: () =>
+            CollectionPickerSheet.show(context, item.contentId),
+        onNotInterested: widget.onNotInterested != null
+            ? () => widget.onNotInterested!(item)
+            : null,
+        isSaved: item.isSaved,
       ),
     );
   }

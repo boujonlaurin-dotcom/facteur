@@ -30,6 +30,9 @@ class TopicSection extends StatefulWidget {
   final VoidCallback? onDismissMuteSource;
   final void Function(String topic)? onDismissMuteTopic;
 
+  /// When true, hides the rank/reason header (used in editorial_v1 layout).
+  final bool editorialMode;
+
   const TopicSection({
     super.key,
     required this.topic,
@@ -43,6 +46,7 @@ class TopicSection extends StatefulWidget {
     this.onDismissAutoResolve,
     this.onDismissMuteSource,
     this.onDismissMuteTopic,
+    this.editorialMode = false,
   });
 
   @override
@@ -86,14 +90,16 @@ class _TopicSectionState extends State<TopicSection> {
     if (allDismissed) return const SizedBox.shrink();
 
     return AnimatedOpacity(
-      opacity: topic.isCovered ? 0.7 : 1.0,
+      opacity: (!widget.editorialMode && topic.isCovered) ? 0.7 : 1.0,
       duration: const Duration(milliseconds: 300),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (flat, no card wrapper)
-          _buildHeader(context, colors, isDark, topic),
-          const SizedBox(height: 8),
+          // Header (flat, no card wrapper) — hidden in editorial mode
+          if (!widget.editorialMode) ...[
+            _buildHeader(context, colors, isDark, topic),
+            const SizedBox(height: 8),
+          ],
 
           // Article card(s)
           if (isMulti)

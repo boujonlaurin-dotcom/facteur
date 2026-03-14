@@ -78,6 +78,7 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
     @JsonKey(name: 'note_text') String? noteText,
+    String? badge,
   }) = _DigestItem;
 
   factory DigestItem.fromJson(Map<String, dynamic> json) =>
@@ -100,6 +101,8 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'topic_score') @Default(0.0) double topicScore,
     @Default([]) List<String> subjects,
     @Default([]) List<DigestItem> articles,
+    @JsonKey(name: 'intro_text') String? introText,
+    @JsonKey(name: 'transition_text') String? transitionText,
   }) = _DigestTopic;
 
   /// A topic is "covered" when at least one article has been interacted with
@@ -130,10 +133,20 @@ class DigestResponse with _$DigestResponse {
     @JsonKey(name: 'completion_threshold') @Default(5) int completionThreshold,
     @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
     @JsonKey(name: 'completed_at') DateTime? completedAt,
+    @JsonKey(name: 'header_text') String? headerText,
+    @JsonKey(name: 'closure_text') String? closureText,
+    @JsonKey(name: 'cta_text') String? ctaText,
+    DigestItem? pepite,
+    @JsonKey(name: 'coup_de_coeur') DigestItem? coupDeCoeur,
   }) = _DigestResponse;
 
-  /// Whether this digest uses the topics layout
-  bool get usesTopics => formatVersion == 'topics_v1' && topics.isNotEmpty;
+  /// Whether this digest uses the editorial layout
+  bool get usesEditorial => formatVersion == 'editorial_v1' && topics.isNotEmpty;
+
+  /// Whether this digest uses the topics layout (includes editorial_v1)
+  bool get usesTopics =>
+      (formatVersion == 'topics_v1' || formatVersion == 'editorial_v1') &&
+      topics.isNotEmpty;
 
   /// Number of covered topics (for progress tracking)
   int get coveredTopicCount => topics.where((t) => t.isCovered).length;
