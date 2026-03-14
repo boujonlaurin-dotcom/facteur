@@ -10,16 +10,28 @@ import '../providers/collections_provider.dart';
 /// Bottom sheet pour ajouter un article à des collections.
 class CollectionPickerSheet extends ConsumerStatefulWidget {
   final String contentId;
+  final VoidCallback? onAddNote;
 
-  const CollectionPickerSheet({super.key, required this.contentId});
+  const CollectionPickerSheet({
+    super.key,
+    required this.contentId,
+    this.onAddNote,
+  });
 
   /// Ouvre le picker en bottom sheet.
-  static Future<void> show(BuildContext context, String contentId) {
+  static Future<void> show(
+    BuildContext context,
+    String contentId, {
+    VoidCallback? onAddNote,
+  }) {
     return showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => CollectionPickerSheet(contentId: contentId),
+      builder: (_) => CollectionPickerSheet(
+        contentId: contentId,
+        onAddNote: onAddNote,
+      ),
     );
   }
 
@@ -29,15 +41,33 @@ class CollectionPickerSheet extends ConsumerStatefulWidget {
 }
 
 class _CollectionPickerSheetState
-    extends ConsumerState<CollectionPickerSheet> {
+    extends ConsumerState<CollectionPickerSheet>
+    with SingleTickerProviderStateMixin {
   final Set<String> _selectedIds = {};
   bool _isCreating = false;
   bool _hasPreSelected = false;
   final _createController = TextEditingController();
   final _createFocus = FocusNode();
+  late final AnimationController _noteButtonAnimController;
+  double _noteButtonScale = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _noteButtonAnimController = AnimationController(
+      duration: const Duration(milliseconds: 120),
+      vsync: this,
+      lowerBound: 0.93,
+      upperBound: 1.0,
+      value: 1.0,
+    )..addListener(() {
+        setState(() => _noteButtonScale = _noteButtonAnimController.value);
+      });
+  }
 
   @override
   void dispose() {
+    _noteButtonAnimController.dispose();
     _createController.dispose();
     _createFocus.dispose();
     super.dispose();
@@ -83,14 +113,62 @@ class _CollectionPickerSheetState
             ),
             const SizedBox(height: 16),
 
-            // Header
-            Text(
-              'Ajouter à une collection',
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
+            // Header + Note CTA
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Ajouter à une collection',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (widget.onAddNote != null)
+                  GestureDetector(
+                    onTapDown: (_) => _noteButtonAnimController.reverse(),
+                    onTapUp: (_) {
+                      _noteButtonAnimController.forward();
+                      Navigator.pop(context);
+                      widget.onAddNote!();
+                    },
+                    onTapCancel: () => _noteButtonAnimController.forward(),
+                    child: Transform.scale(
+                      scale: _noteButtonScale,
+                      child: FilledButton.icon(
+                        onPressed: null, // handled by GestureDetector
+                        icon: Icon(
+                          PhosphorIcons.pencilLine(PhosphorIconsStyle.regular),
+                          size: 16,
+                        ),
+                        label: const Text(
+                          'Ajouter une note',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: colors.primary,
+                          disabledBackgroundColor: colors.primary,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
 

@@ -34,6 +34,7 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
+import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/widgets/streak_indicator.dart';
 import '../../gamification/widgets/daily_progress_indicator.dart';
@@ -764,9 +765,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onLongPressEnd: (_) =>
                                           ArticlePreviewOverlay.dismiss(),
                                       onLike: () {
+                                        final wasLiked = content.isLiked;
                                         ref
                                             .read(feedProvider.notifier)
                                             .toggleLike(content);
+                                        NotificationService.showInfo(
+                                          wasLiked
+                                              ? 'Retiré de vos contenus favoris'
+                                              : 'Ajouté à vos contenus favoris',
+                                        );
+                                        ref.invalidate(collectionsProvider);
                                       },
                                       isLiked: content.isLiked,
                                       onSave: () async {
