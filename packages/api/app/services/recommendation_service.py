@@ -74,6 +74,7 @@ class RecommendationService:
         mode: FeedFilterMode | None = None,
         saved_only: bool = False,
         theme: str | None = None,
+        topic: str | None = None,
         has_note: bool = False,
         source_id: str | None = None,
     ) -> list[Content]:
@@ -276,6 +277,8 @@ class RecommendationService:
             digest_content_ids=digest_content_ids,
             # Story 11 : Feed par thème
             theme=theme,
+            # Topic filter (granular, e.g. 'startups', 'entrepreneurship')
+            topic=topic,
             # Paywall filter
             hide_paid_content=hide_paid_content,
             # Premium sources: allow paid content from subscribed sources
@@ -284,9 +287,9 @@ class RecommendationService:
             source_id=source_uuid,
         )
 
-        # Source filter OR RECENT mode: skip scoring, return pure chronological order
+        # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
-        if source_uuid or mode == FeedFilterMode.RECENT:
+        if source_uuid or topic or mode == FeedFilterMode.RECENT:
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id)
             return paginated
@@ -865,6 +868,7 @@ class RecommendationService:
         hide_paid_content: bool = True,
         subscribed_source_ids: set[UUID] = None,
         source_id: UUID | None = None,
+        topic: str | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -883,27 +887,33 @@ class RecommendationService:
             muted_topics = {t for t in muted_topics if t}
 
         # Candidates to EXCLUDE:
-        # 1. is_hidden == True
-        # OR
-        # 2. is_saved == True (Triaged to watch later)
-        # OR
-        # 3. status IN (SEEN, CONSUMED)
-
-        # Optimization: Use NOT EXISTS instead of NOT IN for exclusion
-        # This is generally faster in Postgres for large status tables
+        # When user explicitly filters by source or theme, only exclude hidden
+        # articles — they want to browse ALL content for that source/theme.
+        # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
-        exists_stmt = exists().where(
-            UserContentStatus.content_id == Content.id,
-            UserContentStatus.user_id == user_id,
-            or_(
+        explicit_filter = source_id is not None or theme is not None or topic is not None
+
+        if explicit_filter:
+            # Relaxed: only exclude explicitly hidden articles
+            exists_stmt = exists().where(
+                UserContentStatus.content_id == Content.id,
+                UserContentStatus.user_id == user_id,
                 UserContentStatus.is_hidden,
-                UserContentStatus.is_saved,
-                UserContentStatus.status.in_(
-                    [ContentStatus.SEEN, ContentStatus.CONSUMED]
+            )
+        else:
+            # Default feed: exclude hidden, saved, seen, consumed
+            exists_stmt = exists().where(
+                UserContentStatus.content_id == Content.id,
+                UserContentStatus.user_id == user_id,
+                or_(
+                    UserContentStatus.is_hidden,
+                    UserContentStatus.is_saved,
+                    UserContentStatus.status.in_(
+                        [ContentStatus.SEEN, ContentStatus.CONSUMED]
+                    ),
                 ),
-            ),
-        )
+            )
 
         query = (
             select(Content)
@@ -930,11 +940,11 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme: show all curated sources (broader discovery)
+        # theme/topic: show all curated sources (broader discovery)
         # followed_source_ids: restrict to user's followed sources (personalized feed)
         if source_id:
             query = query.where(Content.source_id == source_id)
-        elif theme:
+        elif theme or topic:
             query = query.where(Source.is_curated)
         elif followed_source_ids:
             query = query.where(Source.id.in_(list(followed_source_ids)))
@@ -1023,6 +1033,10 @@ class RecommendationService:
         # Apply theme filter (Story 2 - Feed par thème, skip when source filter active)
         if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
+
+        # Apply topic filter (granular topic from Content.topics array)
+        if topic and not source_id:
+            query = query.where(Content.topics.any(topic))
 
         query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
 

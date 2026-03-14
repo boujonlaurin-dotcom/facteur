@@ -27,6 +27,9 @@ async def get_personalized_feed(
     theme: str | None = Query(
         None, description="Theme slug to filter by (e.g. 'tech', 'science')"
     ),
+    topic: str | None = Query(
+        None, description="Topic slug to filter by (e.g. 'startups', 'entrepreneurship')"
+    ),
     saved_only: bool = Query(False, alias="saved"),
     has_note: bool = Query(False, alias="has_note"),
     source_id: str | None = Query(None, description="Source UUID to filter by"),
@@ -51,6 +54,7 @@ async def get_personalized_feed(
         mode=mode,
         saved_only=saved_only,
         theme=theme,
+        topic=topic,
         has_note=has_note,
         source_id=source_id,
     )

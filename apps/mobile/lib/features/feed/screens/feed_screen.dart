@@ -48,7 +48,6 @@ import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
-import 'cluster_view_screen.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -526,6 +525,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           final otherThemeFilters = themeFilters
                               .where((f) => f.key != 'pour_vous' && f.key != 'recent')
                               .toList();
+                          // Track which keys are custom topics vs themes
+                          final customTopicKeys =
+                              uniqueCustomFilters.map((f) => f.key).toSet();
+
                           final mergedFilters = [
                             ...pourVousFilter,
                             ...uniqueCustomFilters,
@@ -541,7 +544,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 selectedFilter:
                                     notifier.selectedFilter == 'pour_vous'
                                         ? 'pour_vous'
-                                        : notifier.selectedTheme,
+                                        : notifier.selectedTheme ??
+                                            notifier.selectedTopic,
                                 userBias:
                                     ref.watch(userBiasProvider).valueOrNull,
                                 availableFilters: mergedFilters,
@@ -561,28 +565,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     // Deselecting: clear whichever is active
                                     if (notifier.selectedTheme != null) {
                                       notifier.setTheme(null);
+                                    } else if (notifier.selectedTopic != null) {
+                                      notifier.setTopic(null);
                                     } else {
                                       notifier.setFilter(null);
                                     }
+                                  } else if (customTopicKeys.contains(filter)) {
+                                    // Custom topic → filter by Content.topics
+                                    notifier.setTopic(filter);
                                   } else {
-                                    // Navigate to filtered view with local articles
-                                    final feedState =
-                                        ref.read(feedProvider).valueOrNull;
-                                    if (feedState != null) {
-                                      final matchingArticles = feedState.items
-                                          .where((item) =>
-                                              item.topics.contains(filter) ||
-                                              item.clusterTopic == filter)
-                                          .toList();
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => ClusterViewScreen(
-                                            topicSlug: filter,
-                                            filteredArticles: matchingArticles,
-                                          ),
-                                        ),
-                                      );
-                                    }
+                                    // Theme → filter by Content.theme / Source.theme
+                                    notifier.setTheme(filter);
                                   }
                                 },
                               ),
