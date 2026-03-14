@@ -60,8 +60,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late Animation<double> _fabAnimation;
   late AnimationController _bookmarkBounceController;
   late Animation<double> _bookmarkScaleAnimation;
-  late AnimationController _noteFabBounceController;
-  late Animation<double> _noteFabScaleAnimation;
+  late AnimationController _likeBounceController;
+  late Animation<double> _likeScaleAnimation;
   late AnimationController _fabReappearController;
   late Animation<double> _fabReappearScale;
 
@@ -147,23 +147,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_bookmarkBounceController);
 
-    // Note FAB bounce animation (triggered at +20s nudge)
-    _noteFabBounceController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+    // Like FAB bounce animation
+    _likeBounceController = AnimationController(
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    _noteFabScaleAnimation = TweenSequence<double>([
+    _likeScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.2)
+        tween: Tween<double>(begin: 1.0, end: 1.3)
             .chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.2, end: 1.0)
+        tween: Tween<double>(begin: 1.3, end: 1.0)
             .chain(CurveTween(curve: Curves.bounceOut)),
         weight: 70,
       ),
-    ]).animate(_noteFabBounceController);
+    ]).animate(_likeBounceController);
 
     // Scroll reappear: subtle scale-up when FABs fade back in
     _fabReappearController = AnimationController(
@@ -207,10 +207,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _startReadingTimer();
     }
 
-    // Note nudge: bounce note FAB after 20s if user hasn't opened note
+    // Note nudge: bounce merged bookmark FAB after 20s if user hasn't opened note
     _noteNudgeTimer = Timer(const Duration(seconds: _noteNudgeDelay), () {
       if (mounted && !_hasOpenedNote) {
-        _noteFabBounceController.forward();
+        _bookmarkBounceController.forward(from: 0);
       }
     });
 
@@ -513,13 +513,56 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           await colRepo.addToCollection(defaultCol.id, content.id);
           ref.invalidate(collectionsProvider);
         }
-        CollectionPickerSheet.show(context, content.id);
+        CollectionPickerSheet.show(
+          context,
+          content.id,
+          onAddNote: () => _openNoteSheet(),
+        );
       }
     } catch (e) {
       // Rollback on error
       if (mounted) {
         setState(() {
           _content = content.copyWith(isSaved: wasSaved);
+        });
+        NotificationService.showError('Erreur', context: context);
+      }
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    final content = _content;
+    if (content == null) return;
+
+    HapticFeedback.lightImpact();
+    final wasLiked = content.isLiked;
+    final newLiked = !wasLiked;
+    setState(() {
+      _content = content.copyWith(isLiked: newLiked);
+    });
+
+    // Bounce animation
+    _likeBounceController.forward(from: 0);
+
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+      await repository.toggleLike(content.id, newLiked);
+      if (mounted) {
+        NotificationService.showInfo(
+          newLiked
+              ? 'Ajouté à vos contenus favoris'
+              : 'Retiré de vos contenus favoris',
+        );
+        // Refresh collections to update liked collection counts
+        ref.invalidate(collectionsProvider);
+      }
+    } catch (e) {
+      // Rollback on error
+      if (mounted) {
+        setState(() {
+          _content = content.copyWith(isLiked: wasLiked);
         });
         NotificationService.showError('Erreur', context: context);
       }
@@ -600,7 +643,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollStopTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
-    _noteFabBounceController.dispose();
+    _likeBounceController.dispose();
     _fabReappearController.dispose();
     _fabOpacity.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
@@ -962,18 +1005,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       ),
                       const SizedBox(height: 12),
                     ],
-                    if (_showNoteWelcome)
-                      NoteWelcomeTooltip(
-                        onDismiss: () =>
-                            setState(() => _showNoteWelcome = false),
-                      ),
                     // External link FAB — hidden for articles unless WebView is active
                     if (content.contentType != ContentType.article ||
                         _showWebView ||
                         _isWebViewActive) ...[
                       SizedBox(
-                        width: 48,
-                        height: 48,
+                        width: 55,
+                        height: 55,
                         child: FloatingActionButton(
                           onPressed: _openOriginalUrl,
                           backgroundColor: Colors.white,
@@ -984,23 +1022,58 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           child: Icon(
                             PhosphorIcons.arrowSquareOut(
                                 PhosphorIconsStyle.regular),
-                            size: 24,
+                            size: 28,
                           ),
                         ),
                       ),
                       const SizedBox(height: 12),
                     ],
-                    // Bookmark FAB (long-press for collection picker)
+                    // Like FAB
+                    ScaleTransition(
+                      scale: _likeScaleAnimation,
+                      child: SizedBox(
+                        width: 55,
+                        height: 55,
+                        child: FloatingActionButton(
+                          onPressed: _toggleLike,
+                          backgroundColor: content.isLiked
+                              ? colors.primary
+                              : Colors.white,
+                          foregroundColor:
+                              content.isLiked ? Colors.white : colors.textPrimary,
+                          elevation: content.isLiked ? 4 : 2,
+                          heroTag: 'like_fab',
+                          tooltip: 'J\'aime',
+                          child: Icon(
+                            content.isLiked
+                                ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
+                                : PhosphorIcons.heart(PhosphorIconsStyle.regular),
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_showNoteWelcome)
+                      NoteWelcomeTooltip(
+                        onDismiss: () =>
+                            setState(() => _showNoteWelcome = false),
+                      ),
+                    // Merged Bookmark + Note FAB (long-press for collection picker)
                     GestureDetector(
                       onLongPress: () {
                         HapticFeedback.mediumImpact();
-                        CollectionPickerSheet.show(context, content.id);
+                        CollectionPickerSheet.show(
+                          context,
+                          content.id,
+                          onAddNote: () => _openNoteSheet(),
+                        );
                       },
                       child: ScaleTransition(
                         scale: _bookmarkScaleAnimation,
                         child: SizedBox(
-                          width: 48,
-                          height: 48,
+                          width: 55,
+                          height: 55,
                           child: FloatingActionButton(
                             onPressed: _toggleBookmark,
                             backgroundColor: content.isSaved
@@ -1017,35 +1090,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       PhosphorIconsStyle.fill)
                                   : PhosphorIcons.bookmarkSimple(
                                       PhosphorIconsStyle.regular),
-                              size: 24,
+                              size: 28,
                             ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Note FAB (always visible)
-                    ScaleTransition(
-                      scale: _noteFabScaleAnimation,
-                      child: SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: FloatingActionButton(
-                          onPressed: _openNoteSheet,
-                          backgroundColor:
-                              content.hasNote ? colors.primary : Colors.white,
-                          foregroundColor:
-                              content.hasNote ? Colors.white : colors.textPrimary,
-                          elevation: content.hasNote ? 4 : 2,
-                          heroTag: 'note_fab',
-                          tooltip: 'Nouvelle note',
-                          child: Icon(
-                            content.hasNote
-                                ? PhosphorIcons.pencilLine(
-                                    PhosphorIconsStyle.fill)
-                                : PhosphorIcons.pencilLine(
-                                    PhosphorIconsStyle.regular),
-                            size: 24,
                           ),
                         ),
                       ),
@@ -1368,9 +1414,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       color: colors.backgroundPrimary,
                       child: Padding(
                         key: _bridgeKey,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space4,
-                          vertical: FacteurSpacing.space3,
+                        padding: EdgeInsets.only(
+                          left: FacteurSpacing.space4,
+                          right: FacteurSpacing.space4,
+                          top: FacteurSpacing.space3,
+                          bottom: FacteurSpacing.space3 + bottomInset,
                         ),
                         child: GestureDetector(
                           onTap: () {

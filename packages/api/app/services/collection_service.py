@@ -15,6 +15,7 @@ logger = structlog.get_logger()
 
 MAX_COLLECTIONS_PER_USER = 50
 DEFAULT_COLLECTION_NAME = "À consulter plus tard"
+LIKED_COLLECTION_NAME = "Contenus likés"
 
 
 class CollectionService:
@@ -57,10 +58,53 @@ class CollectionService:
         )
         return collection
 
+    async def ensure_liked_collection(self, user_id: UUID) -> Collection:
+        """Crée la collection 'Contenus likés' si elle n'existe pas (lazy creation)."""
+        stmt = select(Collection).where(
+            Collection.user_id == user_id,
+            Collection.is_liked_collection.is_(True),
+        )
+        existing = await self.session.scalar(stmt)
+        if existing:
+            return existing
+
+        # Ensure default exists first so positions are stable
+        await self.ensure_default_collection(user_id)
+
+        # Shift non-default collections positions by +1 to insert at position 1
+        shift_stmt = (
+            select(Collection)
+            .where(
+                Collection.user_id == user_id,
+                Collection.is_default.is_(False),
+            )
+            .order_by(Collection.position)
+        )
+        result = await self.session.execute(shift_stmt)
+        for col in result.scalars().all():
+            col.position += 1
+
+        collection = Collection(
+            user_id=user_id,
+            name=LIKED_COLLECTION_NAME,
+            position=1,
+            is_liked_collection=True,
+        )
+        self.session.add(collection)
+        await self.session.flush()
+
+        logger.info(
+            "liked_collection_created",
+            user_id=str(user_id),
+            collection_id=str(collection.id),
+        )
+        return collection
+
     async def list_collections(self, user_id: UUID) -> list[dict]:
         """Liste les collections avec count, read_count et 4 thumbnail URLs."""
-        # Ensure default collection exists
+        # Ensure default and liked collections exist
         await self.ensure_default_collection(user_id)
+        await self.ensure_liked_collection(user_id)
 
         # Fetch collections
         stmt = (
@@ -114,6 +158,7 @@ class CollectionService:
                     "name": col.name,
                     "position": col.position,
                     "is_default": col.is_default,
+                    "is_liked_collection": col.is_liked_collection,
                     "item_count": item_count,
                     "read_count": read_count,
                     "thumbnails": thumbnails,
@@ -125,9 +170,12 @@ class CollectionService:
 
     async def create_collection(self, user_id: UUID, name: str) -> Collection:
         """Crée une collection. Valide unicité du nom et limite max."""
-        # Block reserved name
-        if name.strip().lower() == DEFAULT_COLLECTION_NAME.lower():
+        # Block reserved names
+        lower_name = name.strip().lower()
+        if lower_name == DEFAULT_COLLECTION_NAME.lower():
             raise ValueError("Ce nom est réservé pour la collection par défaut")
+        if lower_name == LIKED_COLLECTION_NAME.lower():
+            raise ValueError("Ce nom est réservé pour la collection des contenus likés")
 
         # Check limit
         count_stmt = (
@@ -166,6 +214,8 @@ class CollectionService:
     ) -> Collection:
         """Renomme une collection."""
         collection = await self._get_user_collection(user_id, collection_id)
+        if collection.is_default or collection.is_liked_collection:
+            raise ValueError("Impossible de renommer une collection système")
         collection.name = name.strip()
         collection.updated_at = datetime.utcnow()
         await self.session.flush()
@@ -174,6 +224,8 @@ class CollectionService:
     async def delete_collection(self, user_id: UUID, collection_id: UUID) -> None:
         """Supprime une collection (les articles restent sauvegardés)."""
         collection = await self._get_user_collection(user_id, collection_id)
+        if collection.is_default or collection.is_liked_collection:
+            raise ValueError("Impossible de supprimer une collection système")
         await self.session.delete(collection)
         await self.session.flush()
         logger.info(

@@ -94,8 +94,8 @@ class _PerspectivesPillState extends State<PerspectivesPill>
         child: Opacity(
           opacity: widget.isEmpty ? 0.4 : 1.0,
           child: SizedBox(
-            width: 48,
-            height: 48,
+            width: 55,
+            height: 55,
             child: FloatingActionButton(
               onPressed: isActive ? widget.onTap : null,
               backgroundColor: Colors.white,
@@ -110,7 +110,7 @@ class _PerspectivesPillState extends State<PerspectivesPill>
                     AnimatedBuilder(
                       animation: _loadingController,
                       builder: (context, child) => CustomPaint(
-                        size: const Size(36, 36),
+                        size: const Size(41, 41),
                         painter: _BiasRingPainter.loading(
                           colors,
                           _loadingController.value,
@@ -119,7 +119,7 @@ class _PerspectivesPillState extends State<PerspectivesPill>
                     )
                   else
                     CustomPaint(
-                      size: const Size(36, 36),
+                      size: const Size(41, 41),
                       painter: widget.isEmpty
                           ? _BiasRingPainter.empty(colors)
                           : _BiasRingPainter(
@@ -130,7 +130,7 @@ class _PerspectivesPillState extends State<PerspectivesPill>
                   // Eye icon (smaller to fit inside the ring)
                   Icon(
                     PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                    size: 18,
+                    size: 21,
                     color: isActive
                         ? colors.textPrimary
                         : colors.textTertiary,
@@ -153,7 +153,7 @@ class _BiasRingPainter extends CustomPainter {
   final bool _isEmpty;
   final double _loadingProgress;
 
-  static const double _strokeWidth = 2.0;
+  static const double _strokeWidth = 2.5;
   static const double _gapDegrees = 6.0;
 
   _BiasRingPainter({
