@@ -19,6 +19,7 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onSaveLongPress;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
+  final VoidCallback? onSourceTap; // Epic 12: tap source name/logo → detail
   final Widget? topicChipWidget;
   final Widget? clusterChipWidget;
   final bool isSaved;
@@ -39,6 +40,7 @@ class FeedCard extends StatelessWidget {
     this.onSaveLongPress,
     this.onLike,
     this.onNotInterested,
+    this.onSourceTap,
     this.topicChipWidget,
     this.clusterChipWidget,
     this.isSaved = false,
@@ -155,38 +157,43 @@ class FeedCard extends StatelessWidget {
                       Expanded(
                         child: Row(
                           children: [
-                            // Source Logo
-                            if (content.source.logoUrl != null &&
-                                content.source.logoUrl!.isNotEmpty) ...[
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: FacteurImage(
-                                  imageUrl: content.source.logoUrl!,
-                                  width: 16,
-                                  height: 16,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (context) =>
-                                      _buildSourcePlaceholder(colors),
-                                ),
-                              ),
-                              const SizedBox(width: FacteurSpacing.space2),
-                            ] else ...[
-                              _buildSourcePlaceholder(colors),
-                              const SizedBox(width: FacteurSpacing.space2),
-                            ],
-
-                            // Source Name
-                            Flexible(
-                              flex: 2,
-                              fit: FlexFit.loose,
-                              child: Text(
-                                content.source.name,
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            // Source Logo + Name (tappable for source detail — Epic 12)
+                            GestureDetector(
+                              onTap: onSourceTap,
+                              behavior: HitTestBehavior.opaque,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (content.source.logoUrl != null &&
+                                      content.source.logoUrl!.isNotEmpty) ...[
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: FacteurImage(
+                                        imageUrl: content.source.logoUrl!,
+                                        width: 16,
+                                        height: 16,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (context) =>
+                                            _buildSourcePlaceholder(colors),
+                                      ),
+                                    ),
+                                    const SizedBox(width: FacteurSpacing.space2),
+                                  ] else ...[
+                                    _buildSourcePlaceholder(colors),
+                                    const SizedBox(width: FacteurSpacing.space2),
+                                  ],
+                                  Flexible(
+                                    child: Text(
+                                      content.source.name,
+                                      style: textTheme.labelMedium?.copyWith(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
 

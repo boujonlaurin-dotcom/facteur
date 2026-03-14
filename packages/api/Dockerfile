@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
 # Copy application AND required configs/scripts
 COPY packages/api/app/ app/
 COPY packages/api/alembic.ini .
+# Bust the BuildKit cache for alembic on every commit (Railway sets this automatically)
+ARG RAILWAY_GIT_COMMIT_SHA
 COPY packages/api/alembic/ alembic/
 
 # Create non-root user
