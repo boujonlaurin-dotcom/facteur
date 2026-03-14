@@ -94,14 +94,16 @@ class _TopicSectionState extends State<TopicSection> {
     if (allDismissed) return const SizedBox.shrink();
 
     return AnimatedOpacity(
-      opacity: topic.isCovered ? 0.7 : 1.0,
+      opacity: (!widget.editorialMode && topic.isCovered) ? 0.7 : 1.0,
       duration: const Duration(milliseconds: 300),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (flat, no card wrapper)
-          _buildHeader(context, colors, isDark, topic),
-          const SizedBox(height: 8),
+          // Header (flat, no card wrapper) — hidden in editorial mode
+          if (!widget.editorialMode) ...[
+            _buildHeader(context, colors, isDark, topic),
+            const SizedBox(height: 8),
+          ],
 
           // Article card(s)
           if (isMulti)

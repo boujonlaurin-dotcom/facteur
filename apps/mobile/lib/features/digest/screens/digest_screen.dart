@@ -581,6 +581,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                               child: IgnorePointer(
                                 ignoring: modeState.isRegenerating,
                                 child: DigestBriefingSection(
+                                  digest: digest,
                                   items: digest.items,
                                   topics:
                                       digest.usesTopics ? digest.topics : null,

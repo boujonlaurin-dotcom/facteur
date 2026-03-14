@@ -27,6 +27,7 @@ import 'transition_text.dart';
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
   final List<DigestTopic>? topics;
+  final DigestResponse? digest;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
@@ -50,6 +51,7 @@ class DigestBriefingSection extends StatefulWidget {
     super.key,
     required this.items,
     this.topics,
+    this.digest,
     required this.onItemTap,
     this.onSave,
     this.onLike,
@@ -73,6 +75,8 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
+  bool get _usesEditorial => widget.digest?.usesEditorial == true;
+
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
