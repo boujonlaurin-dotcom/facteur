@@ -99,6 +99,9 @@ class Content {
   final List<String> clusterHiddenIds;
   final List<Content> clusterHiddenArticles;
 
+  // Epic 12: Source overflow (populated by FeedRepository from diversification)
+  final int sourceOverflowCount;
+
   Content({
     required this.id,
     required this.title,
@@ -125,6 +128,7 @@ class Content {
     this.clusterHiddenCount = 0,
     this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
+    this.sourceOverflowCount = 0,
   });
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
@@ -172,6 +176,7 @@ class Content {
       clusterHiddenCount: clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
+      sourceOverflowCount: sourceOverflowCount,
     );
   }
 
@@ -260,6 +265,7 @@ class Content {
     int? clusterHiddenCount,
     List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
+    int? sourceOverflowCount,
   }) {
     return Content(
       id: id ?? this.id,
@@ -288,6 +294,7 @@ class Content {
       clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
+      sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
     );
   }
 
@@ -402,15 +409,35 @@ class FeedCluster {
   }
 }
 
+/// Epic 12: Source overflow from diversification filtering.
+class SourceOverflow {
+  final String sourceId;
+  final int hiddenCount;
+
+  SourceOverflow({
+    required this.sourceId,
+    required this.hiddenCount,
+  });
+
+  factory SourceOverflow.fromJson(Map<String, dynamic> json) {
+    return SourceOverflow(
+      sourceId: (json['source_id'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+    );
+  }
+}
+
 class FeedResponse {
   final List<Content> items;
   final Pagination pagination;
   final List<FeedCluster> clusters;
+  final List<SourceOverflow> sourceOverflow;
 
   FeedResponse({
     required this.items,
     required this.pagination,
     this.clusters = const [],
+    this.sourceOverflow = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -425,6 +452,11 @@ class FeedResponse {
       clusters: (json['clusters'] as List<dynamic>?)
               ?.whereType<Map<String, dynamic>>()
               .map((e) => FeedCluster.fromJson(e))
+              .toList() ??
+          const [],
+      sourceOverflow: (json['source_overflow'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => SourceOverflow.fromJson(e))
               .toList() ??
           const [],
     );

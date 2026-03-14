@@ -42,6 +42,7 @@ import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
+import '../widgets/source_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
@@ -842,7 +843,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ),
                                             ),
                                       clusterChipWidget:
-                                          ClusterChip(content: content),
+                                          content.clusterHiddenCount > 0
+                                              ? ClusterChip(content: content)
+                                              : SourceOverflowChip(content: content),
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
                                       onSourceTap: () =>

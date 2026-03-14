@@ -10,7 +10,12 @@ from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
 from app.schemas.content import FeedRefreshRequest
-from app.schemas.feed import ClusterInfo, FeedResponse, PaginationMeta
+from app.schemas.feed import (
+    ClusterInfo,
+    FeedResponse,
+    PaginationMeta,
+    SourceOverflowInfo,
+)
 from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
@@ -65,6 +70,12 @@ async def get_personalized_feed(
         )
         clusters_data = [ClusterInfo(**c) for c in raw_clusters]
 
+    # Epic 12: Source overflow from chronological diversification
+    overflow_data = [
+        SourceOverflowInfo(source_id=sid, hidden_count=count)
+        for sid, count in service.source_overflow.items()
+    ]
+
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
     has_next = len(feed_items) >= limit
@@ -78,6 +89,7 @@ async def get_personalized_feed(
             has_next=has_next,
         ),
         clusters=clusters_data,
+        source_overflow=overflow_data,
     )
 
 
