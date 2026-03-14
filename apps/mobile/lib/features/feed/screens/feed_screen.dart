@@ -42,6 +42,7 @@ import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
+import '../widgets/source_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
@@ -739,36 +740,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                // Show dismiss banner if this card is being dismissed
-                                if (_activeDismissalId == content.id &&
-                                    _activeDismissalContent != null) {
-                                  final capturedContent =
-                                      _activeDismissalContent!;
-                                  final capturedIndex = _activeDismissalIndex;
-                                  return Padding(
-                                    key: ValueKey('dismiss_${content.id}'),
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: AnimatedSize(
-                                      duration:
-                                          const Duration(milliseconds: 300),
-                                      child: DismissBanner(
-                                        content: capturedContent,
-                                        onUndo: () => _handleDismissUndo(
-                                            capturedContent, capturedIndex),
-                                        onMuteSource: () =>
-                                            _handleDismissMuteSource(
-                                                capturedContent),
-                                        onMuteTopic: (topic) =>
-                                            _handleDismissMuteTopic(
-                                                capturedContent, topic),
-                                        onAutoResolve: () =>
-                                            _handleDismissAutoResolve(
-                                                capturedContent),
-                                      ),
-                                    ),
-                                  );
-                                }
-
                                 final showHint =
                                     !_swipeHintSeen && contentIndex <= 1;
 
@@ -872,7 +843,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ),
                                             ),
                                       clusterChipWidget:
-                                          ClusterChip(content: content),
+                                          content.clusterHiddenCount > 0
+                                              ? ClusterChip(content: content)
+                                              : SourceOverflowChip(content: content),
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
                                       onSourceTap: () =>

@@ -338,13 +338,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     if (!content.hasNote) {
       NotificationService.showInfo(
-        'Bravo, article terminé !',
+        'Article terminé. Ajouter une note ?',
         actionLabel: 'Ajouter une note',
         onAction: _openNoteSheet,
       );
     } else if (!content.isSaved) {
       NotificationService.showInfo(
-        'Bravo, article terminé !',
+        'Article terminé. Ajouter une note ?',
         actionLabel: 'Enregistrer',
         onAction: _toggleBookmark,
       );
@@ -946,7 +946,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Perspectives pill (articles only) — always just above FABs
+                    // Perspectives FAB (articles only) — always just above other FABs
                     if (content.contentType == ContentType.article) ...[
                       PerspectivesPill(
                         biasDistribution:
@@ -971,18 +971,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     if (content.contentType != ContentType.article ||
                         _showWebView ||
                         _isWebViewActive) ...[
-                      FloatingActionButton(
-                        mini: true,
-                        onPressed: _openOriginalUrl,
-                        backgroundColor: Colors.white,
-                        foregroundColor: colors.textPrimary,
-                        elevation: 2,
-                        heroTag: 'original_fab',
-                        tooltip: _getFabLabel(),
-                        child: Icon(
-                          PhosphorIcons.arrowSquareOut(
-                              PhosphorIconsStyle.regular),
-                          size: 20,
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: FloatingActionButton(
+                          onPressed: _openOriginalUrl,
+                          backgroundColor: Colors.white,
+                          foregroundColor: colors.textPrimary,
+                          elevation: 2,
+                          heroTag: 'original_fab',
+                          tooltip: _getFabLabel(),
+                          child: Icon(
+                            PhosphorIcons.arrowSquareOut(
+                                PhosphorIconsStyle.regular),
+                            size: 24,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -995,24 +998,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       },
                       child: ScaleTransition(
                         scale: _bookmarkScaleAnimation,
-                        child: FloatingActionButton(
-                          mini: true,
-                          onPressed: _toggleBookmark,
-                          backgroundColor: content.isSaved
-                              ? colors.primary
-                              : Colors.white,
-                          foregroundColor:
-                              content.isSaved ? Colors.white : colors.textPrimary,
-                          elevation: content.isSaved ? 4 : 2,
-                          heroTag: 'bookmark_fab',
-                          tooltip: 'Sauvegarder',
-                          child: Icon(
-                            content.isSaved
-                                ? PhosphorIcons.bookmarkSimple(
-                                    PhosphorIconsStyle.fill)
-                                : PhosphorIcons.bookmarkSimple(
-                                    PhosphorIconsStyle.regular),
-                            size: 20,
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: FloatingActionButton(
+                            onPressed: _toggleBookmark,
+                            backgroundColor: content.isSaved
+                                ? colors.primary
+                                : Colors.white,
+                            foregroundColor:
+                                content.isSaved ? Colors.white : colors.textPrimary,
+                            elevation: content.isSaved ? 4 : 2,
+                            heroTag: 'bookmark_fab',
+                            tooltip: 'Sauvegarder',
+                            child: Icon(
+                              content.isSaved
+                                  ? PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.regular),
+                              size: 24,
+                            ),
                           ),
                         ),
                       ),
@@ -1021,23 +1027,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     // Note FAB (always visible)
                     ScaleTransition(
                       scale: _noteFabScaleAnimation,
-                      child: FloatingActionButton(
-                        mini: true,
-                        onPressed: _openNoteSheet,
-                        backgroundColor:
-                            content.hasNote ? colors.primary : Colors.white,
-                        foregroundColor:
-                            content.hasNote ? Colors.white : colors.textPrimary,
-                        elevation: content.hasNote ? 4 : 2,
-                        heroTag: 'note_fab',
-                        tooltip: 'Nouvelle note',
-                        child: Icon(
-                          content.hasNote
-                              ? PhosphorIcons.pencilLine(
-                                  PhosphorIconsStyle.fill)
-                              : PhosphorIcons.pencilLine(
-                                  PhosphorIconsStyle.regular),
-                          size: 20,
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: FloatingActionButton(
+                          onPressed: _openNoteSheet,
+                          backgroundColor:
+                              content.hasNote ? colors.primary : Colors.white,
+                          foregroundColor:
+                              content.hasNote ? Colors.white : colors.textPrimary,
+                          elevation: content.hasNote ? 4 : 2,
+                          heroTag: 'note_fab',
+                          tooltip: 'Nouvelle note',
+                          child: Icon(
+                            content.hasNote
+                                ? PhosphorIcons.pencilLine(
+                                    PhosphorIconsStyle.fill)
+                                : PhosphorIcons.pencilLine(
+                                    PhosphorIconsStyle.regular),
+                            size: 24,
+                          ),
                         ),
                       ),
                     ),
@@ -1193,12 +1202,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
         return SizedBox(
-          height: 1.5,
+          height: 4.5,
           child: LinearProgressIndicator(
             value: progress.clamp(0.0, 1.0),
             backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(colors.success),
-            minHeight: 1.5,
+            valueColor: AlwaysStoppedAnimation<Color>(colors.primary.withValues(alpha: 0.7)),
+            minHeight: 4.5,
           ),
         );
       },
