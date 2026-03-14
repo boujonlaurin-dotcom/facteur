@@ -739,36 +739,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 final progressionTopic =
                                     _activeProgressions[content.id];
 
-                                // Show dismiss banner if this card is being dismissed
-                                if (_activeDismissalId == content.id &&
-                                    _activeDismissalContent != null) {
-                                  final capturedContent =
-                                      _activeDismissalContent!;
-                                  final capturedIndex = _activeDismissalIndex;
-                                  return Padding(
-                                    key: ValueKey('dismiss_${content.id}'),
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: AnimatedSize(
-                                      duration:
-                                          const Duration(milliseconds: 300),
-                                      child: DismissBanner(
-                                        content: capturedContent,
-                                        onUndo: () => _handleDismissUndo(
-                                            capturedContent, capturedIndex),
-                                        onMuteSource: () =>
-                                            _handleDismissMuteSource(
-                                                capturedContent),
-                                        onMuteTopic: (topic) =>
-                                            _handleDismissMuteTopic(
-                                                capturedContent, topic),
-                                        onAutoResolve: () =>
-                                            _handleDismissAutoResolve(
-                                                capturedContent),
-                                      ),
-                                    ),
-                                  );
-                                }
-
                                 final showHint =
                                     !_swipeHintSeen && contentIndex <= 1;
 
