@@ -196,7 +196,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
           if (widget.footer != null) ...[
             const SizedBox(height: 32),
             widget.footer!,
-            const SizedBox(height: 32),
+            const SizedBox(height: 64),
           ],
         ],
       ),

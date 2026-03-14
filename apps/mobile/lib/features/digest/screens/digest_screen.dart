@@ -581,6 +581,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                               child: IgnorePointer(
                                 ignoring: modeState.isRegenerating,
                                 child: DigestBriefingSection(
+                                  digest: digest,
                                   items: digest.items,
                                   topics:
                                       digest.usesTopics ? digest.topics : null,
@@ -595,6 +596,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                       ref.read(feedProvider.notifier).muteTopic(topic),
                                   mode: modeState.mode,
                                   isRegenerating: modeState.isRegenerating,
+                                  usesEditorial: digest.usesEditorial,
+                                  pepite: digest.usesEditorial ? digest.pepite : null,
+                                  coupDeCoeur: digest.usesEditorial ? digest.coupDeCoeur : null,
+                                  headerText: digest.usesEditorial ? digest.headerText : null,
+                                  closureText: digest.usesEditorial ? digest.closureText : null,
+                                  ctaText: digest.usesEditorial ? digest.ctaText : null,
                                   onTapModeSelector: () {
                                     context.push(RoutePaths.digestSettings);
                                   },

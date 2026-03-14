@@ -10,8 +10,14 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import '../models/digest_mode.dart';
+import 'closure_block.dart';
+import 'coup_de_coeur_block.dart';
 import 'digest_mode_tab_selector.dart';
+import 'intro_text.dart';
+import 'pepite_block.dart';
+import 'section_divider.dart';
 import 'topic_section.dart';
+import 'transition_text.dart';
 
 /// Digest Briefing Section with premium design.
 /// Container smoothly animates its background color, border, and glow
@@ -21,6 +27,7 @@ import 'topic_section.dart';
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
   final List<DigestTopic>? topics;
+  final DigestResponse? digest;
   final void Function(DigestItem) onItemTap;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
@@ -30,6 +37,12 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(String topic)? onMuteTopic;
   final DigestMode mode;
   final bool isRegenerating;
+  final bool usesEditorial;
+  final PepiteResponse? pepite;
+  final CoupDeCoeurResponse? coupDeCoeur;
+  final String? headerText;
+  final String? closureText;
+  final String? ctaText;
 
   /// Called when the user taps the disabled mode selector (navigate to settings).
   final VoidCallback? onTapModeSelector;
@@ -38,6 +51,7 @@ class DigestBriefingSection extends StatefulWidget {
     super.key,
     required this.items,
     this.topics,
+    this.digest,
     required this.onItemTap,
     this.onSave,
     this.onLike,
@@ -47,6 +61,12 @@ class DigestBriefingSection extends StatefulWidget {
     this.onMuteTopic,
     this.mode = DigestMode.pourVous,
     this.isRegenerating = false,
+    this.usesEditorial = false,
+    this.pepite,
+    this.coupDeCoeur,
+    this.headerText,
+    this.closureText,
+    this.ctaText,
     this.onTapModeSelector,
   });
 
@@ -55,6 +75,8 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
+  bool get _usesEditorial => widget.digest?.usesEditorial == true;
+
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
@@ -198,10 +220,12 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left: title
+                  // Left: title (dynamic in editorial mode)
                   Expanded(
                     child: Text(
-                      "L'Essentiel du jour",
+                      widget.usesEditorial && widget.headerText != null
+                          ? widget.headerText!
+                          : "L'Essentiel du jour",
                       style: Theme.of(context)
                           .textTheme
                           .displaySmall
@@ -211,7 +235,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                             letterSpacing: -0.5,
                             color: textPrimary,
                           ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -247,8 +271,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               ),
               const SizedBox(height: 10),
 
-              // Layout branching: topics or flat
-              if (_usesTopics)
+              // Layout branching: editorial, topics, or flat
+              if (widget.usesEditorial && _usesTopics)
+                _buildEditorialLayout()
+              else if (_usesTopics)
                 _buildTopicsLayout()
               else
                 _buildFlatLayout(context),
@@ -297,6 +323,99 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         onDismissMuteSource: _handleLocalMuteSource,
         onDismissMuteTopic: _handleLocalMuteTopic,
       ),
+    );
+  }
+
+  /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
+  Widget _buildEditorialLayout() {
+    final isSerene = widget.mode == DigestMode.serein;
+    final sections = <Widget>[];
+
+    // Topics with intro text, editorial DigestCards, and transition text
+    for (int i = 0; i < widget.topics!.length; i++) {
+      final topic = widget.topics![i];
+
+      // Intro text above the topic
+      if (topic.introText != null) {
+        sections.add(IntroText(text: topic.introText!));
+      }
+
+      // Topic section with editorial cards
+      sections.add(
+        TopicSection(
+          topic: topic,
+          editorialMode: true,
+          isSerene: isSerene,
+          onArticleTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+          onSwipeDismiss: widget.onSwipeDismiss != null
+              ? _handleLocalSwipeDismiss
+              : null,
+          activeDismissalId: _activeDismissalId,
+          onDismissUndo: _handleLocalUndo,
+          onDismissAutoResolve: _handleLocalAutoResolve,
+          onDismissMuteSource: _handleLocalMuteSource,
+          onDismissMuteTopic: _handleLocalMuteTopic,
+        ),
+      );
+
+      // Transition text between topics (not after last one)
+      if (topic.transitionText != null && i < widget.topics!.length - 1) {
+        sections.add(TransitionText(text: topic.transitionText!));
+      }
+    }
+
+    // Section divider before special picks
+    if (widget.pepite != null || widget.coupDeCoeur != null) {
+      sections.add(const SectionDivider());
+    }
+
+    // Pépite block
+    if (widget.pepite != null) {
+      sections.add(
+        PepiteBlock(
+          pepite: widget.pepite!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+        ),
+      );
+    }
+
+    // Coup de cœur block
+    if (widget.coupDeCoeur != null) {
+      sections.add(
+        CoupDeCoeurBlock(
+          coupDeCoeur: widget.coupDeCoeur!,
+          isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onLike: widget.onLike,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+        ),
+      );
+    }
+
+    // Closure block
+    if (widget.closureText != null) {
+      sections.add(
+        ClosureBlock(
+          closureText: widget.closureText!,
+          ctaText: widget.ctaText,
+        ),
+      );
+    }
+
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: sections.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      itemBuilder: (_, i) => sections[i],
     );
   }
 

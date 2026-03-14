@@ -2,9 +2,9 @@ name: "QA: BMAD Verification"
 
 on:
   push:
-    branches: [ main, 'feat/**' ]
+    branches: [ staging, main, 'feat/**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ staging, main ]
 
 jobs:
   verify:
