@@ -46,6 +46,9 @@ class RecommendationService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.user_custom_topics: list = []  # Populated by get_feed() for reuse by caller
+        self.source_overflow: dict[
+            UUID, int
+        ] = {}  # Populated by chronological diversification
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -254,8 +257,11 @@ class RecommendationService:
         )
 
         # Paywall filter preference
+        # Disable paywall filter when browsing a specific source (exploration mode)
         hide_paid_content = True  # Default: hide paid articles
-        if personalization and personalization.hide_paid_content is not None:
+        if source_id:
+            hide_paid_content = False
+        elif personalization and personalization.hide_paid_content is not None:
             hide_paid_content = personalization.hide_paid_content
 
         # Convert source_id string to UUID if provided
@@ -317,9 +323,10 @@ class RecommendationService:
                 mode="chronological",
             )
 
-            result = self._apply_chronological_diversification(
+            result, source_overflow = self._apply_chronological_diversification(
                 candidates, source_priority_multipliers, limit, offset
             )
+            self.source_overflow = source_overflow
             await self._hydrate_user_status(result, user_id)
 
             # Load custom topics for cluster building (reuse by caller)
@@ -545,21 +552,21 @@ class RecommendationService:
         source_priority_multipliers: dict[UUID, float],
         limit: int,
         offset: int,
-    ) -> list[Content]:
+    ) -> tuple[list[Content], dict[UUID, int]]:
         """
         Epic 12: Algorithme "Ratio Normalisé" — chronological feed with source diversification.
 
         Pipeline:
         1. Group by source, compute relative frequency
-        2. Compute quota per source: ceil(frequency × limit × priority_multiplier), min 1
+        2. Compute quota per source: ceil(frequency × (offset+limit) × priority_multiplier), min 1
         3. Keep the N most recent articles per source (up to quota)
         4. Sort all retained articles by published_at DESC
-        5. Paginate with offset
+        5. Paginate with offset (quotas cover offset+limit so slice is never empty)
         """
         from math import ceil
 
         if not candidates:
-            return []
+            return [], {}
 
         # PASS 1: Group by source and compute frequencies
         by_source: dict[UUID, list[Content]] = {}
@@ -567,35 +574,64 @@ class RecommendationService:
             by_source.setdefault(article.source_id, []).append(article)
 
         total = len(candidates)
+        effective_limit = offset + limit  # Cover all pages up to current request
 
         # PASS 2: Compute quotas with user multipliers
         quotas: dict[UUID, int] = {}
         for source_id, articles_src in by_source.items():
             ratio = len(articles_src) / total
             multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
-            quota = max(1, ceil(ratio * limit * multiplier))
+            quota = max(1, ceil(ratio * effective_limit * multiplier))
             quotas[source_id] = quota
 
-        # PASS 2b: Normalize quotas so total ≈ limit (prevent overflow
+        logger.debug(
+            "diversification_quotas_raw",
+            quotas={str(sid): q for sid, q in quotas.items()},
+            multipliers={
+                str(sid): source_priority_multipliers.get(sid, 1.0) for sid in by_source
+            },
+        )
+
+        # PASS 2b: Diversity cap — no source gets more than 4× min_quota (× its multiplier)
+        MAX_SOURCE_RATIO = 4
+        min_quota = min(quotas.values())
+        for source_id in quotas:
+            multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
+            cap = max(1, ceil(MAX_SOURCE_RATIO * min_quota * multiplier))
+            quotas[source_id] = min(quotas[source_id], cap)
+
+        # PASS 2c: Normalize quotas so total ≈ limit (prevent overflow
         # when multipliers push sum(quotas) well beyond requested limit)
         total_quota = sum(quotas.values())
-        if total_quota > limit:
-            scale = limit / total_quota
+        if total_quota > effective_limit:
+            scale = effective_limit / total_quota
             quotas = {sid: max(1, ceil(q * scale)) for sid, q in quotas.items()}
+
+        logger.debug(
+            "diversification_quotas_normalized",
+            quotas={str(sid): q for sid, q in quotas.items()},
+            total_quota=sum(quotas.values()),
+            effective_limit=effective_limit,
+        )
 
         # PASS 3: Select articles to retain (most recent per source, up to quota)
         # Candidates from _get_candidates are already sorted by published_at DESC,
         # so each source's list preserves that order.
+        MIN_OVERFLOW_FOR_CTA = 3
         retained: list[Content] = []
+        source_overflow: dict[UUID, int] = {}
         for source_id, articles_src in by_source.items():
             quota = quotas[source_id]
             retained.extend(articles_src[:quota])
+            overflow_count = len(articles_src) - quota
+            if overflow_count >= MIN_OVERFLOW_FOR_CTA:
+                source_overflow[source_id] = overflow_count
 
         # PASS 4: Final chronological sort
         retained.sort(key=lambda a: a.published_at, reverse=True)
 
         # PASS 5: Paginate
-        return retained[offset : offset + limit]
+        return retained[offset : offset + limit], source_overflow
 
     def _hydrate_legacy_reasons(
         self, result: list[Content], context: ScoringContext
@@ -942,14 +978,16 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme/topic: show all curated sources (broader discovery)
-        # followed_source_ids: restrict to user's followed sources (personalized feed)
+        # theme: show all curated sources (broader discovery)
+        # followed_source_ids: two-phase fetch (user sources + curated enrichment)
+        _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme or topic:
             query = query.where(Source.is_curated)
         elif followed_source_ids:
-            query = query.where(Source.id.in_(list(followed_source_ids)))
+            # Don't apply source filter yet — two-phase fetch after all filters
+            _use_two_phase = True
         else:
             query = query.where(Source.is_curated)
 
@@ -1036,14 +1074,41 @@ class RecommendationService:
         if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
 
-        # Apply topic filter (granular topic from Content.topics array)
-        if topic and not source_id:
-            query = query.where(Content.topics.any(topic))
+        if _use_two_phase:
+            # Two-phase candidate pool (mirrors digest_selector.py)
+            # Phase 1: User's followed sources (prioritaires)
+            user_query = query.where(Source.id.in_(list(followed_source_ids)))
+            user_query = user_query.order_by(Content.published_at.desc()).limit(120)
+            user_result = await self.session.scalars(user_query)
+            user_candidates = list(user_result.all())
 
-        query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
+            # Phase 2: Curated sources enrichment (découverte)
+            existing_ids = {c.id for c in user_candidates}
+            curated_query = query.where(Source.is_curated)
+            if existing_ids:
+                curated_query = curated_query.where(
+                    Content.id.notin_(list(existing_ids))
+                )
+            remaining = max(limit_candidates - len(user_candidates), 0)
+            curated_query = curated_query.order_by(Content.published_at.desc()).limit(
+                remaining
+            )
+            curated_result = await self.session.scalars(curated_query)
+            curated_candidates = list(curated_result.all())
 
-        candidates = await self.session.scalars(query)
-        candidates_list = list(candidates.all())
+            candidates_list = user_candidates + curated_candidates
+
+            logger.info(
+                "feed_candidates_two_phase",
+                user_id=str(user_id),
+                user_sources=len(user_candidates),
+                curated_enrichment=len(curated_candidates),
+                total=len(candidates_list),
+            )
+        else:
+            query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
+            candidates = await self.session.scalars(query)
+            candidates_list = list(candidates.all())
 
         # Debug logging for mode filters
         if mode:

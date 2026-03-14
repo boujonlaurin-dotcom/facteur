@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -6,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../providers/feed_provider.dart';
 
 /// Bottom sheet for quick source adjustment (frequency slider + mute).
 ///
@@ -58,6 +61,8 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
       await ref
           .read(userSourcesProvider.notifier)
           .updateWeight(widget.source.id, newValue);
+      // Auto-refresh feed to reflect new diversification quotas
+      unawaited(ref.read(feedProvider.notifier).refresh());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

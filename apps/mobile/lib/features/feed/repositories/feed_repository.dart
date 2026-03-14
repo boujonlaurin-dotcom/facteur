@@ -134,6 +134,44 @@ class FeedRepository {
               }).toList();
             }
           }
+
+          // Epic 12: Parse source_overflow and annotate last card per source
+          final overflowRaw = data['source_overflow'];
+          if (overflowRaw is List) {
+            final overflowMap = <String, int>{};
+            for (final o in overflowRaw) {
+              if (o is Map<String, dynamic>) {
+                final sid = o['source_id'] as String?;
+                final count = o['hidden_count'] as int?;
+                if (sid != null && count != null && count > 0) {
+                  overflowMap[sid] = count;
+                }
+              }
+            }
+
+            if (overflowMap.isNotEmpty) {
+              // Find the LAST card per source and annotate with overflow count
+              // (only if no cluster chip already present — cluster takes priority)
+              final lastIndexBySource = <String, int>{};
+              for (var i = 0; i < itemsList.length; i++) {
+                final sid = itemsList[i].source.id;
+                if (overflowMap.containsKey(sid)) {
+                  lastIndexBySource[sid] = i;
+                }
+              }
+
+              for (final entry in lastIndexBySource.entries) {
+                final idx = entry.value;
+                final item = itemsList[idx];
+                // Don't annotate if cluster chip already present
+                if (item.clusterHiddenCount == 0) {
+                  itemsList[idx] = item.copyWith(
+                    sourceOverflowCount: overflowMap[entry.key]!,
+                  );
+                }
+              }
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];

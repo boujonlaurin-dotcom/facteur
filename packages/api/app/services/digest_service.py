@@ -49,6 +49,13 @@ from app.services.topic_selector import TopicGroup
 logger = structlog.get_logger()
 
 
+def _count_digest_items(digest_items) -> int:
+    """Count items in either EditorialPipelineResult or list."""
+    if isinstance(digest_items, EditorialPipelineResult):
+        return len(digest_items.subjects)
+    return len(digest_items) if digest_items else 0
+
+
 @dataclass
 class EmergencyItem:
     """Dummy DigestItem wrapper for emergency fallback."""
@@ -224,10 +231,11 @@ class DigestService:
             digest_items = []
 
         selection_time = time.time() - step_start
+        _item_count = _count_digest_items(digest_items)
         logger.info(
             "digest_step_selection",
             user_id=str(user_id),
-            item_count=len(digest_items),
+            item_count=_item_count,
             duration_ms=round(selection_time * 1000, 2),
         )
 
@@ -247,6 +255,17 @@ class DigestService:
             if is_editorial_format
             else (type(digest_items[0]).__name__ if digest_items else "empty"),
         )
+
+        # Guardrail: editorial result with 0 subjects → fall back to topics
+        if is_editorial_format and not digest_items.subjects:
+            logger.warning(
+                "digest_editorial_empty_subjects_fallback",
+                user_id=str(user_id),
+                has_header=bool(digest_items.header_text),
+                has_closure=bool(digest_items.closure_text),
+            )
+            digest_items = []
+            is_editorial_format = False
 
         # Emergency Fallback: If standard selection returns nothing, grab from user's sources first
         # This prevents 503 errors when personalization is too restrictive or history is empty
@@ -294,7 +313,7 @@ class DigestService:
             "digest_created",
             user_id=str(user_id),
             digest_id=str(digest.id),
-            items_count=len(digest_items),
+            items_count=_count_digest_items(digest_items),
             store_duration_ms=round(store_time * 1000, 2),
             total_duration_ms=round(total_time * 1000, 2),
         )
