@@ -59,6 +59,15 @@ class EditorialConfig:
             system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
         )
     )
+    writing_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(system="", max_tokens=2000)
+    )
+    writing_serene_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(system="", max_tokens=2000)
+    )
+    pepite_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(system="", temperature=0.3, max_tokens=500)
+    )
 
     def is_enabled_for_user(self, user_id: str) -> bool:
         """Check if editorial pipeline is enabled for a specific user."""
@@ -83,9 +92,18 @@ def load_editorial_config() -> EditorialConfig:
     query_expansion_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.3, max_tokens=150
     )
+    writing_prompt = PromptConfig(system="", max_tokens=2000)
+    writing_serene_prompt = PromptConfig(system="", max_tokens=2000)
+    pepite_prompt = PromptConfig(system="", temperature=0.3, max_tokens=500)
 
     # Load pipeline config
-    if config_path.exists():
+    if not config_path.exists():
+        logger.error(
+            "editorial_config_yaml_missing",
+            path=str(config_path),
+            message="editorial_config.yaml not found — using defaults (editorial DISABLED)",
+        )
+    else:
         try:
             raw = yaml.safe_load(config_path.read_text())
             if raw and "pipeline" in raw:
@@ -96,7 +114,13 @@ def load_editorial_config() -> EditorialConfig:
             logger.exception("editorial_config_load_failed", path=str(config_path))
 
     # Load prompts
-    if prompts_path.exists():
+    if not prompts_path.exists():
+        logger.error(
+            "editorial_prompts_yaml_missing",
+            path=str(prompts_path),
+            message="editorial_prompts.yaml not found — writing/pepite prompts empty",
+        )
+    else:
         try:
             raw = yaml.safe_load(prompts_path.read_text())
             if raw and "curation" in raw:
@@ -105,13 +129,35 @@ def load_editorial_config() -> EditorialConfig:
                 deep_matching_prompt = PromptConfig(**raw["deep_matching"])
             if raw and "query_expansion" in raw:
                 query_expansion_prompt = PromptConfig(**raw["query_expansion"])
+            if raw and "writing" in raw:
+                writing_prompt = PromptConfig(**raw["writing"])
+            if raw and "writing_serene" in raw:
+                writing_serene_prompt = PromptConfig(**raw["writing_serene"])
+            if raw and "pepite" in raw:
+                pepite_prompt = PromptConfig(**raw["pepite"])
         except Exception:
             logger.exception("editorial_prompts_load_failed", path=str(prompts_path))
 
-    return EditorialConfig(
+    cfg = EditorialConfig(
         pipeline=pipeline_cfg,
         feature_flags=feature_flags,
         curation_prompt=curation_prompt,
         deep_matching_prompt=deep_matching_prompt,
         query_expansion_prompt=query_expansion_prompt,
+        writing_prompt=writing_prompt,
+        writing_serene_prompt=writing_serene_prompt,
+        pepite_prompt=pepite_prompt,
     )
+
+    logger.info(
+        "editorial_config_loaded",
+        editorial_enabled=cfg.feature_flags.editorial_enabled,
+        whitelist_count=len(cfg.feature_flags.editorial_user_ids),
+        has_curation_prompt=bool(cfg.curation_prompt.system),
+        has_writing_prompt=bool(cfg.writing_prompt.system),
+        has_pepite_prompt=bool(cfg.pepite_prompt.system),
+        config_path=str(config_path),
+        prompts_path=str(prompts_path),
+    )
+
+    return cfg

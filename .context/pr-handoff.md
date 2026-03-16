@@ -1,47 +1,57 @@
-# PR — Story 10.27 : Cartes éditoriales (badges sémantiques, ArticlePairView, Pépite/Coup de cœur)
+# PR — fix: editorial_v1 pipeline crash + missing config prompts
 
 ## Quoi
-Implémentation de la couche visuelle éditorialisée pour les digests `editorial_v1`. Les cartes affichent maintenant des badges sémantiques (actu/pas_de_recul/pépite/coup de cœur) au lieu du badge reason algorithmique, le rank badge circulaire est masqué en mode éditorial, et deux nouveaux blocs encadrent pépite et coup de cœur.
+Corrige 3 bugs qui empêchaient le pipeline éditorial de fonctionner en prod après activation de MISTRAL_API_KEY :
+1. `TypeError: 'EditorialPipelineResult' has no len()` — crash à chaque force-regeneration
+2. `'EditorialConfig' has no attribute 'writing_prompt'` — prompts writing/pepite jamais définis
+3. JSON truncation sur query_expansion (max_tokens trop bas)
+
+Ajoute aussi des guardrails : log explicite si YAML manquant, fallback si editorial vide, log du config summary au boot.
 
 ## Pourquoi
-Story 10.26 avait posé le layout éditorial (header, introText, transitionText, dots). Il manquait l'éditorialisation des cartes elles-mêmes. Le backend ne peuple pas encore le champ `badge` — tout est implémenté avec fallback `null` (rétrocompatibilité totale).
+Après ajout de MISTRAL_API_KEY sur le service WEB Railway, le pipeline éditorial s'activait enfin mais crashait immédiatement (500 Internal Server Error sur chaque `POST /api/digest/generate?force=true`). Les 3 bugs proviennent de Story 10.24 (writer.py) qui référençait des champs config jamais ajoutés, et de `digest_service.py` qui n'avait pas été adapté pour le nouveau type de retour `EditorialPipelineResult`.
 
 ## Fichiers modifiés
-**Mobile :**
-- `digest/widgets/digest_card.dart` — D4 (badge sémantique) + D5 (rank badge conditionnel)
-- `digest/widgets/topic_section.dart` — N3 (editorialMode : DigestCard au lieu de FeedCard, header simplifié)
-- `digest/widgets/digest_briefing_section.dart` — N5c (editorial layout method, nouveaux params pepite/coupDeCoeur)
-- `digest/screens/digest_screen.dart` — N5d (wiring usesEditorial/pepite/coupDeCoeur)
+**Backend :**
+- `packages/api/app/services/digest_service.py` — fix `len()` sur EditorialPipelineResult (lignes 230, 302) + guardrail subjects vides
+- `packages/api/app/services/editorial/config.py` — ajout 3 champs prompt (writing, writing_serene, pepite) + loader + logs manquant YAML + log config summary
 
-**Nouveaux fichiers :**
-- `digest/widgets/pepite_block.dart` — N5a
-- `digest/widgets/coup_de_coeur_block.dart` — N5b
+**Config :**
+- `packages/api/config/editorial_prompts.yaml` — ajout prompts writing, writing_serene, pepite + fix query_expansion max_tokens 150→500
 
 ## Zones à risque
-- **`digest_card.dart`** : le conditionnel `if (item.badge == null)` sur le rank badge — s'assurer que les formats `flat_v1` et `topics_v1` n'ont pas de `badge` peuplé côté backend (sinon le rank badge disparaît)
-- **`topic_section.dart`** : `_editorialBodyFooterHeight = 210.0` est une estimation pour le calcul de hauteur du PageView. Si DigestCard est plus haute qu'estimé, les cartes seront tronquées en bas. À valider visuellement.
-- **`_handleDigestCardAction`** dans `topic_section.dart` : mapping des action strings vers les callbacks. Le case `'read'` appelle `onArticleTap` — vérifier que c'est cohérent avec `ArticleActionBar`.
+- **`config.py` @lru_cache** : le cache est process-lifetime. Si le YAML est absent au premier appel, les defaults (editorial_enabled=False) sont cachés pour toujours. Le nouveau log `editorial_config_yaml_missing` rend ce cas visible. Un redeploy Railway reset le cache.
+- **`editorial_prompts.yaml`** : les prompts writing/pepite sont des first drafts. Le LLM (Mistral) peut ne pas respecter le format JSON attendu → les handlers dans writer.py gèrent déjà le graceful degradation (return None).
+- **`digest_service.py:258-266`** : nouveau guardrail "empty editorial subjects" force un fallback vers emergency candidates. Vérifier que le fallback ne crée pas de doublon de digest en DB.
 
 ## Points d'attention pour le reviewer
-1. **Rétrocompatibilité** : `flat_v1` et `topics_v1` ne passent jamais par `_buildEditorialLayout()` (guard `widget.usesEditorial && _usesTopics`). `DigestCard` avec `item.badge == null` se comporte exactement comme avant.
-2. **Conversion PepiteResponse/CoupDeCoeurResponse → DigestItem** : les helpers dans `pepite_block.dart` et `coup_de_coeur_block.dart` passent uniquement les champs disponibles. Le `reason` de DigestItem a un `@Default('')` donc pas de crash, mais le fallback reason badge affichera "" → "Environnement" — non visible car `badge` est toujours non-null pour ces items.
-3. **`_withEditorialBadge`** dans `topic_section.dart` : assign badge par index (0 = actu, 1+ = pas_de_recul) uniquement si `article.badge == null`. Quand le backend peuplera ce champ, l'assignation par index sera skippée automatiquement.
-4. **Mode serein** : la logique emoji est dans `DigestCard._buildBadge()`. La valeur `isSerene` est passée via chain de params (digest_screen → DigestBriefingSection → TopicSection → DigestCard), pas via provider.
+1. **Type safety du `len()`** : les 2 fix utilisent `isinstance(digest_items, EditorialPipelineResult)` — même pattern que le check existant à la ligne 240. Pas de risque de régression pour topics_v1/flat_v1.
+2. **Prompts YAML** : les doubles accolades `{{...}}` sont nécessaires car le YAML est lu brut (pas de f-string). Le writer.py envoie le `system` prompt tel quel au LLM — les `{{` seront interprétés comme des littéraux JSON, pas des placeholders Python.
+3. **`if not config_path.exists()`** : transforme le silent-default en error log explicite. Ne change PAS le comportement (defaults toujours utilisés) mais rend le problème visible dans Railway.
+4. **`editorial_config_loaded` log** : appelé une seule fois (lru_cache). Vérifier dans Railway que les flags sont corrects après deploy.
 
 ## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-- `_buildTopicsLayout()` dans `digest_briefing_section.dart` : inchangé, `editorialMode: false` implicite
-- Le dismiss flow (DismissBanner, SwipeToOpenCard) : conservé en editorial mode dans `_buildSingleArticle`
-- `ArticleActionBar` : non modifié, toujours appelé via `onAction` dans DigestCard
-- Aucun test widget ne couvre ces widgets dans le repo — pas de risque de régression test
+- `digest_selector.py` : aucune modif. Les 4 fallback branches (not_enabled, no_api_key, global_ctx_failed, exception) sont inchangées.
+- `writer.py` : aucune modif. Les AttributeError sont résolus côté config, pas côté writer.
+- `llm_client.py` : aucune modif. Le `is_ready` check fonctionne maintenant que MISTRAL_API_KEY est set.
+- `editorial_config.yaml` : aucune modif (editorial_enabled: true, whitelist vide = tous users).
+- Le flow `GET /api/digest` (lecture d'un digest existant) n'est pas affecté.
 
 ## Comment tester
-1. **flat_v1 / topics_v1 inchangés** :
-   - Ouvrir un digest non-éditorial → vérifier rank badge visible, reason badge présent
-2. **editorial_v1 badges** :
-   - `editorial_enabled: true` dans `packages/api/config/editorial_config.yaml` (déjà activé en dev local)
-   - Badge "🔴 L'actu du jour" sur première carte de chaque topic
-   - Badge "🔭 Le pas de recul" sur deuxième carte (si deep article présent)
-   - Absence du cercle rank (#1, #2) en top-left des cartes
-3. **Mode serein** : switcher en mode Serein → badges actu/pas_de_recul sans emoji
-4. **Pépite & Coup de cœur** : blocs visibles uniquement si le backend renvoie `pepite`/`coup_de_coeur` dans la réponse `editorial_v1` — à connecter quand le backend peuplera ces champs
-5. `flutter analyze` — 0 nouvelles erreurs (vérifié)
+1. **Vérif config au boot** : après deploy, chercher dans Railway logs :
+   - `editorial_config_loaded` avec `editorial_enabled=true`, `has_writing_prompt=true`, `has_pepite_prompt=true`
+   - Absence de `editorial_config_yaml_missing` ou `editorial_prompts_yaml_missing`
+
+2. **Force-regeneration** :
+   ```
+   POST /api/digest/generate?force=true
+   ```
+   - Réponse doit avoir `format_version: "editorial_v1"` (pas `topics_v1`)
+   - Chercher `digest_editorial_completed` dans les logs (pas de fallback)
+
+3. **Fallback fonctionne toujours** :
+   - Si MISTRAL_API_KEY est retirée → `digest_editorial_no_api_key` dans les logs → digest en topics_v1
+   - Si prompts YAML vide → writing/pepite seront null (graceful) mais le digest éditorial sera créé
+
+4. **Régression topics_v1** :
+   - `GET /api/digest` pour un user qui a déjà un digest du jour → doit retourner le digest existant sans re-génération
