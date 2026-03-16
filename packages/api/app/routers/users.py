@@ -1,9 +1,12 @@
 """Routes utilisateur."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -160,6 +163,7 @@ class TopThemeResponse(BaseModel):
 
     interest_slug: str
     weight: float
+    article_count: int = 0
 
 
 @router.get("/top-themes", response_model=list[TopThemeResponse])
@@ -167,10 +171,37 @@ async def get_top_themes(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> list[TopThemeResponse]:
-    """Retourne les thèmes de l'utilisateur triés par poids décroissant."""
+    """Retourne les thèmes de l'utilisateur triés par poids décroissant.
+
+    Themes with no recent articles (last 14 days) are excluded.
+    """
+    from app.models.content import Content
+
     service = UserService(db)
     interests = await service.get_interests(user_id)
+
+    if not interests:
+        return []
+
+    # Count recent articles per theme (last 14 days) in a single query
+    cutoff = datetime.now(UTC) - timedelta(days=14)
+    slugs = [i.interest_slug for i in interests]
+    count_rows = (
+        await db.execute(
+            sa_select(Content.theme, func.count(Content.id))
+            .where(Content.theme.in_(slugs), Content.published_at >= cutoff)
+            .group_by(Content.theme)
+        )
+    ).all()
+    theme_counts = {row[0]: row[1] for row in count_rows}
+
     themes = sorted(interests, key=lambda i: i.weight, reverse=True)
     return [
-        TopThemeResponse(interest_slug=i.interest_slug, weight=i.weight) for i in themes
+        TopThemeResponse(
+            interest_slug=i.interest_slug,
+            weight=i.weight,
+            article_count=theme_counts.get(i.interest_slug, 0),
+        )
+        for i in themes
+        if theme_counts.get(i.interest_slug, 0) > 0
     ]

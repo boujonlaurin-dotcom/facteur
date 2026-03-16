@@ -14,6 +14,7 @@ class FeedRepository {
     bool savedOnly = false,
     String? mode,
     String? theme,
+    String? topic,
     bool hasNote = false,
     String? sourceId,
   }) async {
@@ -41,6 +42,10 @@ class FeedRepository {
 
       if (theme != null) {
         queryParams['theme'] = theme;
+      }
+
+      if (topic != null) {
+        queryParams['topic'] = topic;
       }
 
       if (hasNote) {

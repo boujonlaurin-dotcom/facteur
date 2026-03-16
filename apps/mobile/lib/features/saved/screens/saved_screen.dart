@@ -216,6 +216,11 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
   }
 
   void _showCollectionMenu(Collection collection) {
+    // System collections (default + liked) cannot be renamed or deleted
+    if (collection.isDefault || collection.isLikedCollection) {
+      return;
+    }
+
     final colors = context.facteurColors;
     HapticFeedback.mediumImpact();
 

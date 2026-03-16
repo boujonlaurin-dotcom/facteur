@@ -32,6 +32,7 @@ import '../widgets/digest_progress_bar.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
+import '../../../core/ui/notification_service.dart';
 
 /// Main digest screen showing the daily "Essentiel" with 7 articles
 /// Uses DigestBriefingSection with Feed-style header and segmented progress bar
@@ -202,6 +203,12 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           item.contentId,
           item.isLiked ? 'unlike' : 'like',
         );
+    NotificationService.showInfo(
+      item.isLiked
+          ? 'Retiré de vos contenus favoris'
+          : 'Ajouté à vos contenus favoris',
+    );
+    ref.invalidate(collectionsProvider);
   }
 
   void _handleSave(DigestItem item) async {
