@@ -176,3 +176,90 @@ class TestMatchForUser:
 
         assert result[0].actu_article is not None
         assert result[0].actu_article.is_user_source is False
+
+
+class TestMatchGlobal:
+    def test_picks_most_recent(self):
+        source1 = uuid4()
+        source2 = uuid4()
+
+        old = _make_content(
+            source_id=source1,
+            title="Older",
+            published_at=datetime.now(UTC) - timedelta(hours=2),
+        )
+        new = _make_content(
+            source_id=source2,
+            title="Newer",
+            published_at=datetime.now(UTC),
+        )
+
+        cluster = _make_cluster("c1", [old, new])
+        subject = _make_subject("c1")
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(subjects=[subject], clusters=[cluster])
+
+        assert result[0].actu_article is not None
+        assert result[0].actu_article.title == "Newer"
+
+    def test_excludes_paid(self):
+        paid = _make_content(is_paid=True)
+        cluster = _make_cluster("c1", [paid])
+        subject = _make_subject("c1")
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(subjects=[subject], clusters=[cluster])
+
+        assert result[0].actu_article is None
+
+    def test_excludes_old(self):
+        old = _make_content(published_at=datetime.now(UTC) - timedelta(hours=48))
+        cluster = _make_cluster("c1", [old])
+        subject = _make_subject("c1")
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(subjects=[subject], clusters=[cluster])
+
+        assert result[0].actu_article is None
+
+    def test_source_diversity(self):
+        shared_source = uuid4()
+        other_source = uuid4()
+
+        c1_article = _make_content(source_id=shared_source, title="A1")
+        c2_same = _make_content(source_id=shared_source, title="A2 same")
+        c2_diff = _make_content(source_id=other_source, title="A2 diff")
+
+        cluster1 = _make_cluster("c1", [c1_article])
+        cluster2 = _make_cluster("c2", [c2_same, c2_diff])
+
+        subjects = [_make_subject("c1", rank=1), _make_subject("c2", rank=2)]
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(
+            subjects=subjects, clusters=[cluster1, cluster2]
+        )
+
+        assert result[0].actu_article.source_id == shared_source
+        assert result[1].actu_article.source_id == other_source
+
+    def test_cluster_not_found(self):
+        subject = _make_subject("nonexistent")
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(subjects=[subject], clusters=[])
+
+        assert result[0].actu_article is None
+        assert result[0].topic_id == "nonexistent"
+
+    def test_is_user_source_always_false(self):
+        content = _make_content(title="Any article")
+        cluster = _make_cluster("c1", [content])
+        subject = _make_subject("c1")
+
+        matcher = ActuMatcher(actu_max_age_hours=24)
+        result = matcher.match_global(subjects=[subject], clusters=[cluster])
+
+        assert result[0].actu_article is not None
+        assert result[0].actu_article.is_user_source is False

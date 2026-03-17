@@ -115,7 +115,7 @@ class EditorialPipelineService:
             duration_ms=round(deep_time * 1000, 2),
         )
 
-        # Build subjects with deep matches (actu will be filled per-user)
+        # Build subjects with deep matches
         subjects = [
             EditorialSubject(
                 rank=i + 1,
@@ -128,7 +128,22 @@ class EditorialPipelineService:
             for i, topic in enumerate(selected_topics)
         ]
 
-        # Serialize cluster data for actu matching (clusters are dataclasses)
+        # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
+        step_start = time.time()
+        subjects = self.actu_matcher.match_global(
+            subjects=subjects,
+            clusters=clusters,
+        )
+        actu_time = time.time() - step_start
+        actu_hit_count = sum(1 for s in subjects if s.actu_article is not None)
+        logger.info(
+            "editorial_pipeline.actu_matching_done",
+            hits=actu_hit_count,
+            total=len(subjects),
+            duration_ms=round(actu_time * 1000, 2),
+        )
+
+        # Serialize cluster data (clusters are dataclasses)
         cluster_data = [
             {
                 "cluster_id": c.cluster_id,

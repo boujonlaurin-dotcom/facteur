@@ -298,6 +298,9 @@ class DigestService:
             digest = await self._create_digest_record_editorial(
                 user_id, target_date, digest_items, mode=effective_mode
             )
+            if digest is None:
+                logger.error("editorial_digest_storage_failed", user_id=str(user_id))
+                return None
         elif is_topics_format:
             digest = await self._create_digest_record_topics(
                 user_id, target_date, digest_items, mode=effective_mode
@@ -871,8 +874,19 @@ class DigestService:
         target_date: date,
         result: EditorialPipelineResult,
         mode: str | None = None,
-    ) -> DailyDigest:
+    ) -> DailyDigest | None:
         """Create a new DailyDigest in editorial_v1 format."""
+        # Garde-fou: filter out subjects with no articles at all
+        valid_subjects = [
+            s for s in result.subjects if s.actu_article or s.deep_article
+        ]
+        if not valid_subjects:
+            logger.error(
+                "editorial_digest.all_subjects_empty", user_id=str(user_id)
+            )
+            return None
+        result = result.model_copy(update={"subjects": valid_subjects})
+
         items_json = {
             "format_version": "editorial_v1",
             "header_text": result.header_text,
@@ -1215,6 +1229,11 @@ class DigestService:
                 content_id = UUID(art_data["content_id"])
                 content = content_map.get(content_id)
                 if not content or not content.source:
+                    logger.warning(
+                        "editorial_response.content_not_found",
+                        content_id=str(content_id),
+                        topic_id=subject.get("topic_id"),
+                    )
                     continue
 
                 action_state = action_states_map.get(
