@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
+import 'feedback_bottom_sheet.dart';
 
 /// Inline closure block at the end of the editorial digest (D7).
 /// Displays closureText + ctaText with a fade-in animation.
@@ -88,7 +89,11 @@ class _ClosureBlockState extends State<ClosureBlock>
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: () {
-                    // TODO: navigate to feedback flow
+                    showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => const FeedbackBottomSheet(),
+                    );
                   },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: colors.primary,

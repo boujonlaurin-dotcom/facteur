@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
+import '../../feed/models/content_model.dart';
+import '../../feed/widgets/feed_card.dart';
+import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
-import 'digest_card.dart';
 
 /// Editorial wrapper for the pépite article.
-/// Displays a mini-editorial text above a DigestCard with badge "pepite".
+/// Displays a mini-editorial text above a FeedCard.
 class PepiteBlock extends StatelessWidget {
   final PepiteResponse pepite;
   final void Function(DigestItem) onTap;
@@ -54,27 +56,20 @@ class PepiteBlock extends StatelessWidget {
           ),
 
         // Pépite card
-        DigestCard(
-          item: item,
-          isSerene: isSerene,
+        FeedCard(
+          boxShadow: const [],
+          content: _convertToContent(item),
           onTap: () => onTap(item),
-          onAction: (action) => _handleAction(action, item),
+          onLike: onLike != null ? () => onLike!(item) : null,
+          isLiked: item.isLiked,
+          onSave: onSave != null ? () => onSave!(item) : null,
+          isSaved: item.isSaved,
+          onNotInterested:
+              onNotInterested != null ? () => onNotInterested!(item) : null,
+          isFollowedSource: item.isFollowedSource,
         ),
       ],
     );
-  }
-
-  void _handleAction(String action, DigestItem item) {
-    switch (action) {
-      case 'like':
-        onLike?.call(item);
-      case 'save':
-        onSave?.call(item);
-      case 'not_interested':
-        onNotInterested?.call(item);
-      case 'read':
-        onTap(item);
-    }
   }
 
   DigestItem _toDigestItem() {
@@ -90,5 +85,40 @@ class PepiteBlock extends StatelessWidget {
       isLiked: pepite.isLiked,
       isDismissed: pepite.isDismissed,
     );
+  }
+
+  Content _convertToContent(DigestItem item) {
+    return Content(
+      id: item.contentId,
+      title: item.title,
+      url: item.url,
+      thumbnailUrl: item.thumbnailUrl,
+      description: item.description,
+      contentType: item.contentType,
+      durationSeconds: item.durationSeconds,
+      publishedAt: item.publishedAt ?? DateTime.now(),
+      source: Source(
+        id: item.source?.id ?? item.contentId,
+        name: item.source?.name ?? 'Source inconnue',
+        type: _mapSourceType(item.contentType),
+        logoUrl: item.source?.logoUrl,
+        theme: item.source?.theme,
+      ),
+      isLiked: item.isLiked,
+      isSaved: item.isSaved,
+    );
+  }
+
+  SourceType _mapSourceType(ContentType type) {
+    switch (type) {
+      case ContentType.video:
+        return SourceType.video;
+      case ContentType.audio:
+        return SourceType.podcast;
+      case ContentType.youtube:
+        return SourceType.youtube;
+      default:
+        return SourceType.article;
+    }
   }
 }
