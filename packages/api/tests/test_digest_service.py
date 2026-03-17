@@ -9,14 +9,15 @@ Note: Ces tests mockent la session DB et les dépendances internes.
 Ils vérifient le comportement logique, pas l'intégration DB.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock, PropertyMock
+import contextlib
+from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
-from datetime import date, datetime, timezone, timedelta
 
-from app.schemas.digest import DigestAction
+import pytest
+
 from app.models.enums import ContentStatus
-
+from app.schemas.digest import DigestAction
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -36,17 +37,19 @@ def mock_session():
 @pytest.fixture
 def service(mock_session):
     """Instance de DigestService avec toutes les dépendances mockées."""
-    with patch('app.services.digest_service.DigestSelector'), \
-         patch('app.services.digest_service.StreakService') as mock_streak_cls:
-        
+    with (
+        patch("app.services.digest_service.DigestSelector"),
+        patch("app.services.digest_service.StreakService") as mock_streak_cls,
+    ):
         mock_streak = Mock()
         mock_streak.increment_consumption = AsyncMock()
         mock_streak_cls.return_value = mock_streak
-        
+
         from app.services.digest_service import DigestService
+
         svc = DigestService(mock_session)
         svc.streak_service = mock_streak
-        
+
     return svc
 
 
@@ -69,13 +72,18 @@ class TestApplyAction:
         mock_status.is_saved = False
         mock_status.is_hidden = False
         mock_status.hidden_reason = None
-        
-        with patch.object(service, '_get_or_create_content_status', new_callable=AsyncMock, return_value=mock_status):
+
+        with patch.object(
+            service,
+            "_get_or_create_content_status",
+            new_callable=AsyncMock,
+            return_value=mock_status,
+        ):
             result = await service.apply_action(
                 digest_id=digest_id,
                 user_id=user_id,
                 content_id=content_id,
-                action=DigestAction.READ
+                action=DigestAction.READ,
             )
 
         assert result["success"] is True
@@ -93,12 +101,17 @@ class TestApplyAction:
         mock_status.is_hidden = False
         mock_status.saved_at = None
 
-        with patch.object(service, '_get_or_create_content_status', new_callable=AsyncMock, return_value=mock_status):
+        with patch.object(
+            service,
+            "_get_or_create_content_status",
+            new_callable=AsyncMock,
+            return_value=mock_status,
+        ):
             result = await service.apply_action(
                 digest_id=uuid4(),
                 user_id=uuid4(),
                 content_id=uuid4(),
-                action=DigestAction.SAVE
+                action=DigestAction.SAVE,
             )
 
         assert result["success"] is True
@@ -115,13 +128,22 @@ class TestApplyAction:
         mock_status.is_hidden = False
         mock_status.hidden_reason = None
 
-        with patch.object(service, '_get_or_create_content_status', new_callable=AsyncMock, return_value=mock_status), \
-             patch.object(service, '_trigger_personalization_mute', new_callable=AsyncMock) as mock_mute:
+        with (
+            patch.object(
+                service,
+                "_get_or_create_content_status",
+                new_callable=AsyncMock,
+                return_value=mock_status,
+            ),
+            patch.object(
+                service, "_trigger_personalization_mute", new_callable=AsyncMock
+            ) as mock_mute,
+        ):
             result = await service.apply_action(
                 digest_id=uuid4(),
                 user_id=uuid4(),
                 content_id=uuid4(),
-                action=DigestAction.NOT_INTERESTED
+                action=DigestAction.NOT_INTERESTED,
             )
 
         assert result["success"] is True
@@ -138,12 +160,17 @@ class TestApplyAction:
         mock_status.is_hidden = True
         mock_status.hidden_reason = "not_interested"
 
-        with patch.object(service, '_get_or_create_content_status', new_callable=AsyncMock, return_value=mock_status):
+        with patch.object(
+            service,
+            "_get_or_create_content_status",
+            new_callable=AsyncMock,
+            return_value=mock_status,
+        ):
             result = await service.apply_action(
                 digest_id=uuid4(),
                 user_id=uuid4(),
                 content_id=uuid4(),
-                action=DigestAction.UNDO
+                action=DigestAction.UNDO,
             )
 
         assert result["success"] is True
@@ -160,12 +187,17 @@ class TestApplyAction:
         mock_status.is_saved = False
         mock_status.is_hidden = False
 
-        with patch.object(service, '_get_or_create_content_status', new_callable=AsyncMock, return_value=mock_status):
+        with patch.object(
+            service,
+            "_get_or_create_content_status",
+            new_callable=AsyncMock,
+            return_value=mock_status,
+        ):
             result = await service.apply_action(
                 digest_id=uuid4(),
                 user_id=uuid4(),
                 content_id=uuid4(),
-                action=DigestAction.READ
+                action=DigestAction.READ,
             )
 
         assert "applied_at" in result
@@ -195,16 +227,26 @@ class TestCompleteDigest:
         mock_session.get = AsyncMock(return_value=mock_digest)
 
         # Mock action stats
-        with patch.object(service, '_get_digest_action_stats', new_callable=AsyncMock, return_value={
-            "read": 3, "saved": 1, "dismissed": 1
-        }), \
-             patch.object(service, '_update_closure_streak', new_callable=AsyncMock, return_value={
-                 "current": 5, "longest": 10, "message": "Série de 5 jours !"
-             }):
+        with (
+            patch.object(
+                service,
+                "_get_digest_action_stats",
+                new_callable=AsyncMock,
+                return_value={"read": 3, "saved": 1, "dismissed": 1},
+            ),
+            patch.object(
+                service,
+                "_update_closure_streak",
+                new_callable=AsyncMock,
+                return_value={
+                    "current": 5,
+                    "longest": 10,
+                    "message": "Série de 5 jours !",
+                },
+            ),
+        ):
             result = await service.complete_digest(
-                digest_id=digest_id,
-                user_id=user_id,
-                closure_time_seconds=120
+                digest_id=digest_id, user_id=user_id, closure_time_seconds=120
             )
 
         assert result["success"] is True
@@ -222,10 +264,7 @@ class TestCompleteDigest:
         mock_session.get = AsyncMock(return_value=None)
 
         with pytest.raises(ValueError, match="Digest not found"):
-            await service.complete_digest(
-                digest_id=uuid4(),
-                user_id=uuid4()
-            )
+            await service.complete_digest(digest_id=uuid4(), user_id=uuid4())
 
     @pytest.mark.asyncio
     async def test_complete_adds_completion_record(self, service, mock_session):
@@ -239,22 +278,160 @@ class TestCompleteDigest:
         mock_digest.items = []
         mock_session.get = AsyncMock(return_value=mock_digest)
 
-        with patch.object(service, '_get_digest_action_stats', new_callable=AsyncMock, return_value={
-            "read": 0, "saved": 0, "dismissed": 0
-        }), \
-             patch.object(service, '_update_closure_streak', new_callable=AsyncMock, return_value={
-                 "current": 1, "longest": 1, "message": "Premier digest complété !"
-             }):
+        with (
+            patch.object(
+                service,
+                "_get_digest_action_stats",
+                new_callable=AsyncMock,
+                return_value={"read": 0, "saved": 0, "dismissed": 0},
+            ),
+            patch.object(
+                service,
+                "_update_closure_streak",
+                new_callable=AsyncMock,
+                return_value={
+                    "current": 1,
+                    "longest": 1,
+                    "message": "Premier digest complété !",
+                },
+            ),
+        ):
             await service.complete_digest(
-                digest_id=digest_id,
-                user_id=user_id,
-                closure_time_seconds=60
+                digest_id=digest_id, user_id=user_id, closure_time_seconds=60
             )
 
         # Verify session.add was called with a DigestCompletion instance
         mock_session.add.assert_called_once()
         added_obj = mock_session.add.call_args[0][0]
         from app.models.digest_completion import DigestCompletion
+
         assert isinstance(added_obj, DigestCompletion)
         assert added_obj.user_id == user_id
         assert added_obj.target_date == date.today()
+
+
+# ─── Tests: get_or_create_digest fallback J-1 ────────────────────────────────
+
+
+class TestFallbackYesterday:
+    """Tests pour le fallback J-1 dans get_or_create_digest()."""
+
+    @pytest.mark.asyncio
+    async def test_fallback_yesterday_digest_when_today_missing(
+        self, service, mock_session
+    ):
+        """When no digest exists for today, serve yesterday's digest."""
+        user_id = uuid4()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        mock_yesterday_digest = Mock()
+        mock_yesterday_digest.id = uuid4()
+        mock_yesterday_digest.target_date = yesterday
+        mock_yesterday_digest.format_version = "topics_v1"
+
+        mock_response = Mock()
+
+        # _get_existing_digest returns None for today, a digest for yesterday
+        async def fake_get_existing(uid, d):
+            if d == today:
+                return None
+            if d == yesterday:
+                return mock_yesterday_digest
+            return None
+
+        mock_build = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(service, "_build_digest_response", mock_build),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today
+            )
+
+        assert result is mock_response
+        mock_build.assert_awaited_once_with(mock_yesterday_digest, user_id)
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_when_force_regenerate(self, service, mock_session):
+        """force_regenerate=True should NOT serve J-1, should proceed to generation."""
+        user_id = uuid4()
+        today = date.today()
+
+        call_count = 0
+
+        async def fake_get_existing(uid, d):
+            nonlocal call_count
+            call_count += 1
+            return None
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_mode",
+                new_callable=AsyncMock,
+                return_value="pour_vous",
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="topics",
+            ),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            with contextlib.suppress(Exception):
+                await service.get_or_create_digest(
+                    user_id=user_id, target_date=today, force_regenerate=True
+                )
+
+        # _get_existing_digest should only be called once (for today), not for yesterday
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_skipped_when_yesterday_also_missing(
+        self, service, mock_session
+    ):
+        """When both today and yesterday have no digest, proceed to generation."""
+        user_id = uuid4()
+        today = date.today()
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service,
+                "_get_existing_digest",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_mode",
+                new_callable=AsyncMock,
+                return_value="pour_vous",
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="topics",
+            ),
+            patch.object(
+                service, "_build_digest_response", new_callable=AsyncMock
+            ) as mock_build,
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            with contextlib.suppress(Exception):
+                await service.get_or_create_digest(user_id=user_id, target_date=today)
+
+        # _build_digest_response should NOT have been called (no yesterday digest to serve)
+        mock_build.assert_not_awaited()

@@ -170,6 +170,18 @@ class DigestService:
                     )
                     await self.session.delete(existing_digest)
                     await self.session.flush()
+        # 1b. No digest for today — try serving yesterday's digest instantly
+        if not force_regenerate:
+            yesterday = target_date - timedelta(days=1)
+            yesterday_digest = await self._get_existing_digest(user_id, yesterday)
+            if yesterday_digest:
+                logger.info(
+                    "digest_serving_yesterday_while_generating",
+                    user_id=str(user_id),
+                    yesterday_date=str(yesterday),
+                )
+                return await self._build_digest_response(yesterday_digest, user_id)
+
         logger.info(
             "digest_no_existing",
             user_id=str(user_id),
