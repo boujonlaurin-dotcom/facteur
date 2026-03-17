@@ -86,6 +86,97 @@ class ActuMatcher:
         )
         return result
 
+    def match_global(
+        self,
+        subjects: list[EditorialSubject],
+        clusters: list[TopicCluster],
+    ) -> list[EditorialSubject]:
+        """Match best actu article per subject from ALL sources (no user filter).
+
+        MVP V2: digest is identical for all users — pick the best article
+        from the entire cluster (most recent, non-paywall).
+
+        Args:
+            subjects: Editorial subjects (with deep matches, no actu yet).
+            clusters: Raw TopicCluster list from global context.
+
+        Returns:
+            Updated subjects with actu_article populated.
+        """
+        cluster_map = {c.cluster_id: c for c in clusters}
+        cutoff = datetime.now(UTC) - timedelta(hours=self._max_age_hours)
+        used_source_ids: set[UUID] = set()
+        result: list[EditorialSubject] = []
+
+        for subject in subjects:
+            cluster = cluster_map.get(subject.topic_id)
+            if not cluster:
+                logger.warning(
+                    "actu_matcher.cluster_not_found",
+                    topic_id=subject.topic_id,
+                )
+                result.append(subject)
+                continue
+
+            best = self._find_best_article_global(
+                cluster=cluster,
+                used_source_ids=used_source_ids,
+                cutoff=cutoff,
+            )
+            if best:
+                used_source_ids.add(best.source_id)
+                result.append(subject.model_copy(update={"actu_article": best}))
+            else:
+                logger.warning(
+                    "actu_matcher.no_global_match", topic_id=subject.topic_id
+                )
+                result.append(subject)
+
+        matched_count = sum(1 for s in result if s.actu_article is not None)
+        logger.info(
+            "actu_matcher.global_done",
+            matched=matched_count,
+            total=len(subjects),
+        )
+        return result
+
+    def _find_best_article_global(
+        self,
+        cluster: TopicCluster,
+        used_source_ids: set[UUID],
+        cutoff: datetime,
+    ) -> MatchedActuArticle | None:
+        """Best article from ANY source (not just user's).
+
+        Constraints:
+        - published_at >= cutoff (< 24h)
+        - is_paid = false
+        - Source not already used (diversity)
+        """
+        candidates = []
+        for content in cluster.contents:
+            if content.is_paid:
+                continue
+            if content.published_at.replace(tzinfo=UTC) < cutoff:
+                continue
+            if content.source_id in used_source_ids:
+                continue
+            candidates.append(content)
+
+        candidates.sort(key=lambda c: c.published_at, reverse=True)
+        if not candidates:
+            return None
+
+        content = candidates[0]
+        return MatchedActuArticle(
+            content_id=content.id,
+            title=content.title,
+            source_name=content.source.name if content.source else "Source inconnue",
+            source_id=content.source_id,
+            is_user_source=False,  # MVP: no user distinction
+            published_at=content.published_at,
+        )
+
     def _find_best_article(
         self,
         cluster: TopicCluster,

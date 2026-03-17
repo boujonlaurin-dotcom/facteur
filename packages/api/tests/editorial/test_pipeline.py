@@ -154,6 +154,11 @@ class TestComputeGlobalContext:
                 "c3": deep_3,
             }
 
+            # match_global is now called in global phase — pass subjects through
+            mock_dependencies["actu"].match_global.side_effect = (
+                lambda subjects, clusters: subjects
+            )
+
             contents = [_make_content_mock() for _ in range(10)]
             result = await svc.compute_global_context(contents)
 
