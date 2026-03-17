@@ -1214,7 +1214,21 @@ class DigestService:
 
                 content_id = UUID(art_data["content_id"])
                 content = content_map.get(content_id)
-                if not content or not content.source:
+                if not content:
+                    logger.warning(
+                        "editorial_article_not_found",
+                        content_id=str(content_id),
+                        art_key=art_key,
+                        topic_label=subject.get("label", ""),
+                    )
+                    continue
+                if not content.source:
+                    logger.warning(
+                        "editorial_article_missing_source",
+                        content_id=str(content_id),
+                        art_key=art_key,
+                        topic_label=subject.get("label", ""),
+                    )
                     continue
 
                 action_state = action_states_map.get(
@@ -1313,6 +1327,16 @@ class DigestService:
         if pepite_data and pepite_data.get("content_id"):
             pepite_cid = UUID(pepite_data["content_id"])
             pepite_content = content_map.get(pepite_cid)
+            if not pepite_content:
+                logger.warning(
+                    "editorial_pepite_not_found",
+                    content_id=str(pepite_cid),
+                )
+            elif not pepite_content.source:
+                logger.warning(
+                    "editorial_pepite_missing_source",
+                    content_id=str(pepite_cid),
+                )
             if pepite_content and pepite_content.source:
                 pepite_action = action_states_map.get(pepite_cid, default_action)
                 pepite_response = PepiteResponse(
@@ -1360,6 +1384,16 @@ class DigestService:
         if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
             cdc_cid = UUID(coup_de_coeur_data["content_id"])
             cdc_content = content_map.get(cdc_cid)
+            if not cdc_content:
+                logger.warning(
+                    "editorial_coup_de_coeur_not_found",
+                    content_id=str(cdc_cid),
+                )
+            elif not cdc_content.source:
+                logger.warning(
+                    "editorial_coup_de_coeur_missing_source",
+                    content_id=str(cdc_cid),
+                )
             if cdc_content and cdc_content.source:
                 cdc_action = action_states_map.get(cdc_cid, default_action)
                 coup_de_coeur_response = CoupDeCoeurResponse(

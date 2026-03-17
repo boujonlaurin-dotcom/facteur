@@ -30,8 +30,8 @@ class DigestModeSegmentedControl extends StatelessWidget {
   static const double _width = 116;
   static const double _height = 32;
   static const double _padding = 3;
-  static const int _count = 3; // DigestMode.values.length
-  static const double _segmentWidth = (_width - _padding * 2) / _count;
+  static final int _count = DigestMode.values.length;
+  static final double _segmentWidth = (_width - _padding * 2) / _count;
 
   @override
   Widget build(BuildContext context) {
