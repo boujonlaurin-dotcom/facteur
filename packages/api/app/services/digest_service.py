@@ -881,9 +881,7 @@ class DigestService:
             s for s in result.subjects if s.actu_article or s.deep_article
         ]
         if not valid_subjects:
-            logger.error(
-                "editorial_digest.all_subjects_empty", user_id=str(user_id)
-            )
+            logger.error("editorial_digest.all_subjects_empty", user_id=str(user_id))
             return None
         result = result.model_copy(update={"subjects": valid_subjects})
 

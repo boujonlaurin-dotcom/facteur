@@ -292,9 +292,7 @@ class DigestSelector:
                                     metadata={
                                         "actu_hits": actu_hits,
                                         "deep_hits": deep_hits,
-                                        "total_subjects": len(
-                                            global_ctx.subjects
-                                        ),
+                                        "total_subjects": len(global_ctx.subjects),
                                         "matching_ms": 0,
                                     },
                                     header_text=global_ctx.header_text,
