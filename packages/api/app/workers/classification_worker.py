@@ -183,9 +183,7 @@ class ClassificationWorker:
 
                 # Retry individually for each article that got empty topics
                 empty_indices = [
-                    idx
-                    for idx, r in enumerate(all_results)
-                    if not r.get("topics")
+                    idx for idx, r in enumerate(all_results) if not r.get("topics")
                 ]
                 if empty_indices:
                     logger.info(
@@ -233,9 +231,7 @@ class ClassificationWorker:
                     # mechanism handle it (mark_failed will requeue up to 3 times)
                     if not topics:
                         if item.retry_count < 2:
-                            await service.mark_failed(
-                                item.id, "empty_classification"
-                            )
+                            await service.mark_failed(item.id, "empty_classification")
                             continue
                         # After max retries, mark completed with empty topics
                         logger.warning(
