@@ -31,6 +31,7 @@ from app.services.digest_selector import (
     DiversityConstraints,
     GlobalTrendingContext,
 )
+from app.services.editorial.schemas import EditorialPipelineResult
 
 logger = structlog.get_logger()
 
@@ -287,6 +288,25 @@ class DigestGenerationJob:
                 focus_theme=focus_theme,
                 global_trending_context=global_trending_context,
             )
+
+            # Handle editorial pipeline result (Pydantic object, not a list)
+            if isinstance(digest_items, EditorialPipelineResult):
+                from app.services.digest_service import DigestService
+
+                svc = DigestService(session)
+                digest = await svc._create_digest_record_editorial(
+                    user_id, target_date, digest_items, mode=digest_mode
+                )
+                if digest:
+                    self.stats["success"] += 1
+                    logger.debug(
+                        "digest_generation_editorial_success",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                    )
+                else:
+                    self.stats["failed"] += 1
+                return
 
             if not digest_items:
                 logger.warning(
