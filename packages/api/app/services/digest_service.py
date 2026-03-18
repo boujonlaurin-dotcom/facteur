@@ -298,6 +298,9 @@ class DigestService:
             digest = await self._create_digest_record_editorial(
                 user_id, target_date, digest_items, mode=effective_mode
             )
+            if digest is None:
+                logger.error("editorial_digest_storage_failed", user_id=str(user_id))
+                return None
         elif is_topics_format:
             digest = await self._create_digest_record_topics(
                 user_id, target_date, digest_items, mode=effective_mode
@@ -871,8 +874,17 @@ class DigestService:
         target_date: date,
         result: EditorialPipelineResult,
         mode: str | None = None,
-    ) -> DailyDigest:
+    ) -> DailyDigest | None:
         """Create a new DailyDigest in editorial_v1 format."""
+        # Garde-fou: filter out subjects with no articles at all
+        valid_subjects = [
+            s for s in result.subjects if s.actu_article or s.deep_article
+        ]
+        if not valid_subjects:
+            logger.error("editorial_digest.all_subjects_empty", user_id=str(user_id))
+            return None
+        result = result.model_copy(update={"subjects": valid_subjects})
+
         items_json = {
             "format_version": "editorial_v1",
             "header_text": result.header_text,
@@ -1214,7 +1226,21 @@ class DigestService:
 
                 content_id = UUID(art_data["content_id"])
                 content = content_map.get(content_id)
-                if not content or not content.source:
+                if not content:
+                    logger.warning(
+                        "editorial_article_not_found",
+                        content_id=str(content_id),
+                        art_key=art_key,
+                        topic_label=subject.get("label", ""),
+                    )
+                    continue
+                if not content.source:
+                    logger.warning(
+                        "editorial_article_missing_source",
+                        content_id=str(content_id),
+                        art_key=art_key,
+                        topic_label=subject.get("label", ""),
+                    )
                     continue
 
                 action_state = action_states_map.get(
@@ -1313,6 +1339,16 @@ class DigestService:
         if pepite_data and pepite_data.get("content_id"):
             pepite_cid = UUID(pepite_data["content_id"])
             pepite_content = content_map.get(pepite_cid)
+            if not pepite_content:
+                logger.warning(
+                    "editorial_pepite_not_found",
+                    content_id=str(pepite_cid),
+                )
+            elif not pepite_content.source:
+                logger.warning(
+                    "editorial_pepite_missing_source",
+                    content_id=str(pepite_cid),
+                )
             if pepite_content and pepite_content.source:
                 pepite_action = action_states_map.get(pepite_cid, default_action)
                 pepite_response = PepiteResponse(
@@ -1360,6 +1396,16 @@ class DigestService:
         if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
             cdc_cid = UUID(coup_de_coeur_data["content_id"])
             cdc_content = content_map.get(cdc_cid)
+            if not cdc_content:
+                logger.warning(
+                    "editorial_coup_de_coeur_not_found",
+                    content_id=str(cdc_cid),
+                )
+            elif not cdc_content.source:
+                logger.warning(
+                    "editorial_coup_de_coeur_missing_source",
+                    content_id=str(cdc_cid),
+                )
             if cdc_content and cdc_content.source:
                 cdc_action = action_states_map.get(cdc_cid, default_action)
                 coup_de_coeur_response = CoupDeCoeurResponse(

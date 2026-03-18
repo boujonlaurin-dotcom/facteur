@@ -46,6 +46,7 @@ class MatchedDeepArticle(BaseModel):
     source_id: UUID
     published_at: datetime
     match_reason: str
+    description: str | None = None
 
 
 class EditorialSubject(BaseModel):
@@ -81,7 +82,7 @@ class WritingOutput(BaseModel):
     header_text: str
     subjects: list[SubjectWriting]
     closure_text: str
-    cta_text: str
+    cta_text: str | None = None
 
 
 class PepiteArticle(BaseModel):

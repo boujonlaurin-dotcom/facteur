@@ -66,23 +66,39 @@ class EditorialWriterService:
             return None
 
         # Build user message with subject data for the LLM
-        subjects_data = [
-            {
-                "topic_id": s.topic_id,
-                "rank": s.rank,
-                "label": s.label,
-                "deep_angle": s.deep_angle,
-                "deep_article": {
+        subjects_data = []
+        for s in subjects:
+            deep = None
+            if s.deep_article:
+                deep = {
                     "title": s.deep_article.title,
                     "source_name": s.deep_article.source_name,
+                    "description": (s.deep_article.description or "")[:300],
                 }
-                if s.deep_article
-                else None,
-            }
-            for s in subjects
-        ]
+            subjects_data.append(
+                {
+                    "topic_id": s.topic_id,
+                    "rank": s.rank,
+                    "label": s.label,
+                    "deep_angle": s.deep_angle,
+                    "deep_article": deep,
+                }
+            )
+
+        # Pass the day name so the LLM can write "Votre essentiel du mardi"
+        _JOURS_FR = {
+            0: "lundi",
+            1: "mardi",
+            2: "mercredi",
+            3: "jeudi",
+            4: "vendredi",
+            5: "samedi",
+            6: "dimanche",
+        }
+        day_name = _JOURS_FR[datetime.now(UTC).weekday()]
 
         user_message = (
+            f"Jour : {day_name}\n\n"
             "Voici les 3 sujets du jour avec leurs articles :\n\n"
             f"{json.dumps(subjects_data, ensure_ascii=False, indent=2)}\n\n"
             "Génère le texte éditorial au format JSON."
@@ -119,8 +135,8 @@ class EditorialWriterService:
             return WritingOutput(
                 header_text=raw.get("header_text", ""),
                 subjects=subject_writings,
-                closure_text=raw.get("closure_text", "✅ T'es à jour."),
-                cta_text=raw.get("cta_text", "Un truc t'a marqué ? Dis-moi 👋"),
+                closure_text=raw.get("closure_text", "Bonne lecture !"),
+                cta_text=raw.get("cta_text"),
             )
         except Exception:
             logger.exception("editorial_writer.parse_failed")

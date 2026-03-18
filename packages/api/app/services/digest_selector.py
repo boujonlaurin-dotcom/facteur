@@ -271,20 +271,35 @@ class DigestSelector:
                                 logger.warning("digest_editorial_global_ctx_failed")
                                 output_format = "topics"
                             else:
-                                # Build clusters for actu matching
-                                clusters = (
-                                    self.importance_detector.build_topic_clusters(
-                                        candidates
-                                    )
+                                # MVP V2: global digest — actu already matched
+                                # in compute_global_context(), no per-user phase
+                                from app.services.editorial.schemas import (
+                                    EditorialPipelineResult,
                                 )
-                                # Per-user actu matching
-                                # Candidates are already filtered by _get_candidates
-                                # so excluded_content_ids is empty here
-                                result = pipeline.run_for_user(
-                                    global_ctx=global_ctx,
-                                    clusters=clusters,
-                                    user_source_ids=set(context.followed_source_ids),
-                                    excluded_content_ids=set(),
+
+                                actu_hits = sum(
+                                    1
+                                    for s in global_ctx.subjects
+                                    if s.actu_article is not None
+                                )
+                                deep_hits = sum(
+                                    1
+                                    for s in global_ctx.subjects
+                                    if s.deep_article is not None
+                                )
+                                result = EditorialPipelineResult(
+                                    subjects=global_ctx.subjects,
+                                    metadata={
+                                        "actu_hits": actu_hits,
+                                        "deep_hits": deep_hits,
+                                        "total_subjects": len(global_ctx.subjects),
+                                        "matching_ms": 0,
+                                    },
+                                    header_text=global_ctx.header_text,
+                                    closure_text=global_ctx.closure_text,
+                                    cta_text=global_ctx.cta_text,
+                                    pepite=global_ctx.pepite,
+                                    coup_de_coeur=global_ctx.coup_de_coeur,
                                 )
                                 editorial_time = time.time() - step_start
                                 total_time = time.time() - start_time

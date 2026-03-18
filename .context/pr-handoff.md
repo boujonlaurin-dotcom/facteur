@@ -1,57 +1,54 @@
-# PR — fix: editorial_v1 pipeline crash + missing config prompts
+# PR — Refactoring pipeline digest : actu matching global (pas per-user)
 
 ## Quoi
-Corrige 3 bugs qui empêchaient le pipeline éditorial de fonctionner en prod après activation de MISTRAL_API_KEY :
-1. `TypeError: 'EditorialPipelineResult' has no len()` — crash à chaque force-regeneration
-2. `'EditorialConfig' has no attribute 'writing_prompt'` — prompts writing/pepite jamais définis
-3. JSON truncation sur query_expansion (max_tokens trop bas)
-
-Ajoute aussi des guardrails : log explicite si YAML manquant, fallback si editorial vide, log du config summary au boot.
+Le matching d'articles actu est deplace de la phase per-user vers la phase globale du pipeline editorial. Au lieu de filtrer par `user_source_ids`, on prend le meilleur article du cluster tout court (le plus recent, non-paywall). Ajout de garde-fous pour sujets vides et logging diagnostique.
 
 ## Pourquoi
-Après ajout de MISTRAL_API_KEY sur le service WEB Railway, le pipeline éditorial s'activait enfin mais crashait immédiatement (500 Internal Server Error sur chaque `POST /api/digest/generate?force=true`). Les 3 bugs proviennent de Story 10.24 (writer.py) qui référençait des champs config jamais ajoutés, et de `digest_service.py` qui n'avait pas été adapté pour le nouveau type de retour `EditorialPipelineResult`.
+Quand un user suit peu de sources, `ActuMatcher._find_best_article()` ne trouvait rien car il filtrait par `user_source_ids` → sujets avec 0 articles → cartes invisibles dans le digest. Decision MVP V2 : le digest editorial est identique pour tous les users. La personnalisation viendra plus tard par ponderation, pas filtrage.
 
-## Fichiers modifiés
-**Backend :**
-- `packages/api/app/services/digest_service.py` — fix `len()` sur EditorialPipelineResult (lignes 230, 302) + guardrail subjects vides
-- `packages/api/app/services/editorial/config.py` — ajout 3 champs prompt (writing, writing_serene, pepite) + loader + logs manquant YAML + log config summary
+## Fichiers modifies
 
-**Config :**
-- `packages/api/config/editorial_prompts.yaml` — ajout prompts writing, writing_serene, pepite + fix query_expansion max_tokens 150→500
+### Backend — Pipeline editorial
+- `packages/api/app/services/editorial/actu_matcher.py` — Ajout de `match_global()` + `_find_best_article_global()` (2 nouvelles methodes, code existant inchange)
+- `packages/api/app/services/editorial/pipeline.py` — Appel `match_global()` dans `compute_global_context()` apres le deep matching (ETAPE 3A)
+- `packages/api/app/services/digest_selector.py` — Remplace `run_for_user()` par construction directe de `EditorialPipelineResult` depuis `global_ctx`
+- `packages/api/app/services/digest_service.py` — Garde-fou sujets vides dans `_create_digest_record_editorial()` + warning log quand `content_id` introuvable
 
-## Zones à risque
-- **`config.py` @lru_cache** : le cache est process-lifetime. Si le YAML est absent au premier appel, les defaults (editorial_enabled=False) sont cachés pour toujours. Le nouveau log `editorial_config_yaml_missing` rend ce cas visible. Un redeploy Railway reset le cache.
-- **`editorial_prompts.yaml`** : les prompts writing/pepite sont des first drafts. Le LLM (Mistral) peut ne pas respecter le format JSON attendu → les handlers dans writer.py gèrent déjà le graceful degradation (return None).
-- **`digest_service.py:258-266`** : nouveau guardrail "empty editorial subjects" force un fallback vers emergency candidates. Vérifier que le fallback ne crée pas de doublon de digest en DB.
+### Tests
+- `packages/api/tests/editorial/test_actu_matcher.py` — 6 nouveaux tests pour `match_global()` (classe `TestMatchGlobal`)
+
+## Zones a risque
+1. **`digest_selector.py` lignes 273-305** — Le remplacement de `run_for_user()` par construction directe. Si un champ de `EditorialPipelineResult` est oublie, le digest sera incomplet.
+2. **`digest_service.py` `_create_digest_record_editorial()`** — Le return type change de `DailyDigest` a `DailyDigest | None`. Les appelants doivent gerer le `None`.
+3. **`pipeline.py` compute_global_context()** — L'actu matching est maintenant dans la phase globale async. Si `match_global()` echoue, les subjects n'auront pas d'actu_article.
 
 ## Points d'attention pour le reviewer
-1. **Type safety du `len()`** : les 2 fix utilisent `isinstance(digest_items, EditorialPipelineResult)` — même pattern que le check existant à la ligne 240. Pas de risque de régression pour topics_v1/flat_v1.
-2. **Prompts YAML** : les doubles accolades `{{...}}` sont nécessaires car le YAML est lu brut (pas de f-string). Le writer.py envoie le `system` prompt tel quel au LLM — les `{{` seront interprétés comme des littéraux JSON, pas des placeholders Python.
-3. **`if not config_path.exists()`** : transforme le silent-default en error log explicite. Ne change PAS le comportement (defaults toujours utilisés) mais rend le problème visible dans Railway.
-4. **`editorial_config_loaded` log** : appelé une seule fois (lru_cache). Vérifier dans Railway que les flags sont corrects après deploy.
 
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-- `digest_selector.py` : aucune modif. Les 4 fallback branches (not_enabled, no_api_key, global_ctx_failed, exception) sont inchangées.
-- `writer.py` : aucune modif. Les AttributeError sont résolus côté config, pas côté writer.
-- `llm_client.py` : aucune modif. Le `is_ready` check fonctionne maintenant que MISTRAL_API_KEY est set.
-- `editorial_config.yaml` : aucune modif (editorial_enabled: true, whitelist vide = tous users).
-- Le flow `GET /api/digest` (lecture d'un digest existant) n'est pas affecté.
+1. **Return type `_create_digest_record_editorial`** — Passe de `DailyDigest` a `DailyDigest | None`. Verifier que l'appelant dans `digest_service.py` (`get_or_create_digest`) gere deja le cas `None` (il y a un guardrail existant `if is_editorial_format and not digest_items.subjects` qui devrait couvrir, mais le nouveau garde-fou agit apres le stockage).
+2. **`match_for_user()` et `_find_best_article()` conserves** — Choix delibere pour permettre un rollback rapide. Le reviewer peut verifier qu'ils ne sont plus appeles nulle part.
+3. **`is_user_source=False` toujours** — Le champ reste dans le schema pour backward compat avec le format `editorial_v1` stocke en DB. Le mobile l'utilise-t-il pour un badge ? A verifier.
+4. **Pas de `excluded_content_ids` dans `match_global()`** — En per-user, on excluait les contenus deja vus. En global, ce filtre n'a plus de sens (le digest est le meme pour tous). Est-ce acceptable ?
+
+## Ce qui N'A PAS change (mais pourrait sembler affecte)
+- **`match_for_user()` et `_find_best_article()`** restent intacts dans `actu_matcher.py` — dead code pour l'instant, conserve pour rollback
+- **`EditorialGlobalContext` schema** — Inchange, les subjects qu'il contient ont juste `actu_article` popule maintenant
+- **`_build_digest_response_editorial()`** — Le format de stockage `editorial_v1` est identique, seul le contenu change (actu articles proviennent de toutes les sources, pas juste les sources user)
+- **Les 7 tests existants `TestMatchForUser`** — Non modifies, toujours valides
 
 ## Comment tester
-1. **Vérif config au boot** : après deploy, chercher dans Railway logs :
-   - `editorial_config_loaded` avec `editorial_enabled=true`, `has_writing_prompt=true`, `has_pepite_prompt=true`
-   - Absence de `editorial_config_yaml_missing` ou `editorial_prompts_yaml_missing`
 
-2. **Force-regeneration** :
+1. **Tests unitaires** :
+   ```bash
+   cd packages/api && source venv/bin/activate
+   python -m pytest tests/editorial/test_actu_matcher.py -v
    ```
-   POST /api/digest/generate?force=true
-   ```
-   - Réponse doit avoir `format_version: "editorial_v1"` (pas `topics_v1`)
-   - Chercher `digest_editorial_completed` dans les logs (pas de fallback)
 
-3. **Fallback fonctionne toujours** :
-   - Si MISTRAL_API_KEY est retirée → `digest_editorial_no_api_key` dans les logs → digest en topics_v1
-   - Si prompts YAML vide → writing/pepite seront null (graceful) mais le digest éditorial sera créé
+2. **Verification integration** (staging) :
+   - Creer un user avec 0 ou 1 source suivie
+   - Generer un digest editorial
+   - Verifier que les 3 sujets ont un `actu_article` non-null dans la reponse API
+   - Verifier dans les logs : `editorial_pipeline.actu_matching_done` apparait dans la phase globale (avant `editorial_pipeline.global_context_ready`)
 
-4. **Régression topics_v1** :
-   - `GET /api/digest` pour un user qui a déjà un digest du jour → doit retourner le digest existant sans re-génération
+3. **Regression** :
+   - Verifier qu'un user avec beaucoup de sources suivies recoit le meme digest qu'un user avec peu de sources (memes articles actu)
+   - Verifier que `editorial_digest.all_subjects_empty` n'apparait pas dans les logs (sauf si vraiment aucun article disponible)
