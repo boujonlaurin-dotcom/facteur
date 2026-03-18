@@ -16,10 +16,7 @@ from app.models.classification_queue import ClassificationQueue
 from app.models.content import Content
 from app.models.source import Source
 from app.services.classification_queue_service import ClassificationQueueService
-from app.services.ml.classification_service import (
-    VALID_TOPIC_SLUGS,
-    get_classification_service,
-)
+from app.services.ml.classification_service import get_classification_service
 
 settings = get_settings()
 
@@ -184,20 +181,25 @@ class ClassificationWorker:
             if classifier and classifier.is_ready() and batch_items:
                 all_results = await classifier.classify_batch_async(batch_items)
 
-                # Fallback: if batch returned all empty, try individual classification
-                if all_results and all(not r.get("topics") for r in all_results):
-                    logger.warning(
-                        "classification_worker.batch_all_empty_fallback",
-                        count=len(batch_items),
+                # Retry individually for each article that got empty topics
+                empty_indices = [
+                    idx for idx, r in enumerate(all_results) if not r.get("topics")
+                ]
+                if empty_indices:
+                    logger.info(
+                        "classification_worker.individual_retry",
+                        total=len(batch_items),
+                        empty=len(empty_indices),
                     )
-                    all_results = []
-                    for bi in batch_items:
+                    for idx in empty_indices:
+                        bi = batch_items[idx]
                         result = await classifier.classify_async(
                             title=bi["title"],
                             description=bi.get("description", ""),
                             source_name=bi.get("source_name", ""),
                         )
-                        all_results.append(result)
+                        if result.get("topics"):
+                            all_results[idx] = result
             else:
                 all_results = [{"topics": [], "serene": None} for _ in batch_items]
 
@@ -225,11 +227,18 @@ class ClassificationWorker:
                         topics = []
                         is_serene = None
 
-                    # Fallback: use source.granular_topics, but only valid slugs
-                    if not topics and source and source.granular_topics:
-                        topics = [
-                            t for t in source.granular_topics if t in VALID_TOPIC_SLUGS
-                        ]
+                    # If still no topics after individual retry, let the retry
+                    # mechanism handle it (mark_failed will requeue up to 3 times)
+                    if not topics:
+                        if item.retry_count < 2:
+                            await service.mark_failed(item.id, "empty_classification")
+                            continue
+                        # After max retries, mark completed with empty topics
+                        logger.warning(
+                            "classification_worker.exhausted_retries",
+                            content_id=str(item.content_id),
+                            title=(content.title or "")[:80],
+                        )
 
                     await service.mark_completed_with_entities(
                         item.id, topics, [], is_serene=is_serene
