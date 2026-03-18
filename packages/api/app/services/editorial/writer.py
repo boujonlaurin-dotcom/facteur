@@ -87,8 +87,13 @@ class EditorialWriterService:
 
         # Pass the day name so the LLM can write "Votre essentiel du mardi"
         _JOURS_FR = {
-            0: "lundi", 1: "mardi", 2: "mercredi",
-            3: "jeudi", 4: "vendredi", 5: "samedi", 6: "dimanche",
+            0: "lundi",
+            1: "mardi",
+            2: "mercredi",
+            3: "jeudi",
+            4: "vendredi",
+            5: "samedi",
+            6: "dimanche",
         }
         day_name = _JOURS_FR[datetime.now(UTC).weekday()]
 
