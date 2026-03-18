@@ -7,7 +7,9 @@ Benefits: ~3000+ articles/hour (vs ~150), better quality (contextual), no local 
 
 from __future__ import annotations
 
+import html
 import json
+import re
 from collections import Counter
 
 import httpx
@@ -234,6 +236,22 @@ Pas de texte avant ou après."""
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
+# Regex to strip HTML tags
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _clean_text(text: str) -> str:
+    """Strip HTML tags and decode HTML entities from text before sending to LLM."""
+    if not text:
+        return text
+    # Remove HTML tags
+    cleaned = _HTML_TAG_RE.sub(" ", text)
+    # Decode HTML entities (&#039; → ', &amp; → &, etc.)
+    cleaned = html.unescape(cleaned)
+    # Collapse multiple whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
 
 class ClassificationService:
     """
@@ -284,7 +302,9 @@ class ClassificationService:
         if not self._ready:
             return {"topics": [], "serene": None}
 
-        text = f"{title}. {description}".strip() if description else title
+        clean_title = _clean_text(title)
+        clean_desc = _clean_text(description)
+        text = f"{clean_title}. {clean_desc}".strip() if clean_desc else clean_title
         if not text:
             return {"topics": [], "serene": None}
 
@@ -368,7 +388,7 @@ class ClassificationService:
                         {"role": "user", "content": batch_prompt},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 60 * len(items),
+                    "max_tokens": 100 * len(items),
                 },
             )
             response.raise_for_status()
@@ -410,8 +430,8 @@ class ClassificationService:
         """Build the user prompt for batch classification."""
         parts = []
         for i, item in enumerate(items):
-            title = item.get("title", "")
-            desc = item.get("description", "") or ""
+            title = _clean_text(item.get("title", ""))
+            desc = _clean_text(item.get("description", "") or "")
             if len(desc) > 200:
                 desc = desc[:200] + "..."
             source_name = item.get("source_name", "")
@@ -483,7 +503,7 @@ class ClassificationService:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                # Check count mismatch
+                # Log count mismatch but use partial results instead of rejecting all
                 if len(parsed) != expected_count:
                     log.warning(
                         "classification_service.batch_count_mismatch",
@@ -491,12 +511,11 @@ class ClassificationService:
                         got=len(parsed),
                         raw=raw[:200],
                     )
-                    return empty_results
 
                 # New format: array of objects with "topics" and "serene"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
-                    for item in parsed:
+                    for item in parsed[:expected_count]:
                         if isinstance(item, dict) and "topics" in item:
                             topics = [
                                 s.strip().lower()
@@ -510,13 +529,16 @@ class ClassificationService:
                             results.append({"topics": topics[:top_k], "serene": serene})
                         else:
                             results.append({"topics": [], "serene": None})
+                    # Pad with empty results if Mistral returned fewer than expected
+                    while len(results) < expected_count:
+                        results.append({"topics": [], "serene": None})
                     return results
 
                 # Fallback: old format (array of arrays), treat serene as None
                 if parsed and isinstance(parsed[0], list):
                     log.info("classification_service.batch_old_format_fallback")
                     results = []
-                    for item in parsed:
+                    for item in parsed[:expected_count]:
                         if isinstance(item, list):
                             valid = [
                                 s.strip().lower()
@@ -527,6 +549,8 @@ class ClassificationService:
                             results.append({"topics": valid[:top_k], "serene": None})
                         else:
                             results.append({"topics": [], "serene": None})
+                    while len(results) < expected_count:
+                        results.append({"topics": [], "serene": None})
                     return results
 
         except (json.JSONDecodeError, TypeError):
