@@ -498,8 +498,6 @@ class ClassificationService:
         self, raw: str, expected_count: int, top_k: int
     ) -> list[dict]:
         """Parse la réponse batch du LLM (JSON array of objects)."""
-        empty_results = [{"topics": [], "serene": None} for _ in range(expected_count)]
-
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
