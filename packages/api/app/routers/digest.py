@@ -26,6 +26,7 @@ from app.schemas.digest import (
     DigestActionResponse,
     DigestCompletionResponse,
     DigestResponse,
+    DualDigestResponse,
 )
 from app.services.digest_service import DigestService
 
@@ -46,6 +47,7 @@ async def get_digest(
     target_date: date | None = Query(
         None, description="Date for digest (default: today)"
     ),
+    serein: bool = Query(False, description="Return serene digest variant"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -78,7 +80,7 @@ async def get_digest(
     start = time.monotonic()
 
     try:
-        digest = await service.get_or_create_digest(user_uuid, target_date)
+        digest = await service.get_or_create_digest(user_uuid, target_date, is_serene=serein)
     except Exception:
         elapsed = time.monotonic() - start
         logger.exception(
@@ -111,6 +113,34 @@ async def get_digest(
         is_completed=digest.is_completed,
     )
     return digest
+
+
+@router.get("/both", response_model=DualDigestResponse)
+async def get_both_digests(
+    target_date: date | None = Query(
+        None, description="Date for digest (default: today)"
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Get both digest variants (normal + serene) for instant toggle.
+
+    Returns both digests in a single response so the mobile app
+    can switch between them without a network round-trip.
+    """
+    service = DigestService(db)
+    user_uuid = UUID(current_user_id)
+
+    normal = await service.get_or_create_digest(user_uuid, target_date, is_serene=False)
+    serein = await service.get_or_create_digest(user_uuid, target_date, is_serene=True)
+    serein_enabled = await service._get_user_serein_enabled(user_uuid)
+
+    return DualDigestResponse(
+        normal=normal,
+        serein=serein,
+        serein_enabled=serein_enabled,
+    )
 
 
 @router.post("/{digest_id}/action", response_model=DigestActionResponse)
@@ -260,12 +290,7 @@ async def generate_digest(
         None, description="Date for digest (default: today)"
     ),
     force: bool = Query(False, description="Force regeneration even if exists"),
-    mode: str | None = Query(
-        None, description="Digest mode (pour_vous, serein, perspective, theme_focus)"
-    ),
-    focus_theme: str | None = Query(
-        None, description="Theme slug for theme_focus mode"
-    ),
+    serein: bool = Query(False, description="Generate serene digest variant"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -278,8 +303,7 @@ async def generate_digest(
     Query Parameters:
     - target_date: Optional specific date (default: today)
     - force: If true, regenerates even if digest exists
-    - mode: Digest mode (pour_vous, serein, perspective, theme_focus)
-    - focus_theme: Theme slug when mode=theme_focus
+    - serein: If true, generates the serene variant
 
     Returns the complete DigestResponse with items (same format as GET endpoint).
     """
@@ -291,8 +315,7 @@ async def generate_digest(
         user_uuid,
         target_date,
         force_regenerate=force,
-        mode=mode,
-        focus_theme=focus_theme,
+        is_serene=serein,
     )
 
     if not digest:

@@ -19,16 +19,12 @@ from uuid import UUID
 import structlog
 
 from app.models.content import Content
-from app.models.enums import DigestMode
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.digest_selector import DigestContext, GlobalTrendingContext
 from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.perspective_service import PerspectiveService
-from app.services.recommendation.filter_presets import (
-    find_perspective_article,
-    is_cluster_serein_compatible,
-)
+from app.services.recommendation.filter_presets import is_cluster_serein_compatible
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import (
     PillarScoringEngine,
@@ -164,7 +160,7 @@ class TopicSelector:
 
         for cluster in clusters:
             # Mode serein : exclure les clusters anxiogènes
-            if mode == DigestMode.SEREIN and not is_cluster_serein_compatible(cluster):
+            if mode == "serein" and not is_cluster_serein_compatible(cluster):
                 continue
 
             score = 0.0
@@ -349,33 +345,6 @@ class TopicSelector:
                 context=context,
                 trending_context=trending_context,
             )
-
-            # Mode perspective : enrichir avec article de biais opposé
-            if mode == DigestMode.PERSPECTIVE and context.user_bias_stance:
-                if len(scored_articles) < ScoringWeights.TOPIC_MAX_ARTICLES:
-                    topic_source_ids = {a.content.source_id for a in scored_articles}
-                    perspective_content = find_perspective_article(
-                        candidates=all_candidates,
-                        topic_source_ids=topic_source_ids,
-                        user_bias=context.user_bias_stance,
-                    )
-                    if perspective_content:
-                        scored_articles.append(
-                            ScoredArticle(
-                                content=perspective_content,
-                                score=0.0,
-                                reason="Perspective opposée",
-                                breakdown=[
-                                    DigestScoreBreakdown(
-                                        label="Perspective opposée",
-                                        points=80.0,
-                                        is_positive=True,
-                                    )
-                                ],
-                                is_followed_source=perspective_content.source_id
-                                in context.followed_source_ids,
-                            )
-                        )
 
             # Determine is_une
             is_une = False

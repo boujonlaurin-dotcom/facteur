@@ -83,10 +83,3 @@ class FeedFilterMode(StrEnum):
     DEEP_DIVE = "deep_dive"
 
 
-class DigestMode(StrEnum):
-    """Mode de personnalisation du digest quotidien (Epic 11)."""
-
-    POUR_VOUS = "pour_vous"
-    SEREIN = "serein"
-    PERSPECTIVE = "perspective"
-    THEME_FOCUS = "theme_focus"

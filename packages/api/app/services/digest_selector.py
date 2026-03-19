@@ -34,17 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
-from app.models.enums import BiasStance, ContentStatus, DigestMode
+from app.models.enums import ContentStatus
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown
 from app.services.briefing.importance_detector import ImportanceDetector
-from app.services.recommendation.filter_presets import (
-    apply_serein_filter,
-    apply_theme_focus_filter,
-    calculate_user_bias,
-    get_opposing_biases,
-)
+from app.services.recommendation.filter_presets import apply_serein_filter
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation_service import RecommendationService
@@ -144,7 +139,6 @@ class DigestSelector:
         limit: int = 7,
         hours_lookback: int = 168,
         mode: str = "pour_vous",
-        focus_theme: str | None = None,
         global_trending_context: GlobalTrendingContext | None = None,
         output_format: str = "topics",
     ) -> list:
@@ -154,8 +148,7 @@ class DigestSelector:
             user_id: ID de l'utilisateur
             limit: Nombre d'articles à sélectionner (défaut: 7)
             hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
-            mode: Mode de digest (pour_vous, serein, perspective, theme_focus)
-            focus_theme: Slug du thème pour le mode theme_focus
+            mode: Mode de digest (pour_vous ou serein)
             global_trending_context: Contexte trending pré-calculé (batch) ou None (on-demand)
 
         Returns:
@@ -172,7 +165,6 @@ class DigestSelector:
                 user_id=str(user_id),
                 limit=limit,
                 mode=mode,
-                focus_theme=focus_theme,
             )
 
             # 1. Construire le contexte utilisateur
@@ -192,7 +184,7 @@ class DigestSelector:
 
             # 1.5 Build or use global trending context (pour_vous only)
             trending_context = None
-            if mode == "pour_vous" or mode == DigestMode.POUR_VOUS:
+            if mode == "pour_vous":
                 if global_trending_context is not None:
                     trending_context = global_trending_context
                     logger.info(
@@ -223,7 +215,6 @@ class DigestSelector:
                 hours_lookback=hours_lookback,
                 min_pool_size=limit,
                 mode=mode,
-                focus_theme=focus_theme,
             )
             candidates_time = time.time() - step_start
 
@@ -349,9 +340,7 @@ class DigestSelector:
 
             # 3-4. Scoring + sélection (deux passes pour pour_vous, single-pass pour les autres)
             scoring_time, diversity_time = 0.0, 0.0
-            if trending_context and (
-                mode == "pour_vous" or mode == DigestMode.POUR_VOUS
-            ):
+            if trending_context and mode == "pour_vous":
                 step_start = time.time()
                 selected = await self._two_pass_selection(
                     candidates=candidates,
@@ -570,10 +559,7 @@ class DigestSelector:
         if personalization and personalization.hide_paid_content is not None:
             hide_paid_content = personalization.hide_paid_content
 
-        # Calculer le biais utilisateur si mode perspective
         user_bias_stance = None
-        if mode == DigestMode.PERSPECTIVE:
-            user_bias_stance = await calculate_user_bias(self.session, user_id)
 
         # Compute source affinity from past interactions
         source_affinity_scores = await self.rec_service._compute_source_affinity(
@@ -620,7 +606,6 @@ class DigestSelector:
         hours_lookback: int,
         min_pool_size: int,
         mode: str = "pour_vous",
-        focus_theme: str | None = None,
     ) -> list[Content]:
         """Récupère les candidats pour le digest.
 
@@ -628,7 +613,7 @@ class DigestSelector:
         1. D'abord, récupérer les articles des sources suivies par l'utilisateur
         2. Si pool insuffisant (< min_pool_size), compléter avec sources curatées
         3. Exclure les articles déjà vus, sauvegardés, ou masqués
-        4. Appliquer les filtres de mode (serein, theme_focus)
+        4. Appliquer le filtre serein si mode == "serein"
         """
         since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             hours=hours_lookback
@@ -703,13 +688,9 @@ class DigestSelector:
                         Content.is_paid.is_not(True)
                     )
 
-            # Appliquer les filtres de mode sur les sources utilisateur
-            if mode == DigestMode.SEREIN:
+            # Appliquer le filtre serein si demandé
+            if mode == "serein":
                 user_sources_query = apply_serein_filter(user_sources_query)
-            elif mode == DigestMode.THEME_FOCUS and focus_theme:
-                user_sources_query = apply_theme_focus_filter(
-                    user_sources_query, focus_theme
-                )
 
             result = await self.session.execute(user_sources_query)
             user_candidates = list(result.scalars().all())
@@ -777,11 +758,9 @@ class DigestSelector:
             else:
                 curated_query = curated_query.where(Content.is_paid.is_not(True))
 
-        # Appliquer les filtres de mode
-        if mode == DigestMode.SEREIN:
+        # Appliquer le filtre serein si demandé
+        if mode == "serein":
             curated_query = apply_serein_filter(curated_query)
-        elif mode == DigestMode.THEME_FOCUS and focus_theme:
-            curated_query = apply_theme_focus_filter(curated_query, focus_theme)
 
         result = await self.session.execute(curated_query)
         curated_candidates = list(result.scalars().all())
@@ -921,21 +900,7 @@ class DigestSelector:
                 else:
                     recency_bonus = 0.0
 
-                # Mode PERSPECTIVE : boost articles de biais opposé
-                perspective_bonus = 0.0
-                if mode == DigestMode.PERSPECTIVE and context.user_bias_stance:
-                    opposing = get_opposing_biases(context.user_bias_stance)
-                    if content.source and content.source.bias_stance in opposing:
-                        perspective_bonus = 80.0
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label="Perspective opposée",
-                                points=perspective_bonus,
-                                is_positive=True,
-                            )
-                        )
-
-                final_score = base_score + recency_bonus + perspective_bonus
+                final_score = base_score + recency_bonus
 
                 # Capture CoreLayer contributions
                 # Theme match (3-tier: content.theme > source.theme > secondary)
@@ -1122,10 +1087,7 @@ class DigestSelector:
         """
         DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
 
-        # Relax max_per_theme in THEME_FOCUS mode (all articles are same theme)
         effective_max_per_theme = self.constraints.MAX_PER_THEME
-        if mode == DigestMode.THEME_FOCUS:
-            effective_max_per_theme = target_count  # No theme limit
 
         # Count distinct sources in candidate pool for fallback decision
         distinct_sources = {c.source_id for c, _, _ in scored_candidates}

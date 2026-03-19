@@ -197,7 +197,11 @@ class DigestResponse(BaseModel):
     generated_at: datetime
     mode: str = Field(
         default="pour_vous",
-        description="Digest mode (pour_vous, serein, perspective, theme_focus)",
+        description="Digest mode (pour_vous or serein)",
+    )
+    is_serene: bool = Field(
+        default=False,
+        description="Whether this is the serene variant of the digest",
     )
     format_version: str = Field(
         default="flat_v1", description="Storage format: flat_v1 or topics_v1"
@@ -289,5 +293,12 @@ class DigestGenerationResponse(BaseModel):
     message: str
 
 
-# Need to import here to avoid circular dependency
-# Moved to top to fix NameError: name 'Enum' is not defined
+class DualDigestResponse(BaseModel):
+    """Response for GET /api/digest/both — both digest variants for instant toggle."""
+
+    normal: DigestResponse | None = None
+    serein: DigestResponse | None = None
+    serein_enabled: bool = Field(
+        default=False,
+        description="User's current serein preference (default toggle state)",
+    )

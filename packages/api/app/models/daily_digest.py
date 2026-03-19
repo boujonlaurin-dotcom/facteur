@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -35,8 +35,11 @@ class DailyDigest(Base):
 
     __tablename__ = "daily_digest"
     __table_args__ = (
-        # Un seul digest par (user, date)
-        UniqueConstraint("user_id", "target_date", name="uq_daily_digest_user_date"),
+        # Un digest par (user, date, is_serene) — permet normal + serein
+        UniqueConstraint(
+            "user_id", "target_date", "is_serene",
+            name="uq_daily_digest_user_date_serene",
+        ),
         Index("ix_daily_digest_user_id", "user_id"),
         Index("ix_daily_digest_target_date", "target_date"),
         Index("ix_daily_digest_generated_at", "generated_at"),
@@ -52,6 +55,9 @@ class DailyDigest(Base):
     )
     mode: Mapped[str | None] = mapped_column(
         String(30), nullable=True, default="pour_vous"
+    )
+    is_serene: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
     format_version: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default="flat_v1", server_default="flat_v1"
