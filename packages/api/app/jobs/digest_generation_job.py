@@ -219,7 +219,7 @@ class DigestGenerationJob:
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
     ) -> None:
-        """Génère le digest pour un utilisateur spécifique.
+        """Génère les deux digests (normal + serein) pour un utilisateur.
 
         Args:
             session: Session SQLAlchemy
@@ -230,44 +230,6 @@ class DigestGenerationJob:
         self.stats["processed"] += 1
 
         try:
-            # Vérifier si un digest existe déjà pour cette date
-            existing = await session.scalar(
-                select(DailyDigest).where(
-                    DailyDigest.user_id == user_id,
-                    DailyDigest.target_date == target_date,
-                )
-            )
-
-            if existing:
-                logger.debug(
-                    "digest_generation_skipped_exists",
-                    user_id=str(user_id),
-                    target_date=str(target_date),
-                )
-                self.stats["skipped"] += 1
-                return
-
-            # Lire les préférences de mode digest de l'utilisateur
-            from app.models.user import UserPreference
-
-            mode_result = await session.execute(
-                select(UserPreference.preference_value).where(
-                    UserPreference.user_id == user_id,
-                    UserPreference.preference_key == "digest_mode",
-                )
-            )
-            digest_mode = mode_result.scalar_one_or_none() or "pour_vous"
-
-            focus_theme = None
-            if digest_mode == "theme_focus":
-                theme_result = await session.execute(
-                    select(UserPreference.preference_value).where(
-                        UserPreference.user_id == user_id,
-                        UserPreference.preference_key == "digest_focus_theme",
-                    )
-                )
-                focus_theme = theme_result.scalar_one_or_none()
-
             # Load user profile to get per-user daily article count
             user_profile = await session.scalar(
                 select(UserProfile).where(UserProfile.user_id == user_id)
@@ -278,83 +240,114 @@ class DigestGenerationJob:
                 else DiversityConstraints.TARGET_DIGEST_SIZE
             )
 
-            # Sélectionner les articles via DigestSelector
-            selector = DigestSelector(session)
-            digest_items = await selector.select_for_user(
-                user_id=user_id,
-                limit=user_target,
-                hours_lookback=self.hours_lookback,
-                mode=digest_mode,
-                focus_theme=focus_theme,
-                global_trending_context=global_trending_context,
-            )
-
-            # Handle editorial pipeline result (Pydantic object, not a list)
-            if isinstance(digest_items, EditorialPipelineResult):
-                from app.services.digest_service import DigestService
-
-                svc = DigestService(session)
-                digest = await svc._create_digest_record_editorial(
-                    user_id, target_date, digest_items, mode=digest_mode
+            for is_serene in [False, True]:
+                # Vérifier si un digest existe déjà pour cette variante
+                existing = await session.scalar(
+                    select(DailyDigest).where(
+                        DailyDigest.user_id == user_id,
+                        DailyDigest.target_date == target_date,
+                        DailyDigest.is_serene == is_serene,
+                    )
                 )
-                if digest:
-                    self.stats["success"] += 1
+
+                if existing:
                     logger.debug(
-                        "digest_generation_editorial_success",
+                        "digest_generation_skipped_exists",
                         user_id=str(user_id),
                         target_date=str(target_date),
+                        is_serene=is_serene,
                     )
-                else:
-                    self.stats["failed"] += 1
-                return
+                    self.stats["skipped"] += 1
+                    continue
 
-            if not digest_items:
-                logger.warning(
-                    "digest_generation_empty",
+                digest_mode = "serein" if is_serene else "pour_vous"
+
+                # Sélectionner les articles via DigestSelector
+                selector = DigestSelector(session)
+                digest_items = await selector.select_for_user(
+                    user_id=user_id,
+                    limit=user_target,
+                    hours_lookback=self.hours_lookback,
+                    mode=digest_mode,
+                    global_trending_context=global_trending_context
+                    if not is_serene
+                    else None,
+                )
+
+                # Handle editorial pipeline result (Pydantic object, not a list)
+                if isinstance(digest_items, EditorialPipelineResult):
+                    from app.services.digest_service import DigestService
+
+                    svc = DigestService(session)
+                    digest = await svc._create_digest_record_editorial(
+                        user_id,
+                        target_date,
+                        digest_items,
+                        mode=digest_mode,
+                        is_serene=is_serene,
+                    )
+                    if digest:
+                        self.stats["success"] += 1
+                        logger.debug(
+                            "digest_generation_editorial_success",
+                            user_id=str(user_id),
+                            target_date=str(target_date),
+                            is_serene=is_serene,
+                        )
+                    else:
+                        self.stats["failed"] += 1
+                    continue
+
+                if not digest_items:
+                    logger.warning(
+                        "digest_generation_empty",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                        is_serene=is_serene,
+                    )
+                    self.stats["failed"] += 1
+                    continue
+
+                # Construire les items JSONB
+                items = []
+                for item in digest_items:
+                    items.append(
+                        {
+                            "content_id": str(item.content.id),
+                            "rank": item.rank,
+                            "reason": item.reason,
+                            "score": item.score,
+                            "source_id": str(item.content.source_id)
+                            if item.content.source_id
+                            else None,
+                            "title": item.content.title,
+                            "published_at": item.content.published_at.isoformat()
+                            if item.content.published_at
+                            else None,
+                        }
+                    )
+
+                # Insérer le digest
+                digest = DailyDigest(
+                    user_id=user_id,
+                    target_date=target_date,
+                    items=items,
+                    mode=digest_mode,
+                    is_serene=is_serene,
+                    generated_at=datetime.datetime.utcnow(),
+                )
+
+                session.add(digest)
+
+                logger.debug(
+                    "digest_generation_success",
                     user_id=str(user_id),
                     target_date=str(target_date),
-                )
-                self.stats["failed"] += 1
-                return
-
-            # Construire les items JSONB
-            items = []
-            for item in digest_items:
-                items.append(
-                    {
-                        "content_id": str(item.content.id),
-                        "rank": item.rank,
-                        "reason": item.reason,
-                        "score": item.score,
-                        "source_id": str(item.content.source_id)
-                        if item.content.source_id
-                        else None,
-                        "title": item.content.title,
-                        "published_at": item.content.published_at.isoformat()
-                        if item.content.published_at
-                        else None,
-                    }
+                    is_serene=is_serene,
+                    article_count=len(items),
                 )
 
-            # Insérer le digest
-            digest = DailyDigest(
-                user_id=user_id,
-                target_date=target_date,
-                items=items,
-                mode=digest_mode,
-                generated_at=datetime.datetime.utcnow(),
-            )
-
-            session.add(digest)
-
-            logger.debug(
-                "digest_generation_success",
-                user_id=str(user_id),
-                target_date=str(target_date),
-                article_count=len(items),
-            )
-
-            self.stats["success"] += 1
+                self.stats["success"] += 1
 
         except Exception as e:
             logger.error(

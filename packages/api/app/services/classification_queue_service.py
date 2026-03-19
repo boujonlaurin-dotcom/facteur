@@ -264,6 +264,38 @@ class ClassificationQueueService:
 
         return count
 
+    async def requeue_missing_serene(self, batch_limit: int = 500) -> int:
+        """Remet en file les articles classifiés mais sans is_serene.
+
+        Cible uniquement les articles qui ont déjà des topics (classifiés)
+        mais où is_serene est NULL (classifiés avant l'ajout du champ).
+
+        Args:
+            batch_limit: Nombre max d'articles à requeue par appel
+
+        Returns:
+            Nombre d'articles remis en file d'attente.
+        """
+        # Sélectionner les articles classifiés (topics != NULL) mais sans is_serene
+        content_ids_query = (
+            select(Content.id)
+            .where(Content.is_serene.is_(None))
+            .where(Content.topics.isnot(None))
+            .order_by(Content.published_at.desc())
+            .limit(batch_limit)
+        )
+
+        result = await self.session.execute(content_ids_query)
+        content_ids = result.scalars().all()
+
+        count = 0
+        for content_id in content_ids:
+            created = await self.enqueue(content_id, priority=3)
+            if created:
+                count += 1
+
+        return count
+
     async def requeue_for_reclassification(
         self, hours_back: int = 48, priority: int = 5
     ) -> int:

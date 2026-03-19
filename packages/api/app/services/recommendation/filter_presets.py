@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
@@ -55,25 +55,42 @@ SEREIN_KEYWORDS = [
 
 
 def apply_serein_filter(query):
-    """Exclut les thèmes anxiogènes et les mots-clés négatifs.
+    """Exclut les articles anxiogènes via is_serene (LLM) + fallback mots-clés.
 
-    Utilisé par le mode INSPIRATION (feed) et le mode SEREIN (digest).
-    Filtre au niveau SQL pour performance.
+    Stratégie :
+    1. is_serene=True  → article passe (classification LLM, plus précis)
+    2. is_serene=False → article exclu
+    3. is_serene=NULL  → fallback sur filtre mots-clés/thèmes legacy
+
+    Utilisé par le mode INSPIRATION (feed) et le toggle serein (digest).
     """
-    query = query.where(Source.theme.notin_(SEREIN_EXCLUDED_THEMES))
+    serene_condition = or_(
+        Content.is_serene == True,  # noqa: E712 — SQLAlchemy needs == True
+        and_(
+            Content.is_serene.is_(None),
+            _legacy_serein_keyword_filter(),
+        ),
+    )
+    return query.where(serene_condition)
+
+
+def _legacy_serein_keyword_filter():
+    """Filtre legacy par mots-clés et thèmes (pour articles non taggés par LLM).
+
+    Retourne une condition SQLAlchemy combinant :
+    - Exclusion de thèmes anxiogènes (via Source.theme)
+    - Exclusion de mots-clés anxiogènes dans titre et description
+    """
     keywords_pattern = "|".join(SEREIN_KEYWORDS)
+    theme_ok = Source.theme.notin_(SEREIN_EXCLUDED_THEMES)
     # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
     # which silently excludes rows. Use OR IS NULL to keep them.
-    query = query.where(
-        or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
+    title_ok = or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
+    desc_ok = or_(
+        Content.description.is_(None),
+        ~Content.description.op("~*")(keywords_pattern),
     )
-    query = query.where(
-        or_(
-            Content.description.is_(None),
-            ~Content.description.op("~*")(keywords_pattern),
-        )
-    )
-    return query
+    return and_(theme_ok, title_ok, desc_ok)
 
 
 def apply_theme_focus_filter(query, theme_slug: str):
@@ -154,34 +171,6 @@ def is_cluster_serein_compatible(cluster: TopicCluster) -> bool:
             match_count += 1
 
     return not (len(cluster.contents) > 0 and match_count / len(cluster.contents) > 0.5)
-
-
-def find_perspective_article(
-    candidates: list[Content],
-    topic_source_ids: set[UUID],
-    user_bias: BiasStance,
-) -> Content | None:
-    """Trouve 1 article de biais opposé à l'utilisateur, hors des sources du topic.
-
-    Utilisé par TopicSelector pour enrichir un topic en mode Perspective.
-
-    Args:
-        candidates: Pool global de candidats
-        topic_source_ids: Source IDs déjà dans le topic (à exclure)
-        user_bias: Biais dominant de l'utilisateur
-
-    Returns:
-        Content de biais opposé, ou None si aucun trouvé
-    """
-    opposing = get_opposing_biases(user_bias)
-
-    for content in candidates:
-        if content.source_id in topic_source_ids:
-            continue
-        if content.source and content.source.bias_stance in opposing:
-            return content
-
-    return None
 
 
 async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStance:
