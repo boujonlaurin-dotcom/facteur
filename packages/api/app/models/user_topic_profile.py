@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,7 +20,18 @@ class UserTopicProfile(Base):
 
     __tablename__ = "user_topic_profiles"
     __table_args__ = (
-        UniqueConstraint("user_id", "slug_parent", name="uq_user_topic_user_slug"),
+        Index(
+            "ix_utp_unique_topic",
+            "user_id", "slug_parent",
+            unique=True,
+            postgresql_where=text("canonical_name IS NULL"),
+        ),
+        Index(
+            "ix_utp_unique_entity",
+            "user_id", "canonical_name",
+            unique=True,
+            postgresql_where=text("canonical_name IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -33,6 +44,8 @@ class UserTopicProfile(Base):
     )
     topic_name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug_parent: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    canonical_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     keywords: Mapped[list[str] | None] = mapped_column(
         ARRAY(Text), nullable=True, default=list
     )
