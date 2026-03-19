@@ -22,10 +22,9 @@ import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../models/digest_models.dart';
-import '../models/digest_mode.dart';
 import '../providers/digest_format_provider.dart';
-import '../providers/digest_mode_provider.dart';
 import '../providers/digest_provider.dart';
+import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_progress_bar.dart';
@@ -166,9 +165,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       if (uri != null) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
         if (!item.isRead && !item.isDismissed) {
-          ref
-              .read(digestProvider.notifier)
-              .applyAction(item.contentId, 'read');
+          ref.read(digestProvider.notifier).applyAction(item.contentId, 'read');
         }
         return;
       }
@@ -252,7 +249,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
   void _handleSwipeDismiss(DigestItem item) {
     HapticFeedback.lightImpact();
-    ref.read(digestProvider.notifier).applyAction(item.contentId, 'not_interested');
+    ref
+        .read(digestProvider.notifier)
+        .applyAction(item.contentId, 'not_interested');
   }
 
   @override
@@ -260,16 +259,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     debugPrint('DigestScreen: build() called');
     final colors = context.facteurColors;
     final digestAsync = ref.watch(digestProvider);
-    final modeState = ref.watch(digestModeProvider);
+    final sereinState = ref.watch(sereinToggleProvider);
 
-    // Initialiser le mode et le format depuis la réponse API
+    // Initialiser le format depuis la réponse API
     ref.listen(digestProvider, (previous, next) {
       next.whenData((digest) {
-        if (digest != null && previous?.value?.mode != digest.mode) {
-          ref
-              .read(digestModeProvider.notifier)
-              .initFromDigestResponse(digest.mode);
-        }
         if (digest != null &&
             previous?.value?.formatVersion != digest.formatVersion) {
           ref
@@ -311,330 +305,318 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               },
               color: colors.primary,
               child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                // Feed-style header with logo and streak
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space6,
-                      vertical: FacteurSpacing.space3,
+                controller: _scrollController,
+                slivers: [
+                  // Feed-style header with logo and streak
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space6,
+                        vertical: FacteurSpacing.space3,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          StreakIndicator(),
+                          FacteurLogo(size: 22),
+                          UpdateButton(),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const StreakIndicator(),
-                        const FacteurLogo(size: 22),
-                        UpdateButton(),
-                      ],
-                    ),
                   ),
-                ),
 
-                // Progress bar (visible when digest has data)
-                SliverToBoxAdapter(
-                  child: Builder(
-                    builder: (context) {
-                      final digest = digestAsync.valueOrNull;
-                      if (digest == null || (digest.items.isEmpty && digest.topics.isEmpty)) {
-                        return const SizedBox.shrink();
-                      }
-                      final notifier = ref.read(digestProvider.notifier);
-                      return DigestProgressBar(
-                        processedCount: notifier.processedCount,
-                        totalCount: notifier.totalCount,
-                      );
-                    },
-                  ),
-                ),
-
-                // Notification activation banner (when not enabled & not dismissed)
-                SliverToBoxAdapter(
-                  child: Builder(
-                    builder: (context) {
-                      final notifSettings =
-                          ref.watch(notificationsSettingsProvider);
-                      if (notifSettings.pushEnabled || _notifBannerDismissed) {
-                        return const SizedBox.shrink();
-                      }
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: colors.primary.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () => showNotificationPermissionBottomSheet(
-                                context, ref),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    PhosphorIcons.bellRinging(
-                                        PhosphorIconsStyle.fill),
-                                    color: colors.primary,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Activer les notifications',
-                                          style: TextStyle(
-                                            color: colors.textPrimary,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Facteur ne t\'enverra qu\'1 notification par jour, pour te fournir l\'Essentiel.',
-                                          style: TextStyle(
-                                            color: colors.textSecondary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: _dismissNotifBanner,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(4),
-                                      child: Icon(
-                                        PhosphorIcons.x(),
-                                        color: colors.textTertiary,
-                                        size: 18,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Success banner when digest is completed
-                SliverToBoxAdapter(
-                  child: Builder(
-                    builder: (context) {
-                      // Check if completed using valueOrNull to avoid loading state issues
-                      final digest = digestAsync.valueOrNull;
-                      final isLoading = digestAsync.isLoading;
-
-                      if (digest?.isCompleted == true) {
-                        return Stack(
-                          children: [
-                            Container(
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colors.success.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: colors.success.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    PhosphorIcons.checkCircle(
-                                        PhosphorIconsStyle.fill),
-                                    color: colors.success,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Briefing terminé !',
-                                          style: TextStyle(
-                                            color: colors.textPrimary,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Revenez demain à 8h pour votre prochaine sélection.',
-                                          style: TextStyle(
-                                            color: colors.textSecondary,
-                                            fontWeight: FontWeight.w400,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Refresh button - top right (disabled during loading)
-                            if (!isLoading)
-                              Positioned(
-                                top: 16,
-                                right: 24,
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () async {
-                                      // Show confirmation dialog before regenerating
-                                      final confirmed = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: const Text(
-                                              'Générer un nouvel essentiel ?'),
-                                          content: const Text(
-                                            'Votre essentiel actuel sera remplacé par 5 nouveaux articles. Cette action est irréversible.',
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, false),
-                                              child: const Text('Annuler'),
-                                            ),
-                                            FilledButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(context, true),
-                                              child: const Text('Confirmer'),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-
-                                      if (confirmed == true &&
-                                          context.mounted) {
-                                        final notifier =
-                                            ref.read(digestProvider.notifier);
-                                        notifier.forceRegenerate();
-                                      }
-                                    },
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: colors.textSecondary
-                                            .withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: Icon(
-                                        PhosphorIcons.arrowClockwise(
-                                            PhosphorIconsStyle.bold),
-                                        color: colors.textSecondary,
-                                        size: 16,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ),
-
-                // Digest Briefing Section
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: digestAsync.when(
-                      data: (digest) {
+                  // Progress bar (visible when digest has data)
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        final digest = digestAsync.valueOrNull;
                         if (digest == null ||
                             (digest.items.isEmpty && digest.topics.isEmpty)) {
-                          return _buildEmptyState(colors);
+                          return const SizedBox.shrink();
                         }
+                        final notifier = ref.read(digestProvider.notifier);
+                        return DigestProgressBar(
+                          processedCount: notifier.processedCount,
+                          totalCount: notifier.totalCount,
+                        );
+                      },
+                    ),
+                  ),
 
-                        return Stack(
-                          children: [
-                            // Articles avec fade out/in animé pendant la régénération
-                            AnimatedOpacity(
-                              opacity: modeState.isRegenerating ? 0.15 : 1.0,
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOut,
-                              child: IgnorePointer(
-                                ignoring: modeState.isRegenerating,
-                                child: DigestBriefingSection(
-                                  digest: digest,
-                                  items: digest.items,
-                                  topics:
-                                      digest.usesTopics ? digest.topics : null,
-                                  onItemTap: _openArticle,
-                                  onLike: _handleLike,
-                                  onSave: _handleSave,
-                                  onNotInterested: _handleNotInterested,
-                                  onSwipeDismiss: _handleSwipeDismiss,
-                                  onMuteSource: (sourceId) =>
-                                      ref.read(feedProvider.notifier).muteSourceById(sourceId),
-                                  onMuteTopic: (topic) =>
-                                      ref.read(feedProvider.notifier).muteTopic(topic),
-                                  mode: modeState.mode,
-                                  isRegenerating: modeState.isRegenerating,
-                                  usesEditorial: digest.usesEditorial,
-                                  pepite: digest.usesEditorial ? digest.pepite : null,
-                                  coupDeCoeur: digest.usesEditorial ? digest.coupDeCoeur : null,
-                                  headerText: digest.usesEditorial ? digest.headerText : null,
-                                  closureText: digest.usesEditorial ? digest.closureText : null,
-                                  ctaText: digest.usesEditorial ? digest.ctaText : null,
-                                  onTapModeSelector: () {
-                                    context.push(RoutePaths.digestSettings);
-                                  },
+                  // Notification activation banner (when not enabled & not dismissed)
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        final notifSettings =
+                            ref.watch(notificationsSettingsProvider);
+                        if (notifSettings.pushEnabled ||
+                            _notifBannerDismissed) {
+                          return const SizedBox.shrink();
+                        }
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: colors.primary.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () =>
+                                  showNotificationPermissionBottomSheet(
+                                      context, ref),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.bellRinging(
+                                          PhosphorIconsStyle.fill),
+                                      color: colors.primary,
+                                      size: 22,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Activer les notifications',
+                                            style: TextStyle(
+                                              color: colors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Facteur ne t\'enverra qu\'1 notification par jour, pour te fournir l\'Essentiel.',
+                                            style: TextStyle(
+                                              color: colors.textSecondary,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: _dismissNotifBanner,
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
+                                        child: Icon(
+                                          PhosphorIcons.x(),
+                                          color: colors.textTertiary,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                            // Overlay de régénération avec shimmer
-                            if (modeState.isRegenerating)
-                              Positioned.fill(
-                                child: _RegenerationOverlay(
-                                  modeColor: modeState.mode
-                                      .effectiveColor(colors.primary),
-                                ),
-                              ),
-                          ],
+                          ),
                         );
                       },
-                      loading: () => _buildLoadingState(colors),
-                      error: (error, stack) =>
-                          _buildErrorState(context, ref, colors, error),
                     ),
                   ),
-                ),
-              ],
+
+                  // Success banner when digest is completed
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        // Check if completed using valueOrNull to avoid loading state issues
+                        final digest = digestAsync.valueOrNull;
+                        final isLoading = digestAsync.isLoading;
+
+                        if (digest?.isCompleted == true) {
+                          return Stack(
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.success.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color:
+                                        colors.success.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.checkCircle(
+                                          PhosphorIconsStyle.fill),
+                                      color: colors.success,
+                                      size: 24,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Briefing terminé !',
+                                            style: TextStyle(
+                                              color: colors.textPrimary,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Revenez demain à 8h pour votre prochaine sélection.',
+                                            style: TextStyle(
+                                              color: colors.textSecondary,
+                                              fontWeight: FontWeight.w400,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Refresh button - top right (disabled during loading)
+                              if (!isLoading)
+                                Positioned(
+                                  top: 16,
+                                  right: 24,
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () async {
+                                        // Show confirmation dialog before regenerating
+                                        final confirmed =
+                                            await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text(
+                                                'Générer un nouvel essentiel ?'),
+                                            content: const Text(
+                                              'Votre essentiel actuel sera remplacé par 5 nouveaux articles. Cette action est irréversible.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, false),
+                                                child: const Text('Annuler'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () => Navigator.pop(
+                                                    context, true),
+                                                child: const Text('Confirmer'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                        if (confirmed == true &&
+                                            context.mounted) {
+                                          final notifier =
+                                              ref.read(digestProvider.notifier);
+                                          notifier.forceRegenerate();
+                                        }
+                                      },
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: colors.textSecondary
+                                              .withValues(alpha: 0.15),
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                        ),
+                                        child: Icon(
+                                          PhosphorIcons.arrowClockwise(
+                                              PhosphorIconsStyle.bold),
+                                          color: colors.textSecondary,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+
+                  // Digest Briefing Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: digestAsync.when(
+                        data: (digest) {
+                          if (digest == null ||
+                              (digest.items.isEmpty && digest.topics.isEmpty)) {
+                            return _buildEmptyState(colors);
+                          }
+
+                          return DigestBriefingSection(
+                            digest: digest,
+                            items: digest.items,
+                            topics: digest.usesTopics ? digest.topics : null,
+                            onItemTap: _openArticle,
+                            onLike: _handleLike,
+                            onSave: _handleSave,
+                            onNotInterested: _handleNotInterested,
+                            onSwipeDismiss: _handleSwipeDismiss,
+                            onMuteSource: (sourceId) => ref
+                                .read(feedProvider.notifier)
+                                .muteSourceById(sourceId),
+                            onMuteTopic: (topic) => ref
+                                .read(feedProvider.notifier)
+                                .muteTopic(topic),
+                            isSerein: sereinState.enabled,
+                            usesEditorial: digest.usesEditorial,
+                            pepite: digest.usesEditorial ? digest.pepite : null,
+                            coupDeCoeur: digest.usesEditorial
+                                ? digest.coupDeCoeur
+                                : null,
+                            headerText:
+                                digest.usesEditorial ? digest.headerText : null,
+                            closureText: digest.usesEditorial
+                                ? digest.closureText
+                                : null,
+                            ctaText:
+                                digest.usesEditorial ? digest.ctaText : null,
+                          );
+                        },
+                        loading: () => _buildLoadingState(colors),
+                        error: (error, stack) =>
+                            _buildErrorState(context, ref, colors, error),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           ),
         ),
         // Welcome modal overlay for first-time users
@@ -795,93 +777,5 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       default:
         return SourceType.article;
     }
-  }
-}
-
-/// Overlay de régénération avec animation de shimmer pulsé.
-/// Affiché par-dessus les articles pendant que le backend régénère le digest.
-class _RegenerationOverlay extends StatefulWidget {
-  final Color modeColor;
-
-  const _RegenerationOverlay({required this.modeColor});
-
-  @override
-  State<_RegenerationOverlay> createState() => _RegenerationOverlayState();
-}
-
-class _RegenerationOverlayState extends State<_RegenerationOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pulseAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulseAnimation,
-      builder: (context, child) {
-        return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(height: 120),
-            // Icône animée avec pulse glow
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.modeColor.withValues(alpha: 0.12),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.modeColor.withValues(
-                      alpha: _pulseAnimation.value * 0.3,
-                    ),
-                    blurRadius: 24,
-                    spreadRadius: 4,
-                  ),
-                ],
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: widget.modeColor.withValues(alpha: 0.8),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Recomposition en cours...',
-              style: TextStyle(
-                color: widget.modeColor.withValues(alpha: 0.8),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                fontFamily: 'DM Sans',
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 }
