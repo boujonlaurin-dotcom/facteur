@@ -37,7 +37,9 @@ class DailyDigest(Base):
     __table_args__ = (
         # Un digest par (user, date, is_serene) — permet normal + serein
         UniqueConstraint(
-            "user_id", "target_date", "is_serene",
+            "user_id",
+            "target_date",
+            "is_serene",
             name="uq_daily_digest_user_date_serene",
         ),
         Index("ix_daily_digest_user_id", "user_id"),

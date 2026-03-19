@@ -80,7 +80,9 @@ async def get_digest(
     start = time.monotonic()
 
     try:
-        digest = await service.get_or_create_digest(user_uuid, target_date, is_serene=serein)
+        digest = await service.get_or_create_digest(
+            user_uuid, target_date, is_serene=serein
+        )
     except Exception:
         elapsed = time.monotonic() - start
         logger.exception(

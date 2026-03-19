@@ -85,9 +85,7 @@ def _legacy_serein_keyword_filter():
     theme_ok = Source.theme.notin_(SEREIN_EXCLUDED_THEMES)
     # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
     # which silently excludes rows. Use OR IS NULL to keep them.
-    title_ok = or_(
-        Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern)
-    )
+    title_ok = or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
     desc_ok = or_(
         Content.description.is_(None),
         ~Content.description.op("~*")(keywords_pattern),

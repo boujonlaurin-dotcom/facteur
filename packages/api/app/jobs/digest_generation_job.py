@@ -269,7 +269,9 @@ class DigestGenerationJob:
                     limit=user_target,
                     hours_lookback=self.hours_lookback,
                     mode=digest_mode,
-                    global_trending_context=global_trending_context if not is_serene else None,
+                    global_trending_context=global_trending_context
+                    if not is_serene
+                    else None,
                 )
 
                 # Handle editorial pipeline result (Pydantic object, not a list)
@@ -278,8 +280,11 @@ class DigestGenerationJob:
 
                     svc = DigestService(session)
                     digest = await svc._create_digest_record_editorial(
-                        user_id, target_date, digest_items,
-                        mode=digest_mode, is_serene=is_serene,
+                        user_id,
+                        target_date,
+                        digest_items,
+                        mode=digest_mode,
+                        is_serene=is_serene,
                     )
                     if digest:
                         self.stats["success"] += 1

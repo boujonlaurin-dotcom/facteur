@@ -135,7 +135,9 @@ class DigestService:
 
         # 1. Check for existing digest
         step_start = time.time()
-        existing_digest = await self._get_existing_digest(user_id, target_date, is_serene=is_serene)
+        existing_digest = await self._get_existing_digest(
+            user_id, target_date, is_serene=is_serene
+        )
         existing_time = time.time() - step_start
         if existing_digest:
             if force_regenerate:
@@ -172,7 +174,9 @@ class DigestService:
         # 1b. No digest for today — try serving yesterday's digest instantly
         if not force_regenerate:
             yesterday = target_date - timedelta(days=1)
-            yesterday_digest = await self._get_existing_digest(user_id, yesterday, is_serene=is_serene)
+            yesterday_digest = await self._get_existing_digest(
+                user_id, yesterday, is_serene=is_serene
+            )
             if yesterday_digest:
                 logger.info(
                     "digest_serving_yesterday_while_generating",
@@ -301,18 +305,30 @@ class DigestService:
         step_start = time.time()
         if is_editorial_format:
             digest = await self._create_digest_record_editorial(
-                user_id, target_date, digest_items, mode=effective_mode, is_serene=is_serene
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
             if digest is None:
                 logger.error("editorial_digest_storage_failed", user_id=str(user_id))
                 return None
         elif is_topics_format:
             digest = await self._create_digest_record_topics(
-                user_id, target_date, digest_items, mode=effective_mode, is_serene=is_serene
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
         else:
             digest = await self._create_digest_record(
-                user_id, target_date, digest_items, mode=effective_mode, is_serene=is_serene
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
         store_time = time.time() - step_start
 
@@ -1919,4 +1935,3 @@ class DigestService:
             return "editorial"
 
         return "topics"
-

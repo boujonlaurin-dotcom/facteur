@@ -81,5 +81,3 @@ class FeedFilterMode(StrEnum):
     INSPIRATION = "inspiration"
     PERSPECTIVES = "perspectives"
     DEEP_DIVE = "deep_dive"
-
-
