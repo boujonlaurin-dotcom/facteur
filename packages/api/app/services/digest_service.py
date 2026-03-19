@@ -87,8 +87,7 @@ class DigestService:
         target_date: date | None = None,
         hours_lookback: int = 168,
         force_regenerate: bool = False,
-        mode: str | None = None,
-        focus_theme: str | None = None,
+        is_serene: bool = False,
     ) -> DigestResponse | None:
         """Retrieves or generates today's digest for a user.
 
@@ -136,7 +135,9 @@ class DigestService:
 
         # 1. Check for existing digest
         step_start = time.time()
-        existing_digest = await self._get_existing_digest(user_id, target_date)
+        existing_digest = await self._get_existing_digest(
+            user_id, target_date, is_serene=is_serene
+        )
         existing_time = time.time() - step_start
         if existing_digest:
             if force_regenerate:
@@ -173,7 +174,9 @@ class DigestService:
         # 1b. No digest for today — try serving yesterday's digest instantly
         if not force_regenerate:
             yesterday = target_date - timedelta(days=1)
-            yesterday_digest = await self._get_existing_digest(user_id, yesterday)
+            yesterday_digest = await self._get_existing_digest(
+                user_id, yesterday, is_serene=is_serene
+            )
             if yesterday_digest:
                 logger.info(
                     "digest_serving_yesterday_while_generating",
@@ -188,13 +191,8 @@ class DigestService:
             duration_ms=round(existing_time * 1000, 2),
         )
 
-        # 2. Determine effective mode (param > user pref > default)
-        effective_mode = mode
-        if not effective_mode:
-            effective_mode = await self._get_user_digest_mode(user_id)
-        effective_focus_theme = focus_theme
-        if not effective_focus_theme and effective_mode == "theme_focus":
-            effective_focus_theme = await self._get_user_focus_theme(user_id)
+        # 2. Determine effective mode from is_serene toggle
+        effective_mode = "serein" if is_serene else "pour_vous"
 
         # 2b. Determine effective output format (user pref, default "topics")
         effective_format = await self._get_user_digest_format(user_id)
@@ -219,7 +217,7 @@ class DigestService:
             user_id=str(user_id),
             hours_lookback=hours_lookback,
             mode=effective_mode,
-            focus_theme=effective_focus_theme,
+            is_serene=is_serene,
             output_format=effective_format,
             target_size=target_size,
             raw_weekly_goal=raw_goal,
@@ -230,8 +228,7 @@ class DigestService:
                 user_id,
                 limit=target_size,
                 hours_lookback=hours_lookback,
-                mode=effective_mode or "pour_vous",
-                focus_theme=effective_focus_theme,
+                mode=effective_mode,
                 output_format=effective_format,
             )
         except Exception:
@@ -308,18 +305,30 @@ class DigestService:
         step_start = time.time()
         if is_editorial_format:
             digest = await self._create_digest_record_editorial(
-                user_id, target_date, digest_items, mode=effective_mode
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
             if digest is None:
                 logger.error("editorial_digest_storage_failed", user_id=str(user_id))
                 return None
         elif is_topics_format:
             digest = await self._create_digest_record_topics(
-                user_id, target_date, digest_items, mode=effective_mode
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
         else:
             digest = await self._create_digest_record(
-                user_id, target_date, digest_items, mode=effective_mode
+                user_id,
+                target_date,
+                digest_items,
+                mode=effective_mode,
+                is_serene=is_serene,
             )
         store_time = time.time() - step_start
 
@@ -747,11 +756,15 @@ class DigestService:
         }
 
     async def _get_existing_digest(
-        self, user_id: UUID, target_date: date
+        self, user_id: UUID, target_date: date, is_serene: bool = False
     ) -> DailyDigest | None:
-        """Check if digest already exists for user + date."""
+        """Check if digest already exists for user + date + serene variant."""
         stmt = select(DailyDigest).where(
-            and_(DailyDigest.user_id == user_id, DailyDigest.target_date == target_date)
+            and_(
+                DailyDigest.user_id == user_id,
+                DailyDigest.target_date == target_date,
+                DailyDigest.is_serene == is_serene,
+            )
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -762,6 +775,7 @@ class DigestService:
         target_date: date,
         digest_items: list[Any],  # List[DigestItem]
         mode: str | None = None,
+        is_serene: bool = False,
     ) -> DailyDigest:
         """Create a new DailyDigest database record."""
         # Build items JSON array
@@ -809,6 +823,7 @@ class DigestService:
             target_date=target_date,
             items=items_json,
             mode=mode or "pour_vous",
+            is_serene=is_serene,
             format_version="flat_v1",
             generated_at=datetime.utcnow(),
         )
@@ -824,6 +839,7 @@ class DigestService:
         target_date: date,
         topic_groups: list[TopicGroup],
         mode: str | None = None,
+        is_serene: bool = False,
     ) -> DailyDigest:
         """Create a new DailyDigest at topics_v1 format."""
         items_json = {
@@ -871,6 +887,7 @@ class DigestService:
             target_date=target_date,
             items=items_json,
             mode=mode or "pour_vous",
+            is_serene=is_serene,
             format_version="topics_v1",
             generated_at=datetime.utcnow(),
         )
@@ -886,6 +903,7 @@ class DigestService:
         target_date: date,
         result: EditorialPipelineResult,
         mode: str | None = None,
+        is_serene: bool = False,
     ) -> DailyDigest | None:
         """Create a new DailyDigest in editorial_v1 format."""
         # Garde-fou: filter out subjects with no articles at all
@@ -963,6 +981,7 @@ class DigestService:
             target_date=target_date,
             items=items_json,
             mode=mode or "pour_vous",
+            is_serene=is_serene,
             format_version="editorial_v1",
             generated_at=datetime.utcnow(),
         )
@@ -1164,6 +1183,7 @@ class DigestService:
             target_date=digest.target_date,
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
+            is_serene=digest.is_serene,
             format_version=digest.format_version or "flat_v1",
             items=items,
             topics=[],
@@ -1469,6 +1489,7 @@ class DigestService:
             target_date=digest.target_date,
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
+            is_serene=digest.is_serene,
             format_version="editorial_v1",
             items=flat_items,
             topics=response_topics,
@@ -1643,6 +1664,7 @@ class DigestService:
             target_date=digest.target_date,
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
+            is_serene=digest.is_serene,
             format_version="topics_v1",
             items=flat_items,
             topics=response_topics,
@@ -1871,8 +1893,8 @@ class DigestService:
             "message": message,
         }
 
-    async def _get_user_digest_mode(self, user_id: UUID) -> str | None:
-        """Lit la préférence digest_mode depuis user_preferences."""
+    async def _get_user_serein_enabled(self, user_id: UUID) -> bool:
+        """Lit la préférence serein_enabled depuis user_preferences."""
         from app.models.user import UserPreference, UserProfile
 
         result = await self.session.execute(
@@ -1880,11 +1902,11 @@ class DigestService:
             .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
             .where(
                 UserProfile.user_id == user_id,
-                UserPreference.preference_key == "digest_mode",
+                UserPreference.preference_key == "serein_enabled",
             )
         )
         value = result.scalar_one_or_none()
-        return value if value else None
+        return value == "true"
 
     async def _get_user_digest_format(self, user_id: UUID) -> str:
         """Lit la préférence digest_format depuis user_preferences.
@@ -1913,18 +1935,3 @@ class DigestService:
             return "editorial"
 
         return "topics"
-
-    async def _get_user_focus_theme(self, user_id: UUID) -> str | None:
-        """Lit la préférence digest_focus_theme depuis user_preferences."""
-        from app.models.user import UserPreference, UserProfile
-
-        result = await self.session.execute(
-            select(UserPreference.preference_value)
-            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
-            .where(
-                UserProfile.user_id == user_id,
-                UserPreference.preference_key == "digest_focus_theme",
-            )
-        )
-        value = result.scalar_one_or_none()
-        return value if value else None

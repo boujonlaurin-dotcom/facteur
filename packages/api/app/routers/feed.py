@@ -29,6 +29,7 @@ async def get_personalized_feed(
     offset: int = Query(0, ge=0),
     content_type: ContentType | None = Query(None, alias="type"),
     mode: FeedFilterMode | None = Query(None),
+    serein: bool = Query(False, description="Apply serein filter (overrides mode)"),
     theme: str | None = Query(
         None, description="Theme slug to filter by (e.g. 'tech', 'science')"
     ),
@@ -50,6 +51,10 @@ async def get_personalized_feed(
     """
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
+
+    # serein=True overrides mode to use the serein filter (same as INSPIRATION)
+    if serein and not mode:
+        mode = FeedFilterMode.INSPIRATION
 
     # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(

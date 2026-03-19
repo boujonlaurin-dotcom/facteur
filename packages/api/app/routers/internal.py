@@ -57,3 +57,20 @@ async def trigger_reclassification(
     service = ClassificationQueueService(session)
     count = await service.requeue_for_reclassification(hours_back=hours_back)
     return {"message": "Reclassification queued", "articles_queued": count}
+
+
+@router.post("/admin/backfill-serene", status_code=status.HTTP_200_OK)
+async def backfill_serene(
+    batch_limit: int = Query(default=500, ge=1, le=5000),
+    session: AsyncSession = Depends(get_db),
+):
+    """Remet en file les articles classifiés mais sans is_serene.
+
+    Cible uniquement les articles qui ont des topics mais is_serene=NULL.
+
+    Args:
+        batch_limit: Nombre max d'articles à requeue (default: 500, max: 5000)
+    """
+    service = ClassificationQueueService(session)
+    count = await service.requeue_missing_serene(batch_limit=batch_limit)
+    return {"message": "Backfill serene queued", "articles_queued": count}

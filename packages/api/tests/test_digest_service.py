@@ -333,7 +333,7 @@ class TestFallbackYesterday:
         mock_response = Mock()
 
         # _get_existing_digest returns None for today, a digest for yesterday
-        async def fake_get_existing(uid, d):
+        async def fake_get_existing(uid, d, is_serene=False):
             if d == today:
                 return None
             if d == yesterday:
@@ -365,7 +365,7 @@ class TestFallbackYesterday:
 
         call_count = 0
 
-        async def fake_get_existing(uid, d):
+        async def fake_get_existing(uid, d, is_serene=False):
             nonlocal call_count
             call_count += 1
             return None
@@ -374,12 +374,6 @@ class TestFallbackYesterday:
             patch("app.services.user_service.UserService") as mock_user_svc_cls,
             patch.object(
                 service, "_get_existing_digest", side_effect=fake_get_existing
-            ),
-            patch.object(
-                service,
-                "_get_user_digest_mode",
-                new_callable=AsyncMock,
-                return_value="pour_vous",
             ),
             patch.object(
                 service,
@@ -412,12 +406,6 @@ class TestFallbackYesterday:
                 "_get_existing_digest",
                 new_callable=AsyncMock,
                 return_value=None,
-            ),
-            patch.object(
-                service,
-                "_get_user_digest_mode",
-                new_callable=AsyncMock,
-                return_value="pour_vous",
             ),
             patch.object(
                 service,
