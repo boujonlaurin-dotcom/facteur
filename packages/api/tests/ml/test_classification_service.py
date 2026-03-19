@@ -13,7 +13,36 @@ import pytest
 from app.services.ml.classification_service import (
     VALID_TOPIC_SLUGS,
     ClassificationService,
+    _clean_text,
 )
+
+
+class TestCleanText:
+    """Tests for _clean_text HTML stripping."""
+
+    def test_strips_html_tags(self):
+        """HTML tags are removed."""
+        text = '<div class="chapo">Hello world</div>'
+        assert _clean_text(text) == "Hello world"
+
+    def test_decodes_html_entities(self):
+        """HTML entities are decoded."""
+        text = "L&#039;affiche &amp; les ombres"
+        assert _clean_text(text) == "L'affiche & les ombres"
+
+    def test_collapses_whitespace(self):
+        """Multiple whitespace is collapsed."""
+        text = "<div>  Hello  </div>  <span>  world  </span>"
+        assert _clean_text(text) == "Hello world"
+
+    def test_empty_string(self):
+        """Empty string returns empty."""
+        assert _clean_text("") == ""
+
+    def test_clean_text_passes_through(self):
+        """Clean text is unchanged."""
+        text = "Un article normal sur le sport"
+        assert _clean_text(text) == text
 
 
 class TestTopicTaxonomy:
@@ -111,8 +140,8 @@ class TestParseBatchResponse:
         assert results[1]["topics"] == ["ai", "tech"]
         assert results[2]["serene"] is False
 
-    def test_wrong_count_returns_empty(self):
-        """JSON with wrong count returns empty results."""
+    def test_wrong_count_returns_partial_results(self):
+        """JSON with fewer items than expected returns partial results, padded with empty."""
         data = [
             {"topics": ["sport"], "serene": True},
             {"topics": ["ai"], "serene": False},
@@ -123,8 +152,14 @@ class TestParseBatchResponse:
         results = self.service._parse_batch_response(raw, expected_count=5, top_k=3)
 
         assert len(results) == 5
-        assert all(r["topics"] == [] for r in results)
-        assert all(r["serene"] is None for r in results)
+        # First 4 should have their topics
+        assert results[0]["topics"] == ["sport"]
+        assert results[1]["topics"] == ["ai"]
+        assert results[2]["topics"] == ["health"]
+        assert results[3]["topics"] == ["cinema"]
+        # 5th should be padded empty
+        assert results[4]["topics"] == []
+        assert results[4]["serene"] is None
 
     def test_fallback_old_format(self):
         """Old format (array of arrays) → topics OK, serene=None."""
