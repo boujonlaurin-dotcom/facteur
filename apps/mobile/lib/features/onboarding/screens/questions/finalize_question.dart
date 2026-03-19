@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../config/theme.dart';
 import '../../../../config/routes.dart';
-import '../../../digest/models/digest_mode.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../onboarding_strings.dart';
 
@@ -21,8 +20,7 @@ class FinalizeQuestion extends ConsumerWidget {
     final themesCount = answers.themes?.length ?? 0;
     final sourcesCount = answers.preferredSources?.length ?? 0;
     final articleCount = answers.dailyArticleCount ?? 5;
-    final digestModeKey = answers.digestMode ?? 'pour_vous';
-    final digestMode = DigestMode.fromKey(digestModeKey);
+    final isSerein = (answers.digestMode ?? 'pour_vous') == 'serein';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
@@ -75,8 +73,8 @@ class FinalizeQuestion extends ConsumerWidget {
                 ),
                 const SizedBox(height: FacteurSpacing.space3),
                 _SummaryRow(
-                  emoji: digestMode.emoji,
-                  label: 'Mode : ${digestMode.label}',
+                  emoji: isSerein ? '🌿' : '☀️',
+                  label: 'Mode : ${isSerein ? "Serein" : "Tout voir"}',
                 ),
               ],
             ),

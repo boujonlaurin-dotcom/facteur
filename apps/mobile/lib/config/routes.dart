@@ -19,7 +19,6 @@ import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
-import '../features/settings/screens/digest_settings_screen.dart';
 import '../features/custom_topics/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/progress/screens/progressions_screen.dart';
@@ -59,7 +58,6 @@ class RouteNames {
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
-  static const String digestSettings = 'digest-settings';
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
 }
@@ -83,7 +81,6 @@ class RoutePaths {
   static const String account = '/settings/account';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
-  static const String digestSettings = '/settings/digest';
   static const String myInterests = '/settings/interests';
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
@@ -347,13 +344,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames.about,
                 pageBuilder: (context, state) => const FullSwipeCupertinoPage(
                   child: AboutScreen(),
-                ),
-              ),
-              GoRoute(
-                path: 'digest', // /settings/digest
-                name: RouteNames.digestSettings,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: DigestSettingsScreen(),
                 ),
               ),
               GoRoute(

@@ -10,7 +10,6 @@ import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/theme_provider.dart';
-import '../../digest/providers/digest_mode_provider.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 
 /// Écran des paramètres
@@ -145,18 +144,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     context,
                     title: 'CONTENU',
                     children: [
-                      Builder(builder: (context) {
-                        final modeState = ref.watch(digestModeProvider);
-                        return _buildTile(
-                          context,
-                          icon: PhosphorIcons.sliders(PhosphorIconsStyle.regular),
-                          title: 'Mon Essentiel',
-                          subtitle: 'Mode : ${modeState.mode.label}',
-                          onTap: () {
-                            context.pushNamed(RouteNames.digestSettings);
-                          },
-                        );
-                      }),
                       _buildTile(
                         context,
                         icon: Icons.bookmark_outline,
