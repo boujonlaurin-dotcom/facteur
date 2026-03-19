@@ -90,6 +90,7 @@ class ContentResponse(BaseModel):
     topics: list[str] | None = (
         None  # Topics ML granulaires (slugs), NULL si non classifié
     )
+    entities: list[str] | None = None  # Named entities (NER)
     is_paid: bool = False  # Paywall detection
     content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
     recommendation_reason: RecommendationReason | None = None
@@ -100,6 +101,11 @@ class ContentResponse(BaseModel):
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:
         """ORM topics peut être NULL en base → toujours retourner une liste lors de la sérialisation."""
+        return value if value is not None else []
+
+    @field_serializer("entities", when_used="always")
+    def serialize_entities(self, value: list[str] | None) -> list[str]:
+        """ORM entities peut être NULL en base → toujours retourner une liste."""
         return value if value is not None else []
 
     class Config:
@@ -127,10 +133,21 @@ class ContentDetailResponse(BaseModel):
     is_liked: bool = False
     is_hidden: bool = False
     hidden_reason: str | None = None
+    topics: list[str] | None = None
+    entities: list[str] | None = None
+    theme: str | None = None
     time_spent_seconds: int = 0
     reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
+
+    @field_serializer("topics", when_used="always")
+    def serialize_topics(self, value: list[str] | None) -> list[str]:
+        return value if value is not None else []
+
+    @field_serializer("entities", when_used="always")
+    def serialize_entities(self, value: list[str] | None) -> list[str]:
+        return value if value is not None else []
 
     class Config:
         from_attributes = True

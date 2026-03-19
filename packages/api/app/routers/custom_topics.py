@@ -65,6 +65,8 @@ class TopicResponse(BaseModel):
     priority_multiplier: float
     composite_score: float
     source_type: str
+    entity_type: str | None = None
+    canonical_name: str | None = None
     created_at: str
 
     model_config = {"from_attributes": True}
@@ -104,6 +106,8 @@ async def list_topics(
             priority_multiplier=t.priority_multiplier,
             composite_score=t.composite_score,
             source_type=t.source_type,
+            entity_type=t.entity_type,
+            canonical_name=t.canonical_name,
             created_at=t.created_at.isoformat() if t.created_at else "",
         )
         for t in results
@@ -174,6 +178,8 @@ async def create_topic(
         priority_multiplier=topic.priority_multiplier,
         composite_score=topic.composite_score,
         source_type=topic.source_type,
+        entity_type=topic.entity_type,
+        canonical_name=topic.canonical_name,
         created_at=topic.created_at.isoformat() if topic.created_at else "",
     )
 
@@ -217,6 +223,8 @@ async def update_topic(
         priority_multiplier=topic.priority_multiplier,
         composite_score=topic.composite_score,
         source_type=topic.source_type,
+        entity_type=topic.entity_type,
+        canonical_name=topic.canonical_name,
         created_at=topic.created_at.isoformat() if topic.created_at else "",
     )
 
