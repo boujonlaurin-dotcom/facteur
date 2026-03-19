@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../models/digest_models.dart';
+import '../models/dual_digest_response.dart';
 
 /// Exception thrown when digest is not found (404)
 class DigestNotFoundException implements Exception {
@@ -205,6 +206,35 @@ class DigestRepository {
       }
       throw Exception('Failed to regenerate digest: ${response.statusCode}');
     } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Fetch both normal and serein digests in one call for instant toggle.
+  Future<DualDigestResponse> fetchBothDigests({DateTime? date}) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (date != null) {
+        queryParams['target_date'] = date.toIso8601String().split('T')[0];
+      }
+
+      final response = await _apiClient.dio.get<dynamic>(
+        'digest/both',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        return DualDigestResponse.fromJson(data);
+      }
+      throw Exception('Failed to load dual digest: ${response.statusCode}');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        throw DigestNotFoundException();
+      }
+      if (e.response?.statusCode == 503) {
+        throw DigestGenerationException();
+      }
       rethrow;
     }
   }

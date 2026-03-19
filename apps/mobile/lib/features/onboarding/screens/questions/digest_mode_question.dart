@@ -2,20 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../config/serein_colors.dart';
 import '../../../../config/theme.dart';
-import '../../../digest/models/digest_mode.dart';
-import '../../../digest/widgets/digest_mode_card.dart';
 import '../../providers/onboarding_provider.dart';
-import '../../onboarding_strings.dart';
 
-/// Digest Mode question: Pour vous / Serein / Ouvrir son point de vue
+/// Emotional binary screen: "Rester serein ?" with two buttons.
 class DigestModeQuestion extends ConsumerWidget {
   const DigestModeQuestion({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(onboardingProvider);
-    final selectedMode = state.answers.digestMode;
     final colors = context.facteurColors;
 
     return Padding(
@@ -25,8 +21,16 @@ class DigestModeQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
+          Icon(
+            SereinColors.sereinIcon,
+            size: 48,
+            color: SereinColors.sereinColor,
+          ),
+
+          const SizedBox(height: FacteurSpacing.space6),
+
           Text(
-            OnboardingStrings.digestModeTitle,
+            'Rester serein ?',
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
@@ -34,7 +38,10 @@ class DigestModeQuestion extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
-            OnboardingStrings.digestModeSubtitle,
+            'Certains sujets peuvent être difficiles à lire. '
+            'Active le mode serein pour filtrer les contenus anxiogènes.\n\n'
+            'Tu pourras changer d\'avis à tout moment avec le toggle 🌿 '
+            'en haut de ton digest.',
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
@@ -44,26 +51,55 @@ class DigestModeQuestion extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space8),
 
-          ...DigestMode.values.map((mode) {
-            final isSelected = mode.key == selectedMode;
-            final modeColor = mode.effectiveColor(colors.primary);
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-              child: DigestModeCard(
-                mode: mode,
-                isSelected: isSelected,
-                modeColor: modeColor,
-                colors: colors,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  ref
-                      .read(onboardingProvider.notifier)
-                      .selectDigestMode(mode.key);
-                },
+          // Primary: Oui, rester serein
+          ElevatedButton.icon(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              ref.read(onboardingProvider.notifier).selectDigestMode('serein');
+            },
+            icon: Icon(SereinColors.sereinIcon, size: 18),
+            label: const Text('Oui, rester serein'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: SereinColors.sereinColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
-            );
-          }),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: FacteurSpacing.space3),
+
+          // Secondary: Non, tout voir
+          OutlinedButton.icon(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectDigestMode('pour_vous');
+            },
+            icon: Icon(SereinColors.normalIcon, size: 18),
+            label: const Text('Non, tout voir'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: colors.textPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+              side: BorderSide(
+                color: colors.textTertiary.withValues(alpha: 0.3),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+              ),
+            ),
+          ),
 
           const Spacer(flex: 3),
         ],

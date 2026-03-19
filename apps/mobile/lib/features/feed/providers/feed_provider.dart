@@ -6,6 +6,7 @@ import '../../../core/auth/auth_state.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
 import '../../saved/providers/saved_feed_provider.dart';
 
 // Provider du repository
@@ -65,6 +66,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
 
+    // Watch serein toggle to refetch feed when it changes
+    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
+      if (prev != next) refresh();
+    });
+
     // Fetch initial page
     final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);
@@ -112,13 +118,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
   Future<FeedResponse> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
+    final isSerein = ref.read(sereinToggleProvider).enabled;
     final response = await repository.getFeed(
         page: page,
         limit: _limit,
         mode: _selectedFilter,
         theme: _selectedTheme,
         topic: _selectedTopic,
-        sourceId: _selectedSourceId);
+        sourceId: _selectedSourceId,
+        serein: isSerein);
 
     // Update pagination state
     _hasNext = response.pagination.hasNext;

@@ -17,6 +17,7 @@ class FeedRepository {
     String? topic,
     bool hasNote = false,
     String? sourceId,
+    bool serein = false,
   }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
@@ -54,6 +55,10 @@ class FeedRepository {
 
       if (sourceId != null) {
         queryParams['source_id'] = sourceId;
+      }
+
+      if (serein) {
+        queryParams['serein'] = true;
       }
 
       final sw = Stopwatch()..start();

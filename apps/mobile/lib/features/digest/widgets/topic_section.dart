@@ -11,7 +11,6 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 
-
 /// A single topic section in the digest topics layout.
 ///
 /// Flat section (no card container) with:
@@ -62,8 +61,7 @@ class _TopicSectionState extends State<TopicSection> {
   void initState() {
     super.initState();
     _pageController = PageController(
-      viewportFraction:
-          widget.topic.articles.length > 1 ? 0.88 : 1.0,
+      viewportFraction: widget.topic.articles.length > 1 ? 0.88 : 1.0,
     );
   }
 
@@ -78,7 +76,6 @@ class _TopicSectionState extends State<TopicSection> {
   /// Footer: border (1) + padding (8) + row with buttons (32) = 41
   /// Small buffer for content variation = 5
   static const double _bodyFooterHeight = 170.0;
-
 
   @override
   Widget build(BuildContext context) {
@@ -115,9 +112,8 @@ class _TopicSectionState extends State<TopicSection> {
                 final cardWidth = constraints.maxWidth * 0.88;
                 final hasAnyImage = topic.articles.any((a) =>
                     a.thumbnailUrl != null && a.thumbnailUrl!.isNotEmpty);
-                final imageHeight =
-                    hasAnyImage ? cardWidth / (16 / 9) : 0.0;
-                final bodyHeight = _bodyFooterHeight;
+                final imageHeight = hasAnyImage ? cardWidth / (16 / 9) : 0.0;
+                const bodyHeight = _bodyFooterHeight;
                 final computedHeight = imageHeight + bodyHeight;
 
                 return SizedBox(
@@ -146,12 +142,9 @@ class _TopicSectionState extends State<TopicSection> {
     bool isDark,
     DigestTopic topic,
   ) {
-    final labelColor = isDark
-        ? const Color(0x80FFFFFF)
-        : const Color(0x802C1E10);
-    final dotColor = isDark
-        ? const Color(0x33FFFFFF)
-        : const Color(0x332C1E10);
+    final labelColor =
+        isDark ? const Color(0x80FFFFFF) : const Color(0x802C1E10);
+    final dotColor = isDark ? const Color(0x33FFFFFF) : const Color(0x332C1E10);
     final isSingleton = topic.articles.length == 1;
 
     // Editorial mode: simplified header (no rank, no trending badges)
@@ -317,8 +310,8 @@ class _TopicSectionState extends State<TopicSection> {
         onTap: () => widget.onArticleTap(article),
         onLongPressStart: (_) =>
             ArticlePreviewOverlay.show(context, _convertToContent(article)),
-        onLongPressMoveUpdate: (details) =>
-            ArticlePreviewOverlay.updateScroll(details.localOffsetFromOrigin.dy),
+        onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
+            details.localOffsetFromOrigin.dy),
         onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
         onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
         isLiked: article.isLiked,
@@ -349,10 +342,11 @@ class _TopicSectionState extends State<TopicSection> {
               boxShadow: const [],
               content: _convertToContent(article),
               onTap: () => widget.onArticleTap(article),
-              onLongPressStart: (_) =>
-                  ArticlePreviewOverlay.show(context, _convertToContent(article)),
-              onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-                  details.localOffsetFromOrigin.dy),
+              onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                  context, _convertToContent(article)),
+              onLongPressMoveUpdate: (details) =>
+                  ArticlePreviewOverlay.updateScroll(
+                      details.localOffsetFromOrigin.dy),
               onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
               onLike:
                   widget.onLike != null ? () => widget.onLike!(article) : null,
