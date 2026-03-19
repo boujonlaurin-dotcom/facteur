@@ -24,6 +24,8 @@ _$UserTopicProfileImpl _$$UserTopicProfileImplFromJson(
               _$TopicSourceTypeEnumMap, json['source_type'],
               unknownValue: TopicSourceType.explicit) ??
           TopicSourceType.explicit,
+      entityType: json['entity_type'] as String?,
+      canonicalName: json['canonical_name'] as String?,
       createdAt: json['created_at'] == null
           ? null
           : DateTime.parse(json['created_at'] as String),
@@ -40,6 +42,8 @@ Map<String, dynamic> _$$UserTopicProfileImplToJson(
       'priority_multiplier': instance.priorityMultiplier,
       'composite_score': instance.compositeScore,
       'source_type': _$TopicSourceTypeEnumMap[instance.sourceType]!,
+      'entity_type': instance.entityType,
+      'canonical_name': instance.canonicalName,
       'created_at': instance.createdAt?.toIso8601String(),
     };
 

@@ -30,6 +30,7 @@ class FilterBar extends StatefulWidget {
   final String? userBias; // Pour la description dynamique de "perspectives"
   final List<FilterConfig>? availableFilters;
   final Widget? sourceFilterChip; // Optional source filter chip (placed first)
+  final Widget? interestFilterChip; // Optional interest filter chip (placed second)
 
   const FilterBar({
     super.key,
@@ -38,6 +39,7 @@ class FilterBar extends StatefulWidget {
     this.userBias,
     this.availableFilters,
     this.sourceFilterChip,
+    this.interestFilterChip,
   });
 
   @override
@@ -310,6 +312,12 @@ class _FilterBarState extends State<FilterBar> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0),
                   child: widget.sourceFilterChip!,
+                ),
+              ],
+              if (widget.interestFilterChip != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: widget.interestFilterChip!,
                 ),
               ],
               ...visibleFilters

@@ -46,6 +46,7 @@ import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
+import '../widgets/interest_filter_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
 
@@ -551,6 +552,27 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           if (sourceId != null) {
                                             notifier.setSource(sourceId);
                                           }
+                                        },
+                                      )
+                                    : null,
+                                interestFilterChip: customTopics.isNotEmpty
+                                    ? InterestFilterChip(
+                                        selectedTopicSlug:
+                                            notifier.selectedTopic,
+                                        selectedTopicName:
+                                            notifier.selectedTopic != null
+                                                ? customTopics
+                                                        .where((t) =>
+                                                            t.slugParent ==
+                                                            notifier
+                                                                .selectedTopic)
+                                                        .firstOrNull
+                                                        ?.name ??
+                                                    getTopicLabel(notifier
+                                                        .selectedTopic!)
+                                                : null,
+                                        onInterestChanged: (slug, name) {
+                                          notifier.setTopic(slug);
                                         },
                                       )
                                     : null,

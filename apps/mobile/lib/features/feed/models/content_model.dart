@@ -70,6 +70,20 @@ enum HiddenReason {
   topic,
 }
 
+class ContentEntity {
+  final String text;
+  final String label;
+
+  ContentEntity({required this.text, required this.label});
+
+  factory ContentEntity.fromJson(Map<String, dynamic> json) {
+    return ContentEntity(
+      text: (json['text'] as String?) ?? '',
+      label: (json['label'] as String?) ?? '',
+    );
+  }
+}
+
 class Content {
   final String id;
   final String title;
@@ -88,6 +102,7 @@ class Content {
   final bool isHidden;
   final bool isPaid;
   final List<String> topics;
+  final List<ContentEntity> entities;
   final RecommendationReason? recommendationReason;
   final int readingProgress; // 0-100 scroll depth percentage
   final String? noteText;
@@ -120,6 +135,7 @@ class Content {
     this.isHidden = false,
     this.isPaid = false,
     this.topics = const [],
+    this.entities = const [],
     this.recommendationReason,
     this.readingProgress = 0,
     this.noteText,
@@ -168,6 +184,7 @@ class Content {
       isHidden: isHidden,
       isPaid: isPaid,
       topics: topics,
+      entities: entities,
       recommendationReason: recommendationReason,
       readingProgress: readingProgress,
       noteText: null,
@@ -215,6 +232,11 @@ class Content {
                 ?.map((e) => e.toString())
                 .toList() ??
             const [],
+        entities: (json['entities'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .map((e) => ContentEntity.fromJson(e))
+                .toList() ??
+            const [],
         recommendationReason: (recJson is Map<String, dynamic>)
             ? RecommendationReason.fromJson(recJson)
             : null,
@@ -257,6 +279,7 @@ class Content {
     bool? isHidden,
     bool? isPaid,
     List<String>? topics,
+    List<ContentEntity>? entities,
     RecommendationReason? recommendationReason,
     int? readingProgress,
     String? noteText,
@@ -285,6 +308,7 @@ class Content {
       isHidden: isHidden ?? this.isHidden,
       isPaid: isPaid ?? this.isPaid,
       topics: topics ?? this.topics,
+      entities: entities ?? this.entities,
       recommendationReason: recommendationReason ?? this.recommendationReason,
       readingProgress: readingProgress ?? this.readingProgress,
       noteText: noteText ?? this.noteText,

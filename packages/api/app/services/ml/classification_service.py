@@ -19,6 +19,33 @@ from app.config import get_settings
 
 log = structlog.get_logger()
 
+VALID_ENTITY_TYPES: set[str] = {"PERSON", "ORG", "EVENT", "LOCATION", "PRODUCT"}
+
+
+def _validate_entities(raw_entities: list) -> list[dict]:
+    """Validate and normalize entity dicts from LLM response. Cap at 5."""
+    if not isinstance(raw_entities, list):
+        return []
+    entities: list[dict] = []
+    for e in raw_entities:
+        if not isinstance(e, dict):
+            continue
+        name = e.get("name")
+        etype = e.get("type")
+        if (
+            isinstance(name, str)
+            and name.strip()
+            and isinstance(etype, str)
+            and etype.upper() in VALID_ENTITY_TYPES
+        ):
+            entities.append({"name": name.strip(), "type": etype.upper()})
+        if len(entities) >= 5:
+            break
+    return entities
+
+
+_EMPTY_RESULT: dict = {"topics": [], "serene": None, "entities": []}
+
 
 # 51 topic slugs in the Facteur taxonomy
 VALID_TOPIC_SLUGS: set[str] = {
@@ -220,6 +247,15 @@ serene = true : sujet positif, neutre, culturel, scientifique, lifestyle, divert
 serene = false : violence, guerre, attentat, meurtre, catastrophe, crise grave, agression, mort.
 En cas de doute, marque false.
 
+## ENTITÉS NOMMÉES
+Pour chaque article, extrais 3 à 5 entités nommées principales.
+Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
+Règles :
+- Normalise les noms (E. Macron → Emmanuel Macron, GPT → OpenAI)
+- Désambiguïse selon le contexte (Apple = ORG si tech, pas fruit)
+- Ignore les entités trop génériques (France, Internet, Europe)
+- Si aucune entité pertinente, retourne un array vide
+
 ## RÈGLES CRITIQUES
 1. Article sur un produit tech (Samsung, iPhone) → "tech" PAS "asia"/"geopolitics"
 2. Article sur une série/film → "cinema" PAS "ai"/"tech"
@@ -231,7 +267,8 @@ En cas de doute, marque false.
 8. Le premier topic est le PLUS pertinent
 
 ## FORMAT
-Réponds en JSON array. Chaque élément : {"topics": ["slug1", "slug2"], "serene": true/false}
+Réponds en JSON array. Chaque élément :
+{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
 Pas de texte avant ou après."""
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
@@ -297,16 +334,16 @@ class ClassificationService:
         Classifie un article basé sur son titre et sa description via Mistral API.
 
         Returns:
-            Dict avec 'topics' (list[str]) et 'serene' (bool | None)
+            Dict avec 'topics' (list[str]), 'serene' (bool | None) et 'entities' (list[dict])
         """
         if not self._ready:
-            return {"topics": [], "serene": None}
+            return _EMPTY_RESULT
 
         clean_title = _clean_text(title)
         clean_desc = _clean_text(description)
         text = f"{clean_title}. {clean_desc}".strip() if clean_desc else clean_title
         if not text:
-            return {"topics": [], "serene": None}
+            return _EMPTY_RESULT
 
         if source_name:
             text = f"[Source: {source_name}] {text}"
@@ -322,7 +359,7 @@ class ClassificationService:
                         {"role": "user", "content": text},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 100,
+                    "max_tokens": 200,
                 },
             )
             response.raise_for_status()
@@ -331,12 +368,12 @@ class ClassificationService:
             choices = data.get("choices") or []
             if not choices:
                 log.warning("classification_service.empty_choices", title=title[:100])
-                return {"topics": [], "serene": None}
+                return _EMPTY_RESULT
             raw_answer = (choices[0].get("message") or {}).get("content") or ""
             raw_answer = raw_answer.strip()
             if not raw_answer:
                 log.warning("classification_service.empty_content", title=title[:100])
-                return {"topics": [], "serene": None}
+                return _EMPTY_RESULT
 
             result = self._parse_topics(raw_answer, top_k)
 
@@ -354,7 +391,7 @@ class ClassificationService:
             log.error(
                 "classification_service.classify_error", error=str(e), title=title[:100]
             )
-            return {"topics": [], "serene": None}
+            return _EMPTY_RESULT
 
     async def classify_batch_async(
         self,
@@ -369,9 +406,9 @@ class ClassificationService:
             top_k: Nombre maximum de topics par article
 
         Returns:
-            Liste de dicts avec 'topics' (list[str]) et 'serene' (bool | None)
+            Liste de dicts avec 'topics', 'serene' et 'entities'
         """
-        empty_results = [{"topics": [], "serene": None} for _ in items]
+        empty_results = [_EMPTY_RESULT.copy() for _ in items]
         if not self._ready or not items:
             return empty_results
 
@@ -388,7 +425,7 @@ class ClassificationService:
                         {"role": "user", "content": batch_prompt},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 100 * len(items),
+                    "max_tokens": 200 * len(items),
                 },
             )
             response.raise_for_status()
@@ -448,13 +485,14 @@ class ClassificationService:
         return (
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
-            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false}, '
-            '{"topics": ["ai", "tech"], "serene": true}]\n\n'
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
+            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
+            '{"topics": ["ai", "tech"], "serene": true, "entities": [{"name": "OpenAI", "type": "ORG"}]}]\n\n'
             f"{articles_text}"
         )
 
     def _parse_topics(self, raw: str, top_k: int) -> dict:
-        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics et serene."""
+        """Parse la réponse du LLM pour un article unique. Retourne dict avec topics, serene et entities."""
         raw = raw.strip()
 
         # Try JSON parse first (new format: single object or array with one element)
@@ -469,7 +507,12 @@ class ClassificationService:
                 serene = parsed.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
-                return {"topics": topics[:top_k], "serene": serene}
+                entities = _validate_entities(parsed.get("entities", []))
+                return {
+                    "topics": topics[:top_k],
+                    "serene": serene,
+                    "entities": entities,
+                }
             if (
                 isinstance(parsed, list)
                 and len(parsed) == 1
@@ -484,7 +527,12 @@ class ClassificationService:
                 serene = item.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
-                return {"topics": topics[:top_k], "serene": serene}
+                entities = _validate_entities(item.get("entities", []))
+                return {
+                    "topics": topics[:top_k],
+                    "serene": serene,
+                    "entities": entities,
+                }
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -492,7 +540,7 @@ class ClassificationService:
         clean = raw.strip('"').strip("'").strip("`")
         slugs = [s.strip().lower() for s in clean.split(",")]
         valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-        return {"topics": valid[:top_k], "serene": None}
+        return {"topics": valid[:top_k], "serene": None, "entities": []}
 
     def _parse_batch_response(
         self, raw: str, expected_count: int, top_k: int
@@ -510,7 +558,7 @@ class ClassificationService:
                         raw=raw[:200],
                     )
 
-                # New format: array of objects with "topics" and "serene"
+                # New format: array of objects with "topics", "serene" and "entities"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
                     for item in parsed[:expected_count]:
@@ -524,12 +572,19 @@ class ClassificationService:
                             serene = item.get("serene")
                             if not isinstance(serene, bool):
                                 serene = None
-                            results.append({"topics": topics[:top_k], "serene": serene})
+                            entities = _validate_entities(item.get("entities", []))
+                            results.append(
+                                {
+                                    "topics": topics[:top_k],
+                                    "serene": serene,
+                                    "entities": entities,
+                                }
+                            )
                         else:
-                            results.append({"topics": [], "serene": None})
+                            results.append(_EMPTY_RESULT)
                     # Pad with empty results if Mistral returned fewer than expected
                     while len(results) < expected_count:
-                        results.append({"topics": [], "serene": None})
+                        results.append(_EMPTY_RESULT)
                     return results
 
                 # Fallback: old format (array of arrays), treat serene as None
@@ -544,11 +599,17 @@ class ClassificationService:
                                 if isinstance(s, str)
                                 and s.strip().lower() in VALID_TOPIC_SLUGS
                             ]
-                            results.append({"topics": valid[:top_k], "serene": None})
+                            results.append(
+                                {
+                                    "topics": valid[:top_k],
+                                    "serene": None,
+                                    "entities": [],
+                                }
+                            )
                         else:
-                            results.append({"topics": [], "serene": None})
+                            results.append(_EMPTY_RESULT)
                     while len(results) < expected_count:
-                        results.append({"topics": [], "serene": None})
+                        results.append(_EMPTY_RESULT)
                     return results
 
         except (json.JSONDecodeError, TypeError):
@@ -562,10 +623,10 @@ class ClassificationService:
             clean = line.strip("[]").strip()
             slugs = [s.strip().strip('"').strip("'").lower() for s in clean.split(",")]
             valid = [s for s in slugs if s in VALID_TOPIC_SLUGS]
-            results.append({"topics": valid[:top_k], "serene": None})
+            results.append({"topics": valid[:top_k], "serene": None, "entities": []})
 
         while len(results) < expected_count:
-            results.append({"topics": [], "serene": None})
+            results.append(_EMPTY_RESULT)
 
         return results
 
