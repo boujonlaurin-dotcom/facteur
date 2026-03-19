@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
-from app.models.enums import ContentStatus
+from app.models.enums import BiasStance, ContentStatus
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 from app.schemas.digest import DigestScoreBreakdown

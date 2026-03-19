@@ -83,13 +83,8 @@ class TestEditorialBatchHandling:
         mock_digest = Mock()
         mock_digest.id = uuid4()
 
-        # Mock: no existing digest
+        # Mock: no existing digest (UserProfile + 2x DailyDigest checks)
         mock_session.scalar = AsyncMock(return_value=None)
-
-        # Mock UserPreference query
-        mock_pref_result = Mock()
-        mock_pref_result.scalar_one_or_none = Mock(return_value="pour_vous")
-        mock_session.execute = AsyncMock(return_value=mock_pref_result)
 
         with (
             patch("app.jobs.digest_generation_job.DigestSelector") as mock_selector_cls,
@@ -110,8 +105,9 @@ class TestEditorialBatchHandling:
                 mock_session, user_id, target_date, None
             )
 
-        mock_svc._create_digest_record_editorial.assert_awaited_once()
-        assert job.stats["success"] == 1
+        # Loop runs for both is_serene=False and is_serene=True → 2 calls
+        assert mock_svc._create_digest_record_editorial.await_count == 2
+        assert job.stats["success"] == 2
         assert job.stats["failed"] == 0
 
     @pytest.mark.asyncio
@@ -124,10 +120,6 @@ class TestEditorialBatchHandling:
         editorial_result = _make_editorial_result()
 
         mock_session.scalar = AsyncMock(return_value=None)
-
-        mock_pref_result = Mock()
-        mock_pref_result.scalar_one_or_none = Mock(return_value="pour_vous")
-        mock_session.execute = AsyncMock(return_value=mock_pref_result)
 
         with (
             patch("app.jobs.digest_generation_job.DigestSelector") as mock_selector_cls,
@@ -146,5 +138,6 @@ class TestEditorialBatchHandling:
                 mock_session, user_id, target_date, None
             )
 
-        assert job.stats["failed"] == 1
+        # Loop runs for both is_serene=False and is_serene=True → 2 failures
+        assert job.stats["failed"] == 2
         assert job.stats["success"] == 0
