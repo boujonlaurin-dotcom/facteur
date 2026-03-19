@@ -34,6 +34,10 @@ mixin _$UserTopicProfile {
   double get compositeScore => throw _privateConstructorUsedError;
   @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
   TopicSourceType get sourceType => throw _privateConstructorUsedError;
+  @JsonKey(name: 'entity_type')
+  String? get entityType => throw _privateConstructorUsedError;
+  @JsonKey(name: 'canonical_name')
+  String? get canonicalName => throw _privateConstructorUsedError;
   @JsonKey(name: 'created_at')
   DateTime? get createdAt => throw _privateConstructorUsedError;
 
@@ -59,6 +63,8 @@ abstract class $UserTopicProfileCopyWith<$Res> {
       @JsonKey(name: 'composite_score') double compositeScore,
       @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
       TopicSourceType sourceType,
+      @JsonKey(name: 'entity_type') String? entityType,
+      @JsonKey(name: 'canonical_name') String? canonicalName,
       @JsonKey(name: 'created_at') DateTime? createdAt});
 }
 
@@ -83,6 +89,8 @@ class _$UserTopicProfileCopyWithImpl<$Res, $Val extends UserTopicProfile>
     Object? priorityMultiplier = null,
     Object? compositeScore = null,
     Object? sourceType = null,
+    Object? entityType = freezed,
+    Object? canonicalName = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(_value.copyWith(
@@ -118,6 +126,14 @@ class _$UserTopicProfileCopyWithImpl<$Res, $Val extends UserTopicProfile>
           ? _value.sourceType
           : sourceType // ignore: cast_nullable_to_non_nullable
               as TopicSourceType,
+      entityType: freezed == entityType
+          ? _value.entityType
+          : entityType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      canonicalName: freezed == canonicalName
+          ? _value.canonicalName
+          : canonicalName // ignore: cast_nullable_to_non_nullable
+              as String?,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -144,6 +160,8 @@ abstract class _$$UserTopicProfileImplCopyWith<$Res>
       @JsonKey(name: 'composite_score') double compositeScore,
       @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
       TopicSourceType sourceType,
+      @JsonKey(name: 'entity_type') String? entityType,
+      @JsonKey(name: 'canonical_name') String? canonicalName,
       @JsonKey(name: 'created_at') DateTime? createdAt});
 }
 
@@ -166,6 +184,8 @@ class __$$UserTopicProfileImplCopyWithImpl<$Res>
     Object? priorityMultiplier = null,
     Object? compositeScore = null,
     Object? sourceType = null,
+    Object? entityType = freezed,
+    Object? canonicalName = freezed,
     Object? createdAt = freezed,
   }) {
     return _then(_$UserTopicProfileImpl(
@@ -201,6 +221,14 @@ class __$$UserTopicProfileImplCopyWithImpl<$Res>
           ? _value.sourceType
           : sourceType // ignore: cast_nullable_to_non_nullable
               as TopicSourceType,
+      entityType: freezed == entityType
+          ? _value.entityType
+          : entityType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      canonicalName: freezed == canonicalName
+          ? _value.canonicalName
+          : canonicalName // ignore: cast_nullable_to_non_nullable
+              as String?,
       createdAt: freezed == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
@@ -222,6 +250,8 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
       @JsonKey(name: 'composite_score') this.compositeScore = 0.0,
       @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
       this.sourceType = TopicSourceType.explicit,
+      @JsonKey(name: 'entity_type') this.entityType,
+      @JsonKey(name: 'canonical_name') this.canonicalName,
       @JsonKey(name: 'created_at') this.createdAt})
       : _keywords = keywords;
 
@@ -258,12 +288,18 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
   @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
   final TopicSourceType sourceType;
   @override
+  @JsonKey(name: 'entity_type')
+  final String? entityType;
+  @override
+  @JsonKey(name: 'canonical_name')
+  final String? canonicalName;
+  @override
   @JsonKey(name: 'created_at')
   final DateTime? createdAt;
 
   @override
   String toString() {
-    return 'UserTopicProfile(id: $id, name: $name, slugParent: $slugParent, keywords: $keywords, intentDescription: $intentDescription, priorityMultiplier: $priorityMultiplier, compositeScore: $compositeScore, sourceType: $sourceType, createdAt: $createdAt)';
+    return 'UserTopicProfile(id: $id, name: $name, slugParent: $slugParent, keywords: $keywords, intentDescription: $intentDescription, priorityMultiplier: $priorityMultiplier, compositeScore: $compositeScore, sourceType: $sourceType, entityType: $entityType, canonicalName: $canonicalName, createdAt: $createdAt)';
   }
 
   @override
@@ -284,6 +320,10 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
                 other.compositeScore == compositeScore) &&
             (identical(other.sourceType, sourceType) ||
                 other.sourceType == sourceType) &&
+            (identical(other.entityType, entityType) ||
+                other.entityType == entityType) &&
+            (identical(other.canonicalName, canonicalName) ||
+                other.canonicalName == canonicalName) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt));
   }
@@ -300,6 +340,8 @@ class _$UserTopicProfileImpl implements _UserTopicProfile {
       priorityMultiplier,
       compositeScore,
       sourceType,
+      entityType,
+      canonicalName,
       createdAt);
 
   @JsonKey(ignore: true)
@@ -328,6 +370,8 @@ abstract class _UserTopicProfile implements UserTopicProfile {
       @JsonKey(name: 'composite_score') final double compositeScore,
       @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
       final TopicSourceType sourceType,
+      @JsonKey(name: 'entity_type') final String? entityType,
+      @JsonKey(name: 'canonical_name') final String? canonicalName,
       @JsonKey(name: 'created_at')
       final DateTime? createdAt}) = _$UserTopicProfileImpl;
 
@@ -356,6 +400,12 @@ abstract class _UserTopicProfile implements UserTopicProfile {
   @override
   @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
   TopicSourceType get sourceType;
+  @override
+  @JsonKey(name: 'entity_type')
+  String? get entityType;
+  @override
+  @JsonKey(name: 'canonical_name')
+  String? get canonicalName;
   @override
   @JsonKey(name: 'created_at')
   DateTime? get createdAt;

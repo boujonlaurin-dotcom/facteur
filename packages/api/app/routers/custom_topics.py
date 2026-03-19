@@ -1,8 +1,10 @@
 """Router pour les endpoints Custom Topics (Epic 11).
 
-CRUD pour les topics personnalisés + endpoint suggestions.
+CRUD pour les topics personnalisés + endpoint suggestions + popular entities.
 """
 
+import json
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -16,7 +18,11 @@ from app.dependencies import get_current_user_id
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user_topic_profile import UserTopicProfile
-from app.services.ml.classification_service import SLUG_TO_LABEL, VALID_TOPIC_SLUGS
+from app.services.ml.classification_service import (
+    SLUG_TO_LABEL,
+    VALID_ENTITY_TYPES,
+    VALID_TOPIC_SLUGS,
+)
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.user_service import UserService
 
@@ -30,6 +36,7 @@ router = APIRouter()
 
 class CreateTopicRequest(BaseModel):
     name: str
+    entity_type: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -40,6 +47,15 @@ class CreateTopicRequest(BaseModel):
         if len(v) > 200:
             raise ValueError("Le nom du topic ne peut pas dépasser 200 caractères")
         return v
+
+    @field_validator("entity_type")
+    @classmethod
+    def validate_entity_type(cls, v: str | None) -> str | None:
+        if v is not None and v.upper() not in VALID_ENTITY_TYPES:
+            raise ValueError(
+                f"entity_type doit être PERSON, ORG, EVENT, LOCATION ou PRODUCT (reçu: {v})"
+            )
+        return v.upper() if v else None
 
 
 class UpdateTopicRequest(BaseModel):
@@ -65,6 +81,8 @@ class TopicResponse(BaseModel):
     priority_multiplier: float
     composite_score: float
     source_type: str
+    entity_type: str | None = None
+    canonical_name: str | None = None
     created_at: str
 
     model_config = {"from_attributes": True}
@@ -76,7 +94,85 @@ class TopicSuggestion(BaseModel):
     article_count: int
 
 
+class PopularEntityResponse(BaseModel):
+    name: str
+    type: str
+    theme: str | None
+    count: int
+
+
+def _topic_to_response(t: UserTopicProfile) -> TopicResponse:
+    """Convert a UserTopicProfile ORM object to TopicResponse."""
+    return TopicResponse(
+        id=t.id,
+        topic_name=t.topic_name,
+        slug_parent=t.slug_parent,
+        keywords=t.keywords or [],
+        intent_description=t.intent_description,
+        priority_multiplier=t.priority_multiplier,
+        composite_score=t.composite_score,
+        source_type=t.source_type,
+        entity_type=t.entity_type,
+        canonical_name=t.canonical_name,
+        created_at=t.created_at.isoformat() if t.created_at else "",
+    )
+
+
 # --- Endpoints ---
+
+
+@router.get("/popular-entities", response_model=list[PopularEntityResponse])
+async def get_popular_entities(
+    theme: str | None = Query(None, description="Theme slug to filter by"),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retourne les entités les plus fréquentes dans les articles des 30 derniers jours."""
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+
+    # Unnest entities JSON strings, group and count
+    unnested = func.unnest(Content.entities).label("entity_json")
+    stmt = select(unnested, Content.theme, func.count().label("cnt")).where(
+        Content.published_at >= cutoff,
+        Content.entities.isnot(None),
+    )
+    if theme:
+        stmt = stmt.where(Content.theme == theme)
+
+    stmt = (
+        stmt.group_by("entity_json", Content.theme)
+        .order_by(func.count().desc())
+        .limit(limit * 3)
+    )
+
+    rows = (await db.execute(stmt)).all()
+
+    # Deduplicate by entity name (case-insensitive) and parse JSON
+    seen: dict[str, PopularEntityResponse] = {}
+    for row in rows:
+        try:
+            entity = json.loads(row.entity_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        name = entity.get("name", "")
+        etype = entity.get("type", "")
+        if not name or not etype:
+            continue
+        key = name.lower()
+        if key in seen:
+            seen[key].count += row.cnt
+        else:
+            seen[key] = PopularEntityResponse(
+                name=name,
+                type=etype,
+                theme=row.theme if theme else None,
+                count=row.cnt,
+            )
+
+    # Sort by count and return top N
+    results = sorted(seen.values(), key=lambda x: x.count, reverse=True)[:limit]
+    return results
 
 
 @router.get("/", response_model=list[TopicResponse])
@@ -94,20 +190,7 @@ async def list_topics(
     )
     results = (await db.scalars(stmt)).all()
 
-    return [
-        TopicResponse(
-            id=t.id,
-            topic_name=t.topic_name,
-            slug_parent=t.slug_parent,
-            keywords=t.keywords or [],
-            intent_description=t.intent_description,
-            priority_multiplier=t.priority_multiplier,
-            composite_score=t.composite_score,
-            source_type=t.source_type,
-            created_at=t.created_at.isoformat() if t.created_at else "",
-        )
-        for t in results
-    ]
+    return [_topic_to_response(t) for t in results]
 
 
 @router.post("/", response_model=TopicResponse, status_code=201)
@@ -116,7 +199,10 @@ async def create_topic(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Crée un custom topic via enrichissement LLM."""
+    """Crée un custom topic via enrichissement LLM.
+
+    Si entity_type est fourni, crée un abonnement entité (canonical_name = name).
+    """
     user_uuid = UUID(current_user_id)
 
     # Ensure user profile exists (FK constraint)
@@ -124,25 +210,46 @@ async def create_topic(
     await user_service.get_or_create_profile(current_user_id)
     await db.flush()
 
-    # LLM enrichment
+    # LLM enrichment (always, for slug_parent + keywords)
     enrichment_service = get_topic_enrichment_service()
     try:
         result = await enrichment_service.enrich(request.name)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Check for duplicate (user_id + slug_parent)
-    existing = await db.scalar(
-        select(UserTopicProfile).where(
-            UserTopicProfile.user_id == user_uuid,
-            UserTopicProfile.slug_parent == result.slug_parent,
+    # Determine entity fields (explicit request OR auto-detected by enrichment)
+    entity_type = request.entity_type or result.entity_type
+    canonical_name = request.name.strip() if entity_type else None
+
+    # Duplicate check depends on entity vs topic subscription
+    if canonical_name:
+        existing = await db.scalar(
+            select(UserTopicProfile).where(
+                UserTopicProfile.user_id == user_uuid,
+                UserTopicProfile.canonical_name == canonical_name,
+            )
         )
-    )
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Tu suis déjà un topic dans la catégorie '{SLUG_TO_LABEL.get(result.slug_parent, result.slug_parent)}'",
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tu suis déjà l'entité '{canonical_name}'",
+            )
+    else:
+        existing = await db.scalar(
+            select(UserTopicProfile).where(
+                UserTopicProfile.user_id == user_uuid,
+                UserTopicProfile.slug_parent == result.slug_parent,
+                UserTopicProfile.canonical_name.is_(None),
+            )
         )
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Tu suis déjà un topic dans la catégorie "
+                    f"'{SLUG_TO_LABEL.get(result.slug_parent, result.slug_parent)}'"
+                ),
+            )
 
     topic = UserTopicProfile(
         user_id=user_uuid,
@@ -150,6 +257,8 @@ async def create_topic(
         slug_parent=result.slug_parent,
         keywords=result.keywords,
         intent_description=result.intent_description,
+        entity_type=entity_type,
+        canonical_name=canonical_name,
         source_type="explicit",
         priority_multiplier=1.0,
         composite_score=0.0,
@@ -163,19 +272,10 @@ async def create_topic(
         user_id=current_user_id,
         topic_name=request.name,
         slug=result.slug_parent,
+        entity_type=entity_type,
     )
 
-    return TopicResponse(
-        id=topic.id,
-        topic_name=topic.topic_name,
-        slug_parent=topic.slug_parent,
-        keywords=topic.keywords or [],
-        intent_description=topic.intent_description,
-        priority_multiplier=topic.priority_multiplier,
-        composite_score=topic.composite_score,
-        source_type=topic.source_type,
-        created_at=topic.created_at.isoformat() if topic.created_at else "",
-    )
+    return _topic_to_response(topic)
 
 
 @router.put("/{topic_id}", response_model=TopicResponse)
@@ -208,17 +308,7 @@ async def update_topic(
         multiplier=request.priority_multiplier,
     )
 
-    return TopicResponse(
-        id=topic.id,
-        topic_name=topic.topic_name,
-        slug_parent=topic.slug_parent,
-        keywords=topic.keywords or [],
-        intent_description=topic.intent_description,
-        priority_multiplier=topic.priority_multiplier,
-        composite_score=topic.composite_score,
-        source_type=topic.source_type,
-        created_at=topic.created_at.isoformat() if topic.created_at else "",
-    )
+    return _topic_to_response(topic)
 
 
 @router.delete("/{topic_id}", status_code=200)

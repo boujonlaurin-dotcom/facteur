@@ -25,6 +25,8 @@ class UserTopicProfile with _$UserTopicProfile {
     @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
     @Default(TopicSourceType.explicit)
     TopicSourceType sourceType,
+    @JsonKey(name: 'entity_type') String? entityType,
+    @JsonKey(name: 'canonical_name') String? canonicalName,
     @JsonKey(name: 'created_at') DateTime? createdAt,
   }) = _UserTopicProfile;
 

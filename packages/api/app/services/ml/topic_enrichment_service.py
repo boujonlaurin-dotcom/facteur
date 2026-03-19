@@ -4,12 +4,14 @@ Takes a free-text topic name from the user and maps it to:
 - slug_parent: one of VALID_TOPIC_SLUGS
 - keywords: 5-10 relevant search keywords
 - intent_description: one-sentence description of the topic intent
+- entity_type: if the input is a named entity (PERSON, ORG, EVENT, LOCATION, PRODUCT)
+- canonical_name: normalized full name of the entity
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 import structlog
@@ -18,6 +20,7 @@ from app.config import get_settings
 from app.services.ml.classification_service import (
     MISTRAL_API_URL,
     SLUG_TO_LABEL,
+    VALID_ENTITY_TYPES,
     VALID_TOPIC_SLUGS,
 )
 
@@ -35,13 +38,21 @@ Tu dois le mapper sur UN SEUL slug parmi cette liste prédéfinie :
 
 {_TOPIC_LIST}
 
-Tu dois retourner un JSON valide avec exactement ces 3 champs :
+Tu dois retourner un JSON valide avec exactement ces champs :
 1. "slug_parent": le slug le plus pertinent (OBLIGATOIREMENT un slug de la liste ci-dessus)
 2. "keywords": un array de 5 à 10 mots-clés de recherche associés (en français)
 3. "intent_description": une phrase décrivant l'intention de suivi
 
-Exemple pour "Voiture électrique" :
+Si le sujet est une entité nommée (personne, organisation, événement, lieu, produit), ajoute aussi :
+4. "entity_type": "PERSON" | "ORG" | "EVENT" | "LOCATION" | "PRODUCT"
+5. "canonical_name": le nom complet normalisé (ex: "E. Macron" → "Emmanuel Macron")
+Si ce n'est PAS une entité nommée, ne PAS inclure entity_type ni canonical_name.
+
+Exemple pour "Voiture électrique" (pas une entité) :
 {{"slug_parent": "climate", "keywords": ["véhicule électrique", "Tesla", "batterie", "recharge", "mobilité durable", "ZFE", "autonomie"], "intent_description": "Suivi des actualités sur les voitures et véhicules électriques"}}
+
+Exemple pour "Elon Musk" (entité PERSON) :
+{{"slug_parent": "startups", "keywords": ["Tesla", "SpaceX", "X", "Neuralink", "milliardaire"], "intent_description": "Suivi des actualités sur Elon Musk", "entity_type": "PERSON", "canonical_name": "Elon Musk"}}
 
 Réponds UNIQUEMENT avec le JSON, rien d'autre."""
 
@@ -53,6 +64,8 @@ class TopicEnrichmentResult:
     slug_parent: str
     keywords: list[str]
     intent_description: str
+    entity_type: str | None = field(default=None)
+    canonical_name: str | None = field(default=None)
 
 
 class TopicEnrichmentService:
@@ -88,7 +101,8 @@ class TopicEnrichmentService:
             topic_name: User-provided topic name (e.g. "Voiture électrique")
 
         Returns:
-            TopicEnrichmentResult with slug_parent, keywords, intent_description
+            TopicEnrichmentResult with slug_parent, keywords, intent_description,
+            and optionally entity_type + canonical_name
 
         Raises:
             ValueError: If LLM returns an invalid slug_parent
@@ -161,17 +175,36 @@ class TopicEnrichmentService:
         if not isinstance(intent, str):
             intent = ""
 
+        # Extract entity fields if present
+        entity_type = None
+        canonical_name = None
+        raw_entity_type = parsed.get("entity_type")
+        if (
+            isinstance(raw_entity_type, str)
+            and raw_entity_type.upper() in VALID_ENTITY_TYPES
+        ):
+            entity_type = raw_entity_type.upper()
+            raw_canonical = parsed.get("canonical_name")
+            canonical_name = (
+                raw_canonical.strip()
+                if isinstance(raw_canonical, str) and raw_canonical.strip()
+                else topic_name
+            )
+
         log.info(
             "topic_enrichment.success",
             topic=topic_name,
             slug=slug,
             keyword_count=len(keywords),
+            entity_type=entity_type,
         )
 
         return TopicEnrichmentResult(
             slug_parent=slug,
             keywords=keywords,
             intent_description=intent.strip(),
+            entity_type=entity_type,
+            canonical_name=canonical_name,
         )
 
     def _fallback_enrich(self, topic_name: str) -> TopicEnrichmentResult:

@@ -23,7 +23,7 @@ final savedNudgeDismissedProvider = FutureProvider<bool>((ref) async {
 
 /// Nudge contextuel "articles sauvegardés non lus" affiché dans le feed.
 ///
-/// Suit le pattern de [PersonalizationNudge] (même structure Container + icon + texte + CTA).
+/// Même structure Container + icon + texte + CTA.
 class SavedNudge extends ConsumerWidget {
   /// Message contextuel à afficher (ex: "Tu as 5 articles sauvegardés non lus").
   final String message;

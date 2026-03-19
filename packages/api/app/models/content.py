@@ -46,6 +46,7 @@ class Content(Base):
         # Composite index for theme-filtered queries with ORDER BY published_at DESC
         # Replaces single-column ix_contents_theme (composite is a strict superset)
         Index("ix_contents_theme_published", "theme", "published_at"),
+        Index("ix_contents_entities", "entities", postgresql_using="gin"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -85,7 +86,7 @@ class Content(Base):
     # Slug normalisé dérivé du top topic classifié (tech, society, etc.)
     theme: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Story 4.2-US-4: Named Entity Recognition
-    # entities: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text), nullable=True)
+    entities: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     # Paywall detection: whether article is behind a paywall
     is_paid: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"

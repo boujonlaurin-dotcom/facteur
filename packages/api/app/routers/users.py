@@ -15,6 +15,7 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.schemas.streak import StreakResponse
 from app.schemas.user import (
+    AlgorithmProfileResponse,
     OnboardingRequest,
     OnboardingResponse,
     UserInterestResponse,
@@ -107,6 +108,91 @@ async def get_interests(
     interests = await service.get_interests(user_id)
 
     return [UserInterestResponse.model_validate(i) for i in interests]
+
+
+@router.get("/algorithm-profile", response_model=AlgorithmProfileResponse)
+async def get_algorithm_profile(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> AlgorithmProfileResponse:
+    """Profil algorithmique : poids appris par thème/subtopic + affinités sources."""
+    from app.models.user import UserInterest, UserSubtopic
+    from app.services.recommendation_service import RecommendationService
+
+    # Interest weights
+    interest_rows = (
+        await db.execute(
+            sa_select(UserInterest.interest_slug, UserInterest.weight).where(
+                UserInterest.user_id == user_id
+            )
+        )
+    ).all()
+    interest_weights = {row.interest_slug: row.weight for row in interest_rows}
+
+    # Subtopic weights
+    subtopic_rows = (
+        await db.execute(
+            sa_select(UserSubtopic.topic_slug, UserSubtopic.weight).where(
+                UserSubtopic.user_id == user_id
+            )
+        )
+    ).all()
+    subtopic_weights = {row.topic_slug: row.weight for row in subtopic_rows}
+
+    # Source affinities (reuse recommendation service logic)
+    reco_service = RecommendationService(db)
+    affinity_map = await reco_service._compute_source_affinity(user_id)
+    source_affinities = {str(sid): score for sid, score in affinity_map.items()}
+
+    return AlgorithmProfileResponse(
+        interest_weights=interest_weights,
+        subtopic_weights=subtopic_weights,
+        source_affinities=source_affinities,
+    )
+
+
+@router.post("/interests/{slug}/reset")
+async def reset_interest_weight(
+    slug: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """Remet le poids appris d'un thème à 1.0 (neutre)."""
+    from sqlalchemy import update
+
+    from app.models.user import UserInterest
+
+    result = await db.execute(
+        update(UserInterest)
+        .where(UserInterest.user_id == user_id, UserInterest.interest_slug == slug)
+        .values(weight=1.0)
+    )
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Interest not found")
+    return {"success": True}
+
+
+@router.post("/subtopics/{slug}/reset")
+async def reset_subtopic_weight(
+    slug: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """Remet le poids appris d'un subtopic à 1.0 (neutre)."""
+    from sqlalchemy import update
+
+    from app.models.user import UserSubtopic
+
+    result = await db.execute(
+        update(UserSubtopic)
+        .where(UserSubtopic.user_id == user_id, UserSubtopic.topic_slug == slug)
+        .values(weight=1.0)
+    )
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Subtopic not found")
+    return {"success": True}
 
 
 @router.get("/stats", response_model=UserStatsResponse)

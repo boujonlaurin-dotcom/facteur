@@ -67,6 +67,9 @@ class ContentService:
             "reading_progress": user_status.reading_progress if user_status else 0,
             "note_text": user_status.note_text if user_status else None,
             "note_updated_at": user_status.note_updated_at if user_status else None,
+            "topics": content.topics,
+            "entities": content.entities,
+            "theme": content.theme,
         }
 
     async def update_content_status(

@@ -201,7 +201,9 @@ class ClassificationWorker:
                         if result.get("topics"):
                             all_results[idx] = result
             else:
-                all_results = [{"topics": [], "serene": None} for _ in batch_items]
+                all_results = [
+                    {"topics": [], "serene": None, "entities": []} for _ in batch_items
+                ]
 
             # Process results
             batch_result_idx = 0
@@ -213,19 +215,21 @@ class ClassificationWorker:
                         await service.mark_completed_with_entities(item.id, [], [])
                         continue
 
-                    # Get topics and serene from batch result
+                    # Get topics, serene and entities from batch result
                     if i in batch_indices:
                         result = (
                             all_results[batch_result_idx]
                             if batch_result_idx < len(all_results)
-                            else {"topics": [], "serene": None}
+                            else {"topics": [], "serene": None, "entities": []}
                         )
                         batch_result_idx += 1
                         topics = result.get("topics", [])
                         is_serene = result.get("serene")
+                        entities = result.get("entities", [])
                     else:
                         topics = []
                         is_serene = None
+                        entities = []
 
                     # If still no topics after individual retry, let the retry
                     # mechanism handle it (mark_failed will requeue up to 3 times)
@@ -241,7 +245,7 @@ class ClassificationWorker:
                         )
 
                     await service.mark_completed_with_entities(
-                        item.id, topics, [], is_serene=is_serene
+                        item.id, topics, entities, is_serene=is_serene
                     )
 
                 except Exception as e:
