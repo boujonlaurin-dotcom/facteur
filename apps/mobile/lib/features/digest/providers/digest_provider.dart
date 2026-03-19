@@ -8,6 +8,7 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
+import 'serein_toggle_provider.dart';
 
 // Repository provider
 final digestRepositoryProvider = Provider<DigestRepository>((ref) {
@@ -24,15 +25,23 @@ final digestProvider =
 class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   bool _isCompleting = false;
 
-  /// In-memory cache to avoid redundant API calls when navigating
-  /// back to the digest screen within the same day.
-  DigestResponse? _cachedDigest;
+  /// Dual-digest cache: both normal and serein variants stored in memory
+  /// for instant toggle without network calls.
+  DigestResponse? _normalDigest;
+  DigestResponse? _sereinDigest;
   String? _cachedDate; // ISO date string (YYYY-MM-DD) for cache invalidation
 
   /// Get today's date as a string for cache comparison.
   String get _todayDateString {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Returns the active digest based on the serein toggle.
+  DigestResponse? get _activeDigest {
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    if (isSerein) return _sereinDigest ?? _normalDigest;
+    return _normalDigest;
   }
 
   @override
@@ -45,13 +54,16 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       return null;
     }
 
+    // Watch serein toggle to swap digest on toggle change
+    ref.watch(sereinToggleProvider.select((s) => s.enabled));
+
     // Return cached digest if available for today
-    if (_cachedDigest != null && _cachedDate == _todayDateString) {
-      return _cachedDigest;
+    if (_normalDigest != null && _cachedDate == _todayDateString) {
+      return _activeDigest;
     }
 
-    // Load digest on initialization
-    return await _loadDigest();
+    // Load both digests on initialization
+    return await _loadBothDigests();
   }
 
   static const _digestMaxRetries = 2;
@@ -60,47 +72,59 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     Duration(seconds: 5),
   ];
 
-  Future<DigestResponse> _loadDigest({DateTime? date}) async {
+  Future<DigestResponse?> _loadBothDigests({DateTime? date}) async {
     final repository = ref.read(digestRepositoryProvider);
 
     for (var attempt = 0; attempt <= _digestMaxRetries; attempt++) {
       try {
-        final digest = await repository.getDigest(date: date).timeout(
+        final dual = await repository.fetchBothDigests(date: date).timeout(
               const Duration(seconds: 45),
               onTimeout: () => throw TimeoutException(
                 'Le chargement a pris trop de temps. Verifiez votre connexion et reessayez.',
               ),
             );
-        // Update cache after successful API call
-        _updateCache(digest);
-        return digest;
+        _normalDigest = dual.normal;
+        _sereinDigest = dual.serein;
+        _cachedDate = _todayDateString;
+        // Sync toggle with server preference
+        ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
+        return _activeDigest;
       } on DigestGenerationException {
-        // 503: digest generation failed, retry after delay
         if (attempt < _digestMaxRetries) {
           // ignore: avoid_print
-          print('DigestNotifier: 503 error, retry ${attempt + 1}/$_digestMaxRetries...');
+          print(
+              'DigestNotifier: 503 error, retry ${attempt + 1}/$_digestMaxRetries...');
           await Future<void>.delayed(_digestRetryDelays[attempt]);
           continue;
         }
         rethrow;
+      } on DigestNotFoundException {
+        // /digest/both returned 404 — fall back to single digest
+        try {
+          final digest = await repository.getDigest(date: date);
+          _normalDigest = digest;
+          _cachedDate = _todayDateString;
+          ref.read(sereinToggleProvider.notifier).initFromApi(false);
+          return digest;
+        } catch (_) {
+          rethrow;
+        }
       }
     }
-    // Unreachable but satisfies the compiler
     throw DigestGenerationException();
   }
 
   Future<void> loadDigest({DateTime? date}) async {
-    // Check cache for today's digest (no specific date requested)
     if (date == null &&
-        _cachedDigest != null &&
+        _normalDigest != null &&
         _cachedDate == _todayDateString) {
-      state = AsyncData(_cachedDigest);
+      state = AsyncData(_activeDigest);
       return;
     }
 
     state = const AsyncLoading();
     try {
-      final digest = await _loadDigest(date: date);
+      final digest = await _loadBothDigests(date: date);
       state = AsyncData(digest);
     } catch (e, stack) {
       _clearCache();
@@ -112,15 +136,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   Future<void> refreshDigest() async {
     if (state.isLoading) return;
 
-    final currentDigest = state.value;
-    if (currentDigest == null) {
-      await loadDigest();
-      return;
-    }
-
     state = const AsyncLoading();
     try {
-      final digest = await _loadDigest(date: currentDigest.targetDate);
+      final digest = await _loadBothDigests();
       state = AsyncData(digest);
     } catch (e, stack) {
       _clearCache();
@@ -130,7 +148,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Force refresh: clears cache and re-fetches from API.
-  /// Use when the user explicitly wants fresh data (e.g., pull-to-refresh).
   Future<void> forceRefresh() async {
     _clearCache();
     await loadDigest();
@@ -140,18 +157,17 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   Future<void> forceRegenerate() async {
     if (state.isLoading) return;
 
-    // Keep previous data while loading to prevent UI from disappearing
     final previousData = state.value;
     state = const AsyncLoading();
 
     try {
       final repository = ref.read(digestRepositoryProvider);
       final digest = await repository.forceRegenerateDigest();
-      _updateCache(digest);
+      _normalDigest = digest;
+      _cachedDate = _todayDateString;
       state = AsyncData(digest);
       NotificationService.showSuccess('Nouveau briefing généré !');
     } catch (e, stack) {
-      // Restore previous data on error so UI doesn't disappear
       if (previousData != null) {
         state = AsyncData(previousData);
       } else {
@@ -165,23 +181,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Update the in-memory cache with a new digest response.
-  void _updateCache(DigestResponse digest) {
-    _cachedDigest = digest;
-    _cachedDate = _todayDateString;
-  }
-
   /// Clear the in-memory cache (forces next load to call API).
   void _clearCache() {
-    _cachedDigest = null;
+    _normalDigest = null;
+    _sereinDigest = null;
     _cachedDate = null;
-  }
-
-  /// Met à jour l'état avec une nouvelle réponse (utilisé par DigestModeNotifier
-  /// après régénération avec un nouveau mode).
-  void updateFromResponse(DigestResponse digest) {
-    _updateCache(digest);
-    state = AsyncData(digest);
   }
 
   /// Apply an action to a digest item (like, unlike, read, save, not_interested, undo)
@@ -225,8 +229,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
-    // Optimistically update cache so navigating away and back reflects the action
-    _updateCache(updatedDigest);
+    // Optimistically update the active cache variant
+    _updateActiveCache(updatedDigest);
+    // Also apply action to the OTHER cached digest (same article may appear in both)
+    _applyActionToOtherCache(contentId, action);
 
     // Call API
     try {
@@ -257,7 +263,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     } catch (e) {
       // Rollback on error — restore original state and cache
       state = AsyncData(currentDigest);
-      _updateCache(currentDigest);
+      _updateActiveCache(currentDigest);
       NotificationService.showError('Erreur lors de l\'action');
       rethrow;
     }
@@ -298,7 +304,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
-    _updateCache(updatedDigest);
+    _updateActiveCache(updatedDigest);
   }
 
   /// Undo an action on a digest item
@@ -328,7 +334,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         completedAt: DateTime.now(),
       );
       state = AsyncData(completedDigest);
-      _updateCache(completedDigest);
+      _updateActiveCache(completedDigest);
 
       // Show completion notification
       NotificationService.showSuccess('Briefing terminé !');
@@ -613,6 +619,50 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       coupDeCoeur: updatedCoupDeCoeur,
     );
     state = AsyncData(updatedDigest);
-    _updateCache(updatedDigest);
+    _updateActiveCache(updatedDigest);
+  }
+
+  /// Update the active cache variant (normal or serein).
+  void _updateActiveCache(DigestResponse digest) {
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    if (isSerein) {
+      _sereinDigest = digest;
+    } else {
+      _normalDigest = digest;
+    }
+  }
+
+  /// Apply an action to the OTHER cached digest (not the currently active one)
+  /// so that toggling back preserves read/saved/liked state.
+  void _applyActionToOtherCache(String contentId, String action) {
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    final otherDigest = isSerein ? _normalDigest : _sereinDigest;
+    if (otherDigest == null) return;
+
+    final updatedItems = otherDigest.items.map((item) {
+      return item.contentId == contentId
+          ? _applyActionToItem(item, action)
+          : item;
+    }).toList();
+
+    final updatedTopics = otherDigest.topics.map((topic) {
+      final updatedArticles = topic.articles.map((article) {
+        return article.contentId == contentId
+            ? _applyActionToItem(article, action)
+            : article;
+      }).toList();
+      return topic.copyWith(articles: updatedArticles);
+    }).toList();
+
+    final updated = otherDigest.copyWith(
+      items: updatedItems,
+      topics: updatedTopics,
+    );
+
+    if (isSerein) {
+      _normalDigest = updated;
+    } else {
+      _sereinDigest = updated;
+    }
   }
 }
