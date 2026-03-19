@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../config/theme.dart';
 
@@ -12,18 +13,25 @@ const Color _terracotta = Color(0xFFE07A5F);
 /// - 1.0 (Normal):  [filled] [filled] [empty]
 /// - 2.0 (Plus):    [filled] [filled] [filled]
 ///
-/// Shows a persistent label to the left of the blocks.
-/// Used by both Topics and Sources for consistent UX.
+/// Each block encodes two layers:
+/// - **Border** = intentional setting (terracotta if active, grey otherwise)
+/// - **Internal fill** = learned usage weight (proportional, theme primary color)
+///
+/// If [usageWeight] is null, behaves exactly as before (no internal fill).
 class PrioritySlider extends StatefulWidget {
   final double currentMultiplier;
   final ValueChanged<double> onChanged;
   final List<String> labels;
+  final double? usageWeight;
+  final VoidCallback? onReset;
 
   const PrioritySlider({
     super.key,
     required this.currentMultiplier,
     required this.onChanged,
     this.labels = const ['Moins', 'Normal', 'Plus'],
+    this.usageWeight,
+    this.onReset,
   });
 
   @override
@@ -51,6 +59,31 @@ class _PrioritySliderState extends State<PrioritySlider>
     final index = _currentCran - 1;
     if (index < widget.labels.length) return widget.labels[index];
     return '';
+  }
+
+  /// Normalize a multiplier (0.5/1.0/2.0) to 0.0-1.0 range for comparison.
+  double _multiplierToNormalized(double m) {
+    if (m <= 0.5) return 0.0;
+    if (m <= 1.0) return 0.5;
+    return 1.0;
+  }
+
+  /// Whether the reset button should be visible.
+  bool get _showReset {
+    if (widget.usageWeight == null || widget.onReset == null) return false;
+    final settingNorm = _multiplierToNormalized(widget.currentMultiplier);
+    return (widget.usageWeight! - settingNorm).abs() > 0.15;
+  }
+
+  /// Fill ratio for a single block based on usageWeight.
+  double _blockFillRatio(int cran) {
+    if (widget.usageWeight == null) return 0.0;
+    final w = widget.usageWeight!.clamp(0.0, 1.0);
+    final blockStart = (cran - 1) / 3.0;
+    final blockEnd = cran / 3.0;
+    if (w <= blockStart) return 0.0;
+    if (w >= blockEnd) return 1.0;
+    return (w - blockStart) / (blockEnd - blockStart);
   }
 
   @override
@@ -145,6 +178,19 @@ class _PrioritySliderState extends State<PrioritySlider>
                 );
               },
             ),
+            // Reset button
+            if (_showReset)
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: GestureDetector(
+                  onTap: widget.onReset,
+                  child: Icon(
+                    PhosphorIcons.arrowCounterClockwise(PhosphorIconsStyle.regular),
+                    size: 16,
+                    color: colors.textTertiary,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -155,17 +201,39 @@ class _PrioritySliderState extends State<PrioritySlider>
     final filled = _currentCran >= cran;
     final shouldPop = _poppedBlock == cran && _popController.isAnimating;
     final scale = shouldPop ? _popAnimation.value : 1.0;
+    final fillRatio = _blockFillRatio(cran);
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Transform.scale(
       scale: scale,
-      child: Container(
+      child: SizedBox(
         width: _blockWidth,
         height: _blockHeight,
-        decoration: BoxDecoration(
-          color: filled
-              ? _terracotta
-              : colors.textTertiary.withValues(alpha: 0.3),
+        child: ClipRRect(
           borderRadius: BorderRadius.circular(3),
+          child: Stack(
+            children: [
+              // Base layer: border/background (existing behavior)
+              Container(
+                width: _blockWidth,
+                height: _blockHeight,
+                color: filled
+                    ? _terracotta
+                    : colors.textTertiary.withValues(alpha: 0.3),
+              ),
+              // Overlay: internal fill proportional to usage weight
+              if (fillRatio > 0)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: _blockWidth * fillRatio,
+                  child: Container(
+                    color: primaryColor.withValues(alpha: filled ? 0.4 : 0.6),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

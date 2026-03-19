@@ -13,11 +13,13 @@ class SourceListItem extends StatelessWidget {
   final VoidCallback? onToggleMute;
   final ValueChanged<double>? onWeightChanged;
   final VoidCallback? onToggleSubscription;
+  final double? usageWeight;
 
   const SourceListItem({
     super.key,
     required this.source,
     this.onTap,
+    this.usageWeight,
     this.onToggleMute,
     this.onWeightChanged,
     this.onToggleSubscription,
@@ -55,6 +57,7 @@ class SourceListItem extends StatelessWidget {
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
             onToggleSubscription: onToggleSubscription,
+            usageWeight: usageWeight,
           ),
         );
       },
@@ -162,6 +165,7 @@ class SourceListItem extends StatelessWidget {
                   key: ValueKey(source.priorityMultiplier),
                   currentMultiplier: source.priorityMultiplier,
                   onChanged: onWeightChanged!,
+                  usageWeight: usageWeight,
                 ),
               ],
 

@@ -21,8 +21,6 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
-import '../widgets/personalization_nudge.dart';
-import '../providers/skip_provider.dart';
 import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
@@ -111,14 +109,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final item = contents[index];
     if (!_viewedIds.contains(item.id)) {
       _viewedIds.add(item.id);
-      ref.read(skipProvider.notifier).recordSkip(item.source.id);
     }
   }
 
   Future<void> _showArticleModal(Content content) async {
-    // Interaction resets skips
-    ref.read(skipProvider.notifier).recordInteraction(content.source.id);
-
     // 1. Mark as consumed immediately
     if (mounted) {
       ref.read(feedProvider.notifier).markContentAsConsumed(content);
@@ -607,17 +601,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // Position de la carte "Tu es à jour" après 8 articles
                         const caughtUpPos = 8;
 
-                        final skips = ref.watch(skipProvider);
-                        final nudgeSourceId = skips.keys.firstWhere(
-                          (id) => skips[id]! >= 3,
-                          orElse: () => '',
-                        );
-                        // Ne pas afficher le nudge si la carte CaughtUp bloque le scroll
-                        final showingNudge = !showCaughtUp &&
-                            nudgeSourceId.isNotEmpty &&
-                            contents.length > 5;
-                        const nudgePos = 5;
-
                         // Saved nudge: show at position 6 if user has 3+ unread saves
                         final savedSummary =
                             ref.watch(savedSummaryProvider).valueOrNull;
@@ -633,7 +616,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         const savedNudgePos = 6;
 
                         // childCount constant pour éviter les recalculs de scroll geometry
-                        // quand showCaughtUp/showingNudge/showSavedNudge changent en cours de scroll.
+                        // quand showCaughtUp/showSavedNudge changent en cours de scroll.
                         final int effectiveChildCount =
                             contents.isEmpty ? 1 : contents.length + 4;
 
@@ -669,28 +652,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 // Compter la CaughtUpCard si elle est passée (pour le décalage)
                                 if (showCaughtUp && listIndex > caughtUpPos) {
                                   contentOffset++;
-                                }
-
-                                // Personalization Nudge (seulement si CaughtUp n'est pas affiché)
-                                if (showingNudge) {
-                                  final nudgeEffectivePos =
-                                      nudgePos + contentOffset;
-                                  if (listIndex == nudgeEffectivePos) {
-                                    final sourceName = contents
-                                        .firstWhere(
-                                            (c) => c.source.id == nudgeSourceId,
-                                            orElse: () => contents.first)
-                                        .source
-                                        .name;
-                                    return PersonalizationNudge(
-                                      key: ValueKey('nudge_$nudgeSourceId'),
-                                      sourceId: nudgeSourceId,
-                                      sourceName: sourceName,
-                                    );
-                                  }
-                                  if (listIndex > nudgeEffectivePos) {
-                                    contentOffset++;
-                                  }
                                 }
 
                                 // Saved Nudge at position 6

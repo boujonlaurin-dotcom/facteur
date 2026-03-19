@@ -12,6 +12,8 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../../core/api/providers.dart';
+import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
@@ -261,30 +263,47 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       ),
                       const Spacer(),
                       // Right: priority slider (self-labeled)
-                      TopicPrioritySlider(
-                        currentMultiplier: matchedTopic.priorityMultiplier,
-                        onChanged: (multiplier) async {
-                          try {
-                            await ref
-                                .read(customTopicsProvider.notifier)
-                                .updatePriority(matchedTopic.id, multiplier);
-                          } on DioException catch (e) {
-                            if (context.mounted) {
-                              final detail = e.response?.data;
-                              final msg =
-                                  (detail is Map && detail['detail'] is String)
-                                      ? detail['detail'] as String
-                                      : 'Erreur lors de la mise à jour';
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(msg),
-                                  duration: const Duration(seconds: 3),
-                                ),
-                              );
+                      Builder(builder: (context) {
+                        final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                        final topicSlug = matchedTopic.slugParent;
+                        final topicUsage = algoProfile != null &&
+                                algoProfile.subtopicWeights.containsKey(topicSlug)
+                            ? algoProfile.normalizeWeight(
+                                algoProfile.subtopicWeights[topicSlug]!)
+                            : null;
+                        return TopicPrioritySlider(
+                          currentMultiplier: matchedTopic.priorityMultiplier,
+                          onChanged: (multiplier) async {
+                            try {
+                              await ref
+                                  .read(customTopicsProvider.notifier)
+                                  .updatePriority(matchedTopic.id, multiplier);
+                            } on DioException catch (e) {
+                              if (context.mounted) {
+                                final detail = e.response?.data;
+                                final msg =
+                                    (detail is Map && detail['detail'] is String)
+                                        ? detail['detail'] as String
+                                        : 'Erreur lors de la mise à jour';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(msg),
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
                             }
-                          }
-                        },
-                      ),
+                          },
+                          usageWeight: topicUsage,
+                          onReset: topicUsage != null
+                              ? () async {
+                                  final client = ref.read(apiClientProvider);
+                                  await client.post('/users/subtopics/$topicSlug/reset');
+                                  ref.invalidate(algorithmProfileProvider);
+                                }
+                              : null,
+                        );
+                      }),
                     ],
                   ),
                 )
@@ -575,17 +594,23 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                               ),
                             ),
                             // Right: priority slider (self-labeled)
-                            PrioritySlider(
-                              currentMultiplier: currentMultiplier,
-                              onChanged: (multiplier) {
-                                ref
-                                    .read(userSourcesProvider.notifier)
-                                    .updateWeight(
-                                      widget.content.source.id,
-                                      multiplier,
-                                    );
-                              },
-                            ),
+                            Builder(builder: (context) {
+                              final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                              final sourceId = widget.content.source.id;
+                              final sourceUsage = algoProfile?.sourceAffinities[sourceId];
+                              return PrioritySlider(
+                                currentMultiplier: currentMultiplier,
+                                onChanged: (multiplier) {
+                                  ref
+                                      .read(userSourcesProvider.notifier)
+                                      .updateWeight(
+                                        widget.content.source.id,
+                                        multiplier,
+                                      );
+                                },
+                                usageWeight: sourceUsage,
+                              );
+                            }),
                           ],
                         ),
                         // Subscription toggle

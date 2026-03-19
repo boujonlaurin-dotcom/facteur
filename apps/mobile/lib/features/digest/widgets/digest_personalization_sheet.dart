@@ -7,6 +7,7 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/design/priority_slider.dart';
+import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -426,14 +427,21 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          PrioritySlider(
-            currentMultiplier: currentMultiplier,
-            onChanged: (multiplier) {
-              ref
-                  .read(userSourcesProvider.notifier)
-                  .updateWeight(source.id!, multiplier);
-            },
-          ),
+          Builder(builder: (context) {
+            final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+            final sourceUsage = source.id != null
+                ? algoProfile?.sourceAffinities[source.id!]
+                : null;
+            return PrioritySlider(
+              currentMultiplier: currentMultiplier,
+              onChanged: (multiplier) {
+                ref
+                    .read(userSourcesProvider.notifier)
+                    .updateWeight(source.id!, multiplier);
+              },
+              usageWeight: sourceUsage,
+            );
+          }),
         ],
       ),
     );

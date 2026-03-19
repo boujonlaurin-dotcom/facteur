@@ -7,6 +7,8 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
+import '../../../core/api/providers.dart';
+import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../widgets/topic_priority_slider.dart';
 
@@ -107,31 +109,49 @@ class TopicExplorerScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: FacteurSpacing.space2),
-                      TopicPrioritySlider(
-                        currentMultiplier: matchedTopic.priorityMultiplier,
-                        onChanged: (multiplier) async {
-                          try {
-                            await ref
-                                .read(customTopicsProvider.notifier)
-                                .updatePriority(
-                                    matchedTopic.id, multiplier);
-                          } on DioException catch (e) {
-                            if (context.mounted) {
-                              final detail = e.response?.data;
-                              final msg = (detail is Map &&
-                                      detail['detail'] is String)
-                                  ? detail['detail'] as String
-                                  : 'Erreur lors de la mise à jour';
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(msg),
-                                  duration: const Duration(seconds: 3),
-                                ),
-                              );
+                      Builder(builder: (context) {
+                        final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                        final topicSlug = matchedTopic.slugParent;
+                        final topicUsage = algoProfile != null &&
+                                topicSlug != null &&
+                                algoProfile.subtopicWeights.containsKey(topicSlug)
+                            ? algoProfile.normalizeWeight(
+                                algoProfile.subtopicWeights[topicSlug]!)
+                            : null;
+                        return TopicPrioritySlider(
+                          currentMultiplier: matchedTopic.priorityMultiplier,
+                          onChanged: (multiplier) async {
+                            try {
+                              await ref
+                                  .read(customTopicsProvider.notifier)
+                                  .updatePriority(
+                                      matchedTopic.id, multiplier);
+                            } on DioException catch (e) {
+                              if (context.mounted) {
+                                final detail = e.response?.data;
+                                final msg = (detail is Map &&
+                                        detail['detail'] is String)
+                                    ? detail['detail'] as String
+                                    : 'Erreur lors de la mise à jour';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(msg),
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
                             }
-                          }
-                        },
-                      ),
+                          },
+                          usageWeight: topicUsage,
+                          onReset: topicUsage != null
+                              ? () async {
+                                  final client = ref.read(apiClientProvider);
+                                  await client.post('/users/subtopics/$topicSlug/reset');
+                                  ref.invalidate(algorithmProfileProvider);
+                                }
+                              : null,
+                        );
+                      }),
                     ],
                   )
                 : Column(
