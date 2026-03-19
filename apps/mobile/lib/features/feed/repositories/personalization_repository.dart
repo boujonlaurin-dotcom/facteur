@@ -106,4 +106,41 @@ class PersonalizationRepository {
       rethrow;
     }
   }
+
+  Future<void> unmuteTheme(String theme) async {
+    try {
+      await _apiClient.delete('users/personalization/unmute-theme/$theme');
+    } on DioException catch (e) {
+      print('❌ PersonalizationRepository.unmuteTheme failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   Theme: $theme');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
+
+  Future<void> unmuteTopic(String topic) async {
+    try {
+      await _apiClient.delete('users/personalization/unmute-topic/$topic');
+    } on DioException catch (e) {
+      print('❌ PersonalizationRepository.unmuteTopic failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   Topic: $topic');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
+
+  Future<void> unmuteContentType(String contentType) async {
+    try {
+      await _apiClient
+          .delete('users/personalization/unmute-content-type/$contentType');
+    } on DioException catch (e) {
+      print('❌ PersonalizationRepository.unmuteContentType failed:');
+      print('   Status: ${e.response?.statusCode}');
+      print('   ContentType: $contentType');
+      print('   Response: ${e.response?.data}');
+      rethrow;
+    }
+  }
 }

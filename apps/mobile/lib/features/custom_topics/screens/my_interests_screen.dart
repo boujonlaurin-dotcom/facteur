@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../feed/repositories/personalization_repository.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
+import '../providers/personalization_provider.dart';
 import '../providers/theme_priority_provider.dart';
 import '../widgets/theme_section.dart';
+
+const _howItWorksKey = 'how_it_works_dismissed';
 
 /// Settings screen for managing custom topic subscriptions.
 ///
@@ -24,6 +29,28 @@ class MyInterestsScreen extends ConsumerStatefulWidget {
 class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
   /// Sorted group order, computed once on first data load.
   List<String>? _sortedGroups;
+  bool _howItWorksDismissed = true; // Default true until loaded
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHowItWorks();
+  }
+
+  Future<void> _loadHowItWorks() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _howItWorksDismissed = prefs.getBool(_howItWorksKey) ?? false;
+      });
+    }
+  }
+
+  Future<void> _dismissHowItWorks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_howItWorksKey, true);
+    if (mounted) setState(() => _howItWorksDismissed = true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +165,47 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   ),
                 ),
 
+                // How it works card
+                if (!_howItWorksDismissed)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(FacteurSpacing.space3),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceElevated,
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.medium),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Les bordures = votre réglage. '
+                              'Le remplissage = vos habitudes de lecture. '
+                              'Tapez pour ajuster, \u21BA pour réinitialiser.',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: _dismissHowItWorks,
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: colors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (!_howItWorksDismissed)
+                  const SizedBox(height: FacteurSpacing.space3),
+
                 // Theme sections (order fixed on initial load)
                 ..._sortedGroups!
                     .where((group) => grouped.containsKey(group))
@@ -162,6 +230,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     followedTopics: allTopics,
                   );
                 }),
+
+                // Content types section
+                _ContentTypesSection(),
 
                 // Empty state
                 if (topics.isEmpty)
@@ -241,4 +312,83 @@ class _GroupedTheme {
     required this.label,
     required this.topics,
   });
+}
+
+/// Section at the bottom of MyInterests for toggling content types on/off.
+class _ContentTypesSection extends ConsumerWidget {
+  static const _contentTypes = {
+    'article': 'Articles',
+    'podcast': 'Podcasts',
+    'youtube': 'Vidéos YouTube',
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final perso = ref.watch(personalizationProvider).valueOrNull;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space2,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: colors.surfaceElevated),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space3,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'TYPES DE CONTENU',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space2),
+            ..._contentTypes.entries.map((entry) {
+              final isMuted =
+                  perso?.mutedContentTypes.contains(entry.key) ?? false;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.value,
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: isMuted ? colors.textTertiary : null,
+                      ),
+                    ),
+                  ),
+                  Switch.adaptive(
+                    value: !isMuted,
+                    activeColor: colors.primary,
+                    onChanged: (enabled) async {
+                      final repo =
+                          ref.read(personalizationRepositoryProvider);
+                      if (enabled) {
+                        await repo.unmuteContentType(entry.key);
+                      } else {
+                        await repo.muteContentType(entry.key);
+                      }
+                      ref.invalidate(personalizationProvider);
+                    },
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 }

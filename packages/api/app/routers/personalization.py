@@ -317,6 +317,80 @@ async def unmute_source(
     return {"message": "Source démuée avec succès", "source_id": str(source_id)}
 
 
+@router.delete("/unmute-theme/{theme}")
+async def unmute_theme(
+    theme: str,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retire un thème de la liste des thèmes mutés."""
+    user_uuid = UUID(current_user_id)
+    theme_slug = theme.lower().strip()
+
+    result = await db.scalar(
+        select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Pas de préférences trouvées")
+
+    if result.muted_themes and theme_slug in result.muted_themes:
+        result.muted_themes = [t for t in result.muted_themes if t != theme_slug]
+        await db.commit()
+
+    return {"message": f"Thème '{theme_slug}' démuté"}
+
+
+@router.delete("/unmute-topic/{topic}")
+async def unmute_topic(
+    topic: str,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retire un topic de la liste des topics mutés."""
+    user_uuid = UUID(current_user_id)
+    topic_slug = topic.lower().strip()
+
+    result = await db.scalar(
+        select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Pas de préférences trouvées")
+
+    if result.muted_topics and topic_slug in result.muted_topics:
+        result.muted_topics = [t for t in result.muted_topics if t != topic_slug]
+        await db.commit()
+
+    return {"message": f"Topic '{topic_slug}' démuté"}
+
+
+@router.delete("/unmute-content-type/{content_type}")
+async def unmute_content_type(
+    content_type: str,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retire un type de contenu de la liste des types mutés."""
+    user_uuid = UUID(current_user_id)
+    ct_slug = content_type.lower().strip()
+
+    result = await db.scalar(
+        select(UserPersonalization).where(UserPersonalization.user_id == user_uuid)
+    )
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Pas de préférences trouvées")
+
+    if result.muted_content_types and ct_slug in result.muted_content_types:
+        result.muted_content_types = [
+            t for t in result.muted_content_types if t != ct_slug
+        ]
+        await db.commit()
+
+    return {"message": f"Type de contenu '{ct_slug}' démuté"}
+
+
 @router.post("/toggle-paid-content")
 async def toggle_paid_content(
     request: TogglePaidContentRequest,

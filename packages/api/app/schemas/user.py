@@ -128,3 +128,16 @@ class UserStatsResponse(BaseModel):
     total: int
     by_type: dict[str, int]
     by_theme: dict[str, int]
+
+
+class AlgorithmProfileResponse(BaseModel):
+    """Profil algorithmique : données apprises par l'algo, surfacées pour transparence."""
+
+    interest_weights: dict[str, float]
+    """Poids appris par thème (slug → weight 0.1-3.0)."""
+
+    subtopic_weights: dict[str, float]
+    """Poids appris par subtopic (slug → weight 0.1-3.0)."""
+
+    source_affinities: dict[str, float]
+    """Affinité par source (source_id string → score normalisé 0.0-1.0)."""
