@@ -269,6 +269,7 @@ class DeepMatcher:
             source_id=content.source_id,
             published_at=content.published_at,
             match_reason=reason or f"Analyse de fond sur {topic.label}",
+            description=content.description,
         )
 
     @staticmethod
@@ -289,4 +290,5 @@ class DeepMatcher:
             source_id=content.source_id,
             published_at=content.published_at,
             match_reason="Selection automatique (meilleure correspondance)",
+            description=content.description,
         )
