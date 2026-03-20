@@ -190,6 +190,27 @@ class ClassificationQueueService:
             await self.session.commit()
             return True  # Sera retenté
 
+    async def reset_stale_processing(self, stale_minutes: int = 10) -> int:
+        """Reset items stuck in 'processing' for longer than stale_minutes.
+
+        Returns:
+            Number of items reset to 'pending'.
+        """
+        cutoff = datetime.utcnow() - timedelta(minutes=stale_minutes)
+
+        result = await self.session.execute(
+            update(ClassificationQueue)
+            .where(
+                ClassificationQueue.status == "processing",
+                ClassificationQueue.updated_at < cutoff,
+            )
+            .values(status="pending", updated_at=datetime.utcnow())
+        )
+        count = result.rowcount
+        if count > 0:
+            await self.session.commit()
+        return count
+
     async def get_queue_stats(self) -> dict:
         """Récupère les statistiques de la file de classification."""
         query = select(
