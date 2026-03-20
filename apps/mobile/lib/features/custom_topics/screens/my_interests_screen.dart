@@ -9,6 +9,7 @@ import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import '../providers/theme_priority_provider.dart';
+import '../widgets/entity_add_sheet.dart';
 import '../widgets/theme_section.dart';
 
 const _howItWorksKey = 'how_it_works_dismissed';
@@ -67,6 +68,16 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: textTheme.displaySmall,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => EntityAddSheet.show(context),
+        backgroundColor: const Color(0xFFE07A5F),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add, size: 20),
+        label: const Text(
+          'Sujet niche',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
       body: topicsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

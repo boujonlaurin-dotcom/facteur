@@ -414,3 +414,414 @@ abstract class _UserTopicProfile implements UserTopicProfile {
   _$$UserTopicProfileImplCopyWith<_$UserTopicProfileImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+PopularEntity _$PopularEntityFromJson(Map<String, dynamic> json) {
+  return _PopularEntity.fromJson(json);
+}
+
+/// @nodoc
+mixin _$PopularEntity {
+  String get name => throw _privateConstructorUsedError;
+  String get type => throw _privateConstructorUsedError;
+  String? get theme => throw _privateConstructorUsedError;
+  int get count => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $PopularEntityCopyWith<PopularEntity> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $PopularEntityCopyWith<$Res> {
+  factory $PopularEntityCopyWith(
+          PopularEntity value, $Res Function(PopularEntity) then) =
+      _$PopularEntityCopyWithImpl<$Res, PopularEntity>;
+  @useResult
+  $Res call({String name, String type, String? theme, int count});
+}
+
+/// @nodoc
+class _$PopularEntityCopyWithImpl<$Res, $Val extends PopularEntity>
+    implements $PopularEntityCopyWith<$Res> {
+  _$PopularEntityCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? type = null,
+    Object? theme = freezed,
+    Object? count = null,
+  }) {
+    return _then(_value.copyWith(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      theme: freezed == theme
+          ? _value.theme
+          : theme // ignore: cast_nullable_to_non_nullable
+              as String?,
+      count: null == count
+          ? _value.count
+          : count // ignore: cast_nullable_to_non_nullable
+              as int,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$PopularEntityImplCopyWith<$Res>
+    implements $PopularEntityCopyWith<$Res> {
+  factory _$$PopularEntityImplCopyWith(
+          _$PopularEntityImpl value, $Res Function(_$PopularEntityImpl) then) =
+      __$$PopularEntityImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String name, String type, String? theme, int count});
+}
+
+/// @nodoc
+class __$$PopularEntityImplCopyWithImpl<$Res>
+    extends _$PopularEntityCopyWithImpl<$Res, _$PopularEntityImpl>
+    implements _$$PopularEntityImplCopyWith<$Res> {
+  __$$PopularEntityImplCopyWithImpl(
+      _$PopularEntityImpl _value, $Res Function(_$PopularEntityImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? name = null,
+    Object? type = null,
+    Object? theme = freezed,
+    Object? count = null,
+  }) {
+    return _then(_$PopularEntityImpl(
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      theme: freezed == theme
+          ? _value.theme
+          : theme // ignore: cast_nullable_to_non_nullable
+              as String?,
+      count: null == count
+          ? _value.count
+          : count // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$PopularEntityImpl implements _PopularEntity {
+  const _$PopularEntityImpl(
+      {required this.name, required this.type, this.theme, this.count = 0});
+
+  factory _$PopularEntityImpl.fromJson(Map<String, dynamic> json) =>
+      _$$PopularEntityImplFromJson(json);
+
+  @override
+  final String name;
+  @override
+  final String type;
+  @override
+  final String? theme;
+  @override
+  @JsonKey()
+  final int count;
+
+  @override
+  String toString() {
+    return 'PopularEntity(name: $name, type: $type, theme: $theme, count: $count)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$PopularEntityImpl &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.type, type) || other.type == type) &&
+            (identical(other.theme, theme) || other.theme == theme) &&
+            (identical(other.count, count) || other.count == count));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, name, type, theme, count);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$PopularEntityImplCopyWith<_$PopularEntityImpl> get copyWith =>
+      __$$PopularEntityImplCopyWithImpl<_$PopularEntityImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$PopularEntityImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _PopularEntity implements PopularEntity {
+  const factory _PopularEntity(
+      {required final String name,
+      required final String type,
+      final String? theme,
+      final int count}) = _$PopularEntityImpl;
+
+  factory _PopularEntity.fromJson(Map<String, dynamic> json) =
+      _$PopularEntityImpl.fromJson;
+
+  @override
+  String get name;
+  @override
+  String get type;
+  @override
+  String? get theme;
+  @override
+  int get count;
+  @override
+  @JsonKey(ignore: true)
+  _$$PopularEntityImplCopyWith<_$PopularEntityImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+DisambiguationSuggestion _$DisambiguationSuggestionFromJson(
+    Map<String, dynamic> json) {
+  return _DisambiguationSuggestion.fromJson(json);
+}
+
+/// @nodoc
+mixin _$DisambiguationSuggestion {
+  @JsonKey(name: 'canonical_name')
+  String get canonicalName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'entity_type')
+  String? get entityType => throw _privateConstructorUsedError;
+  String get description => throw _privateConstructorUsedError;
+  @JsonKey(name: 'slug_parent')
+  String get slugParent => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $DisambiguationSuggestionCopyWith<DisambiguationSuggestion> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $DisambiguationSuggestionCopyWith<$Res> {
+  factory $DisambiguationSuggestionCopyWith(DisambiguationSuggestion value,
+          $Res Function(DisambiguationSuggestion) then) =
+      _$DisambiguationSuggestionCopyWithImpl<$Res, DisambiguationSuggestion>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'canonical_name') String canonicalName,
+      @JsonKey(name: 'entity_type') String? entityType,
+      String description,
+      @JsonKey(name: 'slug_parent') String slugParent});
+}
+
+/// @nodoc
+class _$DisambiguationSuggestionCopyWithImpl<$Res,
+        $Val extends DisambiguationSuggestion>
+    implements $DisambiguationSuggestionCopyWith<$Res> {
+  _$DisambiguationSuggestionCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? canonicalName = null,
+    Object? entityType = freezed,
+    Object? description = null,
+    Object? slugParent = null,
+  }) {
+    return _then(_value.copyWith(
+      canonicalName: null == canonicalName
+          ? _value.canonicalName
+          : canonicalName // ignore: cast_nullable_to_non_nullable
+              as String,
+      entityType: freezed == entityType
+          ? _value.entityType
+          : entityType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: null == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String,
+      slugParent: null == slugParent
+          ? _value.slugParent
+          : slugParent // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$DisambiguationSuggestionImplCopyWith<$Res>
+    implements $DisambiguationSuggestionCopyWith<$Res> {
+  factory _$$DisambiguationSuggestionImplCopyWith(
+          _$DisambiguationSuggestionImpl value,
+          $Res Function(_$DisambiguationSuggestionImpl) then) =
+      __$$DisambiguationSuggestionImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'canonical_name') String canonicalName,
+      @JsonKey(name: 'entity_type') String? entityType,
+      String description,
+      @JsonKey(name: 'slug_parent') String slugParent});
+}
+
+/// @nodoc
+class __$$DisambiguationSuggestionImplCopyWithImpl<$Res>
+    extends _$DisambiguationSuggestionCopyWithImpl<$Res,
+        _$DisambiguationSuggestionImpl>
+    implements _$$DisambiguationSuggestionImplCopyWith<$Res> {
+  __$$DisambiguationSuggestionImplCopyWithImpl(
+      _$DisambiguationSuggestionImpl _value,
+      $Res Function(_$DisambiguationSuggestionImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? canonicalName = null,
+    Object? entityType = freezed,
+    Object? description = null,
+    Object? slugParent = null,
+  }) {
+    return _then(_$DisambiguationSuggestionImpl(
+      canonicalName: null == canonicalName
+          ? _value.canonicalName
+          : canonicalName // ignore: cast_nullable_to_non_nullable
+              as String,
+      entityType: freezed == entityType
+          ? _value.entityType
+          : entityType // ignore: cast_nullable_to_non_nullable
+              as String?,
+      description: null == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String,
+      slugParent: null == slugParent
+          ? _value.slugParent
+          : slugParent // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$DisambiguationSuggestionImpl implements _DisambiguationSuggestion {
+  const _$DisambiguationSuggestionImpl(
+      {@JsonKey(name: 'canonical_name') required this.canonicalName,
+      @JsonKey(name: 'entity_type') this.entityType,
+      required this.description,
+      @JsonKey(name: 'slug_parent') required this.slugParent});
+
+  factory _$DisambiguationSuggestionImpl.fromJson(Map<String, dynamic> json) =>
+      _$$DisambiguationSuggestionImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'canonical_name')
+  final String canonicalName;
+  @override
+  @JsonKey(name: 'entity_type')
+  final String? entityType;
+  @override
+  final String description;
+  @override
+  @JsonKey(name: 'slug_parent')
+  final String slugParent;
+
+  @override
+  String toString() {
+    return 'DisambiguationSuggestion(canonicalName: $canonicalName, entityType: $entityType, description: $description, slugParent: $slugParent)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$DisambiguationSuggestionImpl &&
+            (identical(other.canonicalName, canonicalName) ||
+                other.canonicalName == canonicalName) &&
+            (identical(other.entityType, entityType) ||
+                other.entityType == entityType) &&
+            (identical(other.description, description) ||
+                other.description == description) &&
+            (identical(other.slugParent, slugParent) ||
+                other.slugParent == slugParent));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType, canonicalName, entityType, description, slugParent);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$DisambiguationSuggestionImplCopyWith<_$DisambiguationSuggestionImpl>
+      get copyWith => __$$DisambiguationSuggestionImplCopyWithImpl<
+          _$DisambiguationSuggestionImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$DisambiguationSuggestionImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _DisambiguationSuggestion implements DisambiguationSuggestion {
+  const factory _DisambiguationSuggestion(
+          {@JsonKey(name: 'canonical_name') required final String canonicalName,
+          @JsonKey(name: 'entity_type') final String? entityType,
+          required final String description,
+          @JsonKey(name: 'slug_parent') required final String slugParent}) =
+      _$DisambiguationSuggestionImpl;
+
+  factory _DisambiguationSuggestion.fromJson(Map<String, dynamic> json) =
+      _$DisambiguationSuggestionImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'canonical_name')
+  String get canonicalName;
+  @override
+  @JsonKey(name: 'entity_type')
+  String? get entityType;
+  @override
+  String get description;
+  @override
+  @JsonKey(name: 'slug_parent')
+  String get slugParent;
+  @override
+  @JsonKey(ignore: true)
+  _$$DisambiguationSuggestionImplCopyWith<_$DisambiguationSuggestionImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}

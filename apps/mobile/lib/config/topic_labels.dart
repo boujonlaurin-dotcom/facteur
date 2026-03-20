@@ -179,3 +179,13 @@ List<String> getSlugsForMacroTheme(String macroTheme) {
       .where((slug) => getTopicMacroTheme(slug) == macroTheme)
       .toList();
 }
+
+/// Converts entity type codes to French display labels.
+String getEntityTypeLabel(String type) => switch (type.toUpperCase()) {
+      'PERSON' => 'Personne',
+      'ORG' => 'Organisation',
+      'EVENT' => 'Événement',
+      'LOCATION' => 'Lieu',
+      'PRODUCT' => 'Produit',
+      _ => type,
+    };

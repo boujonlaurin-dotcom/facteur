@@ -57,6 +57,25 @@ Exemple pour "Elon Musk" (entité PERSON) :
 Réponds UNIQUEMENT avec le JSON, rien d'autre."""
 
 
+DISAMBIGUATION_SYSTEM_PROMPT = f"""Tu es un assistant qui aide à désambiguïser les sujets d'intérêt.
+
+L'utilisateur te donne un nom ou sujet libre. Tu dois proposer les 1 à 5 interprétations les plus probables.
+
+Pour chaque interprétation, tu dois fournir :
+1. "canonical_name": le nom complet normalisé
+2. "entity_type": "PERSON" | "ORG" | "EVENT" | "LOCATION" | "PRODUCT" | null (si c'est un concept/thème)
+3. "description": une phrase courte décrivant cette interprétation (max 80 caractères)
+4. "slug_parent": le slug le plus pertinent parmi cette liste :
+
+{_TOPIC_LIST}
+
+Si le sujet est clairement non-ambigu (ex: "Emmanuel Macron"), retourne un seul résultat.
+Si le sujet est ambigu (ex: "Dakar", "Mercury", "Apple"), retourne 2 à 5 interprétations.
+
+Retourne un JSON valide : {{"suggestions": [...]}}
+Réponds UNIQUEMENT avec le JSON, rien d'autre."""
+
+
 @dataclass
 class TopicEnrichmentResult:
     """Result of LLM topic enrichment."""
@@ -66,6 +85,16 @@ class TopicEnrichmentResult:
     intent_description: str
     entity_type: str | None = field(default=None)
     canonical_name: str | None = field(default=None)
+
+
+@dataclass
+class DisambiguationOption:
+    """A single disambiguation suggestion from the LLM."""
+
+    canonical_name: str
+    entity_type: str | None
+    description: str
+    slug_parent: str
 
 
 class TopicEnrichmentService:
@@ -242,6 +271,121 @@ class TopicEnrichmentService:
             keywords=[topic_name.lower()],
             intent_description=f"Suivi de {topic_name}",
         )
+
+    async def disambiguate(
+        self, name: str, *, theme_hint: str | None = None,
+    ) -> list[DisambiguationOption]:
+        """Return 1-5 disambiguation suggestions for an ambiguous topic name."""
+        if not name or not name.strip():
+            raise ValueError("name cannot be empty")
+
+        if self._ready:
+            try:
+                return await self._disambiguate_via_llm(name.strip(), theme_hint)
+            except Exception as e:
+                log.warning(
+                    "topic_disambiguation.llm_failed",
+                    name=name,
+                    error=str(e),
+                )
+
+        # Fallback: single result using existing enrich
+        result = self._fallback_enrich(name.strip())
+        return [
+            DisambiguationOption(
+                canonical_name=name.strip(),
+                entity_type=result.entity_type,
+                description=result.intent_description,
+                slug_parent=result.slug_parent,
+            )
+        ]
+
+    async def _disambiguate_via_llm(
+        self, name: str, theme_hint: str | None,
+    ) -> list[DisambiguationOption]:
+        """Call Mistral API for topic disambiguation."""
+        client = self._get_client()
+
+        user_message = name
+        if theme_hint:
+            user_message += f" (contexte: {theme_hint})"
+
+        response = await client.post(
+            MISTRAL_API_URL,
+            json={
+                "model": "mistral-small-latest",
+                "messages": [
+                    {"role": "system", "content": DISAMBIGUATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 600,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("Empty LLM response")
+
+        raw_answer = (choices[0].get("message") or {}).get("content") or ""
+        raw_answer = raw_answer.strip()
+
+        if not raw_answer:
+            raise ValueError("Empty LLM content")
+
+        # Strip markdown code blocks if present
+        if raw_answer.startswith("```"):
+            lines = raw_answer.split("\n")
+            raw_answer = "\n".join(
+                line for line in lines if not line.strip().startswith("```")
+            )
+
+        parsed = json.loads(raw_answer)
+        raw_suggestions = parsed.get("suggestions", [])
+        if not isinstance(raw_suggestions, list):
+            raise ValueError("LLM response 'suggestions' is not a list")
+
+        options: list[DisambiguationOption] = []
+        for item in raw_suggestions:
+            if not isinstance(item, dict):
+                continue
+
+            slug = (item.get("slug_parent") or "").strip().lower()
+            if slug not in VALID_TOPIC_SLUGS:
+                continue
+
+            canonical = (item.get("canonical_name") or "").strip()
+            if not canonical:
+                continue
+
+            description = (item.get("description") or "").strip()
+
+            entity_type = None
+            raw_et = item.get("entity_type")
+            if isinstance(raw_et, str) and raw_et.upper() in VALID_ENTITY_TYPES:
+                entity_type = raw_et.upper()
+
+            options.append(
+                DisambiguationOption(
+                    canonical_name=canonical,
+                    entity_type=entity_type,
+                    description=description,
+                    slug_parent=slug,
+                )
+            )
+
+        if not options:
+            raise ValueError("No valid suggestions from LLM")
+
+        log.info(
+            "topic_disambiguation.success",
+            name=name,
+            suggestion_count=len(options),
+        )
+
+        return options[:5]
 
     def is_ready(self) -> bool:
         return self._ready

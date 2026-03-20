@@ -5,8 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
-import '../../custom_topics/widgets/topic_chip.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/feed_card.dart';
@@ -76,8 +74,6 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
     final topicLabel = getTopicLabel(widget.topicSlug);
     final macroTheme = getTopicMacroTheme(widget.topicSlug);
     final emoji = macroTheme != null ? getMacroThemeEmoji(macroTheme) : '';
-    final followedTopics = ref.watch(customTopicsProvider).valueOrNull ?? [];
-
     final allArticles = _isFilterMode
         ? widget.filteredArticles!
         : [
@@ -127,15 +123,6 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
                       content: article,
                       isSaved: article.isSaved,
                       isLiked: article.isLiked,
-                      topicChipWidget: TopicChip(
-                        content: article,
-                        isFollowed: article.topics.isNotEmpty &&
-                            followedTopics.any((t) =>
-                                t.slugParent == article.topics.first ||
-                                t.name.toLowerCase() ==
-                                    getTopicLabel(article.topics.first)
-                                        .toLowerCase()),
-                      ),
                       onTap: () {
                         context.pushNamed(
                           RouteNames.contentDetail,
