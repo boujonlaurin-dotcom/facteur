@@ -19,6 +19,23 @@
         "panel": "dedicated",
         "showReuseMessage": false
       }
+    },
+    {
+      "label": "Launch Android Emulator",
+      "type": "shell",
+      "command": "${env:HOME}/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_36.1 -no-snapshot-load & ADB=${env:HOME}/Library/Android/sdk/platform-tools/adb; $ADB wait-for-device; while [ \"$($ADB shell getprop sys.boot_completed 2>/dev/null)\" != \"1\" ]; do sleep 2; done; echo 'Emulator ready'",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Android Emulator + Backend API",
+      "dependsOn": ["Launch Android Emulator", "Start Backend API"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
     }
   ]
 }

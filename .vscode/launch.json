@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-       "name": "Facteur Mobile (Chrome)",
+      "name": "Facteur (Chrome)",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "name": "Facteur Mobile (Chrome — Local API)",
+      "name": "Facteur (Chrome — Local API)",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -33,13 +33,29 @@
       ]
     },
     {
-      "name": "Facteur Mobile (macOS)",
+      "name": "Facteur (Android)",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Launch Android Emulator",
       "args": [
         "-d",
-        "macos",
+        "emulator-5554",
+        "--dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/",
+        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+      ]
+    },
+    {
+      "name": "Facteur (Android — Local API)",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Android Emulator + Backend API",
+      "args": [
+        "-d",
+        "emulator-5554",
+        "--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/",
         "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
         "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
       ]
