@@ -34,18 +34,18 @@ import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
-import '../../gamification/widgets/streak_indicator.dart';
-import '../../gamification/widgets/daily_progress_indicator.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
-import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
+import '../widgets/interest_filter_chip.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
+import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
 
@@ -75,6 +75,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
+
+  // Serein toggle: brief opacity fade on content while feed refreshes
+  bool _isTogglingFeed = false;
 
   @override
   void initState() {
@@ -331,6 +334,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     // Listen to scroll to top trigger
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
 
+    // Serein toggle: brief loading indicator while feed refreshes
+    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
+      if (prev != next && mounted) {
+        setState(() => _isTogglingFeed = true);
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) setState(() => _isTogglingFeed = false);
+        });
+      }
+    });
+
     return PopScope(
       canPop: false,
       child: Material(
@@ -406,9 +419,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 },
                               ),
                             ),
-                            const StreakIndicator(),
-                            const SizedBox(width: 8),
-                            const DailyProgressIndicator(),
+                            const SereinToggleChip(),
                           ],
                         ),
                       ),
@@ -519,7 +530,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .where((f) => f.key == 'pour_vous')
                               .toList();
                           final otherThemeFilters = themeFilters
-                              .where((f) => f.key != 'pour_vous' && f.key != 'recent')
+                              .where((f) =>
+                                  f.key != 'pour_vous' && f.key != 'recent')
                               .toList();
                           // Track which keys are custom topics vs themes
                           final customTopicKeys =
@@ -554,6 +566,27 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         },
                                       )
                                     : null,
+                                interestFilterChip: customTopics.isNotEmpty
+                                    ? InterestFilterChip(
+                                        selectedTopicSlug:
+                                            notifier.selectedTopic,
+                                        selectedTopicName:
+                                            notifier.selectedTopic != null
+                                                ? customTopics
+                                                        .where((t) =>
+                                                            t.slugParent ==
+                                                            notifier
+                                                                .selectedTopic)
+                                                        .firstOrNull
+                                                        ?.name ??
+                                                    getTopicLabel(
+                                                        notifier.selectedTopic!)
+                                                : null,
+                                        onInterestChanged: (slug, name) {
+                                          notifier.setTopic(slug);
+                                        },
+                                      )
+                                    : null,
                                 onFilterChanged: (String? filter) {
                                   if (filter == 'pour_vous') {
                                     notifier.setFilter('pour_vous');
@@ -581,6 +614,21 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       ),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                    // Brief loading indicator when serein toggle triggers feed refresh
+                    if (_isTogglingFeed)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              minHeight: 2,
+                              backgroundColor: colors.border,
+                              color: colors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
                     feedAsync.when(
                       data: (state) {
                         final contents = state.items;
@@ -765,49 +813,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      // Epic 12.5: In chrono mode, topic chip tap opens SourceAdjustSheet
-                                      // In pour_vous mode, default ArticleSheet with scoring breakdown
-                                      topicChipWidget: notifier
-                                                  .selectedFilter ==
-                                              'pour_vous'
-                                          ? TopicChip(
-                                              content: content,
-                                              isFollowed: content
-                                                      .topics.isNotEmpty &&
-                                                  followedTopics.any((t) =>
-                                                      t.slugParent ==
-                                                          content
-                                                              .topics.first ||
-                                                      t.name.toLowerCase() ==
-                                                          getTopicLabel(content
-                                                                  .topics.first)
-                                                              .toLowerCase()),
-                                            )
-                                          : GestureDetector(
-                                              onTap: () =>
-                                                  _handleSwipeAdjust(content),
-                                              child: AbsorbPointer(
-                                                child: TopicChip(
-                                                  content: content,
-                                                  isFollowed: content
-                                                          .topics.isNotEmpty &&
-                                                      followedTopics.any((t) =>
-                                                          t.slugParent ==
-                                                              content.topics
-                                                                  .first ||
-                                                          t.name.toLowerCase() ==
-                                                              getTopicLabel(
-                                                                      content
-                                                                          .topics
-                                                                          .first)
-                                                                  .toLowerCase()),
-                                                ),
-                                              ),
-                                            ),
                                       clusterChipWidget:
                                           content.clusterHiddenCount > 0
                                               ? ClusterChip(content: content)
-                                              : SourceOverflowChip(content: content),
+                                              : SourceOverflowChip(
+                                                  content: content),
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
                                       onSourceTap: () =>

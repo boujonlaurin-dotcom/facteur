@@ -25,9 +25,39 @@ class UserTopicProfile with _$UserTopicProfile {
     @JsonKey(name: 'source_type', unknownEnumValue: TopicSourceType.explicit)
     @Default(TopicSourceType.explicit)
     TopicSourceType sourceType,
+    @JsonKey(name: 'entity_type') String? entityType,
+    @JsonKey(name: 'canonical_name') String? canonicalName,
     @JsonKey(name: 'created_at') DateTime? createdAt,
   }) = _UserTopicProfile;
 
   factory UserTopicProfile.fromJson(Map<String, dynamic> json) =>
       _$UserTopicProfileFromJson(json);
+}
+
+/// Popular entity from backend (trending entities in recent articles).
+@freezed
+class PopularEntity with _$PopularEntity {
+  const factory PopularEntity({
+    required String name,
+    required String type,
+    String? theme,
+    @Default(0) int count,
+  }) = _PopularEntity;
+
+  factory PopularEntity.fromJson(Map<String, dynamic> json) =>
+      _$PopularEntityFromJson(json);
+}
+
+/// A single disambiguation suggestion returned by POST /disambiguate.
+@freezed
+class DisambiguationSuggestion with _$DisambiguationSuggestion {
+  const factory DisambiguationSuggestion({
+    @JsonKey(name: 'canonical_name') required String canonicalName,
+    @JsonKey(name: 'entity_type') String? entityType,
+    required String description,
+    @JsonKey(name: 'slug_parent') required String slugParent,
+  }) = _DisambiguationSuggestion;
+
+  factory DisambiguationSuggestion.fromJson(Map<String, dynamic> json) =>
+      _$DisambiguationSuggestionFromJson(json);
 }

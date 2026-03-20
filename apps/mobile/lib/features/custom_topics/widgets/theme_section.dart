@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
@@ -11,6 +12,7 @@ import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import '../providers/theme_priority_provider.dart';
+import 'entity_add_sheet.dart';
 import 'suggestion_row.dart';
 import 'topic_priority_slider.dart';
 import 'topic_row.dart';
@@ -251,6 +253,36 @@ class ThemeSection extends ConsumerWidget {
               _SuggestionsBlock(
                 themeSlug: themeSlug,
                 followedTopics: followedTopics,
+              ),
+
+              // "Ajouter un sujet niche" button
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FacteurSpacing.space4,
+                  vertical: FacteurSpacing.space2,
+                ),
+                child: GestureDetector(
+                  onTap: () =>
+                      EntityAddSheet.show(context, themeSlug: themeSlug),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                        size: 14,
+                        color: const Color(0xFFE07A5F),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Ajouter un sujet niche',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFFE07A5F),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

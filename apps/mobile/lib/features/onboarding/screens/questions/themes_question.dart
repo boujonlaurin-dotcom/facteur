@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
+import '../../../custom_topics/models/topic_models.dart';
+import '../../../custom_topics/providers/custom_topics_provider.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../data/available_subtopics.dart';
 import '../../onboarding_strings.dart';
@@ -20,6 +22,7 @@ class ThemesQuestion extends ConsumerStatefulWidget {
 class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
   Set<String> _selectedThemes = {};
   Set<String> _selectedSubtopics = {};
+  final Set<String> _selectedEntities = {};
 
   @override
   void initState() {
@@ -66,10 +69,25 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
     });
   }
 
+  void _toggleEntity(String entityName) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedEntities.contains(entityName)) {
+        _selectedEntities.remove(entityName);
+      } else {
+        _selectedEntities.add(entityName);
+      }
+    });
+  }
+
   void _continue() {
     if (_selectedThemes.isNotEmpty) {
       ref.read(onboardingProvider.notifier).selectThemesAndSubtopics(
           _selectedThemes.toList(), _selectedSubtopics.toList());
+      // Follow selected entities after onboarding
+      for (final entityName in _selectedEntities) {
+        ref.read(customTopicsProvider.notifier).followTopic(entityName);
+      }
     }
   }
 
@@ -125,14 +143,23 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
                         final isSelected = _selectedThemes.contains(theme.slug);
                         final subtopics =
                             AvailableSubtopics.byTheme[theme.slug] ?? [];
+                        final entities = isSelected
+                            ? ref
+                                    .watch(popularEntitiesProvider(theme.slug))
+                                    .valueOrNull ??
+                                <PopularEntity>[]
+                            : <PopularEntity>[];
 
                         return ThemeWithSubtopics(
                           theme: theme,
                           subtopics: subtopics,
                           isSelected: isSelected,
                           selectedSubtopics: _selectedSubtopics.toList(),
+                          popularEntities: entities,
+                          selectedEntities: _selectedEntities,
                           onThemeToggled: _toggleTheme,
                           onSubtopicToggled: _toggleSubtopic,
+                          onEntityToggled: _toggleEntity,
                         );
                       }).toList(),
                     ),

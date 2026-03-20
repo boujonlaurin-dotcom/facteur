@@ -37,5 +37,5 @@ class AlgorithmProfile {
 final algorithmProfileProvider = FutureProvider<AlgorithmProfile>((ref) async {
   final client = ref.watch(apiClientProvider);
   final response = await client.get('/users/algorithm-profile');
-  return AlgorithmProfile.fromJson(response.data);
+  return AlgorithmProfile.fromJson(response.data as Map<String, dynamic>);
 });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
@@ -9,13 +10,12 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
-import '../models/digest_mode.dart';
 import 'closure_block.dart';
 import 'coup_de_coeur_block.dart';
-import 'digest_mode_tab_selector.dart';
 import 'intro_text.dart';
 import 'pepite_block.dart';
 import 'section_divider.dart';
+import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
 import 'transition_text.dart';
 
@@ -35,17 +35,13 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(DigestItem)? onSwipeDismiss;
   final void Function(String sourceId)? onMuteSource;
   final void Function(String topic)? onMuteTopic;
-  final DigestMode mode;
-  final bool isRegenerating;
+  final bool isSerein;
   final bool usesEditorial;
   final PepiteResponse? pepite;
   final CoupDeCoeurResponse? coupDeCoeur;
   final String? headerText;
   final String? closureText;
   final String? ctaText;
-
-  /// Called when the user taps the disabled mode selector (navigate to settings).
-  final VoidCallback? onTapModeSelector;
 
   const DigestBriefingSection({
     super.key,
@@ -59,15 +55,13 @@ class DigestBriefingSection extends StatefulWidget {
     this.onSwipeDismiss,
     this.onMuteSource,
     this.onMuteTopic,
-    this.mode = DigestMode.pourVous,
-    this.isRegenerating = false,
+    this.isSerein = false,
     this.usesEditorial = false,
     this.pepite,
     this.coupDeCoeur,
     this.headerText,
     this.closureText,
     this.ctaText,
-    this.onTapModeSelector,
   });
 
   @override
@@ -154,13 +148,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modeColor = widget.mode.effectiveColor(colors.primary);
 
     // Gradient adapté au thème : dark → gradients sombres, light → gradients clairs.
-    final gradStart =
-        isDark ? widget.mode.gradientStart : widget.mode.lightGradientStart;
-    final gradEnd =
-        isDark ? widget.mode.gradientEnd : widget.mode.lightGradientEnd;
+    final gradStart = SereinColors.gradientStart(widget.isSerein, isDark: isDark);
+    final gradEnd = SereinColors.gradientEnd(widget.isSerein, isDark: isDark);
 
     // Couleurs internes : texte et icônes s'adaptent au fond du container.
     final textPrimary =
@@ -216,9 +207,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             children: [
               // Header: title+progress (left) | selector+subtitle (right)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Left: title (dynamic in editorial mode)
                   Expanded(
@@ -248,45 +239,32 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // Right: segmented control (disabled) + CTA label
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      DigestModeSegmentedControl(
-                        selectedMode: widget.mode,
-                        disabled: true,
-                        onTapDisabled: widget.onTapModeSelector,
-                      ),
-                      if (widget.onTapModeSelector != null) ...[
-                        const SizedBox(height: 4),
-                        GestureDetector(
-                          onTap: widget.onTapModeSelector,
-                          child: Text(
-                            'Modifier',
-                            style: TextStyle(
-                              color: modeColor.withValues(alpha: 0.75),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'DM Sans',
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                  const SizedBox(width: 8),
+                  // Right: serein toggle chip
+                  const SereinToggleChip(),
                 ],
               ),
               ),
               const SizedBox(height: 10),
 
-              // Layout branching: editorial, topics, or flat
-              if (widget.usesEditorial && _usesTopics)
-                _buildEditorialLayout()
-              else if (_usesTopics)
-                _buildTopicsLayout()
-              else
-                _buildFlatLayout(context),
+              // Content area with crossfade on serein toggle
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: child,
+                ),
+                child: KeyedSubtree(
+                  key: ValueKey(widget.isSerein),
+                  child: widget.usesEditorial && _usesTopics
+                      ? _buildEditorialLayout()
+                      : _usesTopics
+                          ? _buildTopicsLayout()
+                          : _buildFlatLayout(context),
+                ),
+              ),
             ],
           ),
         );
@@ -337,7 +315,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
   /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
   Widget _buildEditorialLayout() {
-    final isSerene = widget.mode == DigestMode.serein;
+    final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
     // Topics with intro text, editorial DigestCards, and transition text

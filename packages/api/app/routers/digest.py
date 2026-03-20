@@ -145,6 +145,45 @@ async def get_both_digests(
     )
 
 
+class ToggleSereinRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/toggle-serein")
+async def toggle_serein(
+    request: ToggleSereinRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Toggle serene mode preference for the current user."""
+    from uuid import uuid4
+
+    from sqlalchemy import delete
+
+    from app.models.user import UserPreference
+
+    user_uuid = UUID(current_user_id)
+
+    # Upsert: delete existing + insert new
+    await db.execute(
+        delete(UserPreference).where(
+            UserPreference.user_id == user_uuid,
+            UserPreference.preference_key == "serein_enabled",
+        )
+    )
+    db.add(
+        UserPreference(
+            id=uuid4(),
+            user_id=user_uuid,
+            preference_key="serein_enabled",
+            preference_value="true" if request.enabled else "false",
+        )
+    )
+    await db.commit()
+
+    return {"serein_enabled": request.enabled}
+
+
 @router.post("/{digest_id}/action", response_model=DigestActionResponse)
 async def apply_digest_action(
     digest_id: str,

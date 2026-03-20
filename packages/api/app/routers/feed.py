@@ -40,6 +40,7 @@ async def get_personalized_feed(
     saved_only: bool = Query(False, alias="saved"),
     has_note: bool = Query(False, alias="has_note"),
     source_id: str | None = Query(None, description="Source UUID to filter by"),
+    entity: str | None = Query(None, description="Entity canonical name to filter by"),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -68,6 +69,7 @@ async def get_personalized_feed(
         topic=topic,
         has_note=has_note,
         source_id=source_id,
+        entity=entity,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)

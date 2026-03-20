@@ -121,6 +121,7 @@ class DigestItem(BaseModel):
     description: str | None = None
     html_content: str | None = None  # In-App Reading Mode
     topics: list[str] = []  # Topics ML granulaires (slugs), vide si ML désactivé
+    entities: list[str] = []  # Entités ML (JSON strings), vide si non classifié
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: int | None = None
     published_at: datetime

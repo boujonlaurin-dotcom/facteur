@@ -285,7 +285,7 @@ class DigestService:
                 user_id=str(user_id),
             )
             digest_items = await self._get_emergency_candidates(
-                user_id=user_id, limit=target_size
+                user_id=user_id, limit=target_size, is_serene=is_serene
             )
             is_topics_format = False  # Emergency fallback always returns flat items
             fallback_time = time.time() - step_start
@@ -345,7 +345,7 @@ class DigestService:
         return await self._build_digest_response(digest, user_id)
 
     async def _get_emergency_candidates(
-        self, user_id: UUID, limit: int = 5
+        self, user_id: UUID, limit: int = 5, is_serene: bool = False
     ) -> list[Any]:
         """Last resort: get most recent content from user's followed sources first.
 
@@ -361,6 +361,7 @@ class DigestService:
 
         from app.models.content import Content
         from app.models.source import Source
+        from app.services.recommendation.filter_presets import apply_serein_filter
 
         MAX_PER_SOURCE = 2  # Same constraint as DigestSelector
         # Fetch more candidates than needed so we can apply diversity
@@ -392,6 +393,8 @@ class DigestService:
                 .order_by(Content.published_at.desc())
                 .limit(fetch_limit)
             )
+            if is_serene:
+                stmt = apply_serein_filter(stmt)
 
             result = await self.session.execute(stmt)
             all_contents = list(result.scalars().all())
@@ -414,6 +417,8 @@ class DigestService:
                 curated_query = curated_query.where(
                     Content.id.notin_(list(existing_ids))
                 )
+            if is_serene:
+                curated_query = apply_serein_filter(curated_query)
             stmt = curated_query
 
             result = await self.session.execute(stmt)
@@ -439,6 +444,8 @@ class DigestService:
                 any_source_query = any_source_query.where(
                     Content.id.notin_(list(existing_ids))
                 )
+            if is_serene:
+                any_source_query = apply_serein_filter(any_source_query)
 
             result = await self.session.execute(any_source_query)
             all_contents.extend(result.scalars().all())
@@ -789,6 +796,7 @@ class DigestService:
                 if item.content.source
                 else None,
                 "score": float(item.score),
+                "entities": item.content.entities or [],
             }
 
             # Store breakdown if available
@@ -825,7 +833,7 @@ class DigestService:
             mode=mode or "pour_vous",
             is_serene=is_serene,
             format_version="flat_v1",
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
         )
 
         self.session.add(digest)
@@ -889,7 +897,7 @@ class DigestService:
             mode=mode or "pour_vous",
             is_serene=is_serene,
             format_version="topics_v1",
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
         )
 
         self.session.add(digest)
@@ -983,7 +991,7 @@ class DigestService:
             mode=mode or "pour_vous",
             is_serene=is_serene,
             format_version="editorial_v1",
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(UTC),
         )
 
         self.session.add(digest)
@@ -1161,6 +1169,7 @@ class DigestService:
                     description=content.description or None,
                     html_content=content.html_content,
                     topics=content.topics or [],
+                    entities=content.entities or [],
                     content_type=content.content_type,
                     duration_seconds=content.duration_seconds,
                     published_at=content.published_at,
@@ -1297,6 +1306,7 @@ class DigestService:
                     description=content.description or None,
                     html_content=content.html_content,
                     topics=content.topics or [],
+                    entities=content.entities or [],
                     content_type=content.content_type,
                     duration_seconds=content.duration_seconds,
                     published_at=content.published_at,
@@ -1599,6 +1609,7 @@ class DigestService:
                     description=content.description or None,
                     html_content=content.html_content,
                     topics=content.topics or [],
+                    entities=content.entities or [],
                     content_type=content.content_type,
                     duration_seconds=content.duration_seconds,
                     published_at=content.published_at,

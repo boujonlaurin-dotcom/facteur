@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../config/theme.dart';
+import '../../../../config/topic_labels.dart';
+import '../../custom_topics/models/topic_models.dart';
 import '../data/available_subtopics.dart';
 import '../providers/onboarding_provider.dart';
 
@@ -9,8 +11,11 @@ class ThemeWithSubtopics extends StatelessWidget {
   final List<SubtopicOption> subtopics;
   final bool isSelected;
   final List<String> selectedSubtopics;
+  final List<PopularEntity> popularEntities;
+  final Set<String> selectedEntities;
   final void Function(String themeSlug) onThemeToggled;
   final void Function(String themeSlug, String subtopicSlug) onSubtopicToggled;
+  final void Function(String entityName)? onEntityToggled;
 
   const ThemeWithSubtopics({
     super.key,
@@ -18,8 +23,11 @@ class ThemeWithSubtopics extends StatelessWidget {
     required this.subtopics,
     required this.isSelected,
     required this.selectedSubtopics,
+    this.popularEntities = const [],
+    this.selectedEntities = const {},
     required this.onThemeToggled,
     required this.onSubtopicToggled,
+    this.onEntityToggled,
   });
 
   @override
@@ -44,33 +52,43 @@ class ThemeWithSubtopics extends StatelessWidget {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic, // Smoother curve
           alignment: Alignment.topCenter,
-          child: isSelected && subtopics.isNotEmpty
+          child: isSelected && (subtopics.isNotEmpty || popularEntities.isNotEmpty)
               ? Padding(
                   padding: const EdgeInsets.only(
                     top: FacteurSpacing.space2,
                     bottom: FacteurSpacing.space2,
                   ),
                   child: Container(
-                    // Fond subtil pour regrouper les sous-thèmes ? Optionnel.
-                    // Pour l'instant on garde simple.
                     constraints:
-                        const BoxConstraints(maxWidth: 300), // Limite largeur
+                        const BoxConstraints(maxWidth: 300),
                     child: Wrap(
                       spacing: FacteurSpacing.space2,
                       runSpacing: FacteurSpacing.space2,
                       alignment: WrapAlignment.center,
-                      children: subtopics.map((subtopic) {
-                        final isSubSelected =
-                            selectedSubtopics.contains(subtopic.slug);
+                      children: [
+                        ...subtopics.map((subtopic) {
+                          final isSubSelected =
+                              selectedSubtopics.contains(subtopic.slug);
 
-                        return SubtopicChip(
-                          subtopic: subtopic,
-                          isSelected: isSubSelected,
-                          onTap: () =>
-                              onSubtopicToggled(theme.slug, subtopic.slug),
-                          themeColor: theme.color,
-                        );
-                      }).toList(),
+                          return SubtopicChip(
+                            subtopic: subtopic,
+                            isSelected: isSubSelected,
+                            onTap: () =>
+                                onSubtopicToggled(theme.slug, subtopic.slug),
+                            themeColor: theme.color,
+                          );
+                        }),
+                        ...popularEntities.map((entity) {
+                          final isEntitySelected =
+                              selectedEntities.contains(entity.name);
+                          return _EntityChip(
+                            entity: entity,
+                            isSelected: isEntitySelected,
+                            onTap: () => onEntityToggled?.call(entity.name),
+                            themeColor: theme.color,
+                          );
+                        }),
+                      ],
                     ),
                   ),
                 )
@@ -193,6 +211,69 @@ class SubtopicChip extends StatelessWidget {
                         : context.facteurColors.textSecondary,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                     fontSize: 13, // Increased font size as requested
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EntityChip extends StatelessWidget {
+  final PopularEntity entity;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Color themeColor;
+
+  const _EntityChip({
+    required this.entity,
+    required this.isSelected,
+    required this.onTap,
+    required this.themeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? themeColor.withValues(alpha: 0.1)
+              : context.facteurColors.surfacePaper,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? themeColor.withValues(alpha: 0.5)
+                : context.facteurColors.surfaceElevated,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              entity.name,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: isSelected
+                        ? themeColor
+                        : context.facteurColors.textSecondary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 13,
+                  ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              getEntityTypeLabel(entity.type),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: context.facteurColors.textTertiary,
+                    fontSize: 9,
                   ),
             ),
           ],
