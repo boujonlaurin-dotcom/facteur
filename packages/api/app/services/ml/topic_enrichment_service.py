@@ -273,7 +273,10 @@ class TopicEnrichmentService:
         )
 
     async def disambiguate(
-        self, name: str, *, theme_hint: str | None = None,
+        self,
+        name: str,
+        *,
+        theme_hint: str | None = None,
     ) -> list[DisambiguationOption]:
         """Return 1-5 disambiguation suggestions for an ambiguous topic name."""
         if not name or not name.strip():
@@ -301,7 +304,9 @@ class TopicEnrichmentService:
         ]
 
     async def _disambiguate_via_llm(
-        self, name: str, theme_hint: str | None,
+        self,
+        name: str,
+        theme_hint: str | None,
     ) -> list[DisambiguationOption]:
         """Call Mistral API for topic disambiguation."""
         client = self._get_client()
