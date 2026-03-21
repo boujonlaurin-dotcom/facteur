@@ -149,8 +149,8 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                accent.withValues(alpha: isDark ? 0.20 : 0.25),
+                            color: accent.withValues(
+                                alpha: isDark ? 0.20 : 0.25),
                             blurRadius: 8,
                             offset: const Offset(0, 1),
                           ),
@@ -167,7 +167,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                 // Segment labels
                 Row(
                   children: [
-                    const SizedBox(width: SereinToggleChip._padding),
+                    SizedBox(width: SereinToggleChip._padding),
                     _buildSegment(
                       width: halfWidth,
                       icon: SereinColors.normalIcon,
@@ -186,7 +186,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                       t: t,
                       onTap: !_isSerein ? _toggle : null,
                     ),
-                    const SizedBox(width: SereinToggleChip._padding),
+                    SizedBox(width: SereinToggleChip._padding),
                   ],
                 ),
               ],

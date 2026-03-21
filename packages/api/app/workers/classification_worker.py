@@ -202,6 +202,7 @@ class ClassificationWorker:
             all_results: list[dict] = []
 
             if classifier and classifier.is_ready() and batch_items:
+                # Step 1: Classify (topics + serene only)
                 all_results = await classifier.classify_batch_async(batch_items)
 
                 # Retry individually for each article that got empty topics
@@ -223,6 +224,20 @@ class ClassificationWorker:
                         )
                         if result.get("topics"):
                             all_results[idx] = result
+
+                # Step 2: Extract entities (separate API call)
+                try:
+                    all_entities = await classifier.extract_entities_batch_async(
+                        batch_items
+                    )
+                    for idx, entities in enumerate(all_entities):
+                        if idx < len(all_results):
+                            all_results[idx]["entities"] = entities
+                except Exception as e:
+                    logger.warning(
+                        "classification_worker.entity_extraction_failed",
+                        error=str(e),
+                    )
             else:
                 all_results = [
                     {"topics": [], "serene": None, "entities": []} for _ in batch_items

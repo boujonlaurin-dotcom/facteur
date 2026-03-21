@@ -81,48 +81,25 @@
 
 ---
 
-## 🚀 ÉTAPE 3: PR Lifecycle (CI → Staging → Review → Merge)
+## 🚀 ÉTAPE 3: PR Lifecycle (CI → Review → Merge)
 
-**Règle bloquante** : Aucun merge vers `main` sans CI green + staging verified + Peer Review APPROVED.
+**Règle bloquante** : Aucun merge vers `main` sans CI green + Peer Review APPROVED.
 
-**Flow unidirectionnel** : `feature` → `staging` → `main` (jamais l'inverse).
+**Flow direct** : `feature-branch` → PR vers `main` → merge.
 
-### 3.1 Ouvrir la PR vers Staging
+### 3.1 Ouvrir la PR vers Main
 
 ```bash
 git push origin <branch-name>
-gh pr create --base staging --title "<type>: <description>" --body "$(cat .github/pull_request_template.md)"
+gh pr create --base main --title "<type>: <description>" --body "$(cat .github/pull_request_template.md)"
 ```
 
 CI s'exécute automatiquement : `lint` + `test` + `build` (Docker) + `verify` (BMAD).
 **Ne pas continuer tant que CI est rouge.**
 
-### 3.2 Staging : Review + Smoke Tests
-
-1. **Peer Review Conductor** sur la PR vers staging (workspace séparé)
-2. **Si APPROVED** → merge (squash) vers `staging`
-3. **Railway auto-déploie staging** via webhook
-4. **`deploy-staging.yml`** se déclenche automatiquement : smoke tests (health, readiness, environment check)
-
-Fallback manuel si besoin : `gh workflow run deploy-staging.yml --ref staging`
-
-### 3.3 Promouvoir en Production (staging → main)
-
-Après validation staging :
-
-```bash
-gh pr create --base main --head staging --title "Release: <description>"
-```
-
-CI re-vérifie sur la PR vers main. Merge via **GitHub UI** (bouton "Squash and merge") ou CLI :
-```bash
-gh pr merge <PR-number> --squash
-```
-
 Railway auto-déploie sur production via push to main.
-`promote-to-production.yml` lance automatiquement les smoke tests production.
 
-### 3.4 Handoff : l'agent dev prépare la review
+### 3.2 Handoff : l'agent dev prépare la review
 
 Avant de STOP, l'agent dev **écrit un résumé de handoff** dans `.context/pr-handoff.md` :
 
@@ -136,7 +113,7 @@ Avant de STOP, l'agent dev **écrit un résumé de handoff** dans `.context/pr-h
 
 Puis l'agent STOP et notifie : **"PR #XX prête pour Peer Review — handoff dans `.context/pr-handoff.md`"**
 
-### 3.5 Peer Review Conductor
+### 3.3 Peer Review Conductor
 
 1. **L'utilisateur ouvre un workspace Conductor séparé** sur la branche
 2. **Prompt de review** (le reviewer lit automatiquement `.context/pr-handoff.md` + le diff) :
@@ -151,11 +128,9 @@ Puis l'agent STOP et notifie : **"PR #XX prête pour Peer Review — handoff dan
 
 ### Règles
 
-- **PRs de features ciblent toujours `staging`** (jamais `main` directement)
-- **PRs vers `main`** uniquement depuis `staging` (promotion)
+- **PRs ciblent toujours `main`** directement
 - L'agent de review est **un workspace Conductor séparé** (pas le même agent qui a codé)
 - L'agent de dev **NE DOIT PAS** se self-review ni merger sans ce processus
-- PR docs-only (stories, README) : skip staging (cocher "N/A" dans la PR template)
 
 ---
 
