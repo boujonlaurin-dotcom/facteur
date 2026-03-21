@@ -89,6 +89,7 @@ class UserApiService {
       'daily_article_count': answers.dailyArticleCount,
       'digest_mode': answers.digestMode,
       'themes': answers.themes,
+      'subtopics': answers.subtopics,
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
     };

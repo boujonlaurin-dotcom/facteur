@@ -4,7 +4,8 @@ import '../../../core/api/providers.dart';
 import 'personalized_filters_provider.dart';
 
 /// Mapping des thèmes vers leurs emojis et labels FR.
-const _themeMetadata = <String, ({String label, String emoji})>{
+/// Exposed for InterestFilterSheet to display all available themes.
+const themeMetadata = <String, ({String label, String emoji})>{
   'tech': (label: 'Technologie', emoji: '💻'),
   'science': (label: 'Science', emoji: '🔬'),
   'culture': (label: 'Culture', emoji: '🎨'),
@@ -38,7 +39,7 @@ final themeFiltersProvider =
 
       final themeFilters = themes.map<FilterConfig>((t) {
         final slug = t['interest_slug'] as String;
-        final meta = _themeMetadata[slug];
+        final meta = themeMetadata[slug];
         final label = meta != null ? meta.label : slug;
         final description = meta != null
             ? 'Tous les contenus ${meta.label}'

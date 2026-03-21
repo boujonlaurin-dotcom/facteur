@@ -181,7 +181,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
       children: [
         // Title
         Text(
-          'Ajouter un sujet niche',
+          'Ajouter un sujet personnalisé',
           style: textTheme.displaySmall?.copyWith(
             fontSize: 20,
             fontWeight: FontWeight.w700,

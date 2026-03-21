@@ -67,7 +67,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
   /// Follow a new topic by name.
   /// Optimistic: adds a placeholder immediately, replaces with server response.
   /// [slugParent] allows immediate slug matching before the API responds.
-  Future<UserTopicProfile?> followTopic(String name, {String? slugParent}) =>
+  /// [priorityMultiplier] restores a specific priority (e.g. undo after unfollow).
+  Future<UserTopicProfile?> followTopic(String name, {String? slugParent, double? priorityMultiplier}) =>
       _serialized(() async {
     final repo = ref.read(topicRepositoryProvider);
 
@@ -79,6 +80,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
       slugParent: slugParent,
+      priorityMultiplier: priorityMultiplier ?? 1.0,
     );
 
     if (state.hasValue) {
@@ -89,7 +91,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followTopic(name);
+      final created = await repo.followTopic(name, priorityMultiplier: priorityMultiplier);
 
       // Replace placeholder with server-enriched profile
       if (state.hasValue) {

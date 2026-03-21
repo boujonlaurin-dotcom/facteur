@@ -10,13 +10,14 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
+from app.models.user import UserSubtopic
 from app.models.user_topic_profile import UserTopicProfile
 from app.services.ml.classification_service import (
     SLUG_TO_LABEL,
@@ -37,6 +38,18 @@ router = APIRouter()
 class CreateTopicRequest(BaseModel):
     name: str
     entity_type: str | None = None
+    priority_multiplier: float | None = None
+
+    @field_validator("priority_multiplier")
+    @classmethod
+    def validate_create_multiplier(cls, v: float | None) -> float | None:
+        if v is not None:
+            allowed = {0.5, 1.0, 2.0}
+            if v not in allowed:
+                raise ValueError(
+                    f"priority_multiplier doit être 0.5, 1.0 ou 2.0 (reçu: {v})"
+                )
+        return v
 
     @field_validator("name")
     @classmethod
@@ -260,7 +273,9 @@ async def create_topic(
         entity_type=entity_type,
         canonical_name=canonical_name,
         source_type="explicit",
-        priority_multiplier=1.0,
+        priority_multiplier=request.priority_multiplier
+        if request.priority_multiplier is not None
+        else 1.0,
         composite_score=0.0,
     )
     db.add(topic)
@@ -329,12 +344,23 @@ async def delete_topic(
     if not topic:
         raise HTTPException(status_code=404, detail="Topic non trouvé")
 
+    # Also remove matching UserSubtopic so the algorithm
+    # no longer weights this topic in recommendations
+    slug = topic.slug_parent
     await db.delete(topic)
+    if slug:
+        await db.execute(
+            delete(UserSubtopic).where(
+                UserSubtopic.user_id == user_uuid,
+                UserSubtopic.topic_slug == slug,
+            )
+        )
 
     logger.info(
         "custom_topic_deleted",
         user_id=current_user_id,
         topic_id=str(topic_id),
+        slug_parent=slug,
     )
 
     return {"message": "Topic supprimé avec succès"}

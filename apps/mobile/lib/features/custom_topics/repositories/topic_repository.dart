@@ -31,11 +31,13 @@ class TopicRepository {
 
   /// POST personalization/topics/ → UserTopicProfile (LLM-enriched)
   /// Trailing slash required: backend uses redirect_slashes=False.
-  Future<UserTopicProfile> followTopic(String name) async {
+  Future<UserTopicProfile> followTopic(String name, {double? priorityMultiplier}) async {
     try {
+      final body = <String, dynamic>{'name': name};
+      if (priorityMultiplier != null) body['priority_multiplier'] = priorityMultiplier;
       final data = await _apiClient.post(
         'personalization/topics/',
-        body: {'name': name},
+        body: body,
       );
       return UserTopicProfile.fromJson(data as Map<String, dynamic>);
     } on DioException catch (e) {
