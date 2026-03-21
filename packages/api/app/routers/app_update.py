@@ -47,7 +47,7 @@ async def _fetch_latest_release() -> dict:
         resp = await client.get(
             f"https://api.github.com/repos/{settings.github_repo}/releases",
             headers=headers,
-            params={"per_page": 5},
+            params={"per_page": 20},  # 20 to ensure Android APKs aren't pushed out by iOS releases
         )
 
     if resp.status_code != 200:
@@ -65,6 +65,7 @@ async def _fetch_latest_release() -> dict:
             r
             for r in releases
             if not r.get("draft", False)
+            and r.get("tag_name", "").startswith("beta-")  # skip ios-beta-* releases
             and any(a["name"].endswith(".apk") for a in r.get("assets", []))
         ),
         None,
