@@ -48,6 +48,7 @@ import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
+import '../../../shared/widgets/mode_accent.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -922,6 +923,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: ModeAccent(
+                  isSerein: ref.watch(sereinToggleProvider).enabled,
                 ),
               ),
             ),

@@ -4,6 +4,16 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/api/api_client.dart';
 
+/// Thrown when Android refuses to install the APK (e.g. signature mismatch).
+class AppUpdateInstallException implements Exception {
+  final String message;
+  final bool isIncompatible;
+  AppUpdateInstallException({required this.message, this.isIncompatible = false});
+
+  @override
+  String toString() => 'AppUpdateInstallException: $message';
+}
+
 /// Handles APK download and installation trigger.
 class AppUpdateService {
   final ApiClient _apiClient;
@@ -40,7 +50,10 @@ class AppUpdateService {
     // 4. Trigger Android install intent
     final result = await OpenFilex.open(filePath);
     if (result.type != ResultType.done) {
-      throw Exception('Failed to open APK: ${result.message}');
+      throw AppUpdateInstallException(
+        message: result.message,
+        isIncompatible: true,
+      );
     }
   }
 }

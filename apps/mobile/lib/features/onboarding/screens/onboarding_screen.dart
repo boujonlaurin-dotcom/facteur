@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/auth/auth_state.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_progress_bar.dart';
 import '../widgets/reaction_screen.dart';
@@ -51,7 +52,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
               child: Row(
                 children: [
-                  if (state.currentQuestionIndex > 0)
+                  if (state.currentQuestionIndex > 0 ||
+                      state.currentSection != OnboardingSection.overview)
                     IconButton(
                       onPressed: () {
                         ref.read(onboardingProvider.notifier).goBack();
@@ -67,7 +69,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       section: state.currentSection,
                     ),
                   ),
-                  const SizedBox(width: 48),
+                  if (state.isRestart)
+                    IconButton(
+                      onPressed: () => _showCancelConfirmation(context),
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: 'Quitter le questionnaire',
+                    )
+                  else
+                    const SizedBox(width: 48),
                 ],
               ),
             ),
@@ -97,6 +106,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showCancelConfirmation(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Annuler les modifications ?'),
+        content: const Text(
+          'Êtes-vous sûr ? Vos modifications seront perdues.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Continuer'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              ref.read(authStateProvider.notifier).setNeedsOnboarding(false);
+            },
+            child: const Text('Quitter'),
+          ),
+        ],
       ),
     );
   }
