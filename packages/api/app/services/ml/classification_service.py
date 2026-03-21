@@ -247,15 +247,6 @@ serene = true : sujet positif, neutre, culturel, scientifique, lifestyle, divert
 serene = false : violence, guerre, attentat, meurtre, catastrophe, crise grave, agression, mort.
 En cas de doute, marque false.
 
-## ENTITÉS NOMMÉES
-Pour chaque article, extrais 3 à 5 entités nommées principales.
-Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
-Règles :
-- Normalise les noms (E. Macron → Emmanuel Macron, GPT → OpenAI)
-- Désambiguïse selon le contexte (Apple = ORG si tech, pas fruit)
-- Ignore les entités trop génériques (France, Internet, Europe)
-- Si aucune entité pertinente, retourne un array vide
-
 ## RÈGLES CRITIQUES
 1. Article sur un produit tech (Samsung, iPhone) → "tech" PAS "asia"/"geopolitics"
 2. Article sur une série/film → "cinema" PAS "ai"/"tech"
@@ -267,8 +258,7 @@ Règles :
 8. Le premier topic est le PLUS pertinent
 
 ## FORMAT
-Réponds en JSON array. Chaque élément :
-{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
+Réponds en JSON array. Chaque élément : {"topics": ["slug1", "slug2"], "serene": true/false}
 Pas de texte avant ou après."""
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
@@ -359,7 +349,7 @@ class ClassificationService:
                         {"role": "user", "content": text},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 200,
+                    "max_tokens": 100,
                 },
             )
             response.raise_for_status()
@@ -425,7 +415,7 @@ class ClassificationService:
                         {"role": "user", "content": batch_prompt},
                     ],
                     "temperature": 0.0,
-                    "max_tokens": 200 * len(items),
+                    "max_tokens": 80 * len(items),
                 },
             )
             response.raise_for_status()
@@ -485,9 +475,8 @@ class ClassificationService:
         return (
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
-            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
-            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
-            '{"topics": ["ai", "tech"], "serene": true, "entities": [{"name": "OpenAI", "type": "ORG"}]}]\n\n'
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false}, '
+            '{"topics": ["ai", "tech"], "serene": true}]\n\n'
             f"{articles_text}"
         )
 
@@ -507,11 +496,10 @@ class ClassificationService:
                 serene = parsed.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
-                entities = _validate_entities(parsed.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
-                    "entities": entities,
+                    "entities": [],
                 }
             if (
                 isinstance(parsed, list)
@@ -527,11 +515,10 @@ class ClassificationService:
                 serene = item.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
-                entities = _validate_entities(item.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
-                    "entities": entities,
+                    "entities": [],
                 }
         except (json.JSONDecodeError, TypeError):
             pass
@@ -558,7 +545,7 @@ class ClassificationService:
                         raw=raw[:200],
                     )
 
-                # New format: array of objects with "topics", "serene" and "entities"
+                # Array of objects with "topics" and "serene"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
                     for item in parsed[:expected_count]:
@@ -572,12 +559,11 @@ class ClassificationService:
                             serene = item.get("serene")
                             if not isinstance(serene, bool):
                                 serene = None
-                            entities = _validate_entities(item.get("entities", []))
                             results.append(
                                 {
                                     "topics": topics[:top_k],
                                     "serene": serene,
-                                    "entities": entities,
+                                    "entities": [],
                                 }
                             )
                         else:
@@ -650,6 +636,92 @@ class ClassificationService:
                 total=len(results),
                 ratio=round(most_common_count / len(results), 2),
             )
+
+    async def extract_entities_batch_async(
+        self,
+        items: list[dict],
+    ) -> list[list[dict]]:
+        """Extract named entities from a batch of articles (separate from classification).
+
+        Args:
+            items: List of dicts with 'title', 'description', 'source_name'
+
+        Returns:
+            List of entity lists, one per article.
+        """
+        empty = [[] for _ in items]
+        if not self._ready or not items:
+            return empty
+
+        parts = []
+        for i, item in enumerate(items):
+            title = _clean_text(item.get("title", ""))
+            desc = _clean_text(item.get("description", "") or "")
+            if len(desc) > 200:
+                desc = desc[:200] + "..."
+            text = f"{title}. {desc}".strip() if desc else title
+            parts.append(f"[{i + 1}] {text}")
+
+        prompt = (
+            f"Extrais les entités nommées de ces {len(items)} articles.\n"
+            f"Réponds en JSON array de exactement {len(items)} éléments.\n"
+            "Chaque élément est un array d'entités: "
+            '[{"name": "Emmanuel Macron", "type": "PERSON"}]\n'
+            "Types autorisés: PERSON, ORG, EVENT, LOCATION, PRODUCT\n"
+            "3 à 5 entités par article. Normalise les noms. "
+            "Ignore les entités trop génériques (France, Internet).\n\n"
+            + "\n\n".join(parts)
+        )
+
+        try:
+            client = self._get_client()
+            response = await client.post(
+                MISTRAL_API_URL,
+                json={
+                    "model": "mistral-small-latest",
+                    "messages": [
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 120 * len(items),
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            choices = data.get("choices") or []
+            if not choices:
+                return empty
+            raw = (choices[0].get("message") or {}).get("content") or ""
+            raw = raw.strip()
+            if not raw:
+                return empty
+
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                return empty
+
+            results: list[list[dict]] = []
+            for item in parsed[: len(items)]:
+                if isinstance(item, list):
+                    results.append(_validate_entities(item))
+                elif isinstance(item, dict) and "entities" in item:
+                    results.append(_validate_entities(item["entities"]))
+                else:
+                    results.append([])
+
+            while len(results) < len(items):
+                results.append([])
+
+            return results
+
+        except Exception as e:
+            log.error(
+                "classification_service.entity_extraction_error",
+                error=str(e),
+                count=len(items),
+            )
+            return empty
 
     def is_ready(self) -> bool:
         """Retourne True si le service est configuré et prêt."""
