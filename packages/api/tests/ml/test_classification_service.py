@@ -2,15 +2,19 @@
 Unit tests for ClassificationService.
 
 Tests the Mistral LLM-based classification: prompt building, response parsing,
-distribution checks, and topic validation.
+distribution checks, topic validation, API retry/backoff, and entity extraction.
 """
 
 import json
 import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.services.ml.classification_service import (
+    CLASSIFICATION_MODEL,
+    ENTITY_SYSTEM_PROMPT,
     VALID_TOPIC_SLUGS,
     ClassificationService,
     _clean_text,
@@ -196,7 +200,11 @@ class TestBuildBatchPrompt:
     def test_includes_source_name(self):
         """Source name is included in prompt when provided."""
         items = [
-            {"title": "Match PSG-OM", "description": "Ligue 1", "source_name": "L'Équipe"},
+            {
+                "title": "Match PSG-OM",
+                "description": "Ligue 1",
+                "source_name": "L'Équipe",
+            },
         ]
         prompt = self.service._build_batch_prompt(items)
         assert "[Source: L'Équipe]" in prompt
@@ -287,3 +295,182 @@ class TestCheckDistribution:
             {"topics": [], "serene": None},
         ]
         self.service._check_distribution(results)
+
+
+class TestCallMistral:
+    """Tests for _call_mistral retry/backoff and error handling."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+        self.service._api_key = "test-key"
+        self.service._ready = True
+        self.service._client = None
+
+    @pytest.mark.asyncio
+    async def test_returns_data_on_success(self):
+        """Successful API call returns parsed JSON."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '{"topics": ["sport"]}'}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+        }
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        self.service._client = mock_client
+
+        result = await self.service._call_mistral({"model": "test", "max_tokens": 100})
+        assert result is not None
+        assert result["choices"][0]["message"]["content"] == '{"topics": ["sport"]}'
+
+    @pytest.mark.asyncio
+    async def test_retries_on_429(self):
+        """429 responses trigger exponential backoff retries."""
+        error_response = MagicMock()
+        error_response.status_code = 429
+        error_response.text = "rate limited"
+
+        success_response = MagicMock()
+        success_response.raise_for_status = MagicMock()
+        success_response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {},
+        }
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [
+            httpx.HTTPStatusError("429", request=MagicMock(), response=error_response),
+            success_response,
+        ]
+        self.service._client = mock_client
+
+        with patch(
+            "app.services.ml.classification_service.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            result = await self.service._call_mistral(
+                {"model": "test", "max_tokens": 50}
+            )
+
+        assert result is not None
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_non_429_http_error(self):
+        """Non-429 HTTP errors return None immediately."""
+        error_response = MagicMock()
+        error_response.status_code = 500
+        error_response.text = "server error"
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.HTTPStatusError(
+            "500", request=MagicMock(), response=error_response
+        )
+        self.service._client = mock_client
+
+        result = await self.service._call_mistral({"model": "test", "max_tokens": 50})
+        assert result is None
+        assert mock_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_timeout(self):
+        """Timeout returns None."""
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.TimeoutException("timeout")
+        self.service._client = mock_client
+
+        result = await self.service._call_mistral({"model": "test", "max_tokens": 50})
+        assert result is None
+
+
+class TestResponseFormatInPayloads:
+    """Verify response_format is included in all API call payloads."""
+
+    def setup_method(self):
+        self.service = ClassificationService.__new__(ClassificationService)
+        self.service._api_key = "test-key"
+        self.service._ready = True
+        self.service._client = None
+
+    @pytest.mark.asyncio
+    async def test_classify_async_includes_response_format(self):
+        """classify_async payload includes response_format json_object."""
+        captured_payload = {}
+
+        async def capture_post(url, json=None):
+            captured_payload.update(json)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "choices": [
+                    {"message": {"content": '{"topics": ["sport"], "serene": true}'}}
+                ],
+                "usage": {},
+            }
+            return resp
+
+        mock_client = AsyncMock()
+        mock_client.post = capture_post
+        self.service._client = mock_client
+
+        await self.service.classify_async("Match PSG-OM")
+        assert captured_payload.get("response_format") == {"type": "json_object"}
+        assert captured_payload.get("model") == CLASSIFICATION_MODEL
+
+    @pytest.mark.asyncio
+    async def test_classify_batch_includes_response_format(self):
+        """classify_batch_async payload includes response_format json_object."""
+        captured_payload = {}
+
+        async def capture_post(url, json=None):
+            captured_payload.update(json)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "choices": [
+                    {"message": {"content": '[{"topics": ["sport"], "serene": true}]'}}
+                ],
+                "usage": {},
+            }
+            return resp
+
+        mock_client = AsyncMock()
+        mock_client.post = capture_post
+        self.service._client = mock_client
+
+        await self.service.classify_batch_async(
+            [{"title": "Test", "description": "", "source_name": ""}]
+        )
+        assert captured_payload.get("response_format") == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_entity_extraction_includes_response_format_and_system_prompt(self):
+        """extract_entities_batch_async includes response_format and ENTITY_SYSTEM_PROMPT."""
+        captured_payload = {}
+
+        async def capture_post(url, json=None):
+            captured_payload.update(json)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "choices": [
+                    {"message": {"content": '[[{"name": "Macron", "type": "PERSON"}]]'}}
+                ],
+                "usage": {},
+            }
+            return resp
+
+        mock_client = AsyncMock()
+        mock_client.post = capture_post
+        self.service._client = mock_client
+
+        await self.service.extract_entities_batch_async(
+            [{"title": "Test", "description": "", "source_name": ""}]
+        )
+        assert captured_payload.get("response_format") == {"type": "json_object"}
+        # Verify system prompt is present
+        messages = captured_payload.get("messages", [])
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        assert len(system_msgs) == 1
+        assert system_msgs[0]["content"] == ENTITY_SYSTEM_PROMPT

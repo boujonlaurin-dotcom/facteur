@@ -7,6 +7,7 @@ Benefits: ~3000+ articles/hour (vs ~150), better quality (contextual), no local 
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import re
@@ -261,7 +262,20 @@ En cas de doute, marque false.
 Réponds en JSON array. Chaque élément : {"topics": ["slug1", "slug2"], "serene": true/false}
 Pas de texte avant ou après."""
 
+CLASSIFICATION_MODEL = "mistral-small-latest"
+
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+ENTITY_SYSTEM_PROMPT = """\
+Tu es un extracteur d'entités nommées expert pour articles de presse francophone.
+Extrais 3 à 5 entités nommées principales de chaque article.
+Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
+Règles :
+- Normalise les noms (E. Macron → Emmanuel Macron)
+- Désambiguïse selon contexte (Apple = ORG si tech)
+- Ignore les entités trop génériques (France, Internet, Europe)
+- Si aucune entité pertinente, retourne un array vide
+Réponds en JSON array. Pas de texte avant ou après."""
 
 # Regex to strip HTML tags
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -300,7 +314,7 @@ class ClassificationService:
                 message="MISTRAL_API_KEY not set. Classification will be unavailable.",
             )
         else:
-            log.info("classification_service.initialized", model="mistral-small-latest")
+            log.info("classification_service.initialized", model=CLASSIFICATION_MODEL)
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -312,6 +326,67 @@ class ClassificationService:
                 },
             )
         return self._client
+
+    async def _call_mistral(
+        self, payload: dict, *, max_retries: int = 3
+    ) -> dict | None:
+        """Call Mistral API with exponential backoff on 429.
+
+        Returns parsed JSON response dict, or None on failure.
+        """
+        client = self._get_client()
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(MISTRAL_API_URL, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                # Log usage tokens + truncation detection
+                usage = data.get("usage", {})
+                max_tokens = payload.get("max_tokens")
+                completion_tokens = usage.get("completion_tokens")
+                log.info(
+                    "classification.api_usage",
+                    model=payload.get("model"),
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=completion_tokens,
+                )
+                if max_tokens and completion_tokens == max_tokens:
+                    log.warning(
+                        "classification.truncated",
+                        max_tokens=max_tokens,
+                        completion_tokens=completion_tokens,
+                    )
+
+                return data
+
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                if status == 429 and attempt < max_retries - 1:
+                    delay = 2**attempt  # 1s, 2s, 4s
+                    log.warning(
+                        "classification.rate_limited",
+                        attempt=attempt,
+                        delay=delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                log.error(
+                    "classification.http_error",
+                    status_code=status,
+                    body=e.response.text[:300],
+                )
+                return None
+            except json.JSONDecodeError as e:
+                log.error("classification.json_error", error=str(e))
+                return None
+            except httpx.TimeoutException:
+                log.error("classification.timeout", attempt=attempt)
+                return None
+            except Exception as e:
+                log.error("classification.unexpected", error=str(e))
+                return None
+        return None
 
     async def classify_async(
         self,
@@ -338,50 +413,42 @@ class ClassificationService:
         if source_name:
             text = f"[Source: {source_name}] {text}"
 
-        try:
-            client = self._get_client()
-            response = await client.post(
-                MISTRAL_API_URL,
-                json={
-                    "model": "mistral-small-latest",
-                    "messages": [
-                        {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
-                        {"role": "user", "content": text},
-                    ],
-                    "temperature": 0.0,
-                    "max_tokens": 100,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            choices = data.get("choices") or []
-            if not choices:
-                log.warning("classification_service.empty_choices", title=title[:100])
-                return _EMPTY_RESULT
-            raw_answer = (choices[0].get("message") or {}).get("content") or ""
-            raw_answer = raw_answer.strip()
-            if not raw_answer:
-                log.warning("classification_service.empty_content", title=title[:100])
-                return _EMPTY_RESULT
-
-            result = self._parse_topics(raw_answer, top_k)
-
-            log.debug(
-                "classification_service.classified",
-                text=text[:100],
-                raw=raw_answer,
-                topics=result.get("topics"),
-                serene=result.get("serene"),
-            )
-
-            return result
-
-        except Exception as e:
-            log.error(
-                "classification_service.classify_error", error=str(e), title=title[:100]
-            )
+        data = await self._call_mistral(
+            {
+                "model": CLASSIFICATION_MODEL,
+                "messages": [
+                    {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 120,
+                "response_format": {"type": "json_object"},
+            }
+        )
+        if not data:
             return _EMPTY_RESULT
+
+        choices = data.get("choices") or []
+        if not choices:
+            log.warning("classification_service.empty_choices", title=title[:100])
+            return _EMPTY_RESULT
+        raw_answer = (choices[0].get("message") or {}).get("content") or ""
+        raw_answer = raw_answer.strip()
+        if not raw_answer:
+            log.warning("classification_service.empty_content", title=title[:100])
+            return _EMPTY_RESULT
+
+        result = self._parse_topics(raw_answer, top_k)
+
+        log.debug(
+            "classification_service.classified",
+            text=text[:100],
+            raw=raw_answer,
+            topics=result.get("topics"),
+            serene=result.get("serene"),
+        )
+
+        return result
 
     async def classify_batch_async(
         self,
@@ -404,54 +471,42 @@ class ClassificationService:
 
         batch_prompt = self._build_batch_prompt(items)
 
-        try:
-            client = self._get_client()
-            response = await client.post(
-                MISTRAL_API_URL,
-                json={
-                    "model": "mistral-small-latest",
-                    "messages": [
-                        {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
-                        {"role": "user", "content": batch_prompt},
-                    ],
-                    "temperature": 0.0,
-                    "max_tokens": 80 * len(items),
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            choices = data.get("choices") or []
-            if not choices:
-                log.warning(
-                    "classification_service.batch_empty_choices", count=len(items)
-                )
-                return empty_results
-            raw_answer = (choices[0].get("message") or {}).get("content") or ""
-            raw_answer = raw_answer.strip()
-            if not raw_answer:
-                log.warning(
-                    "classification_service.batch_empty_content", count=len(items)
-                )
-                return empty_results
-
-            results = self._parse_batch_response(raw_answer, len(items), top_k)
-
-            self._check_distribution(results)
-
-            log.info(
-                "classification_service.batch_classified",
-                count=len(items),
-                successful=sum(1 for r in results if r.get("topics")),
-            )
-
-            return results
-
-        except Exception as e:
-            log.error(
-                "classification_service.batch_error", error=str(e), count=len(items)
-            )
+        data = await self._call_mistral(
+            {
+                "model": CLASSIFICATION_MODEL,
+                "messages": [
+                    {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
+                    {"role": "user", "content": batch_prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 100 * len(items),
+                "response_format": {"type": "json_object"},
+            }
+        )
+        if not data:
             return empty_results
+
+        choices = data.get("choices") or []
+        if not choices:
+            log.warning("classification_service.batch_empty_choices", count=len(items))
+            return empty_results
+        raw_answer = (choices[0].get("message") or {}).get("content") or ""
+        raw_answer = raw_answer.strip()
+        if not raw_answer:
+            log.warning("classification_service.batch_empty_content", count=len(items))
+            return empty_results
+
+        results = self._parse_batch_response(raw_answer, len(items), top_k)
+
+        self._check_distribution(results)
+
+        log.info(
+            "classification_service.batch_classified",
+            count=len(items),
+            successful=sum(1 for r in results if r.get("topics")),
+        )
+
+        return results
 
     def _build_batch_prompt(self, items: list[dict]) -> str:
         """Build the user prompt for batch classification."""
@@ -673,55 +728,51 @@ class ClassificationService:
             + "\n\n".join(parts)
         )
 
+        data = await self._call_mistral(
+            {
+                "model": CLASSIFICATION_MODEL,
+                "messages": [
+                    {"role": "system", "content": ENTITY_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "max_tokens": 150 * len(items),
+                "response_format": {"type": "json_object"},
+            }
+        )
+        if not data:
+            return empty
+
+        choices = data.get("choices") or []
+        if not choices:
+            return empty
+        raw = (choices[0].get("message") or {}).get("content") or ""
+        raw = raw.strip()
+        if not raw:
+            return empty
+
         try:
-            client = self._get_client()
-            response = await client.post(
-                MISTRAL_API_URL,
-                json={
-                    "model": "mistral-small-latest",
-                    "messages": [
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.0,
-                    "max_tokens": 120 * len(items),
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            choices = data.get("choices") or []
-            if not choices:
-                return empty
-            raw = (choices[0].get("message") or {}).get("content") or ""
-            raw = raw.strip()
-            if not raw:
-                return empty
-
             parsed = json.loads(raw)
-            if not isinstance(parsed, list):
-                return empty
+        except json.JSONDecodeError:
+            log.error("classification_service.entity_json_error", raw=raw[:300])
+            return empty
 
-            results: list[list[dict]] = []
-            for item in parsed[: len(items)]:
-                if isinstance(item, list):
-                    results.append(_validate_entities(item))
-                elif isinstance(item, dict) and "entities" in item:
-                    results.append(_validate_entities(item["entities"]))
-                else:
-                    results.append([])
+        if not isinstance(parsed, list):
+            return empty
 
-            while len(results) < len(items):
+        results: list[list[dict]] = []
+        for item_data in parsed[: len(items)]:
+            if isinstance(item_data, list):
+                results.append(_validate_entities(item_data))
+            elif isinstance(item_data, dict) and "entities" in item_data:
+                results.append(_validate_entities(item_data["entities"]))
+            else:
                 results.append([])
 
-            return results
+        while len(results) < len(items):
+            results.append([])
 
-        except Exception as e:
-            log.error(
-                "classification_service.entity_extraction_error",
-                error=str(e),
-                count=len(items),
-            )
-            return empty
+        return results
 
     def is_ready(self) -> bool:
         """Retourne True si le service est configuré et prêt."""
