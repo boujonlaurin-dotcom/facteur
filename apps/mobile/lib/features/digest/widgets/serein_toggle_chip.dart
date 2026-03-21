@@ -18,8 +18,6 @@ class SereinToggleChip extends ConsumerStatefulWidget {
   static const double _height = 28;
   // Minimal padding — indicator almost flush with pill border
   static const double _padding = 1.5;
-  // Selected segment takes 58% of inner width
-  static const double _selectedRatio = 0.58;
 
   @override
   ConsumerState<SereinToggleChip> createState() => _SereinToggleChipState();
@@ -35,10 +33,6 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
 
   static double get _innerWidth =>
       SereinToggleChip._width - SereinToggleChip._padding * 2;
-  static double get _selectedWidth =>
-      _innerWidth * SereinToggleChip._selectedRatio;
-  static double get _unselectedWidth =>
-      _innerWidth * (1 - SereinToggleChip._selectedRatio);
 
   @override
   void initState() {
@@ -133,13 +127,9 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
             )!;
 
             // Indicator slides from left to right
+            final halfWidth = _innerWidth * 0.5;
             final indicatorLeft =
-                SereinToggleChip._padding + t * _unselectedWidth;
-
-            // Segment widths: selected = wider, unselected = narrower
-            final leftSegmentWidth =
-                _selectedWidth + (_unselectedWidth - _selectedWidth) * t;
-            final rightSegmentWidth = _innerWidth - leftSegmentWidth;
+                SereinToggleChip._padding + t * halfWidth;
 
             return Stack(
               children: [
@@ -148,7 +138,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                   left: indicatorLeft,
                   top: SereinToggleChip._padding,
                   bottom: SereinToggleChip._padding,
-                  width: _selectedWidth,
+                  width: halfWidth,
                   child: Transform.scale(
                     scale: scale,
                     child: Container(
@@ -179,7 +169,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                   children: [
                     const SizedBox(width: SereinToggleChip._padding),
                     _buildSegment(
-                      width: leftSegmentWidth,
+                      width: halfWidth,
                       icon: SereinColors.normalIcon,
                       label: 'Normal',
                       selectedColor: SereinColors.normalColor,
@@ -188,7 +178,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                       onTap: _isSerein ? _toggle : null,
                     ),
                     _buildSegment(
-                      width: rightSegmentWidth,
+                      width: halfWidth,
                       icon: SereinColors.sereinIcon,
                       label: 'Serein',
                       selectedColor: SereinColors.sereinColor,
