@@ -1915,13 +1915,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           onMessageReceived: _onScrollBridgeMessage)
       ..loadRequest(Uri.parse(content.url));
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 64;
-    return Column(
-      children: [
-        SizedBox(height: headerHeight),
-        Expanded(child: WebViewWidget(controller: _webViewController!)),
-      ],
-    );
+    return WebViewWidget(controller: _webViewController!);
   }
 }
