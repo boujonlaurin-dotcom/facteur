@@ -36,6 +36,6 @@ class AlgorithmProfile {
 /// Fetches the user's algorithm profile from the backend.
 final algorithmProfileProvider = FutureProvider<AlgorithmProfile>((ref) async {
   final client = ref.watch(apiClientProvider);
-  final response = await client.get('/users/algorithm-profile');
-  return AlgorithmProfile.fromJson(response.data as Map<String, dynamic>);
+  final data = await client.get('users/algorithm-profile');
+  return AlgorithmProfile.fromJson(data as Map<String, dynamic>);
 });

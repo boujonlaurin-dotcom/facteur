@@ -10,16 +10,12 @@ class TopicRow extends StatelessWidget {
   final UserTopicProfile topic;
   final ValueChanged<double> onPriorityChanged;
   final VoidCallback? onUnfollow;
-  final double? usageWeight;
-  final VoidCallback? onReset;
 
   const TopicRow({
     super.key,
     required this.topic,
     required this.onPriorityChanged,
     this.onUnfollow,
-    this.usageWeight,
-    this.onReset,
   });
 
   @override
@@ -27,72 +23,50 @@ class TopicRow extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FacteurSpacing.space4,
-            vertical: 2,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE07A5F),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: FacteurSpacing.space2),
-              Expanded(
-                child: Text(
-                  topic.name,
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              TopicPrioritySlider(
-                currentMultiplier: topic.priorityMultiplier,
-                onChanged: onPriorityChanged,
-                usageWeight: usageWeight,
-                onReset: onReset,
-              ),
-            ],
-          ),
-        ),
-        if (onUnfollow != null)
-          Padding(
-            padding: const EdgeInsets.only(
-              left: FacteurSpacing.space4 + 6 + FacteurSpacing.space2,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: 2,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE07A5F),
+              shape: BoxShape.circle,
             ),
-            child: GestureDetector(
+          ),
+          const SizedBox(width: FacteurSpacing.space2),
+          Expanded(
+            child: Text(
+              topic.name,
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (onUnfollow != null)
+            GestureDetector(
               onTap: onUnfollow,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    PhosphorIcons.minusCircle(PhosphorIconsStyle.regular),
-                    size: 12,
-                    color: colors.textTertiary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Ne plus suivre',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.textTertiary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(
+                  PhosphorIcons.minusCircle(PhosphorIconsStyle.regular),
+                  size: 14,
+                  color: const Color(0xFFE07A5F),
+                ),
               ),
             ),
+          TopicPrioritySlider(
+            currentMultiplier: topic.priorityMultiplier,
+            onChanged: onPriorityChanged,
           ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -102,16 +76,12 @@ class DismissibleTopicRow extends StatelessWidget {
   final UserTopicProfile topic;
   final ValueChanged<double> onPriorityChanged;
   final VoidCallback? onUnfollow;
-  final double? usageWeight;
-  final VoidCallback? onReset;
 
   const DismissibleTopicRow({
     super.key,
     required this.topic,
     required this.onPriorityChanged,
     this.onUnfollow,
-    this.usageWeight,
-    this.onReset,
   });
 
   @override
@@ -145,16 +115,12 @@ class DismissibleTopicRow extends StatelessWidget {
           ],
         ),
       ),
-      confirmDismiss: (_) async {
-        onUnfollow?.call();
-        return false; // Don't remove — let state rebuild handle removal
-      },
+      confirmDismiss: (_) async => true,
+      onDismissed: (_) => onUnfollow?.call(),
       child: TopicRow(
         topic: topic,
         onPriorityChanged: onPriorityChanged,
         onUnfollow: onUnfollow,
-        usageWeight: usageWeight,
-        onReset: onReset,
       ),
     );
   }

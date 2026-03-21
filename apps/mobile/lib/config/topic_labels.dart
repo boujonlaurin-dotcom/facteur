@@ -1,3 +1,5 @@
+import '../features/custom_topics/models/topic_models.dart';
+
 /// Mapping des slugs de topics ML vers les labels français lisibles.
 ///
 /// Miroir inversé de ClassificationService.LABEL_TO_SLUG (Python).
@@ -137,6 +139,20 @@ const Map<String, String> _slugToMacroTheme = {
   'sport': 'Sport',
 };
 
+/// Reverse mapping: macro-theme label → API theme slug.
+/// Used to resolve the correct slug for algorithm profile lookups.
+const Map<String, String> macroThemeToApiSlug = {
+  'Technologie': 'tech',
+  'Sciences': 'science',
+  'Société': 'society',
+  'Politique': 'politics',
+  'Économie': 'economy',
+  'Environnement': 'environment',
+  'Culture': 'culture',
+  'Géopolitique': 'international',
+  'Sport': 'sport',
+};
+
 /// Ordered list of macro-theme group labels (matches backend's 9 themes).
 const List<String> macroThemeOrder = [
   'Technologie',
@@ -189,3 +205,27 @@ String getEntityTypeLabel(String type) => switch (type.toUpperCase()) {
       'PRODUCT' => 'Produit',
       _ => type,
     };
+
+/// Emoji for entity types (used in quick pick chips).
+String getEntityTypeEmoji(String? entityType) =>
+    switch (entityType?.toUpperCase()) {
+      'PERSON' => '👤',
+      'ORG' => '🏢',
+      'LOCATION' => '📍',
+      'EVENT' => '📅',
+      'PRODUCT' => '📦',
+      _ => '🏷️',
+    };
+
+/// Counts followed topics per macro-theme from an already-loaded list.
+/// No extra API call — uses the same data from customTopicsProvider.
+Map<String, int> countTopicsPerMacroTheme(List<UserTopicProfile> topics) {
+  final counts = {for (final t in macroThemeOrder) t: 0};
+  for (final topic in topics) {
+    final macro = getTopicMacroTheme(topic.slugParent ?? '');
+    if (macro != null && counts.containsKey(macro)) {
+      counts[macro] = counts[macro]! + 1;
+    }
+  }
+  return counts;
+}

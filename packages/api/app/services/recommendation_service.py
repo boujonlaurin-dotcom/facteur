@@ -17,8 +17,10 @@ logger = structlog.get_logger()
 
 from app.schemas.content import RecommendationReason, ScoreContribution
 from app.services.recommendation.filter_presets import (
+    apply_entity_filter,
     apply_serein_filter,
     apply_theme_focus_filter,
+    apply_topic_filter,
     calculate_user_bias,
     get_opposing_biases,
 )
@@ -286,6 +288,8 @@ class RecommendationService:
             theme=theme,
             # Topic filter (granular, e.g. 'startups', 'entrepreneurship')
             topic=topic,
+            # Entity filter: signal explicit_filter mode
+            entity=entity,
             # Paywall filter
             hide_paid_content=hide_paid_content,
             # Premium sources: allow paid content from subscribed sources
@@ -929,6 +933,7 @@ class RecommendationService:
         subscribed_source_ids: set[UUID] = None,
         source_id: UUID | None = None,
         topic: str | None = None,
+        entity: str | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -954,6 +959,7 @@ class RecommendationService:
 
         explicit_filter = (
             source_id is not None or theme is not None or topic is not None
+            or entity is not None
         )
 
         if explicit_filter:
@@ -1007,7 +1013,7 @@ class RecommendationService:
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
-        elif theme or topic:
+        elif theme or topic or entity:
             query = query.where(Source.is_curated)
         elif followed_source_ids:
             # Don't apply source filter yet — two-phase fetch after all filters
@@ -1097,6 +1103,14 @@ class RecommendationService:
         # Apply theme filter (Story 2 - Feed par thème, skip when source filter active)
         if theme and not source_id:
             query = apply_theme_focus_filter(query, theme)
+
+        # Apply topic filter (granular ML topic, e.g. 'ai', 'startups')
+        if topic and not source_id:
+            query = apply_topic_filter(query, topic)
+
+        # Apply entity filter (entity name within JSON-encoded entity array)
+        if entity and not source_id:
+            query = apply_entity_filter(query, entity)
 
         if _use_two_phase:
             # Two-phase candidate pool (mirrors digest_selector.py)

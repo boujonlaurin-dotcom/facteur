@@ -17,6 +17,7 @@ class FeedRepository {
     String? topic,
     bool hasNote = false,
     String? sourceId,
+    String? entity,
     bool serein = false,
   }) async {
     try {
@@ -55,6 +56,10 @@ class FeedRepository {
 
       if (sourceId != null) {
         queryParams['source_id'] = sourceId;
+      }
+
+      if (entity != null) {
+        queryParams['entity'] = entity;
       }
 
       if (serein) {

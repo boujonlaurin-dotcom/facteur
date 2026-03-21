@@ -6,12 +6,15 @@ import 'interest_filter_sheet.dart';
 class InterestFilterChip extends StatelessWidget {
   final String? selectedTopicSlug;
   final String? selectedTopicName;
-  final void Function(String? slug, String? name) onInterestChanged;
+  final bool selectedIsTheme;
+  final void Function(String? slug, String? name, {bool isTheme, bool isEntity})
+      onInterestChanged;
 
   const InterestFilterChip({
     super.key,
     this.selectedTopicSlug,
     this.selectedTopicName,
+    this.selectedIsTheme = false,
     required this.onInterestChanged,
   });
 
@@ -79,7 +82,7 @@ class InterestFilterChip extends StatelessWidget {
         size: 14,
         color: colorScheme.onPrimary,
       ),
-      onDeleted: () => onInterestChanged(null, null),
+      onDeleted: () => onInterestChanged(null, null, isTheme: false, isEntity: false),
       onPressed: () => _openSheet(context),
       side: BorderSide.none,
       shape: RoundedRectangleBorder(
@@ -93,7 +96,9 @@ class InterestFilterChip extends StatelessWidget {
     InterestFilterSheet.show(
       context,
       currentTopicSlug: selectedTopicSlug,
-      onInterestSelected: (slug, name) => onInterestChanged(slug, name),
+      currentIsTheme: selectedIsTheme,
+      onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) =>
+          onInterestChanged(slug, name, isTheme: isTheme, isEntity: isEntity),
     );
   }
 }

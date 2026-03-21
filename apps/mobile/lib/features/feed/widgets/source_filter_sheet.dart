@@ -50,22 +50,35 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
     super.dispose();
   }
 
-  List<Source> _getFilteredSources(List<Source> allSources) {
+  List<Source> _getFollowedSources(List<Source> allSources) {
     final followed = allSources
         .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
+    followed.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return followed;
+  }
 
-    if (_searchQuery.isEmpty) {
-      followed.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      return followed;
-    }
-
-    final query = _searchQuery.toLowerCase();
-    final filtered = followed
-        .where((s) => s.name.toLowerCase().contains(query))
+  List<Source> _getFavorites(List<Source> allSources) {
+    final followed = allSources
+        .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
         .toList();
-    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    return filtered;
+    final favorites = followed
+        .where((s) => s.hasSubscription || s.priorityMultiplier >= 2.0)
+        .toList();
+    favorites.sort((a, b) {
+      if (a.hasSubscription != b.hasSubscription) {
+        return b.hasSubscription ? 1 : -1;
+      }
+      return b.priorityMultiplier.compareTo(a.priorityMultiplier);
+    });
+    return favorites;
+  }
+
+  List<Source> _filterByQuery(List<Source> sources) {
+    if (_searchQuery.isEmpty) return sources;
+    final query = _searchQuery.toLowerCase();
+    return sources.where((s) => s.name.toLowerCase().contains(query)).toList();
   }
 
   @override
@@ -75,7 +88,7 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.6,
+        maxHeight: MediaQuery.of(context).size.height * 0.81,
       ),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
@@ -106,7 +119,7 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Filtrer par source',
+                  'Filtrer parmi vos sources',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: colors.textPrimary,
@@ -151,8 +164,9 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                   fillColor: colors.surface,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 10,
+                    vertical: 6,
                   ),
+                  isDense: true,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -166,13 +180,15 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
             ),
             const SizedBox(height: 8),
 
-            // Source list
+            // Content
             Flexible(
               child: sourcesAsync.when(
                 data: (allSources) {
-                  final sources = _getFilteredSources(allSources);
+                  final favorites = _filterByQuery(_getFavorites(allSources));
+                  final allFollowed =
+                      _filterByQuery(_getFollowedSources(allSources));
 
-                  if (sources.isEmpty) {
+                  if (favorites.isEmpty && allFollowed.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.all(32),
                       child: Text(
@@ -187,27 +203,88 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                     );
                   }
 
-                  return ListView.builder(
+                  return ListView(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
+                      horizontal: 20,
                       vertical: 4,
                     ),
                     shrinkWrap: true,
-                    itemCount: sources.length,
-                    itemBuilder: (context, index) {
-                      final source = sources[index];
-                      final isSelected = source.id == widget.currentSourceId;
+                    children: [
+                      // Favorites section
+                      if (favorites.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 10),
+                          child: Text(
+                            'VOS FAVORIS',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: colors.textTertiary,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.2,
+                                ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 40,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: favorites.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 8),
+                            itemBuilder: (context, index) {
+                              final source = favorites[index];
+                              final isSelected =
+                                  source.id == widget.currentSourceId;
+                              return _FavoriteChip(
+                                source: source,
+                                isSelected: isSelected,
+                                colors: colors,
+                                onTap: () {
+                                  widget.onSourceSelected(source.id);
+                                  Navigator.of(context).pop();
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
 
-                      return _SourceItem(
-                        source: source,
-                        isSelected: isSelected,
-                        colors: colors,
-                        onTap: () {
-                          widget.onSourceSelected(source.id);
-                          Navigator.of(context).pop();
-                        },
-                      );
-                    },
+                      // All sources section
+                      if (allFollowed.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            'TOUTES VOS SOURCES',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: colors.textTertiary,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.2,
+                                ),
+                          ),
+                        ),
+                        ...allFollowed.map((source) {
+                          final isSelected =
+                              source.id == widget.currentSourceId;
+                          return _SourceItem(
+                            source: source,
+                            isSelected: isSelected,
+                            colors: colors,
+                            onTap: () {
+                              widget.onSourceSelected(source.id);
+                              Navigator.of(context).pop();
+                            },
+                          );
+                        }),
+                      ],
+
+                      const SizedBox(height: 16),
+                    ],
                   );
                 },
                 loading: () => const Padding(
@@ -221,6 +298,67 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                     style: TextStyle(color: colors.textTertiary),
                   ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteChip extends StatelessWidget {
+  final Source source;
+  final bool isSelected;
+  final FacteurColors colors;
+  final VoidCallback onTap;
+
+  const _FavoriteChip({
+    required this.source,
+    required this.isSelected,
+    required this.colors,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = isSelected ? colors.primary : colors.surface;
+    final borderColor =
+        isSelected ? colors.primary : colors.primary.withValues(alpha: 0.3);
+    final textColor = isSelected ? Colors.white : colors.textPrimary;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          border: Border.all(color: borderColor, width: 1.5),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (source.logoUrl != null && source.logoUrl!.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: FacteurImage(
+                  imageUrl: source.logoUrl!,
+                  width: 16,
+                  height: 16,
+                  fit: BoxFit.cover,
+                  placeholder: (context) => const SizedBox(width: 16, height: 16),
+                  errorWidget: (context) => const SizedBox(width: 16, height: 16),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              source.name,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

@@ -10,10 +10,10 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.models.enums import ContentType
-from app.schemas.content import SourceMini
+from app.schemas.content import SourceMini, parse_entity_strings
 
 
 class DigestScoreBreakdown(BaseModel):
@@ -57,6 +57,7 @@ class DigestTopicArticle(BaseModel):
     description: str | None = None
     html_content: str | None = None  # In-App Reading Mode
     topics: list[str] = []
+    entities: list[str] = []  # Named entities (NER), empty if not classified
     content_type: ContentType = ContentType.ARTICLE
     duration_seconds: int | None = None
     published_at: datetime
@@ -71,6 +72,10 @@ class DigestTopicArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+
+    @field_serializer("entities", when_used="always")
+    def serialize_entities(self, value: list[str]) -> list[dict]:
+        return parse_entity_strings(value)
 
     class Config:
         from_attributes = True
@@ -145,6 +150,10 @@ class DigestItem(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+
+    @field_serializer("entities", when_used="always")
+    def serialize_entities(self, value: list[str]) -> list[dict]:
+        return parse_entity_strings(value)
 
     class Config:
         from_attributes = True

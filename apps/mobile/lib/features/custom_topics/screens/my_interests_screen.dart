@@ -75,7 +75,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add, size: 20),
         label: const Text(
-          'Sujet niche',
+          'Sujet personnalisé',
           style: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
@@ -167,7 +167,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       ),
                       const SizedBox(height: FacteurSpacing.space2),
                       Text(
-                        'Vos centres d\'intérêt influencent le digest et le mode Pour vous.',
+                        'Ajustez vos thèmes et sujets pour les voir plus ou moins apparaître dans l\'Essentiel du jour et votre flux.',
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -228,7 +228,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                         .toList();
                     if (groupSlugs.isEmpty) return const SizedBox.shrink();
                     return ThemeSection(
-                      themeSlug: groupSlugs.first,
+                      themeSlug: macroThemeToApiSlug[group] ?? groupSlugs.first,
                       themeLabel: group,
                       followedTopics: const [],
                     );
@@ -236,7 +236,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   final allTopics =
                       themes.expand((t) => t.topics).toList();
                   return ThemeSection(
-                    themeSlug: themes.first.slug,
+                    themeSlug: macroThemeToApiSlug[group] ?? themes.first.slug,
                     themeLabel: group,
                     followedTopics: allTopics,
                   );
