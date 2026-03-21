@@ -958,7 +958,9 @@ class RecommendationService:
         from sqlalchemy import exists
 
         explicit_filter = (
-            source_id is not None or theme is not None or topic is not None
+            source_id is not None
+            or theme is not None
+            or topic is not None
             or entity is not None
         )
 

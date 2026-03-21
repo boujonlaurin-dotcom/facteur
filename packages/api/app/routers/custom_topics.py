@@ -273,7 +273,9 @@ async def create_topic(
         entity_type=entity_type,
         canonical_name=canonical_name,
         source_type="explicit",
-        priority_multiplier=request.priority_multiplier if request.priority_multiplier is not None else 1.0,
+        priority_multiplier=request.priority_multiplier
+        if request.priority_multiplier is not None
+        else 1.0,
         composite_score=0.0,
     )
     db.add(topic)

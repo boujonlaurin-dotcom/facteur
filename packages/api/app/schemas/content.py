@@ -24,7 +24,9 @@ def parse_entity_strings(raw_entities: list[str] | None) -> list[dict]:
     for raw in raw_entities:
         try:
             parsed = json.loads(raw)
-            result.append({"text": parsed.get("name", raw), "label": parsed.get("type", "")})
+            result.append(
+                {"text": parsed.get("name", raw), "label": parsed.get("type", "")}
+            )
         except (json.JSONDecodeError, AttributeError):
             result.append({"text": raw, "label": ""})
     return result
