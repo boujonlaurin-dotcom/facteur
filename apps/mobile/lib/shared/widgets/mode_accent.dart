@@ -19,7 +19,7 @@ class ModeAccent extends StatelessWidget {
   Widget build(BuildContext context) {
     final color =
         isSerein ? SereinColors.sereinColor : SereinColors.normalColor;
-    final haloOpacity = isSerein ? 0.14 : 0.18;
+    final haloOpacity = isSerein ? 0.10 : 0.13;
 
     return IgnorePointer(
       child: Column(
@@ -32,7 +32,7 @@ class ModeAccent extends StatelessWidget {
             curve: _curve,
             builder: (context, value, _) => Container(
               height: 1.5,
-              color: value,
+              color: value?.withValues(alpha: 0.7),
             ),
           ),
 
@@ -46,7 +46,7 @@ class ModeAccent extends StatelessWidget {
             builder: (context, value, _) {
               final c = value ?? Colors.transparent;
               return Container(
-                height: 60,
+                height: 30,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,

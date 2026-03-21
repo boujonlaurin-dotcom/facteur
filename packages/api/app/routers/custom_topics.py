@@ -114,32 +114,6 @@ class PopularEntityResponse(BaseModel):
     count: int
 
 
-class DisambiguateRequest(BaseModel):
-    name: str
-    theme: str | None = None
-
-    @field_validator("name")
-    @classmethod
-    def name_must_not_be_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v or len(v) < 2:
-            raise ValueError("Le nom doit contenir au moins 2 caractères")
-        if len(v) > 200:
-            raise ValueError("Le nom ne peut pas dépasser 200 caractères")
-        return v
-
-
-class DisambiguationSuggestionSchema(BaseModel):
-    canonical_name: str
-    entity_type: str | None = None
-    description: str
-    slug_parent: str
-
-
-class DisambiguateResponse(BaseModel):
-    suggestions: list[DisambiguationSuggestionSchema]
-
-
 def _topic_to_response(t: UserTopicProfile) -> TopicResponse:
     """Convert a UserTopicProfile ORM object to TopicResponse."""
     return TopicResponse(
@@ -212,33 +186,6 @@ async def get_popular_entities(
     # Sort by count and return top N
     results = sorted(seen.values(), key=lambda x: x.count, reverse=True)[:limit]
     return results
-
-
-@router.post("/disambiguate", response_model=DisambiguateResponse)
-async def disambiguate_topic(
-    request: DisambiguateRequest,
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Retourne 1-5 interprétations possibles pour un nom de sujet ambigu."""
-    enrichment_service = get_topic_enrichment_service()
-    try:
-        suggestions = await enrichment_service.disambiguate(
-            request.name, theme_hint=request.theme
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    return DisambiguateResponse(
-        suggestions=[
-            DisambiguationSuggestionSchema(
-                canonical_name=s.canonical_name,
-                entity_type=s.entity_type,
-                description=s.description,
-                slug_parent=s.slug_parent,
-            )
-            for s in suggestions
-        ]
-    )
 
 
 @router.get("/", response_model=list[TopicResponse])

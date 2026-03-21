@@ -28,6 +28,7 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
+import '../widgets/digest_progress_bar.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
@@ -331,6 +332,24 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           UpdateButton(),
                         ],
                       ),
+                    ),
+                  ),
+
+                  // Progress bar (visible when digest has data)
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        final digest = digestAsync.valueOrNull;
+                        if (digest == null ||
+                            (digest.items.isEmpty && digest.topics.isEmpty)) {
+                          return const SizedBox.shrink();
+                        }
+                        final notifier = ref.read(digestProvider.notifier);
+                        return DigestProgressBar(
+                          processedCount: notifier.processedCount,
+                          totalCount: notifier.totalCount,
+                        );
+                      },
                     ),
                   ),
 
