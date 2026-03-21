@@ -377,7 +377,7 @@ class _InterestItem extends StatelessWidget {
       case 'EVENT':
         return PhosphorIcons.calendarBlank(PhosphorIconsStyle.regular);
       case 'PRODUCT':
-        return PhosphorIcons.package(PhosphorIconsStyle.regular);
+        return PhosphorIcons.package_(PhosphorIconsStyle.regular);
       default:
         return PhosphorIcons.hash(PhosphorIconsStyle.regular);
     }

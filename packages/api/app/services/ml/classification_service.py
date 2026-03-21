@@ -248,6 +248,15 @@ serene = true : sujet positif, neutre, culturel, scientifique, lifestyle, divert
 serene = false : violence, guerre, attentat, meurtre, catastrophe, crise grave, agression, mort.
 En cas de doute, marque false.
 
+## ENTITÉS NOMMÉES
+Pour chaque article, extrais 3 à 5 entités nommées principales.
+Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
+Règles :
+- Normalise les noms (E. Macron → Emmanuel Macron, GPT → OpenAI)
+- Désambiguïse selon le contexte (Apple = ORG si tech, pas fruit)
+- Ignore les entités trop génériques (France, Internet, Europe)
+- Si aucune entité pertinente, retourne un array vide
+
 ## RÈGLES CRITIQUES
 1. Article sur un produit tech (Samsung, iPhone) → "tech" PAS "asia"/"geopolitics"
 2. Article sur une série/film → "cinema" PAS "ai"/"tech"
@@ -259,7 +268,8 @@ En cas de doute, marque false.
 8. Le premier topic est le PLUS pertinent
 
 ## FORMAT
-Réponds en JSON array. Chaque élément : {"topics": ["slug1", "slug2"], "serene": true/false}
+Réponds en JSON array. Chaque élément :
+{"topics": ["slug1", "slug2"], "serene": true/false, "entities": [{"name": "Nom Complet", "type": "PERSON"}]}
 Pas de texte avant ou après."""
 
 CLASSIFICATION_MODEL = "mistral-small-latest"
@@ -421,7 +431,7 @@ class ClassificationService:
                     {"role": "user", "content": text},
                 ],
                 "temperature": 0.0,
-                "max_tokens": 120,
+                "max_tokens": 200,
                 "response_format": {"type": "json_object"},
             }
         )
@@ -479,7 +489,7 @@ class ClassificationService:
                     {"role": "user", "content": batch_prompt},
                 ],
                 "temperature": 0.0,
-                "max_tokens": 100 * len(items),
+                "max_tokens": 200 * len(items),
                 "response_format": {"type": "json_object"},
             }
         )
@@ -530,8 +540,9 @@ class ClassificationService:
         return (
             f"Classifie chacun de ces {len(items)} articles.\n"
             f"Réponds en JSON array de exactement {len(items)} éléments.\n"
-            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false}, '
-            '{"topics": ["ai", "tech"], "serene": true}]\n\n'
+            'Exemple pour 2 articles: [{"topics": ["politics", "europe"], "serene": false, '
+            '"entities": [{"name": "Emmanuel Macron", "type": "PERSON"}]}, '
+            '{"topics": ["ai", "tech"], "serene": true, "entities": [{"name": "OpenAI", "type": "ORG"}]}]\n\n'
             f"{articles_text}"
         )
 
@@ -551,10 +562,11 @@ class ClassificationService:
                 serene = parsed.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
+                entities = _validate_entities(parsed.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
-                    "entities": [],
+                    "entities": entities,
                 }
             if (
                 isinstance(parsed, list)
@@ -570,10 +582,11 @@ class ClassificationService:
                 serene = item.get("serene")
                 if not isinstance(serene, bool):
                     serene = None
+                entities = _validate_entities(item.get("entities", []))
                 return {
                     "topics": topics[:top_k],
                     "serene": serene,
-                    "entities": [],
+                    "entities": entities,
                 }
         except (json.JSONDecodeError, TypeError):
             pass
@@ -600,7 +613,7 @@ class ClassificationService:
                         raw=raw[:200],
                     )
 
-                # Array of objects with "topics" and "serene"
+                # Array of objects with "topics", "serene" and "entities"
                 if parsed and isinstance(parsed[0], dict):
                     results = []
                     for item in parsed[:expected_count]:
@@ -614,11 +627,12 @@ class ClassificationService:
                             serene = item.get("serene")
                             if not isinstance(serene, bool):
                                 serene = None
+                            entities = _validate_entities(item.get("entities", []))
                             results.append(
                                 {
                                     "topics": topics[:top_k],
                                     "serene": serene,
-                                    "entities": [],
+                                    "entities": entities,
                                 }
                             )
                         else:

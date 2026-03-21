@@ -37,6 +37,7 @@ import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
 import '../../settings/providers/user_profile_provider.dart';
 import '../providers/user_bias_provider.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
@@ -530,8 +531,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .where((f) => f.key == 'pour_vous')
                               .toList();
                           final otherThemeFilters = themeFilters
-                              .where((f) =>
-                                  f.key != 'pour_vous' && f.key != 'recent')
+                              .where((f) => f.key != 'pour_vous' && f.key != 'recent')
                               .toList();
                           // Track which keys are custom topics vs themes
                           final customTopicKeys =
@@ -579,8 +579,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                                 .selectedTopic)
                                                         .firstOrNull
                                                         ?.name ??
-                                                    getTopicLabel(
-                                                        notifier.selectedTopic!)
+                                                    getTopicLabel(notifier
+                                                        .selectedTopic!)
                                                 : null,
                                         onInterestChanged: (slug, name) {
                                           notifier.setTopic(slug);
@@ -813,11 +813,49 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
+                                      // Epic 12.5: In chrono mode, topic chip tap opens SourceAdjustSheet
+                                      // In pour_vous mode, default ArticleSheet with scoring breakdown
+                                      topicChipWidget: notifier
+                                                  .selectedFilter ==
+                                              'pour_vous'
+                                          ? TopicChip(
+                                              content: content,
+                                              isFollowed: content
+                                                      .topics.isNotEmpty &&
+                                                  followedTopics.any((t) =>
+                                                      t.slugParent ==
+                                                          content
+                                                              .topics.first ||
+                                                      t.name.toLowerCase() ==
+                                                          getTopicLabel(content
+                                                                  .topics.first)
+                                                              .toLowerCase()),
+                                            )
+                                          : GestureDetector(
+                                              onTap: () =>
+                                                  _handleSwipeAdjust(content),
+                                              child: AbsorbPointer(
+                                                child: TopicChip(
+                                                  content: content,
+                                                  isFollowed: content
+                                                          .topics.isNotEmpty &&
+                                                      followedTopics.any((t) =>
+                                                          t.slugParent ==
+                                                              content.topics
+                                                                  .first ||
+                                                          t.name.toLowerCase() ==
+                                                              getTopicLabel(
+                                                                      content
+                                                                          .topics
+                                                                          .first)
+                                                                  .toLowerCase()),
+                                                ),
+                                              ),
+                                            ),
                                       clusterChipWidget:
                                           content.clusterHiddenCount > 0
                                               ? ClusterChip(content: content)
-                                              : SourceOverflowChip(
-                                                  content: content),
+                                              : SourceOverflowChip(content: content),
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
                                       onSourceTap: () =>
