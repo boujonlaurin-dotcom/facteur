@@ -88,7 +88,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
-  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.12);
+  Timer? _headerScrollStopTimer;
+  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
+  final ValueNotifier<double> _headerOpacity = ValueNotifier<double>(1.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
   bool _endNudgeShown = false;
@@ -98,7 +100,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // Reading progress tracking (0.0 - 1.0)
   // Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
   final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
-  int _webViewProgress = 0; // from WebView JS bridge (0-100)
+  double _webViewProgress = 0; // from WebView JS bridge (0-100)
 
   Content? _content;
 
@@ -264,7 +266,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
           lastTouchY = currentY;
         }, { passive: true });
-        // Reading progress tracking (throttled to every 500ms)
+        // Reading progress tracking (throttled to every 150ms for smooth updates)
         var progressTimer = null;
         window.addEventListener('scroll', function() {
           if (progressTimer) return;
@@ -272,14 +274,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             progressTimer = null;
             var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
             if (maxScroll > 0) {
-              var pct = Math.round((window.scrollY / maxScroll) * 100);
+              var pct = parseFloat((window.scrollY / maxScroll * 100).toFixed(1));
               pct = Math.min(100, Math.max(0, pct));
               if (pct > lastProgress) {
                 lastProgress = pct;
                 ScrollBridge.postMessage('progress:' + pct);
               }
             }
-          }, 500);
+            ScrollBridge.postMessage('scroll_active');
+          }, 150);
         }, { passive: true });
       })();
     ''');
@@ -288,8 +291,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
+    if (msg == 'scroll_active') {
+      _onScrollFabOpacity();
+      return;
+    }
     if (msg.startsWith('progress:')) {
-      final pct = int.tryParse(msg.substring(9));
+      final pct = double.tryParse(msg.substring(9));
       if (pct != null && pct > _webViewProgress) {
         _webViewProgress = pct;
         // For partial content: WebView scroll maps to 25%-100% of total progress
@@ -392,14 +399,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Fade FABs to near-transparent during scroll, restore on stop.
+  /// Fade FABs + header during scroll, restore on stop with differentiated delays.
   /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
   void _onScrollFabOpacity() {
-    if (_fabOpacity.value != 0.12) {
-      _fabOpacity.value = 0.12;
+    if (_fabOpacity.value != 0.07) {
+      _fabOpacity.value = 0.07;
     }
+    if (_headerOpacity.value != 0.0) {
+      _headerOpacity.value = 0.0;
+    }
+    // Header reappears after 1s
+    _headerScrollStopTimer?.cancel();
+    _headerScrollStopTimer = Timer(const Duration(milliseconds: 1000), () {
+      if (mounted) {
+        _headerOpacity.value = 1.0;
+      }
+    });
+    // FABs reappear after 2.5s
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 800), () {
+    _scrollStopTimer = Timer(const Duration(milliseconds: 2500), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
@@ -643,11 +661,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
+    _headerScrollStopTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _fabOpacity.dispose();
+    _headerOpacity.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
@@ -949,35 +969,38 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               }
               return false;
             },
-            child: Builder(builder: (context) {
-              final topInset = MediaQuery.of(context).padding.top;
-              final headerHeight = topInset + 64;
-              return Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.only(top: headerHeight),
-                  child: useScrollToSite
-                      ? _buildScrollToSiteContent(context, content)
-                      : useInAppReading
-                          ? _buildInAppContent(context, content)
-                          : _buildWebViewFallback(content),
-                ),
-              );
-            }),
+            child: Positioned.fill(
+              child: useScrollToSite
+                  ? _buildScrollToSiteContent(context, content)
+                  : useInAppReading
+                      ? _buildInAppContent(context, content)
+                      : _buildWebViewFallback(content),
+            ),
           ),
+          // Header — slides up off-screen on scroll, reappears after 1s
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildHeader(context, content),
-                // Reading progress bar — thin line below header
-                if (content.hasInAppContent || _isWebViewActive)
-                  _buildReadingProgressBar(colors),
-              ],
+            child: ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, child) => AnimatedSlide(
+                offset: Offset(0, opacity < 0.5 ? -1.0 : 0.0),
+                duration: Duration(milliseconds: opacity < 0.5 ? 200 : 350),
+                curve: opacity < 0.5 ? Curves.easeIn : Curves.easeOut,
+                child: child!,
+              ),
+              child: _buildHeader(context, content),
             ),
           ),
+          // Reading progress bar — bottom of screen, grey→primary color
+          if (content.hasInAppContent || _isWebViewActive || (!useScrollToSite && !useInAppReading))
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildReadingProgressBar(colors),
+            ),
         ],
       ),
       // FABs — vertical column with immersive scroll opacity
@@ -1347,14 +1370,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       builder: (context, progress, _) {
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
-        return SizedBox(
-          height: 4.5,
-          child: LinearProgressIndicator(
-            value: progress.clamp(0.0, 1.0),
-            backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(
-                colors.primary.withValues(alpha: 0.7)),
-            minHeight: 4.5,
+        final clamped = progress.clamp(0.0, 1.0);
+        // Grey→primary color with progressive opacity (20%→100%)
+        final alpha = 0.2 + (clamped * 0.8); // 20% at start → 100% at end
+        final barColor = Color.lerp(
+          Colors.grey.shade400,
+          colors.primary,
+          clamped,
+        )!.withValues(alpha: alpha);
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: clamped),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          builder: (context, smoothProgress, _) => SizedBox(
+            height: 6.5,
+            child: LinearProgressIndicator(
+              value: smoothProgress,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              minHeight: 6.5,
+            ),
           ),
         );
       },
@@ -1432,6 +1467,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Spacer: scrolls with content, initially behind the header overlay
+                    SizedBox(height: headerHeight),
                     // ZONE 1: Article content — opaque background hides WebView
                     Container(
                       key: _articleKey,
@@ -1660,6 +1697,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // but Footer CTA is removed per User Story 8 Refactor.
     }
 
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + 64;
+
     switch (content.contentType) {
       case ContentType.article:
         final colors = context.facteurColors;
@@ -1680,6 +1720,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           header: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Spacer: scrolls with content, initially behind the header overlay
+              SizedBox(height: headerHeight),
               // Hero thumbnail image (smooth integration)
               if (content.thumbnailUrl != null) ...[
                 ClipRRect(
@@ -1819,20 +1861,34 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         );
 
       case ContentType.audio:
-        return AudioPlayerWidget(
-          audioUrl: content.audioUrl!,
-          title: content.title,
-          description: content.description,
-          thumbnailUrl: content.thumbnailUrl,
-          durationSeconds: content.durationSeconds,
+        return Column(
+          children: [
+            SizedBox(height: headerHeight),
+            Expanded(
+              child: AudioPlayerWidget(
+                audioUrl: content.audioUrl!,
+                title: content.title,
+                description: content.description,
+                thumbnailUrl: content.thumbnailUrl,
+                durationSeconds: content.durationSeconds,
+              ),
+            ),
+          ],
         );
 
       case ContentType.youtube:
       case ContentType.video:
-        return YouTubePlayerWidget(
-          videoUrl: content.url,
-          title: content.title,
-          description: content.description,
+        return Column(
+          children: [
+            SizedBox(height: headerHeight),
+            Expanded(
+              child: YouTubePlayerWidget(
+                videoUrl: content.url,
+                title: content.title,
+                description: content.description,
+              ),
+            ),
+          ],
         );
     }
   }
@@ -1849,11 +1905,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Mobile: Use native WebView
+    // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
     _webViewController ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) => _injectScrollBridgeScript(),
+      ))
+      ..addJavaScriptChannel('ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage)
       ..loadRequest(Uri.parse(content.url));
 
-    return WebViewWidget(controller: _webViewController!);
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + 64;
+    return Column(
+      children: [
+        SizedBox(height: headerHeight),
+        Expanded(child: WebViewWidget(controller: _webViewController!)),
+      ],
+    );
   }
 }

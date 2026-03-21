@@ -6,12 +6,14 @@ import 'source_filter_sheet.dart';
 class SourceFilterChip extends StatelessWidget {
   final String? selectedSourceId;
   final String? selectedSourceName;
+  final String? selectedSourceLogoUrl;
   final ValueChanged<String?> onSourceChanged;
 
   const SourceFilterChip({
     super.key,
     this.selectedSourceId,
     this.selectedSourceName,
+    this.selectedSourceLogoUrl,
     required this.onSourceChanged,
   });
 
@@ -63,13 +65,33 @@ class SourceFilterChip extends StatelessWidget {
 
   Widget _buildActiveChip(BuildContext context, ColorScheme colorScheme) {
     return InputChip(
-      label: Text(
-        selectedSourceName ?? 'Source',
-        style: TextStyle(
-          color: colorScheme.onPrimary,
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
-        ),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (selectedSourceLogoUrl != null &&
+              selectedSourceLogoUrl!.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.network(
+                selectedSourceLogoUrl!,
+                width: 16,
+                height: 16,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    const SizedBox(width: 16, height: 16),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            selectedSourceName ?? 'Source',
+            style: TextStyle(
+              color: colorScheme.onPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
       ),
       selected: true,
       selectedColor: colorScheme.primary,

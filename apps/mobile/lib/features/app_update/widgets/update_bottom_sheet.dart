@@ -5,8 +5,9 @@ import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
 import '../providers/app_update_provider.dart';
 import '../services/app_update_service.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-enum _UpdateState { idle, downloading, done, error }
+enum _UpdateState { idle, downloading, done, error, incompatible }
 
 /// Bottom sheet showing update details and download progress.
 class UpdateBottomSheet extends ConsumerStatefulWidget {
@@ -56,6 +57,17 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
         // Close sheet after a short delay since Android installer is opening
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) Navigator.of(context).pop();
+        });
+      }
+    } on AppUpdateInstallException catch (e) {
+      // ignore: avoid_print
+      print('AppUpdate: install failed: $e');
+      if (mounted) {
+        setState(() {
+          _state = e.isIncompatible
+              ? _UpdateState.incompatible
+              : _UpdateState.error;
+          _errorMessage = e.message;
         });
       }
     } catch (e) {
@@ -193,6 +205,38 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.success,
                   ),
+            ),
+          ],
+        );
+
+      case _UpdateState.incompatible:
+        return Column(
+          children: [
+            Icon(
+              PhosphorIcons.warning(PhosphorIconsStyle.fill),
+              color: colors.error,
+              size: 32,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Installation impossible',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.error,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Cette mise a jour n\'est pas compatible avec la version installee.\n\n'
+              'Desinstallez l\'app depuis les Parametres Android, '
+              'puis reinstallez-la depuis le lien de telechargement.\n\n'
+              'Vos donnees sont sauvegardees sur le serveur, rien ne sera perdu.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textSecondary,
+                    height: 1.4,
+                  ),
+              textAlign: TextAlign.center,
             ),
           ],
         );
