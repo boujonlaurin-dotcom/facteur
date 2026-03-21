@@ -47,7 +47,8 @@ async def _fetch_latest_release() -> dict:
         resp = await client.get(
             f"https://api.github.com/repos/{settings.github_repo}/releases",
             headers=headers,
-            params={"per_page": 20},  # 20 to ensure Android APKs aren't pushed out by iOS releases
+            # 20 to ensure Android APKs aren't pushed out by iOS releases
+            params={"per_page": 20},
         )
 
     if resp.status_code != 200:
