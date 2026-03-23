@@ -339,25 +339,66 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Show a contextual nudge when user reads >= 90% of the article.
+  /// Uses the local ScaffoldMessenger so the SnackBar appears near the FAB.
   void _onReadingProgressNudge() {
     if (_endNudgeShown || _readingProgress.value < 0.9) return;
     _endNudgeShown = true;
     final content = _content;
     if (content == null || !mounted) return;
 
+    const message = 'Article terminé. Ajouter une note ?';
+    final String actionLabel;
+    final VoidCallback onAction;
+
     if (!content.hasNote) {
-      NotificationService.showInfo(
-        'Article terminé. Ajouter une note ?',
-        actionLabel: 'Ajouter une note',
-        onAction: _openNoteSheet,
-      );
+      actionLabel = 'Ajouter une note';
+      onAction = _openNoteSheet;
     } else if (!content.isSaved) {
-      NotificationService.showInfo(
-        'Article terminé. Ajouter une note ?',
-        actionLabel: 'Enregistrer',
-        onAction: _toggleBookmark,
-      );
+      actionLabel = 'Enregistrer';
+      onAction = _toggleBookmark;
+    } else {
+      return;
     }
+
+    final colors = context.facteurColors;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Expanded(
+              child: Text(
+                message,
+                style: FacteurTypography.bodyMedium(colors.textPrimary)
+                    .copyWith(fontWeight: FontWeight.w500, fontSize: 14),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                onAction();
+              },
+              child: Text(
+                actionLabel,
+                style: FacteurTypography.bodyMedium(colors.primary).copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: colors.backgroundSecondary,
+        behavior: SnackBarBehavior.floating,
+        elevation: 4,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        duration: const Duration(seconds: 3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
   }
 
   /// Compute layout offsets for bridge zone.
@@ -996,7 +1037,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Reading progress bar — bottom of screen, grey→primary color
           if (content.hasInAppContent || _isWebViewActive || (!useScrollToSite && !useInAppReading))
             Positioned(
-              bottom: 0,
+              bottom: MediaQuery.of(context).viewPadding.bottom,
               left: 0,
               right: 0,
               child: _buildReadingProgressBar(colors),
@@ -1087,11 +1128,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (_showNoteWelcome)
-                          NoteWelcomeTooltip(
-                            onDismiss: () =>
-                                setState(() => _showNoteWelcome = false),
-                          ),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
                         GestureDetector(
                           onLongPress: () {
@@ -1130,6 +1166,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ),
                         ),
+                        // Note welcome tooltip — bottom of FAB column, near the bookmark button
+                        if (_showNoteWelcome) ...[
+                          const SizedBox(height: 12),
+                          NoteWelcomeTooltip(
+                            onDismiss: () =>
+                                setState(() => _showNoteWelcome = false),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1145,17 +1189,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    // Wrap in SafeArea to respect Notch/StatusBar because we are in a Stack now
-    return SafeArea(
-      bottom: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space3,
-        ),
-        decoration: BoxDecoration(
-          color: colors.backgroundPrimary,
-        ),
+    // ColoredBox fills the status bar area; SafeArea pushes content below it
+    return ColoredBox(
+      color: colors.backgroundPrimary,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space2,
+            vertical: FacteurSpacing.space3,
+          ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1273,6 +1316,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               _buildEntityChips(context, content),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1452,9 +1496,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Container color hides WebView entirely before CTA tap;
         // becomes transparent after tap so spacer reveals WebView.
         // IgnorePointer lets touches pass through to WebView when active.
+        // AnimatedOpacity hides article layer when WebView is active to prevent
+        // bottom-of-article content from bleeding through the header status bar area.
         Positioned.fill(
-          child: IgnorePointer(
-            ignoring: _isWebViewActive,
+          child: AnimatedOpacity(
+            opacity: _isWebViewActive ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 300),
+            child: IgnorePointer(
+              ignoring: _isWebViewActive,
             child: ColoredBox(
               color: _ctaTapped
                   ? const Color(0x00000000)
@@ -1658,6 +1707,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ),
               ),
             ),
+          ),
           ),
         ),
       ],

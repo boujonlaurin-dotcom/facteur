@@ -167,7 +167,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                 // Segment labels
                 Row(
                   children: [
-                    SizedBox(width: SereinToggleChip._padding),
+                    const SizedBox(width: SereinToggleChip._padding),
                     _buildSegment(
                       width: halfWidth,
                       icon: SereinColors.normalIcon,
@@ -186,7 +186,7 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                       t: t,
                       onTap: !_isSerein ? _toggle : null,
                     ),
-                    SizedBox(width: SereinToggleChip._padding),
+                    const SizedBox(width: SereinToggleChip._padding),
                   ],
                 ),
               ],

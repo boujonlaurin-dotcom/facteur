@@ -6,7 +6,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/priority_slider.dart';
-import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../providers/feed_provider.dart';
@@ -197,15 +196,10 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
                 ),
               ),
               const Spacer(),
-              Builder(builder: (context) {
-                final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                final sourceUsage = algoProfile?.sourceAffinities[widget.source.id];
-                return PrioritySlider(
-                  currentMultiplier: _currentMultiplier,
-                  onChanged: _onSliderChanged,
-                  usageWeight: sourceUsage,
-                );
-              }),
+              PrioritySlider(
+                currentMultiplier: _currentMultiplier,
+                onChanged: _onSliderChanged,
+              ),
             ],
           ),
           const SizedBox(height: 20),
