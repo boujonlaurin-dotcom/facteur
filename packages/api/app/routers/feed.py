@@ -15,6 +15,7 @@ from app.schemas.feed import (
     FeedResponse,
     PaginationMeta,
     SourceOverflowInfo,
+    TopicOverflowInfo,
 )
 from app.services.recommendation_service import RecommendationService
 
@@ -88,6 +89,11 @@ async def get_personalized_feed(
         for sid, count in service.source_overflow.items()
     ]
 
+    # Topic overflow from topic-aware regroupement (Phase 2)
+    topic_overflow_data = [
+        TopicOverflowInfo(**info) for info in service.topic_overflow
+    ]
+
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
     has_next = len(feed_items) >= limit
@@ -102,6 +108,7 @@ async def get_personalized_feed(
         ),
         clusters=clusters_data,
         source_overflow=overflow_data,
+        topic_overflow=topic_overflow_data,
     )
 
 

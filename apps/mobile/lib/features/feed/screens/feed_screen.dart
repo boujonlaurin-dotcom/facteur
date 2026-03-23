@@ -25,7 +25,6 @@ import '../widgets/filter_bar.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../widgets/swipe_to_open_card.dart';
-import '../widgets/source_adjust_sheet.dart';
 import '../providers/swipe_hint_provider.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -40,6 +39,7 @@ import '../providers/user_bias_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
+import '../widgets/topic_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -79,8 +79,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Dynamic progressions map: ContentID -> Topic
   final Map<String, String> _activeProgressions = {};
 
-  // Serein toggle: brief opacity fade on content while feed refreshes
-  bool _isTogglingFeed = false;
+  // Feed loading state: true while any filter change or serein toggle refreshes
+  bool _isFeedRefreshing = false;
+
+  Future<void> _withFeedLoading(Future<void> Function() action) async {
+    if (mounted) setState(() => _isFeedRefreshing = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _isFeedRefreshing = false);
+    }
+  }
 
   // Interest filter: store selected name & type to avoid re-derivation bugs
   String? _selectedInterestName;
@@ -298,34 +307,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  // --- Swipe-left: open source adjust bottom sheet (Epic 12) ---
-
-  void _handleSwipeAdjust(Content content) {
-    SourceAdjustSheet.show(
-      context,
-      source: content.source,
-      onMuted: () {
-        // Remove all articles from this source in the feed
-        ref.read(feedProvider.notifier).swipeDismissAndMuteSource(content);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${content.source.name} masquée'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Annuler',
-              onPressed: () {
-                ref
-                    .read(userSourcesProvider.notifier)
-                    .toggleMute(content.source.id, true);
-                ref.invalidate(feedProvider);
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final feedAsync = ref.watch(feedProvider);
@@ -341,13 +322,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     // Listen to scroll to top trigger
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
 
-    // Serein toggle: brief loading indicator while feed refreshes
+    // Serein toggle: loading indicator tied to actual feed refresh
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
       if (prev != next && mounted) {
-        setState(() => _isTogglingFeed = true);
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (mounted) setState(() => _isTogglingFeed = false);
-        });
+        _withFeedLoading(() => ref.read(feedProvider.notifier).refresh());
       }
     });
 
@@ -538,7 +516,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     ? SourceFilterChip(
                                         onSourceChanged: (sourceId) {
                                           if (sourceId != null) {
-                                            notifier.setSource(sourceId);
+                                            _withFeedLoading(() => notifier.setSource(sourceId));
                                           }
                                         },
                                       )
@@ -556,25 +534,29 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       _selectedInterestName = name;
                                       _selectedIsTheme = isTheme;
                                     });
-                                    if (slug == null) {
-                                      notifier.setTopic(null);
-                                      notifier.setTheme(null);
-                                      notifier.setEntity(null);
-                                    } else if (isTheme) {
-                                      notifier.setTheme(slug);
-                                    } else if (isEntity) {
-                                      notifier.setEntity(slug);
-                                    } else {
-                                      notifier.setTopic(slug);
-                                    }
+                                    _withFeedLoading(() async {
+                                      if (slug == null) {
+                                        await notifier.setTopic(null);
+                                        await notifier.setTheme(null);
+                                        await notifier.setEntity(null);
+                                      } else if (isTheme) {
+                                        await notifier.setTheme(slug);
+                                      } else if (isEntity) {
+                                        await notifier.setEntity(slug);
+                                      } else {
+                                        await notifier.setTopic(slug);
+                                      }
+                                    });
                                   },
                                 ),
                                 onFilterChanged: (String? filter) {
-                                  if (filter == 'pour_vous') {
-                                    notifier.setFilter('pour_vous');
-                                  } else {
-                                    notifier.setFilter(null);
-                                  }
+                                  _withFeedLoading(() {
+                                    if (filter == 'pour_vous') {
+                                      return notifier.setFilter('pour_vous');
+                                    } else {
+                                      return notifier.setFilter(null);
+                                    }
+                                  });
                                 },
                               ),
                             ],
@@ -584,7 +566,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     // Brief loading indicator when serein toggle triggers feed refresh
-                    if (_isTogglingFeed)
+                    if (_isFeedRefreshing)
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -777,7 +759,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
                                   onSwipeDismiss: () =>
-                                      _handleSwipeAdjust(content),
+                                      TopicChip.showArticleSheet(context, content),
                                   enableHintAnimation: showHint,
                                   onHintAnimationComplete: () {
                                     if (!_swipeHintSeen) {
@@ -841,53 +823,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      // Epic 12.5: In chrono mode, topic chip tap opens SourceAdjustSheet
-                                      // In pour_vous mode, default ArticleSheet with scoring breakdown
-                                      topicChipWidget: notifier
-                                                  .selectedFilter ==
-                                              'pour_vous'
-                                          ? TopicChip(
-                                              content: content,
-                                              isFollowed: content
-                                                      .topics.isNotEmpty &&
-                                                  followedTopics.any((t) =>
-                                                      t.slugParent ==
-                                                          content
-                                                              .topics.first ||
-                                                      t.name.toLowerCase() ==
-                                                          getTopicLabel(content
-                                                                  .topics.first)
-                                                              .toLowerCase()),
-                                            )
-                                          : GestureDetector(
-                                              onTap: () =>
-                                                  _handleSwipeAdjust(content),
-                                              child: AbsorbPointer(
-                                                child: TopicChip(
-                                                  content: content,
-                                                  isFollowed: content
-                                                          .topics.isNotEmpty &&
-                                                      followedTopics.any((t) =>
-                                                          t.slugParent ==
-                                                              content.topics
-                                                                  .first ||
-                                                          t.name.toLowerCase() ==
-                                                              getTopicLabel(
-                                                                      content
-                                                                          .topics
-                                                                          .first)
-                                                                  .toLowerCase()),
-                                                ),
-                                              ),
-                                            ),
+                                      // TopicChip handles its own onTap → ArticleSheet in all modes
+                                      topicChipWidget: TopicChip(
+                                        content: content,
+                                        isFollowed: content
+                                                .topics.isNotEmpty &&
+                                            followedTopics.any((t) =>
+                                                t.slugParent ==
+                                                    content
+                                                        .topics.first ||
+                                                t.name.toLowerCase() ==
+                                                    getTopicLabel(content
+                                                            .topics.first)
+                                                        .toLowerCase()),
+                                      ),
                                       clusterChipWidget:
                                           content.clusterHiddenCount > 0
                                               ? ClusterChip(content: content)
-                                              : SourceOverflowChip(content: content),
+                                              : content.topicOverflowCount > 0
+                                                  ? TopicOverflowChip(content: content)
+                                                  : SourceOverflowChip(content: content),
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
                                       onSourceTap: () =>
-                                          _handleSwipeAdjust(content),
+                                          TopicChip.showArticleSheet(context, content),
                                     ),
                                   ),
                                 );
