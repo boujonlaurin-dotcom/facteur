@@ -39,6 +39,16 @@ class SourceOverflowInfo(BaseModel):
     hidden_count: int
 
 
+class TopicOverflowInfo(BaseModel):
+    """Metadata d'overflow: articles neutres regroupés par topic ou thème."""
+
+    group_type: str  # "topic" ou "theme"
+    group_key: str  # slug du topic ou theme
+    group_label: str  # label traduit pour affichage
+    hidden_count: int
+    hidden_ids: list[UUID]
+
+
 class FeedResponse(BaseModel):
     """Réponse feed paginé."""
 
@@ -46,6 +56,7 @@ class FeedResponse(BaseModel):
     pagination: PaginationMeta
     clusters: list[ClusterInfo] = []
     source_overflow: list[SourceOverflowInfo] = []
+    topic_overflow: list[TopicOverflowInfo] = []
 
 
 class FeedFilters(BaseModel):

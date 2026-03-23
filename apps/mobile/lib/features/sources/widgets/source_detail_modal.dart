@@ -13,8 +13,6 @@ class SourceDetailModal extends StatelessWidget {
   final VoidCallback? onCopyFeedUrl;
   final VoidCallback? onToggleSubscription;
   final ValueChanged<double>? onPriorityChanged; // Epic 12: frequency slider
-  final double? usageWeight;
-
   const SourceDetailModal({
     super.key,
     required this.source,
@@ -23,7 +21,6 @@ class SourceDetailModal extends StatelessWidget {
     this.onCopyFeedUrl,
     this.onToggleSubscription,
     this.onPriorityChanged,
-    this.usageWeight,
   });
 
   @override
@@ -169,7 +166,6 @@ class SourceDetailModal extends StatelessWidget {
                     key: ValueKey(source.id),
                     currentMultiplier: source.priorityMultiplier,
                     onChanged: onPriorityChanged!,
-                    usageWeight: usageWeight,
                   ),
                 ],
               ),

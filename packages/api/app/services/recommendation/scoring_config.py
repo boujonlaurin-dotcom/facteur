@@ -230,3 +230,14 @@ class ScoringWeights:
 
     # Scoring engine version: "layers_v1" (legacy) or "pillars_v1" (new).
     SCORING_VERSION = "pillars_v1"
+
+    # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
+
+    # Floor ratio: minimum fraction of neutral articles kept visible (discovery).
+    DISCOVERY_FLOOR_RATIO = 0.30
+
+    # Subtopic weight threshold to consider a subtopic as "followed" (implicit).
+    FOLLOWED_SUBTOPIC_THRESHOLD = 1.5
+
+    # Minimum articles in a neutral group to justify a CTA chip.
+    MIN_FOR_TOPIC_GROUPING = 3

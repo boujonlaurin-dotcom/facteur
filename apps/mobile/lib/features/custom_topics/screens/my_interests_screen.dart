@@ -92,6 +92,17 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
           ),
         ),
         data: (topics) {
+          // Muted topics grouped by macro-theme
+          final mutedTopics =
+              ref.watch(personalizationProvider).valueOrNull?.mutedTopics ?? {};
+          final mutedByTheme = <String, List<String>>{};
+          for (final slug in mutedTopics) {
+            final macro = getTopicMacroTheme(slug);
+            if (macro != null) {
+              mutedByTheme.putIfAbsent(macro, () => []).add(slug);
+            }
+          }
+
           // Group topics by macro group
           final grouped = <String, List<_GroupedTheme>>{};
           for (final topic in topics) {
@@ -231,6 +242,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       themeSlug: macroThemeToApiSlug[group] ?? groupSlugs.first,
                       themeLabel: group,
                       followedTopics: const [],
+                      mutedTopicSlugs: mutedByTheme[group] ?? [],
                     );
                   }
                   final allTopics =
@@ -239,6 +251,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     themeSlug: macroThemeToApiSlug[group] ?? themes.first.slug,
                     themeLabel: group,
                     followedTopics: allTopics,
+                    mutedTopicSlugs: mutedByTheme[group] ?? [],
                   );
                 }),
 

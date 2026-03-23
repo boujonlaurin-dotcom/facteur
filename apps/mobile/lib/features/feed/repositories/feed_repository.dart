@@ -182,6 +182,58 @@ class FeedRepository {
               }
             }
           }
+          // Topic overflow from topic-aware regroupement (Phase 2)
+          final topicOverflowRaw = data['topic_overflow'];
+          if (topicOverflowRaw is List) {
+            final topicOverflows = <TopicOverflow>[];
+            for (final t in topicOverflowRaw) {
+              try {
+                if (t is Map<String, dynamic>) {
+                  topicOverflows.add(TopicOverflow.fromJson(t));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt topic_overflow: $err');
+              }
+            }
+
+            if (topicOverflows.isNotEmpty) {
+              // For each topic overflow group, find the last article matching
+              // that group and annotate it with overflow metadata.
+              // Priority: cluster > topic_overflow > source_overflow
+              for (final overflow in topicOverflows) {
+                int? lastMatchIdx;
+                for (var i = 0; i < itemsList.length; i++) {
+                  final item = itemsList[i];
+                  bool matches = false;
+                  if (overflow.groupType == 'topic') {
+                    matches = item.topics.any(
+                        (t) => t.toLowerCase() == overflow.groupKey);
+                  } else {
+                    // theme match via source.theme
+                    matches = (item.source.theme?.toLowerCase() ?? '') ==
+                        overflow.groupKey;
+                  }
+                  if (matches) {
+                    lastMatchIdx = i;
+                  }
+                }
+
+                if (lastMatchIdx != null) {
+                  final item = itemsList[lastMatchIdx];
+                  // Don't overwrite cluster chip (highest priority)
+                  if (item.clusterHiddenCount == 0) {
+                    itemsList[lastMatchIdx] = item.copyWith(
+                      topicOverflowCount: overflow.hiddenCount,
+                      topicOverflowLabel: overflow.groupLabel,
+                      topicOverflowKey: overflow.groupKey,
+                      topicOverflowType: overflow.groupType,
+                      topicOverflowHiddenIds: overflow.hiddenIds,
+                    );
+                  }
+                }
+              }
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];
