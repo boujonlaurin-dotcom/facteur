@@ -15,7 +15,9 @@ from app.models.user import (
     UserStreak,
     UserSubtopic,
 )
+from app.models.user_topic_profile import UserTopicProfile
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
+from app.services.ml.classification_service import SLUG_TO_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,8 @@ class UserService:
         await self.db.execute(
             delete(UserSubtopic).where(UserSubtopic.user_id == UUID(user_id))
         )
+        # Note: onboarding topic profiles are now upserted (skip-if-exists)
+        # to preserve manual priority changes made post-onboarding.
 
         # Sauvegarder les préférences
         preferences = {
@@ -160,7 +164,7 @@ class UserService:
                 self.db.add(interest)
                 interest_count += 1
 
-        # Sauvegarder les sous-thèmes
+        # Sauvegarder les sous-thèmes + créer les topic profiles correspondants
         subtopic_count = 0
         if answers.subtopics:
             for topic_slug in answers.subtopics:
@@ -172,6 +176,28 @@ class UserService:
                 )
                 self.db.add(subtopic)
                 subtopic_count += 1
+
+                # Create UserTopicProfile only if not already followed
+                # (preserves manual priority changes from post-onboarding edits)
+                existing_profile = await self.db.scalar(
+                    select(UserTopicProfile).where(
+                        UserTopicProfile.user_id == UUID(user_id),
+                        UserTopicProfile.slug_parent == topic_slug,
+                    )
+                )
+                if not existing_profile:
+                    topic_profile = UserTopicProfile(
+                        user_id=UUID(user_id),
+                        topic_name=SLUG_TO_LABEL.get(
+                            topic_slug, topic_slug.capitalize()
+                        ),
+                        slug_parent=topic_slug,
+                        keywords=[topic_slug],
+                        source_type="onboarding",
+                        priority_multiplier=1.0,
+                        composite_score=0.0,
+                    )
+                    self.db.add(topic_profile)
 
         # Sauvegarder les sources sélectionnées (UserSource)
         # Atomique avec le reste de l'onboarding — pas de race condition

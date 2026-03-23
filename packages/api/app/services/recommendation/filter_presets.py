@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
@@ -112,13 +112,40 @@ def apply_theme_focus_filter(query, theme_slug: str):
         )
     )
     # Deux chemins indexés sur la même table (contents) :
-    # 1. Articles de sources matchant le thème (via ix_contents_source_id)
-    # 2. Articles classifiés ML dans ce thème (via ix_contents_theme_published)
+    # 1. Articles classifiés ML dans ce thème → toujours inclus
+    # 2. Articles de sources matchant le thème MAIS pas encore classifiés
+    #    (Content.theme IS NULL) → bénéfice du doute
+    # Exclut: articles de sources matchantes mais classifiés dans un AUTRE thème
     return query.where(
         or_(
-            Content.source_id.in_(theme_source_ids_subq),
             Content.theme == theme_slug,
+            and_(
+                Content.source_id.in_(theme_source_ids_subq),
+                Content.theme.is_(None),
+            ),
         )
+    )
+
+
+def apply_topic_filter(query, topic_slug: str):
+    """Filtre les contenus par topic ML granulaire (e.g. 'ai', 'startups').
+
+    Utilise Content.topics (ARRAY) avec l'index GIN ix_contents_topics.
+    """
+    return query.where(Content.topics.any(topic_slug))
+
+
+def apply_entity_filter(query, entity_name: str):
+    """Filter content whose entities array contains a JSON string matching the entity name.
+
+    Content.entities is ARRAY(Text) with GIN index ix_contents_entities.
+    Each element is a JSON string like '{"name": "Macron", "type": "PERSON"}'.
+    Uses unnest + LIKE for safe parameterized matching.
+    """
+    entity_element = func.unnest(Content.entities).column_valued()
+    pattern = f'%"name": "{entity_name}"%'
+    return query.where(
+        exists(select(literal_column("1")).where(entity_element.like(pattern)))
     )
 
 

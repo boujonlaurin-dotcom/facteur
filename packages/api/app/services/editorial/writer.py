@@ -6,7 +6,6 @@ Story 10.24: Fills all null editorial text fields via LLM + DB query.
 from __future__ import annotations
 
 import json
-import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -27,14 +26,6 @@ from app.services.editorial.schemas import (
 )
 
 logger = structlog.get_logger()
-
-
-def _strip_plain(html: str | None) -> str | None:
-    """Strip HTML tags, return plain text or None."""
-    if not html:
-        return None
-    plain = re.sub(r"<[^>]+>", " ", html)
-    return re.sub(r"\s+", " ", plain).strip() or None
 
 
 class EditorialWriterService:
@@ -94,7 +85,20 @@ class EditorialWriterService:
                 }
             )
 
+        # Pass the day name so the LLM can write "Votre essentiel du mardi"
+        _JOURS_FR = {
+            0: "lundi",
+            1: "mardi",
+            2: "mercredi",
+            3: "jeudi",
+            4: "vendredi",
+            5: "samedi",
+            6: "dimanche",
+        }
+        day_name = _JOURS_FR[datetime.now(UTC).weekday()]
+
         user_message = (
+            f"Jour : {day_name}\n\n"
             "Voici les 3 sujets du jour avec leurs articles :\n\n"
             f"{json.dumps(subjects_data, ensure_ascii=False, indent=2)}\n\n"
             "Génère le texte éditorial au format JSON."
@@ -194,7 +198,7 @@ class EditorialWriterService:
                 "source_name": c.source.name
                 if hasattr(c, "source") and c.source
                 else "Source inconnue",
-                "description": (c.description or _strip_plain(c.html_content) or "")[:200],
+                "description": (c.description or "")[:200],
             }
             for c in eligible
         ]

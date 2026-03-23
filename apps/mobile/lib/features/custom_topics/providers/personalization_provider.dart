@@ -34,6 +34,6 @@ class UserPersonalization {
 final personalizationProvider =
     FutureProvider<UserPersonalization>((ref) async {
   final client = ref.watch(apiClientProvider);
-  final response = await client.get('/users/personalization');
-  return UserPersonalization.fromJson(response.data as Map<String, dynamic>);
+  final data = await client.get('users/personalization');
+  return UserPersonalization.fromJson(data as Map<String, dynamic>);
 });

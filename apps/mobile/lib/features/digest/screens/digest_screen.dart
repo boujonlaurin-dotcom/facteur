@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../shared/widgets/mode_accent.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
@@ -295,6 +296,15 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
       children: [
         Container(
           color: colors.backgroundPrimary,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: ModeAccent(isSerein: sereinState.enabled),
+          ),
         ),
         Scaffold(
           backgroundColor: Colors.transparent,

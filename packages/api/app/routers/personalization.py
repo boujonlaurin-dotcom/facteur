@@ -105,9 +105,16 @@ async def mute_source(
             .on_conflict_do_update(
                 index_elements=["user_id"],
                 set_={
-                    "muted_sources": func.coalesce(
-                        UserPersonalization.muted_sources, text("'{}'::uuid[]")
-                    ).op("||")([request.source_id]),
+                    "muted_sources": func.array_append(
+                        func.array_remove(
+                            func.coalesce(
+                                UserPersonalization.muted_sources,
+                                text("ARRAY[]::uuid[]"),
+                            ),
+                            request.source_id,
+                        ),
+                        request.source_id,
+                    ),
                     "updated_at": func.now(),
                 },
             )
@@ -168,9 +175,16 @@ async def mute_theme(
             .on_conflict_do_update(
                 index_elements=["user_id"],
                 set_={
-                    "muted_themes": func.coalesce(
-                        UserPersonalization.muted_themes, text("'{}'::text[]")
-                    ).op("||")([theme_slug]),
+                    "muted_themes": func.array_append(
+                        func.array_remove(
+                            func.coalesce(
+                                UserPersonalization.muted_themes,
+                                text("ARRAY[]::text[]"),
+                            ),
+                            theme_slug,
+                        ),
+                        theme_slug,
+                    ),
                     "updated_at": func.now(),
                 },
             )
@@ -214,9 +228,16 @@ async def mute_topic(
             .on_conflict_do_update(
                 index_elements=["user_id"],
                 set_={
-                    "muted_topics": func.coalesce(
-                        UserPersonalization.muted_topics, text("'{}'::text[]")
-                    ).op("||")([topic_slug]),
+                    "muted_topics": func.array_append(
+                        func.array_remove(
+                            func.coalesce(
+                                UserPersonalization.muted_topics,
+                                text("ARRAY[]::text[]"),
+                            ),
+                            topic_slug,
+                        ),
+                        topic_slug,
+                    ),
                     "updated_at": func.now(),
                 },
             )
@@ -266,9 +287,16 @@ async def mute_content_type(
             .on_conflict_do_update(
                 index_elements=["user_id"],
                 set_={
-                    "muted_content_types": func.coalesce(
-                        UserPersonalization.muted_content_types, text("'{}'::text[]")
-                    ).op("||")([ct_slug]),
+                    "muted_content_types": func.array_append(
+                        func.array_remove(
+                            func.coalesce(
+                                UserPersonalization.muted_content_types,
+                                text("ARRAY[]::text[]"),
+                            ),
+                            ct_slug,
+                        ),
+                        ct_slug,
+                    ),
                     "updated_at": func.now(),
                 },
             )

@@ -158,7 +158,8 @@ class FeedCard extends StatelessWidget {
                         child: Row(
                           children: [
                             // Source Logo + Name (tappable for source detail — Epic 12)
-                            GestureDetector(
+                            Flexible(
+                            child: GestureDetector(
                               onTap: onSourceTap,
                               behavior: HitTestBehavior.opaque,
                               child: Row(
@@ -195,6 +196,7 @@ class FeedCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
+                            ),
                             ),
 
                             // Source suivie badge

@@ -41,14 +41,16 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
-import '../providers/personalized_filters_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
+import '../widgets/empty_filter_state.dart';
 import '../widgets/interest_filter_chip.dart';
+import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../progress/widgets/progression_card.dart';
+import '../../../shared/widgets/mode_accent.dart';
 
 /// Écran principal du feed
 class FeedScreen extends ConsumerStatefulWidget {
@@ -79,6 +81,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   // Serein toggle: brief opacity fade on content while feed refreshes
   bool _isTogglingFeed = false;
+
+  // Interest filter: store selected name & type to avoid re-derivation bugs
+  String? _selectedInterestName;
+  bool _selectedIsTheme = false;
 
   @override
   void initState() {
@@ -449,6 +455,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                           final notifier = ref.read(feedProvider.notifier);
 
+                          // Sync local display state with notifier — reset if no filter active
+                          if (notifier.selectedTheme == null &&
+                              notifier.selectedTopic == null &&
+                              notifier.selectedEntity == null) {
+                            _selectedInterestName = null;
+                            _selectedIsTheme = false;
+                          }
+
                           // Source filter state
                           final sourcesAsync = ref.watch(userSourcesProvider);
                           final allSources = sourcesAsync.valueOrNull ?? [];
@@ -468,6 +482,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   .firstOrNull
                                   ?.name
                               : null;
+                          final selectedSourceLogoUrl = selectedSourceId != null
+                              ? followedSources
+                                  .where((s) => s.id == selectedSourceId)
+                                  .firstOrNull
+                                  ?.logoUrl
+                              : null;
 
                           // When source filter is active: show only the source chip
                           if (selectedSourceId != null) {
@@ -479,6 +499,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 child: SourceFilterChip(
                                   selectedSourceId: selectedSourceId,
                                   selectedSourceName: selectedSourceName,
+                                  selectedSourceLogoUrl: selectedSourceLogoUrl,
                                   onSourceChanged: (sourceId) {
                                     if (sourceId != null) {
                                       notifier.setSource(sourceId);
@@ -491,57 +512,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             );
                           }
 
-                          // Merge custom topics into filters
+                          // Only keep "Pour vous" as a chip — themes/topics
+                          // are now accessed via the "Mes intérêts" sheet.
                           final customTopics =
                               ref.watch(customTopicsProvider).valueOrNull ?? [];
-                          final customTopicFilters = customTopics
-                              .where((t) => t.slugParent != null)
-                              .map((t) => FilterConfig(
-                                    key: t.slugParent!,
-                                    label: '• ${t.name}',
-                                    description: 'Articles sur ${t.name}',
-                                  ))
-                              .toList();
-
-                          // Merge: custom topics first (by priority), then theme filters
-                          final themeKeys =
-                              themeFilters.map((f) => f.key).toSet();
-                          final uniqueCustomFilters = customTopicFilters
-                              .where((f) => !themeKeys.contains(f.key))
-                              .toList();
-
-                          // Sort custom topics by priority descending
-                          uniqueCustomFilters.sort((a, b) {
-                            final aPri = customTopics
-                                    .where((t) => t.slugParent == a.key)
-                                    .firstOrNull
-                                    ?.priorityMultiplier ??
-                                1.0;
-                            final bPri = customTopics
-                                    .where((t) => t.slugParent == b.key)
-                                    .firstOrNull
-                                    ?.priorityMultiplier ??
-                                1.0;
-                            return bPri.compareTo(aPri);
-                          });
-
-                          // Epic 12: "Pour vous" after custom topics, then theme filters
-                          // "Derniers articles" always first, then custom topics, then other themes
-                          final pourVousFilter = themeFilters
+                          final mergedFilters = themeFilters
                               .where((f) => f.key == 'pour_vous')
                               .toList();
-                          final otherThemeFilters = themeFilters
-                              .where((f) => f.key != 'pour_vous' && f.key != 'recent')
-                              .toList();
-                          // Track which keys are custom topics vs themes
-                          final customTopicKeys =
-                              uniqueCustomFilters.map((f) => f.key).toSet();
-
-                          final mergedFilters = [
-                            ...pourVousFilter,
-                            ...uniqueCustomFilters,
-                            ...otherThemeFilters,
-                          ];
 
                           // No source active: show source chip + filter bar
                           return Column(
@@ -566,45 +543,37 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         },
                                       )
                                     : null,
-                                interestFilterChip: customTopics.isNotEmpty
-                                    ? InterestFilterChip(
-                                        selectedTopicSlug:
-                                            notifier.selectedTopic,
-                                        selectedTopicName:
-                                            notifier.selectedTopic != null
-                                                ? customTopics
-                                                        .where((t) =>
-                                                            t.slugParent ==
-                                                            notifier
-                                                                .selectedTopic)
-                                                        .firstOrNull
-                                                        ?.name ??
-                                                    getTopicLabel(notifier
-                                                        .selectedTopic!)
-                                                : null,
-                                        onInterestChanged: (slug, name) {
-                                          notifier.setTopic(slug);
-                                        },
-                                      )
-                                    : null,
+                                interestFilterChip: InterestFilterChip(
+                                  selectedTopicSlug:
+                                      notifier.selectedTopic ??
+                                          notifier.selectedTheme ??
+                                          notifier.selectedEntity,
+                                  selectedTopicName: _selectedInterestName,
+                                  selectedIsTheme: _selectedIsTheme,
+                                  onInterestChanged:
+                                      (slug, name, {isTheme = false, isEntity = false}) {
+                                    setState(() {
+                                      _selectedInterestName = name;
+                                      _selectedIsTheme = isTheme;
+                                    });
+                                    if (slug == null) {
+                                      notifier.setTopic(null);
+                                      notifier.setTheme(null);
+                                      notifier.setEntity(null);
+                                    } else if (isTheme) {
+                                      notifier.setTheme(slug);
+                                    } else if (isEntity) {
+                                      notifier.setEntity(slug);
+                                    } else {
+                                      notifier.setTopic(slug);
+                                    }
+                                  },
+                                ),
                                 onFilterChanged: (String? filter) {
                                   if (filter == 'pour_vous') {
                                     notifier.setFilter('pour_vous');
-                                  } else if (filter == null) {
-                                    // Deselecting: clear whichever is active
-                                    if (notifier.selectedTheme != null) {
-                                      notifier.setTheme(null);
-                                    } else if (notifier.selectedTopic != null) {
-                                      notifier.setTopic(null);
-                                    } else {
-                                      notifier.setFilter(null);
-                                    }
-                                  } else if (customTopicKeys.contains(filter)) {
-                                    // Custom topic → filter by Content.topics
-                                    notifier.setTopic(filter);
                                   } else {
-                                    // Theme → filter by Content.theme / Source.theme
-                                    notifier.setTheme(filter);
+                                    notifier.setFilter(null);
                                   }
                                 },
                               ),
@@ -667,6 +636,65 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // quand showCaughtUp/showSavedNudge changent en cours de scroll.
                         final int effectiveChildCount =
                             contents.isEmpty ? 1 : contents.length + 4;
+
+                        // Empty state when a filter is active but no results
+                        final hasActiveFilter =
+                            notifier.selectedTheme != null ||
+                                notifier.selectedTopic != null ||
+                                notifier.selectedEntity != null ||
+                                notifier.selectedSourceId != null;
+
+                        if (contents.isEmpty && hasActiveFilter) {
+                          // Resolve source name from ID for display
+                          final sourceFilterName = notifier.selectedSourceId != null
+                              ? (ref.read(userSourcesProvider).valueOrNull ?? [])
+                                  .where((s) => s.id == notifier.selectedSourceId)
+                                  .firstOrNull
+                                  ?.name
+                              : null;
+
+                          return SliverToBoxAdapter(
+                            child: EmptyFilterState(
+                              filterName: _selectedInterestName ??
+                                  sourceFilterName,
+                              isTheme: notifier.selectedTheme != null,
+                              isEntity: notifier.selectedEntity != null,
+                              isSource: notifier.selectedSourceId != null,
+                              onClearFilter: () {
+                                setState(() {
+                                  _selectedInterestName = null;
+                                  _selectedIsTheme = false;
+                                });
+                                notifier.setTopic(null);
+                                notifier.setTheme(null);
+                                notifier.setEntity(null);
+                                notifier.setSource(null);
+                                notifier.setFilter(null);
+                              },
+                              onBrowseThemes: () {
+                                InterestFilterSheet.show(
+                                  context,
+                                  currentTopicSlug: null,
+                                  onInterestSelected: (slug, name,
+                                      {bool isTheme = false,
+                                      bool isEntity = false}) {
+                                    setState(() {
+                                      _selectedInterestName = name;
+                                      _selectedIsTheme = isTheme;
+                                    });
+                                    if (isTheme) {
+                                      notifier.setTheme(slug);
+                                    } else if (isEntity) {
+                                      notifier.setEntity(slug);
+                                    } else {
+                                      notifier.setTopic(slug);
+                                    }
+                                  },
+                                );
+                              },
+                            ),
+                          );
+                        }
 
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -960,6 +988,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: ModeAccent(
+                  isSerein: ref.watch(sereinToggleProvider).enabled,
                 ),
               ),
             ),

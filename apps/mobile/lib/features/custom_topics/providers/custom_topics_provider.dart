@@ -67,7 +67,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
   /// Follow a new topic by name.
   /// Optimistic: adds a placeholder immediately, replaces with server response.
   /// [slugParent] allows immediate slug matching before the API responds.
-  Future<UserTopicProfile?> followTopic(String name, {String? slugParent}) =>
+  /// [priorityMultiplier] restores a specific priority (e.g. undo after unfollow).
+  Future<UserTopicProfile?> followTopic(String name, {String? slugParent, double? priorityMultiplier}) =>
       _serialized(() async {
     final repo = ref.read(topicRepositoryProvider);
 
@@ -79,6 +80,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
       slugParent: slugParent,
+      priorityMultiplier: priorityMultiplier ?? 1.0,
     );
 
     if (state.hasValue) {
@@ -89,7 +91,7 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followTopic(name);
+      final created = await repo.followTopic(name, priorityMultiplier: priorityMultiplier);
 
       // Replace placeholder with server-enriched profile
       if (state.hasValue) {
@@ -179,6 +181,56 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       (t) => t.name.toLowerCase() == name.toLowerCase(),
     );
   }
+
+  /// Check if an entity is already followed by canonical name (case-insensitive).
+  bool isEntityFollowed(String canonicalName) {
+    if (!state.hasValue) return false;
+    return state.value!.any(
+      (t) => t.canonicalName?.toLowerCase() == canonicalName.toLowerCase(),
+    );
+  }
+
+  /// Follow an entity by name and type.
+  /// Optimistic: adds a placeholder immediately, replaces with server response.
+  Future<UserTopicProfile?> followEntity(
+    String name,
+    String entityType, {
+    String? slugParent,
+  }) =>
+      _serialized(() async {
+    final repo = ref.read(topicRepositoryProvider);
+    final previousState = state;
+
+    final placeholder = UserTopicProfile(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      slugParent: slugParent,
+      entityType: entityType,
+      canonicalName: name,
+    );
+
+    if (state.hasValue) {
+      state = AsyncData([...state.value!, placeholder]);
+    } else {
+      state = AsyncData([placeholder]);
+    }
+
+    try {
+      final created = await repo.followEntity(name, entityType);
+      if (state.hasValue) {
+        final updated = state.value!
+            .map((t) => t.id == placeholder.id ? created : t)
+            .toList();
+        state = AsyncData(updated);
+      } else {
+        state = AsyncData([created]);
+      }
+      return created;
+    } catch (e) {
+      state = previousState;
+      rethrow;
+    }
+  });
 }
 
 // Topic suggestions provider (parameterized by optional theme slug)
@@ -186,4 +238,11 @@ final topicSuggestionsProvider =
     FutureProvider.family<List<String>, String?>((ref, theme) async {
   final repo = ref.watch(topicRepositoryProvider);
   return repo.getTopicSuggestions(theme: theme);
+});
+
+// Popular entities provider (parameterized by optional theme slug)
+final popularEntitiesProvider =
+    FutureProvider.family<List<PopularEntity>, String?>((ref, theme) async {
+  final repo = ref.watch(topicRepositoryProvider);
+  return repo.getPopularEntities(theme: theme);
 });

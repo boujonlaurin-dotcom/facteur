@@ -59,6 +59,7 @@ class ClassificationWorker:
         )
 
         self._classifier = None
+        self._loop_count = 0
 
     def _get_classifier(self):
         """Lazy load classification service."""
@@ -120,6 +121,11 @@ class ClassificationWorker:
         """Main processing loop."""
         while self.running:
             try:
+                # Every ~5 minutes, reset items stuck in "processing" too long
+                self._loop_count += 1
+                if self._loop_count % 30 == 0:
+                    await self._reset_stale_processing()
+
                 await self._process_batch()
             except Exception as e:
                 import structlog
@@ -128,6 +134,23 @@ class ClassificationWorker:
                 logger.error("classification_worker_error", error=str(e))
 
             await asyncio.sleep(self.interval)
+
+    async def _reset_stale_processing(self):
+        """Periodically reset items stuck in 'processing' for >10 minutes."""
+        import structlog
+
+        logger = structlog.get_logger()
+
+        try:
+            async with self.session_maker() as session:
+                service = ClassificationQueueService(session)
+                count = await service.reset_stale_processing(stale_minutes=10)
+                if count > 0:
+                    logger.info(
+                        "classification_worker.reset_stale_processing", count=count
+                    )
+        except Exception as e:
+            logger.error("classification_worker.reset_stale_failed", error=str(e))
 
     async def _process_batch(self):
         """Process one batch of pending items using batch API call."""
@@ -179,6 +202,7 @@ class ClassificationWorker:
             all_results: list[dict] = []
 
             if classifier and classifier.is_ready() and batch_items:
+                # Step 1: Classify (topics + serene only)
                 all_results = await classifier.classify_batch_async(batch_items)
 
                 # Retry individually for each article that got empty topics
@@ -200,6 +224,20 @@ class ClassificationWorker:
                         )
                         if result.get("topics"):
                             all_results[idx] = result
+
+                # Step 2: Extract entities (separate API call)
+                try:
+                    all_entities = await classifier.extract_entities_batch_async(
+                        batch_items
+                    )
+                    for idx, entities in enumerate(all_entities):
+                        if idx < len(all_results):
+                            all_results[idx]["entities"] = entities
+                except Exception as e:
+                    logger.warning(
+                        "classification_worker.entity_extraction_failed",
+                        error=str(e),
+                    )
             else:
                 all_results = [
                     {"topics": [], "serene": None, "entities": []} for _ in batch_items

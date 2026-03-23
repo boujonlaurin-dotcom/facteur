@@ -10,7 +10,6 @@ No time limit on deep articles (can be months old).
 from __future__ import annotations
 
 import asyncio
-import re
 
 import structlog
 from sqlalchemy import select
@@ -25,23 +24,6 @@ from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import MatchedDeepArticle, SelectedTopic
 
 logger = structlog.get_logger()
-
-
-def _resolve_description(content: Content) -> str | None:
-    """Get description, falling back to html_content excerpt.
-
-    html_content comes from trafilatura (article text only, no nav/footer),
-    so tag stripping just removes residual <p>/<a>/etc.
-    """
-    if content.description:
-        return content.description
-    if content.html_content:
-        plain = re.sub(r"<[^>]+>", " ", content.html_content)
-        plain = re.sub(r"\s+", " ", plain).strip()
-        # Skip short remnants (nav text, "Loading...", etc.)
-        if len(plain) >= 20:
-            return plain[:500]
-    return None
 
 
 class DeepMatcher:
@@ -210,10 +192,6 @@ class DeepMatcher:
                 article_text += " " + " ".join(article.topics)
             if article.description:
                 article_text += " " + article.description[:200]
-            elif article.html_content:
-                plain = re.sub(r"<[^>]+>", " ", article.html_content)
-                plain = re.sub(r"\s+", " ", plain).strip()
-                article_text += " " + plain[:200]
             article_tokens = self._detector.normalize_title(article_text)
 
             similarity = self._detector.jaccard_similarity(topic_tokens, article_tokens)
@@ -237,7 +215,7 @@ class DeepMatcher:
         candidates_text = "\n".join(
             f"[{i}] {c.title} — {c.source.name if c.source else 'Unknown'}"
             f" ({c.published_at.strftime('%Y-%m-%d')})"
-            f"\n    {(_resolve_description(c) or '')[:200]}"
+            f"\n    {(c.description or '')[:200]}"
             for i, (c, _score) in enumerate(candidates)
         )
 
@@ -263,12 +241,11 @@ class DeepMatcher:
 
         if selected_index is None:
             logger.info(
-                "deep_matcher.llm_no_match_fallback",
+                "deep_matcher.llm_no_match",
                 topic_id=topic.topic_id,
                 reason=reason,
-                candidates_count=len(candidates),
             )
-            return self._fallback_pick(candidates)
+            return None
 
         if (
             not isinstance(selected_index, int)
@@ -292,7 +269,7 @@ class DeepMatcher:
             source_id=content.source_id,
             published_at=content.published_at,
             match_reason=reason or f"Analyse de fond sur {topic.label}",
-            description=_resolve_description(content),
+            description=content.description,
         )
 
     @staticmethod
@@ -313,5 +290,5 @@ class DeepMatcher:
             source_id=content.source_id,
             published_at=content.published_at,
             match_reason="Selection automatique (meilleure correspondance)",
-            description=_resolve_description(content),
+            description=content.description,
         )

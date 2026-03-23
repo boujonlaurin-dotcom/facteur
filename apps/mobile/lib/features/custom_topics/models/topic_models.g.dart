@@ -52,3 +52,37 @@ const _$TopicSourceTypeEnumMap = {
   TopicSourceType.implicit: 'implicit',
   TopicSourceType.suggested: 'suggested',
 };
+
+_$PopularEntityImpl _$$PopularEntityImplFromJson(Map<String, dynamic> json) =>
+    _$PopularEntityImpl(
+      name: json['name'] as String,
+      type: json['type'] as String,
+      theme: json['theme'] as String?,
+      count: (json['count'] as num?)?.toInt() ?? 0,
+    );
+
+Map<String, dynamic> _$$PopularEntityImplToJson(_$PopularEntityImpl instance) =>
+    <String, dynamic>{
+      'name': instance.name,
+      'type': instance.type,
+      'theme': instance.theme,
+      'count': instance.count,
+    };
+
+_$DisambiguationSuggestionImpl _$$DisambiguationSuggestionImplFromJson(
+        Map<String, dynamic> json) =>
+    _$DisambiguationSuggestionImpl(
+      canonicalName: json['canonical_name'] as String,
+      entityType: json['entity_type'] as String?,
+      description: json['description'] as String,
+      slugParent: json['slug_parent'] as String,
+    );
+
+Map<String, dynamic> _$$DisambiguationSuggestionImplToJson(
+        _$DisambiguationSuggestionImpl instance) =>
+    <String, dynamic>{
+      'canonical_name': instance.canonicalName,
+      'entity_type': instance.entityType,
+      'description': instance.description,
+      'slug_parent': instance.slugParent,
+    };

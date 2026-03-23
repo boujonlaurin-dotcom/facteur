@@ -15,7 +15,6 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -99,19 +98,13 @@ async def get_digest(
     elapsed = time.monotonic() - start
 
     if not digest:
-        elapsed = time.monotonic() - start
-        logger.info(
-            "digest_generation_in_progress",
+        logger.warning(
+            "digest_generation_returned_none",
             user_id=current_user_id,
             elapsed_ms=round(elapsed * 1000, 1),
         )
-        return JSONResponse(
-            status_code=202,
-            content={
-                "detail": "Votre briefing est en cours de préparation. Réessayez dans quelques secondes.",
-                "status": "generating",
-            },
-            headers={"Retry-After": "15"},
+        raise HTTPException(
+            status_code=503, detail="Digest generation failed. Please try again later."
         )
 
     logger.info(
@@ -143,18 +136,6 @@ async def get_both_digests(
 
     normal = await service.get_or_create_digest(user_uuid, target_date, is_serene=False)
     serein = await service.get_or_create_digest(user_uuid, target_date, is_serene=True)
-
-    # If both are None, digest generation was triggered in background
-    if normal is None and serein is None:
-        return JSONResponse(
-            status_code=202,
-            content={
-                "detail": "Votre briefing est en cours de préparation. Réessayez dans quelques secondes.",
-                "status": "generating",
-            },
-            headers={"Retry-After": "15"},
-        )
-
     serein_enabled = await service._get_user_serein_enabled(user_uuid)
 
     return DualDigestResponse(
