@@ -1,189 +1,51 @@
-# Handoff: Fix Reader header transparency + note nudge positioning
+# PR — fix: harden serein filter + add user feedback CTA
 
-## Branche cible
-Continuer sur la branche actuelle `boujonlaurin-dotcom/fix-reader-webview-ux`.
+## Quoi
+1. Réécriture du prompt LLM de classification sérénité pour couvrir les catégories manquantes (trafic humain, extrémisme, discrimination, pandémie, etc.) + extension des mots-clés fallback.
+2. Nouveau CTA "Pas serein" dans Digest et Feed : quand le mode Serein est actif, le bouton "Pas pour moi" est remplacé par un bouton shieldWarning qui signale l'article au backend → reclassification immédiate `is_serene=False`.
 
-## Contexte
-Deux bugs toujours visibles dans le reader (content_detail_screen) apres les premiers correctifs :
-1. La status bar Android est transparente quand le header WebView est affiche
-2. Le SnackBar "Article termine. Ajouter une note ?" apparait trop haut sur l'ecran
+## Pourquoi
+Des articles clairement anxiogènes passaient à travers le filtre Serein (ex: "trafic d'êtres humains", "montée de l'extrême droite"). Le prompt Mistral ne listait que 8 catégories pour `serene=false` et le LLM traitait la liste comme exhaustive. Aucun mécanisme de feedback utilisateur n'existait pour corriger les faux positifs.
 
----
+## Fichiers modifiés
 
-## Bug A : Status bar Android transparente dans le header WebView
+### Backend
+- `packages/api/app/services/ml/classification_service.py` — Section SÉRÉNITÉ du prompt : ajout "liste NON exhaustive" + 11 catégories manquantes + règle "même partiellement anxiogène → false"
+- `packages/api/app/services/recommendation/filter_presets.py` — 19 nouveaux mots-clés dans `SEREIN_KEYWORDS` (fallback pour articles `is_serene=NULL`)
+- `packages/api/app/models/serene_report.py` — **Nouveau fichier** : modèle `SereneReport` (table `serene_reports`, contrainte unique user+content)
+- `packages/api/app/models/__init__.py` — Enregistrement du nouveau modèle
+- `packages/api/app/routers/contents.py` — Endpoint `POST /contents/{id}/report-not-serene` : upsert idempotent + flip immédiat `is_serene=False`
+- `packages/api/alembic/versions/sr01_create_serene_reports.py` — **Nouveau fichier** : migration (table + index + unique constraint). Head unique confirmée : `merge01 → sr01`
 
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart`
+### Mobile
+- `apps/mobile/lib/features/digest/widgets/article_action_bar.dart` — Nouveau param `isSerene`, 4è bouton conditionnel : eyeSlash/"Pas pour moi" → shieldWarning/"Pas serein"
+- `apps/mobile/lib/features/digest/widgets/digest_card.dart` — Passe `isSerene` à `ArticleActionBar` (1 ligne)
+- `apps/mobile/lib/features/digest/repositories/digest_repository.dart` — Méthode `reportNotSerene(contentId)`
+- `apps/mobile/lib/features/digest/providers/digest_provider.dart` — Intercepte action `report_not_serene` en haut de `applyAction()`, appel API séparé + snackbar "Merci"
+- `apps/mobile/lib/features/feed/widgets/feed_card.dart` — Nouveaux params `isSerene` + `onReportNotSerene`, bouton conditionnel shieldWarning avant eyeSlash
+- `apps/mobile/lib/features/feed/screens/feed_screen.dart` — Lit `sereinToggleProvider.enabled`, passe `isSerene` + callback `onReportNotSerene` au `FeedCard`
+- `apps/mobile/lib/features/feed/repositories/feed_repository.dart` — Méthode `reportNotSerene(contentId)`
 
-**Symptome** : Quand l'utilisateur est en mode WebView (apres "Lire sur..."), la barre de status Android (heure, batterie, reseau) a un fond transparent au lieu de reprendre la couleur du header (`backgroundPrimary`). On voit le contenu de la WebView (elements de la page web) transparaitre derriere les icones systeme. Voir captures image-v20.png et image-v21.png.
+## Zones à risque
+- **`classification_service.py`** : le prompt élargi pourrait théoriquement être plus conservateur et classer certains articles légitimement neutres comme non-sereins. C'est le trade-off voulu (faux négatifs > faux positifs pour le mode Serein).
+- **`contents.py` endpoint** : le flip `is_serene=False` est immédiat (seuil=1). Risque d'abus théorique si un user signale tout, mais accepté par le product owner pour cette phase.
+- **`digest_provider.dart`** : le `report_not_serene` est intercepté AVANT le flow normal `applyAction` (early return). Pas d'optimistic UI update — le bouton n'a pas d'état "actif" persistant. Vérifier qu'il ne court-circuite pas d'autre logique.
 
-**Cause** : Le header (`_buildHeader()`, ligne 1147) utilise `SafeArea(bottom: false)` qui pousse le `Container` avec `color: backgroundPrimary` SOUS la zone de status bar. La status bar elle-meme n'a pas de fond colore — elle est transparente par defaut sur Android. Le header est dans un `Positioned(top: 0)` dans le Stack (ligne 981), mais la `SafeArea` cree un padding top qui laisse la zone status bar sans couleur de fond.
+## Points d'attention pour le reviewer
+1. **Prompt LLM** : vérifier que la formulation "liste NON exhaustive" + "même partiellement anxiogène" donne bien le comportement attendu avec Mistral. Pas de test automatisé possible (classification LLM).
+2. **`PhosphorIcons.shieldWarning()`** : confirmé existant dans phosphor_flutter 2.1+ (même famille que `shieldCheck` déjà utilisé). Pas de compilation error sur `flutter analyze`.
+3. **Endpoint upsert** : utilise `on_conflict_do_nothing` (pas `do_update`) car il n'y a rien à update — le signalement existe ou pas. Le flip `is_serene` se fait via `db.get(Content, content_id)` dans la même transaction.
+4. **Feed vs Digest** : le Feed n'a pas de `onNotInterested` callback passé (le swipe-dismiss le gère). Le bouton "Pas serein" apparaît dans le même slot mais via `isSerene && onReportNotSerene != null` qui est une condition différente — pas de conflit.
 
-**Architecture actuelle** (lignes 981-994 + 1147-1161) :
-```dart
-// Dans le body Stack :
-Positioned(
-  top: 0, left: 0, right: 0,
-  child: AnimatedSlide(
-    // ...
-    child: _buildHeader(context, content),  // line 993
-  ),
-),
+## Ce qui N'A PAS changé (mais pourrait sembler affecté)
+- `SEREIN_EXCLUDED_THEMES` n'a pas été modifié (toujours 4 thèmes : society, international, economy, politics). Les nouveaux mots-clés sont dans `SEREIN_KEYWORDS` uniquement.
+- `apply_serein_filter()` n'a pas changé de logique — la stratégie 3 tiers (True/False/NULL→keywords) est identique. Seule la liste de keywords a grandi.
+- `is_cluster_serein_compatible()` utilise aussi `SEREIN_KEYWORDS` et bénéficie donc automatiquement des nouveaux mots-clés.
 
-// _buildHeader() :
-Widget _buildHeader(...) {
-  return SafeArea(          // line 1152 — pushes content below status bar
-    bottom: false,
-    child: Container(       // line 1154 — backgroundPrimary starts BELOW status bar
-      decoration: BoxDecoration(color: colors.backgroundPrimary),
-      child: Column(...)    // header content
-    ),
-  );
-}
-```
-
-**Fix** : Wrapper la `SafeArea` dans un `Container`/`ColoredBox` qui remplit la zone status bar avec `backgroundPrimary` :
-
-```dart
-Widget _buildHeader(...) {
-  return ColoredBox(
-    color: colors.backgroundPrimary,  // ← fills status bar area
-    child: SafeArea(
-      bottom: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space3,
-        ),
-        // Remove decoration since parent ColoredBox handles bg color
-        child: Column(...)
-      ),
-    ),
-  );
-}
-```
-
-Cela garantit que la couleur `backgroundPrimary` s'etend depuis le bord superieur de l'ecran (top: 0 du Positioned) jusqu'en dessous du contenu header. La `SafeArea` continue de pousser le contenu interactif sous la status bar, mais la couleur de fond couvre toute la zone.
-
-**Alternative** : Garder le `Container` avec `decoration`, mais l'envelopper d'un `ColoredBox` parent. L'important est qu'un widget avec la bonne couleur soit rendu AVANT (au-dessus dans le widget tree de) la SafeArea.
-
----
-
-## Bug B : SnackBar "Article termine. Ajouter une note ?" positionne trop haut
-
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart`
-
-**Symptome** : Le SnackBar de nudge "Article termine. Ajouter une note ?" (declenche a 90% de progression de lecture) apparait trop haut sur l'ecran, loin du bouton bookmark. Voir capture image-v22.png.
-
-**Cause** : Le nudge utilise `NotificationService.showInfo()` (ligne 349-352) qui passe par le **root `ScaffoldMessenger`** (via `messengerKey` sur `MaterialApp`, `app.dart:23`). Le SnackBar floating est positionne par le root scaffold, pas par le Scaffold local du detail screen. Comme le root scaffold a une `bottomNavigationBar` (tabs Essentiel/Mon flux/Parametres), le SnackBar est positionne au-dessus de cette nav bar, ce qui sur la page detail (full-screen) correspond a une position trop haute.
-
-**Code actuel** (lignes 341-361) :
-```dart
-void _onReadingProgressNudge() {
-  if (_endNudgeShown || _readingProgress.value < 0.9) return;
-  _endNudgeShown = true;
-  final content = _content;
-  if (content == null || !mounted) return;
-
-  if (!content.hasNote) {
-    NotificationService.showInfo(          // ← root ScaffoldMessenger
-      'Article termine. Ajouter une note ?',
-      actionLabel: 'Ajouter une note',
-      onAction: _openNoteSheet,
-    );
-  } else if (!content.isSaved) {
-    NotificationService.showInfo(
-      'Article termine. Ajouter une note ?',
-      actionLabel: 'Enregistrer',
-      onAction: _toggleBookmark,
-    );
-  }
-}
-```
-
-**Fix** : Utiliser le `ScaffoldMessenger` **local** du detail screen au lieu du global. Remplacer `NotificationService.showInfo(...)` par `ScaffoldMessenger.of(context).showSnackBar(...)` directement dans `_onReadingProgressNudge` :
-
-```dart
-void _onReadingProgressNudge() {
-  if (_endNudgeShown || _readingProgress.value < 0.9) return;
-  _endNudgeShown = true;
-  final content = _content;
-  if (content == null || !mounted) return;
-
-  final String message = 'Article termine. Ajouter une note ?';
-  final String actionLabel;
-  final VoidCallback onAction;
-
-  if (!content.hasNote) {
-    actionLabel = 'Ajouter une note';
-    onAction = _openNoteSheet;
-  } else if (!content.isSaved) {
-    actionLabel = 'Enregistrer';
-    onAction = _toggleBookmark;
-  } else {
-    return;
-  }
-
-  final colors = context.facteurColors;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              onAction();
-            },
-            child: Text(
-              actionLabel,
-              style: TextStyle(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-      backgroundColor: colors.backgroundSecondary,
-      behavior: SnackBarBehavior.floating,
-      elevation: 4,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      duration: const Duration(seconds: 3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-    ),
-  );
-}
-```
-
-En utilisant `ScaffoldMessenger.of(context)` dans le build context du detail screen, le SnackBar sera positionne par le Scaffold local (ligne 950) qui connait son propre `floatingActionButton`. Le SnackBar floating apparaitra au bas du detail screen, juste au-dessus du FAB bookmark — exactement la bonne position.
-
-**Note importante** : Le `context` utilise doit etre celui du widget detail screen (pas un context d'un builder interne). Verifier que `_onReadingProgressNudge` a acces au bon context (probablement via `this.context` dans le State).
-
-**Fichiers references** :
-- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` : `_onReadingProgressNudge()` (lignes 341-361), `_buildHeader()` (lignes 1147-1281)
-- `apps/mobile/lib/core/ui/notification_service.dart` : SnackBar styling de reference (lignes 44-88)
-- `apps/mobile/lib/app.dart:23` : root ScaffoldMessenger key
-
----
-
-## Fichiers modifies
-- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` (les deux bugs)
-
-## Verification
-- **Bug A** : Ouvrir un article → taper "Lire sur [source]" → la status bar Android doit avoir le fond `backgroundPrimary` (beige/blanc), pas transparent. Tester sur emulateur Android.
-- **Bug B** : Lire un article jusqu'a ~90% → le SnackBar "Article termine. Ajouter une note ?" doit apparaitre en bas de l'ecran, pres du FAB bookmark, pas au milieu de l'ecran.
-- `cd apps/mobile && flutter analyze` doit passer sans nouveaux warnings
+## Comment tester
+1. **Prompt** : reclassifier manuellement quelques articles problématiques avec le nouveau prompt via Mistral API directement (titre: "Trafic d'êtres humains en Méditerranée") → vérifier `serene=false`
+2. **Keywords** : `pytest tests/test_serein_filter.py -v` — les tests existants couvrent la logique True/False/NULL, pas le contenu exact de la liste
+3. **CTA Digest** : lancer l'app en mode Serein, vérifier que le 4è bouton est bien shieldWarning/"Pas serein", taper → snackbar "Merci" + check réseau que `POST /contents/{id}/report-not-serene` part
+4. **CTA Feed** : même vérification dans le Feed en mode Serein (toggle via le chip header)
+5. **Backend** : `curl -X POST localhost:8080/api/contents/{content_id}/report-not-serene -H "Authorization: Bearer ..."` → 200 + vérifier que `is_serene` est flippé en DB
+6. **Migration** : vérifier head unique Alembic (`HEADS: ['sr01']` ✅ déjà confirmé)
