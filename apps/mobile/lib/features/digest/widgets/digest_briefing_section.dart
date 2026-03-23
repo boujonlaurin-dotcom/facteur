@@ -219,12 +219,12 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                           .textTheme
                           .displaySmall
                           ?.copyWith(
-                            fontSize: 23,
+                            fontSize: 19,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
+                            letterSpacing: -0.3,
                             color: textPrimary,
                           ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

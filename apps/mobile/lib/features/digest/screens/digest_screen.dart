@@ -324,17 +324,24 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         horizontal: FacteurSpacing.space6,
                         vertical: FacteurSpacing.space3,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Stack(
+                        alignment: Alignment.center,
                         children: [
-                          const StreakIndicator(),
                           const FacteurLogo(size: 22),
                           Row(
-                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              _buildDiscreteCounter(ref, digestAsync, colors),
-                              const SizedBox(width: FacteurSpacing.space2),
-                              const UpdateButton(),
+                              const StreakIndicator(),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildDiscreteCounter(
+                                      ref, digestAsync, colors),
+                                  const SizedBox(
+                                      width: FacteurSpacing.space2),
+                                  const UpdateButton(),
+                                ],
+                              ),
                             ],
                           ),
                         ],

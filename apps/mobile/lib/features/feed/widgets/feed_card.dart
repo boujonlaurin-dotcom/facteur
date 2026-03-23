@@ -28,6 +28,7 @@ class FeedCard extends StatelessWidget {
   final bool isSourceSubscribed;
   final Color? backgroundColor;
   final List<BoxShadow>? boxShadow;
+  final String? editorialBadgeLabel;
 
   const FeedCard({
     super.key,
@@ -49,6 +50,7 @@ class FeedCard extends StatelessWidget {
     this.isSourceSubscribed = false,
     this.backgroundColor,
     this.boxShadow,
+    this.editorialBadgeLabel,
   });
 
   @override
@@ -274,6 +276,32 @@ class FeedCard extends StatelessWidget {
                           ],
                         ),
                       ),
+
+                      // Editorial badge (digest only)
+                      if (editorialBadgeLabel != null) ...[
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color:
+                                  colors.textSecondary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              editorialBadgeLabel!,
+                              style: TextStyle(
+                                color: colors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
 
                       // Actions (Like, Save, NotInterested, Personalize)
                       Row(
