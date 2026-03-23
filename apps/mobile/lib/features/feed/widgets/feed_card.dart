@@ -274,18 +274,18 @@ class FeedCard extends StatelessWidget {
                               ),
                             ],
 
-                            // Editorial badge (digest only) — inside Expanded so actions stay flush-right
+                            // Editorial badge (digest only) — pushed right inside Expanded
                             if (editorialBadgeLabel != null) ...[
-                              const SizedBox(width: FacteurSpacing.space2),
+                              const Spacer(),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
                                   color:
-                                      colors.textSecondary.withValues(alpha: 0.20),
+                                      colors.textSecondary.withValues(alpha: 0.14),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: colors.textTertiary.withValues(alpha: 0.25),
+                                    color: colors.textTertiary.withValues(alpha: 0.20),
                                     width: 0.5,
                                   ),
                                 ),
