@@ -128,9 +128,34 @@ class ActuMatcher:
                 result.append(subject.model_copy(update={"actu_article": best}))
             else:
                 logger.warning(
-                    "actu_matcher.no_global_match", topic_id=subject.topic_id
+                    "actu_matcher.no_global_match",
+                    topic_id=subject.topic_id,
+                    cluster_content_count=len(cluster.contents),
                 )
                 result.append(subject)
+
+        # Pass 2+3: relax filters for unmatched subjects
+        cutoff_relaxed = datetime.now(UTC) - timedelta(hours=self._max_age_hours * 2)
+        relaxed_used: set[UUID] = set()
+        for i, subject in enumerate(result):
+            if subject.actu_article is not None:
+                continue
+            cluster = cluster_map.get(subject.topic_id)
+            if not cluster:
+                continue
+            # Try without pass-1 diversity, but keep diversity among relaxed matches
+            best = self._find_best_article_global(
+                cluster=cluster, used_source_ids=relaxed_used, cutoff=cutoff,
+            )
+            if not best:
+                # Try with relaxed recency (48h)
+                best = self._find_best_article_global(
+                    cluster=cluster, used_source_ids=relaxed_used, cutoff=cutoff_relaxed,
+                )
+            if best:
+                relaxed_used.add(best.source_id)
+                result[i] = subject.model_copy(update={"actu_article": best})
+                logger.info("actu_matcher.relaxed_match", topic_id=subject.topic_id)
 
         matched_count = sum(1 for s in result if s.actu_article is not None)
         logger.info(

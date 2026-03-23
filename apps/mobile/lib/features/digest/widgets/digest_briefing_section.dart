@@ -214,28 +214,17 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   // Left: title (dynamic in editorial mode)
                   Expanded(
                     child: Text(
-                      widget.usesEditorial && widget.headerText != null
-                          ? widget.headerText!
-                          : "L'Essentiel du jour",
+                      "L'Essentiel du jour",
                       style: Theme.of(context)
                           .textTheme
                           .displaySmall
                           ?.copyWith(
-                            fontSize: (widget.usesEditorial &&
-                                    widget.headerText != null)
-                                ? 20
-                                : 23,
-                            fontWeight: (widget.usesEditorial &&
-                                    widget.headerText != null)
-                                ? FontWeight.w700
-                                : FontWeight.w800,
+                            fontSize: 23,
+                            fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
                             color: textPrimary,
                           ),
-                      maxLines: (widget.usesEditorial &&
-                              widget.headerText != null)
-                          ? 3
-                          : 2,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -387,15 +376,13 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       );
     }
 
-    // Closure block
-    if (widget.closureText != null) {
-      sections.add(
-        ClosureBlock(
-          closureText: widget.closureText!,
-          ctaText: widget.ctaText,
-        ),
-      );
-    }
+    // Closure block (always shown with fallback)
+    sections.add(
+      ClosureBlock(
+        closureText: widget.closureText ?? 'Bonne lecture !',
+        ctaText: widget.ctaText,
+      ),
+    );
 
     return ListView.separated(
       shrinkWrap: true,

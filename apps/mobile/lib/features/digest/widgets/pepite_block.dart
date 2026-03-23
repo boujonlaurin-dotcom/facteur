@@ -4,6 +4,8 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'editorial_badge.dart';
+import 'markdown_text.dart';
 
 /// Editorial wrapper for the pépite article.
 /// Displays a mini-editorial text above a FeedCard.
@@ -42,11 +44,11 @@ class PepiteBlock extends StatelessWidget {
               right: 4,
               bottom: 10,
             ),
-            child: Text(
-              pepite.miniEditorial,
+            child: MarkdownText(
+              text: pepite.miniEditorial,
               style: TextStyle(
                 fontStyle: FontStyle.italic,
-                fontSize: 14,
+                fontSize: 15,
                 height: 1.5,
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.8)
@@ -67,6 +69,15 @@ class PepiteBlock extends StatelessWidget {
           onNotInterested:
               onNotInterested != null ? () => onNotInterested!(item) : null,
           isFollowedSource: item.isFollowedSource,
+        ),
+
+        // Editorial badge (below card)
+        Padding(
+          padding: const EdgeInsets.only(left: 4, top: 6),
+          child: EditorialBadge(
+            badge: pepite.badge,
+            isSerene: isSerene,
+          ),
         ),
       ],
     );

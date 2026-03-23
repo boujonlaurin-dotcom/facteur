@@ -19,6 +19,15 @@ class DigestGenerationException implements Exception {
   String toString() => message;
 }
 
+/// Exception thrown when digest is being prepared (202)
+class DigestPreparingException implements Exception {
+  final String message;
+  DigestPreparingException(
+      [this.message = 'Votre briefing est en cours de préparation']);
+  @override
+  String toString() => message;
+}
+
 /// Repository for digest-related API operations
 class DigestRepository {
   final ApiClient _apiClient;
@@ -42,6 +51,9 @@ class DigestRepository {
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
+      if (response.statusCode == 202) {
+        throw DigestPreparingException();
+      }
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         // ignore: avoid_print
@@ -223,6 +235,9 @@ class DigestRepository {
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
+      if (response.statusCode == 202) {
+        throw DigestPreparingException();
+      }
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         return DualDigestResponse.fromJson(data);

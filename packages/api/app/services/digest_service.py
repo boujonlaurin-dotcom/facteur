@@ -191,6 +191,26 @@ class DigestService:
             duration_ms=round(existing_time * 1000, 2),
         )
 
+        # 3. No digest exists and no yesterday fallback.
+        # For normal requests: trigger background generation, return None (202).
+        # For force_regenerate: keep synchronous generation (user explicitly asked).
+        if not force_regenerate:
+            import asyncio
+
+            from app.jobs.digest_generation_job import generate_digest_for_user
+
+            logger.info(
+                "digest_triggering_background_generation",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            asyncio.create_task(
+                generate_digest_for_user(user_id, target_date=target_date)
+            )
+            # Return None — the router will respond with 202 + Retry-After
+            return None
+
         # 2. Determine effective mode from is_serene toggle
         effective_mode = "serein" if is_serene else "pour_vous"
 

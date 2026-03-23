@@ -1,54 +1,178 @@
-# PR — Refactoring pipeline digest : actu matching global (pas per-user)
+# Handoff — Digest UX/UI itération 2 : 4 ajustements restants
 
-## Quoi
-Le matching d'articles actu est deplace de la phase per-user vers la phase globale du pipeline editorial. Au lieu de filtrer par `user_source_ids`, on prend le meilleur article du cluster tout court (le plus recent, non-paywall). Ajout de garde-fous pour sujets vides et logging diagnostique.
+## Contexte
 
-## Pourquoi
-Quand un user suit peu de sources, `ActuMatcher._find_best_article()` ne trouvait rien car il filtrait par `user_source_ids` → sujets avec 0 articles → cartes invisibles dans le digest. Decision MVP V2 : le digest editorial est identique pour tous les users. La personnalisation viendra plus tard par ponderation, pas filtrage.
+On a déjà implémenté 5 corrections UX/UI sur le digest (branche `make-digest-great`) :
+- Barre de progression → compteur discret (mini-barres)
+- Header statique "L'Essentiel du jour"
+- Carrousel : hauteur augmentée (170→200) + ClipRect + dots agrandis
+- Badges éditoriaux : nouveau widget `EditorialBadge` + intégration TopicSection/PepiteBlock/CoupDeCoeurBlock
+- Typo "Et aussi" : 15px w400 italic
 
-## Fichiers modifies
+Après tests visuels, 4 problèmes subsistent.
 
-### Backend — Pipeline editorial
-- `packages/api/app/services/editorial/actu_matcher.py` — Ajout de `match_global()` + `_find_best_article_global()` (2 nouvelles methodes, code existant inchange)
-- `packages/api/app/services/editorial/pipeline.py` — Appel `match_global()` dans `compute_global_context()` apres le deep matching (ETAPE 3A)
-- `packages/api/app/services/digest_selector.py` — Remplace `run_for_user()` par construction directe de `EditorialPipelineResult` depuis `global_ctx`
-- `packages/api/app/services/digest_service.py` — Garde-fou sujets vides dans `_create_digest_record_editorial()` + warning log quand `content_id` introuvable
+---
 
-### Tests
-- `packages/api/tests/editorial/test_actu_matcher.py` — 6 nouveaux tests pour `match_global()` (classe `TestMatchGlobal`)
+## 1. Carrousel : overflow vertical persistant
 
-## Zones a risque
-1. **`digest_selector.py` lignes 273-305** — Le remplacement de `run_for_user()` par construction directe. Si un champ de `EditorialPipelineResult` est oublie, le digest sera incomplet.
-2. **`digest_service.py` `_create_digest_record_editorial()`** — Le return type change de `DailyDigest` a `DailyDigest | None`. Les appelants doivent gerer le `None`.
-3. **`pipeline.py` compute_global_context()** — L'actu matching est maintenant dans la phase globale async. Si `match_global()` echoue, les subjects n'auront pas d'actu_article.
+**Problème** : Malgré l'augmentation de `_bodyFooterHeight` à 200px, le footer des cartes du carrousel est toujours rogné sur certaines cartes (titres longs, descriptions présentes). La capture montre le bas de la carte coupé avec les barres jaunes/noires de warning overflow.
 
-## Points d'attention pour le reviewer
+**Fichier** : `apps/mobile/lib/features/digest/widgets/topic_section.dart`
 
-1. **Return type `_create_digest_record_editorial`** — Passe de `DailyDigest` a `DailyDigest | None`. Verifier que l'appelant dans `digest_service.py` (`get_or_create_digest`) gere deja le cas `None` (il y a un guardrail existant `if is_editorial_format and not digest_items.subjects` qui devrait couvrir, mais le nouveau garde-fou agit apres le stockage).
-2. **`match_for_user()` et `_find_best_article()` conserves** — Choix delibere pour permettre un rollback rapide. Le reviewer peut verifier qu'ils ne sont plus appeles nulle part.
-3. **`is_user_source=False` toujours** — Le champ reste dans le schema pour backward compat avec le format `editorial_v1` stocke en DB. Le mobile l'utilise-t-il pour un badge ? A verifier.
-4. **Pas de `excluded_content_ids` dans `match_global()`** — En per-user, on excluait les contenus deja vus. En global, ce filtre n'a plus de sens (le digest est le meme pour tous). Est-ce acceptable ?
+**Approche recommandée** :
+- Le `_bodyFooterHeight` fixe (200px) est fondamentalement fragile — il ne peut pas anticiper toutes les variations de contenu.
+- **Option A** (recommandée) : Remplacer le `SizedBox(height: computedHeight)` + `PageView.builder` par un `PageView` dont la hauteur est calculée dynamiquement. Comme `PageView` exige une hauteur fixe, mesurer la hauteur max de la première page au premier build avec un `GlobalKey` + `WidgetsBinding.instance.addPostFrameCallback`, puis `setState` avec la hauteur mesurée. Fallback initial : `_bodyFooterHeight` actuel (200).
+- **Option B** (pragmatique) : Augmenter `_bodyFooterHeight` à ~230px (marge confortable pour 3 lignes de titre + description + footer) et garder le `ClipRect` comme filet de sécurité.
+- La ligne à modifier est `static const double _bodyFooterHeight = 200.0;` (ligne ~79).
+- Le `ClipRect` wrapper (déjà en place) empêche l'overflow visible en mode debug, mais le contenu reste tronqué.
 
-## Ce qui N'A PAS change (mais pourrait sembler affecte)
-- **`match_for_user()` et `_find_best_article()`** restent intacts dans `actu_matcher.py` — dead code pour l'instant, conserve pour rollback
-- **`EditorialGlobalContext` schema** — Inchange, les subjects qu'il contient ont juste `actu_article` popule maintenant
-- **`_build_digest_response_editorial()`** — Le format de stockage `editorial_v1` est identique, seul le contenu change (actu articles proviennent de toutes les sources, pas juste les sources user)
-- **Les 7 tests existants `TestMatchForUser`** — Non modifies, toujours valides
+**Références code** :
+```dart
+// topic_section.dart ligne ~79
+static const double _bodyFooterHeight = 200.0;
 
-## Comment tester
+// topic_section.dart lignes ~111-126 — le LayoutBuilder + SizedBox
+LayoutBuilder(
+  builder: (context, constraints) {
+    final cardWidth = constraints.maxWidth * 0.88;
+    final hasAnyImage = topic.articles.any((a) => ...);
+    final imageHeight = hasAnyImage ? cardWidth / (16 / 9) : 0.0;
+    const bodyHeight = _bodyFooterHeight;
+    final computedHeight = imageHeight + bodyHeight;
+    return ClipRect(
+      child: SizedBox(height: computedHeight, child: _buildPageView(topic)),
+    );
+  },
+)
+```
 
-1. **Tests unitaires** :
-   ```bash
-   cd packages/api && source venv/bin/activate
-   python -m pytest tests/editorial/test_actu_matcher.py -v
-   ```
+---
 
-2. **Verification integration** (staging) :
-   - Creer un user avec 0 ou 1 source suivie
-   - Generer un digest editorial
-   - Verifier que les 3 sujets ont un `actu_article` non-null dans la reponse API
-   - Verifier dans les logs : `editorial_pipeline.actu_matching_done` apparait dans la phase globale (avant `editorial_pipeline.global_context_ready`)
+## 2. Badges éditoriaux : aligner avec le design system
 
-3. **Regression** :
-   - Verifier qu'un user avec beaucoup de sources suivies recoit le meme digest qu'un user avec peu de sources (memes articles actu)
-   - Verifier que `editorial_digest.all_subjects_empty` n'apparait pas dans les logs (sauf si vraiment aucun article disponible)
+**Problème** : Les badges (`EditorialBadge`) utilisent des couleurs sémantiques (primary rouge, info bleu, success vert) qui créent un "arc-en-ciel" visuel non cohérent avec le design system Facteur, qui est très neutre (beiges, gris, touches de rouge subtiles).
+
+**Proposition** : Repartir d'un gris semi-transparent uniforme, déjà présent dans le design system. Garder les emojis comme seul différenciateur visuel entre types de badges.
+
+**Fichier** : `apps/mobile/lib/features/digest/widgets/editorial_badge.dart`
+
+**Changement** : Dans `_badgeConfig()`, remplacer les 4 configs couleur par une seule approche neutre :
+```dart
+// Remplacer les couleurs individuelles par :
+// Light mode : fond = noir 8% alpha, texte = textSecondary
+// Dark mode : fond = blanc 12% alpha, texte = textSecondary
+// Toutes les balises utilisent la même palette neutre
+```
+
+**Référence design system** (`apps/mobile/lib/config/theme.dart`) :
+- Light : `backgroundSecondary: Color(0xFFEBE0CC)`, `textSecondary: Color(0xFF7A7775)`
+- Dark : `backgroundSecondary: Color(0xFF161616)`, `textSecondary: Color(0xFFA6A6A6)`
+- Pattern existant pour gris transparent : `colors.textTertiary.withValues(alpha: 0.25)` (utilisé dans les dots du carrousel)
+
+---
+
+## 3. CTA "Donner un retour" n'apparaît pas
+
+**Problème** : Le `ClosureBlock` s'affiche maintenant systématiquement (fix précédent : fallback `"Bonne lecture !"`), mais le bouton "Donner un retour" n'apparaît que si `ctaText != null`. Or le backend renvoie `cta_text: null` par défaut (voir `editorial_prompts.yaml` ligne 104 : `cta_text : toujours null`).
+
+**Fichier** : `apps/mobile/lib/features/digest/widgets/closure_block.dart`
+
+**Fix** : Le bouton "Donner un retour" et son texte introductif ne dépendent pas réellement du contenu de `ctaText` — c'est toujours le même CTA statique. Rendre le bouton inconditionnel :
+
+```dart
+// closure_block.dart lignes 78-108
+// AVANT :
+if (widget.ctaText != null) ...[
+  const SizedBox(height: 16),
+  Text(widget.ctaText!, ...),
+  const SizedBox(height: 12),
+  OutlinedButton(...)
+]
+
+// APRÈS :
+const SizedBox(height: 16),
+Text(
+  'Une suggestion ? Un avis ?',  // Texte statique de fallback
+  style: TextStyle(fontSize: 13, ...),
+),
+const SizedBox(height: 12),
+OutlinedButton(
+  onPressed: () { showModalBottomSheet(...FeedbackBottomSheet...) },
+  child: const Text('Donner un retour'),
+),
+```
+
+**Alternative** : Si on veut garder la possibilité d'un texte CTA custom du backend, utiliser `widget.ctaText ?? 'Une suggestion ? Un avis ?'` comme fallback.
+
+---
+
+## 4. Compteur : ajouter le label X/Y et centrer à droite
+
+**Problème** : Le compteur en mini-barres est trop discret sans indicateur numérique. L'utilisateur veut voir `2/4` (ou le ratio approprié) juste à gauche des barres, et que le groupe soit bien aligné à droite du header.
+
+**Fichier** : `apps/mobile/lib/features/digest/screens/digest_screen.dart`
+
+**Changement dans `_buildDiscreteCounter()`** (lignes ~640-657) :
+```dart
+// AVANT : juste les barres
+return Row(
+  mainAxisSize: MainAxisSize.min,
+  children: List.generate(denominator, (i) { ... }),
+);
+
+// APRÈS : label + barres
+return Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    Text(
+      '$processed/$denominator',
+      style: TextStyle(
+        color: isComplete ? colors.success : colors.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    const SizedBox(width: 6),
+    ...List.generate(denominator, (i) {
+      final isDone = i < processed;
+      return Container(
+        width: 14,
+        height: 3,
+        margin: EdgeInsets.only(right: i < denominator - 1 ? 3 : 0),
+        decoration: BoxDecoration(
+          color: isDone
+              ? (isComplete ? colors.success : colors.primary)
+              : colors.textTertiary.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(1.5),
+        ),
+      );
+    }),
+  ],
+);
+```
+
+**Position dans le header** (lignes ~322-329) : déjà bien positionné à droite dans un `Row` avec `MainAxisAlignment.spaceBetween`. Vérifier que le `UpdateButton` ne prend pas trop de place — si besoin, inverser l'ordre (counter après UpdateButton, ou supprimer le `SizedBox(width: space2)` entre les deux).
+
+---
+
+## Fichiers à modifier (résumé)
+
+| # | Fichier | Changement |
+|---|---------|-----------|
+| 1 | `apps/mobile/lib/features/digest/widgets/topic_section.dart` | Augmenter `_bodyFooterHeight` ou calcul dynamique |
+| 2 | `apps/mobile/lib/features/digest/widgets/editorial_badge.dart` | Palette neutre (gris transparent) |
+| 3 | `apps/mobile/lib/features/digest/widgets/closure_block.dart` | Rendre le bouton CTA inconditionnel |
+| 4 | `apps/mobile/lib/features/digest/screens/digest_screen.dart` | Ajouter label `X/Y` au compteur |
+
+## Vérification
+
+```bash
+cd apps/mobile && flutter analyze   # 0 nouvelles erreurs
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080/api/
+```
+
+Checklist visuelle :
+- [ ] Carrousel : aucune carte tronquée (tester avec titres longs, 1-3 lignes)
+- [ ] Badges : tous en gris neutre, emojis visibles, cohérent light/dark
+- [ ] CTA "Donner un retour" visible en bas du digest (scroller jusqu'en bas)
+- [ ] Compteur : affiche "2/4 ━━━━" avec barres, vert quand complété

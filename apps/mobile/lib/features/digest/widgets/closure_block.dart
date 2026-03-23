@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
 import 'feedback_bottom_sheet.dart';
+import 'markdown_text.dart';
 
 /// Inline closure block at the end of the editorial digest (D7).
 /// Displays closureText + ctaText with a fade-in animation.
@@ -65,8 +66,8 @@ class _ClosureBlockState extends State<ClosureBlock>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                widget.closureText,
+              MarkdownText(
+                text: widget.closureText,
                 style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w400,
@@ -75,38 +76,36 @@ class _ClosureBlockState extends State<ClosureBlock>
                 ),
                 textAlign: TextAlign.center,
               ),
-              if (widget.ctaText != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  widget.ctaText!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: colors.textSecondary,
-                  ),
-                  textAlign: TextAlign.center,
+              const SizedBox(height: 16),
+              Text(
+                widget.ctaText ?? 'Une suggestion ? Un avis ?',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w400,
+                  color: colors.textSecondary,
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: () {
-                    showModalBottomSheet<void>(
-                      context: context,
-                      isScrollControlled: true,
-                      builder: (_) => const FeedbackBottomSheet(),
-                    );
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: colors.primary,
-                    side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 10,
-                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () {
+                  showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => const FeedbackBottomSheet(),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.primary,
+                  side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
+                  shape: const StadiumBorder(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 10,
                   ),
-                  child: const Text('Donner un retour'),
                 ),
-              ],
+                child: const Text('Donner un retour'),
+              ),
             ],
           ),
         ),
