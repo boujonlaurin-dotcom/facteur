@@ -285,6 +285,49 @@ async def unhide_content(
     return {"status": "ok", "is_hidden": False}
 
 
+@router.post("/{content_id}/report-not-serene", status_code=status.HTTP_200_OK)
+async def report_not_serene(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Signale un article affiché en mode Serein comme anxiogène.
+
+    Upsert idempotent. Dès le premier signalement, l'article est
+    reclassifié is_serene=False pour tous les utilisateurs.
+    """
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.serene_report import SereneReport
+
+    user_uuid = UUID(current_user_id)
+
+    stmt = (
+        insert(SereneReport)
+        .values(
+            content_id=content_id,
+            user_id=user_uuid,
+        )
+        .on_conflict_do_nothing(
+            constraint="uq_serene_report_user_content",
+        )
+    )
+    await db.execute(stmt)
+
+    # Flip is_serene immediately (threshold = 1)
+    content = await db.get(Content, content_id)
+    if content and content.is_serene is not False:
+        content.is_serene = False
+        logger.info(
+            "serene_report_reclassified",
+            content_id=str(content_id),
+            user_id=current_user_id,
+        )
+
+    await db.commit()
+    return {"status": "ok"}
+
+
 @router.post("/{content_id}/impress", status_code=status.HTTP_200_OK)
 async def impress_content(
     content_id: UUID,

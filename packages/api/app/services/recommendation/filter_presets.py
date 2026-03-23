@@ -51,6 +51,26 @@ SEREIN_KEYWORDS = [
     "zelensky",
     "ukraine",
     "gaza",
+    # Extended: catégories manquantes identifiées via faux positifs
+    "trafic",
+    "esclavage",
+    "extrémisme",
+    "extrême droite",
+    "extrême gauche",
+    "radicalisation",
+    "fascisme",
+    "racisme",
+    "discrimination",
+    "pandémie",
+    "épidémie",
+    "effondrement",
+    "maltraitance",
+    "harcèlement",
+    "attentat",
+    "meurtre",
+    "agression",
+    "féminicide",
+    "pédocriminalité",
 ]
 
 

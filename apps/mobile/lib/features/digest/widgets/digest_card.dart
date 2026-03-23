@@ -224,6 +224,7 @@ class DigestCard extends StatelessWidget {
                   ArticleActionBar(
                     item: item,
                     onAction: onAction!,
+                    isSerene: isSerene,
                   ),
               ],
             ),

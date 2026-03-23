@@ -17,6 +17,7 @@ from app.models.user import UserInterest, UserPreference, UserProfile, UserStrea
 from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.waitlist import WaitlistEntry
+from app.models.serene_report import SereneReport
 from app.models.waitlist_survey import WaitlistSurveyResponse
 
 __all__ = [
@@ -63,4 +64,6 @@ __all__ = [
     # Waitlist (Landing Page)
     "WaitlistEntry",
     "WaitlistSurveyResponse",
+    # Serene Feedback
+    "SereneReport",
 ]

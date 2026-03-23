@@ -24,6 +24,7 @@ class TopicSection extends StatefulWidget {
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onReportNotSerene;
   final void Function(DigestItem)? onSwipeDismiss;
   final String? activeDismissalId;
   final VoidCallback? onDismissUndo;
@@ -40,6 +41,7 @@ class TopicSection extends StatefulWidget {
     this.onLike,
     this.onSave,
     this.onNotInterested,
+    this.onReportNotSerene,
     this.onSwipeDismiss,
     this.activeDismissalId,
     this.onDismissUndo,
@@ -328,6 +330,10 @@ class _TopicSectionState extends State<TopicSection> {
           onNotInterested: widget.onNotInterested != null
               ? () => widget.onNotInterested!(article)
               : null,
+          isSerene: widget.isSerene,
+          onReportNotSerene: widget.onReportNotSerene != null
+              ? () => widget.onReportNotSerene!(article)
+              : null,
           isFollowedSource: article.isFollowedSource,
         ),
       ),
@@ -388,6 +394,10 @@ class _TopicSectionState extends State<TopicSection> {
                 isSaved: article.isSaved,
                 onNotInterested: widget.onNotInterested != null
                     ? () => widget.onNotInterested!(article)
+                    : null,
+                isSerene: widget.isSerene,
+                onReportNotSerene: widget.onReportNotSerene != null
+                    ? () => widget.onReportNotSerene!(article)
                     : null,
                 isFollowedSource: article.isFollowedSource,
               ),

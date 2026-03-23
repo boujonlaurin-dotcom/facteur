@@ -4,15 +4,17 @@ import '../../../config/theme.dart';
 import '../models/digest_models.dart';
 
 /// Action bar with 4 buttons for digest card interactions
-/// Like, Read, Save, and Not Interested
+/// Like, Read, Save, and Not Interested (or "Pas serein" when serene mode is active)
 class ArticleActionBar extends StatelessWidget {
   final DigestItem item;
   final ValueChanged<String> onAction;
+  final bool isSerene;
 
   const ArticleActionBar({
     super.key,
     required this.item,
     required this.onAction,
+    this.isSerene = false,
   });
 
   @override
@@ -65,15 +67,23 @@ class ArticleActionBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: FacteurSpacing.space2),
-          // Not Interested button
+          // Not Interested / Report Not Serene (conditional)
           Expanded(
-            child: _ActionButton(
-              icon: PhosphorIcons.eyeSlash(),
-              label: 'Pas pour moi',
-              isActive: item.isDismissed,
-              activeColor: colors.textSecondary,
-              onTap: () => onAction('not_interested'),
-            ),
+            child: isSerene
+                ? _ActionButton(
+                    icon: PhosphorIcons.shieldWarning(),
+                    label: 'Pas serein',
+                    isActive: false,
+                    activeColor: colors.warning,
+                    onTap: () => onAction('report_not_serene'),
+                  )
+                : _ActionButton(
+                    icon: PhosphorIcons.eyeSlash(),
+                    label: 'Pas pour moi',
+                    isActive: item.isDismissed,
+                    activeColor: colors.textSecondary,
+                    onTap: () => onAction('not_interested'),
+                  ),
           ),
         ],
       ),
