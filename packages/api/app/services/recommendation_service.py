@@ -51,7 +51,9 @@ class RecommendationService:
         self.source_overflow: dict[
             UUID, int
         ] = {}  # Populated by chronological diversification
-        self.topic_overflow: list[dict] = []  # Populated by topic regroupement (Phase 2)
+        self.topic_overflow: list[
+            dict
+        ] = []  # Populated by topic regroupement (Phase 2)
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -774,9 +776,7 @@ class RecommendationService:
 
         all_groups = [
             (slug, arts, "topic")
-            for slug, arts in sorted(
-                groupable_topics.items(), key=lambda x: -len(x[1])
-            )
+            for slug, arts in sorted(groupable_topics.items(), key=lambda x: -len(x[1]))
         ] + [
             (theme, arts, "theme")
             for theme, arts in sorted(by_theme.items(), key=lambda x: -len(x[1]))

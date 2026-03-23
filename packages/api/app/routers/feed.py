@@ -90,9 +90,7 @@ async def get_personalized_feed(
     ]
 
     # Topic overflow from topic-aware regroupement (Phase 2)
-    topic_overflow_data = [
-        TopicOverflowInfo(**info) for info in service.topic_overflow
-    ]
+    topic_overflow_data = [TopicOverflowInfo(**info) for info in service.topic_overflow]
 
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
