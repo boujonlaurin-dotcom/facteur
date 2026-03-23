@@ -46,6 +46,36 @@ from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
 
+# --- Editorial global context cache (TTL 30 min) ---
+# Avoids redundant LLM calls when generating editorial digests
+# for multiple users or both variants (normal + serein) in the same window.
+_editorial_ctx_cache: dict[tuple, tuple[float, object]] = {}
+_EDITORIAL_CACHE_TTL = 1800  # 30 minutes
+
+
+def _get_cached_editorial_ctx(target_date: datetime.date, mode: str) -> object | None:
+    """Return cached EditorialGlobalContext if fresh, else None."""
+    key = (target_date, mode)
+    entry = _editorial_ctx_cache.get(key)
+    if entry is not None:
+        ts, ctx = entry
+        if time.time() - ts < _EDITORIAL_CACHE_TTL:
+            logger.info(
+                "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
+            )
+            return ctx
+        # Expired — remove
+        del _editorial_ctx_cache[key]
+    return None
+
+
+def _set_cached_editorial_ctx(
+    target_date: datetime.date, mode: str, ctx: object
+) -> None:
+    """Store EditorialGlobalContext in cache."""
+    _editorial_ctx_cache[(target_date, mode)] = (time.time(), ctx)
+    logger.info("editorial_ctx_cache_set", target_date=str(target_date), mode=mode)
+
 
 @dataclass
 class DigestItem:
@@ -254,10 +284,17 @@ class DigestSelector:
                             logger.warning("digest_editorial_no_api_key")
                             output_format = "topics"
                         else:
-                            # Compute global context (clustering + curation + deep)
-                            global_ctx = await pipeline.compute_global_context(
-                                candidates, mode=mode
-                            )
+                            # Check cache first, then compute global context
+                            _cache_date = datetime.date.today()
+                            global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
+                            if global_ctx is None:
+                                global_ctx = await pipeline.compute_global_context(
+                                    candidates, mode=mode
+                                )
+                                if global_ctx is not None:
+                                    _set_cached_editorial_ctx(
+                                        _cache_date, mode, global_ctx
+                                    )
                             if not global_ctx:
                                 logger.warning("digest_editorial_global_ctx_failed")
                                 output_format = "topics"

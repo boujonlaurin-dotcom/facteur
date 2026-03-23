@@ -18,6 +18,7 @@ import '../../feed/providers/feed_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
 import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
@@ -28,7 +29,6 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
-import '../widgets/digest_progress_bar.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
@@ -317,39 +317,28 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo and streak
-                  const SliverToBoxAdapter(
+                  // Feed-style header with logo, streak, and discrete counter
+                  SliverToBoxAdapter(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
+                      padding: const EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space6,
                         vertical: FacteurSpacing.space3,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          StreakIndicator(),
-                          FacteurLogo(size: 22),
-                          UpdateButton(),
+                          const StreakIndicator(),
+                          const FacteurLogo(size: 22),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildDiscreteCounter(ref, digestAsync, colors),
+                              const SizedBox(width: FacteurSpacing.space2),
+                              const UpdateButton(),
+                            ],
+                          ),
                         ],
                       ),
-                    ),
-                  ),
-
-                  // Progress bar (visible when digest has data)
-                  SliverToBoxAdapter(
-                    child: Builder(
-                      builder: (context) {
-                        final digest = digestAsync.valueOrNull;
-                        if (digest == null ||
-                            (digest.items.isEmpty && digest.topics.isEmpty)) {
-                          return const SizedBox.shrink();
-                        }
-                        final notifier = ref.read(digestProvider.notifier);
-                        return DigestProgressBar(
-                          processedCount: notifier.processedCount,
-                          totalCount: notifier.totalCount,
-                        );
-                      },
                     ),
                   ),
 
@@ -636,6 +625,54 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               onDismiss: _dismissWelcome,
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _buildDiscreteCounter(
+    WidgetRef ref,
+    AsyncValue<DigestResponse?> digestAsync,
+    FacteurColors colors,
+  ) {
+    final digest = digestAsync.valueOrNull;
+    if (digest == null ||
+        (digest.items.isEmpty && digest.topics.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    final notifier = ref.read(digestProvider.notifier);
+    final processed = notifier.processedCount;
+    final total = notifier.totalCount;
+    final userPref =
+        ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
+    final denominator = total < userPref ? total : userPref;
+    final isComplete = processed >= denominator;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$processed/$denominator',
+          style: TextStyle(
+            color: isComplete ? colors.success : colors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 6),
+        ...List.generate(denominator, (i) {
+          final isDone = i < processed;
+          return Container(
+            width: 14,
+            height: 3,
+            margin: EdgeInsets.only(right: i < denominator - 1 ? 3 : 0),
+            decoration: BoxDecoration(
+              color: isDone
+                  ? (isComplete ? colors.success : colors.primary)
+                  : colors.textTertiary.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          );
+        }),
       ],
     );
   }

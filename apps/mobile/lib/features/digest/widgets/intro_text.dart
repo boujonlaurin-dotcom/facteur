@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'markdown_text.dart';
 
 /// Editorial intro text displayed above each topic section (N1).
 /// Shows 2-3 LLM-generated sentences introducing the topic.
@@ -14,8 +15,8 @@ class IntroText extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 12),
-      child: Text(
-        text,
+      child: MarkdownText(
+        text: text,
         style: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w400,

@@ -66,10 +66,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return await _loadBothDigests();
   }
 
-  static const _digestMaxRetries = 2;
+  static const _digestMaxRetries = 3;
   static const _digestRetryDelays = [
-    Duration(seconds: 3),
     Duration(seconds: 5),
+    Duration(seconds: 10),
+    Duration(seconds: 15),
   ];
 
   Future<DigestResponse?> _loadBothDigests({DateTime? date}) async {
@@ -89,6 +90,16 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         // Sync toggle with server preference
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         return _activeDigest;
+      } on DigestPreparingException {
+        // 202: digest is being generated in background, retry with longer delays
+        if (attempt < _digestMaxRetries) {
+          // ignore: avoid_print
+          print(
+              'DigestNotifier: 202 preparing, retry ${attempt + 1}/$_digestMaxRetries...');
+          await Future<void>.delayed(_digestRetryDelays[attempt]);
+          continue;
+        }
+        rethrow;
       } on DigestGenerationException {
         if (attempt < _digestMaxRetries) {
           // ignore: avoid_print

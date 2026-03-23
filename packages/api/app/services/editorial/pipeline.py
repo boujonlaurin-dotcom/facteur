@@ -143,6 +143,15 @@ class EditorialPipelineService:
             duration_ms=round(actu_time * 1000, 2),
         )
 
+        # Warn about subjects with no articles at all
+        for s in subjects:
+            if s.actu_article is None and s.deep_article is None:
+                logger.warning(
+                    "editorial_pipeline.subject_no_articles",
+                    topic_id=s.topic_id,
+                    label=s.label,
+                )
+
         # Serialize cluster data (clusters are dataclasses)
         cluster_data = [
             {

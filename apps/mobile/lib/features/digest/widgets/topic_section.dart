@@ -10,6 +10,7 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'editorial_badge.dart';
 
 /// A single topic section in the digest topics layout.
 ///
@@ -74,8 +75,8 @@ class _TopicSectionState extends State<TopicSection> {
   /// Estimated body + footer height for FeedCard WITH image.
   /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20) = 124
   /// Footer: border (1) + padding (8) + row with buttons (32) = 41
-  /// Small buffer for content variation = 5
-  static const double _bodyFooterHeight = 170.0;
+  /// Buffer for content variation (long titles, description, platform font) = 75
+  static const double _bodyFooterHeight = 240.0;
 
   @override
   Widget build(BuildContext context) {
@@ -116,9 +117,11 @@ class _TopicSectionState extends State<TopicSection> {
                 const bodyHeight = _bodyFooterHeight;
                 final computedHeight = imageHeight + bodyHeight;
 
-                return SizedBox(
-                  height: computedHeight,
-                  child: _buildPageView(topic),
+                return ClipRect(
+                  child: SizedBox(
+                    height: computedHeight,
+                    child: _buildPageView(topic),
+                  ),
                 );
               },
             )
@@ -304,26 +307,49 @@ class _TopicSectionState extends State<TopicSection> {
       onSwipeDismiss: widget.onSwipeDismiss != null
           ? () => widget.onSwipeDismiss!(article)
           : null,
-      child: FeedCard(
-        boxShadow: const [],
-        content: _convertToContent(article),
-        onTap: () => widget.onArticleTap(article),
-        onLongPressStart: (_) =>
-            ArticlePreviewOverlay.show(context, _convertToContent(article)),
-        onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-            details.localOffsetFromOrigin.dy),
-        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-        isLiked: article.isLiked,
-        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-        onSaveLongPress: () =>
-            CollectionPickerSheet.show(context, article.contentId),
-        isSaved: article.isSaved,
-        onNotInterested: widget.onNotInterested != null
-            ? () => widget.onNotInterested!(article)
-            : null,
-        isFollowedSource: article.isFollowedSource,
+      child: _wrapWithBadge(
+        article: article,
+        child: FeedCard(
+          boxShadow: const [],
+          content: _convertToContent(article),
+          onTap: () => widget.onArticleTap(article),
+          onLongPressStart: (_) =>
+              ArticlePreviewOverlay.show(context, _convertToContent(article)),
+          onLongPressMoveUpdate: (details) =>
+              ArticlePreviewOverlay.updateScroll(
+                  details.localOffsetFromOrigin.dy),
+          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+          onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
+          isLiked: article.isLiked,
+          onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+          onSaveLongPress: () =>
+              CollectionPickerSheet.show(context, article.contentId),
+          isSaved: article.isSaved,
+          onNotInterested: widget.onNotInterested != null
+              ? () => widget.onNotInterested!(article)
+              : null,
+          isFollowedSource: article.isFollowedSource,
+        ),
       ),
+    );
+  }
+
+  /// Wraps a card widget with an editorial badge chip above it.
+  Widget _wrapWithBadge({required DigestItem article, required Widget child}) {
+    if (article.badge == null) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: EditorialBadge(
+            badge: article.badge!,
+            isSerene: widget.isSerene,
+          ),
+        ),
+        child,
+      ],
     );
   }
 
@@ -338,28 +364,33 @@ class _TopicSectionState extends State<TopicSection> {
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
-            child: FeedCard(
-              boxShadow: const [],
-              content: _convertToContent(article),
-              onTap: () => widget.onArticleTap(article),
-              onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                  context, _convertToContent(article)),
-              onLongPressMoveUpdate: (details) =>
-                  ArticlePreviewOverlay.updateScroll(
-                      details.localOffsetFromOrigin.dy),
-              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike:
-                  widget.onLike != null ? () => widget.onLike!(article) : null,
-              isLiked: article.isLiked,
-              onSave:
-                  widget.onSave != null ? () => widget.onSave!(article) : null,
-              onSaveLongPress: () =>
-                  CollectionPickerSheet.show(context, article.contentId),
-              isSaved: article.isSaved,
-              onNotInterested: widget.onNotInterested != null
-                  ? () => widget.onNotInterested!(article)
-                  : null,
-              isFollowedSource: article.isFollowedSource,
+            child: _wrapWithBadge(
+              article: article,
+              child: FeedCard(
+                boxShadow: const [],
+                content: _convertToContent(article),
+                onTap: () => widget.onArticleTap(article),
+                onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                    context, _convertToContent(article)),
+                onLongPressMoveUpdate: (details) =>
+                    ArticlePreviewOverlay.updateScroll(
+                        details.localOffsetFromOrigin.dy),
+                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+                onLike: widget.onLike != null
+                    ? () => widget.onLike!(article)
+                    : null,
+                isLiked: article.isLiked,
+                onSave: widget.onSave != null
+                    ? () => widget.onSave!(article)
+                    : null,
+                onSaveLongPress: () =>
+                    CollectionPickerSheet.show(context, article.contentId),
+                isSaved: article.isSaved,
+                onNotInterested: widget.onNotInterested != null
+                    ? () => widget.onNotInterested!(article)
+                    : null,
+                isFollowedSource: article.isFollowedSource,
+              ),
             ),
           ),
         );
@@ -374,14 +405,14 @@ class _TopicSectionState extends State<TopicSection> {
         final isActive = index == _currentPage;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: isActive ? 16 : 6,
-          height: 6,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          width: isActive ? 24 : 10,
+          height: 10,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
           decoration: BoxDecoration(
             color: isActive
                 ? colors.primary
                 : colors.textTertiary.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(5),
           ),
         );
       }),

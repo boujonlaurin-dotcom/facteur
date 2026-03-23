@@ -4,6 +4,7 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'editorial_badge.dart';
 
 /// Editorial wrapper for the coup de cœur article.
 /// Displays a FeedCard with a save count label.
@@ -47,6 +48,15 @@ class CoupDeCoeurBlock extends StatelessWidget {
           isFollowedSource: item.isFollowedSource,
         ),
 
+        // Editorial badge (below card)
+        Padding(
+          padding: const EdgeInsets.only(left: 4, top: 6),
+          child: EditorialBadge(
+            badge: coupDeCoeur.badge,
+            isSerene: isSerene,
+          ),
+        ),
+
         // Save count label
         if (coupDeCoeur.saveCount > 0)
           Padding(
@@ -54,8 +64,9 @@ class CoupDeCoeurBlock extends StatelessWidget {
             child: Text(
               'Gardé par ${coupDeCoeur.saveCount} lecteurs',
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                fontStyle: FontStyle.italic,
                 color: colors.textSecondary,
               ),
             ),

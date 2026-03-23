@@ -157,6 +157,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("lifespan_starting_scheduler")
     start_scheduler()
 
+    # Startup catch-up: si les digests du jour n'existent pas encore
+    # (cron raté, deploy, restart), lancer la génération immédiatement en background.
+    if _has_explicit_db:
+
+        async def _startup_digest_catchup() -> None:
+            """Vérifie si les digests du jour existent, sinon lance la génération."""
+            try:
+                from datetime import date
+
+                from sqlalchemy import select as sa_select
+
+                from app.database import async_session_maker
+                from app.jobs.digest_generation_job import run_digest_generation
+                from app.models.daily_digest import DailyDigest
+
+                async with async_session_maker() as session:
+                    today = date.today()
+                    exists = await session.scalar(
+                        sa_select(DailyDigest.id)
+                        .where(DailyDigest.target_date == today)
+                        .limit(1)
+                    )
+                    if not exists:
+                        logger.info(
+                            "digest_startup_catchup_triggered",
+                            target_date=str(today),
+                        )
+                        await run_digest_generation(target_date=today)
+                        logger.info("digest_startup_catchup_completed")
+                    else:
+                        logger.info(
+                            "digest_startup_catchup_skipped",
+                            reason="digests_exist",
+                        )
+            except Exception:
+                logger.exception("digest_startup_catchup_failed")
+
+        import asyncio
+
+        asyncio.create_task(_startup_digest_catchup())
+
     # Démarrage conditionnel du worker de classification ML
     ml_worker = None
     if settings.ml_enabled:

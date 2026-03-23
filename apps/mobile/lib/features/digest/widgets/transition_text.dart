@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
+import 'markdown_text.dart';
 
 /// Editorial transition text between topic sections (N2).
 /// Italic bridging sentence with separator lines above and below.
@@ -23,8 +24,8 @@ class TransitionText extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text(
-              text,
+            child: MarkdownText(
+              text: text,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w400,

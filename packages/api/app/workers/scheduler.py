@@ -43,12 +43,17 @@ def start_scheduler() -> None:
     )
 
     # Job Digest Quotidien (8h00 Paris)
+    # misfire_grace_time=3600: si le container redémarre entre 8h00 et 9h00,
+    # le job est quand même exécuté (au lieu d'être silencieusement droppé).
+    # coalesce=True: pas de double exécution si plusieurs triggers rattrapés.
     scheduler.add_job(
         run_digest_generation,
         trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
         id="daily_digest",
         name="Daily Digest Generation",
         replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
     )
 
     # Job Storage Cleanup Quotidien (3h00 Paris - heure creuse)

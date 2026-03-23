@@ -20,7 +20,7 @@ class SectionDivider extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w600,
               color: textColor,
             ),
