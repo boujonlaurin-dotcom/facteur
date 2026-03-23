@@ -32,6 +32,7 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onReportNotSerene;
   final void Function(DigestItem)? onSwipeDismiss;
   final void Function(String sourceId)? onMuteSource;
   final void Function(String topic)? onMuteTopic;
@@ -52,6 +53,7 @@ class DigestBriefingSection extends StatefulWidget {
     this.onSave,
     this.onLike,
     this.onNotInterested,
+    this.onReportNotSerene,
     this.onSwipeDismiss,
     this.onMuteSource,
     this.onMuteTopic,
@@ -326,6 +328,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
           onSwipeDismiss: widget.onSwipeDismiss != null
               ? _handleLocalSwipeDismiss
               : null,
@@ -358,6 +361,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
         ),
       );
     }
@@ -372,6 +376,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
         ),
       );
     }
@@ -495,6 +500,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   CollectionPickerSheet.show(context, item.contentId),
               onNotInterested: widget.onNotInterested != null
                   ? () => widget.onNotInterested!(item)
+                  : null,
+              isSerene: widget.isSerein,
+              onReportNotSerene: widget.onReportNotSerene != null
+                  ? () => widget.onReportNotSerene!(item)
                   : null,
               isSaved: item.isSaved,
             ),

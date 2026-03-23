@@ -199,10 +199,23 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     _cachedDate = null;
   }
 
-  /// Apply an action to a digest item (like, unlike, read, save, not_interested, undo)
+  /// Apply an action to a digest item (like, unlike, read, save, not_interested, report_not_serene, undo)
   Future<void> applyAction(String contentId, String action) async {
     final currentDigest = state.value;
     if (currentDigest == null) return;
+
+    // Report not serene: separate API call, no optimistic state change
+    if (action == 'report_not_serene') {
+      try {
+        final repository = ref.read(digestRepositoryProvider);
+        await repository.reportNotSerene(contentId);
+        await HapticFeedback.lightImpact();
+        NotificationService.showSuccess('Merci, nous en prenons note');
+      } catch (e) {
+        NotificationService.showError('Erreur lors du signalement');
+      }
+      return;
+    }
 
     // Optimistic update — apply to flat items
     final updatedItems = currentDigest.items.map((item) {

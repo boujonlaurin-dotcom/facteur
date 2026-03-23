@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -847,6 +848,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           .contains(content.source.id),
                                       onSourceTap: () =>
                                           TopicChip.showArticleSheet(context, content),
+                                      isSerene: ref.watch(sereinToggleProvider).enabled,
+                                      onReportNotSerene: () async {
+                                        try {
+                                          final feedRepo = ref.read(feedRepositoryProvider);
+                                          await feedRepo.reportNotSerene(content.id);
+                                          HapticFeedback.lightImpact();
+                                          NotificationService.showSuccess(
+                                              'Merci, nous en prenons note');
+                                        } catch (e) {
+                                          NotificationService.showError(
+                                              'Erreur lors du signalement');
+                                        }
+                                      },
                                     ),
                                   ),
                                 );

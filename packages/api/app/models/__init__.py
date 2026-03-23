@@ -11,6 +11,7 @@ from app.models.digest_completion import DigestCompletion
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.progress import TopicQuiz, UserTopicProgress
+from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
@@ -63,4 +64,6 @@ __all__ = [
     # Waitlist (Landing Page)
     "WaitlistEntry",
     "WaitlistSurveyResponse",
+    # Serene Feedback
+    "SereneReport",
 ]

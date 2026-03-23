@@ -254,6 +254,13 @@ class DigestRepository {
     }
   }
 
+  /// Report an article as not serene (misclassified)
+  Future<void> reportNotSerene(String contentId) async {
+    await _apiClient.dio.post<dynamic>(
+      'contents/$contentId/report-not-serene',
+    );
+  }
+
   /// Update a user preference (key-value)
   Future<void> updatePreference({
     required String key,
