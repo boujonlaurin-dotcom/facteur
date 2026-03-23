@@ -273,35 +273,37 @@ class FeedCard extends StatelessWidget {
                                 ),
                               ),
                             ],
+
+                            // Editorial badge (digest only) — inside Expanded so actions stay flush-right
+                            if (editorialBadgeLabel != null) ...[
+                              const SizedBox(width: FacteurSpacing.space2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color:
+                                      colors.textSecondary.withValues(alpha: 0.20),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: colors.textTertiary.withValues(alpha: 0.25),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  editorialBadgeLabel!,
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
-
-                      // Editorial badge (digest only)
-                      if (editorialBadgeLabel != null) ...[
-                        const SizedBox(width: FacteurSpacing.space2),
-                        Flexible(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color:
-                                  colors.textSecondary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              editorialBadgeLabel!,
-                              style: TextStyle(
-                                color: colors.textSecondary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 10,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
 
                       // Actions (Like, Save, NotInterested, Personalize)
                       Row(

@@ -330,6 +330,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                           const FacteurLogo(size: 22),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               const StreakIndicator(),
                               Row(
@@ -337,8 +338,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 children: [
                                   _buildDiscreteCounter(
                                       ref, digestAsync, colors),
-                                  const SizedBox(
-                                      width: FacteurSpacing.space2),
                                   const UpdateButton(),
                                 ],
                               ),
