@@ -24,9 +24,7 @@ class SereneReport(Base):
         nullable=False,
         index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
