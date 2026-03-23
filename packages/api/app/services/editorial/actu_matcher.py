@@ -145,12 +145,16 @@ class ActuMatcher:
                 continue
             # Try without pass-1 diversity, but keep diversity among relaxed matches
             best = self._find_best_article_global(
-                cluster=cluster, used_source_ids=relaxed_used, cutoff=cutoff,
+                cluster=cluster,
+                used_source_ids=relaxed_used,
+                cutoff=cutoff,
             )
             if not best:
                 # Try with relaxed recency (48h)
                 best = self._find_best_article_global(
-                    cluster=cluster, used_source_ids=relaxed_used, cutoff=cutoff_relaxed,
+                    cluster=cluster,
+                    used_source_ids=relaxed_used,
+                    cutoff=cutoff_relaxed,
                 )
             if best:
                 relaxed_used.add(best.source_id)

@@ -53,16 +53,16 @@ _editorial_ctx_cache: dict[tuple, tuple[float, object]] = {}
 _EDITORIAL_CACHE_TTL = 1800  # 30 minutes
 
 
-def _get_cached_editorial_ctx(
-    target_date: datetime.date, mode: str
-) -> object | None:
+def _get_cached_editorial_ctx(target_date: datetime.date, mode: str) -> object | None:
     """Return cached EditorialGlobalContext if fresh, else None."""
     key = (target_date, mode)
     entry = _editorial_ctx_cache.get(key)
     if entry is not None:
         ts, ctx = entry
         if time.time() - ts < _EDITORIAL_CACHE_TTL:
-            logger.info("editorial_ctx_cache_hit", target_date=str(target_date), mode=mode)
+            logger.info(
+                "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
+            )
             return ctx
         # Expired — remove
         del _editorial_ctx_cache[key]
@@ -292,7 +292,9 @@ class DigestSelector:
                                     candidates, mode=mode
                                 )
                                 if global_ctx is not None:
-                                    _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
+                                    _set_cached_editorial_ctx(
+                                        _cache_date, mode, global_ctx
+                                    )
                             if not global_ctx:
                                 logger.warning("digest_editorial_global_ctx_failed")
                                 output_format = "topics"
