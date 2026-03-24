@@ -63,12 +63,16 @@ class OnboardingAnswers(BaseModel):
 
     # Section 1 - Overview
     objective: str = Field(..., description="Objectif : learn, culture, professional")
-    age_range: str | None = Field(None, description="Tranche d'âge (removed in onboarding v3)")
+    age_range: str | None = Field(
+        None, description="Tranche d'âge (removed in onboarding v3)"
+    )
     gender: str | None = None
     approach: str = Field(..., description="direct ou detailed")
 
     # Section 2 - App Preferences
-    perspective: str | None = Field(None, description="big_picture ou detail_oriented (removed in onboarding v3)")
+    perspective: str | None = Field(
+        None, description="big_picture ou detail_oriented (removed in onboarding v3)"
+    )
     response_style: str = Field(..., description="decisive ou nuanced")
     content_recency: str | None = Field(
         None, description="recent ou evergreen (deprecated)"
