@@ -1,7 +1,7 @@
 """Service waitlist — inscription email depuis la landing page."""
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,11 @@ logger = structlog.get_logger()
 class WaitlistService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def get_count(self) -> int:
+        """Return total number of waitlist entries."""
+        result = await self.db.execute(select(func.count()).select_from(WaitlistEntry))
+        return result.scalar_one()
 
     async def register(
         self,
