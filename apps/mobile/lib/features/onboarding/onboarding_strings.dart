@@ -110,9 +110,9 @@ class OnboardingStrings {
       'Vous pourrez changer à tout moment.';
 
   // Q9: Sources
-  static const String q9Title = 'Construisons votre front de sources fiables.';
+  static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
-      'Sélectionnez les sources qui seront privilégiées pour votre flux.';
+      'Basé sur vos centres d\'intérêt, voici les sources que nous vous recommandons.';
   static const String q9HelperText =
       'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
@@ -124,6 +124,22 @@ class OnboardingStrings {
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
       'Pré-sélection basée sur vos thèmes';
+
+  // Sources Page 2
+  static const String sourcesPage2Title = 'Allez plus loin.';
+  static const String sourcesPage2Subtitle =
+      'Explorez le catalogue complet et ajoutez vos propres sources.';
+  static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
+  static const String premiumSubscriptionsButton =
+      'Indiquer vos abonnements presse';
+  static const String premiumSheetTitle = 'Vos abonnements presse';
+  static const String premiumSheetSubtitle =
+      'Si vous êtes abonné à un média payant (Le Monde, Mediapart...), '
+      'indiquez-le ici.\n\n'
+      'Facteur vous redirigera directement vers le site du média '
+      'pour lire les articles en entier, et inclura leurs contenus '
+      'payants dans votre sélection quotidienne.';
+  static const String premiumSheetDone = 'Valider';
 
   // Q10: Themes
   static const String q10Title = 'Quels sont vos centres d\'intérêt ?';
@@ -140,6 +156,19 @@ class OnboardingStrings {
   static const String themeEnvironment = 'Environnement';
   static const String themeEconomy = 'Économie';
   static const String themeSport = 'Sport';
+
+  // Restart Welcome (v3 re-trigger)
+  static const String restartWelcomeTitle = 'Facteur fait peau neuve !';
+  static const String restartWelcomeSubtitle =
+      'Reprenons l\'onboarding pour intégrer plus de sources et sujets pertinents pour vous.';
+  static const String restartStartButton = 'C\'est parti !';
+
+  // Subtopics Screen (Screen B)
+  static const String subtopicsTitle = 'Affine tes centres d\'intérêt';
+  static const String subtopicsSubtitle =
+      'Personnalise chaque thème avec des sous-sujets et tes niches';
+  static const String addCustomTopicHint = 'Ajouter un sujet';
+  static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
 
   // Sources Reaction (after source selection)
   static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';

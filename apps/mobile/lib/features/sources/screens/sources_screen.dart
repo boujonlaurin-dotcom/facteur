@@ -31,7 +31,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   static const _themeFilters = <({String? key, String label})>[
     (key: null, label: 'Toutes'),
     (key: 'tech', label: 'Tech'),
-    (key: 'society', label: 'Societe'),
+    (key: 'society', label: 'Société'),
     (key: 'environment', label: 'Environnement'),
     (key: 'economy', label: 'Economie'),
     (key: 'politics', label: 'Politique'),

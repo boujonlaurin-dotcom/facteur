@@ -41,7 +41,7 @@ class ThemeWithSubtopics extends StatelessWidget {
         // Thème principal (Chip style)
         GestureDetector(
           onTap: () => onThemeToggled(theme.slug),
-          child: _ThemeChip(
+          child: ThemeChip(
             theme: theme,
             isSelected: isSelected,
           ),
@@ -99,11 +99,12 @@ class ThemeWithSubtopics extends StatelessWidget {
   }
 }
 
-class _ThemeChip extends StatelessWidget {
+class ThemeChip extends StatelessWidget {
   final ThemeOption theme;
   final bool isSelected;
 
-  const _ThemeChip({
+  const ThemeChip({
+    super.key,
     required this.theme,
     required this.isSelected,
   });
@@ -185,12 +186,12 @@ class SubtopicChip extends StatelessWidget {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected
               ? themeColor.withValues(alpha: 0.1)
               : context.facteurColors.surfacePaper,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
             color: isSelected
                 ? themeColor.withValues(alpha: 0.5)
@@ -210,9 +211,13 @@ class SubtopicChip extends StatelessWidget {
                         ? themeColor
                         : context.facteurColors.textSecondary,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    fontSize: 13, // Increased font size as requested
+                    fontSize: 13,
                   ),
             ),
+            if (subtopic.isPopular) ...[
+              const SizedBox(width: 3),
+              Icon(Icons.trending_up, size: 12, color: themeColor),
+            ],
           ],
         ),
       ),
@@ -242,12 +247,12 @@ class _EntityChip extends StatelessWidget {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
               ? themeColor.withValues(alpha: 0.1)
               : context.facteurColors.surfacePaper,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
             color: isSelected
                 ? themeColor.withValues(alpha: 0.5)
@@ -265,7 +270,7 @@ class _EntityChip extends StatelessWidget {
                         ? themeColor
                         : context.facteurColors.textSecondary,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
             ),
             const SizedBox(width: 4),
