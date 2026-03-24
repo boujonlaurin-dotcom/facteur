@@ -278,30 +278,32 @@ class FeedCard extends StatelessWidget {
                               ),
                             ],
 
-                            // Editorial badge (digest only) — pushed right inside Expanded
+                            // Editorial badge (digest only) — truncates before source name
                             if (editorialBadgeLabel != null) ...[
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color:
-                                      colors.textSecondary.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: colors.textTertiary.withValues(alpha: 0.20),
-                                    width: 0.5,
+                              const SizedBox(width: FacteurSpacing.space2),
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        colors.textSecondary.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: colors.textTertiary.withValues(alpha: 0.20),
+                                      width: 0.5,
+                                    ),
                                   ),
-                                ),
-                                child: Text(
-                                  editorialBadgeLabel!,
-                                  style: TextStyle(
-                                    color: colors.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 11,
+                                  child: Text(
+                                    editorialBadgeLabel!,
+                                    style: TextStyle(
+                                      color: colors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 11,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],

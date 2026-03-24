@@ -93,7 +93,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ValueNotifier<double> _headerOpacity = ValueNotifier<double>(1.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
-  bool _endNudgeShown = false;
   static const int _consumptionThreshold = 30; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
@@ -978,7 +977,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ),
           // Reading progress bar — bottom of screen, grey→primary color
-          if (content.hasInAppContent || _isWebViewActive || (!useScrollToSite && !useInAppReading))
+          if (content.hasInAppContent ||
+              _isWebViewActive ||
+              (!useScrollToSite && !useInAppReading))
             Positioned(
               bottom: MediaQuery.of(context).viewPadding.bottom,
               left: 0,
@@ -1161,121 +1162,122 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             horizontal: FacteurSpacing.space2,
             vertical: FacteurSpacing.space2,
           ),
-        child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
-          child: Row(
-                children: [
-                  // Discreet Back Button (reduced icon, maintained hitbox)
-                  IconButton(
-                    padding: const EdgeInsets.all(8),
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                      size: 16,
-                      color: colors.textSecondary,
-                    ),
-                    onPressed: () => context.pop(_content),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+            child: Row(
+              children: [
+                // Discreet Back Button (reduced icon, maintained hitbox)
+                IconButton(
+                  padding: const EdgeInsets.all(8),
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                    size: 16,
+                    color: colors.textSecondary,
                   ),
-                  const SizedBox(width: 4),
+                  onPressed: () => context.pop(_content),
+                ),
+                const SizedBox(width: 4),
 
-                  // Source logo (reduced from 32 to 28)
-                  if (content.source.logoUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: CachedNetworkImage(
-                        imageUrl: content.source.logoUrl!,
-                        width: 28,
-                        height: 28,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            _buildSourcePlaceholder(colors),
+                // Source logo (reduced from 32 to 28)
+                if (content.source.logoUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: CachedNetworkImage(
+                      imageUrl: content.source.logoUrl!,
+                      width: 28,
+                      height: 28,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) =>
+                          _buildSourcePlaceholder(colors),
+                    ),
+                  )
+                else
+                  _buildSourcePlaceholder(colors),
+                const SizedBox(width: 8),
+
+                // Source Name + Time + Badges
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Ligne 1 : Nom + Badges
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              content.source.name,
+                              style: textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // Bias dot
+                          if (content.source.biasStance != 'unknown') ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: content.source.getBiasColor(),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    )
-                  else
-                    _buildSourcePlaceholder(colors),
-                  const SizedBox(width: 8),
-
-                  // Source Name + Time + Badges
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Ligne 1 : Nom + Badges
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                content.source.name,
-                                style: textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: colors.textPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            // Bias dot
-                            if (content.source.biasStance != 'unknown') ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: content.source.getBiasColor(),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 1),
-                        // Ligne 2 : Temps relatif (icône + format court)
-                        Row(
-                          children: [
-                            Icon(
-                              PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                              size: 11,
+                      const SizedBox(height: 1),
+                      // Ligne 2 : Temps relatif (icône + format court)
+                      Row(
+                        children: [
+                          Icon(
+                            PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                            size: 11,
+                            color: colors.textTertiary,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            timeago
+                                .format(content.publishedAt, locale: 'fr_short')
+                                .replaceAll('il y a ', ''),
+                            style: textTheme.bodySmall?.copyWith(
                               color: colors.textTertiary,
+                              fontSize: 11,
                             ),
-                            const SizedBox(width: 3),
-                            Text(
-                              timeago
-                                  .format(content.publishedAt,
-                                      locale: 'fr_short')
-                                  .replaceAll('il y a ', ''),
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colors.textTertiary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
+                ),
 
-                  // Share button — copie le lien dans le presse-papier
-                  IconButton(
-                    padding: const EdgeInsets.all(4),
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(),
-                    onPressed: _shareArticle,
-                    icon: Icon(
-                      PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
-                      size: 22,
-                      color: colors.textSecondary,
-                    ),
+                // Share button — copie le lien dans le presse-papier
+                IconButton(
+                  padding: const EdgeInsets.all(4),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(),
+                  onPressed: _shareArticle,
+                  icon: Icon(
+                    PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
+                    size: 22,
+                    color: colors.textSecondary,
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
       ),
     );
   }
 
-  Widget _buildEntityChips(BuildContext context, Content content) {
+  /// Returns individual entity chip widgets (no wrapper) for use in Wrap layouts.
+  /// Tapping any chip opens the full entities sheet.
+  List<Widget> _buildEntityChipWidgets(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final topicsAsync = ref.watch(customTopicsProvider);
@@ -1289,77 +1291,69 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final visible = entities.take(maxVisible).toList();
     final overflow = entities.length - maxVisible;
 
-    return Padding(
-      padding: const EdgeInsets.only(
-        left: FacteurSpacing.space4,
-        right: FacteurSpacing.space4,
-        top: 6,
-      ),
-      child: GestureDetector(
-        onTap: () => ArticleEntitiesSheet.show(context, content),
-        child: Wrap(
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            ...visible.map((entity) {
-              final isFollowed =
-                  followedNames.contains(entity.text.toLowerCase());
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isFollowed
-                      ? const Color(0xFFE07A5F).withValues(alpha: 0.1)
-                      : colors.textTertiary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 100),
-                      child: Text(
-                        entity.text,
-                        style: textTheme.labelSmall?.copyWith(
-                          color: isFollowed
-                              ? const Color(0xFFE07A5F)
-                              : colors.textTertiary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    return [
+      ...visible.map((entity) {
+        final isFollowed =
+            followedNames.contains(entity.text.toLowerCase());
+        return GestureDetector(
+          onTap: () => ArticleEntitiesSheet.show(context, content),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isFollowed
+                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
+                  : colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 100),
+                  child: Text(
+                    entity.text,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: isFollowed
+                          ? const Color(0xFFE07A5F)
+                          : colors.textTertiary,
+                      fontWeight: FontWeight.w500,
                     ),
-                    if (isFollowed) ...[
-                      const SizedBox(width: 3),
-                      Icon(
-                        PhosphorIcons.check(PhosphorIconsStyle.bold),
-                        size: 10,
-                        color: const Color(0xFFE07A5F),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
-            if (overflow > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '+$overflow',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                    fontWeight: FontWeight.w500,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (isFollowed) ...[
+                  const SizedBox(width: 3),
+                  Icon(
+                    PhosphorIcons.check(PhosphorIconsStyle.bold),
+                    size: 10,
+                    color: const Color(0xFFE07A5F),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+      if (overflow > 0)
+        GestureDetector(
+          onTap: () => ArticleEntitiesSheet.show(context, content),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '+$overflow',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
               ),
-          ],
+            ),
+          ),
         ),
-      ),
-    );
+    ];
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
@@ -1375,7 +1369,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!.withValues(alpha: alpha);
+        )!
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -1418,7 +1413,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 56;
+    final headerHeight = topInset + 50;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
@@ -1458,221 +1453,228 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             duration: const Duration(milliseconds: 300),
             child: IgnorePointer(
               ignoring: _isWebViewActive,
-            child: ColoredBox(
-              color: _ctaTapped
-                  ? const Color(0x00000000)
-                  : colors.backgroundPrimary,
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                physics: _isWebViewActive
-                    ? const NeverScrollableScrollPhysics()
-                    : const ClampingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Spacer: scrolls with content, initially behind the header overlay
-                    SizedBox(height: headerHeight),
-                    // Entity chips — above article, animated with header
-                    if (content.entities.isNotEmpty)
-                      ValueListenableBuilder<double>(
-                        valueListenable: _headerOpacity,
-                        builder: (context, opacity, child) => AnimatedOpacity(
-                          opacity: opacity,
-                          duration: const Duration(milliseconds: 200),
-                          child: child!,
-                        ),
-                        child: _buildEntityChips(context, content),
-                      ),
-                    // ZONE 1: Article content — opaque background hides WebView
-                    Container(
-                      key: _articleKey,
-                      color: colors.backgroundPrimary,
-                      child: ArticleReaderWidget(
-                        htmlContent: content.htmlContent,
-                        description: content.description,
-                        title: content.title,
-                        shrinkWrap: true,
-                        header: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (content.thumbnailUrl != null) ...[
-                              ClipRRect(
-                                borderRadius:
-                                    BorderRadius.circular(FacteurRadius.large),
-                                child: FacteurThumbnail(
-                                  imageUrl: content.thumbnailUrl,
-                                  aspectRatio: 16 / 9,
-                                ),
-                              ),
-                              const SizedBox(height: FacteurSpacing.space4),
-                            ],
-                            if (isPartial) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colors.warning.withValues(alpha: 0.12),
-                                  borderRadius:
-                                      BorderRadius.circular(FacteurRadius.pill),
-                                ),
-                                child: Text(
-                                  'Aperçu — contenu partiel',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.warning,
-                                    fontWeight: FontWeight.w600,
+              child: ColoredBox(
+                color: _ctaTapped
+                    ? const Color(0x00000000)
+                    : colors.backgroundPrimary,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  physics: _isWebViewActive
+                      ? const NeverScrollableScrollPhysics()
+                      : const ClampingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Spacer: scrolls with content, initially behind the header overlay
+                      SizedBox(height: headerHeight),
+                      // ZONE 1: Article content — opaque background hides WebView
+                      Container(
+                        key: _articleKey,
+                        color: colors.backgroundPrimary,
+                        child: ArticleReaderWidget(
+                          htmlContent: content.htmlContent,
+                          description: content.description,
+                          title: content.title,
+                          shrinkWrap: true,
+                          header: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (content.thumbnailUrl != null) ...[
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                      FacteurRadius.large),
+                                  child: FacteurThumbnail(
+                                    imageUrl: content.thumbnailUrl,
+                                    aspectRatio: 16 / 9,
                                   ),
                                 ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              // Entity chips + partial badge row
+                              if (content.entities.isNotEmpty ||
+                                  isPartial) ...[
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (isPartial)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colors.warning
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(
+                                              FacteurRadius.pill),
+                                        ),
+                                        child: Text(
+                                          'Aperçu — contenu partiel',
+                                          style:
+                                              textTheme.labelSmall?.copyWith(
+                                            color: colors.warning,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    if (content.entities.isNotEmpty)
+                                      ..._buildEntityChipWidgets(
+                                          context, content),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space4),
+                              ],
+                              Text(
+                                content.title,
+                                style: textTheme.displayLarge
+                                    ?.copyWith(fontSize: 24),
                               ),
-                              const SizedBox(height: FacteurSpacing.space3),
-                            ],
-                            Text(
-                              content.title,
-                              style: textTheme.displayLarge
-                                  ?.copyWith(fontSize: 24),
-                            ),
-                            const SizedBox(height: FacteurSpacing.space2),
-                            if (readingTime != null) ...[
-                              Row(
-                                children: [
-                                  Icon(
-                                    PhosphorIcons.timer(
-                                        PhosphorIconsStyle.regular),
-                                    size: 14,
-                                    color: colors.textTertiary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    readingTime,
-                                    style: textTheme.bodySmall?.copyWith(
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (readingTime != null) ...[
+                                Row(
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.timer(
+                                          PhosphorIconsStyle.regular),
+                                      size: 14,
                                       color: colors.textTertiary,
                                     ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      readingTime,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              Divider(color: colors.border, height: 1),
+                              const SizedBox(height: FacteurSpacing.space4),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // ZONE 2: CTA button — intentional transition to WebView
+                      Container(
+                        color: colors.backgroundPrimary,
+                        child: Padding(
+                          key: _bridgeKey,
+                          padding: EdgeInsets.only(
+                            left: FacteurSpacing.space4,
+                            right: FacteurSpacing.space4,
+                            top: FacteurSpacing.space3,
+                            bottom: FacteurSpacing.space3 + bottomInset,
+                          ),
+                          child: GestureDetector(
+                            onTap: () {
+                              if (_offsetsComputed && !_ctaTapped) {
+                                setState(() {
+                                  _ctaTapped = true;
+                                });
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
+                                  if (mounted) {
+                                    _scrollController.animateTo(
+                                      _scrollController
+                                          .position.maxScrollExtent,
+                                      duration:
+                                          const Duration(milliseconds: 500),
+                                      curve: Curves.easeInOutCubic,
+                                    );
+                                  }
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.surfaceElevated,
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.large),
+                                border: Border.all(
+                                  color: colors.border.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  if (content.source.logoUrl != null)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: CachedNetworkImage(
+                                        imageUrl: content.source.logoUrl!,
+                                        width: 28,
+                                        height: 28,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => Container(
+                                          width: 28,
+                                          height: 28,
+                                          decoration: BoxDecoration(
+                                            color: colors.surface,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Icon(
+                                            PhosphorIcons.newspaper(
+                                                PhosphorIconsStyle.regular),
+                                            size: 16,
+                                            color: colors.textTertiary,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: colors.surface,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        PhosphorIcons.newspaper(
+                                            PhosphorIconsStyle.regular),
+                                        size: 16,
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Lire sur ${content.source.name}',
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    PhosphorIcons.arrowRight(
+                                        PhosphorIconsStyle.regular),
+                                    size: 20,
+                                    color: colors.textTertiary,
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: FacteurSpacing.space3),
-                            ],
-                            Divider(color: colors.border, height: 1),
-                            const SizedBox(height: FacteurSpacing.space4),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // ZONE 2: CTA button — intentional transition to WebView
-                    Container(
-                      color: colors.backgroundPrimary,
-                      child: Padding(
-                        key: _bridgeKey,
-                        padding: EdgeInsets.only(
-                          left: FacteurSpacing.space4,
-                          right: FacteurSpacing.space4,
-                          top: FacteurSpacing.space3,
-                          bottom: FacteurSpacing.space3 + bottomInset,
-                        ),
-                        child: GestureDetector(
-                          onTap: () {
-                            if (_offsetsComputed && !_ctaTapped) {
-                              setState(() {
-                                _ctaTapped = true;
-                              });
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) {
-                                  _scrollController.animateTo(
-                                    _scrollController.position.maxScrollExtent,
-                                    duration: const Duration(milliseconds: 500),
-                                    curve: Curves.easeInOutCubic,
-                                  );
-                                }
-                              });
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.surfaceElevated,
-                              borderRadius:
-                                  BorderRadius.circular(FacteurRadius.large),
-                              border: Border.all(
-                                color: colors.border.withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                if (content.source.logoUrl != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: CachedNetworkImage(
-                                      imageUrl: content.source.logoUrl!,
-                                      width: 28,
-                                      height: 28,
-                                      fit: BoxFit.cover,
-                                      errorWidget: (_, __, ___) => Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          color: colors.surface,
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          PhosphorIcons.newspaper(
-                                              PhosphorIconsStyle.regular),
-                                          size: 16,
-                                          color: colors.textTertiary,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      color: colors.surface,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      PhosphorIcons.newspaper(
-                                          PhosphorIconsStyle.regular),
-                                      size: 16,
-                                      color: colors.textTertiary,
-                                    ),
-                                  ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Lire sur ${content.source.name}',
-                                    style: textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: colors.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  PhosphorIcons.arrowRight(
-                                      PhosphorIconsStyle.regular),
-                                  size: 20,
-                                  color: colors.textTertiary,
-                                ),
-                              ],
                             ),
                           ),
                         ),
                       ),
-                    ),
 
-                    // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
-                    if (_ctaTapped) SizedBox(height: availableHeight),
-                  ],
+                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
+                      if (_ctaTapped) SizedBox(height: availableHeight),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ),
       ],
@@ -1713,7 +1715,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 56;
+    final headerHeight = topInset + 50;
 
     switch (content.contentType) {
       case ContentType.article:
@@ -1737,17 +1739,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             children: [
               // Spacer: scrolls with content, initially behind the header overlay
               SizedBox(height: headerHeight),
-              // Entity chips — above article, animated with header
-              if (content.entities.isNotEmpty)
-                ValueListenableBuilder<double>(
-                  valueListenable: _headerOpacity,
-                  builder: (context, opacity, child) => AnimatedOpacity(
-                    opacity: opacity,
-                    duration: const Duration(milliseconds: 200),
-                    child: child!,
-                  ),
-                  child: _buildEntityChips(context, content),
-                ),
               // Hero thumbnail image (smooth integration)
               if (content.thumbnailUrl != null) ...[
                 ClipRRect(
@@ -1757,28 +1748,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     aspectRatio: 16 / 9,
                   ),
                 ),
-                const SizedBox(height: FacteurSpacing.space4),
-              ],
-              // "Aperçu" badge for partial content
-              if (isPartial) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.warning.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(FacteurRadius.pill),
-                  ),
-                  child: Text(
-                    'Aperçu — contenu partiel',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.warning,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
                 const SizedBox(height: FacteurSpacing.space3),
+              ],
+              // Entity chips + partial badge row
+              if (content.entities.isNotEmpty || isPartial) ...[
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (isPartial)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.warning.withValues(alpha: 0.12),
+                          borderRadius:
+                              BorderRadius.circular(FacteurRadius.pill),
+                        ),
+                        child: Text(
+                          'Aperçu — contenu partiel',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.warning,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (content.entities.isNotEmpty)
+                      ..._buildEntityChipWidgets(context, content),
+                  ],
+                ),
+                const SizedBox(height: FacteurSpacing.space4),
               ],
               // Title
               Text(
@@ -1921,7 +1923,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   Widget _buildWebViewFallback(Content content) {
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
 
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
@@ -1942,12 +1943,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 56;
+    final headerHeight = topInset + 50;
     return Column(
       children: [
         SizedBox(height: headerHeight),
         if (content.entities.isNotEmpty)
-          _buildEntityChips(context, content),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: 6,
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _buildEntityChipWidgets(context, content),
+            ),
+          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );

@@ -12,18 +12,16 @@ import 'core/services/push_notification_service.dart';
 import 'core/ui/notification_service.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
-// Note: Certains packages demandent l'import src pour les messages spécifiques s'ils ne sont pas exportés,
-// mais on va essayer de voir si on peut s'en passer ou si l'erreur est bloquante.
-// Si l'erreur 'implementation_imports' est bloquante, on l'ignorera via // ignore: implementation_imports
 import 'package:timeago/src/messages/fr_messages.dart'
     as fr_messages; // ignore: implementation_imports
+import 'core/utils/fr_compact_messages.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialiser timeago
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
-  timeago.setLocaleMessages('fr_short', fr_messages.FrShortMessages());
+  timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
   // Orientation portrait uniquement
   await SystemChrome.setPreferredOrientations([

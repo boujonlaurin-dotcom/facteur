@@ -340,13 +340,16 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               const StreakIndicator(),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildDiscreteCounter(
-                                      ref, digestAsync, colors),
-                                  const UpdateButton(),
-                                ],
+                              Transform.translate(
+                                offset: const Offset(0, 1),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildDiscreteCounter(
+                                        ref, digestAsync, colors),
+                                    const UpdateButton(),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
