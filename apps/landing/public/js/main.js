@@ -13,6 +13,85 @@
         utm_campaign: urlParams.get('utm_campaign') || null,
     };
 
+    // ── Section Nav ───────────────────────────────
+    var sectionNav = document.getElementById('section-nav');
+    var navItems = sectionNav.querySelectorAll('.section-nav__item');
+    var trackedSections = [];
+
+    navItems.forEach(function (item) {
+        var id = item.getAttribute('data-section');
+        var el = document.getElementById(id);
+        if (el) trackedSections.push({ id: id, el: el });
+    });
+
+    var scrollIdleTimer = null;
+
+    function updateActiveSection() {
+        var scrollY = window.scrollY;
+        var heroBottom = document.getElementById('hero').offsetHeight;
+
+        // Show/hide nav based on hero + idle
+        if (scrollY > heroBottom * 0.6) {
+            sectionNav.classList.add('is-visible');
+            sectionNav.classList.remove('is-idle');
+
+            clearTimeout(scrollIdleTimer);
+            scrollIdleTimer = setTimeout(function () {
+                sectionNav.classList.add('is-idle');
+            }, 1500);
+        } else {
+            sectionNav.classList.remove('is-visible');
+        }
+
+        // Find active section
+        var activeId = 'hero';
+        for (var i = trackedSections.length - 1; i >= 0; i--) {
+            var section = trackedSections[i];
+            if (scrollY >= section.el.offsetTop - 120) {
+                activeId = section.id;
+                break;
+            }
+        }
+
+        navItems.forEach(function (item) {
+            if (item.getAttribute('data-section') === activeId) {
+                item.classList.add('is-active');
+            } else {
+                item.classList.remove('is-active');
+            }
+        });
+    }
+
+    window.addEventListener('scroll', updateActiveSection, { passive: true });
+    updateActiveSection();
+
+    // ── Waitlist Count (social proof) ─────────────
+    (function loadWaitlistCount() {
+        var badge = document.getElementById('social-proof');
+        var countEl = document.getElementById('waitlist-count');
+        if (!badge || !countEl) return;
+
+        fetch(API_URL + '/api/waitlist/count')
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                var realCount = data.count || 0;
+                if (realCount < 3) return;
+                var displayed = realCount * 3 + 1;
+                badge.hidden = false;
+                // Animate count up
+                var duration = 1200;
+                var start = performance.now();
+                function step(now) {
+                    var progress = Math.min((now - start) / duration, 1);
+                    var eased = 1 - Math.pow(1 - progress, 3);
+                    countEl.textContent = Math.round(eased * displayed);
+                    if (progress < 1) requestAnimationFrame(step);
+                }
+                requestAnimationFrame(step);
+            })
+            .catch(function () { /* silently ignore */ });
+    })();
+
     // ── Scroll Reveal ─────────────────────────────
     var observer = new IntersectionObserver(
         function (entries) {
@@ -71,7 +150,7 @@
         if (e.target === surveyModal) closeSurvey();
     });
 
-    // ── Radio highlight (Q1/Q3) ─────────────────
+    // ── Radio highlight (Q3) ──────────────────────
     surveyForm.querySelectorAll('input[type="radio"]').forEach(function (radio) {
         radio.addEventListener('change', function () {
             var name = radio.getAttribute('name');
@@ -79,6 +158,17 @@
                 r.closest('.survey-option').classList.remove('is-checked');
             });
             radio.closest('.survey-option').classList.add('is-checked');
+        });
+    });
+
+    // ── Checkbox highlight (Q1) ─────────────────
+    surveyForm.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            if (cb.checked) {
+                cb.closest('.survey-option').classList.add('is-checked');
+            } else {
+                cb.closest('.survey-option').classList.remove('is-checked');
+            }
         });
     });
 
@@ -129,12 +219,18 @@
         submitBtn.disabled = true;
         submitBtn.textContent = '...';
 
+        // Collect checked info_source checkboxes
+        var infoSources = [];
+        surveyForm.querySelectorAll('input[name="info_source"]:checked').forEach(function (cb) {
+            infoSources.push(cb.value);
+        });
+
         fetch(API_URL + '/api/waitlist/survey', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 email: lastSignupEmail,
-                info_source: data.get('info_source'),
+                info_source: infoSources.join(','),
                 main_pain: painOrder.join(','),
                 willingness: data.get('willingness'),
             }),
@@ -206,6 +302,20 @@
                     btn.textContent = 'Rejoindre la waitlist';
                     btn.disabled = false;
                 });
+        });
+    });
+
+    // ── FAQ Accordion ─────────────────────────────
+    document.querySelectorAll('.faq__question').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var item = btn.closest('.faq__item');
+            var wasOpen = item.classList.contains('is-open');
+            // Close all
+            document.querySelectorAll('.faq__item.is-open').forEach(function (el) {
+                el.classList.remove('is-open');
+            });
+            // Toggle clicked
+            if (!wasOpen) item.classList.add('is-open');
         });
     });
 

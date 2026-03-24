@@ -33,3 +33,9 @@ class SurveyResponse(BaseModel):
     """Réponse soumission survey."""
 
     message: str
+
+
+class WaitlistCountResponse(BaseModel):
+    """Nombre d'inscrits waitlist (public)."""
+
+    count: int
