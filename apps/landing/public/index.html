@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=2">
+    <link rel="stylesheet" href="/css/style.css?v=3">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -26,14 +26,26 @@
 <body>
 
     <!-- ═══════════════════════════════════════════ -->
+    <!-- Section Nav                                 -->
+    <!-- ═══════════════════════════════════════════ -->
+    <nav id="section-nav" class="section-nav">
+        <a href="#hero" class="section-nav__item is-active" data-section="hero">Accueil</a>
+        <a href="#testimonials" class="section-nav__item" data-section="testimonials">Témoignages</a>
+        <a href="#solution" class="section-nav__item" data-section="solution">Solution</a>
+        <a href="#founder" class="section-nav__item" data-section="founder">Fondateur</a>
+        <a href="#faq" class="section-nav__item" data-section="faq">FAQ</a>
+        <a href="#manifesto" class="section-nav__item" data-section="manifesto">Manifeste</a>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════ -->
     <!-- SECTION 1 — Hero                           -->
     <!-- ═══════════════════════════════════════════ -->
     <header id="hero" class="section hero">
         <div class="container hero__inner">
             <div class="hero__text">
                 <h1 class="hero__title">Reprends <span class="highlight">le contrôle</span><br>sur ton info.</h1>
-                <p class="hero__subtitle">L'essentiel de tes médias de confiance.<br>Dans une seule App sereine.<br>Pour
-                    mieux t'informer.</p>
+                <p class="hero__subtitle">L'essentiel de tes médias de confiance.<br>Dans une seule interface.<br>Mieux
+                    s'informer.</p>
 
                 <form class="waitlist-form" data-form="hero">
                     <div class="waitlist-form__row">
@@ -45,6 +57,16 @@
                     <p class="waitlist-form__success" hidden>Merci ! On t'écrit très vite. 💌</p>
                     <p class="waitlist-form__error" hidden></p>
                 </form>
+
+                <div id="social-proof" class="social-proof" hidden>
+                    <div class="social-proof__avatars">
+                        <span class="social-proof__dot">L</span>
+                        <span class="social-proof__dot">M</span>
+                        <span class="social-proof__dot">S</span>
+                        <span class="social-proof__dot">A</span>
+                    </div>
+                    <p class="social-proof__text"><span id="waitlist-count">0</span> personnes sur la waitlist</p>
+                </div>
             </div>
             <div class="hero__visual">
                 <div class="phone-mockup">
@@ -67,62 +89,64 @@
                 <div class="testimonial-grid">
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
-                            &laquo;&nbsp;On nous balance contenu sur contenu, on veut un max d'info. Mais on reste
-                            toujours en surface.&nbsp;&raquo;
+                            &laquo;&nbsp;On est noy&eacute;s de contenus, on consomme toujours plus d'info &mdash;
+                            mais au final, on reste en surface sur tout.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
                             <span class="testimonial-card__avatar">S</span>
                             <div class="testimonial-card__identity">
                                 <span class="testimonial-card__name">Sandrine A.</span>
-                                <span class="testimonial-card__context">34 ans</span>
+                                <span class="testimonial-card__context">Enseignante, 34 ans</span>
                             </div>
                         </div>
                     </div>
 
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
-                            &laquo;&nbsp;Chaque matin, je scroll. &Ccedil;a m'&eacute;nerve. C'est la plus grosse perte
-                            de temps dans ma vie.&nbsp;&raquo;
+                            &laquo;&nbsp;Chaque matin, je scroll pendant 30 minutes sans m'en rendre compte.
+                            C'est devenu la plus grosse perte de temps de ma journ&eacute;e.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
                             <span class="testimonial-card__avatar">M</span>
                             <div class="testimonial-card__identity">
                                 <span class="testimonial-card__name">Margaux R.</span>
-                                <span class="testimonial-card__context">27 ans</span>
+                                <span class="testimonial-card__context">Consultante, 27 ans</span>
                             </div>
                         </div>
                     </div>
 
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
-                            &laquo;&nbsp;L'info aujourd'hui, c'est d&eacute;primant, &ccedil;a fatigue. &mdash;
-                            &ccedil;a ne met jamais en joie. C'est simple&nbsp;: maintenant, je
-                            l'&eacute;vite.&nbsp;&raquo;
+                            &laquo;&nbsp;L'info est devenue anxiog&egrave;ne. &Ccedil;a fatigue, &ccedil;a
+                            d&eacute;prime &mdash; alors j'ai fini par l'&eacute;viter
+                            compl&egrave;tement.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
                             <span class="testimonial-card__avatar">R</span>
                             <div class="testimonial-card__identity">
                                 <span class="testimonial-card__name">Romain B.</span>
-                                <span class="testimonial-card__context">41 ans</span>
+                                <span class="testimonial-card__context">Ind&eacute;pendant, 41 ans</span>
                             </div>
                         </div>
                     </div>
 
                     <div class="testimonial-card reveal-child">
                         <blockquote class="testimonial-card__quote">
-                            &laquo;&nbsp;On a plus vraiment d'info s&eacute;rieuse aujourd'hui en France... Trop
-                            de
-                            conflits d'int&eacute;r&ecirc;ts.&nbsp;&raquo;
+                            &laquo;&nbsp;Je ne sais plus &agrave; qui faire confiance. Entre les conflits
+                            d'int&eacute;r&ecirc;ts et les biais, l'info s&eacute;rieuse est devenue
+                            introuvable.&nbsp;&raquo;
                         </blockquote>
                         <div class="testimonial-card__header">
                             <span class="testimonial-card__avatar">S</span>
                             <div class="testimonial-card__identity">
                                 <span class="testimonial-card__name">Sana H.</span>
-                                <span class="testimonial-card__context">30 ans</span>
+                                <span class="testimonial-card__context">Chercheuse, 30 ans</span>
                             </div>
                         </div>
                     </div>
                 </div>
+                <p class="testimonials__footnote">* Bas&eacute; sur des interviews utilisateurs r&eacute;elles, sans
+                    g&eacute;n&eacute;ration LLM ;-)</p>
             </div>
         </section>
 
@@ -230,42 +254,174 @@
         <section id="founder" class="section founder reveal">
             <div class="container founder__inner">
                 <div class="founder__photo">
-                    <img src="/images/laurin.jpeg" alt="Laurin, fondateur de Facteur" class="founder__photo-img">
+                    <img src="/images/laurin-v2.png" alt="Laurin, fondateur de Facteur" class="founder__photo-img">
                 </div>
                 <div class="founder__text">
                     <h2 class="section__title">Pourquoi lancer Facteur ?</h2>
-                    <p>Souvent, je pense à la vidéo qui a changé ma vie.</p>
-                    <p>À 23 ans, au début du COVID, je tombe sur une conférence de Jean-Marc Jancovici qui présentait le
+                    <p>Souvent, je repense à <a href="https://www.youtube.com/watch?v=Vjkq8V5rVy0" target="_blank"
+                            rel="noopener">cette vidéo</a> qui a profondément changé ma vie.</p>
+                    <p>À 23 ans, début de COVID, je tombe sur <a href="https://www.youtube.com/watch?v=Vjkq8V5rVy0"
+                            target="_blank" rel="noopener">cette conférence de Jean-Marc Jancovici</a> présentant le
                         problème
                         du changement climatique à Sciences Po, sur YouTube.
                     </p>
                     <p>Quelques centaines de vidéos et de conférences plus tard, et me voilà
-                        convaincu de dédier une partie de ma vie à ce problème. Est-ce que j'aurais même pensé à
-                        le faire sans cette
-                        vidéo ? Est-ce que je l'aurais fait
-                        sans les 100 autres contenus recommandés par mon algorithme sur ces sujets ? Rien
-                        de moins sûr.</p>
-                    <p>Je crois que l'info qu'on reçoit aujourd'hui façonne ce en quoi on croit et ce pour quoi on se
-                        battra demain. Choisir
+                        convaincu de dédier une partie de ma vie à ce même problème. Est-ce que j'aurais même envisagé
+                        une telle trajectoire sans cette
+                        vidéo ? Est-ce que je l'aurais pris cette route
+                        sans les 100 autres contenus recommandés par mon algorithme sur ces sujets ensuite ? Rien
+                        de moins certain.</p>
+                    <p>Je crois que l'info qu'on reçoit aujourd'hui façonne ce en quoi on croit et ce pour quoi on sera
+                        prêt à se
+                        battre demain. Choisir
                         qui
                         peut voir quoi, c'est donc un
                         pouvoir immense. Et
-                        c'est bien pour ça qu'il se vend si cher aujourd'hui.</p>
-                    <p>Si les médias et les réseaux sociaux sont rachetés par des milliardaires aujourd'hui, ce n'est
-                        pas un hasard. C'est car ils peuvent mieux nous connaitre et nous garder en ligne - quitte à
+                        c'est bien pour ça qu'il se dispute tant aujourd'hui.</p>
+                    <p>Si les médias et les réseaux sociaux sont rachetés par les plus puissants d'entre nous, ce n'est
+                        pas un hasard. C'est car il s'agit du meilleur moyen pour nous connaitre et nous influencer -
+                        quitte, au besoin, à
                         nous diviser.</p>
-                    <p>Facteur, c'est une contre-proposition à ces modèles. Une app où on contrôle nos sources.
+                    <p>Facteur, c'est une contre-proposition à ces modèles de médias et de réseaux sociaux. Une app où
+                        on
+                        contrôle nos sources.
                         Où on comprend
                         pourquoi chaque contenu est là. Et où on peut aussi s'arrêter — pour vraiment sortir du
                         trop-plein
                         d'infos inutiles et déprimantes.</p>
-                    <p class="founder__closing">L'ingénieur fou à gauche, c'est moi, Laurin. Et
-                        si je quitte mon travail dans l'écologie pour lancer ce projet, c'est parce que je pense
+                    <p class="founder__closing">L'ingénieur fou qui impulse ce projet, c'est moi, Laurin.
+                        <br>Et
+                        si je quitte mon travail dans l'écologie pour lancer cette app, c'est parce que je crois
                         profondément qu'on
-                        peut aujourd'hui re-créer, ensemble, un
-                        nouveau système de
-                        consommation de l'info.
+                        peut aujourd'hui repenser, ensemble, une toute autre façon de produire et consommer
+                        l'information qui nous parvient chaque jour.
                     </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- SECTION — FAQ                               -->
+        <!-- ═══════════════════════════════════════════ -->
+        <section id="faq" class="section faq reveal">
+            <div class="container">
+                <h2 class="section__title">Questions fréquentes</h2>
+                <div class="faq__list">
+                    <div class="faq__item">
+                        <button class="faq__question" type="button">
+                            Comment Facteur gagne-t-il de l'argent ?
+                            <span class="faq__icon"></span>
+                        </button>
+                        <div class="faq__answer">
+                            <p>L'application est et restera gratuite. Nous d&eacute;veloppons des
+                                fonctionnalit&eacute;s premium optionnelles, ainsi que des partenariats avec des
+                                m&eacute;dias et cr&eacute;ateurs ind&eacute;pendants. L'objectif&nbsp;: un
+                                mod&egrave;le &eacute;conomique align&eacute; avec la qualit&eacute; de l'info, pas
+                                avec le temps pass&eacute; sur l'&eacute;cran.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq__item">
+                        <button class="faq__question" type="button">
+                            Facteur est open-source ?
+                            <span class="faq__icon"></span>
+                        </button>
+                        <div class="faq__answer">
+                            <p>Oui, et &ccedil;a le restera. Le code est ouvert sous licence libre.
+                                D&eacute;veloppeurs, designers, product managers &mdash; ou toute personne avec de
+                                bonnes id&eacute;es et l'envie de les porter &mdash; sont les bienvenus pour
+                                contribuer.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq__item">
+                        <button class="faq__question" type="button">
+                            De quel bord politique &ecirc;tes-vous ?
+                            <span class="faq__icon"></span>
+                        </button>
+                        <div class="faq__answer">
+                            <p>Aucun. Facteur adopte une approche transpartisane, centr&eacute;e sur les faits
+                                v&eacute;rifiables. Toutes les sources et opinions &eacute;ditoriales ont leur place,
+                                tant qu'elles s'appuient sur une d&eacute;marche journalistique sinc&egrave;re.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq__item">
+                        <button class="faq__question" type="button">
+                            Comment r&eacute;cup&eacute;rez-vous le contenu des sources ?
+                            <span class="faq__icon"></span>
+                        </button>
+                        <div class="faq__answer">
+                            <p>Via des flux RSS et des APIs publiques (YouTube, Reddit, etc.). Facteur ne scrape pas,
+                                ne copie pas&nbsp;: il pointe vers les articles originaux et r&eacute;mun&egrave;re les
+                                cr&eacute;ateurs &agrave; terme.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq__item">
+                        <button class="faq__question" type="button">
+                            Quels projets vous inspirent ?
+                            <span class="faq__icon"></span>
+                        </button>
+                        <div class="faq__answer">
+                            <p>L'association Tournesol, notamment, avec laquelle nous sommes en lien pour rendre nos
+                                solutions compl&eacute;mentaires de leurs travaux et outils.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════ -->
+        <!-- SECTION — Manifeste                         -->
+        <!-- ═══════════════════════════════════════════ -->
+        <section id="manifesto" class="section manifesto reveal">
+            <div class="container manifesto__inner">
+                <h2 class="section__title">Notre manifeste</h2>
+                <div class="manifesto__body">
+                    <p>Le monde dans lequel nous vivons actuellement est devenu pleinement d&eacute;pendant et
+                        fa&ccedil;onn&eacute; par le monde Num&eacute;rique. Probl&egrave;me&nbsp;: ce dernier se trouve
+                        aujourd'hui dans un &eacute;tat de <strong>polarisation</strong>,
+                        <strong>d'opacit&eacute;</strong>, et de <strong>vuln&eacute;rabilit&eacute;</strong>
+                        compl&egrave;te face aux potentielles manipulations &mdash; qu'elles soient guid&eacute;es par
+                        des int&eacute;r&ecirc;ts priv&eacute;s, des ing&eacute;rences ou des id&eacute;ologies
+                        extr&eacute;mistes.
+                    </p>
+
+                    <p>Ce que ce projet porte, c'est la vocation de repenser nos outils num&eacute;riques en profondeur
+                        pour en faire de vrais alli&eacute;s de la circulation d'information
+                        <strong>d&eacute;centralis&eacute;e</strong> et <strong>d&eacute;mocratique</strong>. Pour ce
+                        faire, ces flux se doivent &eacute;galement &ecirc;tre constitu&eacute;s d'informations
+                        <strong>qualitatives</strong>, et d'&eacute;viter, dans la mesure du possible, de contribuer
+                        &agrave; l'<strong>explosion quantitative</strong> du volume d'information, qui am&egrave;ne
+                        &agrave; une plus forte vuln&eacute;rabilit&eacute; de toutes les parties prenantes du
+                        traitement de l'information (traitement des fake news, exploitation de biais cognitifs&hellip;)
+                    </p>
+
+                    <p>Pour avoir une chance d'exister dans ce milieu ultracomp&eacute;titif de l'information, devenu
+                        compl&egrave;tement scl&eacute;ros&eacute; par la pression de guerres attentionnelles,
+                        id&eacute;ologiques et informationnelles, la strat&eacute;gie et la R&amp;D du projet viseront
+                        &agrave; toujours suivre 2 boussoles, sur lesquels s'appuyer de fa&ccedil;on it&eacute;rative et
+                        tr&egrave;s r&eacute;guli&egrave;re&nbsp;: pragmatisme d'impact, et lucidit&eacute;
+                        cons&eacute;quencielle.</p>
+
+                    <div class="manifesto__principles">
+                        <div class="manifesto__principle">
+                            <h3 class="manifesto__principle-title">Pragmatisme d'impact</h3>
+                            <p>Nos choix doivent &ecirc;tre orient&eacute;s vers la maximisation de notre impact, afin
+                                de faire &laquo;&nbsp;barrage&nbsp;&raquo; aux immenses avantages structurels des
+                                mastodontes du num&eacute;rique (pouvoir &eacute;conomique, structurel,
+                                informationnel&hellip;) et &agrave; l'incons&eacute;quence de leur strat&eacute;gie, qui
+                                ne cherche en aucun cas &agrave; maximiser l'int&eacute;r&ecirc;t commun.</p>
+                        </div>
+                        <div class="manifesto__principle">
+                            <h3 class="manifesto__principle-title">Lucidit&eacute; cons&eacute;quencielle</h3>
+                            <p>Bien que la maximisation de l'impact soit un aspect cl&eacute; de ce projet, il n'en
+                                reste pas moins essentiel de mesurer aussi pr&eacute;cis&eacute;ment que possible les
+                                potentiels impacts n&eacute;gatifs allant de pair avec tout changement
+                                provoqu&eacute; <em>dans la vie d'un utilisateur.</em></p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -295,7 +451,16 @@
 
     <footer class="footer">
         <div class="container footer__inner">
-            <p>&copy; 2026 Facteur. Tous droits réservés.</p>
+            <div class="footer__brand">
+                <span class="footer__logo">Facteur</span>
+                <p class="footer__tagline">L'info sereine, chaque jour.</p>
+            </div>
+            <div class="footer__links">
+                <a href="https://github.com/boujonlaurin-dotcom/facteur" target="_blank" rel="noopener"
+                    class="footer__link">GitHub</a>
+                <a href="mailto:laurin_boujon@proton.me" class="footer__link">Contact</a>
+            </div>
+            <p class="footer__copy">&copy; 2026 Facteur. Tous droits réservés.</p>
         </div>
     </footer>
 
@@ -311,15 +476,16 @@
                 <form id="survey-form" class="survey-form">
                     <fieldset class="survey-question">
                         <legend>Tu t'informes principalement via...</legend>
-                        <label class="survey-option"><input type="radio" name="info_source" value="reseaux_sociaux"
-                                required><span>R&eacute;seaux sociaux (Insta, X, TikTok)</span></label>
-                        <label class="survey-option"><input type="radio" name="info_source" value="apps_news"><span>Apps
-                                de news (Google News, Apple News)</span></label>
-                        <label class="survey-option"><input type="radio" name="info_source"
+                        <p class="survey-hint">Plusieurs r&eacute;ponses possibles.</p>
+                        <label class="survey-option"><input type="checkbox" name="info_source"
+                                value="reseaux_sociaux"><span>R&eacute;seaux sociaux (Insta, X, TikTok)</span></label>
+                        <label class="survey-option"><input type="checkbox" name="info_source"
+                                value="apps_news"><span>Apps de news (Google News, Apple News)</span></label>
+                        <label class="survey-option"><input type="checkbox" name="info_source"
                                 value="newsletters_podcasts"><span>Newsletters / podcasts</span></label>
-                        <label class="survey-option"><input type="radio" name="info_source"
+                        <label class="survey-option"><input type="checkbox" name="info_source"
                                 value="journaux"><span>Journaux (web ou papier)</span></label>
-                        <label class="survey-option"><input type="radio" name="info_source"
+                        <label class="survey-option"><input type="checkbox" name="info_source"
                                 value="plus_vraiment"><span>Je ne m'informe plus vraiment</span></label>
                     </fieldset>
 
@@ -365,7 +531,7 @@
         </div>
     </div>
 
-    <script src="/js/main.js?v=2"></script>
+    <script src="/js/main.js?v=3"></script>
 </body>
 
 </html>

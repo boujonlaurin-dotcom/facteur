@@ -117,6 +117,13 @@ class Content {
   // Epic 12: Source overflow (populated by FeedRepository from diversification)
   final int sourceOverflowCount;
 
+  // Topic overflow (populated by FeedRepository from topic regroupement Phase 2)
+  final int topicOverflowCount;
+  final String? topicOverflowLabel;
+  final String? topicOverflowKey;
+  final String? topicOverflowType; // "topic" or "theme"
+  final List<String> topicOverflowHiddenIds;
+
   Content({
     required this.id,
     required this.title,
@@ -145,6 +152,11 @@ class Content {
     this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
     this.sourceOverflowCount = 0,
+    this.topicOverflowCount = 0,
+    this.topicOverflowLabel,
+    this.topicOverflowKey,
+    this.topicOverflowType,
+    this.topicOverflowHiddenIds = const [],
   });
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
@@ -194,6 +206,11 @@ class Content {
       clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
       sourceOverflowCount: sourceOverflowCount,
+      topicOverflowCount: topicOverflowCount,
+      topicOverflowLabel: topicOverflowLabel,
+      topicOverflowKey: topicOverflowKey,
+      topicOverflowType: topicOverflowType,
+      topicOverflowHiddenIds: topicOverflowHiddenIds,
     );
   }
 
@@ -289,6 +306,11 @@ class Content {
     List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
     int? sourceOverflowCount,
+    int? topicOverflowCount,
+    String? topicOverflowLabel,
+    String? topicOverflowKey,
+    String? topicOverflowType,
+    List<String>? topicOverflowHiddenIds,
   }) {
     return Content(
       id: id ?? this.id,
@@ -319,6 +341,12 @@ class Content {
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
       sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
+      topicOverflowCount: topicOverflowCount ?? this.topicOverflowCount,
+      topicOverflowLabel: topicOverflowLabel ?? this.topicOverflowLabel,
+      topicOverflowKey: topicOverflowKey ?? this.topicOverflowKey,
+      topicOverflowType: topicOverflowType ?? this.topicOverflowType,
+      topicOverflowHiddenIds:
+          topicOverflowHiddenIds ?? this.topicOverflowHiddenIds,
     );
   }
 
@@ -433,6 +461,36 @@ class FeedCluster {
   }
 }
 
+/// Topic overflow from topic-aware regroupement (Phase 2).
+class TopicOverflow {
+  final String groupType; // "topic" or "theme"
+  final String groupKey;
+  final String groupLabel;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+
+  TopicOverflow({
+    required this.groupType,
+    required this.groupKey,
+    required this.groupLabel,
+    required this.hiddenCount,
+    this.hiddenIds = const [],
+  });
+
+  factory TopicOverflow.fromJson(Map<String, dynamic> json) {
+    return TopicOverflow(
+      groupType: (json['group_type'] as String?) ?? 'theme',
+      groupKey: (json['group_key'] as String?) ?? '',
+      groupLabel: (json['group_label'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+    );
+  }
+}
+
 /// Epic 12: Source overflow from diversification filtering.
 class SourceOverflow {
   final String sourceId;
@@ -456,12 +514,14 @@ class FeedResponse {
   final Pagination pagination;
   final List<FeedCluster> clusters;
   final List<SourceOverflow> sourceOverflow;
+  final List<TopicOverflow> topicOverflow;
 
   FeedResponse({
     required this.items,
     required this.pagination,
     this.clusters = const [],
     this.sourceOverflow = const [],
+    this.topicOverflow = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -481,6 +541,11 @@ class FeedResponse {
       sourceOverflow: (json['source_overflow'] as List<dynamic>?)
               ?.whereType<Map<String, dynamic>>()
               .map((e) => SourceOverflow.fromJson(e))
+              .toList() ??
+          const [],
+      topicOverflow: (json['topic_overflow'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => TopicOverflow.fromJson(e))
               .toList() ??
           const [],
     );

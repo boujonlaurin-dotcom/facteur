@@ -24,6 +24,7 @@ class TopicSection extends StatefulWidget {
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onReportNotSerene;
   final void Function(DigestItem)? onSwipeDismiss;
   final String? activeDismissalId;
   final VoidCallback? onDismissUndo;
@@ -40,6 +41,7 @@ class TopicSection extends StatefulWidget {
     this.onLike,
     this.onSave,
     this.onNotInterested,
+    this.onReportNotSerene,
     this.onSwipeDismiss,
     this.activeDismissalId,
     this.onDismissUndo,
@@ -329,6 +331,25 @@ class _TopicSectionState extends State<TopicSection> {
         isFollowedSource: article.isFollowedSource,
         editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
       ),
+    );
+  }
+
+  /// Wraps a card widget with an editorial badge chip above it.
+  Widget _wrapWithBadge({required DigestItem article, required Widget child}) {
+    if (article.badge == null) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: EditorialBadge(
+            badge: article.badge!,
+            isSerene: widget.isSerene,
+          ),
+        ),
+        child,
+      ],
     );
   }
 

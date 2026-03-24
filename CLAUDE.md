@@ -258,6 +258,46 @@ cd /Users/laurinboujon/Desktop/Projects/Work\ Projects/Facteur
 git worktree remove ../<agent>-<tache>
 ```
 
+### Tests E2E (VERIFY phase)
+
+**Principe** : Chaque feature doit avoir un script de vérification dans `docs/qa/scripts/verify_<task>.sh` exécutable en one-liner. L'agent **doit** exécuter ce script lui-même pendant la phase VERIFY du cycle M.A.D.A.
+
+**Workflow E2E :**
+```bash
+# 1. Démarrer l'API locale (si pas déjà active)
+kill $(lsof -ti:8080) 2>/dev/null
+source "$(git rev-parse --show-toplevel)/../packages/api/venv/bin/activate" \
+  || source packages/api/venv/bin/activate
+PYTHONPATH=packages/api uvicorn app.main:app --port 8080 &
+sleep 4 && curl -s http://localhost:8080/api/health
+
+# 2. Générer des JWT de test (adapter user_id selon le test)
+python3 -c "
+import jose.jwt, datetime
+secret = '<SUPABASE_JWT_SECRET>'  # depuis .env
+payload = {'sub': '<USER_UUID>', 'aud': 'authenticated', 'role': 'authenticated',
+           'iat': int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+           'exp': int((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=2)).timestamp())}
+print('Bearer ' + jose.jwt.encode(payload, secret, algorithm='HS256'))
+"
+
+# 3. Exécuter le script QA
+export FACTEUR_TEST_TOKEN='Bearer eyJ...'
+export API_BASE_URL='http://localhost:8080'
+bash docs/qa/scripts/verify_<task>.sh
+
+# 4. (Optionnel) Test mobile visuel via Chrome
+cd apps/mobile
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080/api/
+```
+
+**Bonnes pratiques scripts QA** :
+- Toujours `set -euo pipefail` en début de script
+- Utiliser `jq` pour parser les réponses JSON API
+- Pattern `pass()/fail()` avec compteurs pour un résumé final clair
+- Tester au minimum : happy path, no-op (user sans prefs), edge cases, régression champs existants
+- Exiter avec code 1 si au moins un test fail
+
 ---
 
 ## 🧼 Hygiène Codebase (Règles d'Or)

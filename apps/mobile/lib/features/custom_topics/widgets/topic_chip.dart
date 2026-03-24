@@ -12,7 +12,6 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
@@ -257,6 +256,38 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '/',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.textTertiary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              onTap: () async {
+                                Navigator.pop(context);
+                                try {
+                                  await ref
+                                      .read(customTopicsProvider.notifier)
+                                      .unfollowTopic(matchedTopic.id);
+                                  NotificationService.showInfo(
+                                    '${widget.topicLabel} retiré de vos sujets',
+                                  );
+                                } catch (e) {
+                                  NotificationService.showError(
+                                    'Impossible de retirer le sujet',
+                                  );
+                                }
+                              },
+                              child: Text(
+                                'Ne plus suivre',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colors.error,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -341,12 +372,30 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 ),
 
               if (!isFollowed) ...[
-                const SizedBox(height: FacteurSpacing.space2),
+                const SizedBox(height: 8),
                 Center(
-                  child: Text(
-                    'Recevez plus d\'articles sur ${widget.topicLabel}',
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colors.textTertiary,
+                  child: GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        for (final topicSlug in widget.content.topics) {
+                          await ref
+                              .read(feedProvider.notifier)
+                              .muteTopic(topicSlug);
+                        }
+                        NotificationService.showInfo('Sujet masqué');
+                      } catch (e) {
+                        NotificationService.showError(
+                          'Impossible de masquer le sujet',
+                        );
+                      }
+                    },
+                    child: Text(
+                      'Masquer ce sujet',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.error,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
@@ -548,22 +597,23 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                         Navigator.pop(context);
                                         try {
                                           await ref
-                                              .read(
-                                                  feedProvider.notifier)
-                                              .muteSource(
-                                                  widget.content);
+                                              .read(userSourcesProvider
+                                                  .notifier)
+                                              .toggleTrust(
+                                                  widget.content.source.id,
+                                                  true);
                                           NotificationService.showInfo(
-                                            'Source ${widget.content.source.name} masquée',
+                                            '${widget.content.source.name} retirée de vos sources',
                                           );
                                         } catch (e) {
                                           NotificationService
                                               .showError(
-                                            'Impossible de masquer la source',
+                                            'Impossible de retirer la source',
                                           );
                                         }
                                       },
                                       child: Text(
-                                        'Masquer',
+                                        'Ne plus suivre',
                                         style: textTheme.labelSmall
                                             ?.copyWith(
                                           color: colors.error,
@@ -576,23 +626,17 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                               ),
                             ),
                             // Right: priority slider (self-labeled)
-                            Builder(builder: (context) {
-                              final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
-                              final sourceId = widget.content.source.id;
-                              final sourceUsage = algoProfile?.sourceAffinities[sourceId];
-                              return PrioritySlider(
-                                currentMultiplier: currentMultiplier,
-                                onChanged: (multiplier) {
-                                  ref
-                                      .read(userSourcesProvider.notifier)
-                                      .updateWeight(
-                                        widget.content.source.id,
-                                        multiplier,
-                                      );
-                                },
-                                usageWeight: sourceUsage,
-                              );
-                            }),
+                            PrioritySlider(
+                              currentMultiplier: currentMultiplier,
+                              onChanged: (multiplier) {
+                                ref
+                                    .read(userSourcesProvider.notifier)
+                                    .updateWeight(
+                                      widget.content.source.id,
+                                      multiplier,
+                                    );
+                              },
+                            ),
                           ],
                         ),
                         // Subscription toggle
@@ -617,7 +661,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                "J'y suis abonné(e)",
+                                "J'ai un abonnement payant",
                                 style: textTheme.bodyMedium?.copyWith(
                                   color: colors.textPrimary,
                                   fontWeight: FontWeight.w500,
@@ -745,28 +789,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   },
                   colors: colors,
                 ),
-                if (widget.content.topics.isNotEmpty)
-                  _buildActionOption(
-                    context,
-                    icon: PhosphorIcons.thumbsDown(PhosphorIconsStyle.regular),
-                    label: "Je n'aime pas le sujet",
-                    isDestructive: true,
-                    onTap: () async {
-                      Navigator.pop(context);
-                      try {
-                        for (final topicSlug in widget.content.topics) {
-                          await ref
-                              .read(feedProvider.notifier)
-                              .muteTopic(topicSlug);
-                        }
-                        NotificationService.showInfo('Sujets masqués');
-                      } catch (e) {
-                        NotificationService.showError(
-                            'Impossible de masquer les sujets');
-                      }
-                    },
-                    colors: colors,
-                  ),
               ],
 
               const SizedBox(height: FacteurSpacing.space2),

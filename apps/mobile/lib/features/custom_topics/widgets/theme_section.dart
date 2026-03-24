@@ -20,12 +20,14 @@ class ThemeSection extends ConsumerWidget {
   final String themeSlug;
   final String themeLabel;
   final List<UserTopicProfile> followedTopics;
+  final List<String> mutedTopicSlugs;
 
   const ThemeSection({
     super.key,
     required this.themeSlug,
     required this.themeLabel,
     required this.followedTopics,
+    this.mutedTopicSlugs = const [],
   });
 
   @override
@@ -207,6 +209,66 @@ class ThemeSection extends ConsumerWidget {
                 themeSlug: themeSlug,
                 followedTopics: followedTopics,
               ),
+
+              // Muted topics for this theme
+              if (mutedTopicSlugs.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4,
+                    vertical: FacteurSpacing.space2,
+                  ),
+                  child: Divider(
+                    color: colors.textTertiary.withValues(alpha: 0.15),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: FacteurSpacing.space4,
+                    bottom: FacteurSpacing.space1,
+                  ),
+                  child: Text(
+                    'Sujets masqués',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary.withValues(alpha: 0.5),
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ...mutedTopicSlugs.map((slug) {
+                  final label = getTopicLabel(slug);
+                  return Opacity(
+                    opacity: 0.5,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
+                      ),
+                      title: Text(
+                        label,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                      trailing: GestureDetector(
+                        onTap: () async {
+                          await ref
+                              .read(personalizationRepositoryProvider)
+                              .unmuteTopic(slug);
+                          ref.invalidate(personalizationProvider);
+                        },
+                        child: Icon(
+                          PhosphorIcons.plusCircle(
+                            PhosphorIconsStyle.regular,
+                          ),
+                          size: 18,
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
 
               // "Ajouter un sujet personnalisé" button
               Padding(

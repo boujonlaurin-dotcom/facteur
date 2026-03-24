@@ -230,6 +230,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
+  void _handleReportNotSerene(DigestItem item) {
+    ref.read(digestProvider.notifier).applyAction(
+          item.contentId,
+          'report_not_serene',
+        );
+  }
+
   void _handleNotInterested(DigestItem item) {
     HapticFeedback.lightImpact();
 
@@ -591,6 +598,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             onLike: _handleLike,
                             onSave: _handleSave,
                             onNotInterested: _handleNotInterested,
+                            onReportNotSerene: sereinState.enabled
+                                ? _handleReportNotSerene
+                                : null,
                             onSwipeDismiss: _handleSwipeDismiss,
                             onMuteSource: (sourceId) => ref
                                 .read(feedProvider.notifier)

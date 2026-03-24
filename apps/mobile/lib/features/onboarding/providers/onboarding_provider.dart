@@ -138,30 +138,29 @@ enum OnboardingSection {
   const OnboardingSection(this.number, this.label);
 }
 
-/// Questions de la Section 1 (Overview) — 7 étapes
+/// Questions de la Section 1 (Overview) — 6 étapes
 enum Section1Question {
   intro1, // Intro: Welcome
   intro2, // Intro: Mission
-  mediaConcentration, // NEW: Carte concentration médias
+  mediaConcentration, // Carte concentration médias
   objective, // Q1: Multi-select diagnostic
   objectiveReaction, // R1: Réaction personnalisée
-  ageRange, // Q2: Tranche d'âge
   approach, // Q3: Tu préfères...
 }
 
-/// Questions de la Section 2 (App Preferences) — 5 étapes
+/// Questions de la Section 2 (App Preferences) — 4 étapes
 enum Section2Question {
-  perspective, // Q5: Big-picture vs details
   responseStyle, // Q6: Tranchées vs nuancées
   gamification, // Q8: Activer la gamification ?
-  articleCount, // NEW: 3/5/7 articles par jour
-  digestMode, // NEW: Pour vous / Serein / Ouvrir son point de vue
+  articleCount, // 3/5/7 articles par jour
+  digestMode, // Pour vous / Serein / Ouvrir son point de vue
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes → Sources → Réaction sources → Finalize
+/// Ordre : Thèmes → Subtopics → Sources → Réaction sources → Finalize
 enum Section3Question {
-  themes, // Q9: Vos thèmes préférés (premier)
+  themes, // Q9: Vos thèmes préférés (cloud pur)
+  subtopics, // Q9b: Affine tes centres d'intérêt (cards structurées)
   sources, // Q10: Vos sources préférées (avec pré-sélection basée sur thèmes)
   sourcesReaction, // Réaction: vous pourrez ajouter vos propres sources
   finalize, // Écran de finalisation
@@ -186,10 +185,10 @@ class OnboardingState {
   });
 
   /// Nombre total de questions dans la Section 1
-  static const int section1QuestionCount = 7;
+  static const int section1QuestionCount = 6;
 
   /// Nombre total de questions dans la Section 2
-  static const int section2QuestionCount = 5;
+  static const int section2QuestionCount = 4;
 
   /// Index de la question actuelle dans toutes les sections
   int get globalQuestionIndex {
@@ -206,7 +205,7 @@ class OnboardingState {
   }
 
   /// Nombre total d'étapes estimées pour l'onboarding
-  static const int totalSteps = 16; // 7 + 5 + 4
+  static const int totalSteps = 15; // 6 + 4 + 5
 
   /// Progression globale (0.0 à 1.0)
   double get progress => (globalQuestionIndex + 1) / totalSteps;
@@ -219,7 +218,7 @@ class OnboardingState {
       case OnboardingSection.appPreferences:
         return (currentQuestionIndex + 1) / section2QuestionCount;
       case OnboardingSection.sourcePreferences:
-        return (currentQuestionIndex + 1) / 4;
+        return (currentQuestionIndex + 1) / 5;
     }
   }
 
@@ -267,7 +266,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   static const String _sectionKey = 'section';
   static const String _questionKey = 'question';
   static const String _versionKey = 'onboarding_version';
-  static const int _currentVersion = 2;
+  static const int _currentVersion = 3;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
@@ -387,26 +386,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   /// Continue après la réaction (après R1)
   void continueAfterReaction() {
     state = state.copyWith(
-      currentQuestionIndex: Section1Question.ageRange.index,
+      currentQuestionIndex: Section1Question.approach.index,
       showReaction: false,
       isTransitioning: false,
     );
-  }
-
-  /// Sélectionne la tranche d'âge (Q2)
-  void selectAgeRange(String ageRange) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(ageRange: ageRange),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section1Question.approach.index,
-        isTransitioning: false,
-      );
-    });
   }
 
   /// Sélectionne l'approche (Q3) - dernière question Section 1
@@ -475,22 +458,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // ============================================================
   // SECTION 2 : App Preferences
   // ============================================================
-
-  /// Sélectionne la perspective (Q5)
-  void selectPerspective(String perspective) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(perspective: perspective),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: Section2Question.responseStyle.index,
-        isTransitioning: false,
-      );
-    });
-  }
 
   /// Sélectionne le style de réponse (Q6) → gamification
   void selectResponseStyle(String responseStyle) {
@@ -568,7 +535,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // ============================================================
 
   /// Sélectionne les thèmes (Q9) - multi-sélection
-  /// Nouvel ordre: Thèmes → Sources → Finalize
+  /// Thèmes → Subtopics → Sources → Finalize
   void selectThemes(List<String> themes) {
     state = state.copyWith(
       answers: state.answers.copyWith(themes: themes),
@@ -576,28 +543,23 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Aller vers Sources (Q10) avec pré-sélection
+    // Aller vers Subtopics (écran B)
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section3Question.sources.index,
+        currentQuestionIndex: Section3Question.subtopics.index,
         isTransitioning: false,
       );
     });
   }
 
-  /// Sélectionne les thèmes et sous-thèmes (Q9)
-  /// Nouvel ordre: Thèmes → Sources → Finalize
-  void selectThemesAndSubtopics(List<String> themes, List<String> subtopics) {
+  /// Sélectionne les sous-thèmes (Q9b) → Sources
+  void selectSubtopics(List<String> subtopics) {
     state = state.copyWith(
-      answers: state.answers.copyWith(
-        themes: themes,
-        subtopics: subtopics,
-      ),
+      answers: state.answers.copyWith(subtopics: subtopics),
       isTransitioning: true,
     );
     _saveAnswers();
 
-    // Aller vers Sources (Q10) avec pré-sélection
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
         currentQuestionIndex: Section3Question.sources.index,
@@ -607,7 +569,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   }
 
   /// Sélectionne les sources (Q10) - multi-sélection
-  /// Nouvel ordre: Thèmes → Sources → Sources Reaction → Finalize
+  /// Ordre: Thèmes → Subtopics → Sources → Sources Page 2 → Finalize
   void selectSources(List<String> sources) {
     state = state.copyWith(
       answers: state.answers.copyWith(preferredSources: sources),
@@ -615,7 +577,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Aller vers Sources Reaction
+    // Aller vers Page 2 (sourcesReaction = "Allez plus loin")
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
         currentQuestionIndex: Section3Question.sourcesReaction.index,
@@ -624,7 +586,23 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Continue après la réaction sources → Finalize
+  /// Continue after sources page 2 → Finalize, saving any updated selections
+  void continueFromSourcesPage2(List<String> sources) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(preferredSources: sources),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      state = state.copyWith(
+        currentQuestionIndex: Section3Question.finalize.index,
+        isTransitioning: false,
+      );
+    });
+  }
+
+  /// Continue après la réaction sources → Finalize (kept for backward compat)
   void continueAfterSourcesReaction() {
     state = state.copyWith(
       currentQuestionIndex: Section3Question.finalize.index,
@@ -676,7 +654,6 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
   final answers = state.answers;
   return answers.objectives != null &&
       answers.objectives!.isNotEmpty &&
-      answers.ageRange != null &&
       answers.approach != null;
 });
 
@@ -684,8 +661,7 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
 final isSection2CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  return answers.perspective != null &&
-      answers.responseStyle != null &&
+  return answers.responseStyle != null &&
       answers.gamificationEnabled != null &&
       answers.dailyArticleCount != null &&
       answers.digestMode != null;

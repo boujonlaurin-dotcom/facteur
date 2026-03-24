@@ -19,6 +19,8 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onSaveLongPress;
   final VoidCallback? onLike;
   final VoidCallback? onNotInterested;
+  final VoidCallback? onReportNotSerene;
+  final bool isSerene;
   final VoidCallback? onSourceTap; // Epic 12: tap source name/logo → detail
   final Widget? topicChipWidget;
   final Widget? clusterChipWidget;
@@ -41,6 +43,8 @@ class FeedCard extends StatelessWidget {
     this.onSaveLongPress,
     this.onLike,
     this.onNotInterested,
+    this.onReportNotSerene,
+    this.isSerene = false,
     this.onSourceTap,
     this.topicChipWidget,
     this.clusterChipWidget,
@@ -345,6 +349,21 @@ class FeedCard extends StatelessWidget {
                                   color: isSaved
                                       ? colors.primary
                                       : colors.textSecondary,
+                                ),
+                              ),
+                            ),
+
+                          // "Pas serein" report button (visible only in serene mode)
+                          if (isSerene && onReportNotSerene != null)
+                            InkWell(
+                              onTap: onReportNotSerene,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(
+                                  PhosphorIcons.shieldWarning(),
+                                  size: 20,
+                                  color: colors.warning,
                                 ),
                               ),
                             ),

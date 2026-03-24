@@ -51,6 +51,9 @@ class RecommendationService:
         self.source_overflow: dict[
             UUID, int
         ] = {}  # Populated by chronological diversification
+        self.topic_overflow: list[
+            dict
+        ] = []  # Populated by topic regroupement (Phase 2)
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -351,8 +354,11 @@ class RecommendationService:
                 mode="chronological",
             )
 
+            # Phase 1: Chronological diversification with expanded pool for Phase 2
+            # Request more articles than limit so Phase 2 has room to compress neutrals
+            phase1_limit = limit * 2
             result, source_overflow = self._apply_chronological_diversification(
-                candidates, source_priority_multipliers, limit, offset
+                candidates, source_priority_multipliers, phase1_limit, offset
             )
             self.source_overflow = source_overflow
             await self._hydrate_user_status(result, user_id)
@@ -366,12 +372,19 @@ class RecommendationService:
             user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
             self.user_custom_topics = user_custom_topics
 
+            # Phase 2: Topic-aware regroupement (compress neutral articles to target)
+            result, topic_overflow = self._apply_topic_regroupement(
+                result, user_custom_topics, user_subtopic_weights, limit
+            )
+            self.topic_overflow = topic_overflow
+
             t_end = time.monotonic()
             logger.info(
                 "feed_total",
                 duration_ms=round((t_end - t0) * 1000),
                 items=len(result),
                 mode="chronological",
+                topic_overflow_count=len(topic_overflow),
             )
             return result
 
@@ -660,6 +673,154 @@ class RecommendationService:
 
         # PASS 5: Paginate
         return retained[offset : offset + limit], source_overflow
+
+    @staticmethod
+    def _apply_topic_regroupement(
+        retained: list[Content],
+        user_custom_topics: list,
+        user_subtopic_weights: dict[str, float],
+        target_slots: int = 20,
+    ) -> tuple[list[Content], list[dict]]:
+        """
+        Phase 2: Topic-aware feed diversification — Budget Neutre.
+
+        Compresses neutral articles (topics not followed by user) into CTA chips
+        when they exceed the available budget, freeing space for followed topics.
+        Discovery floor guarantees 30% neutral articles always remain visible.
+
+        target_slots: desired number of visible articles in the final feed (the API limit).
+        Phase 1 provides an expanded pool (2× target) so Phase 2 can compress neutrals.
+        """
+        from math import ceil
+
+        # Build set of followed topic slugs (explicit + implicit high-affinity)
+        followed_slugs = {t.slug_parent for t in user_custom_topics}
+        high_subtopics = {
+            slug
+            for slug, w in user_subtopic_weights.items()
+            if w >= ScoringWeights.FOLLOWED_SUBTOPIC_THRESHOLD
+        }
+        all_followed = followed_slugs | high_subtopics
+
+        if not all_followed:
+            return retained[:target_slots], []
+
+        # Step 1: Classify each article as "followed" or "neutral"
+        followed_ids = set()
+        neutral_articles = []
+        for article in retained:
+            article_topics = {t.lower() for t in (article.topics or [])}
+            if article_topics & all_followed:
+                followed_ids.add(article.id)
+            else:
+                neutral_articles.append(article)
+
+        # Step 2: Compute neutral budget
+        # Budget = slots remaining after followed articles, but never below discovery floor.
+        # Example: target=20, followed=15 → budget=max(6, 5)=6 → compress 9 neutrals
+        # Example: target=20, followed=5  → budget=max(6, 15)=15 → minimal compression
+        floor = max(1, ceil(target_slots * ScoringWeights.DISCOVERY_FLOOR_RATIO))
+        neutral_budget = max(floor, target_slots - len(followed_ids))
+
+        # Step 3: Nothing to regroup?
+        if len(neutral_articles) <= neutral_budget:
+            return retained[:target_slots], []
+
+        excess = len(neutral_articles) - neutral_budget
+
+        # Step 4: Group neutrals by topic slug first, then by theme
+        by_topic: dict[str, list[Content]] = {}
+        ungrouped: list[Content] = []
+        for article in neutral_articles:
+            if article.topics:
+                slug = article.topics[0].lower().strip()
+                by_topic.setdefault(slug, []).append(article)
+            else:
+                ungrouped.append(article)
+
+        # Separate large topic groups (≥MIN) from small ones (merge into theme)
+        min_group = ScoringWeights.MIN_FOR_TOPIC_GROUPING
+        groupable_topics: dict[str, list[Content]] = {}
+        by_theme: dict[str, list[Content]] = {}
+
+        for slug, articles in sorted(by_topic.items(), key=lambda x: -len(x[1])):
+            if len(articles) >= min_group:
+                groupable_topics[slug] = articles
+            else:
+                for a in articles:
+                    theme = (a.theme or "other").lower().strip()
+                    by_theme.setdefault(theme, []).append(a)
+
+        for a in ungrouped:
+            theme = (a.source.theme or "other").lower().strip()
+            by_theme.setdefault(theme, []).append(a)
+
+        # Build CTAs: topic slugs first (more targeted), then themes
+        # Theme translations (inline to avoid dependency on instance method)
+        THEME_LABELS = {
+            "tech": "Tech & Innovation",
+            "society": "Société",
+            "environment": "Environnement",
+            "economy": "Économie",
+            "politics": "Politique",
+            "culture": "Culture & Idées",
+            "science": "Sciences",
+            "international": "Géopolitique",
+            "geopolitics": "Géopolitique",
+            "society_climate": "Société",
+            "culture_ideas": "Culture & Idées",
+        }
+
+        overflow_info: list[dict] = []
+        ids_to_hide: set[UUID] = set()
+
+        all_groups = [
+            (slug, arts, "topic")
+            for slug, arts in sorted(groupable_topics.items(), key=lambda x: -len(x[1]))
+        ] + [
+            (theme, arts, "theme")
+            for theme, arts in sorted(by_theme.items(), key=lambda x: -len(x[1]))
+            if len(arts) >= min_group
+        ]
+
+        for group_key, articles, group_type in all_groups:
+            if excess <= 0:
+                break
+            to_hide = articles[1:]  # Keep first as representative
+            actual_hide = to_hide[:excess]
+
+            if len(actual_hide) >= 2:  # At least 2 hidden to justify a CTA
+                ids_to_hide.update(a.id for a in actual_hide)
+                overflow_info.append(
+                    {
+                        "group_type": group_type,
+                        "group_key": group_key,
+                        "group_label": THEME_LABELS.get(
+                            group_key, group_key.replace("-", " ").title()
+                        ),
+                        "hidden_count": len(actual_hide),
+                        "hidden_ids": [a.id for a in actual_hide],
+                    }
+                )
+                excess -= len(actual_hide)
+
+        # Step 5: Filter hidden articles and trim to target
+        if ids_to_hide:
+            retained = [a for a in retained if a.id not in ids_to_hide]
+
+        retained = retained[:target_slots]
+
+        logger.info(
+            "topic_regroupement",
+            followed_count=len(followed_ids),
+            neutral_count=len(neutral_articles),
+            neutral_budget=neutral_budget,
+            hidden=len(ids_to_hide),
+            cta_count=len(overflow_info),
+            final_count=len(retained),
+        )
+
+        return retained, overflow_info
 
     def _hydrate_legacy_reasons(
         self, result: list[Content], context: ScoringContext
@@ -1010,8 +1171,8 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme: show all curated sources (broader discovery)
-        # followed_source_ids: two-phase fetch (user sources + curated enrichment)
+        # theme/topic/entity: show curated sources (broader discovery)
+        # followed_source_ids: followed sources only (no curated enrichment)
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
@@ -1115,35 +1276,20 @@ class RecommendationService:
             query = apply_entity_filter(query, entity)
 
         if _use_two_phase:
-            # Two-phase candidate pool (mirrors digest_selector.py)
-            # Phase 1: User's followed sources (prioritaires)
+            # Followed sources only — no curated enrichment in default feed.
+            # Curated enrichment is reserved for digest (digest_selector.py).
             user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            user_query = user_query.order_by(Content.published_at.desc()).limit(120)
-            user_result = await self.session.scalars(user_query)
-            user_candidates = list(user_result.all())
-
-            # Phase 2: Curated sources enrichment (découverte)
-            existing_ids = {c.id for c in user_candidates}
-            curated_query = query.where(Source.is_curated)
-            if existing_ids:
-                curated_query = curated_query.where(
-                    Content.id.notin_(list(existing_ids))
-                )
-            remaining = max(limit_candidates - len(user_candidates), 0)
-            curated_query = curated_query.order_by(Content.published_at.desc()).limit(
-                remaining
+            user_query = user_query.order_by(Content.published_at.desc()).limit(
+                limit_candidates
             )
-            curated_result = await self.session.scalars(curated_query)
-            curated_candidates = list(curated_result.all())
-
-            candidates_list = user_candidates + curated_candidates
+            user_result = await self.session.scalars(user_query)
+            candidates_list = list(user_result.all())
 
             logger.info(
-                "feed_candidates_two_phase",
+                "feed_candidates_followed_only",
                 user_id=str(user_id),
-                user_sources=len(user_candidates),
-                curated_enrichment=len(curated_candidates),
-                total=len(candidates_list),
+                followed_source_count=len(followed_source_ids),
+                candidates=len(candidates_list),
             )
         else:
             query = query.order_by(Content.published_at.desc()).limit(limit_candidates)

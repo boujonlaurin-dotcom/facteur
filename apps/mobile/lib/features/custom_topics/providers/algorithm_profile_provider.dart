@@ -24,8 +24,14 @@ class AlgorithmProfile {
 
   static Map<String, double> _toDoubleMap(dynamic raw) {
     if (raw == null) return {};
-    return (raw as Map<String, dynamic>)
-        .map((k, v) => MapEntry(k, (v as num).toDouble()));
+    // Dio/jsonDecode renvoie souvent Map<String, dynamic>, mais le type exact
+    // peut varier selon l'implémentation et le décorateur de la réponse.
+    if (raw is Map) {
+      return raw.map(
+        (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+      );
+    }
+    return {};
   }
 
   /// Normalize a learned weight (0.1-3.0) to usageWeight (0.0-1.0).
