@@ -1171,8 +1171,8 @@ class RecommendationService:
 
         # Base source filter
         # source_id: show only articles from this specific source
-        # theme: show all curated sources (broader discovery)
-        # followed_source_ids: two-phase fetch (user sources + curated enrichment)
+        # theme/topic/entity: show curated sources (broader discovery)
+        # followed_source_ids: followed sources only (no curated enrichment)
         _use_two_phase = False
         if source_id:
             query = query.where(Content.source_id == source_id)
@@ -1276,35 +1276,20 @@ class RecommendationService:
             query = apply_entity_filter(query, entity)
 
         if _use_two_phase:
-            # Two-phase candidate pool (mirrors digest_selector.py)
-            # Phase 1: User's followed sources (prioritaires)
+            # Followed sources only — no curated enrichment in default feed.
+            # Curated enrichment is reserved for digest (digest_selector.py).
             user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            user_query = user_query.order_by(Content.published_at.desc()).limit(120)
-            user_result = await self.session.scalars(user_query)
-            user_candidates = list(user_result.all())
-
-            # Phase 2: Curated sources enrichment (découverte)
-            existing_ids = {c.id for c in user_candidates}
-            curated_query = query.where(Source.is_curated)
-            if existing_ids:
-                curated_query = curated_query.where(
-                    Content.id.notin_(list(existing_ids))
-                )
-            remaining = max(limit_candidates - len(user_candidates), 0)
-            curated_query = curated_query.order_by(Content.published_at.desc()).limit(
-                remaining
+            user_query = user_query.order_by(Content.published_at.desc()).limit(
+                limit_candidates
             )
-            curated_result = await self.session.scalars(curated_query)
-            curated_candidates = list(curated_result.all())
-
-            candidates_list = user_candidates + curated_candidates
+            user_result = await self.session.scalars(user_query)
+            candidates_list = list(user_result.all())
 
             logger.info(
-                "feed_candidates_two_phase",
+                "feed_candidates_followed_only",
                 user_id=str(user_id),
-                user_sources=len(user_candidates),
-                curated_enrichment=len(curated_candidates),
-                total=len(candidates_list),
+                followed_source_count=len(followed_source_ids),
+                candidates=len(candidates_list),
             )
         else:
             query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
