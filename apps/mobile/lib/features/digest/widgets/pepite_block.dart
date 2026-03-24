@@ -77,14 +77,6 @@ class PepiteBlock extends StatelessWidget {
           editorialBadgeLabel: EditorialBadge.labelFor(pepite.badge),
         ),
 
-        // Editorial badge (below card)
-        Padding(
-          padding: const EdgeInsets.only(left: 4, top: 6),
-          child: EditorialBadge(
-            badge: pepite.badge,
-            isSerene: isSerene,
-          ),
-        ),
       ],
     );
   }

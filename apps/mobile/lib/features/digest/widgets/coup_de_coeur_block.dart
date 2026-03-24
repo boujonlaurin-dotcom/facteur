@@ -54,15 +54,6 @@ class CoupDeCoeurBlock extends StatelessWidget {
           editorialBadgeLabel: EditorialBadge.labelFor(coupDeCoeur.badge),
         ),
 
-        // Editorial badge (below card)
-        Padding(
-          padding: const EdgeInsets.only(left: 4, top: 6),
-          child: EditorialBadge(
-            badge: coupDeCoeur.badge,
-            isSerene: isSerene,
-          ),
-        ),
-
         // Save count label
         if (coupDeCoeur.saveCount > 0)
           Padding(

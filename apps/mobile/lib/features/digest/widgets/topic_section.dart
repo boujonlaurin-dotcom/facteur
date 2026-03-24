@@ -334,25 +334,6 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
-  /// Wraps a card widget with an editorial badge chip above it.
-  Widget _wrapWithBadge({required DigestItem article, required Widget child}) {
-    if (article.badge == null) return child;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 6),
-          child: EditorialBadge(
-            badge: article.badge!,
-            isSerene: widget.isSerene,
-          ),
-        ),
-        child,
-      ],
-    );
-  }
-
   Widget _buildPageView(DigestTopic topic) {
     return PageView.builder(
       controller: _pageController,
