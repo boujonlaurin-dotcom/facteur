@@ -244,8 +244,20 @@ Utilise UNIQUEMENT les slugs anglais. Choisis le topic le PLUS SPECIFIQUE possib
 
 ## SÉRÉNITÉ
 Pour chaque article, détermine "serene": true ou false.
-serene = true : sujet positif, neutre, culturel, scientifique, lifestyle, divertissement.
-serene = false : violence, guerre, attentat, meurtre, catastrophe, crise grave, agression, mort.
+serene = true : sujet constructif, positif, neutre, culturel, scientifique, lifestyle, divertissement, innovation, découverte.
+serene = false : tout sujet susceptible de provoquer de l'anxiété chez le lecteur. Cela inclut (liste NON exhaustive) :
+- Violence, guerre, attentat, meurtre, agression, mort, accident mortel
+- Trafic d'êtres humains, esclavage moderne, exploitation
+- Extrémisme, montée de l'autoritarisme, radicalisation, fascisme
+- Discrimination, racisme, oppression systémique, haine
+- Catastrophe naturelle ou industrielle, effondrement, destruction
+- Crise économique grave, faillite massive, pauvreté extrême
+- Pandémie, épidémie, crise sanitaire
+- Cybercriminalité, surveillance de masse, espionnage
+- Corruption majeure, scandale politique grave
+- Tensions géopolitiques, menaces nucléaires, sanctions
+- Maltraitance, violences conjugales, pédocriminalité
+Règle : si le sujet principal de l'article est anxiogène, même partiellement, marque false.
 En cas de doute, marque false.
 
 ## ENTITÉS NOMMÉES

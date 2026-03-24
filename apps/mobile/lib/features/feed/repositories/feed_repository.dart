@@ -381,6 +381,11 @@ class FeedRepository {
     }
   }
 
+  /// Report an article as not serene (misclassified)
+  Future<void> reportNotSerene(String contentId) async {
+    await _apiClient.dio.post<void>('contents/$contentId/report-not-serene');
+  }
+
   /// Fire-and-forget: persist reading progress on article close.
   Future<void> updateContentStatusWithProgress(
       String contentId, int readingProgress) async {
