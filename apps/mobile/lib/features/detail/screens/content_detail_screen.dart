@@ -338,67 +338,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Show a contextual nudge when user reads >= 90% of the article.
-  /// Uses the local ScaffoldMessenger so the SnackBar appears near the FAB.
+  /// Previously showed a contextual nudge SnackBar at 90% reading progress.
+  /// Replaced by a permanent Share FAB in the FAB column.
   void _onReadingProgressNudge() {
-    if (_endNudgeShown || _readingProgress.value < 0.9) return;
-    _endNudgeShown = true;
-    final content = _content;
-    if (content == null || !mounted) return;
-
-    const message = 'Article terminé. Ajouter une note ?';
-    final String actionLabel;
-    final VoidCallback onAction;
-
-    if (!content.hasNote) {
-      actionLabel = 'Ajouter une note';
-      onAction = _openNoteSheet;
-    } else if (!content.isSaved) {
-      actionLabel = 'Enregistrer';
-      onAction = _toggleBookmark;
-    } else {
-      return;
-    }
-
-    final colors = context.facteurColors;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Expanded(
-              child: Text(
-                message,
-                style: FacteurTypography.bodyMedium(colors.textPrimary)
-                    .copyWith(fontWeight: FontWeight.w500, fontSize: 14),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                onAction();
-              },
-              child: Text(
-                actionLabel,
-                style: FacteurTypography.bodyMedium(colors.primary).copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: colors.backgroundSecondary,
-        behavior: SnackBarBehavior.floating,
-        elevation: 4,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
-    );
+    // No-op: end-of-article notification removed in favor of Share FAB.
   }
 
   /// Compute layout offsets for bridge zone.
@@ -1060,6 +1003,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        // Share FAB — top of FAB column
+                        SizedBox(
+                          width: 50,
+                          height: 50,
+                          child: FloatingActionButton(
+                            onPressed: _shareArticle,
+                            backgroundColor: Colors.white,
+                            foregroundColor: colors.textPrimary,
+                            elevation: 2,
+                            heroTag: 'share_fab',
+                            tooltip: 'Partager',
+                            child: Icon(
+                              PhosphorIcons.shareNetwork(
+                                  PhosphorIconsStyle.regular),
+                              size: 25,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
                           PerspectivesPill(
@@ -1081,8 +1043,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             _showWebView ||
                             _isWebViewActive) ...[
                           SizedBox(
-                            width: 55,
-                            height: 55,
+                            width: 50,
+                            height: 50,
                             child: FloatingActionButton(
                               onPressed: _openOriginalUrl,
                               backgroundColor: Colors.white,
@@ -1093,7 +1055,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               child: Icon(
                                 PhosphorIcons.arrowSquareOut(
                                     PhosphorIconsStyle.regular),
-                                size: 28,
+                                size: 25,
                               ),
                             ),
                           ),
@@ -1103,8 +1065,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ScaleTransition(
                           scale: _likeScaleAnimation,
                           child: SizedBox(
-                            width: 55,
-                            height: 55,
+                            width: 50,
+                            height: 50,
                             child: FloatingActionButton(
                               onPressed: _toggleLike,
                               backgroundColor: content.isLiked
@@ -1122,7 +1084,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         PhosphorIconsStyle.fill)
                                     : PhosphorIcons.heart(
                                         PhosphorIconsStyle.regular),
-                                size: 28,
+                                size: 25,
                               ),
                             ),
                           ),
@@ -1141,8 +1103,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           child: ScaleTransition(
                             scale: _bookmarkScaleAnimation,
                             child: SizedBox(
-                              width: 55,
-                              height: 55,
+                              width: 50,
+                              height: 50,
                               child: FloatingActionButton(
                                 onPressed: _toggleBookmark,
                                 backgroundColor: content.isSaved
@@ -1160,7 +1122,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                           PhosphorIconsStyle.fill)
                                       : PhosphorIcons.bookmarkSimple(
                                           PhosphorIconsStyle.regular),
-                                  size: 28,
+                                  size: 25,
                                 ),
                               ),
                             ),
@@ -1197,15 +1159,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: FacteurSpacing.space2,
-            vertical: FacteurSpacing.space3,
+            vertical: FacteurSpacing.space2,
           ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
-              child: Row(
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+          child: Row(
                 children: [
                   // Discreet Back Button (reduced icon, maintained hitbox)
                   IconButton(
@@ -1310,11 +1269,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
                 ],
               ),
-            ),
-            // Entity chips row
-            if (content.entities.isNotEmpty)
-              _buildEntityChips(context, content),
-          ],
         ),
       ),
       ),
@@ -1464,7 +1418,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 64;
+    final headerHeight = topInset + 56;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
@@ -1518,6 +1472,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   children: [
                     // Spacer: scrolls with content, initially behind the header overlay
                     SizedBox(height: headerHeight),
+                    // Entity chips — above article, animated with header
+                    if (content.entities.isNotEmpty)
+                      ValueListenableBuilder<double>(
+                        valueListenable: _headerOpacity,
+                        builder: (context, opacity, child) => AnimatedOpacity(
+                          opacity: opacity,
+                          duration: const Duration(milliseconds: 200),
+                          child: child!,
+                        ),
+                        child: _buildEntityChips(context, content),
+                      ),
                     // ZONE 1: Article content — opaque background hides WebView
                     Container(
                       key: _articleKey,
@@ -1748,7 +1713,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 64;
+    final headerHeight = topInset + 56;
 
     switch (content.contentType) {
       case ContentType.article:
@@ -1772,6 +1737,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             children: [
               // Spacer: scrolls with content, initially behind the header overlay
               SizedBox(height: headerHeight),
+              // Entity chips — above article, animated with header
+              if (content.entities.isNotEmpty)
+                ValueListenableBuilder<double>(
+                  valueListenable: _headerOpacity,
+                  builder: (context, opacity, child) => AnimatedOpacity(
+                    opacity: opacity,
+                    duration: const Duration(milliseconds: 200),
+                    child: child!,
+                  ),
+                  child: _buildEntityChips(context, content),
+                ),
               // Hero thumbnail image (smooth integration)
               if (content.thumbnailUrl != null) ...[
                 ClipRRect(
@@ -1966,10 +1942,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 64;
+    final headerHeight = topInset + 56;
     return Column(
       children: [
         SizedBox(height: headerHeight),
+        if (content.entities.isNotEmpty)
+          _buildEntityChips(context, content),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );
