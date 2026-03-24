@@ -13,20 +13,20 @@ Future<void> showThemeChoiceBottomSheet(BuildContext context, WidgetRef ref) {
     context: context,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.6),
-    builder: (ctx) => BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-      child: _ThemeChoiceContent(ref: ref),
+    builder: (ctx) => ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: const _ThemeChoiceContent(),
+      ),
     ),
   );
 }
 
-class _ThemeChoiceContent extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _ThemeChoiceContent({required this.ref});
+class _ThemeChoiceContent extends ConsumerWidget {
+  const _ThemeChoiceContent();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
 
     return Container(
@@ -123,6 +123,7 @@ class _ThemeOption extends StatelessWidget {
     final colors = context.facteurColors;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

@@ -17,9 +17,11 @@ Future<void> showNotificationPermissionBottomSheet(
     barrierColor: Colors.black.withValues(alpha: 0.6),
     isDismissible: false,
     enableDrag: false,
-    builder: (ctx) => BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-      child: const _NotificationPermissionContent(),
+    builder: (ctx) => ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: const _NotificationPermissionContent(),
+      ),
     ),
   );
 }
