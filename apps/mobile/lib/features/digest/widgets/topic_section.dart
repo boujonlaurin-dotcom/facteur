@@ -309,33 +309,27 @@ class _TopicSectionState extends State<TopicSection> {
       onSwipeDismiss: widget.onSwipeDismiss != null
           ? () => widget.onSwipeDismiss!(article)
           : null,
-      child: _wrapWithBadge(
-        article: article,
-        child: FeedCard(
-          boxShadow: const [],
-          content: _convertToContent(article),
-          onTap: () => widget.onArticleTap(article),
-          onLongPressStart: (_) =>
-              ArticlePreviewOverlay.show(context, _convertToContent(article)),
-          onLongPressMoveUpdate: (details) =>
-              ArticlePreviewOverlay.updateScroll(
-                  details.localOffsetFromOrigin.dy),
-          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-          onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-          isLiked: article.isLiked,
-          onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-          onSaveLongPress: () =>
-              CollectionPickerSheet.show(context, article.contentId),
-          isSaved: article.isSaved,
-          onNotInterested: widget.onNotInterested != null
-              ? () => widget.onNotInterested!(article)
-              : null,
-          isSerene: widget.isSerene,
-          onReportNotSerene: widget.onReportNotSerene != null
-              ? () => widget.onReportNotSerene!(article)
-              : null,
-          isFollowedSource: article.isFollowedSource,
-        ),
+      child: FeedCard(
+        boxShadow: const [],
+        content: _convertToContent(article),
+        onTap: () => widget.onArticleTap(article),
+        onLongPressStart: (_) =>
+            ArticlePreviewOverlay.show(context, _convertToContent(article)),
+        onLongPressMoveUpdate: (details) =>
+            ArticlePreviewOverlay.updateScroll(
+                details.localOffsetFromOrigin.dy),
+        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
+        isLiked: article.isLiked,
+        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+        onSaveLongPress: () =>
+            CollectionPickerSheet.show(context, article.contentId),
+        isSaved: article.isSaved,
+        onNotInterested: widget.onNotInterested != null
+            ? () => widget.onNotInterested!(article)
+            : null,
+        isFollowedSource: article.isFollowedSource,
+        editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
       ),
     );
   }
@@ -370,37 +364,31 @@ class _TopicSectionState extends State<TopicSection> {
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
-            child: _wrapWithBadge(
-              article: article,
-              child: FeedCard(
-                boxShadow: const [],
-                content: _convertToContent(article),
-                onTap: () => widget.onArticleTap(article),
-                onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                    context, _convertToContent(article)),
-                onLongPressMoveUpdate: (details) =>
-                    ArticlePreviewOverlay.updateScroll(
-                        details.localOffsetFromOrigin.dy),
-                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-                onLike: widget.onLike != null
-                    ? () => widget.onLike!(article)
-                    : null,
-                isLiked: article.isLiked,
-                onSave: widget.onSave != null
-                    ? () => widget.onSave!(article)
-                    : null,
-                onSaveLongPress: () =>
-                    CollectionPickerSheet.show(context, article.contentId),
-                isSaved: article.isSaved,
-                onNotInterested: widget.onNotInterested != null
-                    ? () => widget.onNotInterested!(article)
-                    : null,
-                isSerene: widget.isSerene,
-                onReportNotSerene: widget.onReportNotSerene != null
-                    ? () => widget.onReportNotSerene!(article)
-                    : null,
-                isFollowedSource: article.isFollowedSource,
-              ),
+            child: FeedCard(
+              boxShadow: const [],
+              content: _convertToContent(article),
+              onTap: () => widget.onArticleTap(article),
+              onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                  context, _convertToContent(article)),
+              onLongPressMoveUpdate: (details) =>
+                  ArticlePreviewOverlay.updateScroll(
+                      details.localOffsetFromOrigin.dy),
+              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+              onLike: widget.onLike != null
+                  ? () => widget.onLike!(article)
+                  : null,
+              isLiked: article.isLiked,
+              onSave: widget.onSave != null
+                  ? () => widget.onSave!(article)
+                  : null,
+              onSaveLongPress: () =>
+                  CollectionPickerSheet.show(context, article.contentId),
+              isSaved: article.isSaved,
+              onNotInterested: widget.onNotInterested != null
+                  ? () => widget.onNotInterested!(article)
+                  : null,
+              isFollowedSource: article.isFollowedSource,
+              editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
             ),
           ),
         );

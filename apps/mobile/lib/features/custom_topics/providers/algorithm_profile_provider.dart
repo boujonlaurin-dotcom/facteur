@@ -43,16 +43,5 @@ class AlgorithmProfile {
 final algorithmProfileProvider = FutureProvider<AlgorithmProfile>((ref) async {
   final client = ref.watch(apiClientProvider);
   final response = await client.get('/users/algorithm-profile');
-
-  if (response is Map<String, dynamic>) {
-    return AlgorithmProfile.fromJson(response);
-  }
-  if (response is Map) {
-    final casted = response.map((k, v) => MapEntry(k.toString(), v));
-    return AlgorithmProfile.fromJson(casted);
-  }
-
-  throw FormatException(
-    'Unexpected algorithm-profile response type: ${response.runtimeType}',
-  );
+  return AlgorithmProfile.fromJson(response.data as Map<String, dynamic>);
 });

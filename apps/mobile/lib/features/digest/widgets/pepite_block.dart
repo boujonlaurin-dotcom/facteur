@@ -74,6 +74,7 @@ class PepiteBlock extends StatelessWidget {
           onReportNotSerene:
               onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
           isFollowedSource: item.isFollowedSource,
+          editorialBadgeLabel: EditorialBadge.labelFor(pepite.badge),
         ),
 
         // Editorial badge (below card)
