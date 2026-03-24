@@ -29,6 +29,8 @@ class SourceResponse(BaseModel):
     reliability_score: str = "unknown"
     bias_origin: str = "unknown"
     secondary_themes: list[str] | None = None
+    granular_topics: list[str] | None = None
+    source_tier: str = "mainstream"
     score_independence: float | None = None
     score_rigor: float | None = None
     score_ux: float | None = None

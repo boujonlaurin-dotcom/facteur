@@ -309,53 +309,28 @@ class _TopicSectionState extends State<TopicSection> {
       onSwipeDismiss: widget.onSwipeDismiss != null
           ? () => widget.onSwipeDismiss!(article)
           : null,
-      child: _wrapWithBadge(
-        article: article,
-        child: FeedCard(
-          boxShadow: const [],
-          content: _convertToContent(article),
-          onTap: () => widget.onArticleTap(article),
-          onLongPressStart: (_) =>
-              ArticlePreviewOverlay.show(context, _convertToContent(article)),
-          onLongPressMoveUpdate: (details) =>
-              ArticlePreviewOverlay.updateScroll(
-                  details.localOffsetFromOrigin.dy),
-          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-          onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-          isLiked: article.isLiked,
-          onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-          onSaveLongPress: () =>
-              CollectionPickerSheet.show(context, article.contentId),
-          isSaved: article.isSaved,
-          onNotInterested: widget.onNotInterested != null
-              ? () => widget.onNotInterested!(article)
-              : null,
-          isSerene: widget.isSerene,
-          onReportNotSerene: widget.onReportNotSerene != null
-              ? () => widget.onReportNotSerene!(article)
-              : null,
-          isFollowedSource: article.isFollowedSource,
-        ),
+      child: FeedCard(
+        boxShadow: const [],
+        content: _convertToContent(article),
+        onTap: () => widget.onArticleTap(article),
+        onLongPressStart: (_) =>
+            ArticlePreviewOverlay.show(context, _convertToContent(article)),
+        onLongPressMoveUpdate: (details) =>
+            ArticlePreviewOverlay.updateScroll(
+                details.localOffsetFromOrigin.dy),
+        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
+        isLiked: article.isLiked,
+        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+        onSaveLongPress: () =>
+            CollectionPickerSheet.show(context, article.contentId),
+        isSaved: article.isSaved,
+        onNotInterested: widget.onNotInterested != null
+            ? () => widget.onNotInterested!(article)
+            : null,
+        isFollowedSource: article.isFollowedSource,
+        editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
       ),
-    );
-  }
-
-  /// Wraps a card widget with an editorial badge chip above it.
-  Widget _wrapWithBadge({required DigestItem article, required Widget child}) {
-    if (article.badge == null) return child;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 6),
-          child: EditorialBadge(
-            badge: article.badge!,
-            isSerene: widget.isSerene,
-          ),
-        ),
-        child,
-      ],
     );
   }
 
@@ -370,37 +345,31 @@ class _TopicSectionState extends State<TopicSection> {
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
-            child: _wrapWithBadge(
-              article: article,
-              child: FeedCard(
-                boxShadow: const [],
-                content: _convertToContent(article),
-                onTap: () => widget.onArticleTap(article),
-                onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                    context, _convertToContent(article)),
-                onLongPressMoveUpdate: (details) =>
-                    ArticlePreviewOverlay.updateScroll(
-                        details.localOffsetFromOrigin.dy),
-                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-                onLike: widget.onLike != null
-                    ? () => widget.onLike!(article)
-                    : null,
-                isLiked: article.isLiked,
-                onSave: widget.onSave != null
-                    ? () => widget.onSave!(article)
-                    : null,
-                onSaveLongPress: () =>
-                    CollectionPickerSheet.show(context, article.contentId),
-                isSaved: article.isSaved,
-                onNotInterested: widget.onNotInterested != null
-                    ? () => widget.onNotInterested!(article)
-                    : null,
-                isSerene: widget.isSerene,
-                onReportNotSerene: widget.onReportNotSerene != null
-                    ? () => widget.onReportNotSerene!(article)
-                    : null,
-                isFollowedSource: article.isFollowedSource,
-              ),
+            child: FeedCard(
+              boxShadow: const [],
+              content: _convertToContent(article),
+              onTap: () => widget.onArticleTap(article),
+              onLongPressStart: (_) => ArticlePreviewOverlay.show(
+                  context, _convertToContent(article)),
+              onLongPressMoveUpdate: (details) =>
+                  ArticlePreviewOverlay.updateScroll(
+                      details.localOffsetFromOrigin.dy),
+              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+              onLike: widget.onLike != null
+                  ? () => widget.onLike!(article)
+                  : null,
+              isLiked: article.isLiked,
+              onSave: widget.onSave != null
+                  ? () => widget.onSave!(article)
+                  : null,
+              onSaveLongPress: () =>
+                  CollectionPickerSheet.show(context, article.contentId),
+              isSaved: article.isSaved,
+              onNotInterested: widget.onNotInterested != null
+                  ? () => widget.onNotInterested!(article)
+                  : null,
+              isFollowedSource: article.isFollowedSource,
+              editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
             ),
           ),
         );

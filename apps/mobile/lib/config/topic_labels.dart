@@ -64,6 +64,11 @@ const Map<String, String> topicSlugToLabel = {
   'history': 'Histoire',
   'philosophy': 'Philosophie',
   'factcheck': 'Fact-checking',
+  // Macro-theme slugs (used as source.theme in DB)
+  'society': 'Société',
+  'society_climate': 'Société',
+  'culture_ideas': 'Culture & Idées',
+  'international': 'International',
 };
 
 /// Retourne le label français pour un slug de topic ML.

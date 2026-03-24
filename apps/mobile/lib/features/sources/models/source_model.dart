@@ -26,6 +26,9 @@ class Source {
   final double? scoreIndependence;
   final double? scoreRigor;
   final double? scoreUx;
+  final List<String> granularTopics;
+  final List<String> secondaryThemes;
+  final String sourceTier;
   final int followerCount;
   final double priorityMultiplier;
   final bool hasSubscription;
@@ -48,6 +51,9 @@ class Source {
     this.scoreIndependence,
     this.scoreRigor,
     this.scoreUx,
+    this.granularTopics = const [],
+    this.secondaryThemes = const [],
+    this.sourceTier = 'mainstream',
     this.followerCount = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
@@ -71,6 +77,9 @@ class Source {
     double? scoreIndependence,
     double? scoreRigor,
     double? scoreUx,
+    List<String>? granularTopics,
+    List<String>? secondaryThemes,
+    String? sourceTier,
     int? followerCount,
     double? priorityMultiplier,
     bool? hasSubscription,
@@ -93,6 +102,9 @@ class Source {
       scoreIndependence: scoreIndependence ?? this.scoreIndependence,
       scoreRigor: scoreRigor ?? this.scoreRigor,
       scoreUx: scoreUx ?? this.scoreUx,
+      granularTopics: granularTopics ?? this.granularTopics,
+      secondaryThemes: secondaryThemes ?? this.secondaryThemes,
+      sourceTier: sourceTier ?? this.sourceTier,
       followerCount: followerCount ?? this.followerCount,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
@@ -125,6 +137,13 @@ class Source {
         scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
         scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
         scoreUx: (json['score_ux'] as num?)?.toDouble(),
+        granularTopics: (json['granular_topics'] as List<dynamic>?)
+                ?.cast<String>() ??
+            const [],
+        secondaryThemes: (json['secondary_themes'] as List<dynamic>?)
+                ?.cast<String>() ??
+            const [],
+        sourceTier: (json['source_tier'] as String?) ?? 'mainstream',
         followerCount: (json['follower_count'] as int?) ?? 0,
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,

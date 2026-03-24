@@ -19,7 +19,7 @@ class UpdateButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Only show on Android release builds
     if (kIsWeb || !Platform.isAndroid) {
-      return const SizedBox(width: 48);
+      return const SizedBox.shrink();
     }
 
     final updateAsync = ref.watch(appUpdateProvider);
@@ -27,12 +27,12 @@ class UpdateButton extends ConsumerWidget {
     return updateAsync.when(
       data: (info) {
         if (info == null || !info.updateAvailable) {
-          return const SizedBox(width: 48);
+          return const SizedBox.shrink();
         }
         return _UpdateIcon(info: info);
       },
-      loading: () => const SizedBox(width: 48),
-      error: (_, __) => const SizedBox(width: 48),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

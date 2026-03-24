@@ -3,15 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
-import '../../../custom_topics/models/topic_models.dart';
-import '../../../custom_topics/providers/custom_topics_provider.dart';
 import '../../providers/onboarding_provider.dart';
-import '../../data/available_subtopics.dart';
 import '../../onboarding_strings.dart';
 import '../../widgets/theme_with_subtopics.dart';
 
-/// Q9 : "Tes thèmes préférés ?"
-/// Multi-sélection avec sous-thèmes
+/// Q9 : "Quels sont vos centres d'intérêt ?"
+/// Cloud de thèmes pur (sans subtopics ni entities)
 class ThemesQuestion extends ConsumerStatefulWidget {
   const ThemesQuestion({super.key});
 
@@ -21,8 +18,6 @@ class ThemesQuestion extends ConsumerStatefulWidget {
 
 class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
   Set<String> _selectedThemes = {};
-  Set<String> _selectedSubtopics = {};
-  final Set<String> _selectedEntities = {};
 
   @override
   void initState() {
@@ -31,9 +26,6 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
     if (answers.themes != null) {
       _selectedThemes = answers.themes!.toSet();
     }
-    if (answers.subtopics != null) {
-      _selectedSubtopics = answers.subtopics!.toSet();
-    }
   }
 
   void _toggleTheme(String slug) {
@@ -41,53 +33,17 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
     setState(() {
       if (_selectedThemes.contains(slug)) {
         _selectedThemes.remove(slug);
-        // Clean up subtopics
-        final subtopicsForTheme = AvailableSubtopics.byTheme[slug];
-        if (subtopicsForTheme != null) {
-          for (final sub in subtopicsForTheme) {
-            _selectedSubtopics.remove(sub.slug);
-          }
-        }
       } else {
         _selectedThemes.add(slug);
       }
     });
   }
 
-  void _toggleSubtopic(String themeSlug, String subtopicSlug) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      if (_selectedSubtopics.contains(subtopicSlug)) {
-        _selectedSubtopics.remove(subtopicSlug);
-      } else {
-        _selectedSubtopics.add(subtopicSlug);
-      }
-
-      if (!_selectedThemes.contains(themeSlug)) {
-        _selectedThemes.add(themeSlug);
-      }
-    });
-  }
-
-  void _toggleEntity(String entityName) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      if (_selectedEntities.contains(entityName)) {
-        _selectedEntities.remove(entityName);
-      } else {
-        _selectedEntities.add(entityName);
-      }
-    });
-  }
-
   void _continue() {
     if (_selectedThemes.isNotEmpty) {
-      ref.read(onboardingProvider.notifier).selectThemesAndSubtopics(
-          _selectedThemes.toList(), _selectedSubtopics.toList());
-      // Follow selected entities after onboarding
-      for (final entityName in _selectedEntities) {
-        ref.read(customTopicsProvider.notifier).followTopic(entityName);
-      }
+      ref.read(onboardingProvider.notifier).selectThemes(
+            _selectedThemes.toList(),
+          );
     }
   }
 
@@ -121,15 +77,14 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
 
           const SizedBox(height: FacteurSpacing.space6),
 
-          // Layout: Cloud de thèmes (Wrap)
+          // Cloud de thèmes (Wrap)
           Expanded(
             flex: 10,
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                      maxWidth: 600), // Max width for larger screens
+                  constraints: const BoxConstraints(maxWidth: 600),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space2),
@@ -137,29 +92,16 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
                       spacing: FacteurSpacing.space3,
                       runSpacing: FacteurSpacing.space3,
                       alignment: WrapAlignment.center,
-                      crossAxisAlignment:
-                          WrapCrossAlignment.center, // Vertically center items
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: AvailableThemes.all.map((theme) {
-                        final isSelected = _selectedThemes.contains(theme.slug);
-                        final subtopics =
-                            AvailableSubtopics.byTheme[theme.slug] ?? [];
-                        final entities = isSelected
-                            ? ref
-                                    .watch(popularEntitiesProvider(theme.slug))
-                                    .valueOrNull ??
-                                <PopularEntity>[]
-                            : <PopularEntity>[];
-
-                        return ThemeWithSubtopics(
-                          theme: theme,
-                          subtopics: subtopics,
-                          isSelected: isSelected,
-                          selectedSubtopics: _selectedSubtopics.toList(),
-                          popularEntities: entities,
-                          selectedEntities: _selectedEntities,
-                          onThemeToggled: _toggleTheme,
-                          onSubtopicToggled: _toggleSubtopic,
-                          onEntityToggled: _toggleEntity,
+                        final isSelected =
+                            _selectedThemes.contains(theme.slug);
+                        return GestureDetector(
+                          onTap: () => _toggleTheme(theme.slug),
+                          child: ThemeChip(
+                            theme: theme,
+                            isSelected: isSelected,
+                          ),
                         );
                       }).toList(),
                     ),

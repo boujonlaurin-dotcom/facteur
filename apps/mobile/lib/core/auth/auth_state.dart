@@ -94,6 +94,11 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   final _supabase = Supabase.instance.client;
   Timer? _refreshTimer;
 
+  /// Version minimale de l'onboarding requise.
+  /// Incrémentée lors de changements majeurs pour forcer les users existants
+  /// à repasser par l'onboarding (skip vers Section 3 uniquement).
+  static const int _requiredOnboardingVersion = 3;
+
   Future<void> _init() async {
     try {
       WidgetsBinding.instance.addObserver(this);
@@ -332,13 +337,32 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           .eq('user_id', state.user!.id)
           .maybeSingle();
 
-      final needsOnboarding =
+      var needsOnboarding =
           response == null || response['onboarding_completed'] == false;
 
-      // 3. Mettre à jour le cache avec la valeur de la DB
+      // 3. Si onboarding déjà fait, vérifier la version
+      // Les users avec une version obsolète repassent par Section 3
+      if (!needsOnboarding) {
+        final savedVersion =
+            box.get('onboarding_app_version') as int? ?? 0;
+        if (savedVersion < _requiredOnboardingVersion) {
+          needsOnboarding = true;
+          // Pré-configurer le restart vers Section 3 directement
+          final onboardingBox = await Hive.openBox('onboarding');
+          await onboardingBox.put('section', 2); // sourcePreferences index
+          await onboardingBox.put('question', 0);
+          await onboardingBox.put('is_restart', true);
+          debugPrint(
+            'AuthState: onboarding version $savedVersion < $_requiredOnboardingVersion, '
+            're-triggering onboarding (Section 3 only)',
+          );
+        }
+      }
+
+      // 4. Mettre à jour le cache avec la valeur de la DB
       await box.put('onboarding_completed', !needsOnboarding);
 
-      // 4. Mettre à jour l'état si différent du cache
+      // 5. Mettre à jour l'état si différent du cache
       if (state.needsOnboarding != needsOnboarding) {
         state = state.copyWith(needsOnboarding: needsOnboarding);
       }
@@ -535,8 +559,11 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  void setOnboardingCompleted() {
+  Future<void> setOnboardingCompleted() async {
     state = state.copyWith(needsOnboarding: false);
+    // Persister la version pour éviter un re-trigger au prochain login
+    final box = await Hive.openBox<dynamic>('user_profile');
+    await box.put('onboarding_app_version', _requiredOnboardingVersion);
   }
 
   /// Change le statut d'onboarding (utilisé pour reset/refaire)

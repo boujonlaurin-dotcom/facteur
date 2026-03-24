@@ -30,6 +30,7 @@ class FeedCard extends StatelessWidget {
   final bool isSourceSubscribed;
   final Color? backgroundColor;
   final List<BoxShadow>? boxShadow;
+  final String? editorialBadgeLabel;
 
   const FeedCard({
     super.key,
@@ -53,6 +54,7 @@ class FeedCard extends StatelessWidget {
     this.isSourceSubscribed = false,
     this.backgroundColor,
     this.boxShadow,
+    this.editorialBadgeLabel,
   });
 
   @override
@@ -272,6 +274,34 @@ class FeedCard extends StatelessWidget {
                                       ),
                                     ),
                                   ],
+                                ),
+                              ),
+                            ],
+
+                            // Editorial badge (digest only) — pushed right inside Expanded
+                            if (editorialBadgeLabel != null) ...[
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color:
+                                      colors.textSecondary.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: colors.textTertiary.withValues(alpha: 0.20),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  editorialBadgeLabel!,
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],

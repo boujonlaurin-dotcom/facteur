@@ -51,15 +51,7 @@ class CoupDeCoeurBlock extends StatelessWidget {
           onReportNotSerene:
               onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
           isFollowedSource: item.isFollowedSource,
-        ),
-
-        // Editorial badge (below card)
-        Padding(
-          padding: const EdgeInsets.only(left: 4, top: 6),
-          child: EditorialBadge(
-            badge: coupDeCoeur.badge,
-            isSerene: isSerene,
-          ),
+          editorialBadgeLabel: EditorialBadge.labelFor(coupDeCoeur.badge),
         ),
 
         // Save count label
