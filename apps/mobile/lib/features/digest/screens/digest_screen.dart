@@ -669,7 +669,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         Text(
           '$processed/$denominator',
           style: TextStyle(
-            color: isComplete ? colors.success : colors.textSecondary,
+            color: isComplete ? colors.success : colors.primary,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

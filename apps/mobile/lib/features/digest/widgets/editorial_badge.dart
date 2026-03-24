@@ -9,13 +9,13 @@ class EditorialBadge {
   static String? labelFor(String? badge) {
     switch (badge) {
       case 'actu':
-        return "L'actu du jour";
+        return "🔴 L'actu du jour";
       case 'pas_de_recul':
-        return 'Le pas de recul';
+        return '🔭 Le pas de recul';
       case 'pepite':
-        return 'Pépite du jour';
+        return '🍀 Pépite du jour';
       case 'coup_de_coeur':
-        return 'Coup de cœur';
+        return '💚 Coup de cœur';
       default:
         return null;
     }
