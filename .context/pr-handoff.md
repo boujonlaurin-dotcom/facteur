@@ -1,189 +1,64 @@
-# Handoff: Fix Reader header transparency + note nudge positioning
+# PR — fix: feed default shows only followed sources (remove curated enrichment)
 
-## Branche cible
-Continuer sur la branche actuelle `boujonlaurin-dotcom/fix-reader-webview-ux`.
+## Quoi
+Suppression de la Phase 2 "curated enrichment" du feed par défaut (sans filtre). Le bloc `_use_two_phase` ne requête plus que les sources suivies par l'utilisateur, au lieu de sources suivies + sources curated (non-suivies).
 
-## Contexte
-Deux bugs toujours visibles dans le reader (content_detail_screen) apres les premiers correctifs :
-1. La status bar Android est transparente quand le header WebView est affiche
-2. Le SnackBar "Article termine. Ajouter une note ?" apparait trop haut sur l'ecran
+## Pourquoi
+Régression introduite par le commit `167aa78b` (topic-aware feed diversification). Le pool élargi laissait beaucoup plus de sources curated (non-suivies) passer la diversification chronologique. Résultat observé en prod : des sources comme Novethic, Osons Causer, Next, La Croix apparaissent dans le feed d'utilisateurs qui ne les suivent pas. Le digest peut inclure des sources curated — le feed par défaut non.
 
----
+## Fichiers modifiés
+- `packages/api/app/services/recommendation_service.py` (+11/-26 lignes)
+  - Bloc `_use_two_phase` : suppression Phase 2 curated, single query sur `Source.id.in_(followed_source_ids)` uniquement
+  - Commentaires mis à jour pour refléter "followed sources only"
+  - Log event renommé : `feed_candidates_two_phase` → `feed_candidates_followed_only`
+  - Ajout `followed_source_count` au log pour meilleur debugging
 
-## Bug A : Status bar Android transparente dans le header WebView
+## Zones à risque
+- `recommendation_service.py` : la méthode `_get_candidates()` est le cœur du feed. Le changement est minimal (suppression de ~15 lignes de curated enrichment), mais tout bug ici impacte 100% des utilisateurs.
 
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart`
+## Ce que le reviewer doit vérifier en priorité
+1. Le bloc `_use_two_phase` est désormais single-phase — query uniquement sur followed sources, pas de curated enrichment
+2. `limit_candidates` remplace le hardcoded `120` — le limit est passé en paramètre, pas fixé arbitrairement
+3. Aucun autre fichier n'est touché — pas de changement mobile, pas de nouveau schema, pas de nouvelle feature
+4. Le path `elif theme or topic or entity` reste sur `Source.is_curated` — la découverte via filtres explicites est inchangée
 
-**Symptome** : Quand l'utilisateur est en mode WebView (apres "Lire sur..."), la barre de status Android (heure, batterie, reseau) a un fond transparent au lieu de reprendre la couleur du header (`backgroundPrimary`). On voit le contenu de la WebView (elements de la page web) transparaitre derriere les icones systeme. Voir captures image-v20.png et image-v21.png.
+## Ce qui N'A PAS changé (mais pourrait sembler affecté)
+- `_use_three_phase` / filtres explicites (topic/theme/entity) : le path `elif theme or topic or entity` reste sur `Source.is_curated`, inchangé
+- `_apply_chronological_diversification()` : inchangé
+- `_apply_topic_regroupement()` : inchangé
+- Le digest (`digest_selector.py`) : aucune modification, continue d'inclure sources curated/deep
+- Le mobile : aucun fichier Flutter modifié
 
-**Cause** : Le header (`_buildHeader()`, ligne 1147) utilise `SafeArea(bottom: false)` qui pousse le `Container` avec `color: backgroundPrimary` SOUS la zone de status bar. La status bar elle-meme n'a pas de fond colore — elle est transparente par defaut sur Android. Le header est dans un `Positioned(top: 0)` dans le Stack (ligne 981), mais la `SafeArea` cree un padding top qui laisse la zone status bar sans couleur de fond.
+## Comment tester
+```bash
+# 1. Lancer l'API locale
+cd packages/api && source venv/bin/activate
+DATABASE_URL="<supabase_url>" SUPABASE_JWT_SECRET="<secret>" PYTHONPATH=. uvicorn app.main:app --port 8080
 
-**Architecture actuelle** (lignes 981-994 + 1147-1161) :
-```dart
-// Dans le body Stack :
-Positioned(
-  top: 0, left: 0, right: 0,
-  child: AnimatedSlide(
-    // ...
-    child: _buildHeader(context, content),  // line 993
-  ),
-),
+# 2. Générer un JWT test
+python3 -c "
+import jose.jwt, datetime
+token = jose.jwt.encode({
+    'sub': '<USER_UUID>', 'aud': 'authenticated', 'role': 'authenticated',
+    'iat': int(datetime.datetime.now(datetime.timezone.utc).timestamp()),
+    'exp': int((datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=2)).timestamp())
+}, '<JWT_SECRET>', algorithm='HS256')
+print(f'Bearer {token}')
+"
 
-// _buildHeader() :
-Widget _buildHeader(...) {
-  return SafeArea(          // line 1152 — pushes content below status bar
-    bottom: false,
-    child: Container(       // line 1154 — backgroundPrimary starts BELOW status bar
-      decoration: BoxDecoration(color: colors.backgroundPrimary),
-      child: Column(...)    // header content
-    ),
-  );
-}
+# 3. Feed sans filtre → toutes les sources doivent être suivies par l'utilisateur
+curl -s "http://localhost:8080/api/feed/?limit=20" -H "Authorization: Bearer <token>" | jq '.items[].source.name'
+
+# 4. Feed avec filtre theme → sources curated OK (path inchangé)
+curl -s "http://localhost:8080/api/feed/?limit=20&theme=tech" -H "Authorization: Bearer <token>" | jq '.items[].source.name'
 ```
 
-**Fix** : Wrapper la `SafeArea` dans un `Container`/`ColoredBox` qui remplit la zone status bar avec `backgroundPrimary` :
+## Comparaison PROD vs LOCAL (extrait des tests précédents)
+| Scénario | PROD (bug) | LOCAL (fix) |
+|---|---|---|
+| Laurin (52 src) sans filtre | 2 followed / 11 non-followed | 2 followed / 0 non-followed |
+| Corentin (6 src) sans filtre | 7 followed / 13 non-followed | 17 followed / 0 non-followed |
+| User 2 sources sans filtre | 0 followed / 20 non-followed | 20 followed / 0 non-followed |
 
-```dart
-Widget _buildHeader(...) {
-  return ColoredBox(
-    color: colors.backgroundPrimary,  // ← fills status bar area
-    child: SafeArea(
-      bottom: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space3,
-        ),
-        // Remove decoration since parent ColoredBox handles bg color
-        child: Column(...)
-      ),
-    ),
-  );
-}
-```
-
-Cela garantit que la couleur `backgroundPrimary` s'etend depuis le bord superieur de l'ecran (top: 0 du Positioned) jusqu'en dessous du contenu header. La `SafeArea` continue de pousser le contenu interactif sous la status bar, mais la couleur de fond couvre toute la zone.
-
-**Alternative** : Garder le `Container` avec `decoration`, mais l'envelopper d'un `ColoredBox` parent. L'important est qu'un widget avec la bonne couleur soit rendu AVANT (au-dessus dans le widget tree de) la SafeArea.
-
----
-
-## Bug B : SnackBar "Article termine. Ajouter une note ?" positionne trop haut
-
-**Fichier** : `apps/mobile/lib/features/detail/screens/content_detail_screen.dart`
-
-**Symptome** : Le SnackBar de nudge "Article termine. Ajouter une note ?" (declenche a 90% de progression de lecture) apparait trop haut sur l'ecran, loin du bouton bookmark. Voir capture image-v22.png.
-
-**Cause** : Le nudge utilise `NotificationService.showInfo()` (ligne 349-352) qui passe par le **root `ScaffoldMessenger`** (via `messengerKey` sur `MaterialApp`, `app.dart:23`). Le SnackBar floating est positionne par le root scaffold, pas par le Scaffold local du detail screen. Comme le root scaffold a une `bottomNavigationBar` (tabs Essentiel/Mon flux/Parametres), le SnackBar est positionne au-dessus de cette nav bar, ce qui sur la page detail (full-screen) correspond a une position trop haute.
-
-**Code actuel** (lignes 341-361) :
-```dart
-void _onReadingProgressNudge() {
-  if (_endNudgeShown || _readingProgress.value < 0.9) return;
-  _endNudgeShown = true;
-  final content = _content;
-  if (content == null || !mounted) return;
-
-  if (!content.hasNote) {
-    NotificationService.showInfo(          // ← root ScaffoldMessenger
-      'Article termine. Ajouter une note ?',
-      actionLabel: 'Ajouter une note',
-      onAction: _openNoteSheet,
-    );
-  } else if (!content.isSaved) {
-    NotificationService.showInfo(
-      'Article termine. Ajouter une note ?',
-      actionLabel: 'Enregistrer',
-      onAction: _toggleBookmark,
-    );
-  }
-}
-```
-
-**Fix** : Utiliser le `ScaffoldMessenger` **local** du detail screen au lieu du global. Remplacer `NotificationService.showInfo(...)` par `ScaffoldMessenger.of(context).showSnackBar(...)` directement dans `_onReadingProgressNudge` :
-
-```dart
-void _onReadingProgressNudge() {
-  if (_endNudgeShown || _readingProgress.value < 0.9) return;
-  _endNudgeShown = true;
-  final content = _content;
-  if (content == null || !mounted) return;
-
-  final String message = 'Article termine. Ajouter une note ?';
-  final String actionLabel;
-  final VoidCallback onAction;
-
-  if (!content.hasNote) {
-    actionLabel = 'Ajouter une note';
-    onAction = _openNoteSheet;
-  } else if (!content.isSaved) {
-    actionLabel = 'Enregistrer';
-    onAction = _toggleBookmark;
-  } else {
-    return;
-  }
-
-  final colors = context.facteurColors;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: colors.textPrimary,
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              onAction();
-            },
-            child: Text(
-              actionLabel,
-              style: TextStyle(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-      backgroundColor: colors.backgroundSecondary,
-      behavior: SnackBarBehavior.floating,
-      elevation: 4,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      duration: const Duration(seconds: 3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-    ),
-  );
-}
-```
-
-En utilisant `ScaffoldMessenger.of(context)` dans le build context du detail screen, le SnackBar sera positionne par le Scaffold local (ligne 950) qui connait son propre `floatingActionButton`. Le SnackBar floating apparaitra au bas du detail screen, juste au-dessus du FAB bookmark — exactement la bonne position.
-
-**Note importante** : Le `context` utilise doit etre celui du widget detail screen (pas un context d'un builder interne). Verifier que `_onReadingProgressNudge` a acces au bon context (probablement via `this.context` dans le State).
-
-**Fichiers references** :
-- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` : `_onReadingProgressNudge()` (lignes 341-361), `_buildHeader()` (lignes 1147-1281)
-- `apps/mobile/lib/core/ui/notification_service.dart` : SnackBar styling de reference (lignes 44-88)
-- `apps/mobile/lib/app.dart:23` : root ScaffoldMessenger key
-
----
-
-## Fichiers modifies
-- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` (les deux bugs)
-
-## Verification
-- **Bug A** : Ouvrir un article → taper "Lire sur [source]" → la status bar Android doit avoir le fond `backgroundPrimary` (beige/blanc), pas transparent. Tester sur emulateur Android.
-- **Bug B** : Lire un article jusqu'a ~90% → le SnackBar "Article termine. Ajouter une note ?" doit apparaitre en bas de l'ecran, pres du FAB bookmark, pas au milieu de l'ecran.
-- `cd apps/mobile && flutter analyze` doit passer sans nouveaux warnings
+## Note
+Le stash `feat: source suggestions + three-phase fetch (PR B material)` contient le travail restant (source suggestions, three-phase fetch, mobile UI) pour une PR séparée.
