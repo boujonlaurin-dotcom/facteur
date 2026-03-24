@@ -7,12 +7,23 @@ from app.database import get_db
 from app.schemas.waitlist import (
     SurveyRequest,
     SurveyResponse,
+    WaitlistCountResponse,
     WaitlistRequest,
     WaitlistResponse,
 )
 from app.services.waitlist_service import WaitlistService
 
 router = APIRouter()
+
+
+@router.get("/count", response_model=WaitlistCountResponse)
+async def get_waitlist_count(
+    db: AsyncSession = Depends(get_db),
+) -> WaitlistCountResponse:
+    """Nombre d'inscrits waitlist. Endpoint public."""
+    service = WaitlistService(db)
+    count = await service.get_count()
+    return WaitlistCountResponse(count=count)
 
 
 @router.post("", response_model=WaitlistResponse)
