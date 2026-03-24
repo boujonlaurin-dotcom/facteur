@@ -5,15 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/theme.dart';
 import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
-import '../../data/theme_to_sources_mapping.dart';
-import '../../providers/onboarding_provider.dart';
+import '../../../sources/widgets/source_detail_modal.dart';
+import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
+import '../../providers/onboarding_provider.dart';
+import '../../widgets/recommendation_section.dart';
+import '../../widgets/source_recommendation_card.dart';
 
-/// Q10 : "Vos sources préférées ?" (après thèmes)
-/// Sélection de sources fiables depuis la base de données.
-/// Les sources sélectionnées seront marquées comme "de confiance".
+/// Q9 : Sources recommandées personnalisées — Page 1.
 ///
-/// Nouvelle fonctionnalité: Pré-sélection automatique basée sur les thèmes choisis.
+/// Affiche 3 sections: Pour vous, Élargis ta vision, Pépites.
+/// Le catalogue et les CTAs sont sur la Page 2 (sourcesReaction).
 class SourcesQuestion extends ConsumerStatefulWidget {
   const SourcesQuestion({super.key});
 
@@ -23,83 +25,45 @@ class SourcesQuestion extends ConsumerStatefulWidget {
 
 class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   Set<String> _selectedSourceIds = {};
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   bool _hasAppliedPreselection = false;
+  SourceRecommendation? _recommendation;
+  bool _showAllMatched = false;
+
+  /// Max matched sources visible before "Voir plus"
+  static const int _matchedVisibleLimit = 8;
 
   @override
   void initState() {
     super.initState();
-    // Charger les sources préférées existantes (reprise d'onboarding ou back navigation)
+    // Restore existing selections (back navigation or resume)
     final existingAnswers = ref.read(onboardingProvider).answers;
     final existingSources = existingAnswers.preferredSources;
     if (existingSources != null && existingSources.isNotEmpty) {
-      // L'utilisateur a déjà fait des sélections → les restaurer
       _selectedSourceIds = existingSources.toSet();
-      _hasAppliedPreselection = true; // Ne pas écraser avec la pré-sélection
+      _hasAppliedPreselection = true;
     }
-
-    _searchController.addListener(() {
-      setState(() {
-        _searchQuery = _searchController.text;
-      });
-    });
   }
 
-  /// Applique la pré-sélection automatique basée sur les thèmes choisis
-  void _applyPreselection(List<Source> allSources) {
-    if (_hasAppliedPreselection) return;
-    _hasAppliedPreselection = true;
+  void _computeRecommendations(List<Source> allSources) {
+    if (_recommendation != null) return;
 
-    final existingAnswers = ref.read(onboardingProvider).answers;
-    final selectedThemes = existingAnswers.themes ?? [];
-    final selectedSubtopics = existingAnswers.subtopics ?? [];
+    final answers = ref.read(onboardingProvider).answers;
+    final themes = answers.themes ?? [];
+    final subtopics = answers.subtopics ?? [];
+    final objectives = answers.objectives ?? [];
 
-    if (selectedThemes.isEmpty) return;
-
-    // Calculer les noms de sources recommandées
-    final recommendedNames = ThemeToSourcesMapping.computeRecommendedSources(
-      selectedThemes: selectedThemes,
-      selectedSubtopics: selectedSubtopics,
+    _recommendation = SourceRecommender.recommend(
+      selectedThemes: themes,
+      selectedSubtopics: subtopics,
+      allSources: allSources,
+      objectives: objectives,
     );
 
-    // Convertir les noms en IDs
-    final recommendedIds = _convertSourceNamesToIds(
-      recommendedNames.toList(),
-      allSources,
-    );
-
-    if (recommendedIds.isNotEmpty) {
-      setState(() {
-        _selectedSourceIds = recommendedIds;
-      });
+    // Apply preselection (matched + gems)
+    if (!_hasAppliedPreselection) {
+      _hasAppliedPreselection = true;
+      _selectedSourceIds = _recommendation!.preselectedIds;
     }
-  }
-
-  /// Convertit les noms de sources en IDs UUID
-  Set<String> _convertSourceNamesToIds(
-    List<String> sourceNames,
-    List<Source> allSources,
-  ) {
-    final Set<String> ids = {};
-
-    for (final name in sourceNames) {
-      final source = allSources.cast<Source?>().firstWhere(
-            (s) => s?.name.toLowerCase() == name.toLowerCase(),
-            orElse: () => null,
-          );
-      if (source != null) {
-        ids.add(source.id);
-      }
-    }
-
-    return ids;
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   void _toggleSource(String sourceId) {
@@ -113,18 +77,22 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     });
   }
 
+  void _showSourceDetail(Source source) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SourceDetailModal(
+        source: source,
+        onToggleTrust: () => _toggleSource(source.id),
+      ),
+    );
+  }
+
   void _continue() {
-    // Sauvegarder les IDs des sources sélectionnées
     ref
         .read(onboardingProvider.notifier)
         .selectSources(_selectedSourceIds.toList());
-  }
-
-  /// Vérifie si des thèmes ont été sélectionnés (pour afficher le message)
-  bool get _hasSelectedThemes {
-    final existingAnswers = ref.read(onboardingProvider).answers;
-    final selectedThemes = existingAnswers.themes ?? [];
-    return selectedThemes.isNotEmpty;
   }
 
   @override
@@ -132,155 +100,43 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: FacteurSpacing.space6),
-
-          // Titre
-          Text(
-            OnboardingStrings.q9Title,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.q9Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Message de pré-sélection (si des thèmes ont été sélectionnés)
-          if (_hasSelectedThemes && _selectedSourceIds.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space4,
-                vertical: FacteurSpacing.space3,
-              ),
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                border: Border.all(
-                  color: colors.primary.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Content
+        Expanded(
+          child: sourcesAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (err, _) => Center(
               child: Text(
-                OnboardingStrings.q9PreselectionTitle,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: colors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                textAlign: TextAlign.center,
+                OnboardingStrings.q9LoadingError,
+                style: TextStyle(color: colors.textSecondary),
               ),
             ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Barre de recherche
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: OnboardingStrings.q9SearchHint,
-              prefixIcon: Icon(Icons.search, color: colors.textSecondary),
-              filled: true,
-              fillColor: colors.surface,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space4,
-                vertical: FacteurSpacing.space3,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(FacteurRadius.full),
-                borderSide: BorderSide.none,
-              ),
-              hintStyle: TextStyle(color: colors.textSecondary),
-            ),
-            style: TextStyle(color: colors.textPrimary),
-            onTapOutside: (_) => FocusScope.of(context).unfocus(),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Chips de sources
-          Expanded(
-            child: sourcesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, _) => Center(
-                child: Text(
-                  OnboardingStrings.q9LoadingError,
-                  style: TextStyle(color: colors.textSecondary),
-                ),
-              ),
-              data: (sources) {
-                // Appliquer la pré-sélection automatique (une seule fois)
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _applyPreselection(sources);
-                });
-
-                // Filtrer pour n'afficher que les sources curées
-                var filteredSources =
-                    sources.where((s) => s.isCurated).toList();
-
-                // Trier par ordre alphabétique
-                filteredSources.sort(
-                  (a, b) =>
-                      a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-                );
-
-                // Appliquer la recherche
-                if (_searchQuery.isNotEmpty) {
-                  filteredSources = filteredSources
-                      .where(
-                        (s) => s.name.toLowerCase().contains(
-                              _searchQuery.toLowerCase(),
-                            ),
-                      )
-                      .toList();
+            data: (sources) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_recommendation == null) {
+                  setState(() => _computeRecommendations(sources));
                 }
+              });
 
-                if (filteredSources.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _searchQuery.isEmpty
-                          ? OnboardingStrings.q9EmptyList
-                          : OnboardingStrings.q9NoMatch,
-                      style: TextStyle(color: colors.textSecondary),
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
+              final reco = _recommendation;
+              if (reco == null) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                return SingleChildScrollView(
-                  child: Wrap(
-                    spacing: FacteurSpacing.space2,
-                    runSpacing: FacteurSpacing.space2,
-                    alignment: WrapAlignment.center,
-                    children: filteredSources.map((source) {
-                      final isSelected = _selectedSourceIds.contains(source.id);
-                      return _SourceChip(
-                        source: source,
-                        isSelected: isSelected,
-                        onTap: () => _toggleSource(source.id),
-                      );
-                    }).toList(),
-                  ),
-                );
-              },
-            ),
+              return _buildContent(context, reco);
+            },
           ),
+        ),
 
-          const SizedBox(height: FacteurSpacing.space4),
-
-          // Bouton continuer
-          ElevatedButton(
+        // Continue button
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space6,
+            vertical: FacteurSpacing.space4,
+          ),
+          child: ElevatedButton(
             onPressed: _continue,
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -288,109 +144,124 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
             child: Text(
               _selectedSourceIds.isEmpty
                   ? OnboardingStrings.skipButton
-                  : OnboardingStrings.selectedCount(_selectedSourceIds.length),
+                  : OnboardingStrings.selectedCount(
+                      _selectedSourceIds.length),
             ),
           ),
+        ),
+      ],
+    );
+  }
 
-          const SizedBox(height: FacteurSpacing.space4),
+  Widget _buildContent(BuildContext context, SourceRecommendation reco) {
+    final colors = context.facteurColors;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: FacteurSpacing.space6),
+
+          // Title
+          Text(
+            OnboardingStrings.q9Title,
+            style: Theme.of(context).textTheme.displayLarge,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: FacteurSpacing.space3),
+          Text(
+            OnboardingStrings.q9Subtitle,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: colors.textSecondary),
+            textAlign: TextAlign.center,
+          ),
+
+          // Section: Pour vous
+          if (reco.matched.isNotEmpty) ...[
+            const RecommendationSectionHeader(
+              emoji: '🎯',
+              title: 'Pour vous',
+              subtitle: 'Pré-sélectionnées pour vous',
+            ),
+            ..._visibleMatched(reco.matched).map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+                  child: SourceRecommendationCard(
+                    recommendation: r,
+                    isSelected: _selectedSourceIds.contains(r.source.id),
+                    onToggle: () => _toggleSource(r.source.id),
+                    onInfoTap: () => _showSourceDetail(r.source),
+                  ),
+                )),
+            // "Voir plus" button
+            if (!_showAllMatched &&
+                reco.matched.length > _matchedVisibleLimit)
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: FacteurSpacing.space2,
+                  bottom: FacteurSpacing.space2,
+                ),
+                child: TextButton(
+                  onPressed: () => setState(() => _showAllMatched = true),
+                  child: Text(
+                    'Voir ${reco.matched.length - _matchedVisibleLimit} de plus',
+                    style: TextStyle(color: colors.primary),
+                  ),
+                ),
+              ),
+          ],
+
+          // Section: Élargissez votre vision
+          if (reco.perspective.isNotEmpty) ...[
+            const RecommendationSectionHeader(
+              emoji: '🔭',
+              title: 'Élargissez votre vision',
+              subtitle:
+                  'Des sources qui challengent vos habitudes de lecture.',
+            ),
+            ...reco.perspective.map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+                  child: SourceRecommendationCard(
+                    recommendation: r,
+                    isSelected: _selectedSourceIds.contains(r.source.id),
+                    onToggle: () => _toggleSource(r.source.id),
+                    onInfoTap: () => _showSourceDetail(r.source),
+                  ),
+                )),
+          ],
+
+          // Section: Pépites
+          if (reco.gems.isNotEmpty) ...[
+            const RecommendationSectionHeader(
+              emoji: '💎',
+              title: 'Pépites',
+              subtitle:
+                  'Des sources rares qui pourraient changer votre vision du monde.',
+            ),
+            ...reco.gems.map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+                  child: SourceRecommendationCard(
+                    recommendation: r,
+                    isSelected: _selectedSourceIds.contains(r.source.id),
+                    onToggle: () => _toggleSource(r.source.id),
+                    onInfoTap: () => _showSourceDetail(r.source),
+                  ),
+                )),
+          ],
+
+          const SizedBox(height: FacteurSpacing.space8),
         ],
       ),
     );
   }
-}
 
-class _SourceChip extends StatelessWidget {
-  final Source source;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _SourceChip({
-    required this.source,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: 6,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? colors.primary.withValues(alpha: 0.15)
-              : colors.surface,
-          borderRadius: BorderRadius.circular(FacteurRadius.pill),
-          border: Border.all(
-            color: isSelected ? colors.primary : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Logo miniature
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: source.logoUrl != null && source.logoUrl!.isNotEmpty
-                  ? Image.network(
-                      source.logoUrl!,
-                      width: 20,
-                      height: 20,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 20,
-                        height: 20,
-                        color: colors.surface,
-                        child: Icon(
-                          Icons.public,
-                          size: 14,
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    )
-                  : Container(
-                      width: 20,
-                      height: 20,
-                      color: colors.surface,
-                      child: Icon(
-                        Icons.public,
-                        size: 14,
-                        color: colors.textSecondary,
-                      ),
-                    ),
-            ),
-            const SizedBox(width: FacteurSpacing.space2),
-            // Nom de la source
-            Text(
-              source.name,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: isSelected ? colors.primary : colors.textPrimary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  ),
-            ),
-            // Indicateur de biais politique
-            if (source.biasStance != 'unknown' &&
-                source.biasStance != 'neutral') ...[
-              const SizedBox(width: FacteurSpacing.space2),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: source.getBiasColor(),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  /// Returns visible matched sources, respecting the collapse limit.
+  List<RecommendedSource> _visibleMatched(List<RecommendedSource> matched) {
+    if (_showAllMatched || matched.length <= _matchedVisibleLimit) {
+      return matched;
+    }
+    return matched.take(_matchedVisibleLimit).toList();
   }
 }

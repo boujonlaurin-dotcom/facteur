@@ -61,7 +61,7 @@ class _ConclusionAnimationScreenState
 
   Future<void> _completeOnboarding() async {
     // Marquer l'onboarding comme terminé dans l'auth state
-    ref.read(authStateProvider.notifier).setOnboardingCompleted();
+    await ref.read(authStateProvider.notifier).setOnboardingCompleted();
 
     // Effacer les données locales temporaires
     ref.read(onboardingProvider.notifier).clearSavedData();
