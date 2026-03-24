@@ -17,9 +17,7 @@ class WaitlistService:
 
     async def get_count(self) -> int:
         """Return total number of waitlist entries."""
-        result = await self.db.execute(
-            select(func.count()).select_from(WaitlistEntry)
-        )
+        result = await self.db.execute(select(func.count()).select_from(WaitlistEntry))
         return result.scalar_one()
 
     async def register(
