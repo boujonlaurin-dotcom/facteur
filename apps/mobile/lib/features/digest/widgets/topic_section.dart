@@ -77,18 +77,17 @@ class _TopicSectionState extends State<TopicSection> {
     super.dispose();
   }
 
-  /// Estimated body + footer height for FeedCard WITH image.
-  /// Body: padding (16) + title 2×22px (44) + SizedBox (6) + desc ~3 lines (54)
-  ///       + meta row (20) + padding (8) = 148
-  /// Footer: border (1) + padding (8) + row with buttons (32) = 41
-  /// Tight fit to minimize gap below carousel cards.
-  static const double _bodyFooterHeight = 155.0;
+  /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
+  static const double _footerHeight = 37.0;
 
-  /// Estimated total height for text-only cards (no image).
-  /// Body: padding (24) + title (72) + spacing (8) + desc 4 lines (76)
-  ///       + spacing (8) + meta (20) + padding (24) = 232
-  /// Footer: 41. Safety: 10. Total ≈ 280
-  static const double _textOnlyCardHeight = 280.0;
+  /// Body padding top + bottom (FacteurSpacing.space3 × 2 = 24)
+  static const double _bodyPadding = 24.0;
+
+  /// Meta row: type icon + duration text
+  static const double _metaRowHeight = 20.0;
+
+  /// SizedBox spacers inside body (space2 = 8 each)
+  static const double _spacer = 8.0;
 
   /// Returns true if this article's image is expected to render.
   bool _imageWillRender(DigestItem article) {
@@ -106,12 +105,45 @@ class _TopicSectionState extends State<TopicSection> {
     }
   }
 
-  /// Compute the appropriate carousel/card height for a set of articles.
+  /// Estimate a single card's height based on its content.
+  double _estimateCardHeight(DigestItem article, double cardWidth) {
+    final hasImage = _imageWillRender(article);
+
+    // Title: fontSize 20, lineHeight 1.2, maxLines 3
+    // Estimate line count from title length vs available width.
+    // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
+    final charsPerLine = (cardWidth - _bodyPadding) / 10;
+    final titleLines =
+        (article.title.length / charsPerLine).ceil().clamp(1, 3);
+    final titleHeight = titleLines * 20.0 * 1.2;
+
+    double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
+
+    // Description only shown when no image (alwaysShowDescription: !imageVisible)
+    if (!hasImage) {
+      final desc = article.description ?? '';
+      if (desc.isNotEmpty) {
+        final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
+        final descLines =
+            (desc.length / descCharsPerLine).ceil().clamp(1, 4);
+        // descriptionFontSize: 15, lineHeight: 1.3
+        final descHeight = descLines * 15.0 * 1.3;
+        bodyHeight += _spacer + descHeight;
+      }
+    }
+
+    final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
+    return imageHeight + bodyHeight + _footerHeight;
+  }
+
+  /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
   double _computeHeight(List<DigestItem> articles, double cardWidth) {
-    final anyVisibleImage = articles.any(_imageWillRender);
-    return anyVisibleImage
-        ? (cardWidth / (16 / 9)) + _bodyFooterHeight
-        : _textOnlyCardHeight;
+    double maxH = 0;
+    for (final article in articles) {
+      final h = _estimateCardHeight(article, cardWidth);
+      if (h > maxH) maxH = h;
+    }
+    return maxH;
   }
 
   @override
