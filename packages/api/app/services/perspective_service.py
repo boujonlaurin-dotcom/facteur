@@ -260,7 +260,9 @@ class PerspectiveService:
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
-        user_message = f'Article lu : "{article_title}" ({source_name}, {source_stance})'
+        user_message = (
+            f'Article lu : "{article_title}" ({source_name}, {source_stance})'
+        )
         if article_description:
             user_message += f"\nRésumé : {article_description[:200]}"
         user_message += f"\n\nAutres traitements :\n{perspectives_text}"
