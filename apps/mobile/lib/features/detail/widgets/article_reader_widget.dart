@@ -113,6 +113,17 @@ class ArticleReaderWidget extends StatelessWidget {
                 textAlign: TextAlign.center,
                 margin: Margins.only(top: 8),
               ),
+              // Defensive: prevent leftover divs/iframes/asides from creating gaps
+              'div': Style(
+                margin: Margins.zero,
+                padding: HtmlPaddings.zero,
+              ),
+              'iframe': Style(
+                display: Display.none,
+              ),
+              'aside': Style(
+                display: Display.none,
+              ),
             },
             onLinkTap: (url, _, __) async {
               if (url != null) {

@@ -56,6 +56,9 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
       _ContentDetailScreenState();
 }
 
+/// Height of the header content area (below the status bar).
+const double _kHeaderContentHeight = 50;
+
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin {
   late AnimationController _fabController;
@@ -66,8 +69,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late Animation<double> _likeScaleAnimation;
   late AnimationController _fabReappearController;
   late Animation<double> _fabReappearScale;
+  late AnimationController _shareFabController;
+  late Animation<double> _shareFabScale;
 
   bool _showFab = false;
+  bool _showShareFab = false;
+  bool _isShortArticle = false;
   bool _showNoteWelcome = false;
   bool _premiumRedirectScheduled = false;
   bool _webFallbackRedirectScheduled = false;
@@ -187,6 +194,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_fabReappearController);
 
+    // Share FAB entrance animation (triggered at 90% reading progress)
+    _shareFabController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _shareFabScale = CurvedAnimation(
+      parent: _shareFabController,
+      curve: Curves.elasticOut,
+    );
+
     // Show FAB after delay — start transparent, fade+scale in after 2s
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) {
@@ -225,6 +242,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
+
+    // Share FAB: show only after 90% reading on long articles
+    _readingProgress.addListener(_onShareFabProgress);
+
+    // Detect short articles after first layout
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkShortArticle();
+    });
 
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
@@ -343,6 +368,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // No-op: end-of-article notification removed in favor of Share FAB.
   }
 
+  /// Show Share FAB when user reaches 90% of article (long articles only).
+  void _onShareFabProgress() {
+    if (_showShareFab || _isShortArticle) return;
+    if (_readingProgress.value >= 0.9) {
+      setState(() => _showShareFab = true);
+      _shareFabController.forward();
+    }
+  }
+
+  /// Detect short articles that don't need scrolling.
+  void _checkShortArticle() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.maxScrollExtent < 50) {
+      _isShortArticle = true;
+    }
+  }
+
   /// Compute layout offsets for bridge zone.
   /// Re-measures on every call to handle late HTML rendering (images, etc).
   void _computeScrollOffsets() {
@@ -437,6 +479,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_content!.hasInAppContent == true && !_isConsumed) {
             _startReadingTimer();
           }
+          // Re-check short article after content loads and renders
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _checkShortArticle();
+          });
           // Pre-load WebView if not already initialized
           if (_webViewController == null) {
             _initScrollToSiteWebView();
@@ -649,9 +695,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _fabReappearController.dispose();
+    _shareFabController.dispose();
     _fabOpacity.dispose();
     _headerOpacity.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
@@ -976,15 +1024,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: _buildHeader(context, content),
             ),
           ),
-          // Reading progress bar — bottom of screen, grey→primary color
+          // Reading progress bar — below header when visible, slides to
+          // top of screen (below status bar) when header hides
           if (content.hasInAppContent ||
               _isWebViewActive ||
               (!useScrollToSite && !useInAppReading))
-            Positioned(
-              bottom: MediaQuery.of(context).viewPadding.bottom,
-              left: 0,
-              right: 0,
-              child: _buildReadingProgressBar(colors),
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, _) {
+                final statusBarHeight = MediaQuery.of(context).padding.top;
+                final topWhenHeaderVisible =
+                    statusBarHeight + _kHeaderContentHeight;
+                final topWhenHeaderHidden = statusBarHeight;
+                final headerVisible = opacity >= 0.5;
+                return AnimatedPositioned(
+                  duration: Duration(
+                      milliseconds: headerVisible ? 350 : 200),
+                  curve: headerVisible ? Curves.easeOut : Curves.easeIn,
+                  top: headerVisible
+                      ? topWhenHeaderVisible
+                      : topWhenHeaderHidden,
+                  left: 0,
+                  right: 0,
+                  child: _buildReadingProgressBar(colors),
+                );
+              },
             ),
         ],
       ),
@@ -1004,25 +1068,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        // Share FAB — top of FAB column
-                        SizedBox(
-                          width: 50,
-                          height: 50,
-                          child: FloatingActionButton(
-                            onPressed: _shareArticle,
-                            backgroundColor: Colors.white,
-                            foregroundColor: colors.textPrimary,
-                            elevation: 2,
-                            heroTag: 'share_fab',
-                            tooltip: 'Partager',
-                            child: Icon(
-                              PhosphorIcons.shareNetwork(
-                                  PhosphorIconsStyle.regular),
-                              size: 25,
+                        // Share FAB — appears after 90% reading on long articles
+                        if (_showShareFab) ...[
+                          ScaleTransition(
+                            scale: _shareFabScale,
+                            child: SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: FloatingActionButton(
+                                onPressed: _shareArticle,
+                                backgroundColor: Colors.white,
+                                foregroundColor: colors.textPrimary,
+                                elevation: 2,
+                                heroTag: 'share_fab',
+                                tooltip: 'Partager',
+                                child: Icon(
+                                  PhosphorIcons.shareNetwork(
+                                      PhosphorIconsStyle.regular),
+                                  size: 25,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 12),
+                        ],
                         // Perspectives FAB (articles only) — always just above other FABs
                         if (content.contentType == ContentType.article) ...[
                           PerspectivesPill(
@@ -1413,7 +1482,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 50;
+    final headerHeight = topInset + _kHeaderContentHeight;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
@@ -1715,7 +1784,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 50;
+    final headerHeight = topInset + _kHeaderContentHeight;
 
     switch (content.contentType) {
       case ContentType.article:
@@ -1943,7 +2012,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
 
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 50;
+    final headerHeight = topInset + _kHeaderContentHeight;
     return Column(
       children: [
         SizedBox(height: headerHeight),

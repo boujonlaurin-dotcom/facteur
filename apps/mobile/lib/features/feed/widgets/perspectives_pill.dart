@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -33,6 +34,14 @@ class _PerspectivesPillState extends State<PerspectivesPill>
 
   late AnimationController _loadingController;
 
+  // Pulse animation: scale-up with bounce to draw attention at key moments
+  late AnimationController _pulseController;
+  late Animation<double> _pulseScale;
+  Timer? _pulseTimer;
+  int _pulseCount = 0;
+  static const int _maxPulses = 3;
+  static const Duration _pulseInterval = Duration(seconds: 25);
+
   @override
   void initState() {
     super.initState();
@@ -59,6 +68,28 @@ class _PerspectivesPillState extends State<PerspectivesPill>
     );
     if (widget.isLoading) _loadingController.repeat();
 
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _pulseScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.18)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.18, end: 0.95)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.95, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 35,
+      ),
+    ]).animate(_pulseController);
+
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) _entranceController.forward();
     });
@@ -72,13 +103,37 @@ class _PerspectivesPillState extends State<PerspectivesPill>
     } else if (!widget.isLoading && oldWidget.isLoading) {
       _loadingController.stop();
       _loadingController.reset();
+      // Data just loaded — pulse once immediately, then periodically
+      if (!widget.isEmpty) {
+        _triggerPulse();
+        _schedulePulses();
+      }
     }
+  }
+
+  void _triggerPulse() {
+    if (!mounted || _pulseCount >= _maxPulses) return;
+    _pulseCount++;
+    _pulseController.forward(from: 0);
+  }
+
+  void _schedulePulses() {
+    _pulseTimer?.cancel();
+    _pulseTimer = Timer.periodic(_pulseInterval, (_) {
+      if (!mounted || _pulseCount >= _maxPulses) {
+        _pulseTimer?.cancel();
+        return;
+      }
+      _triggerPulse();
+    });
   }
 
   @override
   void dispose() {
     _entranceController.dispose();
     _loadingController.dispose();
+    _pulseController.dispose();
+    _pulseTimer?.cancel();
     super.dispose();
   }
 
@@ -93,49 +148,52 @@ class _PerspectivesPillState extends State<PerspectivesPill>
         position: _slideAnimation,
         child: Opacity(
           opacity: widget.isEmpty ? 0.4 : 1.0,
-          child: SizedBox(
-            width: 55,
-            height: 55,
-            child: FloatingActionButton(
-              onPressed: isActive ? widget.onTap : null,
-              backgroundColor: Colors.white,
-              elevation: 2,
-              heroTag: 'perspectives_fab',
-              tooltip: 'Autres points de vue',
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Circular bias ring inside the FAB
-                  if (widget.isLoading)
-                    AnimatedBuilder(
-                      animation: _loadingController,
-                      builder: (context, child) => CustomPaint(
-                        size: const Size(41, 41),
-                        painter: _BiasRingPainter.loading(
-                          colors,
-                          _loadingController.value,
+          child: ScaleTransition(
+            scale: _pulseScale,
+            child: SizedBox(
+              width: 55,
+              height: 55,
+              child: FloatingActionButton(
+                onPressed: isActive ? widget.onTap : null,
+                backgroundColor: Colors.white,
+                elevation: 2,
+                heroTag: 'perspectives_fab',
+                tooltip: 'Autres points de vue',
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Circular bias ring inside the FAB
+                    if (widget.isLoading)
+                      AnimatedBuilder(
+                        animation: _loadingController,
+                        builder: (context, child) => CustomPaint(
+                          size: const Size(41, 41),
+                          painter: _BiasRingPainter.loading(
+                            colors,
+                            _loadingController.value,
+                          ),
                         ),
+                      )
+                    else
+                      CustomPaint(
+                        size: const Size(41, 41),
+                        painter: widget.isEmpty
+                            ? _BiasRingPainter.empty(colors)
+                            : _BiasRingPainter(
+                                distribution: widget.biasDistribution,
+                                colors: colors,
+                              ),
                       ),
-                    )
-                  else
-                    CustomPaint(
-                      size: const Size(41, 41),
-                      painter: widget.isEmpty
-                          ? _BiasRingPainter.empty(colors)
-                          : _BiasRingPainter(
-                              distribution: widget.biasDistribution,
-                              colors: colors,
-                            ),
+                    // Eye icon (smaller to fit inside the ring)
+                    Icon(
+                      PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                      size: 21,
+                      color: isActive
+                          ? colors.textPrimary
+                          : colors.textTertiary,
                     ),
-                  // Eye icon (smaller to fit inside the ring)
-                  Icon(
-                    PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                    size: 21,
-                    color: isActive
-                        ? colors.textPrimary
-                        : colors.textTertiary,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
