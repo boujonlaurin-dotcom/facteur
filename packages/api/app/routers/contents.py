@@ -560,6 +560,7 @@ async def get_perspectives(
                 "source_domain": p.source_domain,
                 "bias_stance": p.bias_stance,
                 "published_at": p.published_at,
+                "description": p.description,
             }
             for p in perspectives
         ],
@@ -628,6 +629,7 @@ async def analyze_perspectives(
         source_name=source_name,
         source_bias=source_bias,
         perspectives=perspectives_list,
+        article_description=content.description,
     )
 
     response = {"content_id": cache_key, "analysis": analysis}

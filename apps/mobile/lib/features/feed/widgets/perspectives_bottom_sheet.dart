@@ -147,6 +147,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
   /// Analysis state
   _AnalysisState _analysisState = _AnalysisState.idle;
   String? _analysisText;
+  bool _isAnalysisExpanded = true;
 
   List<Perspective> get _filteredPerspectives {
     if (_activeBiasFilter == null) return widget.perspectives;
@@ -408,31 +409,60 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                size: 14,
-                color: colors.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Analyse IA',
-                style: textTheme.labelSmall?.copyWith(
+          GestureDetector(
+            onTap: () =>
+                setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                  size: 14,
                   color: colors.primary,
-                  fontWeight: FontWeight.w700,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _analysisText ?? '',
-            style: textTheme.bodySmall?.copyWith(
-              color: colors.textPrimary,
-              height: 1.5,
+                const SizedBox(width: 6),
+                Text(
+                  'Analyse IA',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _isAnalysisExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                    size: 12,
+                    color: colors.primary,
+                  ),
+                ),
+              ],
             ),
           ),
+          if (_isAnalysisExpanded) ...[
+            const SizedBox(height: 8),
+            Text(
+              _analysisText ?? '',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textPrimary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Généré via Mistral',
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

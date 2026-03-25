@@ -1,6 +1,8 @@
 """Perspectives service - hybrid search via DB entities + Google News RSS."""
 
+import html
 import json
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -137,6 +139,7 @@ class Perspective:
     source_domain: str
     bias_stance: str  # left, center-left, center, center-right, right, unknown
     published_at: str | None = None
+    description: str | None = None
 
 
 STANCE_LABELS = {
@@ -222,7 +225,8 @@ class PerspectiveService:
         article_title: str,
         source_name: str,
         source_bias: str,
-        perspectives: list[dict],  # [{title, source_name, bias_stance}]
+        perspectives: list[dict],  # [{title, source_name, bias_stance, description?}]
+        article_description: str | None = None,
     ) -> str | None:
         """Generate a short LLM analysis of editorial divergences."""
         from app.services.editorial.llm_client import EditorialLLMClient
@@ -234,22 +238,34 @@ class PerspectiveService:
         if not client.is_ready:
             return None
 
-        perspectives_text = "\n".join(
-            f'- "{p["title"]}" ({p["source_name"]}, {STANCE_LABELS.get(p.get("bias_stance", "unknown"), p.get("bias_stance", "?"))})'
-            for p in perspectives
-        )
+        perspectives_lines = []
+        for p in perspectives:
+            stance = STANCE_LABELS.get(
+                p.get("bias_stance", "unknown"), p.get("bias_stance", "?")
+            )
+            line = f'- "{p["title"]}" ({p["source_name"]}, {stance})'
+            desc = p.get("description")
+            if desc:
+                line += f" — {desc[:150]}"
+            perspectives_lines.append(line)
+        perspectives_text = "\n".join(perspectives_lines)
 
         system = (
             "Tu es un analyste média français. "
-            "En 2-3 phrases, compare factuellement les angles éditoriaux des articles ci-dessous. "
-            "Ton factuel et concis, pas de bullet points, pas de jugement de valeur. "
+            "En 1-2 phrases courtes, dis ce que les perspectives alternatives apportent "
+            "que l'article original ne couvre pas. "
+            "Sois concret : nomme les faits, angles ou dimensions spécifiques qui diffèrent. "
+            "Ne décris pas chaque source individuellement. Ne fais pas de jugement de valeur. "
             "Écris en français."
         )
+
+        source_stance = STANCE_LABELS.get(source_bias, source_bias)
         user_message = (
-            f'Article original : "{article_title}" '
-            f"({source_name}, {STANCE_LABELS.get(source_bias, source_bias)})\n\n"
-            f"Perspectives alternatives :\n{perspectives_text}"
+            f'Article lu : "{article_title}" ({source_name}, {source_stance})'
         )
+        if article_description:
+            user_message += f"\nRésumé : {article_description[:200]}"
+        user_message += f"\n\nAutres traitements :\n{perspectives_text}"
 
         try:
             result = await client.chat_text(
@@ -257,7 +273,7 @@ class PerspectiveService:
                 user_message=user_message,
                 model="mistral-large-latest",
                 temperature=0.4,
-                max_tokens=300,
+                max_tokens=200,
             )
             return result
         except Exception as e:
@@ -528,6 +544,7 @@ class PerspectiveService:
                 link_el = item.find("link")
                 source_el = item.find("source")
                 pub_date_el = item.find("pubDate")
+                desc_el = item.find("description")
 
                 if title_el is None or link_el is None:
                     continue
@@ -565,6 +582,14 @@ class PerspectiveService:
                 # Get bias (DB-first fallback, then name match)
                 bias = await self.resolve_bias(domain, source_name=source_name)
 
+                # Clean HTML from RSS description snippet (cap at 300 chars)
+                description = None
+                if desc_el is not None and desc_el.text:
+                    cleaned = re.sub(r"<[^>]+>", " ", desc_el.text)
+                    cleaned = html.unescape(re.sub(r"\s+", " ", cleaned).strip())
+                    if cleaned:
+                        description = cleaned[:300]
+
                 perspectives.append(
                     Perspective(
                         title=title_el.text or "",
@@ -575,6 +600,7 @@ class PerspectiveService:
                         published_at=pub_date_el.text
                         if pub_date_el is not None
                         else None,
+                        description=description,
                     )
                 )
 
