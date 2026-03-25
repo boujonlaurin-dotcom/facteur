@@ -1,69 +1,89 @@
-# PR — feat: onboarding wow — refonte écrans thèmes/subtopics + sources personnalisées
+# Handoff: Digest Carousel Card Sizing & Spacing Fix
 
-## Quoi
-Refonte majeure de l'onboarding Section 3 : séparation thèmes/subtopics en 2 écrans distincts (cloud de thèmes puis cards structurées par thème), ajout d'entités par défaut hardcodées (fallback quand le backend n'en retourne pas), refonte complète de l'écran sources (3 sections personnalisées : Pour vous / Élargissez votre vision / Pépites), suppression des questions Age et Perspective, ajout d'une Page 2 sources.
+## Branch: `boujonlaurin-dotcom/digest-carousel-fix`
 
-## Pourquoi
-L'onboarding précédent était plat : un seul écran thèmes+subtopics mélangés, des thèmes trop pauvres (Science: 2 entries, Sport: 1, Politics: 1), et un écran sources qui listait toutes les sources curées sans personnalisation. L'objectif est un "wow moment" qui engage l'utilisateur dès le premier contact, avec des recommandations de sources basées sur ses choix de thèmes/subtopics.
+## Contexte
+L'utilisateur veut que le carrousel digest ait des cartes de taille uniforme (hauteur = celle d'une carte avec image) et zéro espace mort entre le bas du carrousel et les page indicator dots.
 
-## Fichiers modifiés
+## État actuel — ce qui a déjà été fait (partiellement)
+1. `topic_section.dart:117` — `imageHeight` est toujours calculé (même sans images) ✅
+2. `feed_card.dart:73` — `Stack(fit: StackFit.expand)` quand `expandContent = true` ✅
+3. `feed_card.dart:404-468` — `_buildBody` affiche description + Spacer quand `expandContent = true` ✅
+4. `onboarding_screen.dart:70` — bouton skip toujours visible ✅
 
-### Mobile — Data
-- `available_subtopics.dart` — Subtopics enrichis (tous les thèmes ont 2-10 entries, isPopular flag, plus de doublons nom=thème), nouvelle map `defaultEntities` (~45 entités hardcodées comme fallback)
-- `source_recommender.dart` — **NOUVEAU** : Algorithme de recommandation de sources basé sur thèmes/subtopics/objectives
-- `theme_to_sources_mapping.dart` — **SUPPRIMÉ** (remplacé par source_recommender)
+## 3 problèmes restants (avec root causes identifiées)
 
-### Mobile — Screens
-- `subtopics_question.dart` — **NOUVEAU** : Écran Q9b avec cards par thème, subtopics + entities merge, custom topics, CTA "Ajouter un sujet"
-- `sources_question.dart` — **REWRITE** : Remplace la liste plate par 3 sections (matched/perspective/gems) avec `SourceRecommendationCard`
-- `sources_page2_question.dart` — **NOUVEAU** : Page 2 sources (catalogue + CTAs)
-- `themes_question.dart` — Simplifié (cloud pur, plus de subtopics)
-- `onboarding_screen.dart` — Routing adapté (ajout subtopics, suppression age/perspective, remplacement sourcesReaction par sources_page2)
-- `age_question.dart` — **SUPPRIMÉ**
-- `perspective_question.dart` — **SUPPRIMÉ**
+### Problème 1 — Carte sans description visible (alors qu'elle en a une)
+**Symptôme** : Capture 1 montre une carte "La guerre en Iran ne fait pas les affaires du luxe" avec juste le titre + footer. Aucune description. La carte est courte.
 
-### Mobile — Widgets
-- `theme_with_subtopics.dart` — Chips pill-shaped (FacteurRadius.pill), padding compact, trending icon sur isPopular
-- `recommendation_section.dart` — **NOUVEAU** : Header de section recommandation
-- `source_recommendation_card.dart` — **NOUVEAU** : Card source avec raison de recommandation
-- `premium_sources_sheet.dart` — **NOUVEAU** : Bottom sheet abonnements presse (extrait de l'ancien onboarding_screen)
+**Root cause** : Le check `hasImage` dans `topic_section.dart:388-389` est :
+```dart
+final hasImage = article.thumbnailUrl != null && article.thumbnailUrl!.isNotEmpty;
+```
+Si l'article a un `thumbnailUrl` non-null (ex: URL cassée ou image 404), `hasImage = true` → `expandContent = false` → pas de description affichée. Puis `FacteurThumbnail` (`facteur_thumbnail.dart:43-44`) détecte l'erreur de chargement et retourne `SizedBox.shrink()`. Résultat : la carte est minuscule, sans image ET sans description.
 
-### Mobile — Provider/Models
-- `onboarding_provider.dart` — Suppression questions age/perspective, ajout step subtopics, nouvelle méthode `selectSubtopics()`, `continueFromSourcesPage2()`, version bump (2→3)
-- `onboarding_strings.dart` — Nouvelles chaînes pour subtopics/sources
-- `source_model.dart` — Ajout champ `isCurated` + `theme` sur le modèle Source
+**Fix requis** : `expandContent` doit TOUJOURS être `true` dans le contexte du digest carousel. Toutes les cartes doivent remplir la hauteur uniforme. L'image (si présente) occupe le haut ; la description remplit l'espace restant. Concrètement :
+- Dans `_buildPageView` et `_buildSingleArticleFixedHeight` de `topic_section.dart`, passer `expandContent: true` pour TOUTES les cartes (supprimer le conditionnel `!hasImage`)
+- Dans `FeedCard._buildBody` (`feed_card.dart:406`), la condition `showDescription` pour `expandContent = true` est déjà correcte (affiche si description non null)
 
-### Backend
-- `packages/api/app/schemas/source.py` — Ajout champs `is_curated` et `theme` dans le schéma Source
+### Problème 2 — Grand bloc vide sous la description dans la carte
+**Symptôme** : Capture 2 montre la carte "Guerre d'Iran : la démission de l'Europe" avec description visible, mais un énorme espace vide entre la description et le footer.
 
-## Zones à risque
+**Root cause** : Dans `feed_card.dart:444`, il y a un `Spacer()` inconditionnel quand `expandContent = true` :
+```dart
+if (expandContent) const Spacer(),
+```
+Ce Spacer pousse le footer (metadata row avec icône type + durée) tout en bas du body Expanded, créant un vide visuel énorme entre la description et les métadonnées.
 
-1. **`source_recommender.dart`** — Nouveau fichier, logique de scoring non testée. Vérifie que les noms de sources hardcodés matchent bien la DB.
-2. **`onboarding_provider.dart`** — Version bump (2→3) : les users avec onboarding v2 en cours seront-ils correctement migrés ? Le flow skip certaines questions (age, perspective) qui peuvent avoir des réponses sauvegardées.
-3. **`subtopics_question.dart:105-121`** — Les appels `followTopic()` fire-and-forget avec `.catchError((_) => null)` silencent toutes les erreurs. Acceptable pour l'onboarding, mais les topics pourraient ne pas être sauvés si l'API échoue.
-4. **`source_model.dart`** — Ajout de `isCurated` et `theme` sur le modèle. Si le backend ne les renvoie pas encore, vérifier que les valeurs par défaut (false/null) ne cassent pas l'écran sources.
+**Fix requis** : Supprimer le `Spacer()` (`feed_card.dart:444`). Sans le Spacer, le body content (titre + description + meta) s'aligne naturellement en haut de l'Expanded widget. Le footer bar (source + actions) reste en bas de la carte grâce à la Column parent avec `mainAxisSize: max`. Résultat visuel : titre → description → meta → espace vide → footer bar avec border-top. C'est visuellement correct.
 
-## Points d'attention pour le reviewer
+### Problème 3 — Espace entre le bas du carrousel et les page indicator dots
+**Symptôme** : Grand gap vertical entre le bas de la carte la plus basse et les dots de pagination.
 
-- **Slugs subtopics** : Tous les slugs dans `available_subtopics.dart` doivent exister dans `SLUG_TO_LABEL` de `classification_service.py:115-167`. Vérifier qu'aucun slug orphelin n'a été introduit.
-- **Entités default vs backend** : Le merge dans `subtopics_question.dart:195-207` déduplique par nom (case-insensitive). Vérifier que ça ne crée pas de doublons visuels si le backend renvoie "OpenAI" et le default aussi.
-- **Source recommender** : Les noms de sources hardcodés dans `source_recommender.dart` sont-ils bien les noms exacts en DB ? Un mismatch = source ignorée silencieusement.
-- **Schema backend** : `source.py` ajoute `is_curated` et `theme`. Vérifier que l'API renvoie bien ces champs, sinon le front va recevoir des `null`/`false` pour toutes les sources → l'écran sources serait vide.
+**Root cause** : Le `SizedBox(height: computedHeight)` dans `topic_section.dart:122-123` réserve la hauteur max (image + body + footer ≈ 360px). Si les cartes ne remplissent pas cette hauteur (car expandContent ne fonctionne pas — Problème 1), il reste un espace vide DANS le SizedBox. Puis 8px de `SizedBox(height: 8)` avant les dots (`topic_section.dart:135`).
 
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
+**Fix requis** : Une fois les Problèmes 1 et 2 résolus (toutes les cartes remplissent la hauteur via `StackFit.expand` + `expandContent: true`), ce problème se résoudra largement. Les cartes occuperont tout le `computedHeight`. L'espace résiduel sera juste les 8px de séparateur. Si l'utilisateur veut encore moins d'espace, réduire le `SizedBox(height: 8)` à `SizedBox(height: 4)` (`topic_section.dart:135`).
 
-- **Auth flow** — Aucun changement dans l'auth ou les JWT
-- **Feed/Digest** — Non impacté, même si des thèmes/subtopics changent
-- **Backend services** — Seul le schema source.py est touché (2 champs ajoutés), aucun endpoint modifié
-- **Section 1 & 2 de l'onboarding** — Seules les questions supprimées (age/perspective) changent, les autres sont intactes
+## Fichiers à modifier
+
+| Fichier | Lignes | Modification |
+|---------|--------|-------------|
+| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 388-393 | `expandContent: true` dans `_buildPageView` (supprimer `!hasImage`) |
+| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 312 | `expandContent: true` dans `_buildSingleArticleFixedHeight` (supprimer `!hasImage`) |
+| `apps/mobile/lib/features/feed/widgets/feed_card.dart` | 444 | Supprimer `if (expandContent) const Spacer()` |
+| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 135 | Optionnel : réduire SizedBox(height: 8) → 4 |
+
+## Détails d'implémentation : FeedCard avec expandContent=true + image présente
+
+Quand `expandContent = true` ET que l'image existe (FacteurThumbnail rend l'AspectRatio) :
+- L'image occupe sa hauteur naturelle (cardWidth / 16×9)
+- Le body (Expanded) prend le reste : titre + description (courte, 2-3 lignes max vu l'espace réduit) + meta
+- Le footer bar est en bas de la carte
+
+Quand `expandContent = true` ET PAS d'image (FacteurThumbnail → SizedBox.shrink) :
+- Tout l'espace va au body : titre complet + description longue (8 lignes max) + meta
+- Le footer bar est en bas de la carte
+- Le `StackFit.expand` (déjà en place dans `feed_card.dart:73`) assure que la carte remplit la hauteur parent
+
+## Points d'attention pour le prochain agent
+
+1. **Ne PAS modifier FacteurThumbnail** — son comportement collapse-on-error est correct pour le feed standard
+2. **Le `Align(alignment: Alignment.topCenter)` pour les cartes avec image** (`topic_section.dart:415-416`) peut rester ou être retiré — avec `expandContent: true` partout et `StackFit.expand`, toutes les cartes rempliront la hauteur quoi qu'il arrive
+3. **Tester avec des articles variés** : image OK, image cassée (thumbnailUrl non-null mais 404), pas d'image, description longue, description courte, pas de description
+4. **Le `_bodyFooterHeight = 175.0`** (`topic_section.dart:81`) est calibré pour les cartes avec image. Pour les cartes texte-seul, cette valeur est suffisante car le titre + description + meta remplissent l'espace disponible grâce à Expanded
 
 ## Comment tester
+```bash
+cd apps/mobile
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080/api/
+```
+- Le bouton X en haut à droite de l'onboarding permet de le skip
+- Vérifier que TOUTES les cartes du carrousel font la même hauteur
+- Vérifier que les cartes sans image affichent la description
+- Vérifier que l'espace entre le bas du carrousel et les dots est minimal (~4-8px)
+- Vérifier que les cartes avec image ne sont pas coupées/cassées
 
-1. **Reset onboarding** : supprimer les données Hive locales ou utiliser un nouveau user
-2. **Parcourir Section 1** : vérifier que age et perspective n'apparaissent plus
-3. **Section 3 — Thèmes** : sélectionner 3+ thèmes, valider → doit arriver sur SubtopicsQuestion
-4. **SubtopicsQuestion** : vérifier que chaque thème a des subtopics (trending icon sur les populaires), des entités (avec "..." à la fin), et un CTA "Ajouter un sujet" (style pill, couleur primary)
-5. **Ajouter un custom topic** (ex: "NBA") puis valider → ne doit PAS crasher (fix `.catchError`)
-6. **Sources** : vérifier que les 3 sections apparaissent (Pour vous, Élargissez votre vision, Pépites)
-7. **Sources Page 2** : vérifier l'accès au catalogue et aux CTAs
-8. **Back navigation** : revenir en arrière depuis sources → subtopics → thèmes, vérifier que les sélections sont conservées
+## Captures de référence (disponibles dans /tmp/attachments/)
+- `image-v36.png` — Carte 1 sans description (bug)
+- `image-v38.png` — Carte 2 avec espace vide sous description (bug)
+- `image-v39.png` — Carte avec image, gap avec les dots (bug)

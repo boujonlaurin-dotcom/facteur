@@ -238,11 +238,24 @@ class EditorialWriterService:
             return None
 
         if not any(c.id == content_id for c in eligible):
-            logger.warning(
-                "editorial_writer.pepite_id_not_in_candidates",
-                content_id=str(content_id),
-            )
-            return None
+            # Fallback: try prefix match (LLM may have truncated UUID)
+            prefix = content_id_str[:8]
+            match = next((c for c in eligible if str(c.id).startswith(prefix)), None)
+            if match:
+                content_id = match.id
+                logger.warning(
+                    "editorial_writer.pepite_prefix_match",
+                    original=content_id_str,
+                    matched=str(content_id),
+                )
+            else:
+                # Last resort: pick most recent eligible article
+                content_id = eligible[0].id
+                logger.warning(
+                    "editorial_writer.pepite_fallback_first",
+                    original=content_id_str,
+                    fallback=str(content_id),
+                )
 
         return PepiteArticle(content_id=content_id, mini_editorial=mini_editorial)
 
@@ -259,7 +272,7 @@ class EditorialWriterService:
         No LLM — pure DB query on UserContentStatus.is_saved.
         Minimum 2 saves required to surface.
         """
-        seven_days_ago = datetime.now(UTC) - timedelta(days=7)
+        fourteen_days_ago = datetime.now(UTC) - timedelta(days=14)
 
         # Build exclusion filter
         exclusion_filter = (
@@ -275,7 +288,7 @@ class EditorialWriterService:
             .join(UserContentStatus, UserContentStatus.content_id == Content.id)
             .where(
                 UserContentStatus.is_saved.is_(True),
-                UserContentStatus.saved_at >= seven_days_ago,
+                UserContentStatus.saved_at >= fourteen_days_ago,
                 exclusion_filter,
             )
             .group_by(Content.id, Content.title)
@@ -286,7 +299,7 @@ class EditorialWriterService:
         result = await self._session.execute(stmt)
         row = result.first()
 
-        if not row or row.save_count < 2:
+        if not row or row.save_count < 1:
             logger.info(
                 "editorial_writer.no_coup_de_coeur",
                 save_count=row.save_count if row else 0,

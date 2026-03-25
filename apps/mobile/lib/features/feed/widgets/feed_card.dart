@@ -31,6 +31,10 @@ class FeedCard extends StatelessWidget {
   final Color? backgroundColor;
   final List<BoxShadow>? boxShadow;
   final String? editorialBadgeLabel;
+  final bool expandContent;
+  final bool alwaysShowDescription;
+  final VoidCallback? onImageError;
+  final double? descriptionFontSize;
 
   const FeedCard({
     super.key,
@@ -55,6 +59,10 @@ class FeedCard extends StatelessWidget {
     this.backgroundColor,
     this.boxShadow,
     this.editorialBadgeLabel,
+    this.expandContent = false,
+    this.alwaysShowDescription = false,
+    this.onImageError,
+    this.descriptionFontSize,
   });
 
   @override
@@ -68,6 +76,7 @@ class FeedCard extends StatelessWidget {
     return Opacity(
       opacity: hasBeenRead ? 0.6 : 1.0,
       child: Stack(
+        fit: expandContent ? StackFit.expand : StackFit.loose,
         children: [
           FacteurCard(
             onTap: onTap,
@@ -79,7 +88,7 @@ class FeedCard extends StatelessWidget {
             padding: EdgeInsets.zero,
             borderRadius: FacteurRadius.small,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. Image (Header)
@@ -87,61 +96,11 @@ class FeedCard extends StatelessWidget {
                   imageUrl: content.thumbnailUrl,
                   borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(FacteurRadius.small)),
+                  onError: onImageError,
                 ),
 
                 // 2. Body (Title + Meta)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space3,
-                    vertical: FacteurSpacing.space3,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Titre
-                      Text(
-                        content.title,
-                        style: textTheme.displaySmall?.copyWith(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          height: 1.2,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if ((content.thumbnailUrl == null ||
-                              content.thumbnailUrl!.isEmpty) &&
-                          content.description != null &&
-                          content.description!.isNotEmpty) ...[
-                        const SizedBox(height: FacteurSpacing.space2),
-                        Text(
-                          stripHtml(content.description!),
-                          style: textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary.withValues(alpha: 0.8),
-                            height: 1.3,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                      const SizedBox(height: FacteurSpacing.space2),
-                      // Métadonnées (Type • Durée)
-                      Row(
-                        children: [
-                          _buildTypeIcon(context, content.contentType),
-                          const SizedBox(width: FacteurSpacing.space2),
-                          if (content.durationSeconds != null)
-                            Text(
-                              _formatDuration(content.durationSeconds!),
-                              style: textTheme.labelSmall?.copyWith(
-                                  color: colors.textSecondary,
-                                  fontWeight: FontWeight.w500),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                _buildBody(context, colors, textTheme),
 
                 // 3. Footer (Source + Actions)
                 Container(
@@ -448,6 +407,76 @@ class FeedCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildBody(
+      BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    final hasDescription =
+        content.description != null && content.description!.isNotEmpty;
+    final showDescription = alwaysShowDescription
+        ? hasDescription
+        : expandContent
+            ? hasDescription
+            : ((content.thumbnailUrl == null ||
+                    content.thumbnailUrl!.isEmpty) &&
+                hasDescription);
+
+    final bodyContent = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space3,
+        vertical: FacteurSpacing.space3,
+      ),
+      child: Column(
+        mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Titre
+          Text(
+            content.title,
+            style: textTheme.displaySmall?.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+            maxLines: expandContent ? null : 3,
+            overflow: expandContent ? null : TextOverflow.ellipsis,
+          ),
+          if (showDescription) ...[
+            const SizedBox(height: FacteurSpacing.space2),
+            Text(
+              stripHtml(content.description!),
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary.withValues(alpha: 0.85),
+                height: 1.3,
+                fontSize: descriptionFontSize,
+              ),
+              maxLines: expandContent ? 8 : alwaysShowDescription ? 4 : 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: FacteurSpacing.space2),
+          // Métadonnées (Type • Durée)
+          Row(
+            children: [
+              _buildTypeIcon(context, content.contentType),
+              const SizedBox(width: FacteurSpacing.space2),
+              if (content.durationSeconds != null)
+                Text(
+                  _formatDuration(content.durationSeconds!),
+                  style: textTheme.labelSmall?.copyWith(
+                      color: colors.textSecondary,
+                      fontWeight: FontWeight.w500),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (expandContent) {
+      return Expanded(child: bodyContent);
+    }
+    return bodyContent;
   }
 
   Widget _buildSourcePlaceholder(FacteurColors colors) {

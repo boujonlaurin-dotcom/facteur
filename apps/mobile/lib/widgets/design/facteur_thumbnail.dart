@@ -8,12 +8,19 @@ class FacteurThumbnail extends StatefulWidget {
   final String? imageUrl;
   final double aspectRatio;
   final BorderRadius? borderRadius;
+  /// Called once when the image fails to load.
+  final VoidCallback? onError;
+
+  /// Session-wide cache of failed image URLs.
+  /// Public so parents can check synchronously whether an image will render.
+  static final Set<String> failedUrls = {};
 
   const FacteurThumbnail({
     super.key,
     required this.imageUrl,
     this.aspectRatio = 16 / 9,
     this.borderRadius,
+    this.onError,
   });
 
   @override
@@ -22,12 +29,6 @@ class FacteurThumbnail extends StatefulWidget {
 
 class _FacteurThumbnailState extends State<FacteurThumbnail> {
   bool _hasError = false;
-
-  // Cache statique des URLs d'images échouées — persiste pendant la session.
-  // Évite la correction de scroll causée par l'effondrement de hauteur
-  // quand une carte avec image cassée repasse dans le viewport après avoir
-  // été disposée (addAutomaticKeepAlives: false dans SliverList).
-  static final Set<String> _failedUrls = {};
 
   @override
   void didUpdateWidget(FacteurThumbnail oldWidget) {
@@ -40,7 +41,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
   @override
   Widget build(BuildContext context) {
     final url = widget.imageUrl;
-    if (url == null || url.isEmpty || _hasError || _failedUrls.contains(url)) {
+    if (url == null || url.isEmpty || _hasError || FacteurThumbnail.failedUrls.contains(url)) {
       return const SizedBox.shrink();
     }
 
@@ -63,9 +64,12 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
             ),
           ),
           errorWidget: (context) {
-            _failedUrls.add(url); // Cache immédiat pour éviter le re-collapse
+            FacteurThumbnail.failedUrls.add(url);
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _hasError = true);
+              if (mounted) {
+                setState(() => _hasError = true);
+                widget.onError?.call();
+              }
             });
             return Container(color: colors.backgroundSecondary);
           },

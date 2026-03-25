@@ -90,6 +90,7 @@ class ActuMatcher:
         self,
         subjects: list[EditorialSubject],
         clusters: list[TopicCluster],
+        excluded_source_ids: set[UUID] | None = None,
     ) -> list[EditorialSubject]:
         """Match best actu article per subject from ALL sources (no user filter).
 
@@ -99,12 +100,16 @@ class ActuMatcher:
         Args:
             subjects: Editorial subjects (with deep matches, no actu yet).
             clusters: Raw TopicCluster list from global context.
+            excluded_source_ids: Source IDs to exclude (e.g. deep article sources).
 
         Returns:
             Updated subjects with actu_article populated.
         """
         cluster_map = {c.cluster_id: c for c in clusters}
         cutoff = datetime.now(UTC) - timedelta(hours=self._max_age_hours)
+        # Per-subject exclusion only: each subject excludes its own deep source,
+        # but deep sources from OTHER subjects are allowed as actu candidates.
+        # Cross-subject actu diversity is maintained by accumulating used sources below.
         used_source_ids: set[UUID] = set()
         result: list[EditorialSubject] = []
 
@@ -118,9 +123,14 @@ class ActuMatcher:
                 result.append(subject)
                 continue
 
+            # Per-subject: exclude this subject's deep article source
+            per_subject_excluded = set(used_source_ids)
+            if subject.deep_article is not None:
+                per_subject_excluded.add(subject.deep_article.source_id)
+
             best = self._find_best_article_global(
                 cluster=cluster,
-                used_source_ids=used_source_ids,
+                used_source_ids=per_subject_excluded,
                 cutoff=cutoff,
             )
             if best:
