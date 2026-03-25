@@ -53,7 +53,37 @@ String sanitizeArticleHtml(String html) {
   // Strip orphaned figcaptions
   content = content.replaceAll(
       RegExp(r'<figcaption[^>]*>.*?</figcaption>', dotAll: true), '');
-  // Strip empty paragraphs and divs
+  // Strip non-content elements that cause large whitespace gaps
+  content = content.replaceAll(
+      RegExp(r'<iframe[^>]*>.*?</iframe>', dotAll: true), '');
+  content = content.replaceAll(RegExp(r'<iframe[^>]*/?>', dotAll: true), '');
+  content = content.replaceAll(
+      RegExp(r'<aside[^>]*>.*?</aside>', dotAll: true), '');
+  content = content.replaceAll(
+      RegExp(r'<svg[^>]*>.*?</svg>', dotAll: true), '');
+  content = content.replaceAll(
+      RegExp(r'<noscript[^>]*>.*?</noscript>', dotAll: true), '');
+  content = content.replaceAll(
+      RegExp(r'<button[^>]*>.*?</button>', dotAll: true), '');
+  // Strip empty spans
+  content = content.replaceAll(RegExp(r'<span[^>]*>\s*</span>'), '');
+  // Collapse 3+ consecutive <br> tags into 2
+  content = content.replaceAll(
+      RegExp(r'(<br\s*/?\s*>[\s]*){3,}'), '<br><br>');
+  // Strip interstitial "À lire aussi / Read also" blocks (hr + link paragraph + hr)
+  // Common in The Conversation and similar academic sources
+  content = content.replaceAll(
+      RegExp(
+          r'<hr[^>]*/?\s*>\s*<p[^>]*>\s*(<em>)?\s*(<strong>)?\s*'
+          r'(À lire aussi|A lire aussi|Read also|Lire aussi)\s*'
+          r'[:\s]*<a[^>]*>.*?</a>\s*(</strong>)?\s*(</em>)?\s*</p>\s*<hr[^>]*/?\s*>',
+          dotAll: true,
+          caseSensitive: false),
+      '');
+  // Strip <hr> tags (horizontal rules create unwanted visual gaps in reader)
+  content = content.replaceAll(RegExp(r'<hr[^>]*/?\s*>'), '');
+  // Strip empty paragraphs and divs (run twice to catch newly-emptied containers)
+  content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
   content = content.replaceAll(RegExp(r'<(p|div)[^>]*>\s*</(p|div)>'), '');
   // Strip trailing "Lire aussi" link blocks (lists where all items are just links)
   content = content.replaceAll(
