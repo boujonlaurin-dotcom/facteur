@@ -418,9 +418,13 @@ async def delete_note(
     return {"status": "ok"}
 
 
-# In-memory cache for perspectives responses (TTL 2h)
-_perspectives_cache: dict[str, tuple[dict, float]] = {}
-_CACHE_TTL = 7200  # 2 hours
+from cachetools import TTLCache
+
+# In-memory cache for analysis responses (TTL 2h, max 256 entries)
+_analysis_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
+
+# In-memory cache for perspectives responses (TTL 2h, max 256 entries)
+_perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
@@ -433,29 +437,22 @@ async def get_perspectives(
     Récupère des perspectives alternatives sur un contenu via Google News.
     Recherche live basée sur les mots-clés du titre, avec cache in-memory (2h TTL).
     """
-    import time
-
     import structlog
     from sqlalchemy import select
     from sqlalchemy.orm import joinedload
 
     from app.models.content import Content
-    from app.services.perspective_service import PerspectiveService
+    from app.services.perspective_service import PerspectiveService, _parse_entity_names
 
     logger = structlog.get_logger(__name__)
 
     cache_key = str(content_id)
-    now = time.time()
 
-    # Check cache
-    if cache_key in _perspectives_cache:
-        cached_response, cached_at = _perspectives_cache[cache_key]
-        if now - cached_at < _CACHE_TTL:
-            logger.info(
-                "perspectives_cache_hit",
-                content_id=cache_key,
-            )
-            return cached_response
+    # Check cache (TTLCache handles expiration automatically)
+    cached_response = _perspectives_cache.get(cache_key)
+    if cached_response is not None:
+        logger.info("perspectives_cache_hit", content_id=cache_key)
+        return cached_response
 
     logger.info(
         "perspectives_endpoint_start",
@@ -509,31 +506,13 @@ async def get_perspectives(
         if source_bias_stance == "unknown" and source_domain:
             source_bias_stance = DOMAIN_BIAS_MAP.get(source_domain, "unknown")
 
-    # Search perspectives with exclusions
+    # Hybrid perspectives search: DB entities → Google News entities → fallback keywords
     service = PerspectiveService(db=db)
-    keywords = service.extract_keywords(content.title)
-
-    if not keywords:
-        logger.warning(
-            "perspectives_no_keywords",
-            content_id=cache_key,
-            title=content.title,
-        )
-        empty_response = {
-            "content_id": cache_key,
-            "perspectives": [],
-            "keywords": [],
-            "source_bias_stance": source_bias_stance,
-            "bias_distribution": {},
-        }
-        return empty_response
-
-    perspectives = await service.search_perspectives(
-        keywords,
-        exclude_url=content.url,
-        exclude_title=content.title,
+    perspectives_raw, keywords = await service.get_perspectives_hybrid(
+        content=content,
         exclude_domain=source_domain,
     )
+    perspectives = perspectives_raw
 
     # Filter out unknown perspectives — they don't add value to political comparison
     perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
@@ -549,6 +528,18 @@ async def get_perspectives(
     for p in perspectives:
         if p.bias_stance in bias_distribution:
             bias_distribution[p.bias_stance] += 1
+
+    # Compute comparison quality from pipeline signals
+    bias_groups = len([v for v in bias_distribution.values() if v > 0])
+    has_entities = bool(_parse_entity_names(content.entities, types={"PERSON", "ORG"}))
+    count = len(perspectives)
+
+    if has_entities and count >= 5 and bias_groups >= 3:
+        comparison_quality = "high"
+    elif count >= 3 and bias_groups >= 2:
+        comparison_quality = "medium"
+    else:
+        comparison_quality = "low"
 
     logger.info(
         "perspectives_endpoint_success",
@@ -573,9 +564,72 @@ async def get_perspectives(
             for p in perspectives
         ],
         "bias_distribution": bias_distribution,
+        "comparison_quality": comparison_quality,
     }
 
-    # Store in cache
-    _perspectives_cache[cache_key] = (response, now)
+    # Store in cache (TTLCache handles expiration automatically)
+    _perspectives_cache[cache_key] = response
 
+    return response
+
+
+@router.post("/{content_id}/perspectives/analyze", status_code=status.HTTP_200_OK)
+async def analyze_perspectives(
+    content_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Analyse LLM des divergences éditoriales entre perspectives.
+    Cache in-memory (2h TTL). Réutilise le cache perspectives si disponible.
+    """
+    from app.services.perspective_service import PerspectiveService
+
+    cache_key = str(content_id)
+
+    # Check analysis cache (TTLCache handles expiration automatically)
+    cached_response = _analysis_cache.get(cache_key)
+    if cached_response is not None:
+        return cached_response
+
+    # Get perspectives (from cache or fresh)
+    perspectives_data = _perspectives_cache.get(cache_key)
+
+    if perspectives_data is None:
+        # Fetch fresh perspectives via the existing endpoint logic
+        perspectives_data = await get_perspectives(
+            content_id=content_id, db=db, current_user_id=current_user_id
+        )
+
+    perspectives_list = perspectives_data.get("perspectives", [])
+    if not perspectives_list:
+        response = {"content_id": cache_key, "analysis": None}
+        _analysis_cache[cache_key] = response
+        return response
+
+    # Get article info from content
+    from sqlalchemy.orm import joinedload
+
+    result = await db.execute(
+        select(Content)
+        .options(joinedload(Content.source))
+        .where(Content.id == content_id)
+    )
+    content = result.scalars().first()
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    source_name = content.source.name if content.source else "Unknown"
+    source_bias = perspectives_data.get("source_bias_stance", "unknown")
+
+    service = PerspectiveService(db=db)
+    analysis = await service.analyze_divergences(
+        article_title=content.title,
+        source_name=source_name,
+        source_bias=source_bias,
+        perspectives=perspectives_list,
+    )
+
+    response = {"content_id": cache_key, "analysis": analysis}
+    _analysis_cache[cache_key] = response
     return response

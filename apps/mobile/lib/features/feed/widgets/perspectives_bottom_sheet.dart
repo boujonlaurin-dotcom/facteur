@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/source_detail_modal.dart';
+import '../providers/feed_provider.dart';
 
 /// Model for a perspective from an external source
 class Perspective {
@@ -100,31 +105,48 @@ String _toBarGroup(String stance) {
   }
 }
 
+/// Stance group order and labels for grouped display
+const _stanceGroups = [
+  ('gauche', 'Gauche'),
+  ('centre', 'Centre'),
+  ('droite', 'Droite'),
+];
+
 /// Bottom sheet to display alternative perspectives
-class PerspectivesBottomSheet extends StatefulWidget {
+class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final List<Perspective> perspectives;
   final Map<String, int> biasDistribution;
   final List<String> keywords;
   final String sourceBiasStance;
   final String sourceName;
+  final String contentId;
+  final String comparisonQuality;
 
   const PerspectivesBottomSheet({
     super.key,
     required this.perspectives,
     required this.biasDistribution,
     required this.keywords,
+    required this.contentId,
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
+    this.comparisonQuality = 'low',
   });
 
   @override
-  State<PerspectivesBottomSheet> createState() =>
+  ConsumerState<PerspectivesBottomSheet> createState() =>
       _PerspectivesBottomSheetState();
 }
 
-class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
+enum _AnalysisState { idle, loading, done, error }
+
+class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomSheet> {
   /// Active filter: 'gauche', 'centre', 'droite', or null (show all)
   String? _activeBiasFilter;
+
+  /// Analysis state
+  _AnalysisState _analysisState = _AnalysisState.idle;
+  String? _analysisText;
 
   List<Perspective> get _filteredPerspectives {
     if (_activeBiasFilter == null) return widget.perspectives;
@@ -143,6 +165,33 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
     };
   }
 
+  /// Whether to show grouped layout (>= 3 perspectives and >= 2 distinct groups)
+  bool get _shouldGroup {
+    if (widget.perspectives.length < 3) return false;
+    final groups = widget.perspectives.map((p) => p.biasGroup).toSet();
+    return groups.length >= 2;
+  }
+
+  Future<void> _requestAnalysis() async {
+    setState(() => _analysisState = _AnalysisState.loading);
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+
+      final result = await repository.analyzePerspectives(widget.contentId);
+      if (!mounted) return;
+
+      setState(() {
+        _analysisText = result;
+        _analysisState =
+            result != null ? _AnalysisState.done : _AnalysisState.error;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _analysisState = _AnalysisState.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -151,7 +200,7 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
       ),
       decoration: BoxDecoration(
         color: colors.backgroundPrimary,
@@ -177,9 +226,9 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
             child: Row(
               children: [
                 Icon(
-                  PhosphorIcons.scales(PhosphorIconsStyle.fill),
+                  PhosphorIcons.eye(PhosphorIconsStyle.fill),
                   color: colors.primary,
-                  size: 24,
+                  size: 32,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -187,18 +236,43 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Autres points de vue',
+                        'Voir tous les points de vue',
                         style: textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colors.textPrimary,
+                          fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
                         ),
                       ),
                       Text(
-                        'Sur le même sujet (${widget.keywords.join(", ")})',
+                        '(${widget.keywords.join(', ')})',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
+                          fontSize: (textTheme.labelSmall?.fontSize ?? 11) + 1,
                         ),
                       ),
+                      if (widget.comparisonQuality == 'low')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.textTertiary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '⚠️ Comparaison limitée (sujet peu couvert)',
+                              style: textTheme.labelSmall?.copyWith(
+                                fontSize: 11,
+                                color: colors.textTertiary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -214,24 +288,274 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
           // Bias Bar (hidden when empty)
           if (widget.perspectives.isNotEmpty) _buildBiasBar(context, colors),
 
-          const Divider(height: 1),
+          // Analysis zone (between bias bar and list)
+          if (widget.perspectives.isNotEmpty)
+            _buildAnalysisZone(context, colors, textTheme),
+
+          Container(
+            height: 4,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  colors.backgroundPrimary,
+                  colors.backgroundPrimary.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
 
           // Perspectives List
           Flexible(
             child: filtered.isEmpty
                 ? _buildEmptyState(context, colors, textTheme)
-                : ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      return _PerspectiveCard(perspective: filtered[index]);
-                    },
-                  ),
+                : _shouldGroup
+                    ? _buildGroupedList(context, colors, textTheme,
+                        widget.perspectives)
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          return _PerspectiveCard(
+                              perspective: filtered[index]);
+                        },
+                      ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAnalysisZone(
+      BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        child: switch (_analysisState) {
+          _AnalysisState.idle => _buildAnalysisCta(colors, textTheme),
+          _AnalysisState.loading => _buildAnalysisSkeleton(colors),
+          _AnalysisState.done => _buildAnalysisResult(colors, textTheme),
+          _AnalysisState.error => _buildAnalysisError(colors, textTheme),
+        },
+      ),
+    );
+  }
+
+  Widget _buildAnalysisCta(FacteurColors colors, TextTheme textTheme) {
+    return Center(
+      child: OutlinedButton.icon(
+        onPressed: _requestAnalysis,
+        icon: Icon(
+          PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+          size: 18,
+          color: colors.primary,
+        ),
+        label: Text(
+          'Analyser les divergences',
+          style: textTheme.labelLarge?.copyWith(
+            color: colors.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: colors.primary.withValues(alpha: 0.4)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalysisSkeleton(FacteurColors colors) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _ShimmerLine(
+              width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
+              colors: colors,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisResult(FacteurColors colors, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                size: 14,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Analyse IA',
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _analysisText ?? '',
+            style: textTheme.bodySmall?.copyWith(
+              color: colors.textPrimary,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisError(FacteurColors colors, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.textSecondary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Analyse indisponible',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _requestAnalysis,
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Réessayer',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupedList(BuildContext context, FacteurColors colors,
+      TextTheme textTheme, List<Perspective> perspectives) {
+    // Group perspectives by stance
+    final groups = <String, List<Perspective>>{};
+    for (final p in perspectives) {
+      groups.putIfAbsent(p.biasGroup, () => []).add(p);
+    }
+
+    return ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        for (final entry in _stanceGroups)
+          if (groups.containsKey(entry.$1)) ...[
+            // Section header (tappable toggle collapse/expand)
+            () {
+              final isExpanded =
+                  _activeBiasFilter == null || _activeBiasFilter == entry.$1;
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (_activeBiasFilter == entry.$1) {
+                        _activeBiasFilter = null;
+                      } else {
+                        _activeBiasFilter = entry.$1;
+                      }
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _activeBiasFilter == entry.$1
+                          ? colors.primary.withValues(alpha: 0.08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${entry.$2} (${groups[entry.$1]!.length})',
+                          style: textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                            color: _activeBiasFilter == entry.$1
+                                ? colors.primary
+                                : colors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: isExpanded ? 0.25 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(
+                            PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                            size: 12,
+                            color: _activeBiasFilter == entry.$1
+                                ? colors.primary
+                                : colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }(),
+            // Cards (only shown when expanded)
+            if (_activeBiasFilter == null ||
+                _activeBiasFilter == entry.$1)
+              for (final p in groups[entry.$1]!) ...[
+                _PerspectiveCard(perspective: p),
+                const SizedBox(height: 8),
+              ],
+          ],
+      ],
     );
   }
 
@@ -266,6 +590,37 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
         children: [
+          // Labels (above the bar) — aligned with bar segments via same flex
+          Row(
+            children: List.generate(segments.length, (i) {
+              final seg = segments[i];
+              final count = merged[seg.$1] ?? 0;
+              return Expanded(
+                flex: flexValues[i],
+                child: Center(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: seg.$3
+                          .withValues(alpha: count > 0 ? 0.15 : 0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      seg.$2,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: count > 0 ? seg.$3 : colors.textTertiary,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 4),
+
           // Interactive 3-segment bias bar
           Row(
             children: List.generate(segments.length, (i) {
@@ -376,22 +731,6 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
             ),
           ],
 
-          const SizedBox(height: 4),
-          // Labels
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: segments.map((seg) {
-              final count = merged[seg.$1] ?? 0;
-              return Text(
-                seg.$2,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: count > 0 ? FontWeight.bold : FontWeight.normal,
-                  color: count > 0 ? seg.$3 : colors.textTertiary,
-                ),
-              );
-            }).toList(),
-          ),
         ],
       ),
     );
@@ -466,6 +805,58 @@ class _PerspectivesBottomSheetState extends State<PerspectivesBottomSheet> {
   }
 }
 
+/// Shimmer line for skeleton loading
+class _ShimmerLine extends StatefulWidget {
+  final double width;
+  final FacteurColors colors;
+
+  const _ShimmerLine({required this.width, required this.colors});
+
+  @override
+  State<_ShimmerLine> createState() => _ShimmerLineState();
+}
+
+class _ShimmerLineState extends State<_ShimmerLine>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return FractionallySizedBox(
+          widthFactor: widget.width,
+          alignment: Alignment.centerLeft,
+          child: Container(
+            height: 12,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              color: widget.colors.textSecondary
+                  .withValues(alpha: 0.08 + 0.08 * _controller.value),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// Triangle painter for the "Votre source" marker
 class _TrianglePainter extends CustomPainter {
   final Color color;
@@ -491,21 +882,58 @@ class _TrianglePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _PerspectiveCard extends StatelessWidget {
+class _PerspectiveCard extends ConsumerWidget {
   final Perspective perspective;
 
   const _PerspectiveCard({required this.perspective});
 
+  /// Find matching Source from user sources by domain
+  Source? _findSource(List<Source> sources) {
+    final domain = perspective.sourceDomain.toLowerCase();
+    if (domain.isEmpty) return null;
+    return sources.cast<Source?>().firstWhere(
+      (s) {
+        if (s?.url == null) return false;
+        final uri = Uri.tryParse(s!.url!);
+        if (uri == null) return false;
+        final host = uri.host.toLowerCase().replaceFirst('www.', '');
+        return host == domain || host == 'www.$domain';
+      },
+      orElse: () => null,
+    );
+  }
+
+  void _showSourceDetail(BuildContext context, WidgetRef ref, Source source) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => SourceDetailModal(
+        source: source,
+        onToggleTrust: () {
+          ref
+              .read(userSourcesProvider.notifier)
+              .toggleTrust(source.id, source.isTrusted);
+        },
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final sourcesAsync = ref.watch(userSourcesProvider);
+    final matchedSource = sourcesAsync.valueOrNull != null
+        ? _findSource(sourcesAsync.valueOrNull!)
+        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Material(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () async {
@@ -514,84 +942,155 @@ class _PerspectiveCard extends StatelessWidget {
               await launchUrl(uri, mode: LaunchMode.externalApplication);
             }
           },
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Bias indicator
-                Container(
-                  width: 4,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: perspective.getBiasColor(colors),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 12),
-
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Source + Bias
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              perspective.sourceName,
-                              style: textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colors.textPrimary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: perspective
-                                  .getBiasColor(colors)
-                                  .withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              perspective.getBiasLabel(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: perspective.getBiasColor(colors),
-                              ),
-                            ),
-                          ),
-                        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title area
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Bias indicator
+                    Container(
+                      width: 4,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: perspective.getBiasColor(colors),
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      const SizedBox(height: 4),
-
-                      // Title
-                      Text(
-                        perspective.title,
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 12),
+                    // Title
+                    Expanded(
+                      child: Text(
+                        perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
+                        style: textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
+                          fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 3,
                         ),
-                        maxLines: 2,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(
+                      PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
+                      size: 16,
+                      color: colors.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Footer — source info, tappable if source found in DB
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: matchedSource != null
+                    ? () => _showSourceDetail(context, ref, matchedSource)
+                    : null,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                    border: Border(
+                      top: BorderSide(
+                        color: colors.textSecondary.withValues(alpha: 0.1),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      // Favicon
+                      if (perspective.sourceDomain.isNotEmpty) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
+                            width: 14,
+                            height: 14,
+                            errorBuilder: (_, __, ___) =>
+                                _buildSourcePlaceholder(colors),
+                          ),
+                        ),
+                      ] else
+                        _buildSourcePlaceholder(colors),
+                      const SizedBox(width: 8),
+                      // Source name
+                      Flexible(
+                        child: Text(
+                          perspective.sourceName,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: (textTheme.labelMedium?.fontSize ?? 12) - 0.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Info hint (only if source is tappable)
+                      if (matchedSource != null) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          PhosphorIcons.info(PhosphorIconsStyle.regular),
+                          size: 11,
+                          color: colors.textTertiary,
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      // Bias badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: perspective
+                              .getBiasColor(colors)
+                              .withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          perspective.getBiasLabel(),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: perspective.getBiasColor(colors),
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-                // Arrow
-                Icon(
-                  PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
-                  size: 16,
-                  color: colors.textTertiary,
-                ),
-              ],
-            ),
+  Widget _buildSourcePlaceholder(FacteurColors colors) {
+    return Container(
+      width: 16,
+      height: 16,
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Center(
+        child: Text(
+          perspective.sourceName.isNotEmpty
+              ? perspective.sourceName.substring(0, 1).toUpperCase()
+              : '?',
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: colors.textSecondary,
           ),
         ),
       ),

@@ -17,6 +17,7 @@ import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -764,9 +765,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     setState(() => _perspectivesLoading = true);
 
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
+      final repository = ref.read(feedRepositoryProvider);
 
       final response = await repository.getPerspectives(content.id);
 
@@ -820,9 +819,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
 
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
+      final repository = ref.read(feedRepositoryProvider);
 
       final response = await repository.getPerspectives(content.id);
 
@@ -865,6 +862,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
         sourceName: _content?.source.name ?? '',
+        contentId: widget.contentId,
+        comparisonQuality: response.comparisonQuality,
       ),
     );
   }
