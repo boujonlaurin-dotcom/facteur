@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger(__name__)
 
 
-def _parse_entity_names(entities: list[str] | None, types: set[str] | None = None) -> list[str]:
+def _parse_entity_names(
+    entities: list[str] | None, types: set[str] | None = None
+) -> list[str]:
     """Parse entity JSON strings, return names filtered by type."""
     if not entities:
         return []
@@ -31,6 +33,7 @@ def _parse_entity_names(entities: list[str] | None, types: set[str] | None = Non
         if name:
             names.append(name)
     return names
+
 
 # User-Agent to avoid being blocked by Google News
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -232,7 +235,7 @@ class PerspectiveService:
             return None
 
         perspectives_text = "\n".join(
-            f"- \"{p['title']}\" ({p['source_name']}, {STANCE_LABELS.get(p.get('bias_stance', 'unknown'), p.get('bias_stance', '?'))})"
+            f'- "{p["title"]}" ({p["source_name"]}, {STANCE_LABELS.get(p.get("bias_stance", "unknown"), p.get("bias_stance", "?"))})'
             for p in perspectives
         )
 
@@ -243,7 +246,7 @@ class PerspectiveService:
             "Écris en français."
         )
         user_message = (
-            f"Article original : \"{article_title}\" "
+            f'Article original : "{article_title}" '
             f"({source_name}, {STANCE_LABELS.get(source_bias, source_bias)})\n\n"
             f"Perspectives alternatives :\n{perspectives_text}"
         )
@@ -408,7 +411,9 @@ class PerspectiveService:
                     source_name=domain,  # Best we have without eager-loading source
                     source_domain=domain,
                     bias_stance=bias,
-                    published_at=row.published_at.isoformat() if row.published_at else None,
+                    published_at=row.published_at.isoformat()
+                    if row.published_at
+                    else None,
                 )
             )
 
@@ -435,7 +440,8 @@ class PerspectiveService:
         title_keywords = self.extract_keywords(title)
         entity_names_lower = {n.lower() for n in entity_names}
         context_words = [
-            kw for kw in title_keywords
+            kw
+            for kw in title_keywords
             if kw.lower() not in entity_names_lower
             and not any(kw.lower() in en.lower() for en in entity_names)
         ][:2]
