@@ -65,7 +65,7 @@ class _FeedbackBottomSheetState extends State<FeedbackBottomSheet> {
 
             // Title
             Text(
-              'Ton avis sur ce digest',
+              'Un avis sur cet essentiel du jour ?',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,

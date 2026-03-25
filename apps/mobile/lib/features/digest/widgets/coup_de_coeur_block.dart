@@ -37,21 +37,25 @@ class CoupDeCoeurBlock extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Coup de cœur card
-        FeedCard(
-          boxShadow: const [],
-          content: _convertToContent(item),
-          onTap: () => onTap(item),
-          onLike: onLike != null ? () => onLike!(item) : null,
-          isLiked: item.isLiked,
-          onSave: onSave != null ? () => onSave!(item) : null,
-          isSaved: item.isSaved,
-          onNotInterested:
-              onNotInterested != null ? () => onNotInterested!(item) : null,
-          isSerene: isSerene,
-          onReportNotSerene:
-              onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
-          isFollowedSource: item.isFollowedSource,
-          editorialBadgeLabel: EditorialBadge.labelFor(coupDeCoeur.badge),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: FeedCard(
+            boxShadow: const [],
+            content: _convertToContent(item),
+            descriptionFontSize: 15,
+            onTap: () => onTap(item),
+            onLike: onLike != null ? () => onLike!(item) : null,
+            isLiked: item.isLiked,
+            onSave: onSave != null ? () => onSave!(item) : null,
+            isSaved: item.isSaved,
+            onNotInterested:
+                onNotInterested != null ? () => onNotInterested!(item) : null,
+            isSerene: isSerene,
+            onReportNotSerene:
+                onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
+            isFollowedSource: item.isFollowedSource,
+            editorialBadgeLabel: EditorialBadge.labelFor(coupDeCoeur.badge),
+          ),
         ),
 
         // Save count label

@@ -324,33 +324,23 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo, streak, and discrete counter
-                  SliverToBoxAdapter(
+                  // Feed-style header with logo, streak, and update button
+                  const SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
+                      padding: EdgeInsets.symmetric(
                         horizontal: FacteurSpacing.space6,
                         vertical: FacteurSpacing.space3,
                       ),
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          const FacteurLogo(size: 22),
+                          FacteurLogo(size: 22),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const StreakIndicator(),
-                              Transform.translate(
-                                offset: const Offset(0, 1),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildDiscreteCounter(
-                                        ref, digestAsync, colors),
-                                    const UpdateButton(),
-                                  ],
-                                ),
-                              ),
+                              StreakIndicator(),
+                              UpdateButton(),
                             ],
                           ),
                         ],
@@ -593,10 +583,17 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             return _buildEmptyState(colors);
                           }
 
+                          final notifier = ref.read(digestProvider.notifier);
+                          final total = notifier.totalCount;
+                          final userPref = ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
+                          final denominator = total < userPref ? total : userPref;
+
                           return DigestBriefingSection(
                             digest: digest,
                             items: digest.items,
                             topics: digest.usesTopics ? digest.topics : null,
+                            processedCount: notifier.processedCount,
+                            dailyGoal: denominator,
                             onItemTap: _openArticle,
                             onLike: _handleLike,
                             onSave: _handleSave,
@@ -644,54 +641,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               onDismiss: _dismissWelcome,
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _buildDiscreteCounter(
-    WidgetRef ref,
-    AsyncValue<DigestResponse?> digestAsync,
-    FacteurColors colors,
-  ) {
-    final digest = digestAsync.valueOrNull;
-    if (digest == null ||
-        (digest.items.isEmpty && digest.topics.isEmpty)) {
-      return const SizedBox.shrink();
-    }
-    final notifier = ref.read(digestProvider.notifier);
-    final processed = notifier.processedCount;
-    final total = notifier.totalCount;
-    final userPref =
-        ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
-    final denominator = total < userPref ? total : userPref;
-    final isComplete = processed >= denominator;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$processed/$denominator',
-          style: TextStyle(
-            color: isComplete ? colors.success : colors.primary,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(width: 6),
-        ...List.generate(denominator, (i) {
-          final isDone = i < processed;
-          return Container(
-            width: 14,
-            height: 3,
-            margin: EdgeInsets.only(right: i < denominator - 1 ? 3 : 0),
-            decoration: BoxDecoration(
-              color: isDone
-                  ? (isComplete ? colors.success : colors.primary)
-                  : colors.textTertiary.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(1.5),
-            ),
-          );
-        }),
       ],
     );
   }

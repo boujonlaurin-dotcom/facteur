@@ -67,14 +67,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       section: state.currentSection,
                     ),
                   ),
-                  if (state.isRestart)
-                    IconButton(
-                      onPressed: () => _showCancelConfirmation(context),
-                      icon: const Icon(Icons.close, size: 20),
-                      tooltip: 'Quitter le questionnaire',
-                    )
-                  else
-                    const SizedBox(width: 48),
+                  IconButton(
+                    onPressed: () => _showCancelConfirmation(context),
+                    icon: const Icon(Icons.close, size: 20),
+                    tooltip: 'Quitter le questionnaire',
+                  ),
                 ],
               ),
             ),

@@ -5,7 +5,6 @@ import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
@@ -43,6 +42,8 @@ class DigestBriefingSection extends StatefulWidget {
   final String? headerText;
   final String? closureText;
   final String? ctaText;
+  final int processedCount;
+  final int dailyGoal;
 
   const DigestBriefingSection({
     super.key,
@@ -64,6 +65,8 @@ class DigestBriefingSection extends StatefulWidget {
     this.headerText,
     this.closureText,
     this.ctaText,
+    this.processedCount = 0,
+    this.dailyGoal = 5,
   });
 
   @override
@@ -236,6 +239,12 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 ],
               ),
               ),
+              // Compact progress counter below title
+              if (widget.dailyGoal > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 14, top: 6),
+                  child: _buildCompactCounter(colors),
+                ),
               const SizedBox(height: 10),
 
               // Content area with crossfade on serein toggle
@@ -289,7 +298,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
         onArticleTap: widget.onItemTap,
-        onLike: widget.onLike,
         onSave: widget.onSave,
         onNotInterested: widget.onNotInterested,
         onSwipeDismiss: widget.onSwipeDismiss != null
@@ -305,6 +313,42 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   }
 
   /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
+  Widget _buildCompactCounter(FacteurColors colors) {
+    final processed = widget.processedCount;
+    final denominator = widget.dailyGoal;
+    final isComplete = processed >= denominator;
+    final color = isComplete ? colors.success : colors.primary;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$processed/$denominator',
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 5),
+        ...List.generate(denominator, (i) {
+          final isDone = i < processed;
+          return Container(
+            width: 8,
+            height: 2,
+            margin: EdgeInsets.only(right: i < denominator - 1 ? 2 : 0),
+            decoration: BoxDecoration(
+              color: isDone
+                  ? (isComplete ? colors.success : color)
+                  : colors.textTertiary.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(1.25),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildEditorialLayout() {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
@@ -325,7 +369,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           editorialMode: true,
           isSerene: isSerene,
           onArticleTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
@@ -358,7 +401,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           pepite: widget.pepite!,
           isSerene: isSerene,
           onTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
@@ -373,7 +415,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           coupDeCoeur: widget.coupDeCoeur!,
           isSerene: isSerene,
           onTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
@@ -473,16 +514,14 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           )
         else
         // The card with save/not interested actions and long-press for preview
-        SwipeToOpenCard(
-          onSwipeOpen: () => widget.onItemTap(item),
-          onSwipeDismiss: widget.onSwipeDismiss != null
-              ? () => _handleLocalSwipeDismiss(item)
-              : null,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Opacity(
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
               boxShadow: const [],
               content: _convertToContent(item),
+              descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),
               onLongPressStart: (_) => ArticlePreviewOverlay.show(
                 context,
@@ -493,8 +532,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 details.localOffsetFromOrigin.dy,
               ),
               onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
-              isLiked: item.isLiked,
               onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
               onSaveLongPress: () =>
                   CollectionPickerSheet.show(context, item.contentId),

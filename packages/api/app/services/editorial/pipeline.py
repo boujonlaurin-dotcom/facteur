@@ -129,10 +129,17 @@ class EditorialPipelineService:
         ]
 
         # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
+        # Collect deep source_ids to enforce source diversity within a subject
+        deep_source_ids = {
+            s.deep_article.source_id
+            for s in subjects
+            if s.deep_article is not None
+        }
         step_start = time.time()
         subjects = self.actu_matcher.match_global(
             subjects=subjects,
             clusters=clusters,
+            excluded_source_ids=deep_source_ids,
         )
         actu_time = time.time() - step_start
         actu_hit_count = sum(1 for s in subjects if s.actu_article is not None)
@@ -186,8 +193,16 @@ class EditorialPipelineService:
         if isinstance(writing_raw, WritingOutput):
             writing_result = writing_raw
             topic_map = {sw.topic_id: sw for sw in writing_result.subjects}
-            for s in subjects:
+            for i, s in enumerate(subjects):
                 sw = topic_map.get(s.topic_id)
+                if not sw and i < len(writing_result.subjects):
+                    # Positional fallback: LLM may have modified the UUID
+                    sw = writing_result.subjects[i]
+                    logger.warning(
+                        "editorial_pipeline.topic_id_mismatch_positional_fallback",
+                        expected=s.topic_id,
+                        got=writing_result.subjects[i].topic_id,
+                    )
                 if sw:
                     s.intro_text = sw.intro_text
                     s.transition_text = sw.transition_text

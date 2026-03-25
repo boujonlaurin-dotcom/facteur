@@ -3,9 +3,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
@@ -60,6 +60,9 @@ class _TopicSectionState extends State<TopicSection> {
   late final PageController _pageController;
   int _currentPage = 0;
 
+  /// Content IDs whose images failed to load (detected at runtime).
+  final Set<String> _collapsedImages = {};
+
   @override
   void initState() {
     super.initState();
@@ -75,10 +78,41 @@ class _TopicSectionState extends State<TopicSection> {
   }
 
   /// Estimated body + footer height for FeedCard WITH image.
-  /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20) = 124
+  /// Body: padding (16) + title 2×22px (44) + SizedBox (6) + desc ~3 lines (54)
+  ///       + meta row (20) + padding (8) = 148
   /// Footer: border (1) + padding (8) + row with buttons (32) = 41
-  /// Buffer for content variation (long titles, description, platform font) = 75
-  static const double _bodyFooterHeight = 240.0;
+  /// Tight fit to minimize gap below carousel cards.
+  static const double _bodyFooterHeight = 155.0;
+
+  /// Estimated total height for text-only cards (no image).
+  /// Body: padding (24) + title (72) + spacing (8) + desc 4 lines (76)
+  ///       + spacing (8) + meta (20) + padding (24) = 232
+  /// Footer: 41. Safety: 10. Total ≈ 280
+  static const double _textOnlyCardHeight = 280.0;
+
+  /// Returns true if this article's image is expected to render.
+  bool _imageWillRender(DigestItem article) {
+    final url = article.thumbnailUrl;
+    return url != null &&
+        url.isNotEmpty &&
+        !FacteurThumbnail.failedUrls.contains(url) &&
+        !_collapsedImages.contains(article.contentId);
+  }
+
+  /// Called by FeedCard when FacteurThumbnail reports an image error.
+  void _onImageError(String contentId) {
+    if (mounted && !_collapsedImages.contains(contentId)) {
+      setState(() => _collapsedImages.add(contentId));
+    }
+  }
+
+  /// Compute the appropriate carousel/card height for a set of articles.
+  double _computeHeight(List<DigestItem> articles, double cardWidth) {
+    final anyVisibleImage = articles.any(_imageWillRender);
+    return anyVisibleImage
+        ? (cardWidth / (16 / 9)) + _bodyFooterHeight
+        : _textOnlyCardHeight;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,31 +143,29 @@ class _TopicSectionState extends State<TopicSection> {
 
           // Article card(s)
           if (isMulti)
-            // Multi-article: PageView needs a fixed height
+            // Multi-article: PageView with dynamic height
             LayoutBuilder(
               builder: (context, constraints) {
                 final cardWidth = constraints.maxWidth * 0.88;
-                final hasAnyImage = topic.articles.any((a) =>
-                    a.thumbnailUrl != null && a.thumbnailUrl!.isNotEmpty);
-                final imageHeight = hasAnyImage ? cardWidth / (16 / 9) : 0.0;
-                const bodyHeight = _bodyFooterHeight;
-                final computedHeight = imageHeight + bodyHeight;
+                final computedHeight =
+                    _computeHeight(topic.articles, cardWidth);
 
-                return ClipRect(
-                  child: SizedBox(
-                    height: computedHeight,
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
+                  height: computedHeight,
+                  child: ClipRect(
                     child: _buildPageView(topic),
                   ),
                 );
               },
             )
           else if (!topic.articles.first.isDismissed)
-            // Singleton: no PageView, let the card size itself naturally
             _buildSingleArticle(topic.articles.first),
 
           // Page indicator dots (only for multi-article)
           if (isMulti) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
             _buildPageIndicator(colors, topic.articles.length),
           ],
         ],
@@ -289,6 +321,7 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
+  /// Singleton card — natural height, no fixed SizedBox.
   Widget _buildSingleArticle(DigestItem article) {
     // Show dismiss banner if this article is being dismissed
     if (widget.activeDismissalId == article.contentId) {
@@ -304,14 +337,16 @@ class _TopicSectionState extends State<TopicSection> {
       );
     }
 
-    return SwipeToOpenCard(
-      onSwipeOpen: () => widget.onArticleTap(article),
-      onSwipeDismiss: widget.onSwipeDismiss != null
-          ? () => widget.onSwipeDismiss!(article)
-          : null,
+    final imageVisible = _imageWillRender(article);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: FeedCard(
         boxShadow: const [],
         content: _convertToContent(article),
+        alwaysShowDescription: !imageVisible,
+        descriptionFontSize: 15,
+        onImageError: () => _onImageError(article.contentId),
         onTap: () => widget.onArticleTap(article),
         onLongPressStart: (_) =>
             ArticlePreviewOverlay.show(context, _convertToContent(article)),
@@ -319,8 +354,6 @@ class _TopicSectionState extends State<TopicSection> {
             ArticlePreviewOverlay.updateScroll(
                 details.localOffsetFromOrigin.dy),
         onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-        isLiked: article.isLiked,
         onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
         onSaveLongPress: () =>
             CollectionPickerSheet.show(context, article.contentId),
@@ -341,37 +374,35 @@ class _TopicSectionState extends State<TopicSection> {
       itemCount: topic.articles.length,
       itemBuilder: (context, index) {
         final article = topic.articles[index];
+        final imageVisible = _imageWillRender(article);
+        final card = FeedCard(
+          boxShadow: const [],
+          content: _convertToContent(article),
+          alwaysShowDescription: !imageVisible,
+          descriptionFontSize: 15,
+          onImageError: () => _onImageError(article.contentId),
+          onTap: () => widget.onArticleTap(article),
+          onLongPressStart: (_) => ArticlePreviewOverlay.show(
+              context, _convertToContent(article)),
+          onLongPressMoveUpdate: (details) =>
+              ArticlePreviewOverlay.updateScroll(
+                  details.localOffsetFromOrigin.dy),
+          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+          onSave: widget.onSave != null
+              ? () => widget.onSave!(article)
+              : null,
+          onSaveLongPress: () =>
+              CollectionPickerSheet.show(context, article.contentId),
+          isSaved: article.isSaved,
+          onNotInterested: widget.onNotInterested != null
+              ? () => widget.onNotInterested!(article)
+              : null,
+          isFollowedSource: article.isFollowedSource,
+          editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
+        );
         return Padding(
           padding: const EdgeInsets.only(right: 8),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: FeedCard(
-              boxShadow: const [],
-              content: _convertToContent(article),
-              onTap: () => widget.onArticleTap(article),
-              onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                  context, _convertToContent(article)),
-              onLongPressMoveUpdate: (details) =>
-                  ArticlePreviewOverlay.updateScroll(
-                      details.localOffsetFromOrigin.dy),
-              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike: widget.onLike != null
-                  ? () => widget.onLike!(article)
-                  : null,
-              isLiked: article.isLiked,
-              onSave: widget.onSave != null
-                  ? () => widget.onSave!(article)
-                  : null,
-              onSaveLongPress: () =>
-                  CollectionPickerSheet.show(context, article.contentId),
-              isSaved: article.isSaved,
-              onNotInterested: widget.onNotInterested != null
-                  ? () => widget.onNotInterested!(article)
-                  : null,
-              isFollowedSource: article.isFollowedSource,
-              editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
-            ),
-          ),
+          child: Align(alignment: Alignment.topCenter, child: card),
         );
       },
     );

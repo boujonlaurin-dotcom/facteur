@@ -34,17 +34,6 @@ class ArticleActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Like button
-          Expanded(
-            child: _ActionButton(
-              icon: PhosphorIcons.heart(),
-              label: "J'aime",
-              isActive: item.isLiked,
-              activeColor: colors.primary,
-              onTap: () => onAction(item.isLiked ? 'unlike' : 'like'),
-            ),
-          ),
-          const SizedBox(width: FacteurSpacing.space2),
           // Read button
           Expanded(
             child: _ActionButton(

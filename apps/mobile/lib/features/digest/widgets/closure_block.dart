@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import 'feedback_bottom_sheet.dart';
 import 'markdown_text.dart';
@@ -87,24 +88,35 @@ class _ClosureBlockState extends State<ClosureBlock>
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: () {
-                  showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
-                    builder: (_) => const FeedbackBottomSheet(),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: colors.primary,
-                  side: BorderSide(color: colors.primary.withValues(alpha: 0.5)),
-                  shape: const StadiumBorder(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 10,
+              SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        builder: (_) => const FeedbackBottomSheet(),
+                      );
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colors.primary,
+                      foregroundColor: Colors.white,
+                      shape: const StadiumBorder(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 14,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    icon: Icon(PhosphorIcons.chatTeardrop(), size: 18),
+                    label: const Text('Donner un retour'),
                   ),
                 ),
-                child: const Text('Donner un retour'),
               ),
             ],
           ),

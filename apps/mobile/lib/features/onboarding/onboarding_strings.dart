@@ -37,12 +37,12 @@ class OnboardingStrings {
       "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
-      "Trop d'info. Impossible de bien trier.";
+      "Trop d'info. Impossible de bien trier";
   static const String q1BiasLabel = 'Les Biais';
-  static const String q1BiasSubtitle = 'Je doute constamment de la neutralité.';
+  static const String q1BiasSubtitle = 'Je doute constamment de la neutralité';
   static const String q1AnxietyLabel = 'La négativité';
   static const String q1AnxietySubtitle =
-      'Le sentiment que le monde devient fou.';
+      'Le sentiment que le monde devient fou';
 
   // Q2: Age
   static const String q2Title = 'Apprenons à se connaitre';
