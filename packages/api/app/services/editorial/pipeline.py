@@ -131,9 +131,7 @@ class EditorialPipelineService:
         # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
         # Collect deep source_ids to enforce source diversity within a subject
         deep_source_ids = {
-            s.deep_article.source_id
-            for s in subjects
-            if s.deep_article is not None
+            s.deep_article.source_id for s in subjects if s.deep_article is not None
         }
         step_start = time.time()
         subjects = self.actu_matcher.match_global(

@@ -240,9 +240,7 @@ class EditorialWriterService:
         if not any(c.id == content_id for c in eligible):
             # Fallback: try prefix match (LLM may have truncated UUID)
             prefix = content_id_str[:8]
-            match = next(
-                (c for c in eligible if str(c.id).startswith(prefix)), None
-            )
+            match = next((c for c in eligible if str(c.id).startswith(prefix)), None)
             if match:
                 content_id = match.id
                 logger.warning(

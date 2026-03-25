@@ -146,8 +146,10 @@ class TestComputeGlobalContext:
             # Mock deep matching
             deep_1 = MagicMock(spec=MatchedDeepArticle)
             deep_1.content_id = UUID("00000000-0000-0000-0000-000000000001")
+            deep_1.source_id = UUID("00000000-0000-0000-0000-aaaaaaaaaaaa")
             deep_3 = MagicMock(spec=MatchedDeepArticle)
             deep_3.content_id = UUID("00000000-0000-0000-0000-000000000003")
+            deep_3.source_id = UUID("00000000-0000-0000-0000-bbbbbbbbbbbb")
             mock_dependencies["deep"].match_for_topics.return_value = {
                 "c1": deep_1,
                 "c2": None,
@@ -156,7 +158,7 @@ class TestComputeGlobalContext:
 
             # match_global is now called in global phase — pass subjects through
             mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters: subjects
+                lambda subjects, clusters, excluded_source_ids=None: subjects
             )
 
             contents = [_make_content_mock() for _ in range(10)]

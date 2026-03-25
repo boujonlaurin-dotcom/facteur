@@ -138,7 +138,11 @@ class DigestGenerationJob:
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i : i + self.batch_size]
                 await self._process_batch(
-                    session, batch, target_date, global_trending_context, editorial_config
+                    session,
+                    batch,
+                    target_date,
+                    global_trending_context,
+                    editorial_config,
                 )
 
                 # Commit après chaque batch
@@ -205,7 +209,11 @@ class DigestGenerationJob:
         async def process_with_limit(user_id: UUID) -> None:
             async with semaphore:
                 await self._generate_digest_for_user(
-                    session, user_id, target_date, global_trending_context, editorial_config
+                    session,
+                    user_id,
+                    target_date,
+                    global_trending_context,
+                    editorial_config,
                 )
 
         # Créer les tâches
@@ -269,7 +277,8 @@ class DigestGenerationJob:
                 # Determine output_format based on editorial whitelist
                 output_format = (
                     "editorial"
-                    if editorial_config and editorial_config.is_enabled_for_user(str(user_id))
+                    if editorial_config
+                    and editorial_config.is_enabled_for_user(str(user_id))
                     else "topics"
                 )
 
