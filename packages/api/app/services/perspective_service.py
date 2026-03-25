@@ -1,15 +1,35 @@
-"""Perspectives service - MVP live search via Google News RSS."""
+"""Perspectives service - hybrid search via DB entities + Google News RSS."""
 
+import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import httpx
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
+
+
+def _parse_entity_names(entities: list[str] | None, types: set[str] | None = None) -> list[str]:
+    """Parse entity JSON strings, return names filtered by type."""
+    if not entities:
+        return []
+    names: list[str] = []
+    for raw in entities:
+        try:
+            obj = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if types and obj.get("type") not in types:
+            continue
+        name = obj.get("name")
+        if name:
+            names.append(name)
+    return names
 
 # User-Agent to avoid being blocked by Google News
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -34,6 +54,7 @@ DOMAIN_BIAS_MAP = {
     "francetvinfo.fr": "center-left",
     "franceinter.fr": "center-left",
     "franceinfo.fr": "center-left",
+    "france3-regions.franceinfo.fr": "center-left",
     "telerama.fr": "center-left",
     "slate.fr": "center-left",
     "france24.com": "center-left",
@@ -47,6 +68,9 @@ DOMAIN_BIAS_MAP = {
     "linforme.com": "center-left",
     "alternatives-economiques.fr": "center-left",
     "francebleu.fr": "center-left",
+    "information.tv5monde.com": "center-left",
+    "fr.euronews.com": "center-left",
+    "lecanardenchaine.fr": "center-left",
     # CENTER
     "20minutes.fr": "center",
     "ouest-france.fr": "center",
@@ -63,6 +87,18 @@ DOMAIN_BIAS_MAP = {
     "actu.fr": "center",
     "la-croix.com": "center",
     "vie-publique.fr": "center",
+    "ladepeche.fr": "center",
+    "midilibre.fr": "center",
+    "laprovence.com": "center",
+    "larep.fr": "center",
+    "objectifgard.com": "center",
+    "lequipe.fr": "center",
+    "rmcsport.bfmtv.com": "center",
+    "lactualite.com": "center",  # Canadian francophone
+    "letemps.ch": "center",  # Swiss francophone
+    "politico.eu": "center",
+    "next.ink": "center",
+    "boursorama.com": "center",
     # CENTER-RIGHT
     "lesechos.fr": "center-right",
     "latribune.fr": "center-right",
@@ -75,6 +111,7 @@ DOMAIN_BIAS_MAP = {
     "parismatch.com": "center-right",
     "parismatch.fr": "center-right",
     "capital.fr": "center-right",
+    "fr.timesofisrael.com": "center-right",
     # RIGHT
     "lefigaro.fr": "right",
     "valeursactuelles.com": "right",
@@ -82,8 +119,7 @@ DOMAIN_BIAS_MAP = {
     "contrepoints.org": "right",
     "bfmtv.com": "right",  # Pro-business, liberal economics
     "europe1.fr": "center-right",
-    # FAR-RIGHT
-    "cnews.fr": "far-right",  # Bolloré-owned, very conservative
+    "cnews.fr": "right",  # Bolloré-owned, very conservative
 }
 
 
@@ -100,6 +136,16 @@ class Perspective:
 
 
 import certifi
+
+
+STANCE_LABELS = {
+    "left": "gauche",
+    "center-left": "centre-gauche",
+    "center": "centre",
+    "center-right": "centre-droit",
+    "right": "droite",
+    "unknown": "inconnu",
+}
 
 
 class PerspectiveService:
@@ -169,6 +215,55 @@ class PerspectiveService:
 
         self._bias_cache[cache_key] = "unknown"
         return "unknown"
+
+    async def analyze_divergences(
+        self,
+        article_title: str,
+        source_name: str,
+        source_bias: str,
+        perspectives: list[dict],  # [{title, source_name, bias_stance}]
+    ) -> str | None:
+        """Generate a short LLM analysis of editorial divergences."""
+        from app.services.editorial.llm_client import EditorialLLMClient
+
+        if not perspectives:
+            return None
+
+        client = EditorialLLMClient()
+        if not client.is_ready:
+            return None
+
+        perspectives_text = "\n".join(
+            f"- \"{p['title']}\" ({p['source_name']}, {STANCE_LABELS.get(p.get('bias_stance', 'unknown'), p.get('bias_stance', '?'))})"
+            for p in perspectives
+        )
+
+        system = (
+            "Tu es un analyste média français. "
+            "En 2-3 phrases, compare factuellement les angles éditoriaux des articles ci-dessous. "
+            "Ton factuel et concis, pas de bullet points, pas de jugement de valeur. "
+            "Écris en français."
+        )
+        user_message = (
+            f"Article original : \"{article_title}\" "
+            f"({source_name}, {STANCE_LABELS.get(source_bias, source_bias)})\n\n"
+            f"Perspectives alternatives :\n{perspectives_text}"
+        )
+
+        try:
+            result = await client.chat_text(
+                system=system,
+                user_message=user_message,
+                model="mistral-large-latest",
+                temperature=0.4,
+                max_tokens=300,
+            )
+            return result
+        except Exception as e:
+            logger.error("analyze_divergences_error", error=str(e))
+            return None
+        finally:
+            await client.close()
 
     async def search_perspectives(
         self,
@@ -250,6 +345,156 @@ class PerspectiveService:
                 error_type=type(e).__name__,
             )
             return []
+
+    async def search_internal_perspectives(
+        self, content, time_window_hours: int = 72
+    ) -> list[Perspective]:
+        """Search DB for articles sharing PERSON/ORG entities with the source article."""
+        if not self.db:
+            return []
+
+        entity_names = _parse_entity_names(content.entities, types={"PERSON", "ORG"})
+        if not entity_names:
+            return []
+
+        # Cap to 3 entities to keep query reasonable
+        entity_names = entity_names[:3]
+
+        from app.models.content import Content
+        from app.models.source import Source
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
+
+        # Build OR conditions: entities text array contains entity name
+        entity_filters = [
+            func.array_to_string(Content.entities, " ").ilike(f"%{name}%")
+            for name in entity_names
+        ]
+
+        stmt = (
+            select(Content)
+            .join(Source, Content.source_id == Source.id)
+            .where(
+                or_(*entity_filters),
+                Content.source_id != content.source_id,
+                Content.published_at >= cutoff,
+                Content.id != content.id,
+            )
+            .order_by(Content.published_at.desc())
+            .limit(self.max_results)
+        )
+
+        try:
+            result = await self.db.execute(stmt)
+            rows = result.scalars().all()
+        except Exception as e:
+            logger.warning("search_internal_perspectives_error", error=str(e))
+            return []
+
+        perspectives: list[Perspective] = []
+        seen_sources: set = set()
+
+        for row in rows:
+            if row.source_id in seen_sources:
+                continue
+            seen_sources.add(row.source_id)
+
+            # Extract domain from URL
+            domain = self._extract_domain(row.url)
+            bias = await self.resolve_bias(domain)
+
+            perspectives.append(
+                Perspective(
+                    title=row.title,
+                    url=row.url,
+                    source_name=domain,  # Best we have without eager-loading source
+                    source_domain=domain,
+                    bias_stance=bias,
+                    published_at=row.published_at.isoformat() if row.published_at else None,
+                )
+            )
+
+        logger.info(
+            "search_internal_perspectives_done",
+            entity_names=entity_names,
+            count=len(perspectives),
+        )
+        return perspectives
+
+    def build_entity_query(
+        self, entities: list[str] | None, title: str, max_terms: int = 3
+    ) -> list[str]:
+        """Build Google News query using quoted entities + context words from title."""
+        entity_names = _parse_entity_names(entities, types={"PERSON", "ORG", "EVENT"})
+
+        if not entity_names:
+            return self.extract_keywords(title)
+
+        # Quote entity names, cap at max_terms
+        quoted = [f'"{name}"' for name in entity_names[:max_terms]]
+
+        # Add 1-2 context words from title (non-entity significant words)
+        title_keywords = self.extract_keywords(title)
+        entity_names_lower = {n.lower() for n in entity_names}
+        context_words = [
+            kw for kw in title_keywords
+            if kw.lower() not in entity_names_lower
+            and not any(kw.lower() in en.lower() for en in entity_names)
+        ][:2]
+
+        return quoted + context_words
+
+    async def get_perspectives_hybrid(
+        self, content, exclude_domain: str | None = None
+    ) -> tuple[list[Perspective], list[str]]:
+        """Hybrid 3-layer search: DB entities → Google News entities → fallback keywords.
+
+        Returns (perspectives, keywords_used).
+        """
+        exclude_url = content.url
+        exclude_title = content.title
+        seen_domains: set[str] = set()
+        if exclude_domain:
+            seen_domains.add(exclude_domain)
+        merged: list[Perspective] = []
+
+        # Layer 1: Internal DB search by shared entities
+        internal = await self.search_internal_perspectives(content)
+        for p in internal:
+            if p.source_domain not in seen_domains:
+                seen_domains.add(p.source_domain)
+                merged.append(p)
+
+        # Layer 2: Google News with quoted entities
+        entity_keywords = self.build_entity_query(content.entities, content.title)
+        google_results = await self.search_perspectives(
+            entity_keywords, exclude_url, exclude_title, exclude_domain
+        )
+        for p in google_results:
+            if p.source_domain not in seen_domains:
+                seen_domains.add(p.source_domain)
+                merged.append(p)
+
+        # Layer 3: Fallback if < 6 results and entity query differs from title keywords
+        fallback_keywords = self.extract_keywords(content.title)
+        if len(merged) < 6 and entity_keywords != fallback_keywords:
+            fallback_results = await self.search_perspectives(
+                fallback_keywords, exclude_url, exclude_title, exclude_domain
+            )
+            for p in fallback_results:
+                if p.source_domain not in seen_domains:
+                    seen_domains.add(p.source_domain)
+                    merged.append(p)
+
+        logger.info(
+            "perspectives_hybrid_done",
+            internal_count=len(internal),
+            google_count=len(google_results),
+            total_merged=len(merged),
+            keywords=entity_keywords,
+        )
+
+        return merged[: self.max_results], entity_keywords
 
     async def _parse_rss(
         self,

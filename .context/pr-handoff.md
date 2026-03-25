@@ -1,89 +1,104 @@
-# Handoff: Digest Carousel Card Sizing & Spacing Fix
+# PR — feat: hybrid perspectives search + UI refonte bottom sheet
 
-## Branch: `boujonlaurin-dotcom/digest-carousel-fix`
+## Quoi
+Refonte complète de la feature "Autres points de vue" : le backend passe d'une recherche Google News par mots-clés titre à un système hybride 3 couches (DB entities → Google News entities quotées → fallback keywords). Le front-end est refondu avec groupement par biais politique, analyse LLM on-demand, et hiérarchie titre-first sur les cartes.
 
-## Contexte
-L'utilisateur veut que le carrousel digest ait des cartes de taille uniforme (hauteur = celle d'une carte avec image) et zéro espace mort entre le bas du carrousel et les page indicator dots.
+## Pourquoi
+Deux problèmes en prod :
+1. **Faux positifs** : des mots abstraits du titre ("remords") matchaient des articles sans rapport (ex: Jospin → Jubillar)
+2. **Faible recall** : des sujets très couverts (TotalEnergies/Trump) ne retournaient qu'1-2 résultats
 
-## État actuel — ce qui a déjà été fait (partiellement)
-1. `topic_section.dart:117` — `imageHeight` est toujours calculé (même sans images) ✅
-2. `feed_card.dart:73` — `Stack(fit: StackFit.expand)` quand `expandContent = true` ✅
-3. `feed_card.dart:404-468` — `_buildBody` affiche description + Spacer quand `expandContent = true` ✅
-4. `onboarding_screen.dart:70` — bouton skip toujours visible ✅
+Cause racine : la recherche reposait uniquement sur `extract_keywords(title)` envoyés à Google News RSS, sans exploiter les entities LLM déjà en DB (82% de couverture).
 
-## 3 problèmes restants (avec root causes identifiées)
+## Fichiers modifiés
 
-### Problème 1 — Carte sans description visible (alors qu'elle en a une)
-**Symptôme** : Capture 1 montre une carte "La guerre en Iran ne fait pas les affaires du luxe" avec juste le titre + footer. Aucune description. La carte est courte.
+### Backend
+- `packages/api/app/services/perspective_service.py` — Nouvelles fonctions : `_parse_entity_names()`, `search_internal_perspectives()`, `build_entity_query()`, `get_perspectives_hybrid()`, `analyze_divergences()`, `STANCE_LABELS`
+- `packages/api/app/routers/contents.py` — Appel hybride remplace l'ancien keyword-only ; nouvel endpoint `POST /{content_id}/perspectives/analyze` avec cache 2h
+- `packages/api/app/services/editorial/llm_client.py` — Nouvelle méthode `chat_text()` (appel Mistral plain-text, réutilisable)
 
-**Root cause** : Le check `hasImage` dans `topic_section.dart:388-389` est :
-```dart
-final hasImage = article.thumbnailUrl != null && article.thumbnailUrl!.isNotEmpty;
-```
-Si l'article a un `thumbnailUrl` non-null (ex: URL cassée ou image 404), `hasImage = true` → `expandContent = false` → pas de description affichée. Puis `FacteurThumbnail` (`facteur_thumbnail.dart:43-44`) détecte l'erreur de chargement et retourne `SizedBox.shrink()`. Résultat : la carte est minuscule, sans image ET sans description.
+### Mobile
+- `apps/mobile/lib/features/feed/widgets/perspectives_bottom_sheet.dart` — Refonte majeure : groupement par biais (gauche/centre/droite), zone d'analyse LLM (CTA → skeleton → résultat), cartes titre-first, labels bias bar au-dessus, hauteur max 92%
+- `apps/mobile/lib/features/feed/repositories/feed_repository.dart` — Nouvelle méthode `analyzePerspectives(contentId)`
+- `apps/mobile/lib/features/feed/widgets/article_viewer_modal.dart` — Passe `contentId` au bottom sheet, icône scales → eye
+- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` — Passe `contentId` au bottom sheet
 
-**Fix requis** : `expandContent` doit TOUJOURS être `true` dans le contexte du digest carousel. Toutes les cartes doivent remplir la hauteur uniforme. L'image (si présente) occupe le haut ; la description remplit l'espace restant. Concrètement :
-- Dans `_buildPageView` et `_buildSingleArticleFixedHeight` de `topic_section.dart`, passer `expandContent: true` pour TOUTES les cartes (supprimer le conditionnel `!hasImage`)
-- Dans `FeedCard._buildBody` (`feed_card.dart:406`), la condition `showDescription` pour `expandContent = true` est déjà correcte (affiche si description non null)
+## Zones à risque
 
-### Problème 2 — Grand bloc vide sous la description dans la carte
-**Symptôme** : Capture 2 montre la carte "Guerre d'Iran : la démission de l'Europe" avec description visible, mais un énorme espace vide entre la description et le footer.
+1. **`search_internal_perspectives()` — query SQL `array_to_string + ilike`** : fonctionne mais `array_to_string` bypass le GIN index existant → full scan sur fenêtre 72h (~2500 articles). Acceptable pour le volume actuel, à surveiller si le volume grandit.
+2. **`build_entity_query()` — quoted entities dans Google News RSS** : les guillemets dans l'URL encodée pourraient être interprétés différemment par Google News. Si les résultats Google deviennent vides, le fallback Layer 3 compense.
+3. **`analyze_divergences()` — appel Mistral** : nouvel appel LLM externe, mais on-demand uniquement (user doit cliquer le CTA) + cache 2h.
+4. **`_ShimmerLine` widget** : utilise `AnimatedBuilder` — vérifier que ça compile (le nom correct Flutter est `AnimatedBuilder`).
 
-**Root cause** : Dans `feed_card.dart:444`, il y a un `Spacer()` inconditionnel quand `expandContent = true` :
-```dart
-if (expandContent) const Spacer(),
-```
-Ce Spacer pousse le footer (metadata row avec icône type + durée) tout en bas du body Expanded, créant un vide visuel énorme entre la description et les métadonnées.
+## Points d'attention pour le reviewer
 
-**Fix requis** : Supprimer le `Spacer()` (`feed_card.dart:444`). Sans le Spacer, le body content (titre + description + meta) s'aligne naturellement en haut de l'Expanded widget. Le footer bar (source + actions) reste en bas de la carte grâce à la Column parent avec `mainAxisSize: max`. Résultat visuel : titre → description → meta → espace vide → footer bar avec border-top. C'est visuellement correct.
+1. **SQL injection potentielle** dans `search_internal_perspectives` : les `entity_names` viennent de la DB (JSON parsé), pas d'input user direct. SQLAlchemy bind les paramètres via `ilike()`, donc c'est safe — mais à confirmer visuellement.
+2. **`or_(*entity_filters)` avec `.where()` comma-separated** : les filtres OR sont bien groupés par `or_()`, puis les autres conditions sont en AND via la virgule. Vérifier que la sémantique SQL générée est correcte (`(A OR B) AND C AND D`).
+3. **Pas de test unitaire** pour les nouvelles fonctions backend. Le plan prévoit un script QA E2E (`verify_perspectives_hybrid.sh`) mais il n'est pas encore dans le diff.
+4. **Le bottom sheet crée son propre `ApiClient` + `FeedRepository`** dans `_requestAnalysis()` au lieu de passer par un provider Riverpod — pattern inhabituel pour ce codebase (potentiel leak ou double-instance).
+5. **`analyze_perspectives` endpoint réappelle `get_perspectives`** si pas en cache — cela re-exécute la requête hybride complète (DB + Google News). Vérifier qu'il n'y a pas de risque de boucle ou de timeout.
 
-### Problème 3 — Espace entre le bas du carrousel et les page indicator dots
-**Symptôme** : Grand gap vertical entre le bas de la carte la plus basse et les dots de pagination.
+## Tuning DOMAIN_BIAS_MAP (2026-03-25)
 
-**Root cause** : Le `SizedBox(height: computedHeight)` dans `topic_section.dart:122-123` réserve la hauteur max (image + body + footer ≈ 360px). Si les cartes ne remplissent pas cette hauteur (car expandContent ne fonctionne pas — Problème 1), il reste un espace vide DANS le SizedBox. Puis 8px de `SizedBox(height: 8)` avant les dots (`topic_section.dart:135`).
+Le diagnostic layer-by-layer a révélé que le bottleneck principal n'était PAS les paramètres du pipeline (time_window, entity caps, etc.) mais la couverture de `DOMAIN_BIAS_MAP`. Le filtre `unknown` dans `contents.py:524` supprimait les perspectives de domaines non mappés.
 
-**Fix requis** : Une fois les Problèmes 1 et 2 résolus (toutes les cartes remplissent la hauteur via `StackFit.expand` + `expandContent: true`), ce problème se résoudra largement. Les cartes occuperont tout le `computedHeight`. L'espace résiduel sera juste les 8px de séparateur. Si l'utilisateur veut encore moins d'espace, réduire le `SizedBox(height: 8)` à `SizedBox(height: 4)` (`topic_section.dart:135`).
+**Avant → Après (articles filtrés retournés par l'API) :**
 
-## Fichiers à modifier
+| Article | Avant | Après | Bias groups |
+|---------|-------|-------|-------------|
+| Deepfakes/Fernandes | 1 | **8** | 3 (center, center-left, right) |
+| Bardella | 7 | **10** | 5 (full spectrum) |
+| Sihem/Nîmes | 6 | **10** | 3 |
+| NBA (no entities) | 1 | 3 | 1 (sports domains = unknown) |
+| Lille douane | 5 | **7** | 4 |
+| Londres antisémite | 4 | **9** | 5 (full spectrum) |
 
-| Fichier | Lignes | Modification |
-|---------|--------|-------------|
-| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 388-393 | `expandContent: true` dans `_buildPageView` (supprimer `!hasImage`) |
-| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 312 | `expandContent: true` dans `_buildSingleArticleFixedHeight` (supprimer `!hasImage`) |
-| `apps/mobile/lib/features/feed/widgets/feed_card.dart` | 444 | Supprimer `if (expandContent) const Spacer()` |
-| `apps/mobile/lib/features/digest/widgets/topic_section.dart` | 135 | Optionnel : réduire SizedBox(height: 8) → 4 |
+**Changements :**
+- +19 domaines ajoutés à `DOMAIN_BIAS_MAP` (79 total, avant 60)
+- `cnews.fr` reclassifié de "far-right" → "right" (cohérent avec bias_distribution qui n'a pas de catégorie far-right)
+- Suppression de "far-right" de `STANCE_LABELS`
 
-## Détails d'implémentation : FeedCard avec expandContent=true + image présente
+**Paramètres pipeline inchangés** (déjà bien calibrés) :
+- `time_window_hours=72` : L1 trouve 6 résultats pour Bardella (recall forte)
+- `entity_cap=3`, `max_terms=3` : bon équilibre
+- `context_words=[:2]` : ajoute de la précision dans la majorité des cas
+- `fallback_threshold=6` : rarement déclenché car L2 remplit déjà
 
-Quand `expandContent = true` ET que l'image existe (FacteurThumbnail rend l'AspectRatio) :
-- L'image occupe sa hauteur naturelle (cardWidth / 16×9)
-- Le body (Expanded) prend le reste : titre + description (courte, 2-3 lignes max vu l'espace réduit) + meta
-- Le footer bar est en bas de la carte
+## Ce qui N'A PAS changé (mais pourrait sembler affecté)
 
-Quand `expandContent = true` ET PAS d'image (FacteurThumbnail → SizedBox.shrink) :
-- Tout l'espace va au body : titre complet + description longue (8 lignes max) + meta
-- Le footer bar est en bas de la carte
-- Le `StackFit.expand` (déjà en place dans `feed_card.dart:73`) assure que la carte remplit la hauteur parent
-
-## Points d'attention pour le prochain agent
-
-1. **Ne PAS modifier FacteurThumbnail** — son comportement collapse-on-error est correct pour le feed standard
-2. **Le `Align(alignment: Alignment.topCenter)` pour les cartes avec image** (`topic_section.dart:415-416`) peut rester ou être retiré — avec `expandContent: true` partout et `StackFit.expand`, toutes les cartes rempliront la hauteur quoi qu'il arrive
-3. **Tester avec des articles variés** : image OK, image cassée (thumbnailUrl non-null mais 404), pas d'image, description longue, description courte, pas de description
-4. **Le `_bodyFooterHeight = 175.0`** (`topic_section.dart:81`) est calibré pour les cartes avec image. Pour les cartes texte-seul, cette valeur est suffisante car le titre + description + meta remplissent l'espace disponible grâce à Expanded
+- `extract_keywords()` — inchangé, toujours utilisé en fallback (Layer 3) et dans `build_entity_query` quand pas d'entities
+- `search_perspectives()` — inchangé, toujours appelé pour Google News RSS (Layers 2 et 3)
+- `_parse_rss()` / `resolve_bias()` — inchangés
+- Le filtrage `unknown` bias et le calcul `bias_distribution` dans le router — inchangés
+- Le cache 2h perspectives — inchangé (le nouvel endpoint `analyze` a son propre cache séparé)
 
 ## Comment tester
+
+### Backend (API locale)
+```bash
+# 1. Lancer l'API
+cd packages/api && source venv/bin/activate
+uvicorn app.main:app --reload --port 8080
+
+# 2. Générer un JWT test (voir CLAUDE.md section Tests E2E)
+
+# 3. Test article avec entities (ex: article Jospin)
+curl -s -H "Authorization: $TOKEN" \
+  http://localhost:8080/api/contents/<content_id>/perspectives | jq '.perspectives | length'
+# Attendu: plus de résultats, pas de faux positifs type Jubillar
+
+# 4. Test analyse LLM
+curl -s -X POST -H "Authorization: $TOKEN" \
+  http://localhost:8080/api/contents/<content_id>/perspectives/analyze | jq '.analysis'
+# Attendu: texte d'analyse en français ou null si Mistral indispo
+
+# 5. Test article sans entities → comportement identique à l'ancien (fallback keywords)
+```
+
+### Mobile (Chrome)
 ```bash
 cd apps/mobile
 flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080/api/
+# Ouvrir un article → cliquer "Voir tous les points de vue"
+# Vérifier: groupement par biais, bouton "Analyser les divergences", cartes titre-first
 ```
-- Le bouton X en haut à droite de l'onboarding permet de le skip
-- Vérifier que TOUTES les cartes du carrousel font la même hauteur
-- Vérifier que les cartes sans image affichent la description
-- Vérifier que l'espace entre le bas du carrousel et les dots est minimal (~4-8px)
-- Vérifier que les cartes avec image ne sont pas coupées/cassées
-
-## Captures de référence (disponibles dans /tmp/attachments/)
-- `image-v36.png` — Carte 1 sans description (bug)
-- `image-v38.png` — Carte 2 avec espace vide sous description (bug)
-- `image-v39.png` — Carte avec image, gap avec les dots (bug)

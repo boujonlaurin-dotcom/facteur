@@ -381,6 +381,23 @@ class FeedRepository {
     }
   }
 
+  /// Analyze perspectives divergences via LLM
+  Future<String?> analyzePerspectives(String contentId) async {
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        'contents/$contentId/perspectives/analyze',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data!['analysis'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print('FeedRepository: [ERROR] analyzePerspectives: $e');
+      return null;
+    }
+  }
+
   /// Report an article as not serene (misclassified)
   Future<void> reportNotSerene(String contentId) async {
     await _apiClient.dio.post<void>('contents/$contentId/report-not-serene');
@@ -450,12 +467,14 @@ class PerspectivesResponse {
   final List<String> keywords;
   final Map<String, int> biasDistribution;
   final String sourceBiasStance;
+  final String comparisonQuality;
 
   PerspectivesResponse({
     required this.perspectives,
     required this.keywords,
     required this.biasDistribution,
     this.sourceBiasStance = 'unknown',
+    this.comparisonQuality = 'low',
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -483,6 +502,8 @@ class PerspectivesResponse {
       biasDistribution: biasMap,
       sourceBiasStance:
           (json['source_bias_stance'] as String?) ?? 'unknown',
+      comparisonQuality:
+          (json['comparison_quality'] as String?) ?? 'low',
     );
   }
 }

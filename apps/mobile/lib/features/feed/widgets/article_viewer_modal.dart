@@ -8,10 +8,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../config/theme.dart';
-import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
+import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart';
 import '../../../core/providers/analytics_provider.dart';
 import 'perspectives_bottom_sheet.dart';
@@ -145,10 +144,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
     );
 
     try {
-      // Get the repository from provider
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
+      final repository = ref.read(feedRepositoryProvider);
 
       // Fetch perspectives
       final response = await repository.getPerspectives(widget.content.id);
@@ -179,6 +175,8 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
             keywords: response.keywords,
             sourceBiasStance: response.sourceBiasStance,
             sourceName: widget.content.source.name,
+            contentId: widget.content.id,
+            comparisonQuality: response.comparisonQuality,
           ),
         );
       }
@@ -344,7 +342,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                PhosphorIcons.scales(PhosphorIconsStyle.fill),
+                                PhosphorIcons.eye(PhosphorIconsStyle.fill),
                                 size: 18,
                                 color: colors.primary,
                               ),

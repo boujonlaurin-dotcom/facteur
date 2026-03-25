@@ -120,6 +120,59 @@ class EditorialLLMClient:
             logger.error("editorial_llm.unexpected_error", error=str(e))
             return None
 
+    async def chat_text(
+        self,
+        system: str,
+        user_message: str,
+        model: str = "mistral-large-latest",
+        temperature: float = 0.4,
+        max_tokens: int = 300,
+    ) -> str | None:
+        """Send a message to Mistral and return plain text response.
+
+        Returns raw text string on success, None on failure.
+        """
+        if not self._ready:
+            logger.warning("editorial_llm.not_ready")
+            return None
+
+        client = self._get_client()
+        payload = {
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+        }
+
+        try:
+            response = await client.post(MISTRAL_API_URL, json=payload)
+            response.raise_for_status()
+
+            data = response.json()
+            text = data["choices"][0]["message"]["content"].strip()
+
+            logger.info(
+                "editorial_llm.chat_text_success",
+                model=model,
+                prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+                completion_tokens=data.get("usage", {}).get("completion_tokens"),
+            )
+            return text
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "editorial_llm.http_error",
+                status_code=e.response.status_code,
+                body=e.response.text[:500],
+            )
+            return None
+        except Exception as e:
+            logger.error("editorial_llm.chat_text_error", error=str(e))
+            return None
+
     async def close(self) -> None:
         """Close the underlying httpx client."""
         if self._client:
