@@ -3,9 +3,10 @@
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
+import certifi
 import httpx
 import structlog
 from sqlalchemy import func, or_, select
@@ -133,9 +134,6 @@ class Perspective:
     source_domain: str
     bias_stance: str  # left, center-left, center, center-right, right, unknown
     published_at: str | None = None
-
-
-import certifi
 
 
 STANCE_LABELS = {
@@ -363,7 +361,7 @@ class PerspectiveService:
         from app.models.content import Content
         from app.models.source import Source
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
+        cutoff = datetime.now(datetime.UTC) - timedelta(hours=time_window_hours)
 
         # Build OR conditions: entities text array contains entity name
         entity_filters = [
