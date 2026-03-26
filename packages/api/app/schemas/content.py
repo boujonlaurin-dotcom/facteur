@@ -114,6 +114,7 @@ class ContentResponse(BaseModel):
     reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
+    is_followed_source: bool = False  # Feed fallback: source suivie par l'utilisateur
 
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:

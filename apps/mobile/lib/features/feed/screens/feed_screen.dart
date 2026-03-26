@@ -839,13 +839,32 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                         .toLowerCase()),
                                       ),
                                       clusterChipWidget:
-                                          content.clusterHiddenCount > 0
-                                              ? ClusterChip(content: content)
-                                              : content.topicOverflowCount > 0
-                                                  ? TopicOverflowChip(content: content)
-                                                  : SourceOverflowChip(content: content),
+                                          // Suppress overflow chips when filter is active
+                                          // (diversification is bypassed server-side)
+                                          (notifier.selectedTheme != null ||
+                                                  notifier.selectedTopic != null ||
+                                                  notifier.selectedEntity != null ||
+                                                  notifier.selectedSourceId != null)
+                                              ? const SizedBox.shrink()
+                                              : content.clusterHiddenCount > 0
+                                                  ? ClusterChip(content: content)
+                                                  : content.topicOverflowCount > 0
+                                                      ? TopicOverflowChip(
+                                                          content: content)
+                                                      : SourceOverflowChip(
+                                                          content: content),
+                                      isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
+                                      hasActiveFilter: notifier.selectedTheme != null ||
+                                          notifier.selectedTopic != null ||
+                                          notifier.selectedEntity != null,
+                                      onFollowSource: !content.isFollowedSource
+                                          ? () async {
+                                              await TopicChip.showArticleSheet(context, content);
+                                              ref.read(feedProvider.notifier).refresh();
+                                            }
+                                          : null,
                                       onSourceTap: () =>
                                           TopicChip.showArticleSheet(context, content),
                                       isSerene: ref.watch(sereinToggleProvider).enabled,

@@ -83,10 +83,10 @@ class TopicChip extends StatelessWidget {
   }
 
   /// Opens the unified article sheet with blur backdrop.
-  static void showArticleSheet(BuildContext context, Content content) {
+  static Future<void> showArticleSheet(BuildContext context, Content content) {
     final topicSlug = content.topics.first;
     final topicLabel = getTopicLabel(topicSlug);
-    showModalBottomSheet<void>(
+    return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -514,28 +514,70 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       sourceMatch?.hasSubscription ?? false;
 
                   if (!isTrustedAndActive) {
-                    // Not trusted: standalone mute button
-                    return _buildActionOption(
-                      context,
-                      icon: PhosphorIcons.prohibit(
-                          PhosphorIconsStyle.regular),
-                      label:
-                          'Ne plus afficher ${widget.content.source.name}',
-                      isDestructive: true,
-                      onTap: () async {
-                        Navigator.pop(context);
-                        try {
-                          await ref
-                              .read(feedProvider.notifier)
-                              .muteSource(widget.content);
-                          NotificationService.showInfo(
-                              'Source ${widget.content.source.name} masquée');
-                        } catch (e) {
-                          NotificationService.showError(
-                              'Impossible de masquer la source');
-                        }
-                      },
-                      colors: colors,
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Follow source button
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () async {
+                              await ref
+                                  .read(userSourcesProvider.notifier)
+                                  .toggleTrust(
+                                      widget.content.source.id, false);
+                              ref.invalidate(userSourcesProvider);
+                            },
+                            icon: Icon(
+                              PhosphorIcons.plus(),
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            label: const Text(
+                              'Suivre cette source',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: colorScheme.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                    FacteurRadius.medium),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: FacteurSpacing.space2),
+                        // Mute button
+                        _buildActionOption(
+                          context,
+                          icon: PhosphorIcons.prohibit(
+                              PhosphorIconsStyle.regular),
+                          label:
+                              'Ne plus afficher ${widget.content.source.name}',
+                          isDestructive: true,
+                          onTap: () async {
+                            Navigator.pop(context);
+                            try {
+                              await ref
+                                  .read(feedProvider.notifier)
+                                  .muteSource(widget.content);
+                              NotificationService.showInfo(
+                                  'Source ${widget.content.source.name} masquée');
+                            } catch (e) {
+                              NotificationService.showError(
+                                  'Impossible de masquer la source');
+                            }
+                          },
+                          colors: colors,
+                        ),
+                      ],
                     );
                   }
 

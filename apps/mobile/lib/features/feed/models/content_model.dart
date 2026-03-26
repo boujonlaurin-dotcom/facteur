@@ -107,6 +107,7 @@ class Content {
   final int readingProgress; // 0-100 scroll depth percentage
   final String? noteText;
   final DateTime? noteUpdatedAt;
+  final bool isFollowedSource; // Feed fallback: source suivie par l'utilisateur
 
   // Epic 11: Cluster fields (populated by FeedRepository when clusters are present)
   final String? clusterTopic;
@@ -147,6 +148,7 @@ class Content {
     this.readingProgress = 0,
     this.noteText,
     this.noteUpdatedAt,
+    this.isFollowedSource = false,
     this.clusterTopic,
     this.clusterHiddenCount = 0,
     this.clusterHiddenIds = const [],
@@ -201,6 +203,7 @@ class Content {
       readingProgress: readingProgress,
       noteText: null,
       noteUpdatedAt: null,
+      isFollowedSource: isFollowedSource,
       clusterTopic: clusterTopic,
       clusterHiddenCount: clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds,
@@ -262,6 +265,7 @@ class Content {
         noteUpdatedAt: json['note_updated_at'] != null
             ? DateTime.tryParse(json['note_updated_at'] as String)
             : null,
+        isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
       );
     } catch (e, stack) {
       // ignore: avoid_print
@@ -301,6 +305,7 @@ class Content {
     int? readingProgress,
     String? noteText,
     DateTime? noteUpdatedAt,
+    bool? isFollowedSource,
     String? clusterTopic,
     int? clusterHiddenCount,
     List<String>? clusterHiddenIds,
@@ -335,6 +340,7 @@ class Content {
       readingProgress: readingProgress ?? this.readingProgress,
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
+      isFollowedSource: isFollowedSource ?? this.isFollowedSource,
       clusterTopic: clusterTopic ?? this.clusterTopic,
       clusterHiddenCount: clusterHiddenCount ?? this.clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
