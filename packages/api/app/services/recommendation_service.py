@@ -326,9 +326,9 @@ class RecommendationService:
 
         # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
-        if source_uuid or topic or entity or mode == FeedFilterMode.RECENT:
+        if source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT:
             paginated = candidates[offset : offset + limit]
-            await self._hydrate_user_status(paginated, user_id)
+            await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
 
         # Load source priority multipliers (needed for both chrono and scoring paths)
@@ -361,7 +361,7 @@ class RecommendationService:
                 candidates, source_priority_multipliers, phase1_limit, offset
             )
             self.source_overflow = source_overflow
-            await self._hydrate_user_status(result, user_id)
+            await self._hydrate_user_status(result, user_id, followed_source_ids)
 
             # Load custom topics for cluster building (reuse by caller)
             from app.models.user_topic_profile import UserTopicProfile
@@ -560,7 +560,7 @@ class RecommendationService:
             self._hydrate_legacy_reasons(result, context)
 
         # 6. Hydrate with User Status (is_saved, etc)
-        await self._hydrate_user_status(result, user_id)
+        await self._hydrate_user_status(result, user_id, followed_source_ids)
 
         t_end = time.monotonic()
         logger.info(
@@ -568,7 +568,12 @@ class RecommendationService:
         )
         return result
 
-    async def _hydrate_user_status(self, items: list[Content], user_id: UUID) -> None:
+    async def _hydrate_user_status(
+        self,
+        items: list[Content],
+        user_id: UUID,
+        followed_source_ids: set[UUID] | None = None,
+    ) -> None:
         """Hydrate content items with user-specific status (is_saved, is_liked, etc.)."""
         content_ids = [c.id for c in items]
         if not content_ids:
@@ -586,6 +591,8 @@ class RecommendationService:
             content.is_hidden = st.is_hidden if st else False
             content.hidden_reason = st.hidden_reason if st else None
             content.status = st.status if st else ContentStatus.UNSEEN
+            if followed_source_ids is not None:
+                content.is_followed_source = content.source_id in followed_source_ids
 
     @staticmethod
     def _apply_chronological_diversification(
@@ -1083,7 +1090,7 @@ class RecommendationService:
         limit_candidates: int,
         content_type: str | None = None,
         mode: FeedFilterMode | None = None,
-        followed_source_ids: set[UUID] = None,
+        followed_source_ids: set[UUID] | None = None,
         muted_sources: set[UUID] = None,
         muted_themes: set[str] = None,
         muted_topics: set[str] = None,

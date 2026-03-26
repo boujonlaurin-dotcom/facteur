@@ -28,6 +28,8 @@ class FeedCard extends StatelessWidget {
   final bool isLiked;
   final bool isFollowedSource;
   final bool isSourceSubscribed;
+  final bool hasActiveFilter; // Feed fallback: filtre thème/topic/entité actif
+  final VoidCallback? onFollowSource; // Feed fallback: suivre la source
   final Color? backgroundColor;
   final List<BoxShadow>? boxShadow;
   final String? editorialBadgeLabel;
@@ -56,6 +58,8 @@ class FeedCard extends StatelessWidget {
     this.isLiked = false,
     this.isFollowedSource = false,
     this.isSourceSubscribed = false,
+    this.hasActiveFilter = false,
+    this.onFollowSource,
     this.backgroundColor,
     this.boxShadow,
     this.editorialBadgeLabel,
@@ -164,13 +168,46 @@ class FeedCard extends StatelessWidget {
                             ),
                             ),
 
-                            // Source suivie badge
+                            // Source suivie badge OR discovery follow CTA
                             if (isFollowedSource) ...[
                               const SizedBox(width: 4),
                               Icon(
                                 PhosphorIcons.star(PhosphorIconsStyle.fill),
                                 size: 12,
                                 color: colors.textSecondary,
+                              ),
+                            ] else if (hasActiveFilter && onFollowSource != null) ...[
+                              const SizedBox(width: 6),
+                              GestureDetector(
+                                onTap: onFollowSource,
+                                behavior: HitTestBehavior.opaque,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Color.lerp(colors.backgroundSecondary,
+                                        Colors.black, 0.008),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Suivre',
+                                        style: textTheme.labelSmall?.copyWith(
+                                          color: colors.textTertiary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        PhosphorIcons.plus(),
+                                        size: 12,
+                                        color: colors.textTertiary,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ],
 
