@@ -4,13 +4,14 @@ Covers HD thumbnail extraction, description-to-html conversion,
 XSS sanitization, and video ID extraction from various URL formats.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from app.services.sync_service import SyncService
+import pytest
+
+from app.models.enums import ContentType, SourceType
 from app.models.source import Source
-from app.models.enums import SourceType, ContentType
+from app.services.sync_service import SyncService
 
 
 @pytest.fixture
