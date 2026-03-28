@@ -52,17 +52,13 @@ def _make_youtube_entry(
 
     if has_media_group:
         media_group = MagicMock()
-        media_group.__contains__.side_effect = (
-            lambda k: k in ["media_thumbnail", "media_description"]
+        media_group.__contains__.side_effect = lambda k: (
+            k in ["media_thumbnail", "media_description"]
         )
-        media_group.media_thumbnail = (
-            [{"url": thumbnail_url}] if thumbnail_url else []
-        )
+        media_group.media_thumbnail = [{"url": thumbnail_url}] if thumbnail_url else []
         media_group.media_description = description
         entry.media_group = media_group
-        entry.__contains__.side_effect = (
-            lambda k: k in data or k == "media_group"
-        )
+        entry.__contains__.side_effect = lambda k: k in data or k == "media_group"
     else:
         entry.__contains__.side_effect = lambda k: k in data
 
