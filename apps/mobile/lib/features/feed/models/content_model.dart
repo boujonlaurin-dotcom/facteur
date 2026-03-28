@@ -161,6 +161,8 @@ class Content {
     this.topicOverflowHiddenIds = const [],
   });
 
+  bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
+
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
 
   /// Reading badge label based on reading_progress.
