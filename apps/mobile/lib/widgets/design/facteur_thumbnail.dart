@@ -8,12 +8,16 @@ class FacteurThumbnail extends StatefulWidget {
   final String? imageUrl;
   final double aspectRatio;
   final BorderRadius? borderRadius;
+  final Widget? overlay;
+  final String? durationLabel;
 
   const FacteurThumbnail({
     super.key,
     required this.imageUrl,
     this.aspectRatio = 16 / 9,
     this.borderRadius,
+    this.overlay,
+    this.durationLabel,
   });
 
   @override
@@ -50,25 +54,56 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
       borderRadius: widget.borderRadius ?? BorderRadius.zero,
       child: AspectRatio(
         aspectRatio: widget.aspectRatio,
-        child: FacteurImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          placeholder: (context) => Container(
-            color: colors.backgroundSecondary,
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: colors.primary.withValues(alpha: 0.5),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FacteurImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              placeholder: (context) => Container(
+                color: colors.backgroundSecondary,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.primary.withValues(alpha: 0.5),
+                  ),
+                ),
               ),
+              errorWidget: (context) {
+                _failedUrls.add(url); // Cache immédiat pour éviter le re-collapse
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _hasError = true);
+                });
+                return Container(color: colors.backgroundSecondary);
+              },
             ),
-          ),
-          errorWidget: (context) {
-            _failedUrls.add(url); // Cache immédiat pour éviter le re-collapse
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _hasError = true);
-            });
-            return Container(color: colors.backgroundSecondary);
-          },
+            // Dark scrim + centered overlay
+            if (widget.overlay != null) ...[
+              Container(color: Colors.black.withValues(alpha: 0.3)),
+              Center(child: widget.overlay!),
+            ],
+            // Duration pill (bottom-right)
+            if (widget.durationLabel != null)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    widget.durationLabel!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

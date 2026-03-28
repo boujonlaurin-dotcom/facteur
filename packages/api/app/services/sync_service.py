@@ -214,9 +214,24 @@ class SyncService:
                 if not content_data["description"] and "summary" in entry:
                     content_data["description"] = html.unescape(entry.summary)
 
-                if content_data["thumbnail_url"]:
+                # HD Thumbnail: extract video ID and use maxresdefault
+                video_id = self._extract_youtube_video_id(link)
+                if video_id:
+                    content_data["thumbnail_url"] = (
+                        f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+                    )
+                elif content_data["thumbnail_url"]:
                     content_data["thumbnail_url"] = self._optimize_thumbnail_url(
                         content_data["thumbnail_url"]
+                    )
+
+                # Description -> html_content for in-app reading
+                if content_data["description"]:
+                    desc = content_data["description"]
+                    html_lines = html.escape(desc).replace("\n", "<br>")
+                    content_data["html_content"] = f"<p>{html_lines}</p>"
+                    content_data["content_quality"] = (
+                        "full" if len(desc) > 500 else "partial"
                     )
 
             elif source.type == SourceType.PODCAST:
@@ -328,6 +343,31 @@ class SyncService:
                 error=str(e),
             )
             return None
+
+    @staticmethod
+    def _extract_youtube_video_id(url: str) -> str | None:
+        """Extract video ID from a YouTube URL.
+
+        Supports patterns like:
+        - https://www.youtube.com/watch?v=VIDEO_ID
+        - https://img.youtube.com/vi/VIDEO_ID/...
+        - https://youtu.be/VIDEO_ID
+        """
+        if not url:
+            return None
+        # watch?v=VIDEO_ID
+        match = re.search(r"[?&]v=([\w-]+)", url)
+        if match:
+            return match.group(1)
+        # /vi/VIDEO_ID or /embed/VIDEO_ID
+        match = re.search(r"/(?:vi|embed)/([\w-]+)", url)
+        if match:
+            return match.group(1)
+        # youtu.be/VIDEO_ID
+        match = re.search(r"youtu\.be/([\w-]+)", url)
+        if match:
+            return match.group(1)
+        return None
 
     def _optimize_thumbnail_url(self, url: str) -> str:
         """Tente d'obtenir une version haute résolution de l'image."""

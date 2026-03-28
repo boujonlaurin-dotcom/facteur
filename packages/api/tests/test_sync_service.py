@@ -91,7 +91,7 @@ async def test_parse_entry_youtube(sync_service):
     
     assert result["title"] == "Test Video"
     assert result["content_type"] == ContentType.YOUTUBE
-    assert result["thumbnail_url"] == "https://img.youtube.com/vi/123/hqdefault.jpg"
+    assert result["thumbnail_url"] == "https://img.youtube.com/vi/123/maxresdefault.jpg"
     assert result["description"] == "Full media description"
 
 @pytest.mark.asyncio
