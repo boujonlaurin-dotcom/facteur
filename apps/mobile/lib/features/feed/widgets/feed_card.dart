@@ -311,26 +311,6 @@ class FeedCard extends StatelessWidget {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Like button
-                          if (onLike != null)
-                            InkWell(
-                              onTap: onLike,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                child: Icon(
-                                  isLiked
-                                      ? PhosphorIcons.heart(
-                                          PhosphorIconsStyle.fill)
-                                      : PhosphorIcons.heart(),
-                                  size: 20,
-                                  color: isLiked
-                                      ? colors.primary
-                                      : colors.textSecondary,
-                                ),
-                              ),
-                            ),
-
                           // Save button (tap = save/unsave, long press = collection picker)
                           if (onSave != null)
                             GestureDetector(
