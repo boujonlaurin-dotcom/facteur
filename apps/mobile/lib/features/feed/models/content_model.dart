@@ -161,6 +161,8 @@ class Content {
     this.topicOverflowHiddenIds = const [],
   });
 
+  bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
+
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
 
   /// Reading badge label based on reading_progress.
@@ -169,10 +171,21 @@ class Content {
   /// because the 30s timer can mark consumed before meaningful scroll.
   String? get readingLabel {
     if (status == ContentStatus.unseen && readingProgress == 0) return null;
+
+    // Video-specific labels
+    if (contentType == ContentType.youtube || contentType == ContentType.video) {
+      if (readingProgress >= 90) return 'Vu jusqu\'au bout';
+      if (readingProgress >= 25) return 'Vu en partie';
+      // Consumed via timer but no progress tracking
+      if (status == ContentStatus.consumed) return 'Vu en partie';
+      return null;
+    }
+
+    // Article labels
     if (readingProgress >= 90) return 'Lu jusqu\'au bout';
     if (readingProgress >= 30) return 'Lu';
     if (readingProgress > 0) return 'Parcouru';
-    // Consumed via 30s timer but no scroll tracking (e.g. video, or partial content)
+    // Consumed via 30s timer but no scroll tracking (e.g. partial content)
     if (status == ContentStatus.consumed) return 'Lu';
     return null;
   }

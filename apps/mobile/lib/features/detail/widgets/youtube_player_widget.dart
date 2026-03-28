@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +13,7 @@ class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
   final String? description;
+  final ValueChanged<double>? onProgressChanged; // 0.0 to 1.0
 
   const YouTubePlayerWidget({
     super.key,
@@ -18,6 +21,7 @@ class YouTubePlayerWidget extends StatefulWidget {
     required this.title,
     this.description,
     this.footer,
+    this.onProgressChanged,
   });
 
   final Widget? footer;
@@ -35,6 +39,8 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
 
   String? _videoId;
   bool _isPlayerReady = false;
+  double _lastReportedProgress = -1.0;
+  Timer? _webProgressTimer;
 
   @override
   void initState() {
@@ -55,6 +61,8 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
           ),
         );
         _isPlayerReady = true; // Iframe handles loading state better internally
+        // Web progress tracking via periodic timer
+        _startWebProgressTracking();
       } else {
         // Initialize Mobile Controller
         _mobileController = mobile.YoutubePlayerController(
@@ -69,29 +77,70 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
           ),
         );
 
-        // Listener for Fullscreen rotation
-        _mobileController.addListener(() {
-          if (_mobileController.value.isFullScreen) {
-            SystemChrome.setPreferredOrientations([
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]);
-          } else {
-            SystemChrome.setPreferredOrientations([
-              DeviceOrientation.portraitUp,
-            ]);
-          }
-        });
+        // Listener for Fullscreen rotation + progress tracking
+        _mobileController.addListener(_onMobileControllerUpdate);
       }
     }
   }
 
+  void _onMobileControllerUpdate() {
+    // Fullscreen rotation
+    if (_mobileController.value.isFullScreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+    }
+
+    // Progress tracking
+    if (widget.onProgressChanged == null) return;
+    final position = _mobileController.value.position;
+    final duration = _mobileController.metadata.duration;
+    if (duration.inMilliseconds > 0) {
+      final progress =
+          (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+      if ((progress - _lastReportedProgress).abs() >= 0.02) {
+        _lastReportedProgress = progress;
+        widget.onProgressChanged!(progress);
+      }
+    }
+  }
+
+  void _startWebProgressTracking() {
+    _webProgressTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) async {
+        if (widget.onProgressChanged == null) return;
+        try {
+          final currentTime = await _webController.currentTime;
+          final duration = await _webController.duration;
+          if (duration > 0) {
+            final progress = (currentTime / duration).clamp(0.0, 1.0);
+            if ((progress - _lastReportedProgress).abs() >= 0.02) {
+              _lastReportedProgress = progress;
+              widget.onProgressChanged!(progress);
+            }
+          }
+        } catch (_) {
+          // Controller may not be ready yet
+        }
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _webProgressTimer?.cancel();
     if (_videoId != null) {
       if (kIsWeb) {
         _webController.close();
       } else {
+        _mobileController.removeListener(_onMobileControllerUpdate);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
         _mobileController.dispose();
       }
     }
