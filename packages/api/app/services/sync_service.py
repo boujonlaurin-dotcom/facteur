@@ -228,7 +228,7 @@ class SyncService:
                 # Description -> html_content for in-app reading
                 if content_data["description"]:
                     desc = content_data["description"]
-                    html_lines = desc.replace("\n", "<br>")
+                    html_lines = html.escape(desc).replace("\n", "<br>")
                     content_data["html_content"] = f"<p>{html_lines}</p>"
                     content_data["content_quality"] = (
                         "full" if len(desc) > 500 else "partial"

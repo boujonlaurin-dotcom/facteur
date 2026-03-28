@@ -206,8 +206,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
 
     // Start timer if content is suitable for in-app reading/viewing and not already consumed
-    final isVideo = _content?.contentType == ContentType.youtube ||
-        _content?.contentType == ContentType.video;
+    final isVideo = _content?.isVideo ?? false;
     if ((_content?.hasInAppContent == true || isVideo) && !_isConsumed) {
       _startReadingTimer();
     }
@@ -436,9 +435,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _content = merged;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
-          final isVideoFetched =
-              _content!.contentType == ContentType.youtube ||
-                  _content!.contentType == ContentType.video;
+          final isVideoFetched = _content!.isVideo;
           if ((_content!.hasInAppContent == true || isVideoFetched) &&
               !_isConsumed) {
             _startReadingTimer();
@@ -712,14 +709,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Persist video watch progress to the backend.
-  void _persistVideoProgress(int progressPct) {
+  Future<void> _persistVideoProgress(int progressPct) async {
     final content = _content;
     if (content == null) return;
     try {
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
       final repository = FeedRepository(apiClient);
-      repository.updateContentStatusWithProgress(content.id, progressPct);
+      await repository.updateContentStatusWithProgress(content.id, progressPct);
     } catch (e) {
       debugPrint('Error persisting video progress: $e');
     }
@@ -931,8 +928,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !kIsWeb;
     final useInAppReading =
         content.hasInAppContent && !_showWebView && !useScrollToSite;
-    final isVideoContent = content.contentType == ContentType.youtube ||
-        content.contentType == ContentType.video;
+    final isVideoContent = content.isVideo;
 
     // Web: no WebView available — auto-redirect to original URL
     if (kIsWeb && !useScrollToSite && !useInAppReading && !isVideoContent &&
@@ -1015,8 +1011,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // Reading progress bar — thin line below header
                 if (content.hasInAppContent ||
                     _isWebViewActive ||
-                    content.contentType == ContentType.youtube ||
-                    content.contentType == ContentType.video)
+                    content.isVideo)
                   _buildReadingProgressBar(colors),
               ],
             ),

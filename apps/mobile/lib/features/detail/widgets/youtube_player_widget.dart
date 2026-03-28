@@ -100,9 +100,9 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     if (widget.onProgressChanged == null) return;
     final position = _mobileController.value.position;
     final duration = _mobileController.metadata.duration;
-    if (duration.inSeconds > 0) {
+    if (duration.inMilliseconds > 0) {
       final progress =
-          (position.inSeconds / duration.inSeconds).clamp(0.0, 1.0);
+          (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
       if ((progress - _lastReportedProgress).abs() >= 0.02) {
         _lastReportedProgress = progress;
         widget.onProgressChanged!(progress);
@@ -140,6 +140,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         _webController.close();
       } else {
         _mobileController.removeListener(_onMobileControllerUpdate);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
         _mobileController.dispose();
       }
     }
