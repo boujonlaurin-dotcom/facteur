@@ -318,7 +318,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           StreakIndicator(),
-                          FacteurLogo(size: 22),
+                          FacteurLogo(size: 22, showIcon: false),
                           UpdateButton(),
                         ],
                       ),
