@@ -334,7 +334,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          FacteurLogo(size: 22),
+                          FacteurLogo(size: 22, showIcon: false),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             crossAxisAlignment: CrossAxisAlignment.center,

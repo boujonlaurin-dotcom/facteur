@@ -350,7 +350,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 22)),
+                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
                       ),
                     ),
                     SliverToBoxAdapter(
