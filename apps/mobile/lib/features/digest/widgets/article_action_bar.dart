@@ -3,8 +3,8 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../models/digest_models.dart';
 
-/// Action bar with 4 buttons for digest card interactions
-/// Like, Read, Save, and Not Interested
+/// Action bar with 3 buttons for digest card interactions
+/// Read, Save, and Not Interested
 class ArticleActionBar extends StatelessWidget {
   final DigestItem item;
   final ValueChanged<String> onAction;
@@ -32,17 +32,6 @@ class ArticleActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Like button
-          Expanded(
-            child: _ActionButton(
-              icon: PhosphorIcons.heart(),
-              label: "J'aime",
-              isActive: item.isLiked,
-              activeColor: colors.primary,
-              onTap: () => onAction(item.isLiked ? 'unlike' : 'like'),
-            ),
-          ),
-          const SizedBox(width: FacteurSpacing.space2),
           // Read button
           Expanded(
             child: _ActionButton(
