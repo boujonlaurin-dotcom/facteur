@@ -6,6 +6,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
+import '../../../widgets/design/video_play_overlay.dart';
 import '../models/digest_models.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import 'article_action_bar.dart';
@@ -33,7 +34,10 @@ class DigestCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final isProcessed = item.isRead || item.isDismissed;
-    final badgeText = item.isRead ? 'Lu' : (item.isDismissed ? 'Masqué' : null);
+    final isVideo = item.contentType == ContentType.youtube || item.contentType == ContentType.video;
+    final badgeText = item.isRead
+        ? (isVideo ? 'Vu' : 'Lu')
+        : (item.isDismissed ? 'Masqué' : null);
     final badgeColor = item.isRead ? colors.success : colors.textSecondary;
     final hasNote =
         item.noteText != null && item.noteText!.isNotEmpty;
@@ -54,6 +58,10 @@ class DigestCard extends StatelessWidget {
                   imageUrl: item.thumbnailUrl,
                   borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(FacteurRadius.small)),
+                  overlay: isVideo ? const VideoPlayOverlay() : null,
+                  durationLabel: isVideo && item.durationSeconds != null
+                      ? _formatDurationMMSS(item.durationSeconds!)
+                      : null,
                 ),
 
                 // 2. Body (Title + Meta + Reason)
@@ -102,16 +110,20 @@ class DigestCard extends StatelessWidget {
                       // Type + Duration
                       Row(
                         children: [
-                          _buildTypeIcon(context, item.contentType),
-                          const SizedBox(width: FacteurSpacing.space2),
-                          if (item.durationSeconds != null)
-                            Text(
-                              _formatDuration(item.durationSeconds!),
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colors.textSecondary,
-                                fontWeight: FontWeight.w500,
+                          if (isVideo)
+                            _buildVideoChip()
+                          else ...[
+                            _buildTypeIcon(context, item.contentType),
+                            const SizedBox(width: FacteurSpacing.space2),
+                            if (item.durationSeconds != null)
+                              Text(
+                                _formatDuration(item.durationSeconds!),
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colors.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
-                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -497,6 +509,36 @@ class DigestCard extends StatelessWidget {
 
     // Return only the theme/category name, default to "Environnement"
     return r.trim().isEmpty ? 'Environnement' : r.trim();
+  }
+
+  Widget _buildVideoChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF0000),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'Vidéo',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
+  String _formatDurationMMSS(int seconds) {
+    if (seconds >= 3600) {
+      final h = seconds ~/ 3600;
+      final m = (seconds % 3600) ~/ 60;
+      final s = seconds % 60;
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   String _formatDuration(int seconds) {
