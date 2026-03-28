@@ -10,6 +10,8 @@ class FacteurThumbnail extends StatefulWidget {
   final BorderRadius? borderRadius;
   /// Called once when the image fails to load.
   final VoidCallback? onError;
+  final Widget? overlay;
+  final String? durationLabel;
 
   /// Session-wide cache of failed image URLs.
   /// Public so parents can check synchronously whether an image will render.
@@ -21,6 +23,8 @@ class FacteurThumbnail extends StatefulWidget {
     this.aspectRatio = 16 / 9,
     this.borderRadius,
     this.onError,
+    this.overlay,
+    this.durationLabel,
   });
 
   @override
@@ -51,28 +55,59 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
       borderRadius: widget.borderRadius ?? BorderRadius.zero,
       child: AspectRatio(
         aspectRatio: widget.aspectRatio,
-        child: FacteurImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
-          placeholder: (context) => Container(
-            color: colors.backgroundSecondary,
-            child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: colors.primary.withValues(alpha: 0.5),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FacteurImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              placeholder: (context) => Container(
+                color: colors.backgroundSecondary,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.primary.withValues(alpha: 0.5),
+                  ),
+                ),
               ),
+              errorWidget: (context) {
+                FacteurThumbnail.failedUrls.add(url);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _hasError = true);
+                    widget.onError?.call();
+                  }
+                });
+                return Container(color: colors.backgroundSecondary);
+              },
             ),
-          ),
-          errorWidget: (context) {
-            FacteurThumbnail.failedUrls.add(url);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                setState(() => _hasError = true);
-                widget.onError?.call();
-              }
-            });
-            return Container(color: colors.backgroundSecondary);
-          },
+            // Dark scrim + centered overlay
+            if (widget.overlay != null) ...[
+              Container(color: Colors.black.withValues(alpha: 0.3)),
+              Center(child: widget.overlay!),
+            ],
+            // Duration pill (bottom-right)
+            if (widget.durationLabel != null)
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    widget.durationLabel!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
