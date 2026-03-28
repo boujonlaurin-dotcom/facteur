@@ -109,6 +109,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
   double _webViewProgress = 0; // from WebView JS bridge (0-100)
 
+  // Video detail screen state
+  bool _isDescriptionExpanded = false;
+
   Content? _content;
 
   // Perspectives pill state
@@ -223,8 +226,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Start timer if content is suitable for in-app reading and not already consumed
-    if (_content?.hasInAppContent == true && !_isConsumed) {
+    // Start timer if content is suitable for in-app reading/viewing and not already consumed
+    final isVideo = _content?.contentType == ContentType.youtube ||
+        _content?.contentType == ContentType.video;
+    if ((_content?.hasInAppContent == true || isVideo) && !_isConsumed) {
       _startReadingTimer();
     }
 
@@ -477,7 +482,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _content = merged;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
-          if (_content!.hasInAppContent == true && !_isConsumed) {
+          final isVideoFetched =
+              _content!.contentType == ContentType.youtube ||
+                  _content!.contentType == ContentType.video;
+          if ((_content!.hasInAppContent == true || isVideoFetched) &&
+              !_isConsumed) {
             _startReadingTimer();
           }
           // Re-check short article after content loads and renders
@@ -736,6 +745,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  /// Handle video progress updates from YouTubePlayerWidget.
+  void _onVideoProgressChanged(double progress) {
+    final progressPct = (progress * 100).round().clamp(0, 100);
+    final currentPct = (_readingProgress.value * 100).round();
+
+    // Update the reading progress notifier
+    if (progress > _readingProgress.value) {
+      _readingProgress.value = progress;
+    }
+
+    // Persist at thresholds: 25%, 50%, 75%, 100%
+    const thresholds = [25, 50, 75, 100];
+    for (final threshold in thresholds) {
+      if (progressPct >= threshold && currentPct < threshold) {
+        _persistVideoProgress(progressPct);
+        break;
+      }
+    }
+  }
+
+  /// Persist video watch progress to the backend.
+  void _persistVideoProgress(int progressPct) {
+    final content = _content;
+    if (content == null) return;
+    try {
+      final supabase = Supabase.instance.client;
+      final apiClient = ApiClient(supabase);
+      final repository = FeedRepository(apiClient);
+      repository.updateContentStatusWithProgress(content.id, progressPct);
+    } catch (e) {
+      debugPrint('Error persisting video progress: $e');
+    }
+  }
+
   Future<void> _openOriginalUrl() async {
     final url = _content?.url;
     if (url != null) {
@@ -942,11 +985,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !kIsWeb;
     final useInAppReading =
         content.hasInAppContent && !_showWebView && !useScrollToSite;
+    final isVideoContent = content.contentType == ContentType.youtube ||
+        content.contentType == ContentType.video;
 
     // Web: no WebView available — auto-redirect to original URL
     if (kIsWeb &&
         !useScrollToSite &&
         !useInAppReading &&
+        !isVideoContent &&
         content.url.isNotEmpty &&
         !_webFallbackRedirectScheduled) {
       _webFallbackRedirectScheduled = true;
@@ -1000,11 +1046,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               return false;
             },
             child: Positioned.fill(
-              child: useScrollToSite
-                  ? _buildScrollToSiteContent(context, content)
-                  : useInAppReading
-                      ? _buildInAppContent(context, content)
-                      : _buildWebViewFallback(content),
+              child: isVideoContent
+                  ? _buildVideoContent(context, content)
+                  : useScrollToSite
+                      ? _buildScrollToSiteContent(context, content)
+                      : useInAppReading
+                          ? _buildInAppContent(context, content)
+                          : _buildWebViewFallback(content),
             ),
           ),
           // Header — slides up off-screen on scroll, reappears after 1s
@@ -1027,6 +1075,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // top of screen (below status bar) when header hides
           if (content.hasInAppContent ||
               _isWebViewActive ||
+              isVideoContent ||
               (!useScrollToSite && !useInAppReading))
             ValueListenableBuilder<double>(
               valueListenable: _headerOpacity,
@@ -1771,6 +1820,158 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   () => HorizontalDragGestureRecognizer()),
             }
           : const {},
+    );
+  }
+
+  /// Video content layout: sticky player at top, scrollable metadata below.
+  Widget _buildVideoContent(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final playerHeight = screenWidth * 9 / 16;
+
+    // Description text: prefer htmlContent (stripped), fallback to description
+    final rawDescription = content.htmlContent ?? content.description;
+    final descriptionText = rawDescription != null
+        ? stripHtml(rawDescription).trim()
+        : null;
+
+    return Column(
+      children: [
+        // Sticky player container (fixed height, 16:9)
+        SizedBox(
+          width: screenWidth,
+          height: playerHeight,
+          child: YouTubePlayerWidget(
+            videoUrl: content.url,
+            title: content.title,
+            onProgressChanged: _onVideoProgressChanged,
+          ),
+        ),
+
+        // Scrollable metadata below the player
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(FacteurSpacing.space4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Video Title
+                Text(
+                  content.title,
+                  style: textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+
+                // Published date
+                Text(
+                  timeago.format(content.publishedAt, locale: 'fr_short'),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: FacteurSpacing.space4),
+
+                // Channel row: avatar + name + optional theme chip
+                Row(
+                  children: [
+                    if (content.source.logoUrl != null)
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundImage:
+                            CachedNetworkImageProvider(content.source.logoUrl!),
+                        backgroundColor: colors.surfaceElevated,
+                      )
+                    else
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: colors.surfaceElevated,
+                        child: Icon(
+                          PhosphorIcons.user(PhosphorIconsStyle.regular),
+                          size: 16,
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                    const SizedBox(width: FacteurSpacing.space3),
+                    Expanded(
+                      child: Text(
+                        content.source.name,
+                        style: textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (content.source.theme != null &&
+                        content.source.theme!.isNotEmpty) ...[
+                      const SizedBox(width: FacteurSpacing.space2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary,
+                          borderRadius:
+                              BorderRadius.circular(FacteurRadius.pill),
+                        ),
+                        child: Text(
+                          content.source.getThemeLabel(),
+                          style: textTheme.labelSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+
+                // Expandable description
+                if (descriptionText != null &&
+                    descriptionText.isNotEmpty) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
+                  Divider(color: colors.border, height: 1),
+                  const SizedBox(height: FacteurSpacing.space4),
+                  Text(
+                    descriptionText,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colors.textSecondary,
+                      height: 1.5,
+                    ),
+                    maxLines: _isDescriptionExpanded ? null : 3,
+                    overflow: _isDescriptionExpanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: FacteurSpacing.space2),
+                  GestureDetector(
+                    onTap: () {
+                      setState(
+                          () => _isDescriptionExpanded = !_isDescriptionExpanded);
+                    },
+                    child: Text(
+                      _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Bottom spacing for FABs
+                const SizedBox(height: 120),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
