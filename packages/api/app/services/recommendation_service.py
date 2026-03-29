@@ -55,6 +55,9 @@ class RecommendationService:
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
+        self.keyword_overflow: list[
+            dict
+        ] = []  # Populated by keyword regroupement
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -365,6 +368,9 @@ class RecommendationService:
             self.source_overflow = source_overflow
             await self._hydrate_user_status(result, user_id, followed_source_ids)
 
+            # Source interleaving: avoid consecutive articles from same source
+            result = self._apply_source_interleaving(result)
+
             # Load custom topics for cluster building (reuse by caller)
             from app.models.user_topic_profile import UserTopicProfile
 
@@ -374,10 +380,13 @@ class RecommendationService:
             user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
             self.user_custom_topics = user_custom_topics
 
-            # Phase 2: Topic-aware regroupement (compress neutral articles to target)
-            result, topic_overflow = self._apply_topic_regroupement(
-                result, user_custom_topics, user_subtopic_weights, limit
+            # Phase 2: Keyword regroupement (compress articles by keyword mining)
+            result, keyword_overflow, topic_overflow = (
+                self._apply_keyword_regroupement(
+                    result, user_custom_topics, user_subtopic_weights, limit
+                )
             )
+            self.keyword_overflow = keyword_overflow
             self.topic_overflow = topic_overflow
 
             t_end = time.monotonic()
@@ -386,6 +395,7 @@ class RecommendationService:
                 duration_ms=round((t_end - t0) * 1000),
                 items=len(result),
                 mode="chronological",
+                keyword_overflow_count=len(keyword_overflow),
                 topic_overflow_count=len(topic_overflow),
             )
             return result
@@ -684,88 +694,145 @@ class RecommendationService:
         return retained[offset : offset + limit], source_overflow
 
     @staticmethod
-    def _apply_topic_regroupement(
+    @staticmethod
+    def _apply_source_interleaving(articles: list[Content]) -> list[Content]:
+        """
+        Avoid consecutive articles from the same source.
+
+        Walks the list and when article[i].source_id == article[i-1].source_id,
+        swaps with the nearest following article from a different source.
+        O(n^2) but n~40, negligible.
+        """
+        result = list(articles)
+        n = len(result)
+        for i in range(1, n):
+            if result[i].source_id == result[i - 1].source_id:
+                # Find the nearest different source to swap with
+                for j in range(i + 1, n):
+                    if result[j].source_id != result[i].source_id:
+                        result[i], result[j] = result[j], result[i]
+                        break
+        return result
+
+    @staticmethod
+    def _extract_keywords(title: str, stop_words: frozenset[str], min_length: int) -> list[str]:
+        """Extract meaningful keywords from an article title."""
+        import re
+
+        # Normalize accented chars for stop word matching, keep original for display
+        tokens = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ\-]+", title.lower())
+        return [t for t in tokens if len(t) >= min_length and t not in stop_words]
+
+    @staticmethod
+    def _apply_keyword_regroupement(
         retained: list[Content],
         user_custom_topics: list,
         user_subtopic_weights: dict[str, float],
         target_slots: int = 20,
-    ) -> tuple[list[Content], list[dict]]:
+    ) -> tuple[list[Content], list[dict], list[dict]]:
         """
-        Phase 2: Topic-aware feed diversification — Budget Neutre.
+        Keyword-based feed regroupement replacing topic regroupement.
 
-        Compresses neutral articles (topics not followed by user) into CTA chips
-        when they exceed the available budget, freeing space for followed topics.
-        Discovery floor guarantees 30% neutral articles always remain visible.
+        Mines keywords from article titles to create granular CTA chips
+        like "Trump — 4 articles" instead of broad "Sport — 150 articles".
 
-        target_slots: desired number of visible articles in the final feed (the API limit).
-        Phase 1 provides an expanded pool (2× target) so Phase 2 can compress neutrals.
+        Returns: (compressed_articles, keyword_overflow_info, topic_overflow_fallback)
         """
         from math import ceil
 
-        # Build set of followed topic slugs (explicit + implicit high-affinity)
-        followed_slugs = {t.slug_parent for t in user_custom_topics}
-        high_subtopics = {
-            slug
-            for slug, w in user_subtopic_weights.items()
-            if w >= ScoringWeights.FOLLOWED_SUBTOPIC_THRESHOLD
-        }
-        all_followed = followed_slugs | high_subtopics
+        from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 
-        if not all_followed:
-            return retained[:target_slots], []
+        min_kw = ScoringWeights.MIN_FOR_KEYWORD_GROUPING
+        kw_min_len = ScoringWeights.KEYWORD_MIN_LENGTH
+        max_ctas = ScoringWeights.MAX_KEYWORD_CTAS
 
-        # Step 1: Classify each article as "followed" or "neutral"
-        followed_ids = set()
-        neutral_articles = []
+        # --- Step 1: Build keyword index from titles ---
+        keyword_to_articles: dict[str, list[Content]] = {}
         for article in retained:
-            article_topics = {t.lower() for t in (article.topics or [])}
-            if article_topics & all_followed:
-                followed_ids.add(article.id)
+            keywords = RecommendationService._extract_keywords(
+                article.title, FRENCH_STOP_WORDS, kw_min_len
+            )
+            for kw in keywords:
+                keyword_to_articles.setdefault(kw, []).append(article)
+
+        # --- Step 2: Filter keywords with enough articles ---
+        viable_keywords = {
+            kw: arts for kw, arts in keyword_to_articles.items() if len(arts) >= min_kw
+        }
+
+        # --- Step 3: Rank by count DESC, then length DESC (longer = more specific) ---
+        ranked_keywords = sorted(
+            viable_keywords.items(), key=lambda x: (-len(x[1]), -len(x[0]))
+        )
+
+        # --- Step 4: Check custom topic lens ---
+        custom_topic_keyword_map: dict[str, str] = {}
+        for ct in user_custom_topics:
+            if hasattr(ct, "keywords") and ct.keywords:
+                for k in ct.keywords:
+                    custom_topic_keyword_map[k.lower()] = ct.name
+
+        # --- Step 5: Greedy assignment (one article = one group max) ---
+        assigned_ids: set[UUID] = set()
+        keyword_groups: list[dict] = []
+        cta_count = 0
+
+        for keyword, articles in ranked_keywords:
+            if cta_count >= max_ctas:
+                break
+
+            # Filter out already-assigned articles
+            available = [a for a in articles if a.id not in assigned_ids]
+            if len(available) < min_kw:
+                continue
+
+            # Keep first article as representative, hide the rest
+            representative = available[0]
+            to_hide = available[1:]
+
+            # Collect source info for multi-source display
+            source_counts: dict[UUID, dict] = {}
+            for a in available:
+                sid = a.source_id
+                if sid not in source_counts:
+                    source_counts[sid] = {
+                        "source_id": sid,
+                        "source_name": a.source.name,
+                        "source_logo_url": a.source.logo_url,
+                        "article_count": 0,
+                    }
+                source_counts[sid]["article_count"] += 1
+
+            sources_list = sorted(
+                source_counts.values(), key=lambda x: -x["article_count"]
+            )
+
+            # Build display label
+            display_keyword = custom_topic_keyword_map.get(keyword, keyword.title())
+            is_custom = keyword in custom_topic_keyword_map
+
+            if len(sources_list) == 1:
+                display_label = f"{display_keyword} \u2014 {len(to_hide)} articles de {sources_list[0]['source_name']}"
             else:
-                neutral_articles.append(article)
+                display_label = f"{display_keyword} \u2014 {len(to_hide)} articles"
 
-        # Step 2: Compute neutral budget
-        # Budget = slots remaining after followed articles, but never below discovery floor.
-        # Example: target=20, followed=15 → budget=max(6, 5)=6 → compress 9 neutrals
-        # Example: target=20, followed=5  → budget=max(6, 15)=15 → minimal compression
-        floor = max(1, ceil(target_slots * ScoringWeights.DISCOVERY_FLOOR_RATIO))
-        neutral_budget = max(floor, target_slots - len(followed_ids))
+            # Mark all articles in this group as assigned
+            for a in available:
+                assigned_ids.add(a.id)
 
-        # Step 3: Nothing to regroup?
-        if len(neutral_articles) <= neutral_budget:
-            return retained[:target_slots], []
+            keyword_groups.append(
+                {
+                    "keyword": display_keyword,
+                    "display_label": display_label,
+                    "hidden_count": len(to_hide),
+                    "hidden_ids": [a.id for a in to_hide],
+                    "sources": sources_list,
+                    "is_custom_topic": is_custom,
+                }
+            )
+            cta_count += 1
 
-        excess = len(neutral_articles) - neutral_budget
-
-        # Step 4: Group neutrals by topic slug first, then by theme
-        by_topic: dict[str, list[Content]] = {}
-        ungrouped: list[Content] = []
-        for article in neutral_articles:
-            if article.topics:
-                slug = article.topics[0].lower().strip()
-                by_topic.setdefault(slug, []).append(article)
-            else:
-                ungrouped.append(article)
-
-        # Separate large topic groups (≥MIN) from small ones (merge into theme)
-        min_group = ScoringWeights.MIN_FOR_TOPIC_GROUPING
-        groupable_topics: dict[str, list[Content]] = {}
-        by_theme: dict[str, list[Content]] = {}
-
-        for slug, articles in sorted(by_topic.items(), key=lambda x: -len(x[1])):
-            if len(articles) >= min_group:
-                groupable_topics[slug] = articles
-            else:
-                for a in articles:
-                    theme = (a.theme or "other").lower().strip()
-                    by_theme.setdefault(theme, []).append(a)
-
-        for a in ungrouped:
-            theme = (a.source.theme or "other").lower().strip()
-            by_theme.setdefault(theme, []).append(a)
-
-        # Build CTAs: topic slugs first (more targeted), then themes
-        # Theme translations (inline to avoid dependency on instance method)
+        # --- Step 6: Fallback — unassigned articles through topic slug grouping ---
         THEME_LABELS = {
             "tech": "Tech & Innovation",
             "society": "Société",
@@ -780,56 +847,61 @@ class RecommendationService:
             "culture_ideas": "Culture & Idées",
         }
 
-        overflow_info: list[dict] = []
-        ids_to_hide: set[UUID] = set()
+        topic_overflow_info: list[dict] = []
+        ids_to_hide_kw: set[UUID] = set()
 
-        all_groups = [
-            (slug, arts, "topic")
-            for slug, arts in sorted(groupable_topics.items(), key=lambda x: -len(x[1]))
-        ] + [
-            (theme, arts, "theme")
-            for theme, arts in sorted(by_theme.items(), key=lambda x: -len(x[1]))
-            if len(arts) >= min_group
-        ]
+        for group in keyword_groups:
+            ids_to_hide_kw.update(group["hidden_ids"])
 
-        for group_key, articles, group_type in all_groups:
-            if excess <= 0:
-                break
-            to_hide = articles[1:]  # Keep first as representative
-            actual_hide = to_hide[:excess]
+        # Topic slug fallback for remaining articles
+        if cta_count < max_ctas:
+            unassigned = [a for a in retained if a.id not in assigned_ids]
+            by_topic: dict[str, list[Content]] = {}
+            for article in unassigned:
+                if article.topics:
+                    slug = article.topics[0].lower().strip()
+                    by_topic.setdefault(slug, []).append(article)
 
-            if len(actual_hide) >= 2:  # At least 2 hidden to justify a CTA
-                ids_to_hide.update(a.id for a in actual_hide)
-                overflow_info.append(
+            min_topic = ScoringWeights.MIN_FOR_TOPIC_GROUPING
+            for slug, arts in sorted(by_topic.items(), key=lambda x: -len(x[1])):
+                if cta_count >= max_ctas:
+                    break
+                if len(arts) < min_topic:
+                    continue
+
+                to_hide = arts[1:]
+                if len(to_hide) < 2:
+                    continue
+
+                ids_to_hide_kw.update(a.id for a in to_hide)
+                topic_overflow_info.append(
                     {
-                        "group_type": group_type,
-                        "group_key": group_key,
+                        "group_type": "topic",
+                        "group_key": slug,
                         "group_label": THEME_LABELS.get(
-                            group_key, group_key.replace("-", " ").title()
+                            slug, slug.replace("-", " ").title()
                         ),
-                        "hidden_count": len(actual_hide),
-                        "hidden_ids": [a.id for a in actual_hide],
+                        "hidden_count": len(to_hide),
+                        "hidden_ids": [a.id for a in to_hide],
                     }
                 )
-                excess -= len(actual_hide)
+                cta_count += 1
 
-        # Step 5: Filter hidden articles and trim to target
-        if ids_to_hide:
-            retained = [a for a in retained if a.id not in ids_to_hide]
+        # --- Step 7: Filter hidden articles and trim to target ---
+        if ids_to_hide_kw:
+            retained = [a for a in retained if a.id not in ids_to_hide_kw]
 
         retained = retained[:target_slots]
 
         logger.info(
-            "topic_regroupement",
-            followed_count=len(followed_ids),
-            neutral_count=len(neutral_articles),
-            neutral_budget=neutral_budget,
-            hidden=len(ids_to_hide),
-            cta_count=len(overflow_info),
+            "keyword_regroupement",
+            keyword_ctas=len(keyword_groups),
+            topic_fallback_ctas=len(topic_overflow_info),
+            hidden=len(ids_to_hide_kw),
             final_count=len(retained),
         )
 
-        return retained, overflow_info
+        return retained, keyword_groups, topic_overflow_info
 
     def _hydrate_legacy_reasons(
         self, result: list[Content], context: ScoringContext

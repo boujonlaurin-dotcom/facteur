@@ -41,6 +41,7 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
 import '../widgets/topic_overflow_chip.dart';
+import '../widgets/keyword_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -848,11 +849,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ? const SizedBox.shrink()
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
-                                                  : content.topicOverflowCount > 0
-                                                      ? TopicOverflowChip(
+                                                  : content.keywordOverflowCount > 0
+                                                      ? KeywordOverflowChip(
                                                           content: content)
-                                                      : SourceOverflowChip(
-                                                          content: content),
+                                                      : content.topicOverflowCount > 0
+                                                          ? TopicOverflowChip(
+                                                              content: content)
+                                                          : SourceOverflowChip(
+                                                              content: content),
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),

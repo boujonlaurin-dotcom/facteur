@@ -234,6 +234,50 @@ class FeedRepository {
               }
             }
           }
+          // Keyword overflow from keyword mining regroupement
+          final keywordOverflowRaw = data['keyword_overflow'];
+          if (keywordOverflowRaw is List) {
+            final keywordOverflows = <KeywordOverflow>[];
+            for (final k in keywordOverflowRaw) {
+              try {
+                if (k is Map<String, dynamic>) {
+                  keywordOverflows.add(KeywordOverflow.fromJson(k));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt keyword_overflow: $err');
+              }
+            }
+
+            if (keywordOverflows.isNotEmpty) {
+              // For each keyword overflow group, find the last article whose
+              // title contains the keyword and annotate it.
+              // Priority: cluster > keyword_overflow > topic_overflow > source_overflow
+              for (final overflow in keywordOverflows) {
+                int? lastMatchIdx;
+                final kwLower = overflow.keyword.toLowerCase();
+                for (var i = 0; i < itemsList.length; i++) {
+                  if (itemsList[i].title.toLowerCase().contains(kwLower)) {
+                    lastMatchIdx = i;
+                  }
+                }
+
+                if (lastMatchIdx != null) {
+                  final item = itemsList[lastMatchIdx];
+                  // Don't overwrite cluster chip (highest priority)
+                  if (item.clusterHiddenCount == 0) {
+                    itemsList[lastMatchIdx] = item.copyWith(
+                      keywordOverflowCount: overflow.hiddenCount,
+                      keywordOverflowLabel: overflow.displayLabel,
+                      keywordOverflowKey: overflow.keyword,
+                      keywordOverflowHiddenIds: overflow.hiddenIds,
+                      keywordOverflowSources: overflow.sources,
+                      keywordOverflowIsCustomTopic: overflow.isCustomTopic,
+                    );
+                  }
+                }
+              }
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];
