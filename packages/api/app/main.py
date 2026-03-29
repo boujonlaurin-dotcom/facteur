@@ -143,7 +143,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         except Exception as e:
             logger.critical(
-                "lifespan_startup_db_error", error=str(e), exc_info=True,
+                "lifespan_startup_db_error",
+                error=str(e),
+                exc_info=True,
                 hint="App will start in degraded mode. /api/health/ready will return 503.",
             )
             # Capture to Sentry but do NOT sys.exit(1) — crash loops are worse
