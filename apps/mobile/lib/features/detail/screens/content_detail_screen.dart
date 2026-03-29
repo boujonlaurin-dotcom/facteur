@@ -1820,11 +1820,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Video content layout: sticky player at top, scrollable metadata below.
+  /// For Shorts: tall 9:16 player with minimal metadata.
   Widget _buildVideoContent(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final screenWidth = MediaQuery.of(context).size.width;
-    final playerHeight = screenWidth * 9 / 16;
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+    final isShort = content.isShort;
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
@@ -1832,26 +1835,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ? stripHtml(rawDescription).trim()
         : null;
 
-    return Column(
-      children: [
-        // Sticky player container (fixed height, 16:9)
-        SizedBox(
-          width: screenWidth,
-          height: playerHeight,
-          child: YouTubePlayerWidget(
-            videoUrl: content.url,
-            title: content.title,
-            onProgressChanged: _onVideoProgressChanged,
-          ),
-        ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final maxHeight = constraints.maxHeight;
+      final playerHeight = isShort
+          ? (maxHeight - headerHeight - 80).clamp(0.0, screenWidth * 16 / 9)
+          : screenWidth * 9 / 16;
 
-        // Scrollable metadata below the player
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(FacteurSpacing.space4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      return Column(
+        children: [
+          // Push below the header overlay
+          SizedBox(height: headerHeight),
+
+          // Sticky player container
+          SizedBox(
+            width: screenWidth,
+            height: playerHeight,
+            child: YouTubePlayerWidget(
+              videoUrl: content.url,
+              title: content.title,
+              onProgressChanged: _onVideoProgressChanged,
+            ),
+          ),
+
+          // Scrollable metadata below the player
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(FacteurSpacing.space4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Video Title
                 Text(
                   content.title,
@@ -1928,8 +1940,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // Expandable description
-                if (descriptionText != null &&
+                // Expandable description (hidden for Shorts)
+                if (!isShort &&
+                    descriptionText != null &&
                     descriptionText.isNotEmpty) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Divider(color: colors.border, height: 1),
@@ -1969,6 +1982,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
       ],
     );
+    }); // LayoutBuilder
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
