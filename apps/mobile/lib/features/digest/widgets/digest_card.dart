@@ -58,11 +58,7 @@ class DigestCard extends StatelessWidget {
                 if (isVideo)
                   Container(
                     height: 3,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFF0000),
-                      borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(FacteurRadius.small)),
-                    ),
+                    color: const Color(0xFFFF0000),
                   ),
 
                 // 1. Thumbnail with rank badge overlay

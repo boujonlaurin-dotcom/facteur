@@ -93,8 +93,8 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
             else if (widget.isVideo)
               // Video placeholder: dark gradient with play icon
               _buildVideoPlaceholder(colors),
-            // Dark scrim + centered overlay
-            if (widget.overlay != null) ...[
+            // Dark scrim + centered overlay (only on real images, not video placeholder)
+            if (widget.overlay != null && _hasValidImage) ...[
               Container(color: Colors.black.withValues(alpha: 0.3)),
               Center(child: widget.overlay!),
             ],

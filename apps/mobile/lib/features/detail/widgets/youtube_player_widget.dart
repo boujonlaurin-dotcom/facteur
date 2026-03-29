@@ -137,23 +137,17 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
 
   // --- Long-press 2x speed ---
   void _startSpeedBoost() {
-    if (!_isPlayerReady && !kIsWeb) return;
     setState(() => _isSpeedBoosted = true);
     if (kIsWeb) {
       _webController.setPlaybackRate(2.0);
-    } else {
-      _mobileController.setPlaybackRate(2.0);
     }
+    // Mobile: youtube_player_flutter v9 doesn't expose setPlaybackRate()
   }
 
   void _stopSpeedBoost() {
     setState(() => _isSpeedBoosted = false);
     if (kIsWeb) {
       _webController.setPlaybackRate(1.0);
-    } else {
-      if (_isPlayerReady) {
-        _mobileController.setPlaybackRate(1.0);
-      }
     }
   }
 
@@ -247,6 +241,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
 
     // Wrap player in GestureDetector for long-press 2x speed + Stack for overlay
     final playerWithSpeedBoost = GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onLongPressStart: (_) => _startSpeedBoost(),
       onLongPressEnd: (_) => _stopSpeedBoost(),
       child: Stack(
