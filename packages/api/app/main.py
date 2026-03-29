@@ -2,7 +2,6 @@
 
 import logging
 import os
-import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -144,12 +143,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
         except Exception as e:
             logger.critical(
-                "lifespan_startup_failed_and_aborting", error=str(e), exc_info=True
+                "lifespan_startup_db_error",
+                error=str(e),
+                exc_info=True,
+                hint="App will start in degraded mode. /api/health/ready will return 503.",
             )
-            # Capture to Sentry and flush BEFORE sys.exit(1) — otherwise the event is lost
+            # Capture to Sentry but do NOT sys.exit(1) — crash loops are worse
+            # than degraded mode. The readiness probe (/api/health/ready) will
+            # correctly return 503, and pool_pre_ping will reconnect when DB is back.
             sentry_sdk.capture_exception(e)
             sentry_sdk.flush(timeout=5)
-            sys.exit(1)
     else:
         logger.warning(
             "lifespan_db_checks_skipped", reason="DATABASE_URL not set in environment"
