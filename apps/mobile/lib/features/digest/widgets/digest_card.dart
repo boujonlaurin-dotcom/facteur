@@ -35,6 +35,7 @@ class DigestCard extends StatelessWidget {
 
     final isProcessed = item.isRead || item.isDismissed;
     final isVideo = item.contentType == ContentType.youtube || item.contentType == ContentType.video;
+    final isShort = isVideo && item.url.contains('/shorts/');
     final badgeText = item.isRead
         ? (isVideo ? 'Vu' : 'Lu')
         : (item.isDismissed ? 'Masqué' : null);
@@ -53,15 +54,29 @@ class DigestCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Red accent line for video cards
+                if (isVideo)
+                  Container(
+                    height: 3,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFF0000),
+                      borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(FacteurRadius.small)),
+                    ),
+                  ),
+
                 // 1. Thumbnail with rank badge overlay
                 FacteurThumbnail(
                   imageUrl: item.thumbnailUrl,
-                  borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(FacteurRadius.small)),
+                  borderRadius: isVideo
+                      ? BorderRadius.zero
+                      : const BorderRadius.vertical(
+                          top: Radius.circular(FacteurRadius.small)),
                   overlay: isVideo ? const VideoPlayOverlay() : null,
                   durationLabel: isVideo && item.durationSeconds != null
-                      ? _formatDurationMMSS(item.durationSeconds!)
+                      ? _formatDuration(item.durationSeconds!)
                       : null,
+                  isVideo: isVideo,
                 ),
 
                 // 2. Body (Title + Meta + Reason)
@@ -107,23 +122,39 @@ class DigestCard extends StatelessWidget {
 
                       const SizedBox(height: FacteurSpacing.space2),
 
-                      // Type + Duration
+                      // Type + Duration + Short badge
                       Row(
                         children: [
-                          if (isVideo)
-                            _buildVideoChip()
-                          else ...[
-                            _buildTypeIcon(context, item.contentType),
-                            const SizedBox(width: FacteurSpacing.space2),
-                            if (item.durationSeconds != null)
-                              Text(
-                                _formatDuration(item.durationSeconds!),
+                          _buildTypeIcon(context, item.contentType),
+                          const SizedBox(width: FacteurSpacing.space2),
+                          if (isShort)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              margin: const EdgeInsets.only(
+                                  right: FacteurSpacing.space2),
+                              decoration: BoxDecoration(
+                                color: colors.textSecondary
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Short',
                                 style: textTheme.labelSmall?.copyWith(
                                   color: colors.textSecondary,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10,
                                 ),
                               ),
-                          ],
+                            ),
+                          if (item.durationSeconds != null)
+                            Text(
+                              _formatDuration(item.durationSeconds!),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -509,36 +540,6 @@ class DigestCard extends StatelessWidget {
 
     // Return only the theme/category name, default to "Environnement"
     return r.trim().isEmpty ? 'Environnement' : r.trim();
-  }
-
-  Widget _buildVideoChip() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFF0000),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Text(
-        'Vidéo',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 10,
-        ),
-      ),
-    );
-  }
-
-  String _formatDurationMMSS(int seconds) {
-    if (seconds >= 3600) {
-      final h = seconds ~/ 3600;
-      final m = (seconds % 3600) ~/ 60;
-      final s = seconds % 60;
-      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   String _formatDuration(int seconds) {

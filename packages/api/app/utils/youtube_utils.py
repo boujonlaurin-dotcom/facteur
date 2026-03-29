@@ -83,6 +83,7 @@ def extract_video_id(url: str) -> str | None:
     """Extrait l'ID de vidéo depuis une URL YouTube."""
     patterns = [
         r"youtube\.com/watch\?v=([\w-]+)",
+        r"youtube\.com/shorts/([\w-]+)",
         r"youtu\.be/([\w-]+)",
         r"youtube\.com/embed/([\w-]+)",
     ]
