@@ -49,6 +49,26 @@ class TopicOverflowInfo(BaseModel):
     hidden_ids: list[UUID]
 
 
+class KeywordOverflowSourceInfo(BaseModel):
+    """Source info within a keyword overflow group."""
+
+    source_id: UUID
+    source_name: str
+    source_logo_url: str | None
+    article_count: int
+
+
+class KeywordOverflowInfo(BaseModel):
+    """Metadata d'overflow: articles regroupés par keyword mining sur les titres."""
+
+    keyword: str
+    display_label: str
+    hidden_count: int
+    hidden_ids: list[UUID]
+    sources: list[KeywordOverflowSourceInfo]
+    is_custom_topic: bool = False
+
+
 class FeedResponse(BaseModel):
     """Réponse feed paginé."""
 
@@ -57,6 +77,7 @@ class FeedResponse(BaseModel):
     clusters: list[ClusterInfo] = []
     source_overflow: list[SourceOverflowInfo] = []
     topic_overflow: list[TopicOverflowInfo] = []
+    keyword_overflow: list[KeywordOverflowInfo] = []
 
 
 class FeedFilters(BaseModel):
