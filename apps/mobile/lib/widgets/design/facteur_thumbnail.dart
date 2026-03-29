@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../config/theme.dart';
 import 'facteur_image.dart';
 
 /// Article thumbnail that collapses entirely on load error.
 /// Wraps [FacteurImage] in ClipRRect + AspectRatio with collapse-on-error.
+/// For videos without thumbnails, shows a styled placeholder with play icon.
 class FacteurThumbnail extends StatefulWidget {
   final String? imageUrl;
   final double aspectRatio;
   final BorderRadius? borderRadius;
   final Widget? overlay;
   final String? durationLabel;
+  final bool isVideo;
 
   const FacteurThumbnail({
     super.key,
@@ -18,6 +21,7 @@ class FacteurThumbnail extends StatefulWidget {
     this.borderRadius,
     this.overlay,
     this.durationLabel,
+    this.isVideo = false,
   });
 
   @override
@@ -41,10 +45,18 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
     }
   }
 
+  bool get _hasValidImage {
+    final url = widget.imageUrl;
+    return url != null &&
+        url.isNotEmpty &&
+        !_hasError &&
+        !_failedUrls.contains(url);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final url = widget.imageUrl;
-    if (url == null || url.isEmpty || _hasError || _failedUrls.contains(url)) {
+    // No image and not a video → collapse
+    if (!_hasValidImage && !widget.isVideo) {
       return const SizedBox.shrink();
     }
 
@@ -57,28 +69,32 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            FacteurImage(
-              imageUrl: url,
-              fit: BoxFit.cover,
-              placeholder: (context) => Container(
-                color: colors.backgroundSecondary,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: colors.primary.withValues(alpha: 0.5),
+            if (_hasValidImage)
+              FacteurImage(
+                imageUrl: widget.imageUrl!,
+                fit: BoxFit.cover,
+                placeholder: (context) => Container(
+                  color: colors.backgroundSecondary,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colors.primary.withValues(alpha: 0.5),
+                    ),
                   ),
                 ),
-              ),
-              errorWidget: (context) {
-                _failedUrls.add(url); // Cache immédiat pour éviter le re-collapse
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) setState(() => _hasError = true);
-                });
-                return Container(color: colors.backgroundSecondary);
-              },
-            ),
-            // Dark scrim + centered overlay
-            if (widget.overlay != null) ...[
+                errorWidget: (context) {
+                  _failedUrls.add(widget.imageUrl!);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _hasError = true);
+                  });
+                  return Container(color: colors.backgroundSecondary);
+                },
+              )
+            else if (widget.isVideo)
+              // Video placeholder: dark gradient with play icon
+              _buildVideoPlaceholder(colors),
+            // Dark scrim + centered overlay (only on real images, not video placeholder)
+            if (widget.overlay != null && _hasValidImage) ...[
               Container(color: Colors.black.withValues(alpha: 0.3)),
               Center(child: widget.overlay!),
             ],
@@ -88,7 +104,8 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
                 bottom: 8,
                 right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.75),
                     borderRadius: BorderRadius.circular(4),
@@ -104,6 +121,49 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoPlaceholder(FacteurColors colors) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF1A1A2E),
+            Color(0xFF16213E),
+            Color(0xFF0F3460),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF0000).withValues(alpha: 0.9),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF0000).withValues(alpha: 0.3),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 3),
+              child: Icon(
+                PhosphorIcons.play(PhosphorIconsStyle.fill),
+                size: 24,
+                color: Colors.white,
+              ),
+            ),
+          ),
         ),
       ),
     );

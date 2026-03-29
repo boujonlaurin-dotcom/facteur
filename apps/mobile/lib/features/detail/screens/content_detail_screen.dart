@@ -101,6 +101,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // Video detail screen state
   bool _isDescriptionExpanded = false;
 
+  // Header height measurement for robust content positioning
+  final GlobalKey _headerColumnKey = GlobalKey();
+  double _measuredHeaderHeight = 0;
+
   Content? _content;
 
   // Perspectives pill state
@@ -985,7 +989,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             },
             child: Builder(builder: (context) {
               final topInset = MediaQuery.of(context).padding.top;
-              final headerHeight = topInset + 64;
+              final headerHeight = _measuredHeaderHeight > 0
+                  ? _measuredHeaderHeight
+                  : (topInset + 64); // fallback until measured
               return Positioned.fill(
                 child: Padding(
                   padding: EdgeInsets.only(top: headerHeight),
@@ -1004,8 +1010,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             top: 0,
             left: 0,
             right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: _MeasuredColumn(
+              key: _headerColumnKey,
+              onHeightChanged: (h) {
+                if (h != _measuredHeaderHeight) {
+                  setState(() => _measuredHeaderHeight = h);
+                }
+              },
               children: [
                 _buildHeader(context, content),
                 // Reading progress bar — thin line below header
@@ -1602,11 +1613,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Video content layout: sticky player at top, scrollable metadata below.
+  /// For Shorts: tall 9:16 player with minimal metadata.
   Widget _buildVideoContent(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final screenWidth = MediaQuery.of(context).size.width;
-    final playerHeight = screenWidth * 9 / 16;
+    final isShort = content.isShort;
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
@@ -1614,18 +1626,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ? stripHtml(rawDescription).trim()
         : null;
 
-    return Column(
-      children: [
-        // Sticky player container (fixed height, 16:9)
-        SizedBox(
-          width: screenWidth,
-          height: playerHeight,
-          child: YouTubePlayerWidget(
-            videoUrl: content.url,
-            title: content.title,
-            onProgressChanged: _onVideoProgressChanged,
+    return LayoutBuilder(builder: (context, constraints) {
+      final maxHeight = constraints.maxHeight;
+      final playerHeight = isShort
+          ? (maxHeight * 0.75).clamp(0.0, screenWidth * 16 / 9) // 75% of available, capped at 9:16
+          : screenWidth * 9 / 16; // 16:9 landscape
+
+      return Column(
+        children: [
+          // Sticky player container
+          SizedBox(
+            width: screenWidth,
+            height: playerHeight,
+            child: YouTubePlayerWidget(
+              videoUrl: content.url,
+              title: content.title,
+              onProgressChanged: _onVideoProgressChanged,
+            ),
           ),
-        ),
 
         // Scrollable metadata below the player
         Expanded(
@@ -1710,8 +1728,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // Expandable description
-                if (descriptionText != null &&
+                // Expandable description (hidden for Shorts)
+                if (!isShort &&
+                    descriptionText != null &&
                     descriptionText.isNotEmpty) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Divider(color: colors.border, height: 1),
@@ -1751,6 +1770,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
       ],
     );
+    }); // LayoutBuilder
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
@@ -1955,5 +1975,53 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..loadRequest(Uri.parse(content.url));
 
     return WebViewWidget(controller: _webViewController!);
+  }
+}
+
+/// Column that reports its rendered height via callback.
+/// Used to measure the header area so content can be positioned below it.
+class _MeasuredColumn extends StatefulWidget {
+  final List<Widget> children;
+  final ValueChanged<double> onHeightChanged;
+
+  const _MeasuredColumn({
+    super.key,
+    required this.children,
+    required this.onHeightChanged,
+  });
+
+  @override
+  State<_MeasuredColumn> createState() => _MeasuredColumnState();
+}
+
+class _MeasuredColumnState extends State<_MeasuredColumn> {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleHeightReport();
+  }
+
+  @override
+  void didUpdateWidget(_MeasuredColumn oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleHeightReport();
+  }
+
+  void _scheduleHeightReport() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        widget.onHeightChanged(box.size.height);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: widget.children,
+    );
   }
 }

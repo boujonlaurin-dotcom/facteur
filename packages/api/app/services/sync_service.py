@@ -359,6 +359,10 @@ class SyncService:
         match = re.search(r"[?&]v=([\w-]+)", url)
         if match:
             return match.group(1)
+        # /shorts/VIDEO_ID
+        match = re.search(r"/shorts/([\w-]+)", url)
+        if match:
+            return match.group(1)
         # /vi/VIDEO_ID or /embed/VIDEO_ID
         match = re.search(r"/(?:vi|embed)/([\w-]+)", url)
         if match:
