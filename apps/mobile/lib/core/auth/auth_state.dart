@@ -348,10 +348,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         if (savedVersion < _requiredOnboardingVersion) {
           needsOnboarding = true;
           // Pré-configurer le restart vers Section 3 directement
-          final onboardingBox = await Hive.openBox('onboarding');
-          await onboardingBox.put('section', 2); // sourcePreferences index
-          await onboardingBox.put('question', 0);
-          await onboardingBox.put('is_restart', true);
+          // Guard: only write once to avoid resetting user progress on every app resume
+          if (!state.needsOnboarding) {
+            final onboardingBox = await Hive.openBox('onboarding');
+            await onboardingBox.put('section', 2); // sourcePreferences index
+            await onboardingBox.put('question', 0);
+            await onboardingBox.put('is_restart', true);
+          }
           debugPrint(
             'AuthState: onboarding version $savedVersion < $_requiredOnboardingVersion, '
             're-triggering onboarding (Section 3 only)',
@@ -564,6 +567,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Persister la version pour éviter un re-trigger au prochain login
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_app_version', _requiredOnboardingVersion);
+    await box.put('onboarding_completed', true);
   }
 
   /// Change le statut d'onboarding (utilisé pour reset/refaire)
@@ -605,7 +609,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           user: user,
           forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
         );
-        await _checkOnboardingStatus();
+        // Skip re-check if already in onboarding flow (avoids resetting progress)
+        if (!state.needsOnboarding) {
+          await _checkOnboardingStatus();
+        }
       }
     } on AuthException catch (e) {
       debugPrint(
