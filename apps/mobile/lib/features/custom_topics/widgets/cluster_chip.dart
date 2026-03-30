@@ -8,7 +8,7 @@ import '../../feed/screens/cluster_view_screen.dart';
 
 /// Chip shown below a representative article when a topic cluster exists.
 ///
-/// Displays: `> N autres articles sur [Topic]`
+/// Displays: `> N articles récents sur [Topic]`
 /// Tap opens an immersive cluster view showing all related articles.
 class ClusterChip extends StatelessWidget {
   final Content content;

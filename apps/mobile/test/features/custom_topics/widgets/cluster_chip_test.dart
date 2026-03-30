@@ -79,7 +79,7 @@ void main() {
       ));
 
       expect(
-        find.text('4 autres articles sur \u2022 Intelligence artificielle'),
+        find.text('4 articles récents sur \u2022 Intelligence artificielle'),
         findsOneWidget,
       );
     });

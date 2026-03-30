@@ -270,7 +270,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
             const RecommendationSectionHeader(
               emoji: '📚',
               title: 'Tout le catalogue',
-              subtitle: 'Toutes les sources disponibles, classées par thème',
+              subtitle: 'Toutes les sources déjà ajoutées, classées par thème',
             ),
 
             // Search bar
