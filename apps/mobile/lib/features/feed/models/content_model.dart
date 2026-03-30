@@ -125,6 +125,14 @@ class Content {
   final String? topicOverflowType; // "topic" or "theme"
   final List<String> topicOverflowHiddenIds;
 
+  // Keyword overflow (populated by FeedRepository from keyword regroupement)
+  final int keywordOverflowCount;
+  final String? keywordOverflowLabel;
+  final String? keywordOverflowKey;
+  final List<String> keywordOverflowHiddenIds;
+  final List<KeywordOverflowSource> keywordOverflowSources;
+  final bool keywordOverflowIsCustomTopic;
+
   Content({
     required this.id,
     required this.title,
@@ -159,6 +167,12 @@ class Content {
     this.topicOverflowKey,
     this.topicOverflowType,
     this.topicOverflowHiddenIds = const [],
+    this.keywordOverflowCount = 0,
+    this.keywordOverflowLabel,
+    this.keywordOverflowKey,
+    this.keywordOverflowHiddenIds = const [],
+    this.keywordOverflowSources = const [],
+    this.keywordOverflowIsCustomTopic = false,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -229,6 +243,12 @@ class Content {
       topicOverflowKey: topicOverflowKey,
       topicOverflowType: topicOverflowType,
       topicOverflowHiddenIds: topicOverflowHiddenIds,
+      keywordOverflowCount: keywordOverflowCount,
+      keywordOverflowLabel: keywordOverflowLabel,
+      keywordOverflowKey: keywordOverflowKey,
+      keywordOverflowHiddenIds: keywordOverflowHiddenIds,
+      keywordOverflowSources: keywordOverflowSources,
+      keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
     );
   }
 
@@ -331,6 +351,12 @@ class Content {
     String? topicOverflowKey,
     String? topicOverflowType,
     List<String>? topicOverflowHiddenIds,
+    int? keywordOverflowCount,
+    String? keywordOverflowLabel,
+    String? keywordOverflowKey,
+    List<String>? keywordOverflowHiddenIds,
+    List<KeywordOverflowSource>? keywordOverflowSources,
+    bool? keywordOverflowIsCustomTopic,
   }) {
     return Content(
       id: id ?? this.id,
@@ -368,6 +394,18 @@ class Content {
       topicOverflowType: topicOverflowType ?? this.topicOverflowType,
       topicOverflowHiddenIds:
           topicOverflowHiddenIds ?? this.topicOverflowHiddenIds,
+      keywordOverflowCount:
+          keywordOverflowCount ?? this.keywordOverflowCount,
+      keywordOverflowLabel:
+          keywordOverflowLabel ?? this.keywordOverflowLabel,
+      keywordOverflowKey:
+          keywordOverflowKey ?? this.keywordOverflowKey,
+      keywordOverflowHiddenIds:
+          keywordOverflowHiddenIds ?? this.keywordOverflowHiddenIds,
+      keywordOverflowSources:
+          keywordOverflowSources ?? this.keywordOverflowSources,
+      keywordOverflowIsCustomTopic:
+          keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
     );
   }
 
@@ -512,6 +550,67 @@ class TopicOverflow {
   }
 }
 
+/// Source info within a keyword overflow group.
+class KeywordOverflowSource {
+  final String sourceId;
+  final String sourceName;
+  final String? sourceLogoUrl;
+  final int articleCount;
+
+  KeywordOverflowSource({
+    required this.sourceId,
+    required this.sourceName,
+    this.sourceLogoUrl,
+    required this.articleCount,
+  });
+
+  factory KeywordOverflowSource.fromJson(Map<String, dynamic> json) {
+    return KeywordOverflowSource(
+      sourceId: (json['source_id'] as String?) ?? '',
+      sourceName: (json['source_name'] as String?) ?? '',
+      sourceLogoUrl: json['source_logo_url'] as String?,
+      articleCount: (json['article_count'] as int?) ?? 0,
+    );
+  }
+}
+
+/// Keyword overflow from keyword mining regroupement.
+class KeywordOverflow {
+  final String keyword;
+  final String displayLabel;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
+  final bool isCustomTopic;
+
+  KeywordOverflow({
+    required this.keyword,
+    required this.displayLabel,
+    required this.hiddenCount,
+    this.hiddenIds = const [],
+    this.sources = const [],
+    this.isCustomTopic = false,
+  });
+
+  factory KeywordOverflow.fromJson(Map<String, dynamic> json) {
+    return KeywordOverflow(
+      keyword: (json['keyword'] as String?) ?? '',
+      displayLabel: (json['display_label'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
+              .toList() ??
+          const [],
+      isCustomTopic: (json['is_custom_topic'] as bool?) ?? false,
+    );
+  }
+}
+
 /// Epic 12: Source overflow from diversification filtering.
 class SourceOverflow {
   final String sourceId;
@@ -536,6 +635,7 @@ class FeedResponse {
   final List<FeedCluster> clusters;
   final List<SourceOverflow> sourceOverflow;
   final List<TopicOverflow> topicOverflow;
+  final List<KeywordOverflow> keywordOverflow;
 
   FeedResponse({
     required this.items,
@@ -543,6 +643,7 @@ class FeedResponse {
     this.clusters = const [],
     this.sourceOverflow = const [],
     this.topicOverflow = const [],
+    this.keywordOverflow = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -567,6 +668,11 @@ class FeedResponse {
       topicOverflow: (json['topic_overflow'] as List<dynamic>?)
               ?.whereType<Map<String, dynamic>>()
               .map((e) => TopicOverflow.fromJson(e))
+              .toList() ??
+          const [],
+      keywordOverflow: (json['keyword_overflow'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflow.fromJson(e))
               .toList() ??
           const [],
     );

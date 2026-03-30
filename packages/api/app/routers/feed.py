@@ -13,6 +13,8 @@ from app.schemas.content import FeedRefreshRequest
 from app.schemas.feed import (
     ClusterInfo,
     FeedResponse,
+    KeywordOverflowInfo,
+    KeywordOverflowSourceInfo,
     PaginationMeta,
     SourceOverflowInfo,
     TopicOverflowInfo,
@@ -92,6 +94,23 @@ async def get_personalized_feed(
     # Topic overflow from topic-aware regroupement (Phase 2)
     topic_overflow_data = [TopicOverflowInfo(**info) for info in service.topic_overflow]
 
+    # Keyword overflow from keyword regroupement
+    keyword_overflow_data = []
+    for info in service.keyword_overflow:
+        sources = [
+            KeywordOverflowSourceInfo(**s) for s in info.get("sources", [])
+        ]
+        keyword_overflow_data.append(
+            KeywordOverflowInfo(
+                keyword=info["keyword"],
+                display_label=info["display_label"],
+                hidden_count=info["hidden_count"],
+                hidden_ids=info["hidden_ids"],
+                sources=sources,
+                is_custom_topic=info.get("is_custom_topic", False),
+            )
+        )
+
     # Calculate pagination metadata
     # If we got 'limit' items, assume there's a next page
     has_next = len(feed_items) >= limit
@@ -107,6 +126,7 @@ async def get_personalized_feed(
         clusters=clusters_data,
         source_overflow=overflow_data,
         topic_overflow=topic_overflow_data,
+        keyword_overflow=keyword_overflow_data,
     )
 
 
