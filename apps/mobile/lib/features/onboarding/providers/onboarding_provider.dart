@@ -284,17 +284,25 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       final savedSection = box.get(_sectionKey);
       final savedQuestion = box.get(_questionKey);
 
+      // Restore answers if available
       if (savedAnswers != null) {
         final answers = OnboardingAnswers.fromJson(
           Map<String, dynamic>.from(savedAnswers as Map),
         );
-        final savedIsRestart = box.get(_isRestartKey) as bool? ?? false;
+        state = state.copyWith(answers: answers);
+      }
+
+      // Always restore navigation position (needed for restart pre-config
+      // written by auth_state._checkOnboardingStatus which sets section/question
+      // without setting answers)
+      final savedIsRestart = box.get(_isRestartKey) as bool? ?? false;
+      if (savedSection != null || savedQuestion != null || savedIsRestart) {
         state = state.copyWith(
-          answers: answers,
           currentSection: savedSection != null && savedSection is int
               ? OnboardingSection.values[savedSection]
-              : OnboardingSection.overview,
-          currentQuestionIndex: savedQuestion is int ? savedQuestion : 0,
+              : state.currentSection,
+          currentQuestionIndex:
+              savedQuestion is int ? savedQuestion : state.currentQuestionIndex,
           isRestart: savedIsRestart,
         );
       }
