@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/pre-edit-alembic-deploy.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -14,24 +25,28 @@
           },
           {
             "type": "command",
-            "command": "bash .claude-hooks/post-edit-reminders.sh"
+            "command": "bash .claude-hooks/post-edit-auto-test.sh"
           }
         ]
       }
     ],
-    "PreToolUse": [
+    "Stop": [
       {
-        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude-hooks/pre-edit-alembic-deploy.sh"
+            "command": "bash .claude-hooks/stop-verify-tests.sh"
           }
         ]
       }
     ]
   },
   "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
     "sentry": {
       "type": "stdio",
       "command": "python",
