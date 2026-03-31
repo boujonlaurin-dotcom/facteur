@@ -7,6 +7,24 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
 
+bool _hasNonEmailProvider(Map<String, dynamic>? appMetadata) {
+  if (appMetadata == null) return false;
+  final providers = appMetadata['providers'];
+
+  // Supabase devrait renvoyer une List<String> (ou List<dynamic>), mais on protège
+  // contre les anciens schémas / surprises côté metadata.
+  if (providers is List) {
+    return providers.any((p) => p != 'email');
+  }
+
+  // Cas rare: un backend/modification pourrait avoir stocké un provider unique.
+  if (providers is String) {
+    return providers != 'email';
+  }
+
+  return false;
+}
+
 /// État d'authentification
 class AuthState {
   final User? user;
@@ -46,10 +64,10 @@ class AuthState {
     // debugPrint('AuthState: emailConfirmedAt: ${user?.emailConfirmedAt}');
     // debugPrint('AuthState: appMetadata: ${user?.appMetadata}');
 
-    // Si on a des identités et qu'une d'entre elles n'est pas 'email', on considère comme confirmé
-    final identities = user?.appMetadata['providers'] as List<dynamic>?;
-    if (identities != null && identities.any((p) => p != 'email')) {
-      debugPrint('AuthState: ✅ Confirmed via non-email provider: $identities');
+    // Si on a des identités et qu'une d'entre elles n'est pas 'email',
+    // on considère comme confirmé (cas providers sociaux).
+    if (_hasNonEmailProvider(user?.appMetadata)) {
+      debugPrint('AuthState: ✅ Confirmed via non-email provider.');
       return true;
     }
 
@@ -115,7 +133,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       // 1. Charger la préférence de persistence
       final box = await Hive.openBox<dynamic>('auth_prefs');
-      final rememberMe = box.get('remember_me', defaultValue: true) as bool;
+      final rememberMeRaw = box.get('remember_me', defaultValue: true);
+      final rememberMe = rememberMeRaw is bool ? rememberMeRaw : true;
       debugPrint('AuthStateNotifier: rememberMe preference is $rememberMe');
 
       // 2. Récupérer la session actuelle (restaurée par Supabase.initialize)
@@ -172,10 +191,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // 5. Verification stricte de l'email confirmé (Fix mismatch 403)
       if (session != null) {
         final user = session.user;
-        final isConfirmed = user.emailConfirmedAt != null ||
-            (user.appMetadata['providers'] as List<dynamic>?)
-                    ?.any((p) => p != 'email') ==
-                true;
+        final isConfirmed =
+            user.emailConfirmedAt != null || _hasNonEmailProvider(user.appMetadata);
 
         if (!isConfirmed) {
           debugPrint(
@@ -229,10 +246,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       if (state.user == null && user == null && !state.isLoading) return;
 
       // Vérifier si l'email est maintenant confirmé pour reset forceUnconfirmed
-      final isNowConfirmed = user?.emailConfirmedAt != null ||
-          (user?.appMetadata['providers'] as List<dynamic>?)
-                  ?.any((p) => p != 'email') ==
-              true;
+      final isNowConfirmed =
+          user?.emailConfirmedAt != null || _hasNonEmailProvider(user?.appMetadata);
 
       state = state.copyWith(
         user: user,
@@ -323,7 +338,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     try {
       // 1. Vérifier le cache local d'abord pour décision rapide
       final box = await Hive.openBox<dynamic>('user_profile');
-      final cachedCompleted = box.get('onboarding_completed') as bool?;
+        final cachedCompletedRaw = box.get('onboarding_completed');
+        final cachedCompleted =
+            cachedCompletedRaw is bool ? cachedCompletedRaw : null;
 
       if (cachedCompleted != null) {
         // Utiliser le cache pour une décision instantanée
@@ -343,12 +360,14 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // 3. Si onboarding déjà fait, vérifier la version
       // Les users avec une version obsolète repassent par Section 3
       if (!needsOnboarding) {
-        final savedVersion =
-            box.get('onboarding_app_version') as int? ?? 0;
+          final savedVersionRaw = box.get('onboarding_app_version');
+          final savedVersion = savedVersionRaw is int
+              ? savedVersionRaw
+              : int.tryParse(savedVersionRaw?.toString() ?? '') ?? 0;
         if (savedVersion < _requiredOnboardingVersion) {
           needsOnboarding = true;
           // Pré-configurer le restart vers Section 3 directement
-          final onboardingBox = await Hive.openBox('onboarding');
+          final onboardingBox = await Hive.openBox<dynamic>('onboarding');
           await onboardingBox.put('section', 2); // sourcePreferences index
           await onboardingBox.put('question', 0);
           await onboardingBox.put('is_restart', true);
@@ -593,10 +612,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       final user = response.user;
 
       if (user != null) {
-        final isNowConfirmed = user.emailConfirmedAt != null ||
-            (user.appMetadata['providers'] as List<dynamic>?)
-                    ?.any((p) => p != 'email') ==
-                true;
+        final isNowConfirmed =
+            user.emailConfirmedAt != null || _hasNonEmailProvider(user.appMetadata);
 
         debugPrint(
           'AuthStateNotifier: User refreshed. Confirmed: $isNowConfirmed',

@@ -83,8 +83,8 @@ class SupabaseHiveStorage extends LocalStorage {
     }
     debugPrint(
         'SupabaseHiveStorage: Persisting session (length: ${session.length}).');
-    debugPrint(
-        'SupabaseHiveStorage: Data to persist: ${session.substring(0, 50)}...');
+    final preview = session.length <= 50 ? session : session.substring(0, 50);
+    debugPrint('SupabaseHiveStorage: Data to persist: $preview...');
     await _box!.put(_key, session);
     // Force flush for stability
     await _box!.flush();
