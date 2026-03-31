@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../providers/digest_provider.dart';
 
 /// Minimal feedback bottom sheet for the editorial digest closure (N6).
-/// V1: local-only, no backend endpoint.
-class FeedbackBottomSheet extends StatefulWidget {
+/// After submission, navigates to the ClosureScreen (celebration).
+class FeedbackBottomSheet extends ConsumerStatefulWidget {
   const FeedbackBottomSheet({super.key});
 
   @override
-  State<FeedbackBottomSheet> createState() => _FeedbackBottomSheetState();
+  ConsumerState<FeedbackBottomSheet> createState() => _FeedbackBottomSheetState();
 }
 
-class _FeedbackBottomSheetState extends State<FeedbackBottomSheet> {
+class _FeedbackBottomSheetState extends ConsumerState<FeedbackBottomSheet> {
   int? _selectedIndex;
   final _controller = TextEditingController();
 
@@ -28,12 +32,11 @@ class _FeedbackBottomSheetState extends State<FeedbackBottomSheet> {
 
   void _submit() {
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Merci pour ton retour !'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+
+    // Navigate to ClosureScreen (celebration / end-of-digest)
+    final digest = ref.read(digestProvider).value;
+    final digestId = digest?.digestId ?? '';
+    context.go(RoutePaths.digestClosure, extra: digestId);
   }
 
   @override

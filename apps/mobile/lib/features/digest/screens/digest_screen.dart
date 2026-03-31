@@ -782,6 +782,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         logoUrl: item.source?.logoUrl,
         theme: item.source?.theme,
       ),
+      editorialBadge: item.badge,
     );
   }
 

@@ -29,6 +29,7 @@ import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
+import '../../digest/widgets/editorial_badge.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -500,6 +501,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 (content.htmlContent != null && content.htmlContent!.isNotEmpty)
                     ? content.htmlContent
                     : _content?.htmlContent,
+            editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
             _content = merged;
@@ -1758,6 +1760,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
                               ],
+                              // Editorial badge above title (from digest)
+                              if (content.editorialBadge != null) ...[
+                                EditorialBadge.chip(
+                                  content.editorialBadge,
+                                  context: context,
+                                ) ?? const SizedBox.shrink(),
+                                const SizedBox(height: FacteurSpacing.space2),
+                              ],
                               Text(
                                 content.title,
                                 style: textTheme.displayLarge
@@ -2339,6 +2349,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
                 const SizedBox(height: FacteurSpacing.space4),
+              ],
+              // Editorial badge above title (from digest)
+              if (content.editorialBadge != null) ...[
+                EditorialBadge.chip(
+                  content.editorialBadge,
+                  context: context,
+                ) ?? const SizedBox.shrink(),
+                const SizedBox(height: FacteurSpacing.space2),
               ],
               // Title
               Text(

@@ -190,6 +190,15 @@ class DailyTop3Response(BaseModel):
         from_attributes = True
 
 
+class ArticleFeedbackRequest(BaseModel):
+    """Feedback utilisateur sur un article (thumbs up/down + raisons optionnelles)."""
+
+    sentiment: str = Field(..., pattern=r"^(positive|negative)$")
+    reasons: list[str] = []
+    comment: str | None = None
+    digest_date: str | None = None
+
+
 class FeedRefreshRequest(BaseModel):
     """Requête pour rafraîchir le feed (marquer les articles visibles comme 'déjà affiché')."""
 

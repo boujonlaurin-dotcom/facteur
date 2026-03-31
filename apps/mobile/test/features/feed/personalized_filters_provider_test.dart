@@ -1,9 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive/hive.dart';
 import 'package:facteur/features/onboarding/providers/onboarding_provider.dart';
 import 'package:facteur/features/feed/providers/personalized_filters_provider.dart';
 
 void main() {
+  setUpAll(() {
+    Hive.init('.');
+  });
+
   group('PersonalizedFiltersProvider', () {
     test('Default order when no specific preference', () {
       final container = ProviderContainer(
@@ -43,9 +48,9 @@ void main() {
         overrides: [
           onboardingProvider.overrideWith((ref) {
             final notifier = OnboardingNotifier();
-            notifier.state = notifier.state.copyWith(
-              answers: notifier.state.answers.copyWith(perspective: 'big_picture'),
-            );
+            // The notifier no longer exposes selectPerspective.
+            // Inspiration is also prioritized when responseStyle == nuanced.
+            notifier.selectResponseStyle('nuanced');
             return notifier;
           }),
         ],

@@ -14,6 +14,7 @@ from app.models.content import Content
 from app.models.enums import ContentType
 from app.schemas.collection import SaveContentRequest
 from app.schemas.content import (
+    ArticleFeedbackRequest,
     ContentDetailResponse,
     ContentStatusUpdate,
     HideContentRequest,
@@ -428,6 +429,89 @@ async def delete_note(
 
     await db.commit()
     return {"status": "ok"}
+
+
+@router.post("/{content_id}/feedback", status_code=status.HTTP_200_OK)
+async def submit_article_feedback(
+    content_id: UUID,
+    request: ArticleFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Enregistre un feedback utilisateur (pouce haut/bas) sur un article.
+
+    Upsert idempotent (1 feedback par user × article).
+    Ajuste les poids subtopics : +0.15 (positive) / -0.15 (negative).
+    """
+    from datetime import date as date_type
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.article_feedback import ArticleFeedback
+    from app.services.recommendation.scoring_config import ScoringWeights
+
+    user_uuid = UUID(current_user_id)
+
+    # Parse digest_date if provided
+    parsed_date = None
+    if request.digest_date:
+        try:
+            parsed_date = date_type.fromisoformat(request.digest_date)
+        except ValueError:
+            pass
+
+    try:
+        stmt = (
+            insert(ArticleFeedback)
+            .values(
+                id=uuid.uuid4(),
+                user_id=user_uuid,
+                content_id=content_id,
+                sentiment=request.sentiment,
+                reasons=request.reasons or None,
+                comment=request.comment,
+                digest_date=parsed_date,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_={
+                    "sentiment": request.sentiment,
+                    "reasons": request.reasons or None,
+                    "comment": request.comment,
+                    "digest_date": parsed_date,
+                },
+            )
+        )
+        await db.execute(stmt)
+
+        # Adjust subtopic weights based on sentiment
+        service = ContentService(db)
+        delta = (
+            ScoringWeights.LIKE_TOPIC_BOOST
+            if request.sentiment == "positive"
+            else ScoringWeights.DISMISS_TOPIC_PENALTY
+        )
+        await service._adjust_subtopic_weights(user_uuid, content_id, delta)
+
+        await db.commit()
+
+        logger.info(
+            "article_feedback_recorded",
+            content_id=str(content_id),
+            user_id=current_user_id,
+            sentiment=request.sentiment,
+            reasons=request.reasons,
+        )
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "article_feedback_failed",
+            content_id=str(content_id),
+            user_id=current_user_id,
+        )
+        raise HTTPException(status_code=500, detail="Failed to record feedback")
+
+    return {"status": "ok", "sentiment": request.sentiment}
 
 
 from cachetools import TTLCache

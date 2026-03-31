@@ -1,185 +1,88 @@
-# Handoff — Fix CTA Footer Chips: Logos + Remove Dots
+# PR — Digest UI polish: editorial badge chips, article thumbs feedback, palette refresh
 
-## Contexte
+## Quoi
+Refonte visuelle du digest : les badges éditoriaux passent de labels inline (dans le FeedCard footer) à des **chips colorés** au-dessus de chaque carte. Ajout d'un **feedback thumbs up/down par article** (nouveau widget + endpoint API + table DB). Rafraîchissement de la palette Serein/Normal vers "Terre & Sauge". Ajustements UI divers (ombres cartes, opacités gradient light mode, closure CTA).
 
-La branche `boujonlaurin-dotcom/feed-grouping-rework` a introduit des CTA footers sous les cartes du feed. Ces bandeaux indiquent "N autres articles sur/de X" et permettent de filtrer le feed.
+## Pourquoi
+- Les badges éditoriaux inline étaient peu visibles → les chips colorés ajoutent du contexte éditorial avant la lecture.
+- Le feedback par article permet de collecter des signaux de pertinence pour ajuster les poids subtopics du moteur de recommandation (+0.15 / -0.15).
+- La palette actuelle (orange vif + vert vif) était trop saturée → tons plus doux "Terre & Sauge".
 
-**Deux problèmes visuels persistent après une première passe de correctifs :**
-1. Les logos de source n'apparaissent sur aucun type de CTA footer
-2. Les caractères `•` (bullet `\u2022`) persistent dans le texte des footers
+## Fichiers modifiés
 
----
+### Backend (5 fichiers)
+- `packages/api/app/routers/contents.py` — Nouvel endpoint `POST /{content_id}/feedback` (upsert idempotent, ajuste subtopic weights)
+- `packages/api/app/schemas/content.py` — `ArticleFeedbackRequest` schema
+- `packages/api/app/models/article_feedback.py` — **Nouveau** modèle SQLAlchemy `article_feedback`
+- `packages/api/alembic/versions/fb01_create_article_feedback.py` — **Nouvelle** migration Alembic
+- `packages/api/config/editorial_prompts.yaml` — Clarification prompt pépite (anti meta-commentaire)
 
-## Architecture du rendering (CRITIQUE à comprendre)
+### Mobile (13 fichiers)
+- `apps/mobile/lib/features/digest/widgets/article_thumbs_feedback.dart` — **Nouveau** widget thumbs up/down avec chips raisons + auto-submit 2s
+- `apps/mobile/lib/features/digest/widgets/editorial_badge.dart` — Ajout `EditorialBadge.chip()` (widget coloré) en plus de `labelFor()`
+- `apps/mobile/lib/features/digest/widgets/topic_section.dart` — Badge chip au-dessus des cartes, `editorialBadgeLabel` retiré, thumbs feedback ajouté
+- `apps/mobile/lib/features/digest/widgets/coup_de_coeur_block.dart` — Badge chip + intro text + thumbs, suppression "Gardé par X lecteurs"
+- `apps/mobile/lib/features/digest/widgets/pepite_block.dart` — Badge chip + thumbs feedback
+- `apps/mobile/lib/features/digest/widgets/closure_block.dart` — CTA simplifié, haptic feedback, nouvelle icône
+- `apps/mobile/lib/features/digest/widgets/digest_briefing_section.dart` — Ombres cartes + opacités gradient light mode réduites
+- `apps/mobile/lib/features/digest/widgets/feedback_bottom_sheet.dart` — ConsumerStatefulWidget, navigation ClosureScreen après submit
+- `apps/mobile/lib/features/digest/widgets/transition_text.dart` — Font size 13→14, couleur ajustée
+- `apps/mobile/lib/features/digest/repositories/digest_repository.dart` — `submitArticleFeedback()` (fail-silent)
+- `apps/mobile/lib/features/digest/screens/digest_screen.dart` — Passe `editorialBadge` au Content model
+- `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` — Badge chip au-dessus du titre écran détail
+- `apps/mobile/lib/features/feed/models/content_model.dart` — Nouveau champ `editorialBadge` + copyWith
+- `apps/mobile/lib/config/serein_colors.dart` — Nouvelle palette "Terre & Sauge"
 
-### Priority chain (feed_screen.dart:842-859)
+## Zones à risque
 
-```
-content.clusterHiddenCount > 0       →  ClusterChip          (Priority 1)
-  : content.keywordOverflowCount > 0 →  KeywordOverflowChip  (Priority 2)
-  : content.topicOverflowCount > 0   →  TopicOverflowChip    (Priority 3)
-  : SourceOverflowChip                                       (Priority 4 / fallback)
-```
+1. **`contents.py` — accès à `service._adjust_subtopic_weights()`** : méthode privée de ContentService. Si renommée côté service, ça casse silencieusement. Anti-pattern assumé.
+2. **Migration Alembic `fb01`** — `down_revision` pointe sur `z1a2b3c4d5e6`. Vérifier que c'est le dernier head. Exécuter via Supabase SQL Editor (pas CLI).
+3. **`FeedbackBottomSheet` → `context.go(RoutePaths.digestClosure)`** : si cette route n'existe pas ou attend un format différent pour `extra`, crash.
+4. **Palette Serein** : toutes les couleurs changent. Vérifier contraste dark + light mode.
 
-### Ce qui est RÉELLEMENT rendu en prod
+## Points d'attention pour le reviewer
 
-En pratique, les chips qui s'affichent le plus souvent sont :
-- **ClusterChip** (priorité 1) — pour les utilisateurs avec des custom topics suivis
-- **SourceOverflowChip** (priorité 4, fallback) — quand aucun autre regroupement ne s'applique
+- **`editorialBadgeLabel` supprimé des FeedCards** : passé à `null` ou retiré dans topic_section, coup_de_coeur_block, pepite_block. Vérifier que FeedCard gère `null` proprement.
+- **Auto-submit timer (2s)** dans `ArticleThumbsFeedback` : le feedback négatif part après 2s d'inactivité. Si l'utilisateur sélectionne encore des raisons, feedback partiel envoyé. Acceptable car upsert côté API.
+- **`print()` dans `digest_repository.dart`** : le catch de `submitArticleFeedback` utilise `print()` au lieu du logger. V1 acceptable mais à upgrader.
+- **Unicode escapes** dans `editorial_badge.dart` : emojis en `\u{XXXX}` au lieu de littéraux. Fonctionnel mais moins lisible.
 
-Les KeywordOverflowChip et TopicOverflowChip n'apparaissent que rarement (seulement en mode chronologique, et seulement si le keyword mining produit des groupes viables).
+## Ce qui N'A PAS changé (mais pourrait sembler affecté)
 
-### Conséquence
+- **`FeedCard`** : aucune modification. Les changements sont dans les appelants.
+- **`digest_models.dart`** : le champ `badge` sur DigestItem existait déjà.
+- **Les routes** : pas de nouvelle route. `RoutePaths.digestClosure` pré-existant.
+- **`ScoringWeights`** : constantes `LIKE_TOPIC_BOOST` / `DISMISS_TOPIC_PENALTY` inchangées.
 
-**Le premier agent a modifié TopicOverflowChip et SourceOverflowChip pour ajouter des logos, mais n'a JAMAIS touché ClusterChip** — qui est le chip le plus couramment affiché. C'est pourquoi l'utilisateur ne voit aucun logo.
+## Comment tester
 
----
+### Backend
+```bash
+cd packages/api && pytest tests/ -x -q
 
-## Problème 1 : Aucun logo sur les CTA footers
-
-### État actuel par type de chip
-
-| Chip | Fichier | Logo actuel | Données source disponibles |
-|------|---------|-------------|---------------------------|
-| **ClusterChip** | `apps/mobile/lib/features/custom_topics/widgets/cluster_chip.dart` | ❌ Aucun logo, aucune donnée source | Le widget reçoit un `Content` (la carte représentante). `content.source` est disponible (nom + logoUrl). Mais les sources des articles cachés ne sont PAS dans les données cluster. |
-| **KeywordOverflowChip** | `apps/mobile/lib/features/feed/widgets/keyword_overflow_chip.dart` | ✅ Multi-logos fonctionnels | `content.keywordOverflowSources` contient une liste de `KeywordOverflowSource` avec `sourceId`, `sourceName`, `sourceLogoUrl`, `articleCount`. |
-| **TopicOverflowChip** | `apps/mobile/lib/features/feed/widgets/topic_overflow_chip.dart` | ⚠️ Code ajouté mais jamais testé/affiché | L'agent a ajouté `topicOverflowSources` (même format que keyword). Le backend a été modifié pour envoyer `sources` dans `topic_overflow`. |
-| **SourceOverflowChip** | `apps/mobile/lib/features/feed/widgets/source_overflow_chip.dart` | ⚠️ Code ajouté mais layout potentiellement incorrect | L'agent a déplacé le logo à droite du texte. Utilise `content.source.logoUrl` (une seule source, logique puisque source overflow = même source). |
-
-### Fix requis
-
-#### 1a — ClusterChip : Ajouter les logos (le plus impactant)
-
-**Backend** (`packages/api/app/services/recommendation_service.py`, méthode `build_clusters()` L1535-1558) :
-
-Le cluster dict actuel ne contient que :
-```python
-{
-    "topic_slug": slug,
-    "topic_name": topic_map[slug],
-    "representative_id": representative.id,
-    "hidden_count": len(others),
-    "hidden_ids": [a.id for a in others],
-}
-```
-
-→ Ajouter un champ `sources` (même format que keyword overflow) :
-```python
-"sources": [unique sources from all articles in the group, with article_count]
-```
-
-**Mobile model** (`content_model.dart`) :
-- `FeedCluster` → ajouter `final List<KeywordOverflowSource> sources;`
-- `Content` → ajouter `final List<KeywordOverflowSource> clusterSources;`
-- Mettre à jour constructor, `copyWith`, `clearNote`
-
-**Mobile repository** (`feed_repository.dart`, section cluster annotation ~L139-149) :
-- Parser le nouveau `sources` dans `FeedCluster.fromJson`
-- Passer `clusterSources` dans le `copyWith` lors de l'annotation du representant
-
-**Mobile widget** (`cluster_chip.dart`) :
-- Ajouter le multi-logo pattern à droite du texte (même layout que `keyword_overflow_chip.dart`)
-- Utiliser `content.clusterSources` comme data source
-- Import `initial_circle.dart` + `facteur_image.dart`
-
-#### 1b — Vérifier que SourceOverflowChip affiche bien le logo
-
-Le code est déjà en place (réécrit par le premier agent). Vérifier que :
-- `content.source.logoUrl` n'est pas null pour les sources concernées
-- Le layout est correct (logo à droite du texte, avant la flèche →)
-- Le fallback `InitialCircle` fonctionne quand logoUrl est null
-
-#### 1c — Vérifier que TopicOverflowChip fonctionne aussi
-
-Le code est en place. Le backend envoie `sources` dans `topic_overflow`. Vérifier le flow complet.
-
----
-
-## Problème 2 : Caractères "•" (bullet) dans le texte des footers
-
-### Root cause
-
-Le commit `eeef2fa8` a introduit `\u2022` (bullet Unicode) dans les strings de texte de 3 widgets :
-
-| Fichier | Ligne originale | État actuel |
-|---------|----------------|-------------|
-| `cluster_chip.dart:66` | `'... sur \u2022 $topicName'` | Fix unstaged (diff enlève le `\u2022`) |
-| `source_overflow_chip.dart:73` | `'... de \u2022 ${content.source.name}'` | Réécrit par l'agent (plus de `\u2022`) |
-| `topic_overflow_chip.dart:62` | `'... \u2022 ${content.topicOverflowLabel}'` | Réécrit par l'agent (plus de `\u2022`) |
-
-### Fix requis
-
-- **cluster_chip.dart** : Le fix est déjà dans le working tree (diff unstaged). Vérifier qu'il est bien appliqué.
-- **source_overflow_chip.dart** et **topic_overflow_chip.dart** : Déjà fixés par la réécriture de l'agent.
-- **keyword_overflow_chip.dart** : N'a jamais eu de `\u2022`.
-
----
-
-## Design des logos dans les CTA footers
-
-Le pattern de référence est dans `keyword_overflow_chip.dart` (le seul qui fonctionne aujourd'hui) :
-
-```
-[> caret]  [Texte label ............]  [logo1 logo2 logo3 +N]  [→]
+# Test endpoint :
+curl -X POST http://localhost:8080/contents/<uuid>/feedback \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"sentiment": "positive"}'
+# → {"status": "ok", "sentiment": "positive"}
+# 2e appel = upsert, pas d'erreur
 ```
 
-- Logos 14x14px, ClipOval
-- Max 3 logos visibles, puis "+N" pour le reste
-- Sources avec logo en premier (tri par `logoUrl != null`)
-- Fallback : `InitialCircle` (cercle coloré + initiale) — widget partagé dans `initial_circle.dart`
-- Le widget `InitialCircle` existe déjà dans `apps/mobile/lib/features/feed/widgets/initial_circle.dart`
+### Mobile
+```bash
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test
+```
 
----
+### Visuel (device/simulator)
+1. Ouvrir le digest → chips colorés au-dessus des cartes (actu=primary, pas_de_recul=info, pepite/coup_de_coeur=success)
+2. Thumbs up sur un article → icône remplie, pas de chips
+3. Thumbs down → chips raisons apparaissent, sélectionner 1-2, attendre 2s → soumission auto
+4. Dark mode + light mode (palette Terre & Sauge, contraste lisible)
+5. Ouvrir un article depuis digest → badge chip visible au-dessus du titre
+6. Closure → CTA "Essentiel terminé — Un avis ?" → bottom sheet → submit → navigation ClosureScreen
 
-## Fichiers à modifier
-
-### Backend (1 fichier)
-- `packages/api/app/services/recommendation_service.py` L1550-1558 : Ajouter `sources` au dict cluster
-
-### Schema (potentiellement)
-- `packages/api/app/schemas/feed.py` : Ajouter `sources` à `ClusterInfo` si le schema est validé côté router
-
-### Mobile (4-5 fichiers)
-- `apps/mobile/lib/features/feed/models/content_model.dart` : `FeedCluster.sources`, `Content.clusterSources`
-- `apps/mobile/lib/features/feed/repositories/feed_repository.dart` : Parser + annoter `clusterSources`
-- `apps/mobile/lib/features/custom_topics/widgets/cluster_chip.dart` : Multi-logos à droite + vérifier suppression `\u2022`
-- `apps/mobile/lib/features/feed/widgets/source_overflow_chip.dart` : Vérifier layout logo à droite (déjà modifié)
-- `apps/mobile/lib/features/feed/widgets/topic_overflow_chip.dart` : Vérifier layout multi-logos (déjà modifié)
-
-### NE PAS toucher
-- `keyword_overflow_chip.dart` — fonctionne déjà correctement
-- `feed_screen.dart` — la priority chain est correcte
-- `feed_provider.dart` — aucun changement nécessaire
-
----
-
-## Vérification
-
-Après modification, sur Chrome (`flutter run -d chrome`) :
-
-1. **ClusterChip** ("N autres articles sur Topic") : doit afficher 1-3 logos source à droite du texte
-2. **SourceOverflowChip** ("N autres articles de Source") : doit afficher 1 logo source à droite
-3. **TopicOverflowChip** ("N autres articles Label") : doit afficher 1-3 logos à droite
-4. **Aucun** footer ne doit contenir le caractère "•"
-5. Quand `logoUrl` est null, un cercle avec initiale colorée (InitialCircle) doit apparaître en fallback
-
----
-
-## Changements déjà effectués par le premier agent (à conserver/ajuster)
-
-Ces changements sont dans le working tree. Ils sont globalement corrects mais le focus était mal ciblé :
-
-**Backend :**
-- ✅ `scoring_config.py` : `KEYWORD_MIN_LENGTH` baissé de 5 à 4
-- ✅ `recommendation_service.py` : Seuil adaptatif `min_kw = 2` si `retained < 15`
-- ✅ `recommendation_service.py` : `sources` list dans topic_overflow_info (L876-895)
-- ✅ `schemas/feed.py` : `OverflowSourceInfo` partagé + `sources` sur `TopicOverflowInfo`
-
-**Mobile :**
-- ✅ `initial_circle.dart` : Widget partagé extrait
-- ✅ `keyword_overflow_chip.dart` : Import du widget partagé, suppression du privé
-- ✅ `content_model.dart` : `TopicOverflow.sources`, `Content.topicOverflowSources`
-- ✅ `feed_repository.dart` : Passage de `topicOverflowSources`
-- ⚠️ `topic_overflow_chip.dart` : Multi-logos ajoutés (correct mais jamais testé)
-- ⚠️ `source_overflow_chip.dart` : Logo unique à droite (correct mais jamais testé)
-- ❌ `cluster_chip.dart` : NON MODIFIÉ — c'est le widget le plus visible, et le seul vraiment manquant
+### Migration
+- Exécuter le SQL de `fb01` via Supabase SQL Editor
+- Vérifier table `article_feedback` avec un INSERT test
