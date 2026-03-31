@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import re
 import time
 from uuid import UUID
 
@@ -18,6 +19,7 @@ logger = structlog.get_logger()
 from app.schemas.content import RecommendationReason, ScoreContribution
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
+    apply_keyword_filter,
     apply_serein_filter,
     apply_theme_focus_filter,
     apply_topic_filter,
@@ -58,6 +60,9 @@ class RecommendationService:
         self.keyword_overflow: list[
             dict
         ] = []  # Populated by keyword regroupement
+        self.entity_overflow: list[
+            dict
+        ] = []  # Populated by entity regroupement
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -90,6 +95,7 @@ class RecommendationService:
         has_note: bool = False,
         source_id: str | None = None,
         entity: str | None = None,
+        keyword: str | None = None,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -380,14 +386,30 @@ class RecommendationService:
             user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
             self.user_custom_topics = user_custom_topics
 
-            # Phase 2: Keyword regroupement (compress articles by keyword mining)
+            # Phase 1.5: Entity regroupement (highest thematic priority)
+            result, entity_overflow, assigned_ids, entity_ctas = (
+                self._apply_entity_regroupement(result, ScoringWeights.MAX_TOTAL_CTAS)
+            )
+            self.entity_overflow = entity_overflow
+
+            # Phase 2: Keyword regroupement (remaining CTA budget)
+            remaining_budget = ScoringWeights.MAX_TOTAL_CTAS - entity_ctas
             result, keyword_overflow, topic_overflow = (
                 self._apply_keyword_regroupement(
-                    result, user_custom_topics, user_subtopic_weights, limit
+                    result, user_custom_topics, user_subtopic_weights, limit,
+                    pre_assigned_ids=assigned_ids, max_ctas=remaining_budget,
                 )
             )
             self.keyword_overflow = keyword_overflow
             self.topic_overflow = topic_overflow
+
+            # Phase 3: Suppress redundant source CTAs
+            self._suppress_redundant_source_overflow()
+
+            # Phase 3b: Safety net — force-group 3+ consecutive same-source
+            result, extra_source_overflow = self._apply_source_safety_net(result)
+            for sid, count in extra_source_overflow.items():
+                self.source_overflow[sid] = self.source_overflow.get(sid, 0) + count
 
             t_end = time.monotonic()
             logger.info(
@@ -653,7 +675,7 @@ class RecommendationService:
         )
 
         # PASS 2b: Diversity cap — no source gets more than 4× min_quota (× its multiplier)
-        MAX_SOURCE_RATIO = 4
+        MAX_SOURCE_RATIO = 8
         min_quota = min(quotas.values())
         for source_id in quotas:
             multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
@@ -694,19 +716,21 @@ class RecommendationService:
         return retained[offset : offset + limit], source_overflow
 
     @staticmethod
-    @staticmethod
     def _apply_source_interleaving(articles: list[Content]) -> list[Content]:
         """
-        Avoid consecutive articles from the same source.
+        Prevent more than 2 consecutive articles from the same source.
 
-        Walks the list and when article[i].source_id == article[i-1].source_id,
-        swaps with the nearest following article from a different source.
-        O(n^2) but n~40, negligible.
+        For each position i (starting at 2), if article[i] shares the same
+        source as article[i-1] and article[i-2], swap with the nearest
+        following article from a different source.
         """
         result = list(articles)
         n = len(result)
-        for i in range(1, n):
-            if result[i].source_id == result[i - 1].source_id:
+        for i in range(2, n):
+            if (
+                result[i].source_id == result[i - 1].source_id
+                and result[i].source_id == result[i - 2].source_id
+            ):
                 # Find the nearest different source to swap with
                 for j in range(i + 1, n):
                     if result[j].source_id != result[i].source_id:
@@ -715,10 +739,178 @@ class RecommendationService:
         return result
 
     @staticmethod
+    def _apply_entity_regroupement(
+        retained: list[Content],
+        max_ctas: int,
+    ) -> tuple[list[Content], list[dict], set[UUID], int]:
+        """
+        Entity-based feed regroupement (highest thematic priority).
+
+        Groups articles sharing the same named entity (from content.entities JSON).
+        Returns: (filtered_articles, entity_overflow_info, assigned_ids, ctas_used)
+        """
+        import json as _json
+
+        min_group = ScoringWeights.MIN_FOR_ENTITY_GROUPING
+
+        # Step 1: Build entity → articles index
+        entity_to_articles: dict[str, list[Content]] = {}
+        for article in retained:
+            if not article.entities:
+                continue
+            seen_entities: set[str] = set()
+            for raw in article.entities:
+                try:
+                    obj = _json.loads(raw)
+                    name = obj.get("name", "").strip()
+                    if name:
+                        key = name.lower()
+                        if key not in seen_entities:
+                            seen_entities.add(key)
+                            entity_to_articles.setdefault(key, []).append(article)
+                except (ValueError, TypeError):
+                    continue
+
+        # Step 2: Filter entities with enough articles
+        viable = {k: v for k, v in entity_to_articles.items() if len(v) >= min_group}
+
+        # Step 3: Rank by count DESC, then name length DESC (more specific = better)
+        ranked = sorted(viable.items(), key=lambda x: (-len(x[1]), -len(x[0])))
+
+        # Step 4: Greedy assignment
+        assigned_ids: set[UUID] = set()
+        entity_groups: list[dict] = []
+        cta_count = 0
+
+        for entity_key, articles in ranked:
+            if cta_count >= max_ctas:
+                break
+
+            available = [a for a in articles if a.id not in assigned_ids]
+            if len(available) < min_group:
+                continue
+
+            representative = available[0]
+            to_hide = available[1:]
+
+            # Collect source info
+            source_counts: dict[UUID, dict] = {}
+            for a in available:
+                sid = a.source_id
+                if sid not in source_counts:
+                    source_counts[sid] = {
+                        "source_id": sid,
+                        "source_name": a.source.name,
+                        "source_logo_url": a.source.logo_url,
+                        "article_count": 0,
+                    }
+                source_counts[sid]["article_count"] += 1
+
+            sources_list = sorted(
+                source_counts.values(), key=lambda x: -x["article_count"]
+            )
+
+            # Display label: use original casing from first article's entity
+            display_name = entity_key.title()
+            for raw in representative.entities:
+                try:
+                    obj = _json.loads(raw)
+                    if obj.get("name", "").lower() == entity_key:
+                        display_name = obj["name"]
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+            if len(sources_list) == 1:
+                display_label = f"{display_name} \u2014 {len(to_hide)} articles de {sources_list[0]['source_name']}"
+            else:
+                display_label = f"{display_name} \u2014 {len(to_hide)} articles"
+
+            for a in available:
+                assigned_ids.add(a.id)
+
+            entity_groups.append(
+                {
+                    "entity_name": entity_key,
+                    "display_label": display_label,
+                    "hidden_count": len(to_hide),
+                    "hidden_ids": [a.id for a in to_hide],
+                    "sources": sources_list,
+                }
+            )
+            cta_count += 1
+
+        # Filter hidden articles
+        if entity_groups:
+            hidden_ids = set()
+            for g in entity_groups:
+                hidden_ids.update(g["hidden_ids"])
+            retained = [a for a in retained if a.id not in hidden_ids]
+
+        logger.info(
+            "entity_regroupement",
+            entity_ctas=len(entity_groups),
+            assigned=len(assigned_ids),
+        )
+
+        return retained, entity_groups, assigned_ids, cta_count
+
+    def _suppress_redundant_source_overflow(self) -> None:
+        """Remove source overflow CTAs when their articles are captured by thematic groups."""
+        # Collect all source_ids that appear in any thematic group
+        thematic_source_ids: set[str] = set()
+        all_overflow = (
+            getattr(self, "entity_overflow", [])
+            + self.keyword_overflow
+            + self.topic_overflow
+        )
+        for info in all_overflow:
+            for s in info.get("sources", []):
+                sid = s.get("source_id")
+                if sid:
+                    thematic_source_ids.add(str(sid))
+
+        # Keep source CTA only if the source is NOT covered by any thematic group
+        updated = {}
+        for source_id, count in self.source_overflow.items():
+            if str(source_id) not in thematic_source_ids:
+                updated[source_id] = count
+        self.source_overflow = updated
+
+    @staticmethod
+    def _apply_source_safety_net(
+        articles: list[Content],
+    ) -> tuple[list[Content], dict[UUID, int]]:
+        """Force-group 3+ consecutive articles from same source into a source CTA."""
+        if len(articles) < 3:
+            return articles, {}
+
+        forced_overflow: dict[UUID, int] = {}
+        to_remove: set[UUID] = set()
+
+        i = 0
+        while i < len(articles):
+            # Find run of same source
+            j = i + 1
+            while j < len(articles) and articles[j].source_id == articles[i].source_id:
+                j += 1
+            run_length = j - i
+            if run_length >= 3:
+                # Keep first, hide the rest
+                for k in range(i + 1, j):
+                    to_remove.add(articles[k].id)
+                sid = articles[i].source_id
+                forced_overflow[sid] = forced_overflow.get(sid, 0) + (run_length - 1)
+            i = j
+
+        if to_remove:
+            articles = [a for a in articles if a.id not in to_remove]
+
+        return articles, forced_overflow
+
+    @staticmethod
     def _extract_keywords(title: str, stop_words: frozenset[str], min_length: int) -> list[str]:
         """Extract meaningful keywords from an article title."""
-        import re
-
         # Normalize accented chars for stop word matching, keep original for display
         tokens = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ\-]+", title.lower())
         return [t for t in tokens if len(t) >= min_length and t not in stop_words]
@@ -729,6 +921,8 @@ class RecommendationService:
         user_custom_topics: list,
         user_subtopic_weights: dict[str, float],
         target_slots: int = 20,
+        pre_assigned_ids: set[UUID] | None = None,
+        max_ctas: int | None = None,
     ) -> tuple[list[Content], list[dict], list[dict]]:
         """
         Keyword-based feed regroupement replacing topic regroupement.
@@ -743,8 +937,10 @@ class RecommendationService:
         from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 
         min_kw = ScoringWeights.MIN_FOR_KEYWORD_GROUPING
+        if len(retained) < 15:
+            min_kw = 2
         kw_min_len = ScoringWeights.KEYWORD_MIN_LENGTH
-        max_ctas = ScoringWeights.MAX_KEYWORD_CTAS
+        max_ctas = max_ctas if max_ctas is not None else ScoringWeights.MAX_TOTAL_CTAS
 
         # --- Step 1: Build keyword index from titles ---
         keyword_to_articles: dict[str, list[Content]] = {}
@@ -773,7 +969,7 @@ class RecommendationService:
                     custom_topic_keyword_map[k.lower()] = ct.name
 
         # --- Step 5: Greedy assignment (one article = one group max) ---
-        assigned_ids: set[UUID] = set()
+        assigned_ids: set[UUID] = set(pre_assigned_ids) if pre_assigned_ids else set()
         keyword_groups: list[dict] = []
         cta_count = 0
 
@@ -874,6 +1070,25 @@ class RecommendationService:
                     continue
 
                 ids_to_hide_kw.update(a.id for a in to_hide)
+                # Collect unique sources from all articles in the group
+                seen_src: set[str] = set()
+                sources_list: list[dict] = []
+                for a in arts:
+                    sid = str(a.source_id)
+                    if sid not in seen_src and a.source:
+                        seen_src.add(sid)
+                        sources_list.append({
+                            "source_id": a.source_id,
+                            "source_name": a.source.name,
+                            "source_logo_url": a.source.logo_url,
+                            "article_count": sum(
+                                1 for x in arts if str(x.source_id) == sid
+                            ),
+                        })
+                # Sort: sources with logos first
+                sources_list.sort(
+                    key=lambda s: (0 if s["source_logo_url"] else 1)
+                )
                 topic_overflow_info.append(
                     {
                         "group_type": "topic",
@@ -883,6 +1098,7 @@ class RecommendationService:
                         ),
                         "hidden_count": len(to_hide),
                         "hidden_ids": [a.id for a in to_hide],
+                        "sources": sources_list,
                     }
                 )
                 cta_count += 1
@@ -1356,6 +1572,10 @@ class RecommendationService:
         if entity and not source_id:
             query = apply_entity_filter(query, entity)
 
+        # Apply keyword filter (title ILIKE match for keyword overflow chip taps)
+        if keyword and not source_id:
+            query = apply_keyword_filter(query, keyword)
+
         if _use_two_phase:
             # Followed sources only — no curated enrichment in default feed.
             # Curated enrichment is reserved for digest (digest_selector.py).
@@ -1523,6 +1743,24 @@ class RecommendationService:
             representative = articles[0]  # Best scored (list is already sorted)
             others = articles[1:]
 
+            # Collect unique sources from all articles in the cluster
+            seen_src: set[str] = set()
+            sources_list: list[dict] = []
+            for a in articles:
+                sid = str(a.source_id)
+                if sid not in seen_src and a.source:
+                    seen_src.add(sid)
+                    sources_list.append({
+                        "source_id": a.source_id,
+                        "source_name": a.source.name,
+                        "source_logo_url": a.source.logo_url,
+                        "article_count": sum(
+                            1 for x in articles if str(x.source_id) == sid
+                        ),
+                    })
+            # Sort: sources with logos first
+            sources_list.sort(key=lambda s: (0 if s["source_logo_url"] else 1))
+
             clusters.append(
                 {
                     "topic_slug": slug,
@@ -1530,6 +1768,7 @@ class RecommendationService:
                     "representative_id": representative.id,
                     "hidden_count": len(others),
                     "hidden_ids": [a.id for a in others],
+                    "sources": sources_list,
                 }
             )
 

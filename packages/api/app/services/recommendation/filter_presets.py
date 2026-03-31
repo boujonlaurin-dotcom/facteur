@@ -169,6 +169,11 @@ def apply_entity_filter(query, entity_name: str):
     )
 
 
+def apply_keyword_filter(query, keyword: str):
+    """Filter content whose title contains the keyword (case-insensitive)."""
+    return query.where(Content.title.ilike(f"%{keyword}%"))
+
+
 def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:
     """Retourne la liste des biais à montrer pour un changement de perspective.
 

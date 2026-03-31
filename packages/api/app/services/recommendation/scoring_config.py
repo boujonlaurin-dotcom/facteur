@@ -248,7 +248,12 @@ class ScoringWeights:
     MIN_FOR_KEYWORD_GROUPING = 3
 
     # Minimum character length for a keyword to be considered.
-    KEYWORD_MIN_LENGTH = 5
+    KEYWORD_MIN_LENGTH = 4
 
-    # Maximum keyword CTA groups per feed page.
-    MAX_KEYWORD_CTAS = 6
+    # Maximum total CTA groups (entity + keyword + topic) per feed page.
+    MAX_TOTAL_CTAS = 7
+
+    # --- ENTITY REGROUPEMENT ---
+
+    # Minimum articles sharing an entity to form an entity CTA group.
+    MIN_FOR_ENTITY_GROUPING = 3

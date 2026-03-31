@@ -18,17 +18,25 @@ void main() {
       expect(Section3Question.themes.index, equals(0));
     });
 
-    test('Section3Question.sources has index 1 (second question)', () {
-      expect(Section3Question.sources.index, equals(1));
+    test('Section3Question.subtopics has index 1 (second question)', () {
+      expect(Section3Question.subtopics.index, equals(1));
     });
 
-    test('Section3Question.finalize has index 2 (last)', () {
-      expect(Section3Question.finalize.index, equals(2));
+    test('Section3Question.sources has index 2 (third question)', () {
+      expect(Section3Question.sources.index, equals(2));
+    });
+
+    test('Section3Question.sourcesReaction has index 3 (fourth question)', () {
+      expect(Section3Question.sourcesReaction.index, equals(3));
+    });
+
+    test('Section3Question.finalize has index 4 (last)', () {
+      expect(Section3Question.finalize.index, equals(4));
     });
   });
 
   group('Section 3 navigation flow', () {
-    test('selectThemesAndSubtopics updates state with themes and subtopics',
+    test('selectThemes and selectSubtopics update state with themes and subtopics',
         () async {
       final container = ProviderContainer();
 
@@ -40,9 +48,9 @@ void main() {
       final themes = ['tech', 'international'];
       final subtopics = ['ai', 'geopolitics'];
 
-      container
-          .read(onboardingProvider.notifier)
-          .selectThemesAndSubtopics(themes, subtopics);
+      final notifier = container.read(onboardingProvider.notifier);
+      notifier.selectThemes(themes);
+      notifier.selectSubtopics(subtopics);
 
       // Verify data update
       final newState = container.read(onboardingProvider);

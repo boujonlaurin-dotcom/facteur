@@ -43,7 +43,9 @@ void main() {
         overrides: [
           onboardingProvider.overrideWith((ref) {
             final notifier = OnboardingNotifier();
-            notifier.selectPerspective('big_picture');
+            notifier.state = notifier.state.copyWith(
+              answers: notifier.state.answers.copyWith(perspective: 'big_picture'),
+            );
             return notifier;
           }),
         ],

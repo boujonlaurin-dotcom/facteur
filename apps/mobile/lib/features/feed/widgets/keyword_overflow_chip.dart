@@ -6,6 +6,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
+import 'initial_circle.dart';
 
 /// Chip shown below the representative card of a keyword group.
 ///
@@ -29,10 +30,20 @@ class KeywordOverflowChip extends ConsumerWidget {
     final sources = content.keywordOverflowSources;
     final isSingleSource = sources.length == 1;
 
+    // Sort sources so those with logos come first
+    final sortedSources = List<KeywordOverflowSource>.from(sources)
+      ..sort((a, b) {
+        final aHasLogo =
+            a.sourceLogoUrl != null && a.sourceLogoUrl!.isNotEmpty ? 0 : 1;
+        final bHasLogo =
+            b.sourceLogoUrl != null && b.sourceLogoUrl!.isNotEmpty ? 0 : 1;
+        return aHasLogo.compareTo(bHasLogo);
+      });
+
     return GestureDetector(
       onTap: () {
-        // Filter feed by keyword (reuse topic filter mechanism)
-        ref.read(feedProvider.notifier).setTopic(content.keywordOverflowKey!);
+        // Filter feed by keyword (title ILIKE match)
+        ref.read(feedProvider.notifier).setKeyword(content.keywordOverflowKey!);
       },
       child: Container(
         decoration: BoxDecoration(
@@ -70,9 +81,16 @@ class KeywordOverflowChip extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (!isSingleSource && sources.isNotEmpty) ...[
+                  if (isSingleSource && sortedSources.isNotEmpty) ...[
                     const SizedBox(width: FacteurSpacing.space2),
-                    _SourceLogos(sources: sources, colors: colors),
+                    _SourceLogo(
+                      source: sortedSources.first,
+                      colors: colors,
+                    ),
+                  ],
+                  if (!isSingleSource && sortedSources.isNotEmpty) ...[
+                    const SizedBox(width: FacteurSpacing.space2),
+                    _SourceLogos(sources: sortedSources, colors: colors),
                   ],
                 ],
               ),
@@ -89,6 +107,25 @@ class KeywordOverflowChip extends ConsumerWidget {
   }
 }
 
+/// Single source: circular logo + "de {sourceName}".
+class _SourceLogo extends StatelessWidget {
+  final KeywordOverflowSource source;
+  final FacteurColors colors;
+
+  const _SourceLogo({required this.source, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _LogoCircle(source: source, colors: colors),
+      ],
+    );
+  }
+}
+
+/// Multi-source: up to 3 circular logos with tight spacing + optional "+N".
 class _SourceLogos extends StatelessWidget {
   final List<KeywordOverflowSource> sources;
   final FacteurColors colors;
@@ -106,20 +143,7 @@ class _SourceLogos extends StatelessWidget {
       children: [
         for (var i = 0; i < visibleSources.length; i++) ...[
           if (i > 0) const SizedBox(width: 2),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: visibleSources[i].sourceLogoUrl != null &&
-                    visibleSources[i].sourceLogoUrl!.isNotEmpty
-                ? FacteurImage(
-                    imageUrl: visibleSources[i].sourceLogoUrl!,
-                    width: 16,
-                    height: 16,
-                    fit: BoxFit.cover,
-                    errorWidget: (context) =>
-                        const SizedBox(width: 16, height: 16),
-                  )
-                : const SizedBox(width: 16, height: 16),
-          ),
+          _LogoCircle(source: visibleSources[i], colors: colors),
         ],
         if (extraCount > 0) ...[
           const SizedBox(width: 2),
@@ -135,3 +159,44 @@ class _SourceLogos extends StatelessWidget {
     );
   }
 }
+
+/// A single circular logo (14x14). Shows the source image if available,
+/// otherwise falls back to the source's initial letter in a colored circle.
+class _LogoCircle extends StatelessWidget {
+  final KeywordOverflowSource source;
+  final FacteurColors colors;
+
+  const _LogoCircle({required this.source, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLogo = source.sourceLogoUrl != null &&
+        source.sourceLogoUrl!.isNotEmpty;
+
+    if (hasLogo) {
+      return ClipOval(
+        child: FacteurImage(
+          imageUrl: source.sourceLogoUrl!,
+          width: 14,
+          height: 14,
+          fit: BoxFit.cover,
+          errorWidget: (context) => InitialCircle(
+            initial: source.sourceName.isNotEmpty
+                ? source.sourceName[0].toUpperCase()
+                : '?',
+            colors: colors,
+          ),
+        ),
+      );
+    }
+
+    return InitialCircle(
+      initial: source.sourceName.isNotEmpty
+          ? source.sourceName[0].toUpperCase()
+          : '?',
+      colors: colors,
+    );
+  }
+}
+
+

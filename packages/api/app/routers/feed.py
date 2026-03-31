@@ -12,9 +12,11 @@ from app.models.enums import ContentType, FeedFilterMode
 from app.schemas.content import FeedRefreshRequest
 from app.schemas.feed import (
     ClusterInfo,
+    EntityOverflowInfo,
     FeedResponse,
     KeywordOverflowInfo,
     KeywordOverflowSourceInfo,
+    OverflowSourceInfo,
     PaginationMeta,
     SourceOverflowInfo,
     TopicOverflowInfo,
@@ -44,6 +46,9 @@ async def get_personalized_feed(
     has_note: bool = Query(False, alias="has_note"),
     source_id: str | None = Query(None, description="Source UUID to filter by"),
     entity: str | None = Query(None, description="Entity canonical name to filter by"),
+    keyword: str | None = Query(
+        None, description="Keyword to filter articles by title (ILIKE match)"
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -73,6 +78,7 @@ async def get_personalized_feed(
         has_note=has_note,
         source_id=source_id,
         entity=entity,
+        keyword=keyword,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)
@@ -115,6 +121,21 @@ async def get_personalized_feed(
             )
         )
 
+    # Entity overflow from entity regroupement
+    entity_overflow_data = []
+    for info in service.entity_overflow:
+        sources = [
+            OverflowSourceInfo(**s) for s in info.get("sources", [])
+        ]
+        entity_overflow_data.append(
+            EntityOverflowInfo(
+                entity_name=info["entity_name"],
+                display_label=info["display_label"],
+                hidden_count=info["hidden_count"],
+                hidden_ids=info["hidden_ids"],
+                sources=sources,
+            )
+        )
     return FeedResponse(
         items=feed_items,
         pagination=PaginationMeta(
@@ -127,6 +148,7 @@ async def get_personalized_feed(
         source_overflow=overflow_data,
         topic_overflow=topic_overflow_data,
         keyword_overflow=keyword_overflow_data,
+        entity_overflow=entity_overflow_data,
     )
 
 

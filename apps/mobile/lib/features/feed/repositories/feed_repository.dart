@@ -18,6 +18,7 @@ class FeedRepository {
     bool hasNote = false,
     String? sourceId,
     String? entity,
+    String? keyword,
     bool serein = false,
   }) async {
     try {
@@ -60,6 +61,10 @@ class FeedRepository {
 
       if (entity != null) {
         queryParams['entity'] = entity;
+      }
+
+      if (keyword != null) {
+        queryParams['keyword'] = keyword;
       }
 
       if (serein) {
@@ -138,6 +143,7 @@ class FeedRepository {
                     clusterTopic: cluster.topicSlug,
                     clusterHiddenCount: cluster.hiddenCount,
                     clusterHiddenIds: cluster.hiddenIds,
+                    clusterSources: cluster.sources,
                   );
                 }
                 return item;
@@ -228,6 +234,54 @@ class FeedRepository {
                       topicOverflowKey: overflow.groupKey,
                       topicOverflowType: overflow.groupType,
                       topicOverflowHiddenIds: overflow.hiddenIds,
+                      topicOverflowSources: overflow.sources,
+                    );
+                  }
+                }
+              }
+            }
+          }
+          // Entity overflow from entity regroupement
+          final entityOverflowRaw = data['entity_overflow'];
+          if (entityOverflowRaw is List) {
+            final entityOverflows = <EntityOverflow>[];
+            for (final e in entityOverflowRaw) {
+              try {
+                if (e is Map<String, dynamic>) {
+                  entityOverflows.add(EntityOverflow.fromJson(e));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt entity_overflow: $err');
+              }
+            }
+
+            if (entityOverflows.isNotEmpty) {
+              // For each entity overflow group, find the last article whose
+              // entities contain the entity name and annotate it.
+              // Priority: cluster > entity_overflow > keyword_overflow > topic_overflow > source_overflow
+              for (final overflow in entityOverflows) {
+                final entityLower = overflow.entityName.toLowerCase();
+                int? lastMatchIdx;
+                for (var i = 0; i < itemsList.length; i++) {
+                  final item = itemsList[i];
+                  final matches = item.entities.any(
+                    (e) => e.text.toLowerCase() == entityLower,
+                  );
+                  if (matches) {
+                    lastMatchIdx = i;
+                  }
+                }
+
+                if (lastMatchIdx != null) {
+                  final item = itemsList[lastMatchIdx];
+                  // Don't overwrite cluster chip (highest priority)
+                  if (item.clusterHiddenCount == 0) {
+                    itemsList[lastMatchIdx] = item.copyWith(
+                      entityOverflowCount: overflow.hiddenCount,
+                      entityOverflowLabel: overflow.displayLabel,
+                      entityOverflowKey: overflow.entityName,
+                      entityOverflowHiddenIds: overflow.hiddenIds,
+                      entityOverflowSources: overflow.sources,
                     );
                   }
                 }

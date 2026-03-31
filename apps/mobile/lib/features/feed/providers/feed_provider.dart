@@ -40,6 +40,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? _selectedTopic;
   String? _selectedSourceId;
   String? _selectedEntity;
+  String? _selectedKeyword;
   final Set<String> _consumedContentIds =
       {}; // Track content being animated out
 
@@ -50,6 +51,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? get selectedTopic => _selectedTopic;
   String? get selectedSourceId => _selectedSourceId;
   String? get selectedEntity => _selectedEntity;
+  String? get selectedKeyword => _selectedKeyword;
 
   @override
   FutureOr<FeedState> build() async {
@@ -68,6 +70,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
     _selectedEntity = null;
+    _selectedKeyword = null;
 
     // Watch serein toggle to refetch feed when it changes
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
@@ -90,6 +93,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
     _selectedEntity = null;
+    _selectedKeyword = null;
     await refresh();
   }
 
@@ -100,6 +104,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTopic = null;
     _selectedSourceId = null;
     _selectedEntity = null;
+    _selectedKeyword = null;
     await refresh();
   }
 
@@ -110,6 +115,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTheme = null;
     _selectedSourceId = null;
     _selectedEntity = null;
+    _selectedKeyword = null;
     await refresh();
   }
 
@@ -120,6 +126,18 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTheme = null;
     _selectedTopic = null;
     _selectedSourceId = null;
+    _selectedKeyword = null;
+    await refresh();
+  }
+
+  Future<void> setKeyword(String? keyword) async {
+    if (_selectedKeyword == keyword) return;
+    _selectedKeyword = keyword;
+    _selectedFilter = null;
+    _selectedTheme = null;
+    _selectedTopic = null;
+    _selectedSourceId = null;
+    _selectedEntity = null;
     await refresh();
   }
 
@@ -130,6 +148,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTheme = null;
     _selectedTopic = null;
     _selectedEntity = null;
+    _selectedKeyword = null;
     await refresh();
   }
 
@@ -144,6 +163,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         topic: _selectedTopic,
         sourceId: _selectedSourceId,
         entity: _selectedEntity,
+        keyword: _selectedKeyword,
         serein: isSerein);
 
     // Update pagination state: keep loading as long as the backend returns

@@ -114,6 +114,7 @@ class Content {
   final int clusterHiddenCount;
   final List<String> clusterHiddenIds;
   final List<Content> clusterHiddenArticles;
+  final List<KeywordOverflowSource> clusterSources;
 
   // Epic 12: Source overflow (populated by FeedRepository from diversification)
   final int sourceOverflowCount;
@@ -124,6 +125,14 @@ class Content {
   final String? topicOverflowKey;
   final String? topicOverflowType; // "topic" or "theme"
   final List<String> topicOverflowHiddenIds;
+  final List<KeywordOverflowSource> topicOverflowSources;
+
+  // Entity overflow (populated by FeedRepository from entity regroupement)
+  final int entityOverflowCount;
+  final String? entityOverflowLabel;
+  final String? entityOverflowKey;
+  final List<String> entityOverflowHiddenIds;
+  final List<KeywordOverflowSource> entityOverflowSources;
 
   // Keyword overflow (populated by FeedRepository from keyword regroupement)
   final int keywordOverflowCount;
@@ -161,12 +170,19 @@ class Content {
     this.clusterHiddenCount = 0,
     this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
+    this.clusterSources = const [],
     this.sourceOverflowCount = 0,
     this.topicOverflowCount = 0,
     this.topicOverflowLabel,
     this.topicOverflowKey,
     this.topicOverflowType,
     this.topicOverflowHiddenIds = const [],
+    this.topicOverflowSources = const [],
+    this.entityOverflowCount = 0,
+    this.entityOverflowLabel,
+    this.entityOverflowKey,
+    this.entityOverflowHiddenIds = const [],
+    this.entityOverflowSources = const [],
     this.keywordOverflowCount = 0,
     this.keywordOverflowLabel,
     this.keywordOverflowKey,
@@ -237,12 +253,19 @@ class Content {
       clusterHiddenCount: clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
+      clusterSources: clusterSources,
       sourceOverflowCount: sourceOverflowCount,
       topicOverflowCount: topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel,
       topicOverflowKey: topicOverflowKey,
       topicOverflowType: topicOverflowType,
       topicOverflowHiddenIds: topicOverflowHiddenIds,
+      topicOverflowSources: topicOverflowSources,
+      entityOverflowCount: entityOverflowCount,
+      entityOverflowLabel: entityOverflowLabel,
+      entityOverflowKey: entityOverflowKey,
+      entityOverflowHiddenIds: entityOverflowHiddenIds,
+      entityOverflowSources: entityOverflowSources,
       keywordOverflowCount: keywordOverflowCount,
       keywordOverflowLabel: keywordOverflowLabel,
       keywordOverflowKey: keywordOverflowKey,
@@ -345,12 +368,19 @@ class Content {
     int? clusterHiddenCount,
     List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
+    List<KeywordOverflowSource>? clusterSources,
     int? sourceOverflowCount,
     int? topicOverflowCount,
     String? topicOverflowLabel,
     String? topicOverflowKey,
     String? topicOverflowType,
     List<String>? topicOverflowHiddenIds,
+    List<KeywordOverflowSource>? topicOverflowSources,
+    int? entityOverflowCount,
+    String? entityOverflowLabel,
+    String? entityOverflowKey,
+    List<String>? entityOverflowHiddenIds,
+    List<KeywordOverflowSource>? entityOverflowSources,
     int? keywordOverflowCount,
     String? keywordOverflowLabel,
     String? keywordOverflowKey,
@@ -387,6 +417,7 @@ class Content {
       clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
+      clusterSources: clusterSources ?? this.clusterSources,
       sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
       topicOverflowCount: topicOverflowCount ?? this.topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel ?? this.topicOverflowLabel,
@@ -394,6 +425,18 @@ class Content {
       topicOverflowType: topicOverflowType ?? this.topicOverflowType,
       topicOverflowHiddenIds:
           topicOverflowHiddenIds ?? this.topicOverflowHiddenIds,
+      topicOverflowSources:
+          topicOverflowSources ?? this.topicOverflowSources,
+      entityOverflowCount:
+          entityOverflowCount ?? this.entityOverflowCount,
+      entityOverflowLabel:
+          entityOverflowLabel ?? this.entityOverflowLabel,
+      entityOverflowKey:
+          entityOverflowKey ?? this.entityOverflowKey,
+      entityOverflowHiddenIds:
+          entityOverflowHiddenIds ?? this.entityOverflowHiddenIds,
+      entityOverflowSources:
+          entityOverflowSources ?? this.entityOverflowSources,
       keywordOverflowCount:
           keywordOverflowCount ?? this.keywordOverflowCount,
       keywordOverflowLabel:
@@ -497,6 +540,7 @@ class FeedCluster {
   final String representativeId;
   final int hiddenCount;
   final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
 
   FeedCluster({
     required this.topicSlug,
@@ -504,6 +548,7 @@ class FeedCluster {
     required this.representativeId,
     this.hiddenCount = 0,
     this.hiddenIds = const [],
+    this.sources = const [],
   });
 
   factory FeedCluster.fromJson(Map<String, dynamic> json) {
@@ -514,6 +559,11 @@ class FeedCluster {
       hiddenCount: (json['hidden_count'] as int?) ?? 0,
       hiddenIds: (json['hidden_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.map((e) =>
+                  KeywordOverflowSource.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
     );
@@ -527,6 +577,7 @@ class TopicOverflow {
   final String groupLabel;
   final int hiddenCount;
   final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
 
   TopicOverflow({
     required this.groupType,
@@ -534,6 +585,7 @@ class TopicOverflow {
     required this.groupLabel,
     required this.hiddenCount,
     this.hiddenIds = const [],
+    this.sources = const [],
   });
 
   factory TopicOverflow.fromJson(Map<String, dynamic> json) {
@@ -544,6 +596,11 @@ class TopicOverflow {
       hiddenCount: (json['hidden_count'] as int?) ?? 0,
       hiddenIds: (json['hidden_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
               .toList() ??
           const [],
     );
@@ -607,6 +664,40 @@ class KeywordOverflow {
               .toList() ??
           const [],
       isCustomTopic: (json['is_custom_topic'] as bool?) ?? false,
+    );
+  }
+}
+
+/// Entity overflow from entity regroupement.
+class EntityOverflow {
+  final String entityName;
+  final String displayLabel;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
+
+  EntityOverflow({
+    required this.entityName,
+    required this.displayLabel,
+    required this.hiddenCount,
+    this.hiddenIds = const [],
+    this.sources = const [],
+  });
+
+  factory EntityOverflow.fromJson(Map<String, dynamic> json) {
+    return EntityOverflow(
+      entityName: (json['entity_name'] as String?) ?? '',
+      displayLabel: (json['display_label'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
+              .toList() ??
+          const [],
     );
   }
 }

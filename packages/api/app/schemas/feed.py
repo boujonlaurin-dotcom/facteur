@@ -22,6 +22,15 @@ class FeedItemResponse(ContentResponse):
     pass
 
 
+class OverflowSourceInfo(BaseModel):
+    """Source info within an overflow group (shared by keyword, topic, and cluster)."""
+
+    source_id: UUID
+    source_name: str
+    source_logo_url: str | None
+    article_count: int
+
+
 class ClusterInfo(BaseModel):
     """Metadata d'un cluster d'articles regroupés par custom topic (Epic 11)."""
 
@@ -30,6 +39,7 @@ class ClusterInfo(BaseModel):
     representative_id: UUID
     hidden_count: int
     hidden_ids: list[UUID]
+    sources: list[OverflowSourceInfo] = []
 
 
 class SourceOverflowInfo(BaseModel):
@@ -47,15 +57,11 @@ class TopicOverflowInfo(BaseModel):
     group_label: str  # label traduit pour affichage
     hidden_count: int
     hidden_ids: list[UUID]
+    sources: list[OverflowSourceInfo] = []
 
 
-class KeywordOverflowSourceInfo(BaseModel):
-    """Source info within a keyword overflow group."""
-
-    source_id: UUID
-    source_name: str
-    source_logo_url: str | None
-    article_count: int
+# Alias for backward compatibility in router imports
+KeywordOverflowSourceInfo = OverflowSourceInfo
 
 
 class KeywordOverflowInfo(BaseModel):
@@ -69,6 +75,16 @@ class KeywordOverflowInfo(BaseModel):
     is_custom_topic: bool = False
 
 
+class EntityOverflowInfo(BaseModel):
+    """Metadata d'overflow: articles regroupés par entité nommée (NER)."""
+
+    entity_name: str
+    display_label: str
+    hidden_count: int
+    hidden_ids: list[UUID]
+    sources: list[OverflowSourceInfo] = []
+
+
 class FeedResponse(BaseModel):
     """Réponse feed paginé."""
 
@@ -78,6 +94,7 @@ class FeedResponse(BaseModel):
     source_overflow: list[SourceOverflowInfo] = []
     topic_overflow: list[TopicOverflowInfo] = []
     keyword_overflow: list[KeywordOverflowInfo] = []
+    entity_overflow: list[EntityOverflowInfo] = []
 
 
 class FeedFilters(BaseModel):
