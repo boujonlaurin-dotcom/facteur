@@ -8,7 +8,7 @@ FRENCH_STOP_WORDS: frozenset[str] = frozenset({
     # Pronouns
     "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "on",
     "me", "te", "se", "lui", "eux", "moi", "toi", "soi",
-    "qui", "que", "quoi", "dont", "ou", "lequel", "laquelle", "lesquels",
+    "qui", "que", "quoi", "dont", "lequel", "laquelle", "lesquels",
     "celui", "celle", "ceux", "celles",
     # Prepositions
     "dans", "pour", "avec", "sans", "sous", "sur", "entre", "vers",
@@ -20,7 +20,7 @@ FRENCH_STOP_WORDS: frozenset[str] = frozenset({
     # Auxiliary verbs
     "etre", "avoir", "est", "sont", "sera", "etait", "fait", "faire",
     "peut", "veut", "doit", "faut", "vont", "font",
-    "a", "aux", "en",
+    "a", "en",
     # Common adverbs
     "pas", "plus", "moins", "bien", "mal", "tres", "aussi", "encore",
     "toujours", "jamais", "deja", "enfin", "alors", "ainsi", "surtout",
@@ -39,5 +39,5 @@ FRENCH_STOP_WORDS: frozenset[str] = frozenset({
     "quel", "quelle", "quels", "quelles", "comment", "pourquoi",
     "combien", "voici", "voila", "cela", "ceci",
     "deux", "trois", "quatre", "cinq",
-    "apres", "avant", "jusqu", "plus",
+    "jusqu",
 })

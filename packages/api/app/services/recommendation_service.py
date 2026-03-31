@@ -304,6 +304,8 @@ class RecommendationService:
             topic=topic,
             # Entity filter: signal explicit_filter mode
             entity=entity,
+            # Keyword filter (title ILIKE match for keyword overflow chip taps)
+            keyword=keyword,
             # Paywall filter
             hide_paid_content=hide_paid_content,
             # Premium sources: allow paid content from subscribed sources
@@ -926,7 +928,7 @@ class RecommendationService:
     def _apply_keyword_regroupement(
         retained: list[Content],
         user_custom_topics: list,
-        user_subtopic_weights: dict[str, float],
+        _user_subtopic_weights: dict[str, float],
         target_slots: int = 20,
         pre_assigned_ids: set[UUID] | None = None,
         max_ctas: int | None = None,
@@ -939,8 +941,6 @@ class RecommendationService:
 
         Returns: (compressed_articles, keyword_overflow_info, topic_overflow_fallback)
         """
-        from math import ceil
-
         from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 
         min_kw = ScoringWeights.MIN_FOR_KEYWORD_GROUPING
@@ -990,7 +990,6 @@ class RecommendationService:
                 continue
 
             # Keep first article as representative, hide the rest
-            representative = available[0]
             to_hide = available[1:]
 
             # Collect source info for multi-source display
@@ -1400,6 +1399,7 @@ class RecommendationService:
         source_id: UUID | None = None,
         topic: str | None = None,
         entity: str | None = None,
+        keyword: str | None = None,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -1428,6 +1428,7 @@ class RecommendationService:
             or theme is not None
             or topic is not None
             or entity is not None
+            or keyword is not None
         )
 
         if explicit_filter:
