@@ -411,9 +411,7 @@ async def get_suggestions(
             continue
 
         label = SLUG_TO_LABEL.get(slug, slug.capitalize())
-        suggestions.append(
-            TopicSuggestion(slug=slug, label=label, article_count=count)
-        )
+        suggestions.append(TopicSuggestion(slug=slug, label=label, article_count=count))
 
         if len(suggestions) >= 4:
             break
