@@ -54,6 +54,7 @@ class RecommendationService:
         self.topic_overflow: list[
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
+        self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -276,7 +277,7 @@ class RecommendationService:
         t2 = time.monotonic()
         candidates = await self._get_candidates(
             user_id,
-            limit_candidates=200,
+            limit_candidates=500,
             content_type=content_type,
             mode=mode,
             followed_source_ids=followed_source_ids,
@@ -300,6 +301,7 @@ class RecommendationService:
             # Source filter
             source_id=source_uuid,
         )
+        self.total_candidates = len(candidates)
 
         # Entity filter: post-filter candidates by entity name in content.entities[]
         if entity:
@@ -356,7 +358,7 @@ class RecommendationService:
 
             # Phase 1: Chronological diversification with expanded pool for Phase 2
             # Request more articles than limit so Phase 2 has room to compress neutrals
-            phase1_limit = limit * 2
+            phase1_limit = limit * 3
             result, source_overflow = self._apply_chronological_diversification(
                 candidates, source_priority_multipliers, phase1_limit, offset
             )

@@ -92,9 +92,9 @@ async def get_personalized_feed(
     # Topic overflow from topic-aware regroupement (Phase 2)
     topic_overflow_data = [TopicOverflowInfo(**info) for info in service.topic_overflow]
 
-    # Calculate pagination metadata
-    # If we got 'limit' items, assume there's a next page
-    has_next = len(feed_items) >= limit
+    # Calculate pagination metadata based on the total candidate pool,
+    # not the post-filtered response size (regroupement/clustering can shrink it)
+    has_next = (offset + limit) < service.total_candidates
 
     return FeedResponse(
         items=feed_items,

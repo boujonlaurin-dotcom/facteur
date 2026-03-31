@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -302,29 +303,40 @@ async def report_not_serene(
 
     user_uuid = UUID(current_user_id)
 
-    stmt = (
-        insert(SereneReport)
-        .values(
-            content_id=content_id,
-            user_id=user_uuid,
+    try:
+        stmt = (
+            insert(SereneReport)
+            .values(
+                id=uuid.uuid4(),
+                content_id=content_id,
+                user_id=user_uuid,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "content_id"],
+            )
         )
-        .on_conflict_do_nothing(
-            constraint="uq_serene_report_user_content",
-        )
-    )
-    await db.execute(stmt)
+        await db.execute(stmt)
 
-    # Flip is_serene immediately (threshold = 1)
-    content = await db.get(Content, content_id)
-    if content and content.is_serene is not False:
-        content.is_serene = False
-        logger.info(
-            "serene_report_reclassified",
+        # Flip is_serene immediately (threshold = 1)
+        content = await db.get(Content, content_id)
+        if content and content.is_serene is not False:
+            content.is_serene = False
+            logger.info(
+                "serene_report_reclassified",
+                content_id=str(content_id),
+                user_id=current_user_id,
+            )
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "serene_report_failed",
             content_id=str(content_id),
             user_id=current_user_id,
         )
+        raise HTTPException(status_code=500, detail="Failed to record serene report")
 
-    await db.commit()
     return {"status": "ok"}
 
 
