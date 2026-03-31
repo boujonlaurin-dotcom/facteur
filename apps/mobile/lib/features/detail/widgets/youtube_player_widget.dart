@@ -1,20 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart' as mobile;
-import 'package:youtube_player_iframe/youtube_player_iframe.dart' as web;
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
-/// Supports long-press for 2x speed boost (web only).
+/// Unified on youtube_player_iframe for all platforms.
+/// Supports long-press for 2x speed boost on all platforms.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
   final String? description;
+  final Widget? footer;
+  final double aspectRatio;
   final ValueChanged<double>? onProgressChanged; // 0.0 to 1.0
+  final ValueChanged<bool>? onPlayStateChanged; // true = playing
 
   const YouTubePlayerWidget({
     super.key,
@@ -22,112 +23,52 @@ class YouTubePlayerWidget extends StatefulWidget {
     required this.title,
     this.description,
     this.footer,
+    this.aspectRatio = 16 / 9,
     this.onProgressChanged,
+    this.onPlayStateChanged,
   });
-
-  final Widget? footer;
 
   @override
   State<YouTubePlayerWidget> createState() => _YouTubePlayerWidgetState();
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
-  // Mobile Controller
-  late mobile.YoutubePlayerController _mobileController;
-
-  // Web Controller
-  late web.YoutubePlayerController _webController;
-
+  late YoutubePlayerController _controller;
   String? _videoId;
-  bool _isPlayerReady = false;
   double _lastReportedProgress = -1.0;
-  Timer? _webProgressTimer;
+  Timer? _progressTimer;
+  StreamSubscription<YoutubePlayerValue>? _playStateSubscription;
 
   // Long-press 2x speed state
   bool _isSpeedBoosted = false;
 
-  /// Extract video ID from /shorts/ URLs not handled by youtube_player_flutter.
-  static String? _extractShortsId(String url) {
-    final match = RegExp(r'youtube\.com/shorts/([\w-]+)').firstMatch(url);
-    return match?.group(1);
-  }
-
   @override
   void initState() {
     super.initState();
-    _videoId = mobile.YoutubePlayer.convertUrlToId(widget.videoUrl);
-    // Fallback for /shorts/ URLs not supported by convertUrlToId
-    _videoId ??= _extractShortsId(widget.videoUrl);
+    _videoId = YoutubePlayerController.convertUrlToId(widget.videoUrl);
 
     if (_videoId != null) {
-      if (kIsWeb) {
-        // Initialize Web Controller
-        _webController = web.YoutubePlayerController.fromVideoId(
-          videoId: _videoId!,
-          autoPlay: false,
-          params: const web.YoutubePlayerParams(
-            showControls: true,
-            showFullscreenButton: true,
-          ),
-        );
-        _isPlayerReady = true; // Iframe handles loading state better internally
-        // Web progress tracking via periodic timer
-        _startWebProgressTracking();
-      } else {
-        // Initialize Mobile Controller
-        _mobileController = mobile.YoutubePlayerController(
-          initialVideoId: _videoId!,
-          flags: const mobile.YoutubePlayerFlags(
-            autoPlay: false,
-            mute: false,
-            enableCaption: true,
-            hideControls: false,
-            hideThumbnail: false,
-            controlsVisibleAtStart: true,
-          ),
-        );
-
-        // Listener for Fullscreen rotation + progress tracking
-        _mobileController.addListener(_onMobileControllerUpdate);
-      }
+      _controller = YoutubePlayerController.fromVideoId(
+        videoId: _videoId!,
+        autoPlay: false,
+        params: const YoutubePlayerParams(
+          showControls: true,
+          showFullscreenButton: true,
+        ),
+      );
+      _startProgressTracking();
+      _startPlayStateTracking();
     }
   }
 
-  void _onMobileControllerUpdate() {
-    // Fullscreen rotation
-    if (_mobileController.value.isFullScreen) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    } else {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
-    }
-
-    // Progress tracking
-    if (widget.onProgressChanged == null) return;
-    final position = _mobileController.value.position;
-    final duration = _mobileController.metadata.duration;
-    if (duration.inMilliseconds > 0) {
-      final progress =
-          (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-      if ((progress - _lastReportedProgress).abs() >= 0.02) {
-        _lastReportedProgress = progress;
-        widget.onProgressChanged!(progress);
-      }
-    }
-  }
-
-  void _startWebProgressTracking() {
-    _webProgressTimer = Timer.periodic(
+  void _startProgressTracking() {
+    _progressTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) async {
         if (widget.onProgressChanged == null) return;
         try {
-          final currentTime = await _webController.currentTime;
-          final duration = await _webController.duration;
+          final currentTime = await _controller.currentTime;
+          final duration = await _controller.duration;
           if (duration > 0) {
             final progress = (currentTime / duration).clamp(0.0, 1.0);
             if ((progress - _lastReportedProgress).abs() >= 0.02) {
@@ -142,33 +83,30 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     );
   }
 
-  // --- Long-press 2x speed (web only) ---
+  void _startPlayStateTracking() {
+    _playStateSubscription = _controller.listen((value) {
+      widget.onPlayStateChanged
+          ?.call(value.playerState == PlayerState.playing);
+    });
+  }
+
+  // --- Long-press 2x speed (all platforms) ---
   void _startSpeedBoost() {
     setState(() => _isSpeedBoosted = true);
-    if (kIsWeb) {
-      _webController.setPlaybackRate(2.0);
-    }
-    // Mobile: youtube_player_flutter v9 doesn't expose setPlaybackRate()
+    _controller.setPlaybackRate(2.0);
   }
 
   void _stopSpeedBoost() {
     setState(() => _isSpeedBoosted = false);
-    if (kIsWeb) {
-      _webController.setPlaybackRate(1.0);
-    }
+    _controller.setPlaybackRate(1.0);
   }
 
   @override
   void dispose() {
-    _webProgressTimer?.cancel();
+    _progressTimer?.cancel();
+    _playStateSubscription?.cancel();
     if (_videoId != null) {
-      if (kIsWeb) {
-        _webController.close();
-      } else {
-        _mobileController.removeListener(_onMobileControllerUpdate);
-        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-        _mobileController.dispose();
-      }
+      _controller.close();
     }
     super.dispose();
   }
@@ -203,51 +141,10 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    Widget playerWidget;
-
-    if (kIsWeb) {
-      playerWidget = web.YoutubePlayer(
-        controller: _webController,
-        aspectRatio: 16 / 9,
-      );
-    } else {
-      playerWidget = mobile.YoutubePlayerBuilder(
-        player: mobile.YoutubePlayer(
-          controller: _mobileController,
-          showVideoProgressIndicator: true,
-          progressIndicatorColor: colors.primary,
-          progressColors: mobile.ProgressBarColors(
-            playedColor: colors.primary,
-            handleColor: colors.primary,
-            bufferedColor: colors.surfaceElevated,
-            backgroundColor: colors.surface,
-          ),
-          onReady: () {
-            setState(() => _isPlayerReady = true);
-          },
-        ),
-        builder: (context, player) {
-          return Column(
-            children: [
-              // Player
-              player,
-
-              // Loading indicator
-              if (!_isPlayerReady)
-                Container(
-                  height: 200,
-                  color: colors.surface,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: colors.primary,
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      );
-    }
+    final playerWidget = YoutubePlayer(
+      controller: _controller,
+      aspectRatio: widget.aspectRatio,
+    );
 
     // Wrap player in GestureDetector for long-press 2x speed + Stack for overlay
     final playerWithSpeedBoost = GestureDetector(
@@ -294,6 +191,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       ),
     );
 
+    // If no description or footer, return player directly so it respects
+    // parent height constraints (important for 9:16 Shorts in bounded containers).
+    if (widget.aspectRatio < 1.0 && widget.description == null && widget.footer == null) {
+      return playerWithSpeedBoost;
+    }
+
+    // With description/footer, use scroll view for overflow content
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

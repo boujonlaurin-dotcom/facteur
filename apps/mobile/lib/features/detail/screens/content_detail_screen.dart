@@ -111,6 +111,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
+  bool _isVideoPlaying = false;
+  Timer? _videoPlayHideTimer;
 
   Content? _content;
 
@@ -431,7 +433,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Fade FABs + header during scroll, restore on stop with differentiated delays.
   /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
+  /// Auto-hide header/FABs during video playback for immersion.
+  void _onVideoPlayStateChanged(bool isPlaying) {
+    _isVideoPlaying = isPlaying;
+    _videoPlayHideTimer?.cancel();
+
+    if (isPlaying) {
+      _videoPlayHideTimer = Timer(const Duration(milliseconds: 2500), () {
+        if (mounted && _isVideoPlaying) {
+          _headerOpacity.value = 0.0;
+          _fabOpacity.value = 0.07;
+        }
+      });
+    } else {
+      _headerOpacity.value = 1.0;
+      _fabOpacity.value = 1.0;
+      _headerScrollStopTimer?.cancel();
+      _scrollStopTimer?.cancel();
+    }
+  }
+
   void _onScrollFabOpacity() {
+    _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
       _fabOpacity.value = 0.07;
     }
@@ -698,6 +721,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
     _headerScrollStopTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
@@ -1819,8 +1843,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Video content layout: sticky player at top, scrollable metadata below.
-  /// For Shorts: tall 9:16 player with minimal metadata.
+  /// Video content layout.
+  /// Regular videos: sticky 16:9 player at top, scrollable metadata below.
+  /// Shorts: full-bleed 9:16 player with overlay metadata bar at bottom.
   Widget _buildVideoContent(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
@@ -1837,9 +1862,166 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return LayoutBuilder(builder: (context, constraints) {
       final maxHeight = constraints.maxHeight;
-      final playerHeight = isShort
-          ? (maxHeight - headerHeight - 80).clamp(0.0, screenWidth * 16 / 9)
-          : screenWidth * 9 / 16;
+
+      // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
+      if (isShort) {
+        // Reserve ~160px below the player for metadata (scrollable, same
+        // pattern as regular videos). FABs float over this Flutter text area
+        // (not an iframe) so they remain clickable.
+        final shortsPlayerHeight = (maxHeight - headerHeight - 160)
+            .clamp(200.0, screenWidth * 16 / 9);
+
+        return Column(
+          children: [
+            // Spacer for header overlay (header sits on this, not on iframe)
+            SizedBox(height: headerHeight),
+
+            // Centered player — bounded height, narrower than screen width
+            SizedBox(
+              height: shortsPlayerHeight,
+              width: screenWidth,
+              child: Center(
+                child: YouTubePlayerWidget(
+                  videoUrl: content.url,
+                  title: content.title,
+                  aspectRatio: 9 / 16,
+                  onProgressChanged: _onVideoProgressChanged,
+                  onPlayStateChanged: _onVideoPlayStateChanged,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: FacteurSpacing.space3),
+
+            // Scrollable metadata — same design as regular video
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Video Title
+                    Text(
+                      content.title,
+                      style: textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+
+                    // Published date
+                    Text(
+                      timeago.format(content.publishedAt, locale: 'fr_short'),
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: FacteurSpacing.space3),
+
+                    // Channel row: avatar + name + optional theme chip
+                    Row(
+                      children: [
+                        if (content.source.logoUrl != null)
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundImage: CachedNetworkImageProvider(
+                                content.source.logoUrl!),
+                            backgroundColor: colors.surfaceElevated,
+                          )
+                        else
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: colors.surfaceElevated,
+                            child: Icon(
+                              PhosphorIcons.user(PhosphorIconsStyle.regular),
+                              size: 16,
+                              color: colors.textTertiary,
+                            ),
+                          ),
+                        const SizedBox(width: FacteurSpacing.space3),
+                        Expanded(
+                          child: Text(
+                            content.source.name,
+                            style: textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (content.source.theme != null &&
+                            content.source.theme!.isNotEmpty) ...[
+                          const SizedBox(width: FacteurSpacing.space2),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.primary,
+                              borderRadius:
+                                  BorderRadius.circular(FacteurRadius.pill),
+                            ),
+                            child: Text(
+                              content.source.getThemeLabel(),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+
+                    // Expandable description
+                    if (descriptionText != null &&
+                        descriptionText.isNotEmpty) ...[
+                      const SizedBox(height: FacteurSpacing.space3),
+                      Divider(color: colors.border, height: 1),
+                      const SizedBox(height: FacteurSpacing.space3),
+                      Text(
+                        descriptionText,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                          height: 1.5,
+                        ),
+                        maxLines: _isDescriptionExpanded ? null : 2,
+                        overflow: _isDescriptionExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _isDescriptionExpanded =
+                              !_isDescriptionExpanded);
+                        },
+                        child: Text(
+                          _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Bottom spacing for FABs
+                    const SizedBox(height: 120),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      // --- Regular video: Column layout ---
+      final playerHeight = screenWidth * 9 / 16;
 
       return Column(
         children: [
@@ -1853,7 +2035,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: YouTubePlayerWidget(
               videoUrl: content.url,
               title: content.title,
+              aspectRatio: 16 / 9,
               onProgressChanged: _onVideoProgressChanged,
+              onPlayStateChanged: _onVideoPlayStateChanged,
             ),
           ),
 
@@ -1940,9 +2124,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // Expandable description (hidden for Shorts)
-                if (!isShort &&
-                    descriptionText != null &&
+                // Expandable description
+                if (descriptionText != null &&
                     descriptionText.isNotEmpty) ...[
                   const SizedBox(height: FacteurSpacing.space4),
                   Divider(color: colors.border, height: 1),
@@ -1984,6 +2167,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     }); // LayoutBuilder
   }
+
 
   Widget _buildInAppContent(BuildContext context, Content content) {
     final topic = content.progressionTopic;
