@@ -4,6 +4,7 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'article_thumbs_feedback.dart';
 import 'editorial_badge.dart';
 
 /// Editorial wrapper for the coup de cœur article.
@@ -35,14 +36,41 @@ class CoupDeCoeurBlock extends StatelessWidget {
     final colors = context.facteurColors;
     final item = _toDigestItem();
 
+    final badgeChip = EditorialBadge.chip(coupDeCoeur.badge, context: context);
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Editorial badge chip above
+        if (badgeChip != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+            child: badgeChip,
+          ),
+
+        // Intro text before card
+        Padding(
+          padding: const EdgeInsets.only(left: 4, right: 4, bottom: 10),
+          child: Text(
+            _introText(),
+            style: TextStyle(
+              fontStyle: FontStyle.italic,
+              fontSize: 15,
+              height: 1.5,
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.8)
+                  : colors.textSecondary,
+            ),
+          ),
+        ),
+
         // Coup de cœur card
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: FeedCard(
-            boxShadow: const [],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(item),
             descriptionFontSize: 15,
             onTap: () => onTap(item),
@@ -59,26 +87,21 @@ class CoupDeCoeurBlock extends StatelessWidget {
             onReportNotSerene:
                 onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
             isFollowedSource: item.isFollowedSource,
-            editorialBadgeLabel: EditorialBadge.labelFor(coupDeCoeur.badge),
+            editorialBadgeLabel: null,
           ),
         ),
 
-        // Save count label
-        if (coupDeCoeur.saveCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(left: 4, top: 6),
-            child: Text(
-              'Gardé par ${coupDeCoeur.saveCount} lecteurs',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                fontStyle: FontStyle.italic,
-                color: colors.textSecondary,
-              ),
-            ),
-          ),
+        // Article feedback thumbs
+        ArticleThumbsFeedback(contentId: coupDeCoeur.contentId),
       ],
     );
+  }
+
+  String _introText() {
+    if (coupDeCoeur.saveCount > 0) {
+      return 'L\u2019article le plus gardé hier par les lecteurs de Facteur.';
+    }
+    return 'L\u2019article le plus apprécié hier par la communauté Facteur.';
   }
 
   DigestItem _toDigestItem() {

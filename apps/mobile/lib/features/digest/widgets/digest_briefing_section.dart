@@ -178,10 +178,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         // crème transparaître. Plus léger en haut, plus teinté en bas.
         final topColor = isDark
             ? baseColor
-            : baseColor.withValues(alpha: 0.35);
+            : baseColor.withValues(alpha: 0.15);
         final bottomColor = isDark
             ? blendedEnd
-            : blendedEnd.withValues(alpha: 0.55);
+            : blendedEnd.withValues(alpha: 0.30);
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
@@ -525,7 +525,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           child: Opacity(
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
-              boxShadow: const [],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),

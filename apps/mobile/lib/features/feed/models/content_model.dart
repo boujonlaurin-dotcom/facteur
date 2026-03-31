@@ -142,6 +142,9 @@ class Content {
   final List<KeywordOverflowSource> keywordOverflowSources;
   final bool keywordOverflowIsCustomTopic;
 
+  // Editorial badge from digest (actu, pas_de_recul, pepite, coup_de_coeur)
+  final String? editorialBadge;
+
   Content({
     required this.id,
     required this.title,
@@ -189,6 +192,7 @@ class Content {
     this.keywordOverflowHiddenIds = const [],
     this.keywordOverflowSources = const [],
     this.keywordOverflowIsCustomTopic = false,
+    this.editorialBadge,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -272,6 +276,7 @@ class Content {
       keywordOverflowHiddenIds: keywordOverflowHiddenIds,
       keywordOverflowSources: keywordOverflowSources,
       keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
+      editorialBadge: editorialBadge,
     );
   }
 
@@ -387,6 +392,7 @@ class Content {
     List<String>? keywordOverflowHiddenIds,
     List<KeywordOverflowSource>? keywordOverflowSources,
     bool? keywordOverflowIsCustomTopic,
+    String? editorialBadge,
   }) {
     return Content(
       id: id ?? this.id,
@@ -449,6 +455,7 @@ class Content {
           keywordOverflowSources ?? this.keywordOverflowSources,
       keywordOverflowIsCustomTopic:
           keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
+      editorialBadge: editorialBadge ?? this.editorialBadge,
     );
   }
 

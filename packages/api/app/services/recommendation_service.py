@@ -980,7 +980,7 @@ class RecommendationService:
         for ct in user_custom_topics:
             if hasattr(ct, "keywords") and ct.keywords:
                 for k in ct.keywords:
-                    custom_topic_keyword_map[k.lower()] = ct.name
+                    custom_topic_keyword_map[k.lower()] = ct.topic_name
 
         # --- Step 5: Greedy assignment (one article = one group max) ---
         assigned_ids: set[UUID] = set(pre_assigned_ids) if pre_assigned_ids else set()

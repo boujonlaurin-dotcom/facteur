@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import 'feedback_bottom_sheet.dart';
@@ -77,45 +78,33 @@ class _ClosureBlockState extends State<ClosureBlock>
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
-              Text(
-                widget.ctaText ?? 'Une suggestion ? Un avis ?',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  color: colors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => const FeedbackBottomSheet(),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: colors.primary,
-                      foregroundColor: Colors.white,
-                      shape: const StadiumBorder(),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 14,
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
+                child: FilledButton.icon(
+                  onPressed: () {
+                    HapticFeedback.mediumImpact();
+                    showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => const FeedbackBottomSheet(),
+                    );
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colors.primary,
+                    foregroundColor: Colors.white,
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 28,
+                      vertical: 14,
                     ),
-                    icon: Icon(PhosphorIcons.chatTeardrop(), size: 18),
-                    label: const Text('Donner un retour'),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
+                  icon: Icon(PhosphorIcons.checkCircle(), size: 18),
+                  label: const Text('Essentiel terminé — Un avis ?'),
                 ),
               ),
             ],

@@ -27,10 +27,10 @@ class TransitionText extends StatelessWidget {
             child: MarkdownText(
               text: text,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: FontWeight.w400,
                 fontStyle: FontStyle.italic,
-                color: colors.textSecondary,
+                color: colors.textPrimary.withValues(alpha: 0.7),
               ),
             ),
           ),

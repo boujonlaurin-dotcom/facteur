@@ -195,6 +195,12 @@ pepite:
     un mini-editorial (1-2 phrases factuelles et denses, forme impersonnelle,
     sans question rhetorique ni sensationnalisme).
 
+    IMPORTANT — le mini-editorial doit parler de l'article selectionne :
+    - NE PAS expliquer ce qu'est la section Pepite ou comment y contribuer
+    - NE PAS ecrire de meta-commentaire ("dans cette section", "on met en valeur", "pour y contribuer")
+    - Ecrire 1-2 phrases factuelles et denses sur l'article lui-meme (~30 mots max)
+    - Forme impersonnelle, pas de question rhetorique
+
     Reponds en JSON valide :
     - Si un candidat convient : {{"selected_content_id": "uuid", "mini_editorial": "1-2 phrases"}}
     - Si aucun ne convient : {{"selected_content_id": null, "mini_editorial": null}}

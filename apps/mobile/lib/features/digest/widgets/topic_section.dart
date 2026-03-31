@@ -10,6 +10,7 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'article_thumbs_feedback.dart';
 import 'editorial_badge.dart';
 
 /// A single topic section in the digest topics layout.
@@ -202,6 +203,13 @@ class _TopicSectionState extends State<TopicSection> {
             const SizedBox(height: 2),
             _buildPageIndicator(colors, topic.articles.length),
           ],
+
+          // Article feedback thumbs (1 per topic group)
+          ArticleThumbsFeedback(
+            contentId: isMulti
+                ? topic.articles[_currentPage].contentId
+                : topic.articles.first.contentId,
+          ),
         ],
       ),
     );
@@ -372,35 +380,45 @@ class _TopicSectionState extends State<TopicSection> {
     }
 
     final imageVisible = _imageWillRender(article);
+    final badgeChip = EditorialBadge.chip(article.badge, context: context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: FeedCard(
-        boxShadow: const [],
-        content: _convertToContent(article),
-        alwaysShowDescription: !imageVisible,
-        descriptionFontSize: 15,
-        onImageError: () => _onImageError(article.contentId),
-        onTap: () => widget.onArticleTap(article),
-        onSourceTap: widget.onSourceTap != null && article.source?.id != null
-            ? () => widget.onSourceTap!(article.source!.id!)
-            : null,
-        onLongPressStart: (_) =>
-            ArticlePreviewOverlay.show(context, _convertToContent(article)),
-        onLongPressMoveUpdate: (details) =>
-            ArticlePreviewOverlay.updateScroll(
-                details.localOffsetFromOrigin.dy),
-        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-        onSaveLongPress: () =>
-            CollectionPickerSheet.show(context, article.contentId),
-        isSaved: article.isSaved,
-        onNotInterested: widget.onNotInterested != null
-            ? () => widget.onNotInterested!(article)
-            : null,
-        isFollowedSource: article.isFollowedSource,
-        editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (badgeChip != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 6),
+            child: badgeChip,
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: FeedCard(
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+            content: _convertToContent(article),
+            alwaysShowDescription: !imageVisible,
+            descriptionFontSize: 15,
+            onImageError: () => _onImageError(article.contentId),
+            onTap: () => widget.onArticleTap(article),
+            onSourceTap: widget.onSourceTap != null && article.source?.id != null
+                ? () => widget.onSourceTap!(article.source!.id!)
+                : null,
+            onLongPressStart: (_) =>
+                ArticlePreviewOverlay.show(context, _convertToContent(article)),
+            onLongPressMoveUpdate: (details) =>
+                ArticlePreviewOverlay.updateScroll(
+                    details.localOffsetFromOrigin.dy),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+            onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+            onSaveLongPress: () =>
+                CollectionPickerSheet.show(context, article.contentId),
+            isSaved: article.isSaved,
+            onNotInterested: widget.onNotInterested != null
+                ? () => widget.onNotInterested!(article)
+                : null,
+            isFollowedSource: article.isFollowedSource,
+          ),
+        ),
+      ],
     );
   }
 
@@ -412,8 +430,9 @@ class _TopicSectionState extends State<TopicSection> {
       itemBuilder: (context, index) {
         final article = topic.articles[index];
         final imageVisible = _imageWillRender(article);
+        final badgeChip = EditorialBadge.chip(article.badge, context: context);
         final card = FeedCard(
-          boxShadow: const [],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
           content: _convertToContent(article),
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
@@ -438,11 +457,24 @@ class _TopicSectionState extends State<TopicSection> {
               ? () => widget.onNotInterested!(article)
               : null,
           isFollowedSource: article.isFollowedSource,
-          editorialBadgeLabel: EditorialBadge.labelFor(article.badge),
         );
         return Padding(
           padding: const EdgeInsets.only(right: 8),
-          child: Align(alignment: Alignment.topCenter, child: card),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (badgeChip != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: badgeChip,
+                  ),
+                card,
+              ],
+            ),
+          ),
         );
       },
     );

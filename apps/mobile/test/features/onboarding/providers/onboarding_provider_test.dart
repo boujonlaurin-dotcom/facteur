@@ -29,7 +29,6 @@ void main() {
     test('Section3Question.sourcesReaction has index 3 (fourth question)', () {
       expect(Section3Question.sourcesReaction.index, equals(3));
     });
-
     test('Section3Question.finalize has index 4 (last)', () {
       expect(Section3Question.finalize.index, equals(4));
     });
@@ -85,14 +84,10 @@ void main() {
 
     test('Section 3 starts at themes (index 0) after transition from Section 2',
         () async {
-      final container = ProviderContainer();
-
       // Simulate being in Section 3 at question index 0
       // After _transitionToSection3() is called, currentQuestionIndex = 0
       // which should map to Section3Question.themes
 
-      // Force state to Section 3
-      final notifier = container.read(onboardingProvider.notifier);
       // We can't directly call _transitionToSection3 (private), but we can simulate
       // by checking the enum mapping
       expect(Section3Question.values[0], equals(Section3Question.themes));

@@ -4,6 +4,7 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'article_thumbs_feedback.dart';
 import 'editorial_badge.dart';
 import 'markdown_text.dart';
 
@@ -37,9 +38,18 @@ class PepiteBlock extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final item = _toDigestItem();
 
+    final badgeChip = EditorialBadge.chip(pepite.badge, context: context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Editorial badge chip above
+        if (badgeChip != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+            child: badgeChip,
+          ),
+
         // Mini-editorial text
         if (pepite.miniEditorial.isNotEmpty)
           Padding(
@@ -65,7 +75,7 @@ class PepiteBlock extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: FeedCard(
-            boxShadow: const [],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(item),
             descriptionFontSize: 15,
             onTap: () => onTap(item),
@@ -82,10 +92,12 @@ class PepiteBlock extends StatelessWidget {
             onReportNotSerene:
                 onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
             isFollowedSource: item.isFollowedSource,
-            editorialBadgeLabel: EditorialBadge.labelFor(pepite.badge),
+            editorialBadgeLabel: null,
           ),
         ),
 
+        // Article feedback thumbs
+        ArticleThumbsFeedback(contentId: pepite.contentId),
       ],
     );
   }

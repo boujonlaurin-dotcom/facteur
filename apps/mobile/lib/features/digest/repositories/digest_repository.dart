@@ -254,6 +254,29 @@ class DigestRepository {
     }
   }
 
+  /// Submit article-level feedback (thumbs up/down + optional reasons)
+  Future<void> submitArticleFeedback({
+    required String contentId,
+    required String sentiment,
+    List<String> reasons = const [],
+    String? comment,
+  }) async {
+    try {
+      await _apiClient.dio.post<dynamic>(
+        'contents/$contentId/feedback',
+        data: {
+          'sentiment': sentiment,
+          'reasons': reasons,
+          if (comment != null) 'comment': comment,
+        },
+      );
+    } catch (e) {
+      // Fail silently — feedback should never block the digest flow
+      // ignore: avoid_print
+      print('DigestRepository: submitArticleFeedback failed: $e');
+    }
+  }
+
   /// Report an article as not serene (misclassified)
   Future<void> reportNotSerene(String contentId) async {
     await _apiClient.dio.post<dynamic>(
