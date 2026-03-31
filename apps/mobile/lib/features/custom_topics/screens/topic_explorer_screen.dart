@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../../core/api/providers.dart';
 import '../providers/algorithm_profile_provider.dart';
@@ -262,6 +265,10 @@ class TopicExplorerScreen extends ConsumerWidget {
                             Navigator.of(context).pushNamed(
                               '/feed/content/${article.id}',
                             );
+                          },
+                          onSourceTap: () {
+                            ref.read(feedProvider.notifier).setSource(article.source.id);
+                            context.goNamed(RouteNames.feed);
                           },
                         ),
                       );

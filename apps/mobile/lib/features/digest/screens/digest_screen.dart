@@ -602,6 +602,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 ? _handleReportNotSerene
                                 : null,
                             onSwipeDismiss: _handleSwipeDismiss,
+                            onSourceTap: (sourceId) {
+                              ref.read(feedProvider.notifier).setSource(sourceId);
+                              context.goNamed(RouteNames.feed);
+                            },
                             onMuteSource: (sourceId) => ref
                                 .read(feedProvider.notifier)
                                 .muteSourceById(sourceId),

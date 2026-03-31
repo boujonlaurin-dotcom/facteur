@@ -15,6 +15,7 @@ class CoupDeCoeurBlock extends StatelessWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
   final void Function(DigestItem)? onReportNotSerene;
+  final void Function(String sourceId)? onSourceTap;
   final bool isSerene;
 
   const CoupDeCoeurBlock({
@@ -25,6 +26,7 @@ class CoupDeCoeurBlock extends StatelessWidget {
     this.onSave,
     this.onNotInterested,
     this.onReportNotSerene,
+    this.onSourceTap,
     this.isSerene = false,
   });
 
@@ -44,6 +46,9 @@ class CoupDeCoeurBlock extends StatelessWidget {
             content: _convertToContent(item),
             descriptionFontSize: 15,
             onTap: () => onTap(item),
+            onSourceTap: onSourceTap != null && coupDeCoeur.source?.id != null
+                ? () => onSourceTap!(coupDeCoeur.source!.id!)
+                : null,
             onLike: onLike != null ? () => onLike!(item) : null,
             isLiked: item.isLiked,
             onSave: onSave != null ? () => onSave!(item) : null,

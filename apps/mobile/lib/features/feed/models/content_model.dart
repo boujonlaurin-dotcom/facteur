@@ -114,6 +114,7 @@ class Content {
   final int clusterHiddenCount;
   final List<String> clusterHiddenIds;
   final List<Content> clusterHiddenArticles;
+  final List<KeywordOverflowSource> clusterSources;
 
   // Epic 12: Source overflow (populated by FeedRepository from diversification)
   final int sourceOverflowCount;
@@ -124,6 +125,22 @@ class Content {
   final String? topicOverflowKey;
   final String? topicOverflowType; // "topic" or "theme"
   final List<String> topicOverflowHiddenIds;
+  final List<KeywordOverflowSource> topicOverflowSources;
+
+  // Entity overflow (populated by FeedRepository from entity regroupement)
+  final int entityOverflowCount;
+  final String? entityOverflowLabel;
+  final String? entityOverflowKey;
+  final List<String> entityOverflowHiddenIds;
+  final List<KeywordOverflowSource> entityOverflowSources;
+
+  // Keyword overflow (populated by FeedRepository from keyword regroupement)
+  final int keywordOverflowCount;
+  final String? keywordOverflowLabel;
+  final String? keywordOverflowKey;
+  final List<String> keywordOverflowHiddenIds;
+  final List<KeywordOverflowSource> keywordOverflowSources;
+  final bool keywordOverflowIsCustomTopic;
 
   Content({
     required this.id,
@@ -153,12 +170,25 @@ class Content {
     this.clusterHiddenCount = 0,
     this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
+    this.clusterSources = const [],
     this.sourceOverflowCount = 0,
     this.topicOverflowCount = 0,
     this.topicOverflowLabel,
     this.topicOverflowKey,
     this.topicOverflowType,
     this.topicOverflowHiddenIds = const [],
+    this.topicOverflowSources = const [],
+    this.entityOverflowCount = 0,
+    this.entityOverflowLabel,
+    this.entityOverflowKey,
+    this.entityOverflowHiddenIds = const [],
+    this.entityOverflowSources = const [],
+    this.keywordOverflowCount = 0,
+    this.keywordOverflowLabel,
+    this.keywordOverflowKey,
+    this.keywordOverflowHiddenIds = const [],
+    this.keywordOverflowSources = const [],
+    this.keywordOverflowIsCustomTopic = false,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -223,12 +253,25 @@ class Content {
       clusterHiddenCount: clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
+      clusterSources: clusterSources,
       sourceOverflowCount: sourceOverflowCount,
       topicOverflowCount: topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel,
       topicOverflowKey: topicOverflowKey,
       topicOverflowType: topicOverflowType,
       topicOverflowHiddenIds: topicOverflowHiddenIds,
+      topicOverflowSources: topicOverflowSources,
+      entityOverflowCount: entityOverflowCount,
+      entityOverflowLabel: entityOverflowLabel,
+      entityOverflowKey: entityOverflowKey,
+      entityOverflowHiddenIds: entityOverflowHiddenIds,
+      entityOverflowSources: entityOverflowSources,
+      keywordOverflowCount: keywordOverflowCount,
+      keywordOverflowLabel: keywordOverflowLabel,
+      keywordOverflowKey: keywordOverflowKey,
+      keywordOverflowHiddenIds: keywordOverflowHiddenIds,
+      keywordOverflowSources: keywordOverflowSources,
+      keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
     );
   }
 
@@ -325,12 +368,25 @@ class Content {
     int? clusterHiddenCount,
     List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
+    List<KeywordOverflowSource>? clusterSources,
     int? sourceOverflowCount,
     int? topicOverflowCount,
     String? topicOverflowLabel,
     String? topicOverflowKey,
     String? topicOverflowType,
     List<String>? topicOverflowHiddenIds,
+    List<KeywordOverflowSource>? topicOverflowSources,
+    int? entityOverflowCount,
+    String? entityOverflowLabel,
+    String? entityOverflowKey,
+    List<String>? entityOverflowHiddenIds,
+    List<KeywordOverflowSource>? entityOverflowSources,
+    int? keywordOverflowCount,
+    String? keywordOverflowLabel,
+    String? keywordOverflowKey,
+    List<String>? keywordOverflowHiddenIds,
+    List<KeywordOverflowSource>? keywordOverflowSources,
+    bool? keywordOverflowIsCustomTopic,
   }) {
     return Content(
       id: id ?? this.id,
@@ -361,6 +417,7 @@ class Content {
       clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
+      clusterSources: clusterSources ?? this.clusterSources,
       sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
       topicOverflowCount: topicOverflowCount ?? this.topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel ?? this.topicOverflowLabel,
@@ -368,6 +425,30 @@ class Content {
       topicOverflowType: topicOverflowType ?? this.topicOverflowType,
       topicOverflowHiddenIds:
           topicOverflowHiddenIds ?? this.topicOverflowHiddenIds,
+      topicOverflowSources:
+          topicOverflowSources ?? this.topicOverflowSources,
+      entityOverflowCount:
+          entityOverflowCount ?? this.entityOverflowCount,
+      entityOverflowLabel:
+          entityOverflowLabel ?? this.entityOverflowLabel,
+      entityOverflowKey:
+          entityOverflowKey ?? this.entityOverflowKey,
+      entityOverflowHiddenIds:
+          entityOverflowHiddenIds ?? this.entityOverflowHiddenIds,
+      entityOverflowSources:
+          entityOverflowSources ?? this.entityOverflowSources,
+      keywordOverflowCount:
+          keywordOverflowCount ?? this.keywordOverflowCount,
+      keywordOverflowLabel:
+          keywordOverflowLabel ?? this.keywordOverflowLabel,
+      keywordOverflowKey:
+          keywordOverflowKey ?? this.keywordOverflowKey,
+      keywordOverflowHiddenIds:
+          keywordOverflowHiddenIds ?? this.keywordOverflowHiddenIds,
+      keywordOverflowSources:
+          keywordOverflowSources ?? this.keywordOverflowSources,
+      keywordOverflowIsCustomTopic:
+          keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
     );
   }
 
@@ -459,6 +540,7 @@ class FeedCluster {
   final String representativeId;
   final int hiddenCount;
   final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
 
   FeedCluster({
     required this.topicSlug,
@@ -466,6 +548,7 @@ class FeedCluster {
     required this.representativeId,
     this.hiddenCount = 0,
     this.hiddenIds = const [],
+    this.sources = const [],
   });
 
   factory FeedCluster.fromJson(Map<String, dynamic> json) {
@@ -476,6 +559,11 @@ class FeedCluster {
       hiddenCount: (json['hidden_count'] as int?) ?? 0,
       hiddenIds: (json['hidden_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.map((e) =>
+                  KeywordOverflowSource.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
     );
@@ -489,6 +577,7 @@ class TopicOverflow {
   final String groupLabel;
   final int hiddenCount;
   final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
 
   TopicOverflow({
     required this.groupType,
@@ -496,6 +585,7 @@ class TopicOverflow {
     required this.groupLabel,
     required this.hiddenCount,
     this.hiddenIds = const [],
+    this.sources = const [],
   });
 
   factory TopicOverflow.fromJson(Map<String, dynamic> json) {
@@ -506,6 +596,112 @@ class TopicOverflow {
       hiddenCount: (json['hidden_count'] as int?) ?? 0,
       hiddenIds: (json['hidden_ids'] as List<dynamic>?)
               ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+/// Source info within a keyword overflow group.
+class KeywordOverflowSource {
+  final String sourceId;
+  final String sourceName;
+  final String? sourceLogoUrl;
+  final int articleCount;
+
+  KeywordOverflowSource({
+    required this.sourceId,
+    required this.sourceName,
+    this.sourceLogoUrl,
+    required this.articleCount,
+  });
+
+  factory KeywordOverflowSource.fromJson(Map<String, dynamic> json) {
+    return KeywordOverflowSource(
+      sourceId: (json['source_id'] as String?) ?? '',
+      sourceName: (json['source_name'] as String?) ?? '',
+      sourceLogoUrl: json['source_logo_url'] as String?,
+      articleCount: (json['article_count'] as int?) ?? 0,
+    );
+  }
+}
+
+/// Keyword overflow from keyword mining regroupement.
+class KeywordOverflow {
+  final String keyword;
+  final String filterKeyword; // Raw mined token for title matching and API filtering
+  final String displayLabel;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
+  final bool isCustomTopic;
+
+  KeywordOverflow({
+    required this.keyword,
+    String? filterKeyword,
+    required this.displayLabel,
+    required this.hiddenCount,
+    this.hiddenIds = const [],
+    this.sources = const [],
+    this.isCustomTopic = false,
+  }) : filterKeyword = filterKeyword ?? keyword;
+
+  factory KeywordOverflow.fromJson(Map<String, dynamic> json) {
+    final keyword = (json['keyword'] as String?) ?? '';
+    return KeywordOverflow(
+      keyword: keyword,
+      filterKeyword: (json['filter_keyword'] as String?)?.isNotEmpty == true
+          ? json['filter_keyword'] as String
+          : keyword,
+      displayLabel: (json['display_label'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
+              .toList() ??
+          const [],
+      isCustomTopic: (json['is_custom_topic'] as bool?) ?? false,
+    );
+  }
+}
+
+/// Entity overflow from entity regroupement.
+class EntityOverflow {
+  final String entityName;
+  final String displayLabel;
+  final int hiddenCount;
+  final List<String> hiddenIds;
+  final List<KeywordOverflowSource> sources;
+
+  EntityOverflow({
+    required this.entityName,
+    required this.displayLabel,
+    required this.hiddenCount,
+    this.hiddenIds = const [],
+    this.sources = const [],
+  });
+
+  factory EntityOverflow.fromJson(Map<String, dynamic> json) {
+    return EntityOverflow(
+      entityName: (json['entity_name'] as String?) ?? '',
+      displayLabel: (json['display_label'] as String?) ?? '',
+      hiddenCount: (json['hidden_count'] as int?) ?? 0,
+      hiddenIds: (json['hidden_ids'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflowSource.fromJson(e))
               .toList() ??
           const [],
     );
@@ -536,6 +732,7 @@ class FeedResponse {
   final List<FeedCluster> clusters;
   final List<SourceOverflow> sourceOverflow;
   final List<TopicOverflow> topicOverflow;
+  final List<KeywordOverflow> keywordOverflow;
 
   FeedResponse({
     required this.items,
@@ -543,6 +740,7 @@ class FeedResponse {
     this.clusters = const [],
     this.sourceOverflow = const [],
     this.topicOverflow = const [],
+    this.keywordOverflow = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -567,6 +765,11 @@ class FeedResponse {
       topicOverflow: (json['topic_overflow'] as List<dynamic>?)
               ?.whereType<Map<String, dynamic>>()
               .map((e) => TopicOverflow.fromJson(e))
+              .toList() ??
+          const [],
+      keywordOverflow: (json['keyword_overflow'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => KeywordOverflow.fromJson(e))
               .toList() ??
           const [],
     );

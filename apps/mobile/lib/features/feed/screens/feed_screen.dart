@@ -41,6 +41,8 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
 import '../widgets/topic_overflow_chip.dart';
+import '../widgets/keyword_overflow_chip.dart';
+import '../widgets/entity_overflow_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -473,20 +475,36 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             return Padding(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16.0, vertical: 8.0),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: SourceFilterChip(
-                                  selectedSourceId: selectedSourceId,
-                                  selectedSourceName: selectedSourceName,
-                                  selectedSourceLogoUrl: selectedSourceLogoUrl,
-                                  onSourceChanged: (sourceId) {
-                                    if (sourceId != null) {
-                                      notifier.setSource(sourceId);
-                                    } else {
-                                      notifier.setSource(null);
-                                    }
-                                  },
-                                ),
+                              child: Row(
+                                children: [
+                                  SourceFilterChip(
+                                    selectedSourceId: selectedSourceId,
+                                    selectedSourceName: selectedSourceName,
+                                    selectedSourceLogoUrl: selectedSourceLogoUrl,
+                                    onSourceChanged: (sourceId) {
+                                      if (sourceId != null) {
+                                        notifier.setSource(sourceId);
+                                      } else {
+                                        notifier.setSource(null);
+                                      }
+                                    },
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: Icon(
+                                      PhosphorIcons.gear(),
+                                      size: 20,
+                                      color: colors.textSecondary,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: () {
+                                      final firstContent = ref.read(feedProvider).valueOrNull?.items.firstOrNull;
+                                      if (firstContent != null) {
+                                        TopicChip.showArticleSheet(context, firstContent);
+                                      }
+                                    },
+                                  ),
+                                ],
                               ),
                             );
                           }
@@ -681,7 +699,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                         return SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
-                          sliver: SliverList(
+                          sliver: SliverAnimatedOpacity(
+                            opacity: _isFeedRefreshing ? 0.3 : 1.0,
+                            duration: const Duration(milliseconds: 200),
+                            sliver: SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final listIndex = index;
@@ -824,7 +845,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       onSaveLongPress: () =>
                                           CollectionPickerSheet.show(
                                               context, content.id),
-                                      // TopicChip handles its own onTap → ArticleSheet in all modes
                                       topicChipWidget: TopicChip(
                                         content: content,
                                         isFollowed: content
@@ -837,6 +857,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                     getTopicLabel(content
                                                             .topics.first)
                                                         .toLowerCase()),
+                                        onTap: content.topics.isNotEmpty
+                                            ? () {
+                                                ref.read(feedProvider.notifier).setTopic(content.topics.first);
+                                              }
+                                            : null,
                                       ),
                                       clusterChipWidget:
                                           // Suppress overflow chips when filter is active
@@ -848,11 +873,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ? const SizedBox.shrink()
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
-                                                  : content.topicOverflowCount > 0
-                                                      ? TopicOverflowChip(
-                                                          content: content)
-                                                      : SourceOverflowChip(
-                                                          content: content),
+                                                  : content.entityOverflowCount > 0
+                                                      ? EntityOverflowChip(content: content)
+                                                      : content.keywordOverflowCount > 0
+                                                          ? KeywordOverflowChip(content: content)
+                                                          : content.topicOverflowCount > 0
+                                                              ? TopicOverflowChip(content: content)
+                                                              : content.sourceOverflowCount > 0
+                                                                  ? SourceOverflowChip(content: content)
+                                                                  : const SizedBox.shrink(),
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
@@ -865,8 +894,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ref.read(feedProvider.notifier).refresh();
                                             }
                                           : null,
-                                      onSourceTap: () =>
-                                          TopicChip.showArticleSheet(context, content),
+                                      onSourceTap: () {
+                                        ref.read(feedProvider.notifier).setSource(content.source.id);
+                                      },
                                       isSerene: ref.watch(sereinToggleProvider).enabled,
                                       onReportNotSerene: () async {
                                         try {
@@ -932,6 +962,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               addAutomaticKeepAlives: false,
                               addRepaintBoundaries: true,
                             ),
+                          ),
                           ),
                         );
                       },

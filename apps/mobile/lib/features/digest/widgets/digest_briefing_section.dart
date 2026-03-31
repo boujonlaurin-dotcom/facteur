@@ -35,6 +35,7 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(DigestItem)? onSwipeDismiss;
   final void Function(String sourceId)? onMuteSource;
   final void Function(String topic)? onMuteTopic;
+  final void Function(String sourceId)? onSourceTap;
   final bool isSerein;
   final bool usesEditorial;
   final PepiteResponse? pepite;
@@ -58,6 +59,7 @@ class DigestBriefingSection extends StatefulWidget {
     this.onSwipeDismiss,
     this.onMuteSource,
     this.onMuteTopic,
+    this.onSourceTap,
     this.isSerein = false,
     this.usesEditorial = false,
     this.pepite,
@@ -300,6 +302,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         onArticleTap: widget.onItemTap,
         onSave: widget.onSave,
         onNotInterested: widget.onNotInterested,
+        onSourceTap: widget.onSourceTap,
         onSwipeDismiss: widget.onSwipeDismiss != null
             ? _handleLocalSwipeDismiss
             : null,
@@ -372,6 +375,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
           onSwipeDismiss: widget.onSwipeDismiss != null
               ? _handleLocalSwipeDismiss
               : null,
@@ -404,6 +408,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
         ),
       );
     }
@@ -418,6 +423,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
           onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
         ),
       );
     }
@@ -523,6 +529,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               content: _convertToContent(item),
               descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),
+              onSourceTap: widget.onSourceTap != null && item.source?.id != null
+                  ? () => widget.onSourceTap!(item.source!.id!)
+                  : null,
               onLongPressStart: (_) => ArticlePreviewOverlay.show(
                 context,
                 _convertToContent(item),

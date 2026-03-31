@@ -3,13 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_image.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
+import 'keyword_overflow_chip.dart';
 
 /// Chip shown below the last card of a source when diversification filtered articles.
 ///
-/// Displays: `> N autres articles de [Source]`
+/// Displays: `> N articles récents de [Source]   [logo] >`
 /// Tap filters the feed to show all articles from that source.
 class SourceOverflowChip extends ConsumerWidget {
   final Content content;
@@ -26,6 +26,12 @@ class SourceOverflowChip extends ConsumerWidget {
     }
 
     final colors = context.facteurColors;
+    final sourceAsBadge = KeywordOverflowSource(
+      sourceId: content.source.id,
+      sourceName: content.source.name,
+      sourceLogoUrl: content.source.logoUrl,
+      articleCount: content.sourceOverflowCount,
+    );
 
     return GestureDetector(
       onTap: () {
@@ -53,24 +59,9 @@ class SourceOverflowChip extends ConsumerWidget {
               color: colors.textSecondary,
             ),
             const SizedBox(width: FacteurSpacing.space2),
-            if (content.source.logoUrl != null &&
-                content.source.logoUrl!.isNotEmpty) ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: FacteurImage(
-                  imageUrl: content.source.logoUrl!,
-                  width: 16,
-                  height: 16,
-                  fit: BoxFit.cover,
-                  errorWidget: (context) =>
-                      const SizedBox(width: 16, height: 16),
-                ),
-              ),
-              const SizedBox(width: FacteurSpacing.space1),
-            ],
             Expanded(
               child: Text(
-                '${content.sourceOverflowCount} autres articles de \u2022 ${content.source.name}',
+                '${content.sourceOverflowCount} articles récents de ${content.source.name}',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: colors.textSecondary,
                     ),
@@ -78,6 +69,9 @@ class SourceOverflowChip extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: FacteurSpacing.space2),
+            LogoCircle(source: sourceAsBadge, colors: colors),
+            const SizedBox(width: FacteurSpacing.space2),
             Icon(
               PhosphorIcons.arrowRight(),
               size: 14,

@@ -241,7 +241,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       );
 
       if (user != null) {
-        _checkOnboardingStatus();
+        // Only check onboarding on actual sign-in (new user), not token refreshes
+        if (state.user?.id != user.id) {
+          _checkOnboardingStatus();
+        }
         _startProactiveRefreshTimer();
       } else {
         _refreshTimer?.cancel();
@@ -348,10 +351,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         if (savedVersion < _requiredOnboardingVersion) {
           needsOnboarding = true;
           // Pré-configurer le restart vers Section 3 directement
-          final onboardingBox = await Hive.openBox('onboarding');
-          await onboardingBox.put('section', 2); // sourcePreferences index
-          await onboardingBox.put('question', 0);
-          await onboardingBox.put('is_restart', true);
+          // Guard: only write once to avoid resetting user progress on every app resume
+          if (!state.needsOnboarding) {
+            final onboardingBox = await Hive.openBox('onboarding');
+            await onboardingBox.put('section', 2); // sourcePreferences index
+            await onboardingBox.put('question', 0);
+            await onboardingBox.put('is_restart', true);
+          }
           debugPrint(
             'AuthState: onboarding version $savedVersion < $_requiredOnboardingVersion, '
             're-triggering onboarding (Section 3 only)',
@@ -367,8 +373,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         state = state.copyWith(needsOnboarding: needsOnboarding);
       }
     } catch (e) {
-      // Si erreur et pas de cache, assumer onboarding nécessaire (safe fallback)
-      state = state.copyWith(needsOnboarding: true);
+      debugPrint('AuthState: _checkOnboardingStatus error: $e');
+      // Don't override existing state on error — keep whatever was cached
     }
   }
 
@@ -564,6 +570,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Persister la version pour éviter un re-trigger au prochain login
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_app_version', _requiredOnboardingVersion);
+    await box.put('onboarding_completed', true);
   }
 
   /// Change le statut d'onboarding (utilisé pour reset/refaire)
@@ -605,7 +612,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           user: user,
           forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
         );
-        await _checkOnboardingStatus();
+        // Onboarding is checked on init and auth change only, not on resume
       }
     } on AuthException catch (e) {
       debugPrint(

@@ -5,11 +5,12 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
+import 'keyword_overflow_chip.dart';
 
 /// Chip shown below the last card of a neutral topic/theme group when
 /// topic-aware regroupement compressed articles.
 ///
-/// Displays: `> N autres articles {label}`
+/// Displays: `> N autres articles {label}   [logo1 logo2 ...+N] >`
 /// Tap filters the feed by theme or topic depending on group_type.
 class TopicOverflowChip extends ConsumerWidget {
   final Content content;
@@ -26,6 +27,17 @@ class TopicOverflowChip extends ConsumerWidget {
     }
 
     final colors = context.facteurColors;
+    final sources = content.topicOverflowSources;
+
+    // Sort sources so those with logos come first
+    final sortedSources = List<KeywordOverflowSource>.from(sources)
+      ..sort((a, b) {
+        final aHasLogo =
+            a.sourceLogoUrl != null && a.sourceLogoUrl!.isNotEmpty ? 0 : 1;
+        final bHasLogo =
+            b.sourceLogoUrl != null && b.sourceLogoUrl!.isNotEmpty ? 0 : 1;
+        return aHasLogo.compareTo(bHasLogo);
+      });
 
     return GestureDetector(
       onTap: () {
@@ -59,7 +71,7 @@ class TopicOverflowChip extends ConsumerWidget {
             const SizedBox(width: FacteurSpacing.space2),
             Expanded(
               child: Text(
-                '${content.topicOverflowCount} autres articles \u2022 ${content.topicOverflowLabel}',
+                '${content.topicOverflowCount} autres articles ${content.topicOverflowLabel}',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: colors.textSecondary,
                     ),
@@ -67,6 +79,11 @@ class TopicOverflowChip extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (sortedSources.isNotEmpty) ...[
+              const SizedBox(width: FacteurSpacing.space2),
+              SourceLogos(sources: sortedSources, colors: colors),
+            ],
+            const SizedBox(width: FacteurSpacing.space2),
             Icon(
               PhosphorIcons.arrowRight(),
               size: 14,

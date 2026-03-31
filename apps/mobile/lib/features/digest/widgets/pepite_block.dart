@@ -16,6 +16,7 @@ class PepiteBlock extends StatelessWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
   final void Function(DigestItem)? onReportNotSerene;
+  final void Function(String sourceId)? onSourceTap;
   final bool isSerene;
 
   const PepiteBlock({
@@ -26,6 +27,7 @@ class PepiteBlock extends StatelessWidget {
     this.onSave,
     this.onNotInterested,
     this.onReportNotSerene,
+    this.onSourceTap,
     this.isSerene = false,
   });
 
@@ -67,6 +69,9 @@ class PepiteBlock extends StatelessWidget {
             content: _convertToContent(item),
             descriptionFontSize: 15,
             onTap: () => onTap(item),
+            onSourceTap: onSourceTap != null && pepite.source?.id != null
+                ? () => onSourceTap!(pepite.source!.id!)
+                : null,
             onLike: onLike != null ? () => onLike!(item) : null,
             isLiked: item.isLiked,
             onSave: onSave != null ? () => onSave!(item) : null,

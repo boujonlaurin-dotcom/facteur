@@ -241,3 +241,19 @@ class ScoringWeights:
 
     # Minimum articles in a neutral group to justify a CTA chip.
     MIN_FOR_TOPIC_GROUPING = 3
+
+    # --- KEYWORD REGROUPEMENT (Feed Grouping Rework) ---
+
+    # Minimum articles sharing a keyword to form a keyword CTA group.
+    MIN_FOR_KEYWORD_GROUPING = 3
+
+    # Minimum character length for a keyword to be considered.
+    KEYWORD_MIN_LENGTH = 4
+
+    # Maximum total CTA groups (entity + keyword + topic) per feed page.
+    MAX_TOTAL_CTAS = 7
+
+    # --- ENTITY REGROUPEMENT ---
+
+    # Minimum articles sharing an entity to form an entity CTA group.
+    MIN_FOR_ENTITY_GROUPING = 3

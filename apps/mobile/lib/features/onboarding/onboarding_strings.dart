@@ -112,7 +112,7 @@ class OnboardingStrings {
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
-      'Basé sur vos centres d\'intérêt, voici les sources que nous vous recommandons.';
+      'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
   static const String q9HelperText =
       'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
@@ -123,7 +123,7 @@ class OnboardingStrings {
 
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
-      'Pré-sélection basée sur vos thèmes';
+      'Modifiez cette liste à tout moment.';
 
   // Sources Page 2
   static const String sourcesPage2Title = 'Allez plus loin.';
@@ -131,7 +131,7 @@ class OnboardingStrings {
       'Explorez le catalogue complet et ajoutez vos propres sources.';
   static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
   static const String premiumSubscriptionsButton =
-      'Indiquer vos abonnements presse';
+      'Ajouter vos abonnements presse';
   static const String premiumSheetTitle = 'Vos abonnements presse';
   static const String premiumSheetSubtitle =
       'Si vous êtes abonné à un média payant (Le Monde, Mediapart...), '
@@ -166,7 +166,7 @@ class OnboardingStrings {
   // Subtopics Screen (Screen B)
   static const String subtopicsTitle = 'Affine tes centres d\'intérêt';
   static const String subtopicsSubtitle =
-      'Personnalise chaque thème avec des sous-sujets et tes niches';
+      'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
 

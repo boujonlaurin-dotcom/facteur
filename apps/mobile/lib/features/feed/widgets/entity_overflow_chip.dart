@@ -1,33 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
-import '../../feed/models/content_model.dart';
-import '../../feed/screens/cluster_view_screen.dart';
-import '../../feed/widgets/keyword_overflow_chip.dart';
+import '../models/content_model.dart';
+import '../providers/feed_provider.dart';
+import 'keyword_overflow_chip.dart';
 
-/// Chip shown below a representative article when a topic cluster exists.
+/// Chip shown below the representative card of an entity group.
 ///
-/// Displays: `> N articles récents sur [Topic]   [logo1 logo2 logo3 +N] >`
-/// Tap opens an immersive cluster view showing all related articles.
-class ClusterChip extends StatelessWidget {
+/// Displays: `> Entity — N articles   [logo1 logo2 logo3 +N] >`
+/// Tap filters the feed by the entity via setEntity().
+class EntityOverflowChip extends ConsumerWidget {
   final Content content;
 
-  const ClusterChip({
+  const EntityOverflowChip({
     super.key,
     required this.content,
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (content.clusterHiddenCount == 0 || content.clusterTopic == null) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (content.entityOverflowCount == 0) {
       return const SizedBox.shrink();
     }
 
     final colors = context.facteurColors;
-    final topicName = getTopicLabel(content.clusterTopic!);
-    final sources = content.clusterSources;
+    final sources = content.entityOverflowSources;
 
     // Sort sources so those with logos come first
     final sortedSources = List<KeywordOverflowSource>.from(sources)
@@ -41,15 +40,7 @@ class ClusterChip extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ClusterViewScreen(
-              topicSlug: content.clusterTopic!,
-              representativeArticle: content,
-              hiddenIds: content.clusterHiddenIds,
-            ),
-          ),
-        );
+        ref.read(feedProvider.notifier).setEntity(content.entityOverflowKey!);
       },
       child: Container(
         decoration: BoxDecoration(
@@ -75,7 +66,7 @@ class ClusterChip extends StatelessWidget {
             const SizedBox(width: FacteurSpacing.space2),
             Expanded(
               child: Text(
-                '${content.clusterHiddenCount} articles récents sur $topicName',
+                content.entityOverflowLabel ?? '',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: colors.textSecondary,
                     ),
