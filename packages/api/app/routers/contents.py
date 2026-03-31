@@ -455,10 +455,9 @@ async def submit_article_feedback(
     # Parse digest_date if provided
     parsed_date = None
     if request.digest_date:
-        try:
+        import contextlib
+        with contextlib.suppress(ValueError):
             parsed_date = date_type.fromisoformat(request.digest_date)
-        except ValueError:
-            pass
 
     try:
         stmt = (
