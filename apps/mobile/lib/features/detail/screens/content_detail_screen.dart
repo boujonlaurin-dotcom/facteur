@@ -111,6 +111,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
+  bool _isVideoPlaying = false;
+  Timer? _videoPlayHideTimer;
 
   Content? _content;
 
@@ -431,7 +433,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Fade FABs + header during scroll, restore on stop with differentiated delays.
   /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
+  /// Auto-hide header/FABs during video playback for immersion.
+  void _onVideoPlayStateChanged(bool isPlaying) {
+    _isVideoPlaying = isPlaying;
+    _videoPlayHideTimer?.cancel();
+
+    if (isPlaying) {
+      _videoPlayHideTimer = Timer(const Duration(milliseconds: 2500), () {
+        if (mounted && _isVideoPlaying) {
+          _headerOpacity.value = 0.0;
+          _fabOpacity.value = 0.07;
+        }
+      });
+    } else {
+      _headerOpacity.value = 1.0;
+      _fabOpacity.value = 1.0;
+      _headerScrollStopTimer?.cancel();
+      _scrollStopTimer?.cancel();
+    }
+  }
+
   void _onScrollFabOpacity() {
+    _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
       _fabOpacity.value = 0.07;
     }
@@ -698,6 +721,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
     _headerScrollStopTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
@@ -1853,7 +1877,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: YouTubePlayerWidget(
               videoUrl: content.url,
               title: content.title,
+              aspectRatio: isShort ? 9 / 16 : 16 / 9,
               onProgressChanged: _onVideoProgressChanged,
+              onPlayStateChanged: _onVideoPlayStateChanged,
             ),
           ),
 

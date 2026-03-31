@@ -507,8 +507,8 @@ class DigestCard extends StatelessWidget {
     switch (type) {
       case ContentType.video:
       case ContentType.youtube:
-        icon = PhosphorIcons.filmStrip(PhosphorIconsStyle.fill);
-        break;
+        // Play overlay + red accent line suffice as video indicator
+        return const SizedBox.shrink();
       case ContentType.audio:
         icon = PhosphorIcons.headphones(PhosphorIconsStyle.fill);
         break;

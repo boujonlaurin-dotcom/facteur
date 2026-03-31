@@ -43,8 +43,7 @@ dependencies:
   # Story 5.2: In-App Reading Mode
   flutter_html: ^3.0.0-beta.2  # HTML rendering for articles
   just_audio: ^0.9.36          # Audio player for podcasts
-  youtube_player_flutter: ^9.1.1  # YouTube player for videos
-  youtube_player_iframe: ^5.1.2   # YouTube player for Web
+  youtube_player_iframe: ^5.1.2   # YouTube player (all platforms)
   
   # Utils
   intl: ^0.20.2

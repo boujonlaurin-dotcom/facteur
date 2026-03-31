@@ -5,6 +5,7 @@ import 'package:facteur/features/feed/widgets/reading_badge.dart';
 import 'package:facteur/widgets/design/facteur_card.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
+import 'package:facteur/widgets/design/video_play_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -75,6 +76,7 @@ class FeedCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     final isConsumed = content.status == ContentStatus.consumed;
+    final isVideo = content.contentType == ContentType.youtube || content.contentType == ContentType.video;
 
     final hasBeenRead = isConsumed || content.readingProgress > 0;
     return Opacity(
@@ -95,12 +97,26 @@ class FeedCard extends StatelessWidget {
               mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Red accent line for video cards
+                if (isVideo)
+                  Container(
+                    height: 3,
+                    color: const Color(0xFFFF0000),
+                  ),
+
                 // 1. Image (Header)
                 FacteurThumbnail(
                   imageUrl: content.thumbnailUrl,
-                  borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(FacteurRadius.small)),
+                  borderRadius: isVideo
+                      ? BorderRadius.zero
+                      : const BorderRadius.vertical(
+                          top: Radius.circular(FacteurRadius.small)),
                   onError: onImageError,
+                  overlay: isVideo ? const VideoPlayOverlay() : null,
+                  durationLabel: isVideo && content.durationSeconds != null
+                      ? _formatDuration(content.durationSeconds!)
+                      : null,
+                  isVideo: isVideo,
                 ),
 
                 // 2. Body (Title + Meta)
@@ -526,8 +542,8 @@ class FeedCard extends StatelessWidget {
     switch (type) {
       case ContentType.video:
       case ContentType.youtube:
-        icon = PhosphorIcons.filmStrip(PhosphorIconsStyle.fill);
-        break;
+        // Play overlay + red accent line suffice as video indicator
+        return const SizedBox.shrink();
       case ContentType.audio:
         icon = PhosphorIcons.headphones(PhosphorIconsStyle.fill);
         break;
