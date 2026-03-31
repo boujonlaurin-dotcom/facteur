@@ -7,6 +7,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/saved_feed_provider.dart';
 
@@ -169,6 +170,10 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                                   content: content,
                                   isSaved: true,
                                   isLiked: content.isLiked,
+                                  onSourceTap: () {
+                                    ref.read(feedProvider.notifier).setSource(content.source.id);
+                                    context.goNamed(RouteNames.feed);
+                                  },
                                   onTap: () async {
                                     final updated =
                                         await context.pushNamed<dynamic>(

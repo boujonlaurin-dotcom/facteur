@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import re
 import time
+import unicodedata
 from uuid import UUID
 
 import structlog
@@ -911,9 +912,15 @@ class RecommendationService:
     @staticmethod
     def _extract_keywords(title: str, stop_words: frozenset[str], min_length: int) -> list[str]:
         """Extract meaningful keywords from an article title."""
-        # Normalize accented chars for stop word matching, keep original for display
         tokens = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ\-]+", title.lower())
-        return [t for t in tokens if len(t) >= min_length and t not in stop_words]
+        # Normalize accented chars for stop word matching, keep original for display
+        # e.g. "après" → stripped "apres" for lookup, but "après" returned as keyword
+        def _strip_accents(t: str) -> str:
+            return "".join(
+                c for c in unicodedata.normalize("NFD", t)
+                if unicodedata.category(c) != "Mn"
+            )
+        return [t for t in tokens if len(t) >= min_length and _strip_accents(t) not in stop_words]
 
     @staticmethod
     def _apply_keyword_regroupement(
@@ -1019,6 +1026,7 @@ class RecommendationService:
             keyword_groups.append(
                 {
                     "keyword": display_keyword,
+                    "filter_keyword": keyword,
                     "display_label": display_label,
                     "hidden_count": len(to_hide),
                     "hidden_ids": [a.id for a in to_hide],

@@ -113,6 +113,7 @@ async def get_personalized_feed(
         keyword_overflow_data.append(
             KeywordOverflowInfo(
                 keyword=info["keyword"],
+                filter_keyword=info.get("filter_keyword", info["keyword"]),
                 display_label=info["display_label"],
                 hidden_count=info["hidden_count"],
                 hidden_ids=info["hidden_ids"],

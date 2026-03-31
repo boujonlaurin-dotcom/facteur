@@ -241,7 +241,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       );
 
       if (user != null) {
-        _checkOnboardingStatus();
+        // Only check onboarding on actual sign-in (new user), not token refreshes
+        if (state.user?.id != user.id) {
+          _checkOnboardingStatus();
+        }
         _startProactiveRefreshTimer();
       } else {
         _refreshTimer?.cancel();
@@ -370,8 +373,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         state = state.copyWith(needsOnboarding: needsOnboarding);
       }
     } catch (e) {
-      // Si erreur et pas de cache, assumer onboarding nécessaire (safe fallback)
-      state = state.copyWith(needsOnboarding: true);
+      debugPrint('AuthState: _checkOnboardingStatus error: $e');
+      // Don't override existing state on error — keep whatever was cached
     }
   }
 
@@ -609,10 +612,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           user: user,
           forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
         );
-        // Skip re-check if already in onboarding flow (avoids resetting progress)
-        if (!state.needsOnboarding) {
-          await _checkOnboardingStatus();
-        }
+        // Onboarding is checked on init and auth change only, not on resume
       }
     } on AuthException catch (e) {
       debugPrint(

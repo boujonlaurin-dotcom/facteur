@@ -68,6 +68,7 @@ class KeywordOverflowInfo(BaseModel):
     """Metadata d'overflow: articles regroupés par keyword mining sur les titres."""
 
     keyword: str
+    filter_keyword: str = ""  # Raw mined token for title matching and API filtering
     display_label: str
     hidden_count: int
     hidden_ids: list[UUID]

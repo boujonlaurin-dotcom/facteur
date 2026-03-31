@@ -3,14 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_image.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
-import 'initial_circle.dart';
+import 'keyword_overflow_chip.dart';
 
 /// Chip shown below the last card of a source when diversification filtered articles.
 ///
-/// Displays: `> N autres articles de [Source]  [logo]`
+/// Displays: `> N articles récents de [Source]   [logo] >`
 /// Tap filters the feed to show all articles from that source.
 class SourceOverflowChip extends ConsumerWidget {
   final Content content;
@@ -27,8 +26,12 @@ class SourceOverflowChip extends ConsumerWidget {
     }
 
     final colors = context.facteurColors;
-    final hasLogo = content.source.logoUrl != null &&
-        content.source.logoUrl!.isNotEmpty;
+    final sourceAsBadge = KeywordOverflowSource(
+      sourceId: content.source.id,
+      sourceName: content.source.name,
+      sourceLogoUrl: content.source.logoUrl,
+      articleCount: content.sourceOverflowCount,
+    );
 
     return GestureDetector(
       onTap: () {
@@ -57,45 +60,18 @@ class SourceOverflowChip extends ConsumerWidget {
             ),
             const SizedBox(width: FacteurSpacing.space2),
             Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      '${content.sourceOverflowCount} articles récents de ${content.source.name}',
-                      style:
-                          Theme.of(context).textTheme.labelMedium?.copyWith(
-                                color: colors.textSecondary,
-                              ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              child: Text(
+                '${content.sourceOverflowCount} articles récents de ${content.source.name}',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: colors.textSecondary,
                     ),
-                  ),
-                  const SizedBox(width: FacteurSpacing.space2),
-                  if (hasLogo)
-                    ClipOval(
-                      child: FacteurImage(
-                        imageUrl: content.source.logoUrl!,
-                        width: 14,
-                        height: 14,
-                        fit: BoxFit.cover,
-                        errorWidget: (context) => InitialCircle(
-                          initial: content.source.name.isNotEmpty
-                              ? content.source.name[0].toUpperCase()
-                              : '?',
-                          colors: colors,
-                        ),
-                      ),
-                    )
-                  else
-                    InitialCircle(
-                      initial: content.source.name.isNotEmpty
-                          ? content.source.name[0].toUpperCase()
-                          : '?',
-                      colors: colors,
-                    ),
-                ],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: FacteurSpacing.space2),
+            LogoCircle(source: sourceAsBadge, colors: colors),
+            const SizedBox(width: FacteurSpacing.space2),
             Icon(
               PhosphorIcons.arrowRight(),
               size: 14,

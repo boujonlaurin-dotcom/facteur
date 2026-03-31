@@ -634,6 +634,7 @@ class KeywordOverflowSource {
 /// Keyword overflow from keyword mining regroupement.
 class KeywordOverflow {
   final String keyword;
+  final String filterKeyword; // Raw mined token for title matching and API filtering
   final String displayLabel;
   final int hiddenCount;
   final List<String> hiddenIds;
@@ -642,16 +643,21 @@ class KeywordOverflow {
 
   KeywordOverflow({
     required this.keyword,
+    String? filterKeyword,
     required this.displayLabel,
     required this.hiddenCount,
     this.hiddenIds = const [],
     this.sources = const [],
     this.isCustomTopic = false,
-  });
+  }) : filterKeyword = filterKeyword ?? keyword;
 
   factory KeywordOverflow.fromJson(Map<String, dynamic> json) {
+    final keyword = (json['keyword'] as String?) ?? '';
     return KeywordOverflow(
-      keyword: (json['keyword'] as String?) ?? '',
+      keyword: keyword,
+      filterKeyword: (json['filter_keyword'] as String?)?.isNotEmpty == true
+          ? json['filter_keyword'] as String
+          : keyword,
       displayLabel: (json['display_label'] as String?) ?? '',
       hiddenCount: (json['hidden_count'] as int?) ?? 0,
       hiddenIds: (json['hidden_ids'] as List<dynamic>?)

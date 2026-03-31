@@ -31,6 +31,7 @@ class TopicSection extends StatefulWidget {
   final VoidCallback? onDismissAutoResolve;
   final VoidCallback? onDismissMuteSource;
   final void Function(String topic)? onDismissMuteTopic;
+  final void Function(String sourceId)? onSourceTap;
   final bool editorialMode;
   final bool isSerene;
 
@@ -48,6 +49,7 @@ class TopicSection extends StatefulWidget {
     this.onDismissAutoResolve,
     this.onDismissMuteSource,
     this.onDismissMuteTopic,
+    this.onSourceTap,
     this.editorialMode = false,
     this.isSerene = false,
   });
@@ -380,6 +382,9 @@ class _TopicSectionState extends State<TopicSection> {
         descriptionFontSize: 15,
         onImageError: () => _onImageError(article.contentId),
         onTap: () => widget.onArticleTap(article),
+        onSourceTap: widget.onSourceTap != null && article.source?.id != null
+            ? () => widget.onSourceTap!(article.source!.id!)
+            : null,
         onLongPressStart: (_) =>
             ArticlePreviewOverlay.show(context, _convertToContent(article)),
         onLongPressMoveUpdate: (details) =>
@@ -414,6 +419,9 @@ class _TopicSectionState extends State<TopicSection> {
           descriptionFontSize: 15,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
+          onSourceTap: widget.onSourceTap != null && article.source?.id != null
+              ? () => widget.onSourceTap!(article.source!.id!)
+              : null,
           onLongPressStart: (_) => ArticlePreviewOverlay.show(
               context, _convertToContent(article)),
           onLongPressMoveUpdate: (details) =>

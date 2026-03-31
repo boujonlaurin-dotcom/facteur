@@ -14,6 +14,7 @@ import 'package:flutter/gestures.dart';
 import 'dart:async';
 
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
@@ -27,7 +28,7 @@ import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
-import '../widgets/article_entities_sheet.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -1317,76 +1318,111 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ),
                 const SizedBox(width: 4),
 
-                // Source logo (reduced from 32 to 28)
-                if (content.source.logoUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: CachedNetworkImage(
-                      imageUrl: content.source.logoUrl!,
-                      width: 28,
-                      height: 28,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          _buildSourcePlaceholder(colors),
-                    ),
-                  )
-                else
-                  _buildSourcePlaceholder(colors),
-                const SizedBox(width: 8),
-
-                // Source Name + Time + Badges
+                // Source logo + name + gear: tappable → filter feed by source
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      // Ligne 1 : Nom + Badges
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              content.source.name,
-                              style: textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colors.textPrimary,
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            ref.read(feedProvider.notifier).setSource(content.source.id);
+                            context.pop(_content);
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              // Source logo (reduced from 32 to 28)
+                              if (content.source.logoUrl != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: CachedNetworkImage(
+                                    imageUrl: content.source.logoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) =>
+                                        _buildSourcePlaceholder(colors),
+                                  ),
+                                )
+                              else
+                                _buildSourcePlaceholder(colors),
+                              const SizedBox(width: 8),
+
+                              // Source Name + Time + Badges
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Ligne 1 : Nom + Badges
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            content.source.name,
+                                            style: textTheme.labelMedium?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: colors.textPrimary,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        // Bias dot
+                                        if (content.source.biasStance != 'unknown') ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            width: 7,
+                                            height: 7,
+                                            decoration: BoxDecoration(
+                                              color: content.source.getBiasColor(),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 1),
+                                    // Ligne 2 : Temps relatif (icône + format court)
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                                          size: 11,
+                                          color: colors.textTertiary,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          timeago
+                                              .format(content.publishedAt, locale: 'fr_short')
+                                              .replaceAll('il y a ', ''),
+                                          style: textTheme.bodySmall?.copyWith(
+                                            color: colors.textTertiary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            ],
                           ),
-                          // Bias dot
-                          if (content.source.biasStance != 'unknown') ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: content.source.getBiasColor(),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 1),
-                      // Ligne 2 : Temps relatif (icône + format court)
-                      Row(
-                        children: [
-                          Icon(
-                            PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                            size: 11,
+                      // Gear icon — aligné à gauche, proche de la source
+                      GestureDetector(
+                        onTap: () => TopicChip.showArticleSheet(
+                          context, content,
+                          initialSection: ArticleSheetSection.source,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Icon(
+                            PhosphorIcons.gear(PhosphorIconsStyle.regular),
+                            size: 16,
                             color: colors.textTertiary,
                           ),
-                          const SizedBox(width: 3),
-                          Text(
-                            timeago
-                                .format(content.publishedAt, locale: 'fr_short')
-                                .replaceAll('il y a ', ''),
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colors.textTertiary,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
@@ -1414,7 +1450,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Returns individual entity chip widgets (no wrapper) for use in Wrap layouts.
   /// Tapping any chip opens the full entities sheet.
-  List<Widget> _buildEntityChipWidgets(BuildContext context, Content content) {
+  List<Widget> _buildArticleTagWidgets(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final topicsAsync = ref.watch(customTopicsProvider);
@@ -1429,11 +1465,58 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final overflow = entities.length - maxVisible;
 
     return [
+      // Macro-theme chip (thème du sujet, ex: Cinéma)
+      if (content.topics.isNotEmpty && getTopicMacroTheme(content.topics.first) != null)
+        Builder(builder: (context) {
+          final macroTheme = getTopicMacroTheme(content.topics.first)!;
+          final emoji = getMacroThemeEmoji(macroTheme);
+          return GestureDetector(
+            onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.textTertiary.withValues(alpha: 0.20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme',
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        }),
+      // Topic chip
+      if (content.topics.isNotEmpty)
+        GestureDetector(
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              getTopicLabel(content.topics.first),
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      // Entity chips
       ...visible.map((entity) {
         final isFollowed =
             followedNames.contains(entity.text.toLowerCase());
         return GestureDetector(
-          onTap: () => ArticleEntitiesSheet.show(context, content),
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -1474,7 +1557,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }),
       if (overflow > 0)
         GestureDetector(
-          onTap: () => ArticleEntitiesSheet.show(context, content),
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -1490,6 +1573,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ),
         ),
+      // Gear icon — ouvre la sheet entities
+      GestureDetector(
+        onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Icon(
+            PhosphorIcons.gear(PhosphorIconsStyle.regular),
+            size: 14,
+            color: colors.textTertiary,
+          ),
+        ),
+      ),
     ];
   }
 
@@ -1657,7 +1752,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         ),
                                       ),
                                     if (content.entities.isNotEmpty)
-                                      ..._buildEntityChipWidgets(
+                                      ..._buildArticleTagWidgets(
                                           context, content),
                                   ],
                                 ),
@@ -2240,7 +2335,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                       ),
                     if (content.entities.isNotEmpty)
-                      ..._buildEntityChipWidgets(context, content),
+                      ..._buildArticleTagWidgets(context, content),
                   ],
                 ),
                 const SizedBox(height: FacteurSpacing.space4),
@@ -2419,7 +2514,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: Wrap(
               spacing: 6,
               runSpacing: 4,
-              children: _buildEntityChipWidgets(context, content),
+              children: _buildArticleTagWidgets(context, content),
             ),
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),

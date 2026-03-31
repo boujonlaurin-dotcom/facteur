@@ -9,6 +9,7 @@ import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../models/collection_model.dart';
 import '../providers/collections_provider.dart';
@@ -342,6 +343,10 @@ class _WeeklyNotesSection extends ConsumerWidget {
                   pathParameters: {'id': article.id},
                   extra: article,
                 ),
+                onSourceTap: () {
+                  ref.read(feedProvider.notifier).setSource(article.source.id);
+                  context.goNamed(RouteNames.feed);
+                },
                 onLongPressStart: (_) =>
                     ArticlePreviewOverlay.show(context, article),
                 onLongPressMoveUpdate: (details) =>
@@ -408,6 +413,10 @@ class _RecentSavedSection extends ConsumerWidget {
                   pathParameters: {'id': article.id},
                   extra: article,
                 ),
+                onSourceTap: () {
+                  ref.read(feedProvider.notifier).setSource(article.source.id);
+                  context.goNamed(RouteNames.feed);
+                },
                 onLongPressStart: (_) =>
                     ArticlePreviewOverlay.show(context, article),
                 onLongPressMoveUpdate: (details) =>

@@ -8,6 +8,8 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../feed/models/content_model.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/collections_provider.dart';
 import '../widgets/collection_dialogs.dart';
@@ -230,6 +232,10 @@ class _CollectionDetailScreenState
                                 pathParameters: {'id': content.id},
                                 extra: content,
                               ),
+                              onSourceTap: () {
+                                ref.read(feedProvider.notifier).setSource(content.source.id);
+                                context.goNamed(RouteNames.feed);
+                              },
                               onLongPressStart: (_) =>
                                   ArticlePreviewOverlay.show(
                                       context, content),
