@@ -58,12 +58,8 @@ class RecommendationService:
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
-        self.keyword_overflow: list[
-            dict
-        ] = []  # Populated by keyword regroupement
-        self.entity_overflow: list[
-            dict
-        ] = []  # Populated by entity regroupement
+        self.keyword_overflow: list[dict] = []  # Populated by keyword regroupement
+        self.entity_overflow: list[dict] = []  # Populated by entity regroupement
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -397,11 +393,13 @@ class RecommendationService:
 
             # Phase 2: Keyword regroupement (remaining CTA budget)
             remaining_budget = ScoringWeights.MAX_TOTAL_CTAS - entity_ctas
-            result, keyword_overflow, topic_overflow = (
-                self._apply_keyword_regroupement(
-                    result, user_custom_topics, user_subtopic_weights, limit,
-                    pre_assigned_ids=assigned_ids, max_ctas=remaining_budget,
-                )
+            result, keyword_overflow, topic_overflow = self._apply_keyword_regroupement(
+                result,
+                user_custom_topics,
+                user_subtopic_weights,
+                limit,
+                pre_assigned_ids=assigned_ids,
+                max_ctas=remaining_budget,
             )
             self.keyword_overflow = keyword_overflow
             self.topic_overflow = topic_overflow
@@ -912,17 +910,26 @@ class RecommendationService:
         return articles, forced_overflow
 
     @staticmethod
-    def _extract_keywords(title: str, stop_words: frozenset[str], min_length: int) -> list[str]:
+    def _extract_keywords(
+        title: str, stop_words: frozenset[str], min_length: int
+    ) -> list[str]:
         """Extract meaningful keywords from an article title."""
         tokens = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ\-]+", title.lower())
+
         # Normalize accented chars for stop word matching, keep original for display
         # e.g. "après" → stripped "apres" for lookup, but "après" returned as keyword
         def _strip_accents(t: str) -> str:
             return "".join(
-                c for c in unicodedata.normalize("NFD", t)
+                c
+                for c in unicodedata.normalize("NFD", t)
                 if unicodedata.category(c) != "Mn"
             )
-        return [t for t in tokens if len(t) >= min_length and _strip_accents(t) not in stop_words]
+
+        return [
+            t
+            for t in tokens
+            if len(t) >= min_length and _strip_accents(t) not in stop_words
+        ]
 
     @staticmethod
     def _apply_keyword_regroupement(
@@ -1084,18 +1091,18 @@ class RecommendationService:
                     sid = str(a.source_id)
                     if sid not in seen_src and a.source:
                         seen_src.add(sid)
-                        sources_list.append({
-                            "source_id": a.source_id,
-                            "source_name": a.source.name,
-                            "source_logo_url": a.source.logo_url,
-                            "article_count": sum(
-                                1 for x in arts if str(x.source_id) == sid
-                            ),
-                        })
+                        sources_list.append(
+                            {
+                                "source_id": a.source_id,
+                                "source_name": a.source.name,
+                                "source_logo_url": a.source.logo_url,
+                                "article_count": sum(
+                                    1 for x in arts if str(x.source_id) == sid
+                                ),
+                            }
+                        )
                 # Sort: sources with logos first
-                sources_list.sort(
-                    key=lambda s: (0 if s["source_logo_url"] else 1)
-                )
+                sources_list.sort(key=lambda s: 0 if s["source_logo_url"] else 1)
                 topic_overflow_info.append(
                     {
                         "group_type": "topic",
@@ -1759,16 +1766,18 @@ class RecommendationService:
                 sid = str(a.source_id)
                 if sid not in seen_src and a.source:
                     seen_src.add(sid)
-                    sources_list.append({
-                        "source_id": a.source_id,
-                        "source_name": a.source.name,
-                        "source_logo_url": a.source.logo_url,
-                        "article_count": sum(
-                            1 for x in articles if str(x.source_id) == sid
-                        ),
-                    })
+                    sources_list.append(
+                        {
+                            "source_id": a.source_id,
+                            "source_name": a.source.name,
+                            "source_logo_url": a.source.logo_url,
+                            "article_count": sum(
+                                1 for x in articles if str(x.source_id) == sid
+                            ),
+                        }
+                    )
             # Sort: sources with logos first
-            sources_list.sort(key=lambda s: (0 if s["source_logo_url"] else 1))
+            sources_list.sort(key=lambda s: 0 if s["source_logo_url"] else 1)
 
             clusters.append(
                 {

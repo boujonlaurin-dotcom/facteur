@@ -107,9 +107,7 @@ async def get_personalized_feed(
     # Keyword overflow from keyword regroupement
     keyword_overflow_data = []
     for info in service.keyword_overflow:
-        sources = [
-            KeywordOverflowSourceInfo(**s) for s in info.get("sources", [])
-        ]
+        sources = [KeywordOverflowSourceInfo(**s) for s in info.get("sources", [])]
         keyword_overflow_data.append(
             KeywordOverflowInfo(
                 keyword=info["keyword"],
@@ -125,9 +123,7 @@ async def get_personalized_feed(
     # Entity overflow from entity regroupement
     entity_overflow_data = []
     for info in service.entity_overflow:
-        sources = [
-            OverflowSourceInfo(**s) for s in info.get("sources", [])
-        ]
+        sources = [OverflowSourceInfo(**s) for s in info.get("sources", [])]
         entity_overflow_data.append(
             EntityOverflowInfo(
                 entity_name=info["entity_name"],
