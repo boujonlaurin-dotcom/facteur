@@ -191,6 +191,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       ),
     );
 
+    // If no description or footer, return player directly so it respects
+    // parent height constraints (important for 9:16 Shorts in bounded containers).
+    if (widget.aspectRatio < 1.0 && widget.description == null && widget.footer == null) {
+      return playerWithSpeedBoost;
+    }
+
+    // With description/footer, use scroll view for overflow content
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
