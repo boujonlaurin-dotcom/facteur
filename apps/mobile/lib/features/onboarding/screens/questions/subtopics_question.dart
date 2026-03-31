@@ -25,6 +25,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   final Map<String, List<String>> _customTopics = {};
   String? _addingForTheme;
   final TextEditingController _customController = TextEditingController();
+  bool _saving = false;
 
   List<String> get _selectedThemes =>
       ref.read(onboardingProvider).answers.themes ?? [];
@@ -102,24 +103,49 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     });
   }
 
-  void _continue() {
-    // Save subtopics
-    ref.read(onboardingProvider.notifier).selectSubtopics(
-          _selectedSubtopics.toList(),
-        );
-
-    // Save custom topics + entities via API (fire-and-forget, errors silenced)
+  Future<void> _continue() async {
+    // Collect custom topics + entities to save via API BEFORE navigating
     final notifier = ref.read(customTopicsProvider.notifier);
+    final futures = <Future<dynamic>>[];
+
     for (final entry in _customTopics.entries) {
       for (final topicName in entry.value) {
-        notifier
-            .followTopic(topicName, slugParent: entry.key)
-            .catchError((_) => null);
+        futures.add(
+          notifier
+              .followTopic(topicName, slugParent: entry.key)
+              .catchError((_) => null),
+        );
       }
     }
     for (final entityName in _selectedEntities) {
-      notifier.followTopic(entityName).catchError((_) => null);
+      futures.add(
+        notifier.followTopic(entityName).catchError((_) => null),
+      );
     }
+
+    if (futures.isNotEmpty) {
+      setState(() => _saving = true);
+      final results = await Future.wait(futures);
+      final failed = results.where((r) => r == null).length;
+
+      if (mounted && failed > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              failed == results.length
+                  ? 'Impossible de sauvegarder les sujets personnalisés'
+                  : '$failed sujet(s) n\'ont pas pu être sauvegardés',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
+    // Save subtopics LAST — this triggers navigation to the next step
+    ref.read(onboardingProvider.notifier).selectSubtopics(
+          _selectedSubtopics.toList(),
+        );
   }
 
   @override
@@ -177,11 +203,17 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           const SizedBox(height: FacteurSpacing.space4),
 
           ElevatedButton(
-            onPressed: _continue,
+            onPressed: _saving ? null : _continue,
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-            child: const Text(OnboardingStrings.continueButton),
+            child: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(OnboardingStrings.continueButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

@@ -293,6 +293,137 @@ async def create_topic(
     return _topic_to_response(topic)
 
 
+# --- Disambiguation ---
+
+
+class DisambiguateRequest(BaseModel):
+    name: str
+    theme: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) < 2:
+            raise ValueError("Le nom doit contenir au moins 2 caractères")
+        if len(v) > 200:
+            raise ValueError("Le nom ne peut pas dépasser 200 caractères")
+        return v
+
+
+class DisambiguationSuggestionResponse(BaseModel):
+    canonical_name: str
+    entity_type: str | None = None
+    description: str
+    slug_parent: str
+
+
+@router.post("/disambiguate")
+async def disambiguate_topic(
+    request: DisambiguateRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Désambiguïse un nom de sujet libre via LLM.
+
+    Retourne 1-3 suggestions selon l'ambiguïté du terme.
+    """
+    enrichment_service = get_topic_enrichment_service()
+    try:
+        candidates = await enrichment_service.disambiguate(
+            request.name, theme=request.theme
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {
+        "suggestions": [
+            DisambiguationSuggestionResponse(
+                canonical_name=c.canonical_name,
+                entity_type=c.entity_type,
+                description=c.description,
+                slug_parent=c.slug_parent,
+            ).model_dump()
+            for c in candidates
+        ]
+    }
+
+
+@router.get("/suggestions", response_model=list[TopicSuggestion])
+async def get_suggestions(
+    theme: str | None = Query(
+        None, description="Theme slug to get suggestions for (e.g. 'tech')"
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retourne des suggestions de topics basées sur les lectures récentes.
+
+    Suggère les slugs les plus lus par l'utilisateur qui ne sont pas
+    encore dans ses UserTopicProfile.
+    """
+    user_uuid = UUID(current_user_id)
+
+    # Deferred import to avoid circular dependency at module level
+    from app.services.ml.topic_theme_mapper import TOPIC_TO_THEME
+
+    # Get user's existing custom topic slugs
+    existing_slugs_stmt = select(UserTopicProfile.slug_parent).where(
+        UserTopicProfile.user_id == user_uuid
+    )
+    existing_slugs = set((await db.scalars(existing_slugs_stmt)).all())
+
+    # Find top consumed topics from user's reading history
+    # Unnest content.topics array, count occurrences, filter out already-followed
+    stmt = (
+        select(
+            func.unnest(Content.topics).label("topic_slug"),
+            func.count().label("article_count"),
+        )
+        .join(
+            UserContentStatus,
+            (UserContentStatus.content_id == Content.id)
+            & (UserContentStatus.user_id == user_uuid),
+        )
+        .where(
+            UserContentStatus.status == ContentStatus.CONSUMED,
+            Content.topics.isnot(None),
+        )
+        .group_by("topic_slug")
+        .order_by(func.count().desc())
+        .limit(20)
+    )
+
+    rows = (await db.execute(stmt)).all()
+
+    suggestions = []
+    for row in rows:
+        slug = row.topic_slug
+        count = row.article_count
+
+        # Filter: must be a valid slug, not already followed
+        if slug not in VALID_TOPIC_SLUGS:
+            continue
+        if slug in existing_slugs:
+            continue
+
+        # If theme filter provided, check topic belongs to that theme
+        if theme and TOPIC_TO_THEME.get(slug) != theme:
+            continue
+
+        label = SLUG_TO_LABEL.get(slug, slug.capitalize())
+        suggestions.append(
+            TopicSuggestion(slug=slug, label=label, article_count=count)
+        )
+
+        if len(suggestions) >= 4:
+            break
+
+    return suggestions
+
+
+# --- Parameterized routes (MUST be last to avoid matching static paths) ---
+
+
 @router.put("/{topic_id}", response_model=TopicResponse)
 async def update_topic(
     topic_id: UUID,
@@ -364,74 +495,3 @@ async def delete_topic(
     )
 
     return {"message": "Topic supprimé avec succès"}
-
-
-@router.get("/suggestions", response_model=list[TopicSuggestion])
-async def get_suggestions(
-    theme: str | None = Query(
-        None, description="Theme slug to get suggestions for (e.g. 'tech')"
-    ),
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Retourne des suggestions de topics basées sur les lectures récentes.
-
-    Suggère les slugs les plus lus par l'utilisateur qui ne sont pas
-    encore dans ses UserTopicProfile.
-    """
-    user_uuid = UUID(current_user_id)
-
-    # Deferred import to avoid circular dependency at module level
-    from app.services.ml.topic_theme_mapper import TOPIC_TO_THEME
-
-    # Get user's existing custom topic slugs
-    existing_slugs_stmt = select(UserTopicProfile.slug_parent).where(
-        UserTopicProfile.user_id == user_uuid
-    )
-    existing_slugs = set((await db.scalars(existing_slugs_stmt)).all())
-
-    # Find top consumed topics from user's reading history
-    # Unnest content.topics array, count occurrences, filter out already-followed
-    stmt = (
-        select(
-            func.unnest(Content.topics).label("topic_slug"),
-            func.count().label("article_count"),
-        )
-        .join(
-            UserContentStatus,
-            (UserContentStatus.content_id == Content.id)
-            & (UserContentStatus.user_id == user_uuid),
-        )
-        .where(
-            UserContentStatus.status == ContentStatus.CONSUMED,
-            Content.topics.isnot(None),
-        )
-        .group_by("topic_slug")
-        .order_by(func.count().desc())
-        .limit(20)
-    )
-
-    rows = (await db.execute(stmt)).all()
-
-    suggestions = []
-    for row in rows:
-        slug = row.topic_slug
-        count = row.article_count
-
-        # Filter: must be a valid slug, not already followed
-        if slug not in VALID_TOPIC_SLUGS:
-            continue
-        if slug in existing_slugs:
-            continue
-
-        # If theme filter provided, check topic belongs to that theme
-        if theme and TOPIC_TO_THEME.get(slug) != theme:
-            continue
-
-        label = SLUG_TO_LABEL.get(slug, slug.capitalize())
-        suggestions.append(TopicSuggestion(slug=slug, label=label, article_count=count))
-
-        if len(suggestions) >= 4:
-            break
-
-    return suggestions

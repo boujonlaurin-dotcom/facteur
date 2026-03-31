@@ -239,9 +239,10 @@ class FeedRepository {
           itemsList = [];
         }
 
-        // On infère la pagination car le backend ne donne pas de métadonnées
-        // Si on a reçu 'limit' items, on suppose qu'il y a une page suivante
-        final hasNext = itemsList.length >= limit;
+        // Pagination inference: non-empty means more pages may exist.
+        // The provider controls actual _hasNext state via items.isNotEmpty;
+        // this value is informational for the FeedResponse model.
+        final hasNext = itemsList.isNotEmpty;
 
         return FeedResponse(
           items: itemsList,

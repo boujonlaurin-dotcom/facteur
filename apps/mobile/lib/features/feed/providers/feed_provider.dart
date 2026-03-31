@@ -146,8 +146,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         entity: _selectedEntity,
         serein: isSerein);
 
-    // Update pagination state
-    _hasNext = response.pagination.hasNext;
+    // Update pagination state: keep loading as long as the backend returns
+    // ANY items. Post-processing (regroupement, clustering) can shrink the
+    // response below `limit`, so count >= limit is unreliable.
+    _hasNext = response.items.isNotEmpty;
 
     return response;
   }
@@ -162,6 +164,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final nextPage = _page + 1;
       final response = await _fetchPage(page: nextPage);
       final newItems = response.items;
+
+      if (newItems.isEmpty) {
+        _hasNext = false;
+        return;
+      }
 
       if (newItems.isNotEmpty) {
         _page = nextPage;

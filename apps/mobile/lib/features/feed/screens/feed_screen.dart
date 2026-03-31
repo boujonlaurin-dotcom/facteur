@@ -234,7 +234,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     // forward (= toward top); idle and reverse (toward bottom) are fine.
     final notScrollingUp = _scrollController.position.userScrollDirection !=
         ScrollDirection.forward;
-    if (currentScroll >= maxScroll - 200 && notScrollingUp) {
+    if (currentScroll >= maxScroll - 800 && notScrollingUp) {
       ref.read(feedProvider.notifier).loadMore();
     }
   }
