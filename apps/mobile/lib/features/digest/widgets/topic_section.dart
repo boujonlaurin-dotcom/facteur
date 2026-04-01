@@ -81,7 +81,7 @@ class _TopicSectionState extends State<TopicSection> {
   }
 
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
-  static const double _footerHeight = 37.0;
+  static const double _footerHeight = 57.0;
 
   /// Body padding top + bottom (FacteurSpacing.space3 × 2 = 24)
   static const double _bodyPadding = 24.0;

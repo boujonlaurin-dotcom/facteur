@@ -13,10 +13,12 @@ import 'keyword_overflow_chip.dart';
 /// Tap filters the feed by the entity via setEntity().
 class EntityOverflowChip extends ConsumerWidget {
   final Content content;
+  final VoidCallback? onOverflowTap;
 
   const EntityOverflowChip({
     super.key,
     required this.content,
+    this.onOverflowTap,
   });
 
   @override
@@ -41,6 +43,7 @@ class EntityOverflowChip extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(feedProvider.notifier).setEntity(content.entityOverflowKey!);
+        onOverflowTap?.call();
       },
       child: Container(
         decoration: BoxDecoration(

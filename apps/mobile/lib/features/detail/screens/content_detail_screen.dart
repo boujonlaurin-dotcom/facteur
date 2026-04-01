@@ -18,6 +18,7 @@ import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
@@ -1328,6 +1329,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         child: GestureDetector(
                           onTap: () {
                             ref.read(feedProvider.notifier).setSource(content.source.id);
+                            ref.read(feedScrollTriggerProvider.notifier).state++;
                             context.pop(_content);
                           },
                           behavior: HitTestBehavior.opaque,
@@ -1355,18 +1357,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Ligne 1 : Nom + Badges
+                                    // Ligne 1 : Nom (mini-chip) + Badges
                                     Row(
                                       children: [
                                         Flexible(
-                                          child: Text(
-                                            content.source.name,
-                                            style: textTheme.labelMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: colors.textPrimary,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                              borderRadius: BorderRadius.circular(8),
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                            child: Text(
+                                              content.source.name,
+                                              style: textTheme.labelMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: colors.textPrimary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                         ),
                                         // Bias dot
@@ -1407,8 +1417,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
+                              ],
+                            ),
                         ),
                       ),
                       // Gear icon — aligné à gauche, proche de la source

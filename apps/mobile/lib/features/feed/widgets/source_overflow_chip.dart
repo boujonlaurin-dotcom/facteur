@@ -13,10 +13,12 @@ import 'keyword_overflow_chip.dart';
 /// Tap filters the feed to show all articles from that source.
 class SourceOverflowChip extends ConsumerWidget {
   final Content content;
+  final VoidCallback? onOverflowTap;
 
   const SourceOverflowChip({
     super.key,
     required this.content,
+    this.onOverflowTap,
   });
 
   @override
@@ -36,6 +38,7 @@ class SourceOverflowChip extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(feedProvider.notifier).setSource(content.source.id);
+        onOverflowTap?.call();
       },
       child: Container(
         decoration: BoxDecoration(

@@ -85,10 +85,9 @@ class FeedCard extends StatelessWidget {
         fit: expandContent ? StackFit.expand : StackFit.loose,
         children: [
           FacteurCard(
-            onTap: onTap,
-            onLongPressStart: onLongPressStart,
-            onLongPressMoveUpdate: onLongPressMoveUpdate,
-            onLongPressEnd: onLongPressEnd,
+            // onTap/onLongPress removed from FacteurCard to avoid gesture
+            // arena competition with footer action buttons (Save, "!" etc.).
+            // Tap/long-press are handled directly on the image+body area below.
             backgroundColor: backgroundColor,
             boxShadow: boxShadow,
             padding: EdgeInsets.zero,
@@ -97,32 +96,44 @@ class FeedCard extends StatelessWidget {
               mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Red accent line for video cards
-                if (isVideo)
-                  Container(
-                    height: 3,
-                    color: const Color(0xFFFF0000),
-                  ),
+                // Tappable area: image + body (isolated from footer buttons)
+                GestureDetector(
+                  onTap: onTap,
+                  onLongPressStart: onLongPressStart,
+                  onLongPressMoveUpdate: onLongPressMoveUpdate,
+                  onLongPressEnd: onLongPressEnd,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Red accent line for video cards
+                      if (isVideo)
+                        Container(
+                          height: 3,
+                          color: const Color(0xFFFF0000),
+                        ),
 
-                // 1. Image (Header)
-                FacteurThumbnail(
-                  imageUrl: content.thumbnailUrl,
-                  borderRadius: isVideo
-                      ? BorderRadius.zero
-                      : const BorderRadius.vertical(
-                          top: Radius.circular(FacteurRadius.small)),
-                  onError: onImageError,
-                  overlay: isVideo ? const VideoPlayOverlay() : null,
-                  durationLabel: isVideo && content.durationSeconds != null
-                      ? _formatDuration(content.durationSeconds!)
-                      : null,
-                  isVideo: isVideo,
+                      // 1. Image (Header)
+                      FacteurThumbnail(
+                        imageUrl: content.thumbnailUrl,
+                        borderRadius: isVideo
+                            ? BorderRadius.zero
+                            : const BorderRadius.vertical(
+                                top: Radius.circular(FacteurRadius.small)),
+                        onError: onImageError,
+                        overlay: isVideo ? const VideoPlayOverlay() : null,
+                        durationLabel: isVideo && content.durationSeconds != null
+                            ? _formatDuration(content.durationSeconds!)
+                            : null,
+                        isVideo: isVideo,
+                      ),
+
+                      // 2. Body (Title + Meta)
+                      _buildBody(context, colors, textTheme),
+                    ],
+                  ),
                 ),
 
-                // 2. Body (Title + Meta)
-                _buildBody(context, colors, textTheme),
-
-                // 3. Footer (Source + Actions)
+                // 3. Footer (Source + Actions) — outside tap area
                 Container(
                   decoration: BoxDecoration(
                     color: colors.backgroundSecondary.withValues(alpha: 0.5),
@@ -147,39 +158,47 @@ class FeedCard extends StatelessWidget {
                             child: GestureDetector(
                               onTap: onSourceTap,
                               behavior: HitTestBehavior.opaque,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (content.source.logoUrl != null &&
-                                      content.source.logoUrl!.isNotEmpty) ...[
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: FacteurImage(
-                                        imageUrl: content.source.logoUrl!,
-                                        width: 16,
-                                        height: 16,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (context) =>
-                                            _buildSourcePlaceholder(colors),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (content.source.logoUrl != null &&
+                                        content.source.logoUrl!.isNotEmpty) ...[
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: FacteurImage(
+                                          imageUrl: content.source.logoUrl!,
+                                          width: 16,
+                                          height: 16,
+                                          fit: BoxFit.cover,
+                                          errorWidget: (context) =>
+                                              _buildSourcePlaceholder(colors),
+                                        ),
+                                      ),
+                                      const SizedBox(width: FacteurSpacing.space2),
+                                    ] else ...[
+                                      _buildSourcePlaceholder(colors),
+                                      const SizedBox(width: FacteurSpacing.space2),
+                                    ],
+                                    Flexible(
+                                      child: Text(
+                                        content.source.name,
+                                        style: textTheme.labelMedium?.copyWith(
+                                          color: colors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    const SizedBox(width: FacteurSpacing.space2),
-                                  ] else ...[
-                                    _buildSourcePlaceholder(colors),
-                                    const SizedBox(width: FacteurSpacing.space2),
                                   ],
-                                  Flexible(
-                                    child: Text(
-                                      content.source.name,
-                                      style: textTheme.labelMedium?.copyWith(
-                                        color: colors.textPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
                             ),
                             ),
@@ -349,9 +368,9 @@ class FeedCard extends StatelessWidget {
 
                           // "Pas serein" report button (visible only in serene mode)
                           if (isSerene && onReportNotSerene != null)
-                            InkWell(
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
                               onTap: onReportNotSerene,
-                              borderRadius: BorderRadius.circular(12),
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(

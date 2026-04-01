@@ -487,6 +487,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       } else {
                                         notifier.setSource(null);
                                       }
+                                      _scrollToTop();
                                     },
                                   ),
                                   const Spacer(),
@@ -537,6 +538,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           if (sourceId != null) {
                                             _withFeedLoading(() => notifier.setSource(sourceId));
                                           }
+                                          _scrollToTop();
                                         },
                                       )
                                     : null,
@@ -566,6 +568,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         await notifier.setTopic(slug);
                                       }
                                     });
+                                    _scrollToTop();
                                   },
                                 ),
                                 onFilterChanged: (String? filter) {
@@ -576,6 +579,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       return notifier.setFilter(null);
                                     }
                                   });
+                                  _scrollToTop();
                                 },
                               ),
                             ],
@@ -859,7 +863,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                         .toLowerCase()),
                                         onTap: content.topics.isNotEmpty
                                             ? () {
-                                                ref.read(feedProvider.notifier).setTopic(content.topics.first);
+                                                final slug = content.topics.first;
+                                                setState(() {
+                                                  _selectedInterestName = getTopicLabel(slug);
+                                                  _selectedIsTheme = false;
+                                                });
+                                                ref.read(feedProvider.notifier).setTopic(slug);
+                                                _scrollToTop();
                                               }
                                             : null,
                                       ),
@@ -874,13 +884,29 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
                                                   : content.entityOverflowCount > 0
-                                                      ? EntityOverflowChip(content: content)
+                                                      ? EntityOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                       : content.keywordOverflowCount > 0
-                                                          ? KeywordOverflowChip(content: content)
+                                                          ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                           : content.topicOverflowCount > 0
-                                                              ? TopicOverflowChip(content: content)
+                                                              ? TopicOverflowChip(
+                                                                  content: content,
+                                                                  onOverflowTap: (slug, label, {isTheme = false}) {
+                                                                    setState(() {
+                                                                      _selectedInterestName = label;
+                                                                      _selectedIsTheme = isTheme;
+                                                                    });
+                                                                    _withFeedLoading(() async {
+                                                                      if (isTheme) {
+                                                                        await notifier.setTheme(slug);
+                                                                      } else {
+                                                                        await notifier.setTopic(slug);
+                                                                      }
+                                                                    });
+                                                                    _scrollToTop();
+                                                                  },
+                                                                )
                                                               : content.sourceOverflowCount > 0
-                                                                  ? SourceOverflowChip(content: content)
+                                                                  ? SourceOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                                   : const SizedBox.shrink(),
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
@@ -896,13 +922,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           : null,
                                       onSourceTap: () {
                                         ref.read(feedProvider.notifier).setSource(content.source.id);
+                                        _scrollToTop();
                                       },
                                       isSerene: ref.watch(sereinToggleProvider).enabled,
                                       onReportNotSerene: () async {
+                                        HapticFeedback.lightImpact();
                                         try {
                                           final feedRepo = ref.read(feedRepositoryProvider);
                                           await feedRepo.reportNotSerene(content.id);
-                                          HapticFeedback.lightImpact();
                                           NotificationService.showSuccess(
                                               'Merci, nous en prenons note');
                                         } catch (e) {

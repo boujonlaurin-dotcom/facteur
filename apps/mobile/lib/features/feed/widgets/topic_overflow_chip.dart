@@ -14,10 +14,12 @@ import 'keyword_overflow_chip.dart';
 /// Tap filters the feed by theme or topic depending on group_type.
 class TopicOverflowChip extends ConsumerWidget {
   final Content content;
+  final void Function(String slug, String label, {bool isTheme})? onOverflowTap;
 
   const TopicOverflowChip({
     super.key,
     required this.content,
+    this.onOverflowTap,
   });
 
   @override
@@ -41,10 +43,17 @@ class TopicOverflowChip extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        if (content.topicOverflowType == 'topic') {
-          ref.read(feedProvider.notifier).setTopic(content.topicOverflowKey!);
+        final slug = content.topicOverflowKey!;
+        final label = content.topicOverflowLabel ?? slug;
+        final isTheme = content.topicOverflowType != 'topic';
+        if (onOverflowTap != null) {
+          onOverflowTap!(slug, label, isTheme: isTheme);
         } else {
-          ref.read(feedProvider.notifier).setTheme(content.topicOverflowKey!);
+          if (isTheme) {
+            ref.read(feedProvider.notifier).setTheme(slug);
+          } else {
+            ref.read(feedProvider.notifier).setTopic(slug);
+          }
         }
       },
       child: Container(
