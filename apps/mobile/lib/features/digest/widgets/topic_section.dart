@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
@@ -402,6 +403,9 @@ class _TopicSectionState extends State<TopicSection> {
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
                 ? () => widget.onSourceTap!(article.source!.id!)
                 : null,
+            onSourceLongPress: () => TopicChip.showArticleSheet(
+                context, _convertToContent(article),
+                initialSection: ArticleSheetSection.source),
             onLongPressStart: (_) =>
                 ArticlePreviewOverlay.show(context, _convertToContent(article)),
             onLongPressMoveUpdate: (details) =>
@@ -441,6 +445,9 @@ class _TopicSectionState extends State<TopicSection> {
           onSourceTap: widget.onSourceTap != null && article.source?.id != null
               ? () => widget.onSourceTap!(article.source!.id!)
               : null,
+          onSourceLongPress: () => TopicChip.showArticleSheet(
+              context, _convertToContent(article),
+              initialSection: ArticleSheetSection.source),
           onLongPressStart: (_) => ArticlePreviewOverlay.show(
               context, _convertToContent(article)),
           onLongPressMoveUpdate: (details) =>

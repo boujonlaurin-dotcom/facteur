@@ -1494,7 +1494,15 @@ class RecommendationService:
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme or topic or entity:
-            query = query.where(Source.is_curated, Source.source_tier != "deep")
+            if followed_source_ids:
+                query = query.where(
+                    or_(
+                        and_(Source.is_curated, Source.source_tier != "deep"),
+                        Source.id.in_(list(followed_source_ids)),
+                    )
+                )
+            else:
+                query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif followed_source_ids:
             # Don't apply source filter yet — two-phase fetch after all filters
             _use_two_phase = True

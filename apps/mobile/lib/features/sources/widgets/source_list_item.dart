@@ -62,8 +62,8 @@ class SourceListItem extends StatelessWidget {
         opacity: isMuted ? 0.5 : 1.0,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: isMuted
                 ? colors.surface
@@ -83,11 +83,11 @@ class SourceListItem extends StatelessWidget {
             children: [
               // Logo or Placeholder
               Container(
-                width: 40,
-                height: 40,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: source.logoUrl != null && source.logoUrl!.isNotEmpty
@@ -105,9 +105,9 @@ class SourceListItem extends StatelessWidget {
                           ),
                         ),
                         errorWidget: (context) =>
-                            Icon(_typeIcon, color: colors.secondary, size: 20),
+                            Icon(_typeIcon, color: colors.secondary, size: 24),
                       )
-                    : Icon(_typeIcon, color: colors.secondary, size: 20),
+                    : Icon(_typeIcon, color: colors.secondary, size: 24),
               ),
               const SizedBox(width: 12),
 

@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
@@ -532,6 +533,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               onSourceTap: widget.onSourceTap != null && item.source?.id != null
                   ? () => widget.onSourceTap!(item.source!.id!)
                   : null,
+              onSourceLongPress: () => TopicChip.showArticleSheet(
+                  context, _convertToContent(item),
+                  initialSection: ArticleSheetSection.source),
               onLongPressStart: (_) => ArticlePreviewOverlay.show(
                 context,
                 _convertToContent(item),

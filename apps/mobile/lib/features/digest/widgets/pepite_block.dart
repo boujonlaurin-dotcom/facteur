@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
 import '../../feed/models/content_model.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -82,6 +83,9 @@ class PepiteBlock extends StatelessWidget {
             onSourceTap: onSourceTap != null && pepite.source?.id != null
                 ? () => onSourceTap!(pepite.source!.id!)
                 : null,
+            onSourceLongPress: () => TopicChip.showArticleSheet(
+                context, _convertToContent(item),
+                initialSection: ArticleSheetSection.source),
             onLike: onLike != null ? () => onLike!(item) : null,
             isLiked: item.isLiked,
             onSave: onSave != null ? () => onSave!(item) : null,

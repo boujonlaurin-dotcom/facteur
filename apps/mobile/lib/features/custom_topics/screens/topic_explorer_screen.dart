@@ -9,6 +9,7 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../../core/api/providers.dart';
 import '../providers/algorithm_profile_provider.dart';
@@ -270,6 +271,9 @@ class TopicExplorerScreen extends ConsumerWidget {
                             ref.read(feedProvider.notifier).setSource(article.source.id);
                             context.goNamed(RouteNames.feed);
                           },
+                          onSourceLongPress: () =>
+                              TopicChip.showArticleSheet(context, article,
+                                  initialSection: ArticleSheetSection.source),
                         ),
                       );
                     },

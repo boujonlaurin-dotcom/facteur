@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/saved_feed_provider.dart';
 
@@ -174,6 +175,9 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                                     ref.read(feedProvider.notifier).setSource(content.source.id);
                                     context.goNamed(RouteNames.feed);
                                   },
+                                  onSourceLongPress: () =>
+                                      TopicChip.showArticleSheet(context, content,
+                                          initialSection: ArticleSheetSection.source),
                                   onTap: () async {
                                     final updated =
                                         await context.pushNamed<dynamic>(

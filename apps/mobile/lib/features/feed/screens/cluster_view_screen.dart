@@ -190,6 +190,9 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
                             ref.read(feedProvider.notifier).setSource(article.source.id);
                             Navigator.of(context).pop();
                           },
+                          onSourceLongPress: () =>
+                              TopicChip.showArticleSheet(context, article,
+                                  initialSection: ArticleSheetSection.source),
                           onLongPressStart: (_) =>
                               ArticlePreviewOverlay.show(context, article),
                           onLongPressMoveUpdate: (details) =>
