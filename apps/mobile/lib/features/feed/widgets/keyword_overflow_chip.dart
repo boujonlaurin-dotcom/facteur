@@ -14,10 +14,12 @@ import 'initial_circle.dart';
 /// Tap filters the feed by the keyword via setKeyword().
 class KeywordOverflowChip extends ConsumerWidget {
   final Content content;
+  final VoidCallback? onOverflowTap;
 
   const KeywordOverflowChip({
     super.key,
     required this.content,
+    this.onOverflowTap,
   });
 
   @override
@@ -42,6 +44,7 @@ class KeywordOverflowChip extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(feedProvider.notifier).setKeyword(content.keywordOverflowKey!);
+        onOverflowTap?.call();
       },
       child: Container(
         decoration: BoxDecoration(

@@ -93,6 +93,7 @@ class RecommendationService:
         source_id: str | None = None,
         entity: str | None = None,
         keyword: str | None = None,
+        serein: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -308,6 +309,8 @@ class RecommendationService:
             subscribed_source_ids=subscribed_source_ids,
             # Source filter
             source_id=source_uuid,
+            # Serein content filter (orthogonal to mode)
+            serein=serein,
         )
         self.total_candidates = len(candidates)
 
@@ -1407,6 +1410,7 @@ class RecommendationService:
         topic: str | None = None,
         entity: str | None = None,
         keyword: str | None = None,
+        serein: bool = False,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -1490,7 +1494,15 @@ class RecommendationService:
         if source_id:
             query = query.where(Content.source_id == source_id)
         elif theme or topic or entity:
-            query = query.where(Source.is_curated, Source.source_tier != "deep")
+            if followed_source_ids:
+                query = query.where(
+                    or_(
+                        and_(Source.is_curated, Source.source_tier != "deep"),
+                        Source.id.in_(list(followed_source_ids)),
+                    )
+                )
+            else:
+                query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif followed_source_ids:
             # Don't apply source filter yet — two-phase fetch after all filters
             _use_two_phase = True
@@ -1538,13 +1550,13 @@ class RecommendationService:
             else:
                 query = query.where(Content.is_paid.is_not(True))
 
+        # Apply serein content filter (orthogonal to mode — filters anxiety content)
+        if serein and not source_id:
+            query = apply_serein_filter(query)
+
         # Apply Mode Logic (skip when filtering by specific source)
         if mode and not source_id:
-            if mode == FeedFilterMode.INSPIRATION:
-                # Mode "Sérénité" : Positive/Zen — via filter_presets partagés
-                query = apply_serein_filter(query)
-
-            elif mode == FeedFilterMode.DEEP_DIVE:
+            if mode == FeedFilterMode.DEEP_DIVE:
                 # Mode "Grand Format" : Contenus > 10min (videos, podcasts, OU articles longs)
                 # Note: 45 videos ont duration_seconds=NULL en base. On les inclut par défaut.
                 query = query.where(

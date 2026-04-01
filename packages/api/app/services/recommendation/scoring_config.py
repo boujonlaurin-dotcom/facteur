@@ -256,4 +256,4 @@ class ScoringWeights:
     # --- ENTITY REGROUPEMENT ---
 
     # Minimum articles sharing an entity to form an entity CTA group.
-    MIN_FOR_ENTITY_GROUPING = 3
+    MIN_FOR_ENTITY_GROUPING = 2

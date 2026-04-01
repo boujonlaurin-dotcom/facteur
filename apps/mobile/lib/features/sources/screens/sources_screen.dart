@@ -22,6 +22,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   String _searchQuery = '';
   String? _selectedTheme;
   SourceType? _selectedType;
+  bool _isSearching = false;
   // Collapsible section state (open by default)
   bool _premiumExpanded = true;
   bool _customExpanded = true;
@@ -48,6 +49,8 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     (key: SourceType.podcast, label: 'Podcasts'),
   ];
 
+  bool get _hasActiveFilter => _selectedTheme != null || _selectedType != null;
+
   @override
   void initState() {
     super.initState();
@@ -64,16 +67,81 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     super.dispose();
   }
 
+  void _exitSearch() {
+    setState(() {
+      _isSearching = false;
+      _searchController.clear();
+      _searchQuery = '';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sources de confiance'),
-        actions: const [],
-      ),
+      appBar: _isSearching
+          ? AppBar(
+              leading: IconButton(
+                icon: Icon(
+                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular)),
+                onPressed: _exitSearch,
+              ),
+              title: TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Rechercher une source...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: colors.textTertiary),
+                ),
+                style: TextStyle(color: colors.textPrimary),
+                onTapOutside: (_) => FocusScope.of(context).unfocus(),
+              ),
+              actions: [
+                if (_searchQuery.isNotEmpty)
+                  IconButton(
+                    icon: Icon(
+                        PhosphorIcons.x(PhosphorIconsStyle.regular)),
+                    onPressed: () {
+                      _searchController.clear();
+                    },
+                  ),
+              ],
+            )
+          : AppBar(
+              title: const Text('Sources de confiance'),
+              actions: [
+                IconButton(
+                  icon: Icon(PhosphorIcons.magnifyingGlass(
+                      PhosphorIconsStyle.regular)),
+                  onPressed: () => setState(() => _isSearching = true),
+                ),
+                Stack(
+                  children: [
+                    IconButton(
+                      icon: Icon(PhosphorIcons.funnel(
+                          PhosphorIconsStyle.regular)),
+                      onPressed: () => _showFilterSheet(colors),
+                    ),
+                    if (_hasActiveFilter)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: colors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
       body: sourcesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Erreur: $err')),
@@ -102,7 +170,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             );
           }
 
-          // Apply theme + type + weight filters for display
+          // Apply theme + type filters for display
           var filteredSources = allSources.toList();
           if (_selectedTheme != null) {
             filteredSources = filteredSources
@@ -127,174 +195,91 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
           final mutedSources =
               filteredSources.where((s) => s.isMuted).toList();
 
-          final hasActiveFilter =
-              _selectedTheme != null || _selectedType != null;
-          final noResults = filteredSources.isEmpty && hasActiveFilter;
+          final noResults = filteredSources.isEmpty && _hasActiveFilter;
 
-          return Column(
-            children: [
-              // Hide paid content toggle
-              _buildPaidContentToggle(colors),
-
-              // Theme dropdown
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildDropdown<String?>(
-                        value: _selectedTheme,
-                        items: _themeFilters
-                            .map((f) => DropdownMenuItem<String?>(
-                                  value: f.key,
-                                  child: Text(f.label),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setState(() => _selectedTheme = v),
-                        hint: 'Theme',
-                        icon: PhosphorIcons.tag(PhosphorIconsStyle.regular),
-                        colors: colors,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildDropdown<SourceType?>(
-                        value: _selectedType,
-                        items: _typeFilters
-                            .map((f) => DropdownMenuItem<SourceType?>(
-                                  value: f.key,
-                                  child: Text(f.label),
-                                ))
-                            .toList(),
-                        onChanged: (v) =>
-                            setState(() => _selectedType = v),
-                        hint: 'Type',
-                        icon: PhosphorIcons.funnel(
-                            PhosphorIconsStyle.regular),
-                        colors: colors,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Search bar (below selectors)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Rechercher une source...',
-                    prefixIcon:
-                        Icon(Icons.search, color: colors.textSecondary),
-                    filled: true,
-                    fillColor: colors.surface,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4,
-                      vertical: FacteurSpacing.space3,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.full),
-                      borderSide: BorderSide.none,
-                    ),
-                    hintStyle: TextStyle(color: colors.textSecondary),
+          if (noResults) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+                    size: 40,
+                    color: colors.textTertiary,
                   ),
-                  style: TextStyle(color: colors.textPrimary),
-                  onTapOutside: (_) => FocusScope.of(context).unfocus(),
-                ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Aucune source pour ces filtres',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: colors.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedTheme = null;
+                        _selectedType = null;
+                      });
+                    },
+                    child: const Text('Réinitialiser les filtres'),
+                  ),
+                  ...mutedSources
+                      .map((source) => _buildSourceItem(source)),
+                ],
               ),
+            );
+          }
 
-              Expanded(
-                child: noResults
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              PhosphorIcons.funnel(
-                                  PhosphorIconsStyle.regular),
-                              size: 40,
-                              color: colors.textTertiary,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Aucune source pour ces filtres',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(color: colors.textSecondary),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedTheme = null;
-                                  _selectedType = null;
-                                });
-                              },
-                              child: const Text('Reinitialiser les filtres'),
-                            ),
-                            ...mutedSources
-                                .map((source) => _buildSourceItem(source)),
-                          ],
-                        ),
-                      )
-                    : ListView(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          if (premiumSources.isNotEmpty)
-                            _buildCollapsibleSection(
-                              title: 'Mes abonnements Premium',
-                              count: premiumSources.length,
-                              isExpanded: _premiumExpanded,
-                              onToggle: () => setState(
-                                  () => _premiumExpanded = !_premiumExpanded),
-                              sources: premiumSources,
-                              colors: colors,
-                              icon: PhosphorIcons.star(
-                                  PhosphorIconsStyle.fill),
-                            ),
-                          if (customSources.isNotEmpty)
-                            _buildCollapsibleSection(
-                              title: 'Mes sources personnalisees',
-                              count: customSources.length,
-                              isExpanded: _customExpanded,
-                              onToggle: () => setState(
-                                  () => _customExpanded = !_customExpanded),
-                              sources: customSources,
-                              colors: colors,
-                            ),
-                          if (curatedSources.isNotEmpty)
-                            _buildCollapsibleSection(
-                              title: 'Sources suggerees',
-                              count: curatedSources.length,
-                              isExpanded: _curatedExpanded,
-                              onToggle: () => setState(
-                                  () => _curatedExpanded = !_curatedExpanded),
-                              sources: curatedSources,
-                              colors: colors,
-                            ),
-                          if (mutedSources.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            _buildCollapsibleSection(
-                              title: 'Sources masquees',
-                              count: mutedSources.length,
-                              isExpanded: _mutedExpanded,
-                              onToggle: () => setState(
-                                  () => _mutedExpanded = !_mutedExpanded),
-                              sources: mutedSources,
-                              colors: colors,
-                              icon: PhosphorIcons.eyeSlash(
-                                  PhosphorIconsStyle.bold),
-                              isMuted: true,
-                            ),
-                          ],
-                        ],
-                      ),
-              ),
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            children: [
+              if (premiumSources.isNotEmpty)
+                _buildCollapsibleSection(
+                  title: 'Mes abonnements Premium',
+                  count: premiumSources.length,
+                  isExpanded: _premiumExpanded,
+                  onToggle: () => setState(
+                      () => _premiumExpanded = !_premiumExpanded),
+                  sources: premiumSources,
+                  colors: colors,
+                  icon: PhosphorIcons.star(PhosphorIconsStyle.fill),
+                ),
+              if (customSources.isNotEmpty)
+                _buildCollapsibleSection(
+                  title: 'Mes sources personnalisees',
+                  count: customSources.length,
+                  isExpanded: _customExpanded,
+                  onToggle: () => setState(
+                      () => _customExpanded = !_customExpanded),
+                  sources: customSources,
+                  colors: colors,
+                ),
+              if (curatedSources.isNotEmpty)
+                _buildCollapsibleSection(
+                  title: 'Sources suggerees',
+                  count: curatedSources.length,
+                  isExpanded: _curatedExpanded,
+                  onToggle: () => setState(
+                      () => _curatedExpanded = !_curatedExpanded),
+                  sources: curatedSources,
+                  colors: colors,
+                ),
+              if (mutedSources.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildCollapsibleSection(
+                  title: 'Sources masquees',
+                  count: mutedSources.length,
+                  isExpanded: _mutedExpanded,
+                  onToggle: () => setState(
+                      () => _mutedExpanded = !_mutedExpanded),
+                  sources: mutedSources,
+                  colors: colors,
+                  icon: PhosphorIcons.eyeSlash(PhosphorIconsStyle.bold),
+                  isMuted: true,
+                ),
+              ],
             ],
           );
         },
@@ -309,83 +294,25 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
     );
   }
 
-  // ─── Paid content toggle ─────────────────────────────────────
+  // ─── Filter bottom sheet ───────────────────────────────────
 
-  Widget _buildPaidContentToggle(FacteurColors colors) {
-    final hidePaid = ref.watch(hidePaidContentProvider);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.border),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            PhosphorIcons.lock(PhosphorIconsStyle.regular),
-            size: 18,
-            color: colors.textSecondary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Masquer les articles payants',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textPrimary,
-                  ),
-            ),
-          ),
-          SizedBox(
-            height: 28,
-            child: Switch.adaptive(
-              value: hidePaid,
-              onChanged: (value) {
-                ref.read(hidePaidContentProvider.notifier).toggle(value);
-              },
-              activeTrackColor: colors.primary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── Dropdown selector ───────────────────────────────────────
-
-  Widget _buildDropdown<T>({
-    required T value,
-    required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
-    required String hint,
-    required IconData icon,
-    required FacteurColors colors,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          items: items,
-          onChanged: onChanged,
-          isExpanded: true,
-          icon: Icon(
-            PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-            size: 14,
-            color: colors.textSecondary,
-          ),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.textPrimary,
-              ),
-          dropdownColor: colors.surface,
-          borderRadius: BorderRadius.circular(12),
-        ),
+  void _showFilterSheet(FacteurColors colors) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _FilterSheetContent(
+        selectedTheme: _selectedTheme,
+        selectedType: _selectedType,
+        themeFilters: _themeFilters,
+        typeFilters: _typeFilters,
+        hasActiveFilter: _hasActiveFilter,
+        onThemeChanged: (v) => setState(() => _selectedTheme = v),
+        onTypeChanged: (v) => setState(() => _selectedType = v),
+        onReset: () => setState(() {
+          _selectedTheme = null;
+          _selectedType = null;
+        }),
       ),
     );
   }
@@ -496,6 +423,238 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
             .read(userSourcesProvider.notifier)
             .toggleSubscription(source.id, source.hasSubscription);
       },
+    );
+  }
+}
+
+// ─── Filter sheet widget ─────────────────────────────────────
+
+class _FilterSheetContent extends ConsumerWidget {
+  final String? selectedTheme;
+  final SourceType? selectedType;
+  final List<({String? key, String label})> themeFilters;
+  final List<({SourceType? key, String label})> typeFilters;
+  final bool hasActiveFilter;
+  final ValueChanged<String?> onThemeChanged;
+  final ValueChanged<SourceType?> onTypeChanged;
+  final VoidCallback onReset;
+
+  const _FilterSheetContent({
+    required this.selectedTheme,
+    required this.selectedType,
+    required this.themeFilters,
+    required this.typeFilters,
+    required this.hasActiveFilter,
+    required this.onThemeChanged,
+    required this.onTypeChanged,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hidePaid = ref.watch(hidePaidContentProvider);
+    final colors = context.facteurColors;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 16),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textTertiary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Title row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Text(
+                    'Filtres',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const Spacer(),
+                  if (hasActiveFilter)
+                    TextButton(
+                      onPressed: () {
+                        onReset();
+                        Navigator.pop(context);
+                      },
+                      child: Text(
+                        'Réinitialiser',
+                        style: TextStyle(color: colors.primary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Paid content toggle
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colors.border),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      PhosphorIcons.lock(PhosphorIconsStyle.regular),
+                      size: 18,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Masquer les articles payants',
+                        style:
+                            Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: colors.textPrimary,
+                                ),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 28,
+                      child: Switch.adaptive(
+                        value: hidePaid,
+                        onChanged: (value) {
+                          ref
+                              .read(hidePaidContentProvider.notifier)
+                              .toggle(value);
+                        },
+                        activeTrackColor: colors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Theme section
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'THÈME',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: themeFilters.map((f) {
+                  final isSelected = selectedTheme == f.key;
+                  return ChoiceChip(
+                    label: Text(f.label),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      onThemeChanged(f.key);
+                      Navigator.pop(context);
+                    },
+                    selectedColor: colors.primary,
+                    backgroundColor: colors.surface,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : colors.textSecondary,
+                      fontSize: 13,
+                    ),
+                    side: BorderSide(
+                      color: isSelected ? colors.primary : colors.border,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    showCheckmark: false,
+                  );
+                }).toList(),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Type section
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'TYPE',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
+                      ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: typeFilters.map((f) {
+                  final isSelected = selectedType == f.key;
+                  return ChoiceChip(
+                    label: Text(f.label),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      onTypeChanged(f.key);
+                      Navigator.pop(context);
+                    },
+                    selectedColor: colors.primary,
+                    backgroundColor: colors.surface,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : colors.textSecondary,
+                      fontSize: 13,
+                    ),
+                    side: BorderSide(
+                      color: isSelected ? colors.primary : colors.border,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    showCheckmark: false,
+                  );
+                }).toList(),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
     );
   }
 }

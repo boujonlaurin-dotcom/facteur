@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/priority_slider.dart';
@@ -28,113 +29,71 @@ class SourceDetailModal extends StatelessWidget {
     final colors = context.facteurColors;
 
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+          // Header — name + bias badge (no logo, more breathing room)
+          Text(
+            source.name,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
+              if (source.logoUrl != null) ...[
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: colors.backgroundSecondary,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: FacteurImage(
+                      imageUrl: source.logoUrl!, fit: BoxFit.cover),
+                ),
+                const SizedBox(width: 8),
+              ],
               Container(
-                width: 64,
-                height: 64,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(16),
+                  color: source.getBiasColor().withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: source.logoUrl != null
-                    ? FacteurImage(
-                        imageUrl: source.logoUrl!, fit: BoxFit.cover)
-                    : Icon(PhosphorIcons.article(), color: colors.secondary),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      source.name,
-                      style:
-                          Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                color: colors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: source.getBiasColor().withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                child: Text(
+                  source.getBiasLabel().toUpperCase(),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: source.getBiasColor(),
+                        fontWeight: FontWeight.bold,
                       ),
-                      child: Text(
-                        source.getBiasLabel().toUpperCase(),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: source.getBiasColor(),
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
+              if (source.theme != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  source.getThemeLabel(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
           // FQS Score Card
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colors.backgroundSecondary,
-              borderRadius: BorderRadius.circular(16),
-              border:
-                  Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(PhosphorIcons.shieldCheck(PhosphorIconsStyle.fill),
-                        color: source.getReliabilityColor()),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Évaluation de qualité',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      source.getReliabilityLabel(),
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: source.getReliabilityColor(),
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildFqsPillar(
-                    context, 'Indépendance', source.scoreIndependence ?? 0.0),
-                const SizedBox(height: 8),
-                _buildFqsPillar(context, 'Rigueur Journalistique',
-                    source.scoreRigor ?? 0.0),
-                const SizedBox(height: 8),
-                _buildFqsPillar(
-                    context, 'Accessibilité', source.scoreUx ?? 0.0),
-              ],
-            ),
-          ),
+          _buildFqsCard(context, colors),
           // Epic 12: Priority slider (only for trusted/followed sources)
           if (onPriorityChanged != null && source.isTrusted) ...[
             const SizedBox(height: 16),
@@ -280,7 +239,136 @@ class SourceDetailModal extends StatelessWidget {
               ),
             ],
           ],
+          // Methodology note
+          _buildMethodologyNote(context, colors),
+
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+        ],
+        ),
+      ),
+    );
+  }
+
+  bool get _hasEvaluation =>
+      source.scoreIndependence != null ||
+      source.scoreRigor != null ||
+      source.scoreUx != null;
+
+  Widget _buildFqsCard(BuildContext context, FacteurColors colors) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: BorderRadius.circular(16),
+        border:
+            Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(PhosphorIcons.shieldCheck(PhosphorIconsStyle.fill),
+                  size: 20,
+                  color: _hasEvaluation
+                      ? source.getReliabilityColor()
+                      : colors.textTertiary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "L'évaluation de Facteur",
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: colors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+              if (_hasEvaluation)
+                Text(
+                  source.getReliabilityLabel(),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: source.getReliabilityColor(),
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_hasEvaluation) ...[
+            _buildFqsPillar(
+                context, 'Indépendance', source.scoreIndependence ?? 0.0),
+            const SizedBox(height: 8),
+            _buildFqsPillar(
+                context, 'Rigueur', source.scoreRigor ?? 0.0),
+            const SizedBox(height: 8),
+            _buildFqsPillar(
+                context, 'Accessibilité', source.scoreUx ?? 0.0),
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Cette source n\'a pas encore pu être évaluée par la méthodologie de Facteur.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textTertiary,
+                      fontStyle: FontStyle.italic,
+                      height: 1.4,
+                    ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMethodologyNote(BuildContext context, FacteurColors colors) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              PhosphorIcons.info(PhosphorIconsStyle.regular),
+              size: 14,
+              color: colors.textTertiary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => launchUrl(
+                Uri.parse('https://facteur.app'),
+                mode: LaunchMode.externalApplication,
+              ),
+              child: Text.rich(
+                TextSpan(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                  children: [
+                    const TextSpan(
+                      text:
+                          'Facteur évalue ces critères sur la base d\'une méthodologie '
+                          'inspirée des codes de déontologie journalistiques. '
+                          'Ce standard ouvert, développé par Facteur, est en cours '
+                          'de relecture par des instituts indépendants. ',
+                    ),
+                    TextSpan(
+                      text: 'En savoir plus',
+                      style: TextStyle(
+                        color: colors.primary,
+                        decoration: TextDecoration.underline,
+                        decorationColor: colors.primary.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

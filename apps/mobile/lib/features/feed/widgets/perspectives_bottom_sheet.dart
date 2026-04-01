@@ -968,9 +968,7 @@ class _PerspectiveCard extends ConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           onTap: () async {
             final uri = Uri.parse(perspective.url);
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
           },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

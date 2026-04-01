@@ -165,7 +165,7 @@ def apply_entity_filter(query, entity_name: str):
     entity_element = func.unnest(Content.entities).column_valued()
     pattern = f'%"name": "{entity_name}"%'
     return query.where(
-        exists(select(literal_column("1")).where(entity_element.like(pattern)))
+        exists(select(literal_column("1")).where(entity_element.ilike(pattern)))
     )
 
 

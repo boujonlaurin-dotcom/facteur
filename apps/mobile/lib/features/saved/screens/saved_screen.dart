@@ -10,6 +10,7 @@ import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../models/collection_model.dart';
 import '../providers/collections_provider.dart';
@@ -347,6 +348,9 @@ class _WeeklyNotesSection extends ConsumerWidget {
                   ref.read(feedProvider.notifier).setSource(article.source.id);
                   context.goNamed(RouteNames.feed);
                 },
+                onSourceLongPress: () =>
+                    TopicChip.showArticleSheet(context, article,
+                        initialSection: ArticleSheetSection.source),
                 onLongPressStart: (_) =>
                     ArticlePreviewOverlay.show(context, article),
                 onLongPressMoveUpdate: (details) =>
@@ -417,6 +421,9 @@ class _RecentSavedSection extends ConsumerWidget {
                   ref.read(feedProvider.notifier).setSource(article.source.id);
                   context.goNamed(RouteNames.feed);
                 },
+                onSourceLongPress: () =>
+                    TopicChip.showArticleSheet(context, article,
+                        initialSection: ArticleSheetSection.source),
                 onLongPressStart: (_) =>
                     ArticlePreviewOverlay.show(context, article),
                 onLongPressMoveUpdate: (details) =>

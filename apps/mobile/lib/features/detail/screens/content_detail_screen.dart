@@ -12,12 +12,14 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
@@ -443,7 +445,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (isPlaying) {
       _videoPlayHideTimer = Timer(const Duration(milliseconds: 2500), () {
         if (mounted && _isVideoPlaying) {
-          _headerOpacity.value = 0.0;
+          // Keep header visible in video readers (fullscreen is handled natively).
           _fabOpacity.value = 0.07;
         }
       });
@@ -456,20 +458,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   void _onScrollFabOpacity() {
+    final isVideo = _content?.isVideo ?? false;
     _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
       _fabOpacity.value = 0.07;
     }
-    if (_headerOpacity.value != 0.0) {
+    // In video readers the header stays visible at all times (only native
+    // fullscreen covers it, which is handled by the system).
+    if (!isVideo && _headerOpacity.value != 0.0) {
       _headerOpacity.value = 0.0;
     }
-    // Header reappears after 1s
+    // Header reappears after 1s (non-video only)
     _headerScrollStopTimer?.cancel();
-    _headerScrollStopTimer = Timer(const Duration(milliseconds: 1000), () {
-      if (mounted) {
-        _headerOpacity.value = 1.0;
-      }
-    });
+    if (!isVideo) {
+      _headerScrollStopTimer = Timer(const Duration(milliseconds: 1000), () {
+        if (mounted) {
+          _headerOpacity.value = 1.0;
+        }
+      });
+    }
     // FABs reappear after 2.5s
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2500), () {
@@ -1325,11 +1332,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   child: Row(
                     children: [
                       Expanded(
-                        child: GestureDetector(
+                        child: _SourceBadgeNudge(
+                          child: GestureDetector(
                           onTap: () {
                             ref.read(feedProvider.notifier).setSource(content.source.id);
+                            ref.read(feedScrollTriggerProvider.notifier).state++;
                             context.pop(_content);
                           },
+                          onLongPress: () => TopicChip.showArticleSheet(
+                            context, content,
+                            initialSection: ArticleSheetSection.source,
+                          ),
                           behavior: HitTestBehavior.opaque,
                           child: Row(
                             children: [
@@ -1355,18 +1368,29 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Ligne 1 : Nom + Badges
+                                    // Ligne 1 : Nom (mini-chip) + Badges
                                     Row(
                                       children: [
                                         Flexible(
-                                          child: Text(
-                                            content.source.name,
-                                            style: textTheme.labelMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: colors.textPrimary,
+                                          child: Opacity(
+                                            opacity: 0.9,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                content.source.name,
+                                                style: textTheme.labelMedium?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: colors.textPrimary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         // Bias dot
@@ -1407,9 +1431,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                               ),
-                            ],
-                          ),
+                              ],
+                            ),
                         ),
+                        ), // _SourceBadgeNudge
                       ),
                       // Gear icon — aligné à gauche, proche de la source
                       GestureDetector(
@@ -1713,6 +1738,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           header: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Extra breathing room so tag chips aren't clipped by the header overlay
+                              const SizedBox(height: FacteurSpacing.space2),
                               if (content.thumbnailUrl != null) ...[
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(
@@ -1973,7 +2000,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Reserve ~160px below the player for metadata (scrollable, same
         // pattern as regular videos). FABs float over this Flutter text area
         // (not an iframe) so they remain clickable.
-        final shortsPlayerHeight = (maxHeight - headerHeight - 160)
+        final shortsPlayerHeight = (maxHeight - headerHeight - 140)
             .clamp(200.0, screenWidth * 16 / 9);
 
         return Column(
@@ -2060,21 +2087,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         if (content.source.theme != null &&
                             content.source.theme!.isNotEmpty) ...[
                           const SizedBox(width: FacteurSpacing.space2),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.primary,
-                              borderRadius:
-                                  BorderRadius.circular(FacteurRadius.pill),
-                            ),
-                            child: Text(
-                              content.source.getThemeLabel(),
-                              style: textTheme.labelSmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
+                          Opacity(
+                            opacity: 0.9,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primary,
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.pill),
+                              ),
+                              child: Text(
+                                content.source.getThemeLabel(),
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
@@ -2307,6 +2337,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             children: [
               // Spacer: scrolls with content, initially behind the header overlay
               SizedBox(height: headerHeight),
+              // Extra breathing room so tag chips aren't clipped by the header overlay
+              const SizedBox(height: FacteurSpacing.space2),
               // Hero thumbnail image (smooth integration)
               if (content.thumbnailUrl != null) ...[
                 ClipRRect(
@@ -2523,6 +2555,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return Column(
       children: [
         SizedBox(height: headerHeight),
+        // Extra breathing room so tag chips aren't clipped by the header overlay
+        const SizedBox(height: FacteurSpacing.space2),
         if (content.entities.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -2537,6 +2571,65 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
+    );
+  }
+}
+
+/// Subtle periodic nudge on the source badge to hint at long-press.
+class _SourceBadgeNudge extends StatefulWidget {
+  final Widget child;
+
+  const _SourceBadgeNudge({required this.child});
+
+  @override
+  State<_SourceBadgeNudge> createState() => _SourceBadgeNudgeState();
+}
+
+class _SourceBadgeNudgeState extends State<_SourceBadgeNudge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  final math.Random _rng = math.Random();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _scheduleNext();
+      }
+    });
+    _scheduleNext();
+  }
+
+  void _scheduleNext() {
+    final delayMs = 8000 + _rng.nextInt(7000); // 8–15 s
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: delayMs), () {
+      if (mounted) _controller.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 1.0 + 0.02 * math.sin(_controller.value * math.pi);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: widget.child,
     );
   }
 }

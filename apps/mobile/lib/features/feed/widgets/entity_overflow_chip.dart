@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/content_model.dart';
-import '../providers/feed_provider.dart';
 import 'keyword_overflow_chip.dart';
 
 /// Chip shown below the representative card of an entity group.
 ///
 /// Displays: `> Entity — N articles   [logo1 logo2 logo3 +N] >`
 /// Tap filters the feed by the entity via setEntity().
-class EntityOverflowChip extends ConsumerWidget {
+class EntityOverflowChip extends StatelessWidget {
   final Content content;
+  final void Function(String entityKey, String entityLabel)? onOverflowTap;
 
   const EntityOverflowChip({
     super.key,
     required this.content,
+    this.onOverflowTap,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     if (content.entityOverflowCount == 0) {
       return const SizedBox.shrink();
     }
@@ -40,7 +40,10 @@ class EntityOverflowChip extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        ref.read(feedProvider.notifier).setEntity(content.entityOverflowKey!);
+        onOverflowTap?.call(
+          content.entityOverflowKey!,
+          content.entityOverflowLabel ?? content.entityOverflowKey!,
+        );
       },
       child: Container(
         decoration: BoxDecoration(

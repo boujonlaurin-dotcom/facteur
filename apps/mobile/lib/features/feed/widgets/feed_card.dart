@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
@@ -7,10 +10,11 @@ import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:facteur/widgets/design/video_play_overlay.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-class FeedCard extends StatelessWidget {
+class FeedCard extends StatefulWidget {
   final Content content;
   final VoidCallback? onTap;
   final GestureLongPressStartCallback? onLongPressStart;
@@ -23,6 +27,7 @@ class FeedCard extends StatelessWidget {
   final VoidCallback? onReportNotSerene;
   final bool isSerene;
   final VoidCallback? onSourceTap; // Epic 12: tap source name/logo → detail
+  final VoidCallback? onSourceLongPress; // Long-press → ArticleSheet (source section)
   final Widget? topicChipWidget;
   final Widget? clusterChipWidget;
   final bool isSaved;
@@ -53,6 +58,7 @@ class FeedCard extends StatelessWidget {
     this.onReportNotSerene,
     this.isSerene = false,
     this.onSourceTap,
+    this.onSourceLongPress,
     this.topicChipWidget,
     this.clusterChipWidget,
     this.isSaved = false,
@@ -71,58 +77,116 @@ class FeedCard extends StatelessWidget {
   });
 
   @override
+  State<FeedCard> createState() => _FeedCardState();
+}
+
+class _FeedCardState extends State<FeedCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pressController;
+  late final Animation<double> _pressScale;
+
+  @override
+  void initState() {
+    super.initState();
+    _pressController = AnimationController(
+      vsync: this,
+      duration: FacteurDurations.fast,
+      reverseDuration: FacteurDurations.medium,
+    );
+    _pressScale = Tween<double>(begin: 1.0, end: 0.98).animate(
+      CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pressController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    final isConsumed = content.status == ContentStatus.consumed;
-    final isVideo = content.contentType == ContentType.youtube || content.contentType == ContentType.video;
+    final isConsumed = widget.content.status == ContentStatus.consumed;
+    final isVideo = widget.content.contentType == ContentType.youtube || widget.content.contentType == ContentType.video;
 
-    final hasBeenRead = isConsumed || content.readingProgress > 0;
+    final hasBeenRead = isConsumed || widget.content.readingProgress > 0;
     return Opacity(
       opacity: hasBeenRead ? 0.6 : 1.0,
       child: Stack(
-        fit: expandContent ? StackFit.expand : StackFit.loose,
+        fit: widget.expandContent ? StackFit.expand : StackFit.loose,
         children: [
-          FacteurCard(
-            onTap: onTap,
-            onLongPressStart: onLongPressStart,
-            onLongPressMoveUpdate: onLongPressMoveUpdate,
-            onLongPressEnd: onLongPressEnd,
-            backgroundColor: backgroundColor,
-            boxShadow: boxShadow,
-            padding: EdgeInsets.zero,
-            borderRadius: FacteurRadius.small,
-            child: Column(
-              mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Red accent line for video cards
-                if (isVideo)
-                  Container(
-                    height: 3,
-                    color: const Color(0xFFFF0000),
+          // ScaleTransition wraps the ENTIRE card so the whole thing shrinks
+          // uniformly (no white border gap between image+body and footer).
+          ScaleTransition(
+            scale: _pressScale,
+            child: FacteurCard(
+              backgroundColor: widget.backgroundColor,
+              boxShadow: widget.boxShadow,
+              padding: EdgeInsets.zero,
+              borderRadius: FacteurRadius.small,
+              child: Column(
+                mainAxisSize: widget.expandContent ? MainAxisSize.max : MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Tappable area: image + body (isolated from footer buttons)
+                  GestureDetector(
+                    onTapDown: (_) => _pressController.forward(),
+                    onTapUp: (_) => _pressController.reverse(),
+                    onTapCancel: () => _pressController.reverse(),
+                    onTap: widget.onTap != null
+                        ? () async {
+                            await HapticFeedback.mediumImpact();
+                            widget.onTap?.call();
+                          }
+                        : null,
+                    onLongPressStart: widget.onLongPressStart != null
+                        ? (details) async {
+                            await HapticFeedback.mediumImpact();
+                            widget.onLongPressStart?.call(details);
+                          }
+                        : null,
+                    onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
+                    onLongPressEnd: widget.onLongPressEnd != null
+                        ? (details) {
+                            _pressController.reverse();
+                            widget.onLongPressEnd?.call(details);
+                          }
+                        : null,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Red accent line for video cards
+                        if (isVideo)
+                          Container(
+                            height: 3,
+                            color: const Color(0xFFFF0000),
+                          ),
+
+                        // 1. Image (Header)
+                        FacteurThumbnail(
+                          imageUrl: widget.content.thumbnailUrl,
+                          borderRadius: isVideo
+                              ? BorderRadius.zero
+                              : const BorderRadius.vertical(
+                                  top: Radius.circular(FacteurRadius.small)),
+                          onError: widget.onImageError,
+                          overlay: isVideo ? const VideoPlayOverlay() : null,
+                          durationLabel: isVideo && widget.content.durationSeconds != null
+                              ? _formatDuration(widget.content.durationSeconds!)
+                              : null,
+                          isVideo: isVideo,
+                        ),
+
+                        // 2. Body (Title + Meta)
+                        _buildBody(context, colors, textTheme),
+                      ],
+                    ),
                   ),
 
-                // 1. Image (Header)
-                FacteurThumbnail(
-                  imageUrl: content.thumbnailUrl,
-                  borderRadius: isVideo
-                      ? BorderRadius.zero
-                      : const BorderRadius.vertical(
-                          top: Radius.circular(FacteurRadius.small)),
-                  onError: onImageError,
-                  overlay: isVideo ? const VideoPlayOverlay() : null,
-                  durationLabel: isVideo && content.durationSeconds != null
-                      ? _formatDuration(content.durationSeconds!)
-                      : null,
-                  isVideo: isVideo,
-                ),
-
-                // 2. Body (Title + Meta)
-                _buildBody(context, colors, textTheme),
-
-                // 3. Footer (Source + Actions)
+                // 3. Footer (Source + Actions) — outside tap area
                 Container(
                   decoration: BoxDecoration(
                     color: colors.backgroundSecondary.withValues(alpha: 0.5),
@@ -144,58 +208,69 @@ class FeedCard extends StatelessWidget {
                           children: [
                             // Source Logo + Name (tappable for source detail — Epic 12)
                             Flexible(
-                            child: GestureDetector(
-                              onTap: onSourceTap,
+                            child: _FooterBadgeNudge(
+                              child: GestureDetector(
+                              onTap: widget.onSourceTap,
+                              onLongPress: widget.onSourceLongPress,
                               behavior: HitTestBehavior.opaque,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (content.source.logoUrl != null &&
-                                      content.source.logoUrl!.isNotEmpty) ...[
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: FacteurImage(
-                                        imageUrl: content.source.logoUrl!,
-                                        width: 16,
-                                        height: 16,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (context) =>
-                                            _buildSourcePlaceholder(colors),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (widget.content.source.logoUrl != null &&
+                                        widget.content.source.logoUrl!.isNotEmpty) ...[
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: FacteurImage(
+                                          imageUrl: widget.content.source.logoUrl!,
+                                          width: 16,
+                                          height: 16,
+                                          fit: BoxFit.cover,
+                                          errorWidget: (context) =>
+                                              _buildSourcePlaceholder(colors),
+                                        ),
+                                      ),
+                                      const SizedBox(width: FacteurSpacing.space2),
+                                    ] else ...[
+                                      _buildSourcePlaceholder(colors),
+                                      const SizedBox(width: FacteurSpacing.space2),
+                                    ],
+                                    Flexible(
+                                      child: Text(
+                                        widget.content.source.name,
+                                        style: textTheme.labelMedium?.copyWith(
+                                          color: colors.textPrimary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    const SizedBox(width: FacteurSpacing.space2),
-                                  ] else ...[
-                                    _buildSourcePlaceholder(colors),
-                                    const SizedBox(width: FacteurSpacing.space2),
                                   ],
-                                  Flexible(
-                                    child: Text(
-                                      content.source.name,
-                                      style: textTheme.labelMedium?.copyWith(
-                                        color: colors.textPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
                             ),
+                            ), // _FooterBadgeNudge
                             ),
 
                             // Source suivie badge OR discovery follow CTA
-                            if (isFollowedSource) ...[
+                            if (widget.isFollowedSource) ...[
                               const SizedBox(width: 4),
                               Icon(
-                                PhosphorIcons.star(PhosphorIconsStyle.fill),
-                                size: 12,
-                                color: colors.textSecondary,
+                                PhosphorIcons.star(),
+                                size: 11,
+                                color: colors.textTertiary,
                               ),
-                            ] else if (hasActiveFilter && onFollowSource != null) ...[
+                            ] else if (widget.hasActiveFilter && widget.onFollowSource != null) ...[
                               const SizedBox(width: 6),
                               GestureDetector(
-                                onTap: onFollowSource,
+                                onTap: widget.onFollowSource,
                                 behavior: HitTestBehavior.opaque,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -237,7 +312,7 @@ class FeedCard extends StatelessWidget {
                             const SizedBox(width: 3),
                             Text(
                               timeago
-                                  .format(content.publishedAt,
+                                  .format(widget.content.publishedAt,
                                       locale: 'fr_short')
                                   .replaceAll('il y a ', ''),
                               style: textTheme.labelSmall?.copyWith(
@@ -247,13 +322,13 @@ class FeedCard extends StatelessWidget {
                             ),
 
                             // Paywall badge (green "Abonné" if subscribed, yellow "Payant" otherwise)
-                            if (content.isPaid) ...[
+                            if (widget.content.isPaid) ...[
                               const SizedBox(width: FacteurSpacing.space2),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: isSourceSubscribed
+                                  color: widget.isSourceSubscribed
                                       ? colors.success.withValues(alpha: 0.15)
                                       : colors.warning.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(8),
@@ -262,23 +337,23 @@ class FeedCard extends StatelessWidget {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      isSourceSubscribed
+                                      widget.isSourceSubscribed
                                           ? PhosphorIcons.crown(
                                               PhosphorIconsStyle.fill)
                                           : PhosphorIcons.lock(
                                               PhosphorIconsStyle.fill),
                                       size: 10,
-                                      color: isSourceSubscribed
+                                      color: widget.isSourceSubscribed
                                           ? colors.success
                                           : colors.warning,
                                     ),
                                     const SizedBox(width: 3),
                                     Text(
-                                      isSourceSubscribed
+                                      widget.isSourceSubscribed
                                           ? 'Abonné'
                                           : 'Payant',
                                       style: TextStyle(
-                                        color: isSourceSubscribed
+                                        color: widget.isSourceSubscribed
                                             ? colors.success
                                             : colors.warning,
                                         fontWeight: FontWeight.w600,
@@ -291,7 +366,7 @@ class FeedCard extends StatelessWidget {
                             ],
 
                             // Editorial badge (digest only) — truncates before source name
-                            if (editorialBadgeLabel != null) ...[
+                            if (widget.editorialBadgeLabel != null) ...[
                               const SizedBox(width: FacteurSpacing.space2),
                               Flexible(
                                 child: Container(
@@ -307,7 +382,7 @@ class FeedCard extends StatelessWidget {
                                     ),
                                   ),
                                   child: Text(
-                                    editorialBadgeLabel!,
+                                    widget.editorialBadgeLabel!,
                                     style: TextStyle(
                                       color: colors.textSecondary,
                                       fontWeight: FontWeight.w600,
@@ -328,49 +403,42 @@ class FeedCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           // Save button (tap = save/unsave, long press = collection picker)
-                          if (onSave != null)
+                          if (widget.onSave != null)
                             GestureDetector(
-                              onTap: onSave,
-                              onLongPress: onSaveLongPress,
+                              onTap: widget.onSave,
+                              onLongPress: widget.onSaveLongPress,
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 child: Icon(
-                                  isSaved
+                                  widget.isSaved
                                       ? PhosphorIcons.bookmarkSimple(
                                           PhosphorIconsStyle.fill)
                                       : PhosphorIcons.bookmarkSimple(),
                                   size: 20,
-                                  color: isSaved
+                                  color: widget.isSaved
                                       ? colors.primary
                                       : colors.textSecondary,
                                 ),
                               ),
                             ),
 
-                          // "Pas serein" report button (visible only in serene mode)
-                          if (isSerene && onReportNotSerene != null)
-                            InkWell(
-                              onTap: onReportNotSerene,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                child: Icon(
-                                  PhosphorIcons.shieldWarning(),
-                                  size: 20,
-                                  color: colors.warning,
-                                ),
-                              ),
-                            ),
+                          // TODO(beta-post): "Pas serein" report button masqué pour Beta 1.0.
+                          // Le tap ne se déclenche pas de manière fiable — cause non identifiée
+                          // malgré plusieurs tentatives (InkWell, GestureDetector, restructuration
+                          // du widget tree). À investiguer après le lancement Beta.
+                          // Ticket : bug-report-not-serene-feed
 
                           // Topic chip (replaces NotInterested when provided)
-                          if (topicChipWidget != null)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: topicChipWidget!,
+                          if (widget.topicChipWidget != null)
+                            _FooterBadgeNudge(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: widget.topicChipWidget!,
+                              ),
                             )
-                          else if (onNotInterested != null)
+                          else if (widget.onNotInterested != null)
                             InkWell(
-                              onTap: onNotInterested,
+                              onTap: widget.onNotInterested,
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
                                 padding: const EdgeInsets.all(6),
@@ -389,11 +457,12 @@ class FeedCard extends StatelessWidget {
                 ),
 
                 // Cluster chip (below footer)
-                if (clusterChipWidget != null) clusterChipWidget!,
+                if (widget.clusterChipWidget != null) widget.clusterChipWidget!,
               ],
             ),
           ),
-          if (content.hasNote)
+          ), // ScaleTransition
+          if (widget.content.hasNote)
             Positioned(
               top: 12,
               left: 12,
@@ -431,11 +500,11 @@ class FeedCard extends StatelessWidget {
                 ),
               ),
             ),
-          if (isConsumed || content.readingProgress > 0)
+          if (isConsumed || widget.content.readingProgress > 0)
             Positioned(
               top: 12,
               right: 12,
-              child: ReadingBadge(content: content),
+              child: ReadingBadge(content: widget.content),
             ),
         ],
       ),
@@ -445,13 +514,13 @@ class FeedCard extends StatelessWidget {
   Widget _buildBody(
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
     final hasDescription =
-        content.description != null && content.description!.isNotEmpty;
-    final showDescription = alwaysShowDescription
+        widget.content.description != null && widget.content.description!.isNotEmpty;
+    final showDescription = widget.alwaysShowDescription
         ? hasDescription
-        : expandContent
+        : widget.expandContent
             ? hasDescription
-            : ((content.thumbnailUrl == null ||
-                    content.thumbnailUrl!.isEmpty) &&
+            : ((widget.content.thumbnailUrl == null ||
+                    widget.content.thumbnailUrl!.isEmpty) &&
                 hasDescription);
 
     final bodyContent = Padding(
@@ -460,30 +529,30 @@ class FeedCard extends StatelessWidget {
         vertical: FacteurSpacing.space3,
       ),
       child: Column(
-        mainAxisSize: expandContent ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: widget.expandContent ? MainAxisSize.max : MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Titre
           Text(
-            content.title,
+            widget.content.title,
             style: textTheme.displaySmall?.copyWith(
               fontSize: 20,
               fontWeight: FontWeight.w700,
               height: 1.2,
             ),
-            maxLines: expandContent ? null : 3,
-            overflow: expandContent ? null : TextOverflow.ellipsis,
+            maxLines: widget.expandContent ? null : 3,
+            overflow: widget.expandContent ? null : TextOverflow.ellipsis,
           ),
           if (showDescription) ...[
             const SizedBox(height: FacteurSpacing.space2),
             Text(
-              stripHtml(content.description!),
+              stripHtml(widget.content.description!),
               style: textTheme.bodySmall?.copyWith(
                 color: colors.textSecondary.withValues(alpha: 0.85),
                 height: 1.3,
-                fontSize: descriptionFontSize,
+                fontSize: widget.descriptionFontSize,
               ),
-              maxLines: expandContent ? 8 : alwaysShowDescription ? 4 : 2,
+              maxLines: widget.expandContent ? 8 : widget.alwaysShowDescription ? 4 : 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],
@@ -491,11 +560,11 @@ class FeedCard extends StatelessWidget {
           // Métadonnées (Type • Durée)
           Row(
             children: [
-              _buildTypeIcon(context, content.contentType),
+              _buildTypeIcon(context, widget.content.contentType),
               const SizedBox(width: FacteurSpacing.space2),
-              if (content.durationSeconds != null)
+              if (widget.content.durationSeconds != null)
                 Text(
-                  _formatDuration(content.durationSeconds!),
+                  _formatDuration(widget.content.durationSeconds!),
                   style: textTheme.labelSmall?.copyWith(
                       color: colors.textSecondary,
                       fontWeight: FontWeight.w500),
@@ -506,7 +575,7 @@ class FeedCard extends StatelessWidget {
       ),
     );
 
-    if (expandContent) {
+    if (widget.expandContent) {
       return Expanded(child: bodyContent);
     }
     return bodyContent;
@@ -522,8 +591,8 @@ class FeedCard extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          content.source.name.isNotEmpty
-              ? content.source.name.substring(0, 1).toUpperCase()
+          widget.content.source.name.isNotEmpty
+              ? widget.content.source.name.substring(0, 1).toUpperCase()
               : '?',
           style: TextStyle(
             fontSize: 9,
@@ -555,7 +624,7 @@ class FeedCard extends StatelessWidget {
     return Icon(icon, size: 14, color: colors.textSecondary);
   }
 
-  /* 
+  /*
   String _getThemeDisplayName(String themeCode) {
     switch (themeCode.toLowerCase()) {
       case 'tech':
@@ -578,5 +647,66 @@ class FeedCard extends StatelessWidget {
     if (seconds < 60) return '${seconds}s';
     final minutes = (seconds / 60).ceil();
     return '$minutes min';
+  }
+}
+
+/// Subtle periodic nudge on footer badges to hint at long-press.
+/// Plays a tiny scale pulse (~2%) at random intervals (8–15 s).
+class _FooterBadgeNudge extends StatefulWidget {
+  final Widget child;
+
+  const _FooterBadgeNudge({required this.child});
+
+  @override
+  State<_FooterBadgeNudge> createState() => _FooterBadgeNudgeState();
+}
+
+class _FooterBadgeNudgeState extends State<_FooterBadgeNudge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  final math.Random _rng = math.Random();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _scheduleNext();
+      }
+    });
+    _scheduleNext();
+  }
+
+  void _scheduleNext() {
+    final delayMs = 8000 + _rng.nextInt(7000); // 8–15 s
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: delayMs), () {
+      if (mounted) _controller.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        // One gentle sine pulse: 1.0 → 1.02 → 1.0
+        final scale = 1.0 + 0.02 * math.sin(_controller.value * math.pi);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: widget.child,
+    );
   }
 }

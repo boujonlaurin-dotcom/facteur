@@ -190,6 +190,9 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
                             ref.read(feedProvider.notifier).setSource(article.source.id);
                             Navigator.of(context).pop();
                           },
+                          onSourceLongPress: () =>
+                              TopicChip.showArticleSheet(context, article,
+                                  initialSection: ArticleSheetSection.source),
                           onLongPressStart: (_) =>
                               ArticlePreviewOverlay.show(context, article),
                           onLongPressMoveUpdate: (details) =>
@@ -257,11 +260,11 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
                           isSerene:
                               ref.watch(sereinToggleProvider).enabled,
                           onReportNotSerene: () async {
+                            HapticFeedback.lightImpact();
                             try {
                               final feedRepo =
                                   ref.read(feedRepositoryProvider);
                               await feedRepo.reportNotSerene(article.id);
-                              HapticFeedback.lightImpact();
                               NotificationService.showSuccess(
                                   'Merci, nous en prenons note');
                             } catch (e) {
