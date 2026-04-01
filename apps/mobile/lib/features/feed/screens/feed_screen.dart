@@ -637,10 +637,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
-                        // childCount constant pour éviter les recalculs de scroll geometry
-                        // quand showCaughtUp/showSavedNudge changent en cours de scroll.
+                        // childCount calculé dynamiquement pour garantir exactement 1 slot
+                        // trailing (loader ou spacer). CaughtUp et SavedNudge sont
+                        // mutuellement exclusifs → intercalatedCount ≤ 1.
+                        final int intercalatedCount =
+                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0);
                         final int effectiveChildCount =
-                            contents.isEmpty ? 1 : contents.length + 4;
+                            contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
@@ -884,7 +887,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
                                                   : content.entityOverflowCount > 0
-                                                      ? EntityOverflowChip(content: content, onOverflowTap: _scrollToTop)
+                                                      ? EntityOverflowChip(
+                                                          content: content,
+                                                          onOverflowTap: (key, label) {
+                                                            final name = label.split(' \u2014 ').first;
+                                                            setState(() {
+                                                              _selectedInterestName = name;
+                                                              _selectedIsTheme = false;
+                                                            });
+                                                            _withFeedLoading(() => notifier.setEntity(key));
+                                                            _scrollToTop();
+                                                          },
+                                                        )
                                                       : content.keywordOverflowCount > 0
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                           : content.topicOverflowCount > 0
@@ -924,6 +938,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         ref.read(feedProvider.notifier).setSource(content.source.id);
                                         _scrollToTop();
                                       },
+                                      onSourceLongPress: () =>
+                                          TopicChip.showArticleSheet(context, content,
+                                              initialSection: ArticleSheetSection.source),
                                       isSerene: ref.watch(sereinToggleProvider).enabled,
                                       onReportNotSerene: () async {
                                         HapticFeedback.lightImpact();
@@ -1096,7 +1113,7 @@ class _NudgePulseWrapperState extends State<_NudgePulseWrapper>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1200),
     );
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
@@ -1123,7 +1140,7 @@ class _NudgePulseWrapperState extends State<_NudgePulseWrapper>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        final scale = 1.0 + 0.03 * math.sin(_controller.value * math.pi);
+        final scale = 1.0 + 0.04 * math.sin(_controller.value * 2 * math.pi);
         return Transform.scale(scale: scale, child: child);
       },
       child: widget.child,
