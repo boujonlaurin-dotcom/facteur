@@ -18,9 +18,11 @@ final feedRepositoryProvider = Provider<FeedRepository>((ref) {
 // Provider des données du feed (Infinite Scroll)
 class FeedState {
   final List<Content> items;
+  final List<FeedCarouselData> carousels;
 
   FeedState({
     required this.items,
+    this.carousels = const [],
   });
 }
 
@@ -83,7 +85,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     sw.stop();
     print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
-    return FeedState(items: response.items);
+    return FeedState(items: response.items, carousels: response.carousels);
   }
 
   Future<void> setFilter(String? filter) async {
@@ -194,9 +196,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         _page = nextPage;
         // Append new items to the existing list
         final currentItems = state.value?.items ?? [];
+        final currentCarousels = state.value?.carousels ?? [];
 
         state = AsyncData(FeedState(
           items: [...currentItems, ...newItems],
+          carousels: currentCarousels, // Keep page 1 carousels
         ));
       }
     } catch (e, stack) {
@@ -217,7 +221,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     try {
       final response = await _fetchPage(page: 1);
-      state = AsyncData(FeedState(items: response.items));
+      state = AsyncData(FeedState(
+        items: response.items,
+        carousels: response.carousels,
+      ));
     } catch (e, stack) {
       state = AsyncError(e, stack);
       rethrow;
@@ -257,7 +264,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove from feed
     final updatedItems = List<Content>.from(currentState.items);
     updatedItems.removeWhere((c) => c.id == content.id);
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -300,7 +307,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
 
     // Mise à jour optimiste immédiate
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -332,7 +339,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
 
     // Optimistic update
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -351,7 +358,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     updatedItems.removeWhere((c) => c.id == content.id);
 
     // Optimistic remove
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -370,7 +377,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final updatedItems = List<Content>.from(currentState.items);
     updatedItems.removeWhere((c) => c.id == content.id);
 
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -390,7 +397,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final insertIndex = originalIndex.clamp(0, updatedItems.length);
     updatedItems.insert(insertIndex, content);
 
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -409,7 +416,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove all from this source
     final updatedItems =
         currentState.items.where((c) => c.source.id != content.source.id).toList();
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -436,7 +443,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id == content.id) return false;
       return !c.topics.contains(topic);
     }).toList();
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -464,7 +471,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this source
     final updatedItems =
         currentState.items.where((c) => c.source.id != sourceId).toList();
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -483,7 +490,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this theme
     final updatedItems =
         currentState.items.where((c) => c.source.theme != theme).toList();
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -505,7 +512,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       return itemTopic != topic;
     }).toList();
 
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -525,7 +532,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         .where((c) => c.contentType.name != contentType)
         .toList();
 
-    state = AsyncData(FeedState(items: updatedItems));
+    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -550,7 +557,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id != updated.id) return c;
       return updated.copyWith(status: c.status);
     }).toList();
-    state = AsyncData(FeedState(items: items));
+    state = AsyncData(FeedState(items: items, carousels: state.value?.carousels ?? const []));
   }
 
   Future<void> markContentAsConsumed(Content content) async {
@@ -566,7 +573,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       updatedItems[feedIndex] =
           updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
 
-      state = AsyncData(FeedState(items: updatedItems));
+      state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
 
       // Call Generic API immediately (Fire and forget)
       try {
