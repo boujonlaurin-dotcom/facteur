@@ -43,12 +43,20 @@ class DeepMatcher:
     async def match_for_topics(
         self,
         selected_topics: list[SelectedTopic],
+        cluster_entities: dict[str, set[str]] | None = None,
     ) -> dict[str, MatchedDeepArticle | None]:
         """Match deep articles for all topics.
+
+        Args:
+            selected_topics: Topics to match.
+            cluster_entities: Optional dict mapping topic_id to entity names
+                extracted from cluster contents (boosts matching accuracy).
 
         Returns:
             Dict mapping topic_id to MatchedDeepArticle or None.
         """
+        _cluster_entities = cluster_entities or {}
+
         # Load all deep source articles once
         deep_articles = await self._load_deep_articles()
         if not deep_articles:
@@ -91,6 +99,7 @@ class DeepMatcher:
                 limit=prefilter_limit,
                 threshold=threshold,
                 extra_tokens=expanded_tokens.get(topic.topic_id, set()),
+                cluster_entities=_cluster_entities.get(topic.topic_id),
             )
             candidates_per_topic[topic.topic_id] = candidates
             logger.info(
@@ -121,6 +130,27 @@ class DeepMatcher:
                     )
                 else:
                     matches[topic.topic_id] = result
+
+            # Pass 3: Broader fallback for topics with no match
+            for topic in selected_topics:
+                if matches.get(topic.topic_id) is not None:
+                    continue
+                broader_candidates = self._prefilter(
+                    topic=topic,
+                    articles=deep_articles,
+                    limit=prefilter_limit * 2,
+                    threshold=threshold * 0.5,
+                    extra_tokens=expanded_tokens.get(topic.topic_id, set()),
+                    cluster_entities=_cluster_entities.get(topic.topic_id),
+                )
+                if broader_candidates:
+                    matches[topic.topic_id] = self._fallback_pick(broader_candidates)
+                    logger.info(
+                        "deep_matcher.broader_fallback_hit",
+                        topic_id=topic.topic_id,
+                        candidates=len(broader_candidates),
+                    )
+
             return matches
 
         # No LLM: use Jaccard fallback for all
@@ -143,7 +173,7 @@ class DeepMatcher:
                 Content.is_paid.is_(False),
             )
             .order_by(Content.published_at.desc())
-            .limit(2000)  # Safety cap
+            .limit(3000)  # Safety cap
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -173,8 +203,9 @@ class DeepMatcher:
         limit: int,
         threshold: float,
         extra_tokens: set[str] | None = None,
+        cluster_entities: set[str] | None = None,
     ) -> list[tuple[Content, float]]:
-        """Pass 1: Jaccard similarity pre-filter."""
+        """Pass 1: Jaccard similarity pre-filter with entity overlap bonus."""
         # Tokenize topic label + deep_angle
         topic_tokens = self._detector.normalize_title(
             f"{topic.label} {topic.deep_angle}"
@@ -195,6 +226,18 @@ class DeepMatcher:
             article_tokens = self._detector.normalize_title(article_text)
 
             similarity = self._detector.jaccard_similarity(topic_tokens, article_tokens)
+
+            # Entity overlap bonus: shared named entities boost similarity
+            if cluster_entities and article.entities:
+                article_entity_names = {
+                    e.split(":")[0].lower().strip()
+                    for e in article.entities
+                    if e and ":" in e
+                }
+                entity_overlap = len(cluster_entities & article_entity_names)
+                if entity_overlap > 0:
+                    similarity += min(0.05 * entity_overlap, 0.15)
+
             if similarity >= threshold:
                 scored.append((article, similarity))
 

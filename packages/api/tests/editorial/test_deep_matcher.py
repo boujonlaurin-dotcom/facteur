@@ -156,7 +156,8 @@ class TestMatchForTopics:
         assert match.match_reason == "Directly relevant analysis"
 
     @pytest.mark.asyncio
-    async def test_llm_null_index_returns_none(self):
+    async def test_llm_null_index_broader_fallback(self):
+        """When LLM returns null, broader fallback (pass 3) picks best Jaccard."""
         articles = [_make_deep_content("Some article")]
         session = _mock_session_with_articles(articles)
 
@@ -176,7 +177,9 @@ class TestMatchForTopics:
         ):
             result = await matcher.match_for_topics([topic])
 
-        assert result[topic.topic_id] is None
+        # Pass 3 broader fallback should find the article
+        assert result[topic.topic_id] is not None
+        assert result[topic.topic_id].content_id == articles[0].id
 
     @pytest.mark.asyncio
     async def test_llm_fail_fallback_jaccard(self):

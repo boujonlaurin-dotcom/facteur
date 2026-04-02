@@ -33,23 +33,108 @@ THEME_DEEP_ANGLES: dict[str, str] = {
 DEFAULT_DEEP_ANGLE = "Les dynamiques structurelles et systemiques de ce sujet"
 
 
+def _cluster_to_une_topic(cluster: TopicCluster) -> SelectedTopic:
+    """Convert a TopicCluster to a SelectedTopic for À la Une."""
+    deep_angle = THEME_DEEP_ANGLES.get(cluster.theme or "", DEFAULT_DEEP_ANGLE)
+    return SelectedTopic(
+        topic_id=cluster.cluster_id,
+        label=cluster.label[:80],
+        selection_reason=f"Traité par {len(cluster.source_ids)} sources",
+        deep_angle=deep_angle,
+        source_count=len(cluster.source_ids),
+    )
+
+
 class CurationService:
-    """Selects 3 editorial topics from topic clusters via LLM."""
+    """Selects editorial topics from topic clusters via LLM."""
 
     def __init__(self, llm: EditorialLLMClient, config: EditorialConfig) -> None:
         self._llm = llm
         self._config = config
 
+    async def select_a_la_une(
+        self,
+        top_clusters: list[TopicCluster],
+    ) -> SelectedTopic | None:
+        """Select the À la Une topic from the top trending clusters.
+
+        Uses a lightweight LLM call to validate which of the top N
+        most-covered clusters is truly the most important headline.
+
+        Args:
+            top_clusters: Top 2-3 trending clusters sorted by source count.
+
+        Returns:
+            SelectedTopic for the À la Une, or None if LLM fails.
+        """
+        if not top_clusters:
+            return None
+
+        if not self._llm.is_ready:
+            logger.info("curation.a_la_une_no_llm_fallback")
+            return _cluster_to_une_topic(top_clusters[0])
+
+        summaries = [self._cluster_to_summary(c) for c in top_clusters]
+        user_message = json.dumps(
+            [s.model_dump() for s in summaries], ensure_ascii=False, indent=2
+        )
+
+        prompt_cfg = self._config.a_la_une_prompt
+        raw = await self._llm.chat_json(
+            system=prompt_cfg.system,
+            user_message=user_message,
+            model=prompt_cfg.model,
+            temperature=prompt_cfg.temperature,
+            max_tokens=prompt_cfg.max_tokens,
+        )
+
+        if not raw or not isinstance(raw, dict):
+            logger.warning("curation.a_la_une_llm_empty")
+            return _cluster_to_une_topic(top_clusters[0])
+
+        selected_id = raw.get("topic_id")
+        reason = raw.get("reason", "")
+
+        # Validate topic_id
+        cluster_map = {c.cluster_id: c for c in top_clusters}
+        if selected_id not in cluster_map:
+            logger.warning(
+                "curation.a_la_une_invalid_topic_id",
+                selected_id=selected_id,
+                valid_ids=[c.cluster_id for c in top_clusters],
+            )
+            return _cluster_to_une_topic(top_clusters[0])
+
+        cluster = cluster_map[selected_id]
+        deep_angle = THEME_DEEP_ANGLES.get(cluster.theme or "", DEFAULT_DEEP_ANGLE)
+
+        logger.info(
+            "curation.a_la_une_selected",
+            topic_id=selected_id,
+            source_count=len(cluster.source_ids),
+            reason=reason,
+        )
+
+        return SelectedTopic(
+            topic_id=cluster.cluster_id,
+            label=cluster.label[:80],
+            selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
+            deep_angle=deep_angle,
+            source_count=len(cluster.source_ids),
+        )
+
     async def select_topics(
         self,
         clusters: list[TopicCluster],
         subjects_count: int | None = None,
+        excluded_cluster_ids: set[str] | None = None,
     ) -> list[SelectedTopic]:
         """Select N topics from clusters using LLM curation.
 
         Args:
             clusters: All topic clusters, sorted by size desc.
             subjects_count: Override from config (default: 3).
+            excluded_cluster_ids: Cluster IDs to exclude (e.g. À la Une already picked).
 
         Returns:
             List of SelectedTopic. Falls back to deterministic if LLM fails.
@@ -57,8 +142,15 @@ class CurationService:
         count = subjects_count or self._config.pipeline.subjects_count
         limit = self._config.pipeline.cluster_input_limit
 
+        # Filter out excluded clusters (e.g. À la Une)
+        available = clusters
+        if excluded_cluster_ids:
+            available = [
+                c for c in clusters if c.cluster_id not in excluded_cluster_ids
+            ]
+
         # Take top clusters by source count
-        top_clusters = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)[
+        top_clusters = sorted(available, key=lambda c: len(c.source_ids), reverse=True)[
             :limit
         ]
 
@@ -120,6 +212,8 @@ class CurationService:
 
         # Validate and parse
         valid_topic_ids = {c.cluster_id for c in clusters}
+        # Build source_count lookup
+        cluster_source_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
         selected: list[SelectedTopic] = []
 
         for item in topics_list[:count]:
@@ -133,6 +227,12 @@ class CurationService:
                         valid_ids=list(valid_topic_ids)[:5],
                     )
                     continue
+                # Populate source_count from cluster data
+                topic = topic.model_copy(
+                    update={
+                        "source_count": cluster_source_counts.get(topic.topic_id, 0)
+                    }
+                )
                 selected.append(topic)
             except Exception:
                 logger.exception("curation.parse_topic_failed", item=str(item)[:200])
@@ -181,6 +281,7 @@ class CurationService:
                     label=cluster.label[:80],
                     selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
                     deep_angle=deep_angle,
+                    source_count=len(cluster.source_ids),
                 )
             )
             used_themes.add(cluster.theme)
@@ -202,6 +303,7 @@ class CurationService:
                         label=cluster.label[:80],
                         selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
                         deep_angle=deep_angle,
+                        source_count=len(cluster.source_ids),
                     )
                 )
 
