@@ -257,7 +257,7 @@ class PerspectiveService:
             "1. Une introduction de 2-3 phrases qui pose le contexte du sujet "
             "(pourquoi il est important, quels enjeux il soulève) puis annonce "
             "ce que révèle la comparaison des couvertures.\n"
-            "2. Puis 2 à 3 constats \"→\", chacun rédigé en phrases complètes "
+            '2. Puis 2 à 3 constats "→", chacun rédigé en phrases complètes '
             "et accessibles. Chaque constat explique :\n"
             "  — soit un aspect du sujet couvert par certains médias mais absent "
             "chez d'autres (et lesquels, nommément)\n"
