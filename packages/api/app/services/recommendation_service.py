@@ -1111,6 +1111,7 @@ class RecommendationService:
 
                     new_articles = list((await self.session.scalars(
                         select(Content)
+                        .options(selectinload(Content.source))
                         .where(
                             Content.source_id.in_(new_src_ids),
                             Content.published_at > seven_days_ago,
@@ -1186,7 +1187,9 @@ class RecommendationService:
                 if len(gem_rows) >= MIN_CAROUSEL_ITEMS:
                     gem_ids = [r.id for r in gem_rows]
                     gem_contents = list((await self.session.scalars(
-                        select(Content).where(Content.id.in_(gem_ids))
+                        select(Content)
+                        .options(selectinload(Content.source))
+                        .where(Content.id.in_(gem_ids))
                     )).all())
                     # Maintain save_count order
                     id_order = {gid: i for i, gid in enumerate(gem_ids)}
@@ -1215,6 +1218,7 @@ class RecommendationService:
             if len(carousels) < max_carousels:
                 saved_articles = list((await self.session.scalars(
                     select(Content)
+                    .options(selectinload(Content.source))
                     .join(
                         UserContentStatus,
                         UserContentStatus.content_id == Content.id,
