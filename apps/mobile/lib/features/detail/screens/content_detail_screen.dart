@@ -65,7 +65,7 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 const double _kHeaderContentHeight = 50;
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
   late AnimationController _bookmarkBounceController;
@@ -76,6 +76,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late Animation<double> _fabReappearScale;
   late AnimationController _shareFabController;
   late Animation<double> _shareFabScale;
+  late AnimationController _exitAnimController;
+  bool _isExitAnimating = false;
 
   bool _showFab = false;
   bool _showShareFab = false;
@@ -119,6 +121,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _videoPlayHideTimer;
 
   Content? _content;
+  bool _contentResolved = false;
 
   // Perspectives pill state
   PerspectivesResponse? _perspectivesResponse;
@@ -213,6 +216,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       parent: _shareFabController,
       curve: Curves.elasticOut,
     );
+
+    _exitAnimController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    WidgetsBinding.instance.addObserver(this);
 
     // Show FAB after delay — start transparent, fade+scale in after 2s
     Future.delayed(const Duration(milliseconds: 2000), () {
@@ -487,6 +497,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
+  /// Returns whichever of [a] or [b] has the longest plain-text content.
+  /// Falls back to the non-null value if one is empty/null.
+  static String? _pickLongest(String? a, String? b) {
+    final aLen = plainTextLength(a);
+    final bLen = plainTextLength(b);
+    if (aLen >= bLen && aLen > 0) return a;
+    if (bLen > 0) return b;
+    return a ?? b;
+  }
+
   Future<void> _fetchContent() async {
     try {
       final supabase = Supabase.instance.client;
@@ -496,22 +516,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       if (mounted) {
         if (content != null) {
-          // Merge: preserve description/htmlContent from initial content
-          // if the API response has less data (e.g. on-demand enrichment failed)
-          // Guard against empty strings (not just null) to prevent losing initial data
+          // Merge: keep the longest text between initial content and API response.
+          // Fixes cases where RSS provides longer htmlContent than the API
+          // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description:
-                (content.description != null && content.description!.isNotEmpty)
-                    ? content.description
-                    : _content?.description,
-            htmlContent:
-                (content.htmlContent != null && content.htmlContent!.isNotEmpty)
-                    ? content.htmlContent
-                    : _content?.htmlContent,
+            description: _pickLongest(content.description, _content?.description),
+            htmlContent: _pickLongest(content.htmlContent, _content?.htmlContent),
             editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
             _content = merged;
+            _contentResolved = true;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
           final isVideoFetched = _content!.isVideo;
@@ -535,6 +550,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
         } else {
           // Show error and pop if content not found
+          setState(() => _contentResolved = true);
           NotificationService.showError('Contenu introuvable',
               context: context);
           context.pop();
@@ -543,6 +559,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
+        setState(() => _contentResolved = true);
         NotificationService.showError('Erreur de chargement', context: context);
         context.pop();
       }
@@ -737,6 +754,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _shareFabController.dispose();
+    _exitAnimController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     _fabOpacity.dispose();
     _headerOpacity.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
@@ -810,13 +829,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isExitAnimating) {
+      _exitAnimController.reset();
+      setState(() {
+        _isExitAnimating = false;
+      });
+    }
+  }
+
+  Future<void> _animateAndLaunch(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    if (!await canLaunchUrl(uri)) return;
+    if (reduceMotion) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    setState(() => _isExitAnimating = true);
+    await _exitAnimController.forward(from: 0.0);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   Future<void> _openOriginalUrl() async {
     final url = _content?.url;
     if (url != null) {
-      final uri = Uri.tryParse(url);
-      if (uri != null && await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      await _animateAndLaunch(url);
     }
   }
 
@@ -1055,7 +1096,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      body: Stack(
+      body: AnimatedBuilder(
+        animation: _exitAnimController,
+        builder: (context, child) {
+          final scale = 1.0 - 0.03 * _exitAnimController.value;
+          return Transform.scale(
+            scale: _isExitAnimating ? scale : 1.0,
+            child: child,
+          );
+        },
+        child: Stack(
         children: [
           NotificationListener<ScrollNotification>(
             onNotification: (notification) {
@@ -1101,6 +1151,36 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: _buildHeader(context, content),
             ),
           ),
+          // Opaque status-bar backdrop — only when WebView is active and
+          // the header has slid off-screen, so WebView content doesn't
+          // bleed through the transparent status bar zone.
+          if (_isWebViewActive)
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, _) {
+                final statusBarHeight = MediaQuery.of(context).padding.top;
+                final headerVisible = opacity >= 0.5;
+                return Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: headerVisible ? 0.0 : 1.0,
+                      duration: Duration(
+                          milliseconds: headerVisible ? 350 : 200),
+                      curve: headerVisible
+                          ? Curves.easeOut
+                          : Curves.easeIn,
+                      child: SizedBox(
+                        height: statusBarHeight,
+                        child: ColoredBox(color: colors.backgroundPrimary),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           // Reading progress bar — below header when visible, slides to
           // top of screen (below status bar) when header hides
           if (content.hasInAppContent ||
@@ -1128,7 +1208,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 );
               },
             ),
+          // Exit animation overlay — fade-to-white + scale-down
+          if (_isExitAnimating)
+            AnimatedBuilder(
+              animation: _exitAnimController,
+              builder: (context, _) {
+                return Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.white
+                          .withValues(alpha: 0.6 * _exitAnimController.value),
+                    ),
+                  ),
+                );
+              },
+            ),
         ],
+      ),
       ),
       // FABs — vertical column with immersive scroll opacity
       // ValueListenableBuilder isolates FAB opacity rebuilds from the main widget tree.
@@ -1600,18 +1696,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ),
         ),
-      // Gear icon — ouvre la sheet entities
-      GestureDetector(
-        onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Icon(
-            PhosphorIcons.gear(PhosphorIconsStyle.regular),
-            size: 14,
-            color: colors.textTertiary,
-          ),
-        ),
-      ),
     ];
   }
 
@@ -1661,6 +1745,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         size: 14,
         color: colors.textTertiary,
       ),
+    );
+  }
+
+  /// Shimmer skeleton placeholder for the article body while content resolves.
+  Widget _buildArticleBodySkeleton(FacteurColors colors) {
+    final widths = [1.0, 1.0, 0.92, 1.0, 0.85, 1.0, 0.95, 0.6];
+    return _ShimmerSkeleton(
+      children: [
+        const SizedBox(height: 16),
+        for (final w in widths)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: w,
+              child: Container(
+                height: 14,
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1735,6 +1844,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           description: content.description,
                           title: content.title,
                           shrinkWrap: true,
+                          onLinkTap: _animateAndLaunch,
+                          bodyPlaceholder: !_contentResolved
+                              ? _buildArticleBodySkeleton(colors)
+                              : null,
                           header: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -2332,6 +2445,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
+          onLinkTap: _animateAndLaunch,
+          bodyPlaceholder: !_contentResolved
+              ? _buildArticleBodySkeleton(colors)
+              : null,
           header: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2630,6 +2747,53 @@ class _SourceBadgeNudgeState extends State<_SourceBadgeNudge>
         return Transform.scale(scale: scale, child: child);
       },
       child: widget.child,
+    );
+  }
+}
+
+/// Pulsating shimmer effect for skeleton loading placeholders.
+class _ShimmerSkeleton extends StatefulWidget {
+  final List<Widget> children;
+  const _ShimmerSkeleton({required this.children});
+
+  @override
+  State<_ShimmerSkeleton> createState() => _ShimmerSkeletonState();
+}
+
+class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: 0.3 + 0.4 * _controller.value,
+          child: child,
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: widget.children,
+      ),
     );
   }
 }
