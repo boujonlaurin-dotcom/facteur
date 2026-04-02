@@ -54,6 +54,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         params: const YoutubePlayerParams(
           showControls: true,
           showFullscreenButton: true,
+          desktopMode: true,
         ),
       );
       _startProgressTracking();
