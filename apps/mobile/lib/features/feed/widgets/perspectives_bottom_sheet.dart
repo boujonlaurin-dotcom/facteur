@@ -7,6 +7,7 @@ import '../../../config/theme.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
+import '../../digest/widgets/markdown_text.dart';
 import '../providers/feed_provider.dart';
 
 /// Model for a perspective from an external source
@@ -358,7 +359,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           color: colors.primary,
         ),
         label: Text(
-          'Analyser les divergences',
+          'Lancer l\'analyse Facteur',
           style: textTheme.labelLarge?.copyWith(
             color: colors.primary,
             fontWeight: FontWeight.w600,
@@ -417,13 +418,13 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
               children: [
                 Icon(
                   PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 14,
+                  size: 18,
                   color: colors.primary,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Text(
-                  'Analyse IA',
-                  style: textTheme.labelSmall?.copyWith(
+                  'Analyse Facteur',
+                  style: textTheme.titleSmall?.copyWith(
                     color: colors.primary,
                     fontWeight: FontWeight.w700,
                   ),
@@ -442,19 +443,19 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
             ),
           ),
           if (_isAnalysisExpanded) ...[
-            const SizedBox(height: 8),
-            Text(
-              _analysisText ?? '',
-              style: textTheme.bodySmall?.copyWith(
+            const SizedBox(height: 10),
+            MarkdownText(
+              text: _analysisText ?? '',
+              style: textTheme.bodySmall!.copyWith(
                 color: colors.textPrimary,
-                height: 1.5,
+                height: 1.6,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Généré via Mistral',
+                'Analyse Facteur',
                 style: textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
@@ -636,12 +637,16 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                           .withValues(alpha: count > 0 ? 0.15 : 0.05),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      seg.$2,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: count > 0 ? seg.$3 : colors.textTertiary,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        seg.$2,
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: count > 0 ? seg.$3 : colors.textTertiary,
+                        ),
                       ),
                     ),
                   ),
