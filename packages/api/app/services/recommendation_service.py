@@ -703,7 +703,7 @@ class RecommendationService:
         # PASS 3: Select articles to retain (most recent per source, up to quota)
         # Candidates from _get_candidates are already sorted by published_at DESC,
         # so each source's list preserves that order.
-        MIN_OVERFLOW_FOR_CTA = 3
+        MIN_OVERFLOW_FOR_CTA = 7
         retained: list[Content] = []
         source_overflow: dict[UUID, int] = {}
         for source_id, articles_src in by_source.items():
@@ -1076,10 +1076,13 @@ class RecommendationService:
                     by_topic.setdefault(slug, []).append(article)
 
             min_topic = ScoringWeights.MIN_FOR_TOPIC_GROUPING
+            min_theme = ScoringWeights.MIN_FOR_THEME_GROUPING
             for slug, arts in sorted(by_topic.items(), key=lambda x: -len(x[1])):
                 if cta_count >= max_ctas:
                     break
-                if len(arts) < min_topic:
+                is_theme = slug in THEME_LABELS
+                min_required = min_theme if is_theme else min_topic
+                if len(arts) < min_required:
                     continue
 
                 to_hide = arts[1:]
@@ -1108,7 +1111,7 @@ class RecommendationService:
                 sources_list.sort(key=lambda s: 0 if s["source_logo_url"] else 1)
                 topic_overflow_info.append(
                     {
-                        "group_type": "topic",
+                        "group_type": "theme" if is_theme else "topic",
                         "group_key": slug,
                         "group_label": THEME_LABELS.get(
                             slug, slug.replace("-", " ").title()
