@@ -94,6 +94,7 @@ class DigestTopic(BaseModel):
     reason: str
     is_trending: bool = False
     is_une: bool = False
+    source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     topic_score: float = 0.0
     subjects: list[str] = Field(

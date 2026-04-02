@@ -42,7 +42,7 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 ### 3. PR (confirmation requise)
 
-1. Crée la PR vers `main`
+1. Crée la PR vers `main` — **toujours spécifier `--base main`** (`staging` est la branche par défaut du repo GitHub, `gh pr create` prend `staging` si `--base` n'est pas précisé)
 2. **STOP → Notifie "PR #XX prête pour review"**
 3. Attends CI green + Peer Review APPROVED avant merge
 
