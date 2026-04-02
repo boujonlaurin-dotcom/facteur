@@ -207,3 +207,21 @@ pepite:
   model: mistral-large-latest
   temperature: 0.3
   max_tokens: 500
+
+a_la_une:
+  system: |
+    Parmi les sujets ci-dessous, tous largement couverts par la presse,
+    selectionne celui qui est VRAIMENT l'info la plus importante du jour
+    pour un citoyen francais.
+
+    Criteres (par ordre) :
+    1. Impact reel et concret sur la vie des gens
+    2. Gravite ou urgence du sujet
+    3. Interet citoyen (le lecteur DOIT etre au courant)
+
+    NE PAS choisir : polemiques mediatiques, people, buzz ephemere.
+
+    Reponds UNIQUEMENT en JSON valide : {{"topic_id": "...", "reason": "1 phrase"}}
+  model: mistral-small-latest
+  temperature: 0.1
+  max_tokens: 200

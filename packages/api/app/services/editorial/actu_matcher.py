@@ -91,6 +91,7 @@ class ActuMatcher:
         subjects: list[EditorialSubject],
         clusters: list[TopicCluster],
         excluded_source_ids: set[UUID] | None = None,
+        excluded_content_ids: set[UUID] | None = None,
     ) -> list[EditorialSubject]:
         """Match best actu article per subject from ALL sources (no user filter).
 
@@ -101,16 +102,18 @@ class ActuMatcher:
             subjects: Editorial subjects (with deep matches, no actu yet).
             clusters: Raw TopicCluster list from global context.
             excluded_source_ids: Source IDs to exclude (e.g. deep article sources).
+            excluded_content_ids: Content IDs to exclude (e.g. deep article content).
 
         Returns:
             Updated subjects with actu_article populated.
         """
         cluster_map = {c.cluster_id: c for c in clusters}
         cutoff = datetime.now(UTC) - timedelta(hours=self._max_age_hours)
-        # Per-subject exclusion only: each subject excludes its own deep source,
-        # but deep sources from OTHER subjects are allowed as actu candidates.
-        # Cross-subject actu diversity is maintained by accumulating used sources below.
-        used_source_ids: set[UUID] = set()
+        _excluded_content = excluded_content_ids or set()
+        # Seed with excluded deep sources to prevent cross-subject overlap
+        used_source_ids: set[UUID] = (
+            set(excluded_source_ids) if excluded_source_ids else set()
+        )
         result: list[EditorialSubject] = []
 
         for subject in subjects:
@@ -132,6 +135,7 @@ class ActuMatcher:
                 cluster=cluster,
                 used_source_ids=per_subject_excluded,
                 cutoff=cutoff,
+                excluded_content_ids=_excluded_content,
             )
             if best:
                 used_source_ids.add(best.source_id)
@@ -146,6 +150,8 @@ class ActuMatcher:
 
         # Pass 2+3: relax filters for unmatched subjects
         cutoff_relaxed = datetime.now(UTC) - timedelta(hours=self._max_age_hours * 2)
+        # Intentionally empty: relaxed pass allows reusing sources from pass 1
+        # for diversity. Content-level dedup (excluded_content_ids) is still enforced.
         relaxed_used: set[UUID] = set()
         for i, subject in enumerate(result):
             if subject.actu_article is not None:
@@ -158,6 +164,7 @@ class ActuMatcher:
                 cluster=cluster,
                 used_source_ids=relaxed_used,
                 cutoff=cutoff,
+                excluded_content_ids=_excluded_content,
             )
             if not best:
                 # Try with relaxed recency (48h)
@@ -165,6 +172,7 @@ class ActuMatcher:
                     cluster=cluster,
                     used_source_ids=relaxed_used,
                     cutoff=cutoff_relaxed,
+                    excluded_content_ids=_excluded_content,
                 )
             if best:
                 relaxed_used.add(best.source_id)
@@ -184,6 +192,7 @@ class ActuMatcher:
         cluster: TopicCluster,
         used_source_ids: set[UUID],
         cutoff: datetime,
+        excluded_content_ids: set[UUID] | None = None,
     ) -> MatchedActuArticle | None:
         """Best article from ANY source (not just user's).
 
@@ -191,9 +200,13 @@ class ActuMatcher:
         - published_at >= cutoff (< 24h)
         - is_paid = false
         - Source not already used (diversity)
+        - Content ID not in excluded set (dedup with deep articles)
         """
+        _excluded = excluded_content_ids or set()
         candidates = []
         for content in cluster.contents:
+            if content.id in _excluded:
+                continue
             if content.is_paid:
                 continue
             if content.published_at.replace(tzinfo=UTC) < cutoff:

@@ -20,7 +20,7 @@ from app.models.content import Content
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
-from app.services.editorial.curation import CurationService
+from app.services.editorial.curation import CurationService, _cluster_to_une_topic
 from app.services.editorial.deep_matcher import DeepMatcher
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
@@ -87,10 +87,47 @@ class EditorialPipelineService:
             duration_ms=round(cluster_time * 1000, 2),
         )
 
-        # ÉTAPE 2: LLM curation — select 3 topics
+        # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert
         step_start = time.time()
-        selected_topics = await self.curation.select_topics(clusters)
-        curation_time = time.time() - step_start
+        trending_clusters = [c for c in clusters if c.is_trending]
+        a_la_une_topic = None
+
+        if trending_clusters:
+            top3 = sorted(
+                trending_clusters, key=lambda c: len(c.source_ids), reverse=True
+            )[:3]
+
+            if len(top3) == 1:
+                a_la_une_topic = _cluster_to_une_topic(top3[0])
+            else:
+                a_la_une_topic = await self.curation.select_a_la_une(top3)
+                if not a_la_une_topic:
+                    a_la_une_topic = _cluster_to_une_topic(top3[0])
+
+            logger.info(
+                "editorial_pipeline.a_la_une_selected",
+                topic_id=a_la_une_topic.topic_id,
+                source_count=a_la_une_topic.source_count,
+                label=a_la_une_topic.label,
+            )
+
+        une_time = time.time() - step_start
+
+        # ÉTAPE 2: LLM curation — select remaining topics
+        step_start = time.time()
+        excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
+        remaining_count = 2 if a_la_une_topic else 3
+        selected_topics = await self.curation.select_topics(
+            clusters,
+            subjects_count=remaining_count,
+            excluded_cluster_ids=excluded_ids,
+        )
+
+        # Assemble: À la Une in rank 1 + others in rank 2-3
+        if a_la_une_topic:
+            selected_topics = [a_la_une_topic] + selected_topics
+
+        curation_time = time.time() - step_start + une_time
 
         if not selected_topics:
             logger.error("editorial_pipeline.curation_failed")
@@ -99,12 +136,30 @@ class EditorialPipelineService:
         logger.info(
             "editorial_pipeline.curation_done",
             topics=[t.topic_id for t in selected_topics],
+            has_a_la_une=a_la_une_topic is not None,
             duration_ms=round(curation_time * 1000, 2),
         )
 
         # ÉTAPE 3B: Deep matching (global — same deep articles for all users)
+        # Extract entities from clusters to boost deep matching accuracy
+        cluster_map = {c.cluster_id: c for c in clusters}
+        cluster_entities: dict[str, set[str]] = {}
+        for topic in selected_topics:
+            cluster = cluster_map.get(topic.topic_id)
+            if cluster:
+                entities: set[str] = set()
+                for content in cluster.contents:
+                    if content.entities:
+                        for e in content.entities:
+                            if e and ":" in e:
+                                entities.add(e.split(":")[0].lower().strip())
+                if entities:
+                    cluster_entities[topic.topic_id] = entities
+
         step_start = time.time()
-        deep_matches = await self.deep_matcher.match_for_topics(selected_topics)
+        deep_matches = await self.deep_matcher.match_for_topics(
+            selected_topics, cluster_entities=cluster_entities
+        )
         deep_time = time.time() - step_start
 
         deep_hit_count = sum(1 for v in deep_matches.values() if v is not None)
@@ -116,6 +171,7 @@ class EditorialPipelineService:
         )
 
         # Build subjects with deep matches
+        cluster_map_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
         subjects = [
             EditorialSubject(
                 rank=i + 1,
@@ -124,20 +180,27 @@ class EditorialPipelineService:
                 selection_reason=topic.selection_reason,
                 deep_angle=topic.deep_angle,
                 deep_article=deep_matches.get(topic.topic_id),
+                source_count=topic.source_count
+                or cluster_map_counts.get(topic.topic_id, 0),
+                is_a_la_une=(i == 0 and a_la_une_topic is not None),
             )
             for i, topic in enumerate(selected_topics)
         ]
 
         # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
-        # Collect deep source_ids to enforce source diversity within a subject
+        # Collect deep source_ids AND content_ids to prevent actu/deep overlap
         deep_source_ids = {
             s.deep_article.source_id for s in subjects if s.deep_article is not None
+        }
+        deep_content_ids = {
+            s.deep_article.content_id for s in subjects if s.deep_article is not None
         }
         step_start = time.time()
         subjects = self.actu_matcher.match_global(
             subjects=subjects,
             clusters=clusters,
             excluded_source_ids=deep_source_ids,
+            excluded_content_ids=deep_content_ids,
         )
         actu_time = time.time() - step_start
         actu_hit_count = sum(1 for s in subjects if s.actu_article is not None)
