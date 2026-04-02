@@ -82,7 +82,7 @@ writing:
 
     REGLE D'OR : ne JAMAIS inventer de faits, de chiffres ou de statistiques.
     Utilise UNIQUEMENT les informations presentes dans les donnees fournies
-    (label, titre, description de l'article). Si aucun article deep n'est fourni
+    (label, titre, description des articles). Si aucun article deep n'est fourni
     pour un sujet, l'intro doit etre plus courte (1 phrase suffit).
     Mieux vaut une phrase vraie et courte que deux phrases inventees.
 
@@ -90,26 +90,72 @@ writing:
     - header_text : toujours "Votre essentiel du [jour en francais]"
       (ex: "Votre essentiel du mardi")
     - intro_text (par sujet) :
-      * Si un article deep est fourni : 2 phrases.
-        Phrase 1 = reformuler le fait a partir du titre et de la description.
-        Phrase 2 = ce qu'apporte l'article de fond, en citant la source
-        (ex: "Selon [source_name], ..."). S'appuyer sur sa description.
-      * Si aucun article deep n'est fourni : 1 phrase factuelle
-        reformulant le sujet a partir du label. Ne rien inventer.
+      * REGLE CRUCIALE : le lecteur voit deja le titre de l'article actu
+        (champ actu_article.title dans les donnees). L'intro ne doit JAMAIS
+        reformuler ce titre. Elle doit apporter une information
+        SUPPLEMENTAIRE : un contexte, une consequence concrete, une
+        comparaison, un precedent — quelque chose que le titre seul ne dit pas.
+        Si tu ne peux pas ajouter d'info supplementaire a partir des donnees,
+        ecris une phrase tres courte qui cadre le sujet (8-12 mots max).
+      * Avec article deep : 2 phrases max.
+        Phrase 1 = un fait ou un contexte supplementaire tire des donnees
+        (label, deep_angle, description de l'article deep).
+        Phrase 2 = ce qu'eclaire l'article de fond, en variant la formulation
+        (voir PONTS ci-dessous).
+      * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
     - transition_text : toujours null (pas de transition entre sujets)
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
+    PONTS VERS L'ARTICLE DE FOND — varier, ne JAMAIS utiliser 2 fois
+    la meme tournure dans un digest :
+    - "[Source] detaille comment/pourquoi..."
+    - "Un eclairage de [Source] sur..."
+    - "[Source] revient sur les mecanismes de..."
+    - Integrer la source naturellement : "La dependance au gaz russe reste
+      le noeud du probleme, comme le montre [Source]."
+    NE PAS utiliser systematiquement "Selon [Source], [paraphrase du titre]."
+
     ANTI-PATTERNS a eviter absolument :
     - Inventer des chiffres, des statistiques ou des sources non fournies
     - Remplir l'espace : si l'information manque, raccourcir plutot que broder
+    - Paraphraser le titre de l'article actu : si l'intro dit la meme chose
+      que le titre en plus long, recommencer
+    - TEST DE SUBSTITUTION : si ta phrase reste vraie en remplacant le sujet
+      par n'importe quel autre sujet, elle est trop generique — supprimer
     - Formulations vagues/corporate : "suscitant des debats", "les experts sont partages"
     - Termes bullshit : "taches analytiques et decisionnelles", "ecosysteme", "paradigme"
     - Euphemismes : dire "risques existentiels" et pas "limites son adoption"
       quand c'est ce que les sources rapportent
-    - Phrases generiques applicables a n'importe quel sujet
     - Attributions fausses ("selon l'INSEE", "les etudes recentes montrent")
       quand aucune source n'est citee dans les donnees
+    - Formulations-cliches a proscrire :
+      "posant la question de l'equilibre entre X et Y",
+      "illustre un recul de...", "met en lumiere",
+      "souleve des questions sur", "revele la fragilite de",
+      "les mecanismes restent a inventer", "reflétant un declin structurel",
+      "symptome d'une crise plus large", "dans un contexte de"
+    - Phrases editoriales inventees : ne JAMAIS ajouter une interpretation,
+      un jugement ou une prediction qui ne figure pas dans les donnees
+
+    EXEMPLES (les chiffres ci-dessous sont illustratifs — toi, utilise
+    UNIQUEMENT les chiffres presents dans les donnees fournies) :
+
+    Avec article deep :
+    - Label: "Espagne : electricite moins chere grace aux renouvelables"
+      Actu: "Grace aux renouvelables, l'Espagne evite la hausse du prix de l'electricite"
+      Deep: Vert, "Comment les renouvelables protegent les factures espagnoles"
+      BON : "Le mix eolien-solaire espagnol absorbe le choc gazier la ou d'autres pays
+      repercutent la hausse. Vert detaille pourquoi ce modele reste difficile a repliquer."
+      MAUVAIS : "L'Espagne limite l'impact de la hausse des prix grace a sa politique de
+      developpement des energies renouvelables. Selon Vert, cette strategie reduit la
+      pression sur les menages."
+
+    Sans article deep :
+    - Label: "Baisse historique des ouvertures d'usines en France"
+      BON : "31 ouvertures au premier semestre, un plus bas depuis 2016."
+      MAUVAIS : "La France enregistre une baisse historique des ouvertures d'usines,
+      reflétant un declin industriel structurel."
 
     Reponds en JSON valide :
     {{
@@ -123,7 +169,7 @@ writing:
       "cta_text": null
     }}
   model: mistral-large-latest
-  temperature: 0.2
+  temperature: 0.35
   max_tokens: 2000
 
 writing_serene:
@@ -150,23 +196,68 @@ writing_serene:
     STRUCTURE :
     - header_text : toujours "Votre essentiel du [jour en francais]"
     - intro_text (par sujet) :
-      * Si un article deep est fourni : 2 phrases.
-        Phrase 1 = reformuler le fait a partir du titre et de la description.
-        Phrase 2 = ce qu'apporte l'article de fond (solutions, perspectives),
-        en citant la source (ex: "Selon [source_name], ...").
-      * Si aucun article deep : 1 phrase factuelle a partir du label.
+      * REGLE CRUCIALE : le lecteur voit deja le titre de l'article actu
+        (champ actu_article.title dans les donnees). L'intro ne doit JAMAIS
+        reformuler ce titre. Elle doit apporter une information
+        SUPPLEMENTAIRE : un contexte, une consequence concrete, une
+        comparaison — quelque chose que le titre seul ne dit pas.
+        Si tu ne peux pas ajouter d'info supplementaire a partir des donnees,
+        ecris une phrase tres courte qui cadre le sujet (8-12 mots max).
+      * Avec article deep : 2 phrases max.
+        Phrase 1 = un fait ou un contexte supplementaire tire des donnees.
+        Phrase 2 = ce qu'eclaire l'article de fond (solutions, perspectives),
+        en variant la formulation (voir PONTS ci-dessous).
+      * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
     - transition_text : toujours null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
+    PONTS VERS L'ARTICLE DE FOND — varier, ne JAMAIS utiliser 2 fois
+    la meme tournure dans un digest :
+    - "[Source] detaille comment/pourquoi..."
+    - "Un eclairage de [Source] sur..."
+    - "[Source] revient sur les mecanismes de..."
+    - Integrer la source naturellement dans la phrase.
+    NE PAS utiliser systematiquement "Selon [Source], [paraphrase du titre]."
+
     ANTI-PATTERNS a eviter absolument :
     - Inventer des chiffres, des statistiques ou des sources non fournies
     - Remplir l'espace : raccourcir plutot que broder
+    - Paraphraser le titre de l'article actu : si l'intro dit la meme chose
+      que le titre en plus long, recommencer
+    - TEST DE SUBSTITUTION : si ta phrase reste vraie en remplacant le sujet
+      par n'importe quel autre sujet, elle est trop generique — supprimer
     - Formulations vagues/corporate : "suscitant des debats", "les experts sont partages"
     - Termes bullshit : "ecosysteme", "paradigme", "enjeux"
     - Euphemismes : dire ce que les sources rapportent reellement
-    - Phrases generiques applicables a n'importe quel sujet
     - Attributions fausses quand aucune source n'est citee dans les donnees
+    - Formulations-cliches a proscrire :
+      "posant la question de l'equilibre entre X et Y",
+      "illustre un recul de...", "met en lumiere",
+      "souleve des questions sur", "revele la fragilite de",
+      "les mecanismes restent a inventer", "reflétant un declin structurel",
+      "symptome d'une crise plus large", "dans un contexte de"
+    - Phrases editoriales inventees : ne JAMAIS ajouter une interpretation,
+      un jugement ou une prediction qui ne figure pas dans les donnees
+
+    EXEMPLES (les chiffres ci-dessous sont illustratifs — toi, utilise
+    UNIQUEMENT les chiffres presents dans les donnees fournies) :
+
+    Avec article deep :
+    - Label: "Espagne : electricite moins chere grace aux renouvelables"
+      Actu: "Grace aux renouvelables, l'Espagne evite la hausse du prix de l'electricite"
+      Deep: Vert, "Comment les renouvelables protegent les factures espagnoles"
+      BON : "Le mix eolien-solaire espagnol absorbe le choc gazier la ou d'autres pays
+      repercutent la hausse. Vert detaille pourquoi ce modele reste difficile a repliquer."
+      MAUVAIS : "L'Espagne limite l'impact de la hausse des prix grace a sa politique de
+      developpement des energies renouvelables. Selon Vert, cette strategie reduit la
+      pression sur les menages."
+
+    Sans article deep :
+    - Label: "Baisse historique des ouvertures d'usines en France"
+      BON : "31 ouvertures au premier semestre, un plus bas depuis 2016."
+      MAUVAIS : "La France enregistre une baisse historique des ouvertures d'usines,
+      reflétant un declin industriel structurel."
 
     Reponds en JSON valide :
     {{
@@ -180,7 +271,7 @@ writing_serene:
       "cta_text": null
     }}
   model: mistral-large-latest
-  temperature: 0.2
+  temperature: 0.35
   max_tokens: 2000
 
 pepite:
@@ -200,6 +291,8 @@ pepite:
     - NE PAS ecrire de meta-commentaire ("dans cette section", "on met en valeur", "pour y contribuer")
     - Ecrire 1-2 phrases factuelles et denses sur l'article lui-meme (~30 mots max)
     - Forme impersonnelle, pas de question rhetorique
+    - NE PAS utiliser "met en lumiere", "souleve des questions", "revele",
+      "interroge" ou d'autres formulations-cliches
 
     Reponds en JSON valide :
     - Si un candidat convient : {{"selected_content_id": "uuid", "mini_editorial": "1-2 phrases"}}
