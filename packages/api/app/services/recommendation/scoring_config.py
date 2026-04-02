@@ -240,7 +240,10 @@ class ScoringWeights:
     FOLLOWED_SUBTOPIC_THRESHOLD = 1.5
 
     # Minimum articles in a neutral group to justify a CTA chip.
-    MIN_FOR_TOPIC_GROUPING = 3
+    MIN_FOR_TOPIC_GROUPING = 5
+
+    # Minimum articles sharing a broad theme to justify a theme CTA chip.
+    MIN_FOR_THEME_GROUPING = 7
 
     # --- KEYWORD REGROUPEMENT (Feed Grouping Rework) ---
 
@@ -256,4 +259,4 @@ class ScoringWeights:
     # --- ENTITY REGROUPEMENT ---
 
     # Minimum articles sharing an entity to form an entity CTA group.
-    MIN_FOR_ENTITY_GROUPING = 2
+    MIN_FOR_ENTITY_GROUPING = 3
