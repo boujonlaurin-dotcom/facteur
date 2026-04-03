@@ -15,6 +15,7 @@ import '../../feed/providers/feed_provider.dart';
 import '../../../core/api/providers.dart';
 import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
+import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';

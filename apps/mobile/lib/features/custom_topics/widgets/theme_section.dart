@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
@@ -11,6 +12,7 @@ import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import '../providers/theme_priority_provider.dart';
+import 'entity_add_sheet.dart';
 import 'suggestion_row.dart';
 import 'topic_priority_slider.dart';
 import 'topic_row.dart';
@@ -20,12 +22,15 @@ class ThemeSection extends ConsumerWidget {
   final String themeSlug;
   final String themeLabel;
   final List<UserTopicProfile> followedTopics;
+  /// slug → display label (preserves original casing, e.g. "NBA").
+  final Map<String, String> mutedTopicSlugs;
 
   const ThemeSection({
     super.key,
     required this.themeSlug,
     required this.themeLabel,
     required this.followedTopics,
+    this.mutedTopicSlugs = const {},
   });
 
   @override
@@ -252,6 +257,97 @@ class ThemeSection extends ConsumerWidget {
                 themeSlug: themeSlug,
                 followedTopics: followedTopics,
               ),
+
+              // Muted topics for this theme
+              if (mutedTopicSlugs.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4,
+                    vertical: FacteurSpacing.space2,
+                  ),
+                  child: Divider(
+                    color: colors.textTertiary.withValues(alpha: 0.15),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: FacteurSpacing.space4,
+                    bottom: FacteurSpacing.space1,
+                  ),
+                  child: Text(
+                    'Sujets masqués',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary.withValues(alpha: 0.5),
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ...mutedTopicSlugs.entries.map((entry) {
+                  final slug = entry.key;
+                  final label = entry.value;
+                  return Opacity(
+                    opacity: 0.5,
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4,
+                      ),
+                      title: Text(
+                        label,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                      trailing: GestureDetector(
+                        onTap: () async {
+                          await ref
+                              .read(personalizationRepositoryProvider)
+                              .unmuteTopic(slug);
+                          ref.invalidate(personalizationProvider);
+                        },
+                        child: Icon(
+                          PhosphorIcons.plusCircle(
+                            PhosphorIconsStyle.regular,
+                          ),
+                          size: 18,
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+
+              // "Ajouter un sujet personnalisé" button
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FacteurSpacing.space4,
+                  vertical: FacteurSpacing.space2,
+                ),
+                child: GestureDetector(
+                  onTap: () =>
+                      EntityAddSheet.show(context, themeSlug: themeSlug),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                        size: 14,
+                        color: const Color(0xFFE07A5F),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Ajouter un sujet personnalisé',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFFE07A5F),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -365,6 +461,31 @@ class _SuggestionsBlockState extends ConsumerState<_SuggestionsBlock> {
                     ref
                         .read(customTopicsProvider.notifier)
                         .followTopic(name);
+                  },
+                  onMute: () async {
+                    final slug = getTopicSlug(name);
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    try {
+                      await repo.muteTopic(slug);
+                      ref.invalidate(personalizationProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sujet masqué'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Erreur lors du masquage'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
                   },
                 )),
             if (hasMore && !_expanded)

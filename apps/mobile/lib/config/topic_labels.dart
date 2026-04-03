@@ -201,6 +201,18 @@ List<String> getSlugsForMacroTheme(String macroTheme) {
       .toList();
 }
 
+/// Reverse lookup: finds a slug for a topic label from [topicSlugToLabel].
+/// Returns the lowercased name if no slug match is found.
+String getTopicSlug(String name) {
+  final lower = name.toLowerCase();
+  for (final entry in topicSlugToLabel.entries) {
+    if (entry.value.toLowerCase() == lower) {
+      return entry.key;
+    }
+  }
+  return lower;
+}
+
 /// Converts entity type codes to French display labels.
 String getEntityTypeLabel(String type) => switch (type.toUpperCase()) {
       'PERSON' => 'Personne',

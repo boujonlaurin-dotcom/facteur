@@ -8,8 +8,10 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../custom_topics/providers/algorithm_profile_provider.dart';
+import '../../custom_topics/providers/personalization_provider.dart';
 import '../../feed/models/content_model.dart' show ContentType;
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/personalization_repository.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../models/digest_models.dart';
 
@@ -323,7 +325,9 @@ class DigestPersonalizationSheet extends ConsumerWidget {
             onTap: () async {
               Navigator.pop(context);
               try {
-                await ref.read(feedProvider.notifier).muteTheme(theme);
+                final repo = ref.read(personalizationRepositoryProvider);
+                await repo.muteTheme(theme);
+                ref.invalidate(personalizationProvider);
                 NotificationService.showInfo('Thème masqué');
               } catch (e) {
                 NotificationService.showError('Impossible de masquer le thème');
@@ -343,7 +347,9 @@ class DigestPersonalizationSheet extends ConsumerWidget {
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  await ref.read(feedProvider.notifier).muteTopic(topicSlug);
+                  final repo = ref.read(personalizationRepositoryProvider);
+                  await repo.muteTopic(topicSlug);
+                  ref.invalidate(personalizationProvider);
                   NotificationService.showInfo('Sujet masqué');
                 } catch (e) {
                   NotificationService.showError(

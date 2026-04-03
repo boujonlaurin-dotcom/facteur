@@ -5,6 +5,8 @@ Les pénalités ne sont PAS normalisées — elles s'appliquent en absolu
 au score final car elles représentent des signaux négatifs forts.
 """
 
+import json
+
 from app.models.content import Content
 from app.services.recommendation.pillars.base import PillarContribution
 from app.services.recommendation.pillars.pertinence import _subtopic_label, _theme_label
@@ -87,6 +89,29 @@ class PenaltyPass:
                 contributions.append(
                     PillarContribution(
                         label=f"Sujet masqué : {_subtopic_label(topic)}",
+                        points=MUTED_TOPIC_MALUS,
+                        is_positive=False,
+                    )
+                )
+
+        # --- Muted Entities (matched via muted_topics) ---
+        if context.muted_topics and content.entities:
+            entity_names: set[str] = set()
+            for raw in content.entities:
+                try:
+                    parsed = json.loads(raw)
+                    name = parsed.get("name", "")
+                    if isinstance(name, str) and name:
+                        entity_names.add(name.lower().strip())
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            muted_entity_matches = entity_names & set(context.muted_topics)
+            for entity in muted_entity_matches:
+                score += MUTED_TOPIC_MALUS
+                contributions.append(
+                    PillarContribution(
+                        label=f"Sujet masqué : {entity}",
                         points=MUTED_TOPIC_MALUS,
                         is_positive=False,
                     )

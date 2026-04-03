@@ -235,20 +235,18 @@ async def create_topic(
                 detail=f"Tu suis déjà l'entité '{canonical_name}'",
             )
     else:
-        existing = await db.scalar(
-            select(UserTopicProfile).where(
+        count = await db.scalar(
+            select(func.count()).select_from(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_uuid,
                 UserTopicProfile.slug_parent == result.slug_parent,
                 UserTopicProfile.canonical_name.is_(None),
             )
         )
-        if existing:
+        if count >= 3:
+            category_label = SLUG_TO_LABEL.get(result.slug_parent, result.slug_parent)
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Tu suis déjà un topic dans la catégorie "
-                    f"'{SLUG_TO_LABEL.get(result.slug_parent, result.slug_parent)}'"
-                ),
+                detail=f"3 sujets personnalisés maximum par thème ({category_label})",
             )
 
     topic = UserTopicProfile(
