@@ -23,6 +23,19 @@ CLASSIFICATION_MODEL = "mistral-small-latest"
 
 VALID_ENTITY_TYPES: set[str] = {"PERSON", "ORG", "EVENT", "LOCATION", "PRODUCT"}
 
+ENTITY_SYSTEM_PROMPT = """\
+Tu es un extracteur d'entités nommées expert pour articles de presse francophone.
+Extrais 3 à 5 entités nommées principales de chaque article.
+Types autorisés : PERSON, ORG, EVENT, LOCATION, PRODUCT
+Règles :
+- Normalise les noms (E. Macron → Emmanuel Macron)
+- Désambiguïse selon contexte (Apple = ORG si tech)
+- Ignore les entités trop génériques (France, Internet, Europe)
+- Si aucune entité pertinente, retourne un array vide
+Réponds en JSON array. Pas de texte avant ou après."""
+
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
 
 def _validate_entities(raw_entities: list) -> list[dict]:
     """Validate and normalize entity dicts from LLM response. Cap at 5."""
