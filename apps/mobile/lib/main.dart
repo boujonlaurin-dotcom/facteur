@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:home_widget/home_widget.dart';
+
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
@@ -82,6 +84,14 @@ Future<void> main() async {
     debugPrint('ERROR: Failed to initialize push notifications: $e\n$s');
   }
 
+  // Initialize Home Widget for Android home screen widget
+  try {
+    HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback);
+    debugPrint('Main: Home Widget initialized.');
+  } catch (e) {
+    debugPrint('Main: Home Widget init failed (non-critical): $e');
+  }
+
   // Validation Supabase avant initialisation
   if (SupabaseConstants.url.isEmpty || SupabaseConstants.anonKey.isEmpty) {
     debugPrint('ERROR: Supabase URL or Anon Key is missing.');
@@ -136,6 +146,13 @@ Future<void> main() async {
   debugPrint('Main: Calling runApp...');
   runApp(const ProviderScope(child: FacteurApp()));
   debugPrint('Main: runApp called.');
+}
+
+/// Background callback for home widget interactions (required by home_widget).
+@pragma('vm:entry-point')
+Future<void> homeWidgetBackgroundCallback(Uri? uri) async {
+  // Widget taps are handled via PendingIntents in Kotlin, so this is a no-op.
+  debugPrint('HomeWidget callback: $uri');
 }
 
 void _runErrorApp(String message) {

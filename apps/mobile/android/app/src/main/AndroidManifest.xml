@@ -46,6 +46,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Home Screen Widget -->
+        <receiver android:name=".FacteurWidget" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/facteur_widget_info" />
+        </receiver>
+
         <!-- Required for flutter_local_notifications scheduled notifications -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
