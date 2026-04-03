@@ -249,4 +249,21 @@ class DigestRepository {
       data: {'key': key, 'value': value},
     );
   }
+
+  /// Submit article feedback (sentiment, reasons, optional comment)
+  Future<void> submitArticleFeedback({
+    required String contentId,
+    required String sentiment,
+    required List<String> reasons,
+    String? comment,
+  }) async {
+    await _apiClient.dio.post<dynamic>(
+      'articles/$contentId/feedback',
+      data: {
+        'sentiment': sentiment,
+        'reasons': reasons,
+        if (comment != null) 'comment': comment,
+      },
+    );
+  }
 }
