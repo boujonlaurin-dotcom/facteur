@@ -460,7 +460,11 @@ class RecommendationService:
                 topic_overflow_count=len(topic_overflow),
                 entity_overflow_count=len(entity_overflow),
                 entity_overflow_details=[
-                    {"name": g["entity_name"], "hidden": g["hidden_count"], "sources": len(g.get("sources", []))}
+                    {
+                        "name": g["entity_name"],
+                        "hidden": g["hidden_count"],
+                        "sources": len(g.get("sources", [])),
+                    }
                     for g in entity_overflow[:5]
                 ],
                 carousel_count=len(self.carousels),
@@ -964,7 +968,7 @@ class RecommendationService:
                 continue
 
             items = [pre_regroup_map[rep_id]]
-            for hid in group["hidden_ids"][:MAX_CAROUSEL_ITEMS - 1]:
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
                 if hid in pre_regroup_map:
                     items.append(pre_regroup_map[hid])
             if len(items) < MIN_CAROUSEL_ITEMS:
@@ -986,14 +990,16 @@ class RecommendationService:
                 "label": "Actu chaude",
                 "emoji": "\U0001f534",
             }
-            carousels.append({
-                "carousel_type": "hot",
-                "title": f"Actu chaude : {display_name}",
-                "emoji": "\U0001f534",
-                "position": 5,
-                "items": items,
-                "badges": [badge] * len(items),
-            })
+            carousels.append(
+                {
+                    "carousel_type": "hot",
+                    "title": f"Actu chaude : {display_name}",
+                    "emoji": "\U0001f534",
+                    "position": 5,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
             for item in items:
                 promoted_ids.add(item.id)
             used_group_keys.add(f"entity:{group['entity_name']}")
@@ -1012,7 +1018,7 @@ class RecommendationService:
                 continue
 
             items = [pre_regroup_map[rep_id]]
-            for hid in group["hidden_ids"][:MAX_CAROUSEL_ITEMS - 1]:
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
                 if hid in pre_regroup_map:
                     items.append(pre_regroup_map[hid])
             if len(items) < MIN_CAROUSEL_ITEMS:
@@ -1024,14 +1030,16 @@ class RecommendationService:
                 "label": topic_name,
                 "emoji": "\U0001f3af",
             }
-            carousels.append({
-                "carousel_type": "favorite",
-                "title": f"Focus sur {topic_name}",
-                "emoji": "\U0001f3af",
-                "position": 10,
-                "items": items,
-                "badges": [badge] * len(items),
-            })
+            carousels.append(
+                {
+                    "carousel_type": "favorite",
+                    "title": f"Focus sur {topic_name}",
+                    "emoji": "\U0001f3af",
+                    "position": 10,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
             for item in items:
                 promoted_ids.add(item.id)
             used_group_keys.add(f"keyword:{group['filter_keyword']}")
@@ -1043,13 +1051,19 @@ class RecommendationService:
             key = f"entity:{group['entity_name']}"
             if key in used_group_keys:
                 continue
-            if group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS and len(group.get("sources", [])) >= 3:
+            if (
+                group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS
+                and len(group.get("sources", [])) >= 3
+            ):
                 deep_candidates.append(("entity", group))
         for group in self.keyword_overflow:
             key = f"keyword:{group['filter_keyword']}"
             if key in used_group_keys:
                 continue
-            if group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS and len(group.get("sources", [])) >= 3:
+            if (
+                group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS
+                and len(group.get("sources", [])) >= 3
+            ):
                 deep_candidates.append(("keyword", group))
 
         # Sort by source count desc (most diverse first)
@@ -1063,7 +1077,7 @@ class RecommendationService:
                 continue
 
             items = [pre_regroup_map[rep_id]]
-            for hid in group["hidden_ids"][:MAX_CAROUSEL_ITEMS - 1]:
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
                 if hid in pre_regroup_map and hid not in promoted_ids:
                     items.append(pre_regroup_map[hid])
             if len(items) < MIN_CAROUSEL_ITEMS:
@@ -1086,14 +1100,16 @@ class RecommendationService:
                 "label": "Autre angle",
                 "emoji": "\U0001f50d",
             }
-            carousels.append({
-                "carousel_type": "deep",
-                "title": f"D\u2019autres angles sur {display_name}",
-                "emoji": "\U0001f50d",
-                "position": 15,
-                "items": items,
-                "badges": [badge] * len(items),
-            })
+            carousels.append(
+                {
+                    "carousel_type": "deep",
+                    "title": f"D\u2019autres angles sur {display_name}",
+                    "emoji": "\U0001f50d",
+                    "position": 15,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
             for item in items:
                 promoted_ids.add(item.id)
             break  # Only 1 deep carousel
@@ -1110,18 +1126,19 @@ class RecommendationService:
         if user_id is not None:
             # --- new_source: articles from recently added sources ---
             if len(carousels) < max_carousels:
-                seven_days_ago = (
-                    datetime.datetime.now(datetime.UTC)
-                    - datetime.timedelta(days=7)
-                )
-                new_src_rows = (await self.session.execute(
-                    select(UserSource.source_id, Source.name)
-                    .join(Source, Source.id == UserSource.source_id)
-                    .where(
-                        UserSource.user_id == user_id,
-                        UserSource.added_at > seven_days_ago,
+                seven_days_ago = datetime.datetime.now(
+                    datetime.UTC
+                ) - datetime.timedelta(days=7)
+                new_src_rows = (
+                    await self.session.execute(
+                        select(UserSource.source_id, Source.name)
+                        .join(Source, Source.id == UserSource.source_id)
+                        .where(
+                            UserSource.user_id == user_id,
+                            UserSource.added_at > seven_days_ago,
+                        )
                     )
-                )).all()
+                ).all()
 
                 logger.info(
                     "carousel_new_source_query",
@@ -1132,20 +1149,24 @@ class RecommendationService:
                     new_src_ids = [r.source_id for r in new_src_rows]
                     src_name_map = {r.source_id: r.name for r in new_src_rows}
 
-                    new_articles = list((await self.session.scalars(
-                        select(Content)
-                        .options(selectinload(Content.source))
-                        .where(
-                            Content.source_id.in_(new_src_ids),
-                            Content.published_at > seven_days_ago,
-                        )
-                        .order_by(Content.published_at.desc())
-                        .limit(MAX_CAROUSEL_ITEMS)
-                    )).all())
+                    new_articles = list(
+                        (
+                            await self.session.scalars(
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(
+                                    Content.source_id.in_(new_src_ids),
+                                    Content.published_at > seven_days_ago,
+                                )
+                                .order_by(Content.published_at.desc())
+                                .limit(MAX_CAROUSEL_ITEMS)
+                            )
+                        ).all()
+                    )
 
-                    items = [
-                        a for a in new_articles if a.id not in promoted_ids
-                    ][:MAX_CAROUSEL_ITEMS]
+                    items = [a for a in new_articles if a.id not in promoted_ids][
+                        :MAX_CAROUSEL_ITEMS
+                    ]
                     logger.info(
                         "carousel_new_source_articles",
                         raw_count=len(new_articles),
@@ -1161,45 +1182,46 @@ class RecommendationService:
                             "label": "Nouvelle source",
                             "emoji": "\U0001f195",
                         }
-                        carousels.append({
-                            "carousel_type": "new_source",
-                            "title": f"Récemment ajouté : {first_src_name}",
-                            "emoji": "\U0001f195",
-                            "position": 3,
-                            "items": items,
-                            "badges": [badge] * len(items),
-                        })
+                        carousels.append(
+                            {
+                                "carousel_type": "new_source",
+                                "title": f"Récemment ajouté : {first_src_name}",
+                                "emoji": "\U0001f195",
+                                "position": 3,
+                                "items": items,
+                                "badges": [badge] * len(items),
+                            }
+                        )
                         for item in items:
                             promoted_ids.add(item.id)
 
             # --- gems: community favorites (most saved by all users) ---
             if len(carousels) < max_carousels:
-                thirty_days_ago = (
-                    datetime.datetime.now(datetime.UTC)
-                    - datetime.timedelta(days=30)
-                )
-                exclusion = (
-                    Content.id.notin_(promoted_ids) if promoted_ids else True
-                )
-                gem_rows = (await self.session.execute(
-                    select(
-                        Content.id,
-                        func.count(UserContentStatus.id).label("save_count"),
+                thirty_days_ago = datetime.datetime.now(
+                    datetime.UTC
+                ) - datetime.timedelta(days=30)
+                exclusion = Content.id.notin_(promoted_ids) if promoted_ids else True
+                gem_rows = (
+                    await self.session.execute(
+                        select(
+                            Content.id,
+                            func.count(UserContentStatus.id).label("save_count"),
+                        )
+                        .join(
+                            UserContentStatus,
+                            UserContentStatus.content_id == Content.id,
+                        )
+                        .where(
+                            UserContentStatus.is_saved.is_(True),
+                            UserContentStatus.saved_at >= thirty_days_ago,
+                            exclusion,
+                        )
+                        .group_by(Content.id)
+                        .having(func.count(UserContentStatus.id) >= 1)
+                        .order_by(func.count(UserContentStatus.id).desc())
+                        .limit(MAX_CAROUSEL_ITEMS)
                     )
-                    .join(
-                        UserContentStatus,
-                        UserContentStatus.content_id == Content.id,
-                    )
-                    .where(
-                        UserContentStatus.is_saved.is_(True),
-                        UserContentStatus.saved_at >= thirty_days_ago,
-                        exclusion,
-                    )
-                    .group_by(Content.id)
-                    .having(func.count(UserContentStatus.id) >= 1)
-                    .order_by(func.count(UserContentStatus.id).desc())
-                    .limit(MAX_CAROUSEL_ITEMS)
-                )).all()
+                ).all()
 
                 logger.info(
                     "carousel_gems_query",
@@ -1209,11 +1231,15 @@ class RecommendationService:
                 )
                 if len(gem_rows) >= MIN_CAROUSEL_ITEMS:
                     gem_ids = [r.id for r in gem_rows]
-                    gem_contents = list((await self.session.scalars(
-                        select(Content)
-                        .options(selectinload(Content.source))
-                        .where(Content.id.in_(gem_ids))
-                    )).all())
+                    gem_contents = list(
+                        (
+                            await self.session.scalars(
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(Content.id.in_(gem_ids))
+                            )
+                        ).all()
+                    )
                     # Maintain save_count order
                     id_order = {gid: i for i, gid in enumerate(gem_ids)}
                     items = sorted(
@@ -1226,38 +1252,44 @@ class RecommendationService:
                         "label": "Pépite",
                         "emoji": "\U0001f48e",
                     }
-                    carousels.append({
-                        "carousel_type": "gems",
-                        "title": "Pépites de la communauté",
-                        "emoji": "\U0001f48e",
-                        "position": 15,
-                        "items": items,
-                        "badges": [badge] * len(items),
-                    })
+                    carousels.append(
+                        {
+                            "carousel_type": "gems",
+                            "title": "Pépites de la communauté",
+                            "emoji": "\U0001f48e",
+                            "position": 15,
+                            "items": items,
+                            "badges": [badge] * len(items),
+                        }
+                    )
                     for item in items:
                         promoted_ids.add(item.id)
 
             # --- saved: user's saved but unconsumed articles ---
             if len(carousels) < max_carousels:
-                saved_articles = list((await self.session.scalars(
-                    select(Content)
-                    .options(selectinload(Content.source))
-                    .join(
-                        UserContentStatus,
-                        UserContentStatus.content_id == Content.id,
-                    )
-                    .where(
-                        UserContentStatus.user_id == user_id,
-                        UserContentStatus.is_saved.is_(True),
-                        UserContentStatus.status != ContentStatus.CONSUMED,
-                    )
-                    .order_by(UserContentStatus.created_at.asc())
-                    .limit(MAX_CAROUSEL_ITEMS)
-                )).all())
+                saved_articles = list(
+                    (
+                        await self.session.scalars(
+                            select(Content)
+                            .options(selectinload(Content.source))
+                            .join(
+                                UserContentStatus,
+                                UserContentStatus.content_id == Content.id,
+                            )
+                            .where(
+                                UserContentStatus.user_id == user_id,
+                                UserContentStatus.is_saved.is_(True),
+                                UserContentStatus.status != ContentStatus.CONSUMED,
+                            )
+                            .order_by(UserContentStatus.created_at.asc())
+                            .limit(MAX_CAROUSEL_ITEMS)
+                        )
+                    ).all()
+                )
 
-                items = [
-                    a for a in saved_articles if a.id not in promoted_ids
-                ][:MAX_CAROUSEL_ITEMS]
+                items = [a for a in saved_articles if a.id not in promoted_ids][
+                    :MAX_CAROUSEL_ITEMS
+                ]
                 logger.info(
                     "carousel_saved_query",
                     raw_count=len(saved_articles),
@@ -1269,32 +1301,40 @@ class RecommendationService:
                     for item in items:
                         ct = item.content_type
                         if ct == ContentType.YOUTUBE:
-                            badges.append({
-                                "code": "saved_video",
-                                "label": "Vidéo sauvegardée",
-                                "emoji": "\U0001f4cc",
-                            })
+                            badges.append(
+                                {
+                                    "code": "saved_video",
+                                    "label": "Vidéo sauvegardée",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
                         elif ct == ContentType.PODCAST:
-                            badges.append({
-                                "code": "saved_audio",
-                                "label": "Audio sauvegardé",
-                                "emoji": "\U0001f4cc",
-                            })
+                            badges.append(
+                                {
+                                    "code": "saved_audio",
+                                    "label": "Audio sauvegardé",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
                         else:
-                            badges.append({
-                                "code": "saved_article",
-                                "label": "Article sauvegardé",
-                                "emoji": "\U0001f4cc",
-                            })
+                            badges.append(
+                                {
+                                    "code": "saved_article",
+                                    "label": "Article sauvegardé",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
 
-                    carousels.append({
-                        "carousel_type": "saved",
-                        "title": "Plus tard, c\u2019est maintenant !",
-                        "emoji": "\U0001f4cc",
-                        "position": 20,
-                        "items": items,
-                        "badges": badges,
-                    })
+                    carousels.append(
+                        {
+                            "carousel_type": "saved",
+                            "title": "Plus tard, c\u2019est maintenant !",
+                            "emoji": "\U0001f4cc",
+                            "position": 20,
+                            "items": items,
+                            "badges": badges,
+                        }
+                    )
                     for item in items:
                         promoted_ids.add(item.id)
 
@@ -1305,14 +1345,18 @@ class RecommendationService:
         # Convert Content objects to serializable dicts for CarouselInfo
         carousel_dicts = []
         for c in carousels:
-            carousel_dicts.append({
-                "carousel_type": c["carousel_type"],
-                "title": c["title"],
-                "emoji": c["emoji"],
-                "position": c["position"],
-                "items": c["items"],  # Content objects — router will serialize via Pydantic
-                "badges": c["badges"],
-            })
+            carousel_dicts.append(
+                {
+                    "carousel_type": c["carousel_type"],
+                    "title": c["title"],
+                    "emoji": c["emoji"],
+                    "position": c["position"],
+                    "items": c[
+                        "items"
+                    ],  # Content objects — router will serialize via Pydantic
+                    "badges": c["badges"],
+                }
+            )
 
         logger.info(
             "carousels_built",
