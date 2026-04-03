@@ -307,29 +307,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo and streak (hidden in editorial mode)
-                  SliverToBoxAdapter(
-                    child: Builder(
-                      builder: (context) {
-                        final digest = digestAsync.valueOrNull;
-                        if (digest != null && digest.usesEditorial) {
-                          return const SizedBox.shrink();
-                        }
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space6,
-                            vertical: FacteurSpacing.space3,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              StreakIndicator(),
-                              FacteurLogo(size: 22),
-                              UpdateButton(),
-                            ],
-                          ),
-                        );
-                      },
+                  // Feed-style header with logo and streak
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space6,
+                        vertical: FacteurSpacing.space3,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          StreakIndicator(),
+                          FacteurLogo(size: 22),
+                          UpdateButton(),
+                        ],
+                      ),
                     ),
                   ),
 
