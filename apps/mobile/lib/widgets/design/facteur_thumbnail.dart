@@ -10,6 +10,11 @@ class FacteurThumbnail extends StatefulWidget {
   final BorderRadius? borderRadius;
   final Widget? overlay;
   final String? durationLabel;
+  final VoidCallback? onError;
+  final bool isVideo;
+
+  /// Public accessor for failed image URLs cached during this session.
+  static Set<String> get failedUrls => _FacteurThumbnailState._failedUrls;
 
   const FacteurThumbnail({
     super.key,
@@ -18,6 +23,8 @@ class FacteurThumbnail extends StatefulWidget {
     this.borderRadius,
     this.overlay,
     this.durationLabel,
+    this.onError,
+    this.isVideo = false,
   });
 
   @override
