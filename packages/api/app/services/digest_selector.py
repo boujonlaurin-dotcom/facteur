@@ -283,9 +283,7 @@ class DigestSelector:
                                 candidates, mode=mode
                             )
                             if global_ctx is not None:
-                                _set_cached_editorial_ctx(
-                                    _cache_date, mode, global_ctx
-                                )
+                                _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
                         if not global_ctx:
                             logger.warning("digest_editorial_global_ctx_failed")
                             output_format = "topics"

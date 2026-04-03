@@ -253,7 +253,7 @@ class PerspectiveService:
         system = (
             "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
             "FORMAT STRICT (court, ~150 mots max) :\n"
-            "1-2 phrases de contexte, puis 2 constats \"→\" nommant les médias.\n"
+            '1-2 phrases de contexte, puis 2 constats "→" nommant les médias.\n'
             "Chaque constat : un angle couvert par certains mais pas d'autres, "
             "ou un même fait cadré différemment.\n\n"
             "RÈGLES : uniquement les titres/résumés fournis, pas de faits inventés. "
