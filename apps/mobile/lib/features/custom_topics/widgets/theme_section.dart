@@ -20,14 +20,15 @@ class ThemeSection extends ConsumerWidget {
   final String themeSlug;
   final String themeLabel;
   final List<UserTopicProfile> followedTopics;
-  final List<String> mutedTopicSlugs;
+  /// slug → display label (preserves original casing, e.g. "NBA").
+  final Map<String, String> mutedTopicSlugs;
 
   const ThemeSection({
     super.key,
     required this.themeSlug,
     required this.themeLabel,
     required this.followedTopics,
-    this.mutedTopicSlugs = const [],
+    this.mutedTopicSlugs = const {},
   });
 
   @override
@@ -155,6 +156,38 @@ class ThemeSection extends ConsumerWidget {
               ...followedTopics.map((topic) {
                 return DismissibleTopicRow(
                   topic: topic,
+                  onMute: () async {
+                    // For entities, mute by canonical name (matches backend entity filtering).
+                    // For regular topics, mute by slug_parent.
+                    final slug = topic.canonicalName?.toLowerCase() ??
+                        topic.slugParent ??
+                        getTopicSlug(topic.name);
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    try {
+                      await repo.muteTopic(slug);
+                      await ref
+                          .read(customTopicsProvider.notifier)
+                          .unfollowTopic(topic.id);
+                      ref.invalidate(personalizationProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sujet masqué'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Erreur lors du masquage'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
+                  },
                   onUnfollow: () async {
                     await ref
                         .read(customTopicsProvider.notifier)
@@ -235,8 +268,9 @@ class ThemeSection extends ConsumerWidget {
                     ),
                   ),
                 ),
-                ...mutedTopicSlugs.map((slug) {
-                  final label = getTopicLabel(slug);
+                ...mutedTopicSlugs.entries.map((entry) {
+                  final slug = entry.key;
+                  final label = entry.value;
                   return Opacity(
                     opacity: 0.5,
                     child: ListTile(
@@ -412,6 +446,31 @@ class _SuggestionsBlockState extends ConsumerState<_SuggestionsBlock> {
                     ref
                         .read(customTopicsProvider.notifier)
                         .followTopic(name);
+                  },
+                  onMute: () async {
+                    final slug = getTopicSlug(name);
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    try {
+                      await repo.muteTopic(slug);
+                      ref.invalidate(personalizationProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sujet masqué'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Erreur lors du masquage'),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
                   },
                 )),
             if (hasMore && !_expanded)

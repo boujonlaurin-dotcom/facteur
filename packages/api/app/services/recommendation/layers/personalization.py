@@ -1,5 +1,7 @@
 """Layer de personnalisation - applique les malus pour sources/thèmes/topics mutés."""
 
+import json
+
 from app.models.content import Content
 from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
 
@@ -86,6 +88,28 @@ class PersonalizationLayer(BaseScoringLayer):
                         self.name,
                         self.MUTED_TOPIC_MALUS,
                         f"Tu vois moins de {topic}",
+                    )
+
+            # 5. Entity names matched against muted_topics (entities stored as JSON strings)
+            if content.entities:
+                entity_names: set[str] = set()
+                for raw in content.entities:
+                    try:
+                        parsed = json.loads(raw)
+                        name = parsed.get("name", "")
+                        if isinstance(name, str) and name:
+                            entity_names.add(name.lower().strip())
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+                muted_entity_matches = entity_names & set(context.muted_topics)
+                for entity in muted_entity_matches:
+                    score += self.MUTED_TOPIC_MALUS
+                    context.add_reason(
+                        content.id,
+                        self.name,
+                        self.MUTED_TOPIC_MALUS,
+                        f"Tu vois moins de {entity}",
                     )
 
         return score

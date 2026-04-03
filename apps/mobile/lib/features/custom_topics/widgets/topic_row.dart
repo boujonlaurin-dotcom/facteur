@@ -10,12 +10,14 @@ class TopicRow extends StatelessWidget {
   final UserTopicProfile topic;
   final ValueChanged<double> onPriorityChanged;
   final VoidCallback? onUnfollow;
+  final VoidCallback? onMute;
 
   const TopicRow({
     super.key,
     required this.topic,
     required this.onPriorityChanged,
     this.onUnfollow,
+    this.onMute,
   });
 
   @override
@@ -49,6 +51,19 @@ class TopicRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (onMute != null)
+            GestureDetector(
+              onTap: onMute,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(
+                  PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                  size: 14,
+                  color: colors.textTertiary,
+                ),
+              ),
+            ),
           if (onUnfollow != null)
             GestureDetector(
               onTap: onUnfollow,
@@ -76,12 +91,14 @@ class DismissibleTopicRow extends StatelessWidget {
   final UserTopicProfile topic;
   final ValueChanged<double> onPriorityChanged;
   final VoidCallback? onUnfollow;
+  final VoidCallback? onMute;
 
   const DismissibleTopicRow({
     super.key,
     required this.topic,
     required this.onPriorityChanged,
     this.onUnfollow,
+    this.onMute,
   });
 
   @override
@@ -121,6 +138,7 @@ class DismissibleTopicRow extends StatelessWidget {
         topic: topic,
         onPriorityChanged: onPriorityChanged,
         onUnfollow: onUnfollow,
+        onMute: onMute,
       ),
     );
   }

@@ -95,11 +95,38 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
           // Muted topics grouped by macro-theme
           final mutedTopics =
               ref.watch(personalizationProvider).valueOrNull?.mutedTopics ?? {};
-          final mutedByTheme = <String, List<String>>{};
+          final mutedByTheme = <String, Map<String, String>>{};
           for (final slug in mutedTopics) {
-            final macro = getTopicMacroTheme(slug);
+            var macro = getTopicMacroTheme(slug);
+            String? displayLabel;
+            if (macro == null) {
+              // Entity names (e.g. "donald trump") aren't in _slugToMacroTheme.
+              // Try to resolve via followed topics' canonicalName → slugParent.
+              final matchingTopic = topics
+                  .where((t) =>
+                      t.canonicalName?.toLowerCase() == slug.toLowerCase())
+                  .firstOrNull;
+              if (matchingTopic != null && matchingTopic.slugParent != null) {
+                macro = getTopicMacroTheme(matchingTopic.slugParent!);
+                displayLabel =
+                    matchingTopic.canonicalName ?? matchingTopic.name;
+              }
+            }
+            // For non-entity slugs, also try to recover the original name
+            // from followed topics (e.g. "nba" → "NBA").
+            displayLabel ??= topics
+                .where((t) =>
+                    t.canonicalName?.toLowerCase() == slug ||
+                    t.name.toLowerCase() == slug)
+                .firstOrNull
+                ?.canonicalName;
+            displayLabel ??= topics
+                .where((t) => t.name.toLowerCase() == slug)
+                .firstOrNull
+                ?.name;
+            displayLabel ??= getTopicLabel(slug);
             if (macro != null) {
-              mutedByTheme.putIfAbsent(macro, () => []).add(slug);
+              mutedByTheme.putIfAbsent(macro, () => {})[slug] = displayLabel;
             }
           }
 
@@ -242,7 +269,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       themeSlug: macroThemeToApiSlug[group] ?? groupSlugs.first,
                       themeLabel: group,
                       followedTopics: const [],
-                      mutedTopicSlugs: mutedByTheme[group] ?? [],
+                      mutedTopicSlugs: mutedByTheme[group] ?? {},
                     );
                   }
                   final allTopics =
@@ -251,7 +278,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                     themeSlug: macroThemeToApiSlug[group] ?? themes.first.slug,
                     themeLabel: group,
                     followedTopics: allTopics,
-                    mutedTopicSlugs: mutedByTheme[group] ?? [],
+                    mutedTopicSlugs: mutedByTheme[group] ?? {},
                   );
                 }),
 
@@ -315,15 +342,7 @@ double _maxPriority(List<_GroupedTheme> themes) {
 }
 
 /// Reverse-lookup: finds a slug for a topic name from [topicSlugToLabel].
-String _deriveSlugFromName(String name) {
-  final lower = name.toLowerCase();
-  for (final entry in topicSlugToLabel.entries) {
-    if (entry.value.toLowerCase() == lower) {
-      return entry.key;
-    }
-  }
-  return '';
-}
+String _deriveSlugFromName(String name) => getTopicSlug(name);
 
 /// Helper to group topics by slug within a macro theme.
 class _GroupedTheme {

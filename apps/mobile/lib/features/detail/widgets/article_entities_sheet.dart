@@ -7,11 +7,14 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
+import '../../custom_topics/providers/personalization_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../feed/repositories/personalization_repository.dart';
 
 const Color _terracotta = Color(0xFFE07A5F);
 
-/// Bottom sheet listing entities from an article with follow/unfollow actions.
+/// Bottom sheet listing entities from an article with follow/unfollow
+/// and mute/unmute actions.
 class ArticleEntitiesSheet extends ConsumerWidget {
   final Content content;
 
@@ -36,6 +39,8 @@ class ArticleEntitiesSheet extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
     final topicsAsync = ref.watch(customTopicsProvider);
     final topics = topicsAsync.valueOrNull ?? [];
+    final perso = ref.watch(personalizationProvider).valueOrNull;
+    final mutedTopics = perso?.mutedTopics ?? {};
 
     return Container(
       constraints: BoxConstraints(
@@ -82,6 +87,8 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                       t.canonicalName?.toLowerCase() ==
                       entity.text.toLowerCase(),
                 );
+                final isMuted =
+                    mutedTopics.contains(entity.text.toLowerCase());
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -89,100 +96,193 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                     children: [
                       // Entity name
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              entity.text,
-                              style: textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
+                        child: Opacity(
+                          opacity: isMuted ? 0.5 : 1.0,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                entity.text,
+                                style: textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (entity.label.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      colors.textTertiary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  getEntityTypeLabel(entity.label),
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.textTertiary,
-                                    fontSize: 10,
+                              if (entity.label.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.textTertiary
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    getEntityTypeLabel(entity.label),
+                                    style: textTheme.labelSmall?.copyWith(
+                                      color: colors.textTertiary,
+                                      fontSize: 10,
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
 
-                      // Follow / Followed indicator
-                      if (isFollowed)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _terracotta.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                PhosphorIcons.check(PhosphorIconsStyle.bold),
-                                size: 14,
-                                color: _terracotta,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Suivi',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: _terracotta,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        TextButton.icon(
-                          onPressed: () {
-                            ref
-                                .read(customTopicsProvider.notifier)
-                                .followEntity(entity.text, entity.label);
+                      // Actions: Follow/Followed + Mute/Unmute
+                      if (isMuted)
+                        // Muted state: show unmute button
+                        GestureDetector(
+                          onTap: () async {
+                            final repo =
+                                ref.read(personalizationRepositoryProvider);
+                            try {
+                              await repo
+                                  .unmuteTopic(entity.text.toLowerCase());
+                              ref.invalidate(personalizationProvider);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Erreur'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
                           },
-                          style: TextButton.styleFrom(
+                          child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 10,
                               vertical: 6,
                             ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            decoration: BoxDecoration(
+                              color: colors.textTertiary
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.eyeSlash(
+                                      PhosphorIconsStyle.regular),
+                                  size: 14,
+                                  color: colors.textTertiary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Masqué',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          icon: Icon(
-                            PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                            size: 14,
-                            color: _terracotta,
-                          ),
-                          label: Text(
-                            'Suivre',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: _terracotta,
-                              fontWeight: FontWeight.w600,
+                        )
+                      else ...[
+                        // Mute button (eye-slash)
+                        GestureDetector(
+                          onTap: () async {
+                            final repo =
+                                ref.read(personalizationRepositoryProvider);
+                            try {
+                              await repo
+                                  .muteTopic(entity.text.toLowerCase());
+                              ref.invalidate(personalizationProvider);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Erreur lors du masquage'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 4),
+                            child: Icon(
+                              PhosphorIcons.eyeSlash(
+                                  PhosphorIconsStyle.regular),
+                              size: 16,
+                              color: colors.textTertiary,
                             ),
                           ),
                         ),
+
+                        // Follow / Followed indicator
+                        if (isFollowed)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _terracotta.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  PhosphorIcons.check(
+                                      PhosphorIconsStyle.bold),
+                                  size: 14,
+                                  color: _terracotta,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Suivi',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: _terracotta,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: () {
+                              ref
+                                  .read(customTopicsProvider.notifier)
+                                  .followEntity(entity.text, entity.label);
+                            },
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: Icon(
+                              PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                              size: 14,
+                              color: _terracotta,
+                            ),
+                            label: Text(
+                              'Suivre',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: _terracotta,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 );

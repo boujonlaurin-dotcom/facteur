@@ -12,8 +12,10 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/personalization_repository.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
+import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -534,8 +536,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               onPressed: () {
+                final router = GoRouter.of(context);
                 Navigator.of(context).pop();
-                context.pushNamed(RouteNames.myInterests);
+                router.pushNamed(RouteNames.myInterests);
               },
               icon: Icon(
                 PhosphorIcons.gear(),
@@ -610,9 +613,11 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             onTap: () async {
               Navigator.pop(context);
               try {
+                final repo = ref.read(personalizationRepositoryProvider);
                 for (final topicSlug in widget.content.topics) {
-                  await ref.read(feedProvider.notifier).muteTopic(topicSlug);
+                  await repo.muteTopic(topicSlug);
                 }
+                ref.invalidate(personalizationProvider);
                 NotificationService.showInfo('Sujet masqué');
               } catch (e) {
                 NotificationService.showError(
@@ -639,8 +644,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             onPressed: () {
+              final router = GoRouter.of(context);
               Navigator.of(context).pop();
-              context.pushNamed(RouteNames.myInterests);
+              router.pushNamed(RouteNames.myInterests);
             },
             icon: Icon(
               PhosphorIcons.gear(),
@@ -724,9 +730,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               onTap: () async {
                 Navigator.pop(context);
                 try {
-                  await ref
-                      .read(feedProvider.notifier)
-                      .muteSource(widget.content);
+                  final repo = ref.read(personalizationRepositoryProvider);
+                  await repo.muteSource(widget.content.source.id);
+                  ref.invalidate(personalizationProvider);
                   NotificationService.showInfo(
                       'Source ${widget.content.source.name} masquée');
                 } catch (e) {
@@ -938,6 +944,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     required FacteurColors colors,
     required TextTheme textTheme,
   }) {
+    final perso = ref.watch(personalizationProvider).valueOrNull;
+    final mutedTopics = perso?.mutedTopics ?? {};
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: widget.content.entities.map((entity) {
@@ -945,103 +954,169 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           (t) =>
               t.canonicalName?.toLowerCase() == entity.text.toLowerCase(),
         );
+        final isMuted = mutedTopics.contains(entity.text.toLowerCase());
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entity.text,
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (entity.label.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.textTertiary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          getEntityTypeLabel(entity.label),
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (isEntityFollowed)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _terracotta.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                child: Opacity(
+                  opacity: isMuted ? 0.5 : 1.0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        PhosphorIcons.check(PhosphorIconsStyle.bold),
-                        size: 14,
-                        color: _terracotta,
-                      ),
-                      const SizedBox(width: 4),
                       Text(
-                        'Suivi',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: _terracotta,
+                        entity.text,
+                        style: textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      if (entity.label.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.textTertiary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            getEntityTypeLabel(entity.label),
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colors.textTertiary,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                )
-              else
-                TextButton.icon(
-                  onPressed: () {
-                    ref
-                        .read(customTopicsProvider.notifier)
-                        .followEntity(entity.text, entity.label);
+                ),
+              ),
+              if (isMuted)
+                // Muted state: show unmute button
+                GestureDetector(
+                  onTap: () async {
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    try {
+                      await repo.unmuteTopic(entity.text.toLowerCase());
+                      ref.invalidate(personalizationProvider);
+                    } catch (_) {}
                   },
-                  style: TextButton.styleFrom(
+                  child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 6,
                     ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    decoration: BoxDecoration(
+                      color: colors.textTertiary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                          size: 14,
+                          color: colors.textTertiary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Masqué',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.textTertiary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  icon: Icon(
-                    PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                    size: 14,
-                    color: _terracotta,
-                  ),
-                  label: Text(
-                    'Suivre',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: _terracotta,
-                      fontWeight: FontWeight.w600,
+                )
+              else ...[
+                // Mute button
+                GestureDetector(
+                  onTap: () async {
+                    final repo = ref.read(personalizationRepositoryProvider);
+                    try {
+                      await repo.muteTopic(entity.text.toLowerCase());
+                      ref.invalidate(personalizationProvider);
+                    } catch (_) {}
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 4),
+                    child: Icon(
+                      PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                      size: 16,
+                      color: colors.textTertiary,
                     ),
                   ),
                 ),
+                // Follow / Followed indicator
+                if (isEntityFollowed)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _terracotta.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.check(PhosphorIconsStyle.bold),
+                          size: 14,
+                          color: _terracotta,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Suivi',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: _terracotta,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () {
+                      ref
+                          .read(customTopicsProvider.notifier)
+                          .followEntity(entity.text, entity.label);
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: Icon(
+                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                      size: 14,
+                      color: _terracotta,
+                    ),
+                    label: Text(
+                      'Suivre',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: _terracotta,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         );

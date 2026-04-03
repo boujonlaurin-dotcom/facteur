@@ -6,6 +6,7 @@ import '../../../core/auth/auth_state.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
+import '../../custom_topics/providers/personalization_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../saved/providers/saved_feed_provider.dart';
 
@@ -421,6 +422,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteSource(content.source.id);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: swipeDismissAndMuteSource mute failed: $e');
     }
@@ -448,6 +450,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(topic);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: swipeDismissAndMuteTopic mute failed: $e');
     }
@@ -469,10 +472,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteSource(sourceId);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: muteSourceById failed for $sourceId: $e');
-      // Story: On ignore l'erreur backend pour ne pas bloquer l'utilisateur
-      // On ne rafraîchit pas pour éviter de faire réapparaître l'item brutalement
     }
   }
 
@@ -488,9 +490,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTheme(theme);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: muteTheme failed for $theme: $e');
-      // On ignore l'erreur backend
     }
   }
 
@@ -498,11 +500,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // Optimistic remove of all content matching this topic
-    // Since topics are often derived from themes in the current version:
+    // Optimistic remove of all content matching this topic slug
     final updatedItems = currentState.items.where((c) {
-      final itemTopic = c.progressionTopic;
-      return itemTopic != topic;
+      return !c.topics.contains(topic);
     }).toList();
 
     state = AsyncData(FeedState(items: updatedItems));
@@ -510,9 +510,31 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(topic);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: muteTopic failed for $topic: $e');
-      // On ignore l'erreur backend
+    }
+  }
+
+  Future<void> muteEntity(String entityName) async {
+    final currentState = state.value;
+    if (currentState == null) return;
+
+    final lowerName = entityName.toLowerCase();
+
+    // Optimistic remove of all content mentioning this entity
+    final updatedItems = currentState.items.where((c) {
+      return !c.entities.any((e) => e.text.toLowerCase() == lowerName);
+    }).toList();
+
+    state = AsyncData(FeedState(items: updatedItems));
+
+    try {
+      final repo = ref.read(personalizationRepositoryProvider);
+      await repo.muteTopic(lowerName);
+      ref.invalidate(personalizationProvider);
+    } catch (e) {
+      print('FeedNotifier: muteEntity failed for $entityName: $e');
     }
   }
 
@@ -530,6 +552,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteContentType(contentType);
+      ref.invalidate(personalizationProvider);
     } catch (e) {
       print('FeedNotifier: muteContentType failed for $contentType: $e');
     }
