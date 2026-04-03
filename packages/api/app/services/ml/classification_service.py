@@ -19,6 +19,8 @@ from app.config import get_settings
 
 log = structlog.get_logger()
 
+CLASSIFICATION_MODEL = "mistral-small-latest"
+
 VALID_ENTITY_TYPES: set[str] = {"PERSON", "ORG", "EVENT", "LOCATION", "PRODUCT"}
 
 

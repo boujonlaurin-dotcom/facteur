@@ -1,5 +1,6 @@
 """Schemas contenu."""
 
+import json
 from datetime import datetime
 from uuid import UUID
 
@@ -171,6 +172,30 @@ class DailyTop3Response(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+def parse_entity_strings(entities: list[str]) -> list[dict]:
+    """Parse entity JSON strings into dicts for serialization.
+
+    Each element is a JSON string like '{"name": "Macron", "type": "PERSON"}'.
+    Returns a list of parsed dicts, silently skipping malformed entries.
+    """
+    result = []
+    for item in entities:
+        try:
+            result.append(json.loads(item))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return result
+
+
+class ArticleFeedbackRequest(BaseModel):
+    """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
+
+    sentiment: str  # "positive" | "negative"
+    reasons: list[str] | None = None
+    comment: str | None = None
+    digest_date: str | None = None  # ISO date string "YYYY-MM-DD"
 
 
 class FeedRefreshRequest(BaseModel):
