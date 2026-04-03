@@ -23,6 +23,7 @@ Widget Android affichant :
 
 ### Nouveaux
 - [x] `lib/core/services/widget_service.dart`
+- [x] `lib/features/digest/widgets/widget_pin_nudge.dart`
 - [x] `android/.../kotlin/.../FacteurWidget.kt`
 - [x] `android/.../res/layout/facteur_widget.xml`
 - [x] `android/.../res/xml/facteur_widget_info.xml`
@@ -34,6 +35,7 @@ Widget Android affichant :
 - [x] `digest_provider.dart` — sync widget on load/action/complete
 - [x] `streak_provider.dart` — sync widget on streak fetch
 - [x] `main.dart` — home_widget init
+- [x] `digest_screen.dart` — widget pin nudge after welcome modal
 
 ## Statut
 

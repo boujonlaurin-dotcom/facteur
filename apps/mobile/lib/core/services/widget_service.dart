@@ -130,6 +130,19 @@ class WidgetService {
         .length;
   }
 
+  /// Request Android to pin the widget to the home screen.
+  /// Shows the system dialog asking the user to confirm placement.
+  static Future<void> requestPinWidget() async {
+    try {
+      await HomeWidget.requestPinWidget(
+        androidName: _androidName,
+      );
+      debugPrint('WidgetService: requestPinWidget sent');
+    } catch (e) {
+      debugPrint('WidgetService: requestPinWidget failed: $e');
+    }
+  }
+
   /// Download an image to local storage and return the file path.
   static Future<String?> _downloadImage(String url) async {
     try {
