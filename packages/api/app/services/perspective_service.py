@@ -5,7 +5,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 import certifi
@@ -383,7 +383,7 @@ class PerspectiveService:
         from app.models.content import Content
         from app.models.source import Source
 
-        cutoff = datetime.now(datetime.UTC) - timedelta(hours=time_window_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
         # Build OR conditions: entities text array contains entity name
         entity_filters = [
