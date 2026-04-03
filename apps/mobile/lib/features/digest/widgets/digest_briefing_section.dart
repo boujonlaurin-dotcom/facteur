@@ -239,9 +239,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // Right: serein toggle chip
-                  const SereinToggleChip(),
+                  if (!widget.usesEditorial) ...[
+                    const SizedBox(width: 8),
+                    // Right: serein toggle chip (hidden in editorial mode)
+                    const SereinToggleChip(),
+                  ],
                 ],
               ),
               ),

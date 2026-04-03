@@ -233,6 +233,18 @@ class DigestGenerationJob:
                     )
                 )
 
+                if existing and existing.format_version != "editorial_v1":
+                    logger.info(
+                        "digest_generation_stale_format_deleted",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                        is_serene=is_serene,
+                        cached=existing.format_version,
+                    )
+                    await session.delete(existing)
+                    await session.flush()
+                    existing = None
+
                 if existing:
                     logger.debug(
                         "digest_generation_skipped_exists",

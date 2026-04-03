@@ -290,25 +290,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           // Bias Bar (hidden when empty)
           if (widget.perspectives.isNotEmpty) _buildBiasBar(context, colors),
 
-          // Analysis zone (between bias bar and list)
-          if (widget.perspectives.isNotEmpty)
-            _buildAnalysisZone(context, colors, textTheme),
-
-          Container(
-            height: 4,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  colors.backgroundPrimary,
-                  colors.backgroundPrimary.withValues(alpha: 0.0),
-                ],
-              ),
-            ),
-          ),
-
-          // Perspectives List
+          // Perspectives List (analysis zone scrolls with content)
           Flexible(
             child: filtered.isEmpty
                 ? _buildEmptyState(context, colors, textTheme)
@@ -318,12 +300,16 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                     : ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: filtered.length,
+                        itemCount: filtered.length + 1,
                         separatorBuilder: (_, __) =>
                             const SizedBox(height: 8),
                         itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return _buildAnalysisZone(
+                                context, colors, textTheme);
+                          }
                           return _PerspectiveCard(
-                              perspective: filtered[index]);
+                              perspective: filtered[index - 1]);
                         },
                       ),
           ),
@@ -515,10 +501,14 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       groups.putIfAbsent(p.biasGroup, () => []).add(p);
     }
 
+    final colors = context.facteurColors;
+    final textThemeLocal = Theme.of(context).textTheme;
+
     return ListView(
       shrinkWrap: true,
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
+        _buildAnalysisZone(context, colors, textThemeLocal),
         for (final entry in _stanceGroups)
           if (groups.containsKey(entry.$1)) ...[
             // Section header (tappable toggle collapse/expand)

@@ -139,6 +139,27 @@ class DigestService:
             user_id, target_date, is_serene=is_serene
         )
         existing_time = time.time() - step_start
+
+        # 1a. Check format_version mismatch — stale cache from pre-editorial era
+        expected_format = await self._get_user_digest_format(user_id)
+        expected_version = {
+            "editorial": "editorial_v1",
+            "topics": "topics_v1",
+            "flat": "flat_v1",
+        }.get(expected_format, "editorial_v1")
+
+        if existing_digest and existing_digest.format_version != expected_version:
+            logger.info(
+                "digest_format_mismatch_regenerating",
+                user_id=str(user_id),
+                digest_id=str(existing_digest.id),
+                cached=existing_digest.format_version,
+                expected=expected_version,
+            )
+            await self.session.delete(existing_digest)
+            await self.session.flush()
+            existing_digest = None
+
         if existing_digest:
             if force_regenerate:
                 # Delete existing digest and regenerate
@@ -177,6 +198,14 @@ class DigestService:
             yesterday_digest = await self._get_existing_digest(
                 user_id, yesterday, is_serene=is_serene
             )
+            if yesterday_digest and yesterday_digest.format_version != expected_version:
+                logger.info(
+                    "digest_yesterday_stale_skipping",
+                    user_id=str(user_id),
+                    cached=yesterday_digest.format_version,
+                    expected=expected_version,
+                )
+                yesterday_digest = None
             if yesterday_digest:
                 logger.info(
                     "digest_serving_yesterday_while_generating",
@@ -194,8 +223,8 @@ class DigestService:
         # 2. Determine effective mode from is_serene toggle
         effective_mode = "serein" if is_serene else "pour_vous"
 
-        # 2b. Determine effective output format (user pref, default "topics")
-        effective_format = await self._get_user_digest_format(user_id)
+        # 2b. Reuse format already resolved above (step 1a)
+        effective_format = expected_format
 
         # 3. Generate new digest using DigestSelector
         step_start = time.time()
