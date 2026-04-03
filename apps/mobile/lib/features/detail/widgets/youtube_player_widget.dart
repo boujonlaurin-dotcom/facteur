@@ -1,21 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:flutter/services.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart' as mobile;
+import 'package:youtube_player_iframe/youtube_player_iframe.dart' as web;
 
 import '../../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
-/// Unified on youtube_player_iframe for all platforms.
-/// Supports long-press for 2x speed boost on all platforms.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
   final String? description;
-  final Widget? footer;
-  final double aspectRatio;
   final ValueChanged<double>? onProgressChanged; // 0.0 to 1.0
-  final ValueChanged<bool>? onPlayStateChanged; // true = playing
 
   const YouTubePlayerWidget({
     super.key,
@@ -23,52 +21,103 @@ class YouTubePlayerWidget extends StatefulWidget {
     required this.title,
     this.description,
     this.footer,
-    this.aspectRatio = 16 / 9,
     this.onProgressChanged,
-    this.onPlayStateChanged,
   });
+
+  final Widget? footer;
 
   @override
   State<YouTubePlayerWidget> createState() => _YouTubePlayerWidgetState();
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
-  late YoutubePlayerController _controller;
-  String? _videoId;
-  double _lastReportedProgress = -1.0;
-  Timer? _progressTimer;
-  StreamSubscription<YoutubePlayerValue>? _playStateSubscription;
+  // Mobile Controller
+  late mobile.YoutubePlayerController _mobileController;
 
-  // Long-press 2x speed state
-  bool _isSpeedBoosted = false;
+  // Web Controller
+  late web.YoutubePlayerController _webController;
+
+  String? _videoId;
+  bool _isPlayerReady = false;
+  double _lastReportedProgress = -1.0;
+  Timer? _webProgressTimer;
 
   @override
   void initState() {
     super.initState();
-    _videoId = YoutubePlayerController.convertUrlToId(widget.videoUrl);
+    // Common ID extraction
+    // Using mobile package to extract ID works on both platforms typically as it's just regex
+    _videoId = mobile.YoutubePlayer.convertUrlToId(widget.videoUrl);
 
     if (_videoId != null) {
-      _controller = YoutubePlayerController.fromVideoId(
-        videoId: _videoId!,
-        autoPlay: false,
-        params: const YoutubePlayerParams(
-          showControls: true,
-          showFullscreenButton: true,
-        ),
-      );
-      _startProgressTracking();
-      _startPlayStateTracking();
+      if (kIsWeb) {
+        // Initialize Web Controller
+        _webController = web.YoutubePlayerController.fromVideoId(
+          videoId: _videoId!,
+          autoPlay: false,
+          params: const web.YoutubePlayerParams(
+            showControls: true,
+            showFullscreenButton: true,
+          ),
+        );
+        _isPlayerReady = true; // Iframe handles loading state better internally
+        // Web progress tracking via periodic timer
+        _startWebProgressTracking();
+      } else {
+        // Initialize Mobile Controller
+        _mobileController = mobile.YoutubePlayerController(
+          initialVideoId: _videoId!,
+          flags: const mobile.YoutubePlayerFlags(
+            autoPlay: false,
+            mute: false,
+            enableCaption: true,
+            hideControls: false,
+            hideThumbnail: false,
+            controlsVisibleAtStart: true,
+          ),
+        );
+
+        // Listener for Fullscreen rotation + progress tracking
+        _mobileController.addListener(_onMobileControllerUpdate);
+      }
     }
   }
 
-  void _startProgressTracking() {
-    _progressTimer = Timer.periodic(
+  void _onMobileControllerUpdate() {
+    // Fullscreen rotation
+    if (_mobileController.value.isFullScreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+    }
+
+    // Progress tracking
+    if (widget.onProgressChanged == null) return;
+    final position = _mobileController.value.position;
+    final duration = _mobileController.metadata.duration;
+    if (duration.inMilliseconds > 0) {
+      final progress =
+          (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+      if ((progress - _lastReportedProgress).abs() >= 0.02) {
+        _lastReportedProgress = progress;
+        widget.onProgressChanged!(progress);
+      }
+    }
+  }
+
+  void _startWebProgressTracking() {
+    _webProgressTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) async {
         if (widget.onProgressChanged == null) return;
         try {
-          final currentTime = await _controller.currentTime;
-          final duration = await _controller.duration;
+          final currentTime = await _webController.currentTime;
+          final duration = await _webController.duration;
           if (duration > 0) {
             final progress = (currentTime / duration).clamp(0.0, 1.0);
             if ((progress - _lastReportedProgress).abs() >= 0.02) {
@@ -83,30 +132,17 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     );
   }
 
-  void _startPlayStateTracking() {
-    _playStateSubscription = _controller.listen((value) {
-      widget.onPlayStateChanged
-          ?.call(value.playerState == PlayerState.playing);
-    });
-  }
-
-  // --- Long-press 2x speed (all platforms) ---
-  void _startSpeedBoost() {
-    setState(() => _isSpeedBoosted = true);
-    _controller.setPlaybackRate(2.0);
-  }
-
-  void _stopSpeedBoost() {
-    setState(() => _isSpeedBoosted = false);
-    _controller.setPlaybackRate(1.0);
-  }
-
   @override
   void dispose() {
-    _progressTimer?.cancel();
-    _playStateSubscription?.cancel();
+    _webProgressTimer?.cancel();
     if (_videoId != null) {
-      _controller.close();
+      if (kIsWeb) {
+        _webController.close();
+      } else {
+        _mobileController.removeListener(_onMobileControllerUpdate);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+        _mobileController.dispose();
+      }
     }
     super.dispose();
   }
@@ -141,69 +177,58 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       );
     }
 
-    final playerWidget = YoutubePlayer(
-      controller: _controller,
-      aspectRatio: widget.aspectRatio,
-    );
+    Widget playerWidget;
 
-    // Wrap player in GestureDetector for long-press 2x speed + Stack for overlay
-    final playerWithSpeedBoost = GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onLongPressStart: (_) => _startSpeedBoost(),
-      onLongPressEnd: (_) => _stopSpeedBoost(),
-      child: Stack(
-        children: [
-          playerWidget,
-          // 2x speed indicator overlay
-          if (_isSpeedBoosted)
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.fast_forward,
-                      size: 14,
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '2x',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+    if (kIsWeb) {
+      playerWidget = web.YoutubePlayer(
+        controller: _webController,
+        aspectRatio: 16 / 9,
+      );
+    } else {
+      playerWidget = mobile.YoutubePlayerBuilder(
+        player: mobile.YoutubePlayer(
+          controller: _mobileController,
+          showVideoProgressIndicator: true,
+          progressIndicatorColor: colors.primary,
+          progressColors: mobile.ProgressBarColors(
+            playedColor: colors.primary,
+            handleColor: colors.primary,
+            bufferedColor: colors.surfaceElevated,
+            backgroundColor: colors.surface,
+          ),
+          onReady: () {
+            setState(() => _isPlayerReady = true);
+          },
+        ),
+        builder: (context, player) {
+          return Column(
+            children: [
+              // Player
+              player,
 
-    // If no description or footer, return player directly so it respects
-    // parent height constraints (important for 9:16 Shorts in bounded containers).
-    if (widget.aspectRatio < 1.0 && widget.description == null && widget.footer == null) {
-      return playerWithSpeedBoost;
+              // Loading indicator
+              if (!_isPlayerReady)
+                Container(
+                  height: 200,
+                  color: colors.surface,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: colors.primary,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      );
     }
 
-    // With description/footer, use scroll view for overflow content
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // YouTube Player with speed boost
-          playerWithSpeedBoost,
+          // YouTube Player
+          playerWidget,
 
           // Description
           if (widget.description != null && widget.description!.isNotEmpty)

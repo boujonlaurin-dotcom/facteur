@@ -79,6 +79,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (prev != next) refresh();
     });
 
+    // Watch serein toggle to refetch feed when it changes
+    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
+      if (prev != next) refresh();
+    });
+
     // Fetch initial page
     final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);

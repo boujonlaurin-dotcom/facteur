@@ -122,7 +122,6 @@ class DigestGenerationJob:
             # TODO(10.23): Pass editorial_global_ctx to DigestSelector to avoid
             # per-user recomputation. For now, editorial pipeline handles caching
             # internally via on-demand computation in digest_selector.py.
-            editorial_config = None
             try:
                 from app.services.editorial.config import load_editorial_config
 
@@ -138,11 +137,7 @@ class DigestGenerationJob:
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i : i + self.batch_size]
                 await self._process_batch(
-                    session,
-                    batch,
-                    target_date,
-                    global_trending_context,
-                    editorial_config,
+                    session, batch, target_date, global_trending_context
                 )
 
                 # Commit après chaque batch
@@ -197,7 +192,6 @@ class DigestGenerationJob:
         user_ids: list[UUID],
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_config=None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
 
@@ -209,11 +203,7 @@ class DigestGenerationJob:
         async def process_with_limit(user_id: UUID) -> None:
             async with semaphore:
                 await self._generate_digest_for_user(
-                    session,
-                    user_id,
-                    target_date,
-                    global_trending_context,
-                    editorial_config,
+                    session, user_id, target_date, global_trending_context
                 )
 
         # Créer les tâches
@@ -228,7 +218,6 @@ class DigestGenerationJob:
         user_id: UUID,
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_config=None,
     ) -> None:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
@@ -237,7 +226,6 @@ class DigestGenerationJob:
             user_id: ID de l'utilisateur
             target_date: Date du digest
             global_trending_context: Contexte trending pré-calculé
-            editorial_config: Pre-loaded editorial config (avoids per-user YAML parse)
         """
         self.stats["processed"] += 1
 
@@ -274,14 +262,6 @@ class DigestGenerationJob:
 
                 digest_mode = "serein" if is_serene else "pour_vous"
 
-                # Determine output_format based on editorial whitelist
-                output_format = (
-                    "editorial"
-                    if editorial_config
-                    and editorial_config.is_enabled_for_user(str(user_id))
-                    else "topics"
-                )
-
                 # Sélectionner les articles via DigestSelector
                 selector = DigestSelector(session)
                 digest_items = await selector.select_for_user(
@@ -292,7 +272,6 @@ class DigestGenerationJob:
                     global_trending_context=global_trending_context
                     if not is_serene
                     else None,
-                    output_format=output_format,
                 )
 
                 # Handle editorial pipeline result (Pydantic object, not a list)
@@ -314,31 +293,6 @@ class DigestGenerationJob:
                             user_id=str(user_id),
                             target_date=str(target_date),
                             is_serene=is_serene,
-                        )
-                    else:
-                        self.stats["failed"] += 1
-                    continue
-
-                # Handle TopicGroup list (output_format="topics")
-                if digest_items and hasattr(digest_items[0], "articles"):
-                    from app.services.digest_service import DigestService
-
-                    svc = DigestService(session)
-                    digest = await svc._create_digest_record_topics(
-                        user_id,
-                        target_date,
-                        digest_items,
-                        mode=digest_mode,
-                        is_serene=is_serene,
-                    )
-                    if digest:
-                        self.stats["success"] += 1
-                        logger.debug(
-                            "digest_generation_topics_success",
-                            user_id=str(user_id),
-                            target_date=str(target_date),
-                            is_serene=is_serene,
-                            topic_count=len(digest_items),
                         )
                     else:
                         self.stats["failed"] += 1

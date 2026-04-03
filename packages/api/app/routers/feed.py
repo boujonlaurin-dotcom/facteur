@@ -63,6 +63,10 @@ async def get_personalized_feed(
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
 
+    # serein=True overrides mode to use the serein filter (same as INSPIRATION)
+    if serein and not mode:
+        mode = FeedFilterMode.INSPIRATION
+
     # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(
         user_id=user_uuid,
