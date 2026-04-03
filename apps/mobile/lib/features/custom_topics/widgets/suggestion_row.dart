@@ -3,15 +3,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
-/// A row displaying a topic suggestion with a [+ Suivre] button.
+/// A row displaying a topic suggestion with a [+ Suivre] button
+/// and an optional mute (eye-slash) action.
 class SuggestionRow extends StatelessWidget {
   final String name;
   final VoidCallback onFollow;
+  final VoidCallback? onMute;
 
   const SuggestionRow({
     super.key,
     required this.name,
     required this.onFollow,
+    this.onMute,
   });
 
   @override
@@ -42,6 +45,19 @@ class SuggestionRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (onMute != null)
+            GestureDetector(
+              onTap: onMute,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Icon(
+                  PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                  size: 16,
+                  color: colors.textTertiary,
+                ),
+              ),
+            ),
           TextButton.icon(
             onPressed: onFollow,
             icon: Icon(

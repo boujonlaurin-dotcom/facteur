@@ -110,7 +110,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
     try {
       final notifier = ref.read(customTopicsProvider.notifier);
       if (s.entityType != null) {
-        await notifier.followEntity(s.canonicalName, s.entityType!);
+        await notifier.followEntity(s.canonicalName, s.entityType!, slugParent: s.slugParent);
       } else {
         await notifier.followTopic(s.canonicalName, slugParent: s.slugParent);
       }

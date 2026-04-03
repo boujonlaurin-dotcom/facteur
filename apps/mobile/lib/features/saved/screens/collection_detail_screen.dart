@@ -8,7 +8,6 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
-import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
@@ -52,20 +51,20 @@ class _CollectionDetailScreenState
 
   @override
   Widget build(BuildContext context) {
-    final itemsAsync =
-        ref.watch(collectionDetailProvider(widget.collectionId));
+    final itemsAsync = ref.watch(collectionDetailProvider(widget.collectionId));
     final collectionsAsync = ref.watch(collectionsProvider);
     final colors = context.facteurColors;
 
     // Find collection name
     final collectionName = collectionsAsync.whenOrNull(
-      data: (cols) =>
-          cols
-              .where((c) => c.id == widget.collectionId)
-              .firstOrNull
-              ?.name ??
-          'Collection',
-    ) ?? 'Collection';
+          data: (cols) =>
+              cols
+                  .where((c) => c.id == widget.collectionId)
+                  .firstOrNull
+                  ?.name ??
+              'Collection',
+        ) ??
+        'Collection';
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
@@ -83,8 +82,8 @@ class _CollectionDetailScreenState
             color: colors.backgroundSecondary,
             onSelected: (value) async {
               if (value == 'rename') {
-                final newName = await showRenameCollectionDialog(
-                    context, collectionName);
+                final newName =
+                    await showRenameCollectionDialog(context, collectionName);
                 if (newName != null && newName.isNotEmpty) {
                   await ref
                       .read(collectionsProvider.notifier)
@@ -107,11 +106,8 @@ class _CollectionDetailScreenState
                 value: 'rename',
                 child: Row(
                   children: [
-                    Icon(
-                        PhosphorIcons.pencilSimple(
-                            PhosphorIconsStyle.regular),
-                        size: 20,
-                        color: colors.textPrimary),
+                    Icon(PhosphorIcons.pencilSimple(PhosphorIconsStyle.regular),
+                        size: 20, color: colors.textPrimary),
                     const SizedBox(width: 12),
                     Text('Renommer',
                         style: TextStyle(color: colors.textPrimary)),
@@ -125,8 +121,7 @@ class _CollectionDetailScreenState
                     Icon(PhosphorIcons.trash(PhosphorIconsStyle.regular),
                         size: 20, color: colors.error),
                     const SizedBox(width: 12),
-                    Text('Supprimer',
-                        style: TextStyle(color: colors.error)),
+                    Text('Supprimer', style: TextStyle(color: colors.error)),
                   ],
                 ),
               ),
@@ -149,22 +144,20 @@ class _CollectionDetailScreenState
                   const SizedBox(height: 16),
                   Text(
                     'Aucun article dans cette collection',
-                    style: TextStyle(
-                        color: colors.textSecondary, fontSize: 16),
+                    style: TextStyle(color: colors.textSecondary, fontSize: 16),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Sauvegardez des articles et ajoutez-les ici',
-                    style: TextStyle(
-                        color: colors.textTertiary, fontSize: 14),
+                    style: TextStyle(color: colors.textTertiary, fontSize: 14),
                   ),
                 ],
               ),
             );
           }
 
-          final notifier = ref.read(
-              collectionDetailProvider(widget.collectionId).notifier);
+          final notifier =
+              ref.read(collectionDetailProvider(widget.collectionId).notifier);
 
           return RefreshIndicator(
             onRefresh: notifier.refresh,
@@ -194,8 +187,7 @@ class _CollectionDetailScreenState
                             return const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(16.0),
-                                child:
-                                    CircularProgressIndicator.adaptive(),
+                                child: CircularProgressIndicator.adaptive(),
                               ),
                             );
                           }
@@ -234,19 +226,21 @@ class _CollectionDetailScreenState
                                 extra: content,
                               ),
                               onSourceTap: () {
-                                ref.read(feedProvider.notifier).setSource(content.source.id);
+                                ref
+                                    .read(feedProvider.notifier)
+                                    .setSource(content.source.id);
                                 context.goNamed(RouteNames.feed);
                               },
                               onSourceLongPress: () =>
-                                  TopicChip.showArticleSheet(context, content,
-                                      initialSection: ArticleSheetSection.source),
+                                  TopicChip.showArticleSheet(
+                                      context, content,
+                                      initialSection:
+                                          ArticleSheetSection.source),
                               onLongPressStart: (_) =>
-                                  ArticlePreviewOverlay.show(
-                                      context, content),
+                                  ArticlePreviewOverlay.show(context, content),
                               onLongPressMoveUpdate: (details) =>
                                   ArticlePreviewOverlay.updateScroll(
-                                      details
-                                          .localOffsetFromOrigin.dy),
+                                      details.localOffsetFromOrigin.dy),
                               onLongPressEnd: (_) =>
                                   ArticlePreviewOverlay.dismiss(),
                               onSave: () {
@@ -336,7 +330,8 @@ class _SortHeader extends StatelessWidget {
       child: Text(label,
           style: TextStyle(
             color: colors.textPrimary,
-            fontWeight: value == currentSort ? FontWeight.w600 : FontWeight.w400,
+            fontWeight:
+                value == currentSort ? FontWeight.w600 : FontWeight.w400,
           )),
     );
   }

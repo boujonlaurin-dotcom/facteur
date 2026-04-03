@@ -21,13 +21,6 @@ class UserTopicProfile(Base):
     __tablename__ = "user_topic_profiles"
     __table_args__ = (
         Index(
-            "ix_utp_unique_topic",
-            "user_id",
-            "slug_parent",
-            unique=True,
-            postgresql_where=text("canonical_name IS NULL"),
-        ),
-        Index(
             "ix_utp_unique_entity",
             "user_id",
             "canonical_name",
