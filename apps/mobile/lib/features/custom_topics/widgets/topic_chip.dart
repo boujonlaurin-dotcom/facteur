@@ -23,6 +23,9 @@ import '../../sources/providers/sources_providers.dart';
 /// Terracotta accent color for custom topics.
 const Color _terracotta = Color(0xFFE07A5F);
 
+/// Which section of the article sheet to expand initially.
+enum ArticleSheetSection { topic, entities, source }
+
 /// Discreet topic tag in the feed card footer.
 ///
 /// Renders as subtle inline text embedded in the footer row.
@@ -31,11 +34,13 @@ const Color _terracotta = Color(0xFFE07A5F);
 class TopicChip extends StatelessWidget {
   final Content content;
   final bool isFollowed;
+  final VoidCallback? onTap;
 
   const TopicChip({
     super.key,
     required this.content,
     this.isFollowed = false,
+    this.onTap,
   });
 
   @override
@@ -51,7 +56,7 @@ class TopicChip extends StatelessWidget {
         : PhosphorIcons.plus(PhosphorIconsStyle.bold);
 
     return GestureDetector(
-      onTap: () => showArticleSheet(context, content),
+      onTap: onTap ?? () => showArticleSheet(context, content),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -86,7 +91,11 @@ class TopicChip extends StatelessWidget {
   }
 
   /// Opens the unified article sheet with blur backdrop.
-  static void showArticleSheet(BuildContext context, Content content) {
+  static void showArticleSheet(
+    BuildContext context,
+    Content content, {
+    ArticleSheetSection initialSection = ArticleSheetSection.topic,
+  }) {
     final topicSlug = content.topics.first;
     final topicLabel = getTopicLabel(topicSlug);
     showModalBottomSheet<void>(
@@ -100,6 +109,7 @@ class TopicChip extends StatelessWidget {
           content: content,
           topicSlug: topicSlug,
           topicLabel: topicLabel,
+          initialSection: initialSection,
         ),
       ),
     );
@@ -115,12 +125,14 @@ class ArticleSheet extends ConsumerStatefulWidget {
   final Content content;
   final String topicSlug;
   final String topicLabel;
+  final ArticleSheetSection initialSection;
 
   const ArticleSheet({
     super.key,
     required this.content,
     required this.topicSlug,
     required this.topicLabel,
+    this.initialSection = ArticleSheetSection.topic,
   });
 
   @override
@@ -136,7 +148,11 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
   void initState() {
     super.initState();
     final reason = widget.content.recommendationReason;
-    _breakdownExpanded = reason != null && reason.breakdown.isNotEmpty;
+    _breakdownExpanded = widget.initialSection == ArticleSheetSection.entities &&
+        reason != null &&
+        reason.breakdown.isNotEmpty;
+    _personalizeExpanded = widget.initialSection == ArticleSheetSection.source ||
+        widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override

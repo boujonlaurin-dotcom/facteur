@@ -6,12 +6,14 @@ import 'interest_filter_sheet.dart';
 class InterestFilterChip extends StatelessWidget {
   final String? selectedTopicSlug;
   final String? selectedTopicName;
-  final void Function(String? slug, String? name) onInterestChanged;
+  final bool selectedIsTheme;
+  final void Function(String? slug, String? name, {bool isTheme, bool isEntity}) onInterestChanged;
 
   const InterestFilterChip({
     super.key,
     this.selectedTopicSlug,
     this.selectedTopicName,
+    this.selectedIsTheme = false,
     required this.onInterestChanged,
   });
 
