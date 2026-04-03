@@ -30,6 +30,7 @@ import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
 import '../widgets/digest_welcome_modal.dart';
+import '../widgets/widget_pin_nudge.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../core/ui/notification_service.dart';
@@ -152,6 +153,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     });
     // Clear the query param from URL
     context.go(RoutePaths.digest);
+
+    // After a short delay, nudge to pin the Android home screen widget
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        WidgetPinNudge.show(context);
+      }
+    });
   }
 
   void _openArticle(DigestItem item) async {

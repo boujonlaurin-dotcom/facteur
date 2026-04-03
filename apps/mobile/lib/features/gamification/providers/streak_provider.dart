@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/services/widget_service.dart';
 import '../models/streak_model.dart';
 import '../repositories/streak_repository.dart';
 
@@ -33,7 +34,10 @@ class StreakNotifier extends AsyncNotifier<StreakModel> {
 
   Future<StreakModel> _fetchStreak() async {
     final repository = ref.read(streakRepositoryProvider);
-    return await repository.getStreak();
+    final streak = await repository.getStreak();
+    // Push streak to home screen widget
+    WidgetService.updateWidget(streak: streak);
+    return streak;
   }
 
   Future<void> refresh() async {
