@@ -1,16 +1,16 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
-/// Uses webview_flutter directly with baseUrl to ensure proper HTTP Referer
-/// headers are sent to YouTube (fixes Error 152-4 on Android WebView).
-/// Supports long-press for 2x speed boost on all platforms.
+///
+/// Uses flutter_inappwebview with a CORS proxy (corsproxy.io) to bypass
+/// YouTube's server-side WebView detection (Error 153 on Android).
+/// JS bridge for progress tracking and long-press 2x speed boost.
+///
+/// Falls back to "open in YouTube" if playback still fails.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
@@ -36,195 +36,99 @@ class YouTubePlayerWidget extends StatefulWidget {
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
-  WebViewController? _controller;
+  InAppWebViewController? _controller;
   String? _videoId;
   double _lastReportedProgress = -1.0;
   bool _isSpeedBoosted = false;
-  bool _isReady = false;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
     _videoId = _extractVideoId(widget.videoUrl);
-    if (_videoId != null) {
-      _initWebView();
-    }
   }
 
   /// Extract YouTube video ID from various URL formats.
   static String? _extractVideoId(String url) {
-    // youtube.com/watch?v=ID
     final watchMatch = RegExp(r'[?&]v=([a-zA-Z0-9_-]{11})').firstMatch(url);
     if (watchMatch != null) return watchMatch.group(1);
 
-    // youtu.be/ID or youtube.com/embed/ID or youtube.com/shorts/ID
     final pathMatch =
         RegExp(r'(?:youtu\.be|youtube\.com/(?:embed|shorts))/([a-zA-Z0-9_-]{11})')
             .firstMatch(url);
     if (pathMatch != null) return pathMatch.group(1);
 
-    // youtube.com/v/ID
     final vMatch =
         RegExp(r'youtube\.com/v/([a-zA-Z0-9_-]{11})').firstMatch(url);
     if (vMatch != null) return vMatch.group(1);
 
-    // Bare ID (11 chars)
     if (RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(url)) return url;
 
     return null;
   }
 
-  void _initWebView() {
-    late final PlatformWebViewControllerCreationParams params;
+  // ---------------------------------------------------------------------------
+  // JS bridge injection — after page loads
+  // ---------------------------------------------------------------------------
 
-    if (!kIsWeb && Platform.isIOS) {
-      params = WebKitWebViewControllerCreationParams(
-        allowsInlineMediaPlayback: true,
-        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
-      );
-    } else {
-      params = const PlatformWebViewControllerCreationParams();
+  Future<void> _injectPlayerBridge() async {
+    await _controller?.evaluateJavascript(source: '''
+(function() {
+  if (window._bridgeInitialized) return;
+  window._bridgeInitialized = true;
+
+  var checkCount = 0;
+
+  function findAndSetup() {
+    var video = document.querySelector('video');
+    if (!video && checkCount < 50) {
+      checkCount++;
+      setTimeout(findAndSetup, 200);
+      return;
     }
-
-    final controller = WebViewController.fromPlatformCreationParams(params)
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black);
-
-    // JavaScript channels for player ↔ Flutter communication
-    controller.addJavaScriptChannel(
-      'FlutterProgress',
-      onMessageReceived: (message) {
-        if (widget.onProgressChanged == null) return;
-        final progress = double.tryParse(message.message) ?? 0.0;
-        if ((progress - _lastReportedProgress).abs() >= 0.02) {
-          _lastReportedProgress = progress;
-          widget.onProgressChanged!(progress);
-        }
-      },
-    );
-
-    controller.addJavaScriptChannel(
-      'FlutterPlayState',
-      onMessageReceived: (message) {
-        final isPlaying = message.message == '1';
-        widget.onPlayStateChanged?.call(isPlaying);
-      },
-    );
-
-    controller.addJavaScriptChannel(
-      'FlutterReady',
-      onMessageReceived: (_) {
-        if (mounted) {
-          setState(() => _isReady = true);
-        }
-      },
-    );
-
-    // Load the YouTube IFrame API HTML with proper baseUrl
-    // Setting baseUrl to https://www.youtube.com ensures the WebView sends
-    // a valid HTTP Referer header, which YouTube requires since July 2025.
-    final html = _buildPlayerHtml(_videoId!);
-    controller.loadHtmlString(
-      html,
-      baseUrl: 'https://www.youtube.com',
-    );
-
-    _controller = controller;
-  }
-
-  String _buildPlayerHtml(String videoId) {
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    #player { width: 100%; height: 100%; }
-  </style>
-</head>
-<body>
-  <div id="player"></div>
-  <script>
-    var tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    var firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-    var player;
-    var progressInterval;
-
-    function onYouTubeIframeAPIReady() {
-      player = new YT.Player('player', {
-        videoId: '$videoId',
-        playerVars: {
-          'autoplay': 0,
-          'controls': 1,
-          'rel': 0,
-          'modestbranding': 1,
-          'playsinline': 1,
-          'enablejsapi': 1,
-          'origin': 'https://www.youtube.com',
-          'fs': 1
-        },
-        events: {
-          'onReady': onPlayerReady,
-          'onStateChange': onPlayerStateChange
-        }
-      });
-    }
-
-    function onPlayerReady(event) {
-      FlutterReady.postMessage('ready');
-      startProgressTracking();
-    }
-
-    function onPlayerStateChange(event) {
-      // YT.PlayerState.PLAYING = 1
-      var isPlaying = (event.data === 1) ? '1' : '0';
-      FlutterPlayState.postMessage(isPlaying);
-    }
-
-    function startProgressTracking() {
-      progressInterval = setInterval(function() {
-        if (player && player.getCurrentTime && player.getDuration) {
-          var current = player.getCurrentTime();
-          var duration = player.getDuration();
-          if (duration > 0) {
-            var progress = (current / duration);
-            FlutterProgress.postMessage(progress.toString());
-          }
+    if (video) {
+      setInterval(function() {
+        if (video.duration > 0) {
+          window.flutter_inappwebview.callHandler('FlutterProgress', video.currentTime / video.duration);
         }
       }, 1000);
-    }
 
-    function setPlaybackRate(rate) {
-      if (player && player.setPlaybackRate) {
-        player.setPlaybackRate(rate);
-      }
+      video.addEventListener('playing', function() {
+        window.flutter_inappwebview.callHandler('FlutterPlayState', 1);
+      });
+      video.addEventListener('pause', function() {
+        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
+      });
+      video.addEventListener('ended', function() {
+        window.flutter_inappwebview.callHandler('FlutterPlayState', 0);
+      });
+
+      window.setPlaybackRate = function(rate) { video.playbackRate = rate; };
     }
-  </script>
-</body>
-</html>
-''';
   }
 
-  // --- Long-press 2x speed (all platforms) ---
+  findAndSetup();
+})();
+''');
+  }
+
   void _startSpeedBoost() {
     setState(() => _isSpeedBoosted = true);
-    _controller?.runJavaScript('setPlaybackRate(2.0)');
+    _controller?.evaluateJavascript(
+      source: 'if(window.setPlaybackRate) window.setPlaybackRate(2.0)',
+    );
   }
 
   void _stopSpeedBoost() {
     setState(() => _isSpeedBoosted = false);
-    _controller?.runJavaScript('setPlaybackRate(1.0)');
+    _controller?.evaluateJavascript(
+      source: 'if(window.setPlaybackRate) window.setPlaybackRate(1.0)',
+    );
   }
 
-  @override
-  void dispose() {
-    // No explicit close needed for WebViewController
-    super.dispose();
+  void _openInYouTube() {
+    final url = 'https://www.youtube.com/watch?v=$_videoId';
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -233,41 +137,93 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     final textTheme = Theme.of(context).textTheme;
 
     if (_videoId == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(FacteurSpacing.space6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 48,
-                color: colors.error,
-              ),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Impossible de charger la vidéo YouTube',
-                style:
-                    textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
+      return _buildErrorState(
+        colors,
+        textTheme,
+        'Impossible de charger la vidéo YouTube',
       );
     }
 
-    final playerWidget = _controller != null
-        ? WebViewWidget(controller: _controller!)
-        : const SizedBox.shrink();
+    if (_hasError) {
+      return _buildErrorState(
+        colors,
+        textTheme,
+        'Vidéo indisponible dans l\'app',
+      );
+    }
 
-    // Wrap in AspectRatio for proper sizing
+    final rawEmbedUrl =
+        'https://www.youtube.com/embed/$_videoId'
+        '?playsinline=1&rel=0&modestbranding=1&autoplay=0&controls=1&fs=1';
+    final embedUrl =
+        'https://corsproxy.io/?url=${Uri.encodeComponent(rawEmbedUrl)}';
+
+    final settings = InAppWebViewSettings(
+      javaScriptEnabled: true,
+      mediaPlaybackRequiresUserGesture: false,
+      allowsInlineMediaPlayback: true,
+      transparentBackground: true,
+    );
+
+    final playerWidget = InAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(embedUrl)),
+      initialSettings: settings,
+      onWebViewCreated: (controller) {
+        _controller = controller;
+
+        controller.addJavaScriptHandler(
+          handlerName: 'FlutterProgress',
+          callback: (args) {
+            if (widget.onProgressChanged == null) return;
+            final progress = (args.isNotEmpty ? args[0] as num? : null)
+                    ?.toDouble() ??
+                0.0;
+            if ((progress - _lastReportedProgress).abs() >= 0.02) {
+              _lastReportedProgress = progress;
+              widget.onProgressChanged!(progress);
+            }
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'FlutterPlayState',
+          callback: (args) {
+            final isPlaying =
+                args.isNotEmpty && (args[0] as num?)?.toInt() == 1;
+            widget.onPlayStateChanged?.call(isPlaying);
+          },
+        );
+      },
+      onLoadStop: (controller, url) async {
+        _injectPlayerBridge();
+      },
+      onReceivedError: (controller, request, error) {
+        if (request.isForMainFrame ?? false) {
+          if (mounted) setState(() => _hasError = true);
+        }
+      },
+      shouldOverrideUrlLoading: (controller, navigationAction) async {
+        final uri = navigationAction.request.url;
+        if (uri == null) return NavigationActionPolicy.CANCEL;
+        final host = uri.host;
+        if (host.endsWith('youtube.com') ||
+            host.endsWith('youtube-nocookie.com') ||
+            host.endsWith('ytimg.com') ||
+            host.endsWith('googlevideo.com') ||
+            host.endsWith('google.com') ||
+            host.endsWith('gstatic.com') ||
+            host.endsWith('corsproxy.io')) {
+          return NavigationActionPolicy.ALLOW;
+        }
+        return NavigationActionPolicy.CANCEL;
+      },
+    );
+
     final sizedPlayer = AspectRatio(
       aspectRatio: widget.aspectRatio,
       child: playerWidget,
     );
 
-    // Wrap player in GestureDetector for long-press 2x speed + Stack for overlay
     final playerWithSpeedBoost = GestureDetector(
       behavior: HitTestBehavior.translucent,
       onLongPressStart: (_) => _startSpeedBoost(),
@@ -275,7 +231,6 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       child: Stack(
         children: [
           sizedPlayer,
-          // 2x speed indicator overlay
           if (_isSpeedBoosted)
             Positioned(
               top: 12,
@@ -312,21 +267,17 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
       ),
     );
 
-    // If no description or footer, return player directly so it respects
-    // parent height constraints (important for 9:16 Shorts in bounded containers).
-    if (widget.aspectRatio < 1.0 && widget.description == null && widget.footer == null) {
+    if (widget.aspectRatio < 1.0 &&
+        widget.description == null &&
+        widget.footer == null) {
       return playerWithSpeedBoost;
     }
 
-    // With description/footer, use scroll view for overflow content
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // YouTube Player with speed boost
           playerWithSpeedBoost,
-
-          // Description
           if (widget.description != null && widget.description!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(FacteurSpacing.space4),
@@ -344,6 +295,43 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
             const SizedBox(height: 64),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(
+    FacteurColors colors,
+    TextTheme textTheme,
+    String message,
+  ) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(FacteurSpacing.space6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.play_circle_outline,
+              size: 48,
+              color: colors.textSecondary,
+            ),
+            const SizedBox(height: FacteurSpacing.space4),
+            Text(
+              message,
+              style:
+                  textTheme.bodyLarge?.copyWith(color: colors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            if (_videoId != null) ...[
+              const SizedBox(height: FacteurSpacing.space4),
+              TextButton.icon(
+                onPressed: _openInYouTube,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Regarder sur YouTube'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
