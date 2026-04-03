@@ -68,6 +68,12 @@ class EditorialWriterService:
         # Build user message with subject data for the LLM
         subjects_data = []
         for s in subjects:
+            actu = None
+            if s.actu_article:
+                actu = {
+                    "title": s.actu_article.title,
+                    "source_name": s.actu_article.source_name,
+                }
             deep = None
             if s.deep_article:
                 deep = {
@@ -81,6 +87,7 @@ class EditorialWriterService:
                     "rank": s.rank,
                     "label": s.label,
                     "deep_angle": s.deep_angle,
+                    "actu_article": actu,
                     "deep_article": deep,
                 }
             )

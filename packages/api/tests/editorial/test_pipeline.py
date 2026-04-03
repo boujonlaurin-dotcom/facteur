@@ -78,6 +78,7 @@ def mock_dependencies():
         # Curation
         mock_curation = MagicMock()
         mock_curation.select_topics = AsyncMock()
+        mock_curation.select_a_la_une = AsyncMock(return_value=None)
         mock_curation_cls.return_value = mock_curation
 
         # Deep matcher
@@ -135,13 +136,16 @@ class TestComputeGlobalContext:
             mock_detector.build_topic_clusters.return_value = clusters
             mock_detector_cls.return_value = mock_detector
 
-            # Mock curation
-            topics = [
-                SelectedTopic(topic_id="c1", label="Retraites", selection_reason="R", deep_angle="D"),
+            # Mock curation: À la Une picks c1, LLM picks remaining 2
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1", label="Retraites", selection_reason="Traité par 1 sources",
+                deep_angle="D", source_count=1,
+            )
+            remaining_topics = [
                 SelectedTopic(topic_id="c2", label="Inflation", selection_reason="R", deep_angle="D"),
                 SelectedTopic(topic_id="c3", label="Climat", selection_reason="R", deep_angle="D"),
             ]
-            mock_dependencies["curation"].select_topics.return_value = topics
+            mock_dependencies["curation"].select_topics.return_value = remaining_topics
 
             # Mock deep matching
             deep_1 = MagicMock(spec=MatchedDeepArticle)
@@ -158,7 +162,7 @@ class TestComputeGlobalContext:
 
             # match_global is now called in global phase — pass subjects through
             mock_dependencies["actu"].match_global.side_effect = (
-                lambda subjects, clusters, excluded_source_ids=None: subjects
+                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
             )
 
             contents = [_make_content_mock() for _ in range(10)]
@@ -193,9 +197,13 @@ class TestComputeGlobalContext:
         session = AsyncMock()
         svc = EditorialPipelineService(session)
 
+        # Non-trending cluster — no À la Une fallback
+        cluster = _make_cluster_mock()
+        cluster.is_trending = False
+
         with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
             mock_detector = MagicMock()
-            mock_detector.build_topic_clusters.return_value = [_make_cluster_mock()]
+            mock_detector.build_topic_clusters.return_value = [cluster]
             mock_detector_cls.return_value = mock_detector
 
             mock_dependencies["curation"].select_topics.return_value = []

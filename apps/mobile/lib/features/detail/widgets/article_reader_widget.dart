@@ -10,10 +10,12 @@ class ArticleReaderWidget extends StatelessWidget {
   final String? htmlContent;
   final String? description;
   final String title;
-  final VoidCallback? onLinkTap;
+  final void Function(String url)? onLinkTap;
   final Widget? header;
   final Widget? footer;
   final bool shrinkWrap;
+  /// When non-null, replaces the HTML body with this widget (e.g. skeleton).
+  final Widget? bodyPlaceholder;
 
   const ArticleReaderWidget({
     super.key,
@@ -24,6 +26,7 @@ class ArticleReaderWidget extends StatelessWidget {
     this.header,
     this.footer,
     this.shrinkWrap = false,
+    this.bodyPlaceholder,
   });
 
   @override
@@ -44,6 +47,9 @@ class ArticleReaderWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (header != null) header!,
+        if (bodyPlaceholder != null)
+          bodyPlaceholder!
+        else
         Html(
           data: content,
           style: {
@@ -127,9 +133,13 @@ class ArticleReaderWidget extends StatelessWidget {
             },
             onLinkTap: (url, _, __) async {
               if (url != null) {
-                final uri = Uri.tryParse(url);
-                if (uri != null && await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                if (onLinkTap != null) {
+                  onLinkTap!(url);
+                } else {
+                  final uri = Uri.tryParse(url);
+                  if (uri != null && await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
                 }
               }
             },

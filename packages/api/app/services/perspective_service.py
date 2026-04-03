@@ -246,26 +246,44 @@ class PerspectiveService:
             line = f'- "{p["title"]}" ({p["source_name"]}, {stance})'
             desc = p.get("description")
             if desc:
-                line += f" — {desc[:150]}"
+                line += f" — {desc[:300]}"
             perspectives_lines.append(line)
         perspectives_text = "\n".join(perspectives_lines)
 
         system = (
-            "Tu es un analyste média français. "
-            "En 1-2 phrases courtes, dis ce que les perspectives alternatives apportent "
-            "que l'article original ne couvre pas. "
-            "Sois concret : nomme les faits, angles ou dimensions spécifiques qui diffèrent. "
-            "Ne décris pas chaque source individuellement. Ne fais pas de jugement de valeur. "
-            "Écris en français."
+            "Tu es un analyste média français qui aide les lecteurs à comprendre "
+            "comment un même sujet d'actualité est traité différemment selon les médias.\n\n"
+            "FORMAT :\n"
+            "1. Une introduction de 2-3 phrases qui pose le contexte du sujet "
+            "(pourquoi il est important, quels enjeux il soulève) puis annonce "
+            "ce que révèle la comparaison des couvertures.\n"
+            '2. Puis 2 à 3 constats "→", chacun rédigé en phrases complètes '
+            "et accessibles. Chaque constat explique :\n"
+            "  — soit un aspect du sujet couvert par certains médias mais absent "
+            "chez d'autres (et lesquels, nommément)\n"
+            "  — soit un même fait présenté très différemment selon les sources "
+            "(en précisant qui dit quoi)\n\n"
+            "RÈGLES :\n"
+            "— Base-toi UNIQUEMENT sur les titres et résumés fournis. N'invente "
+            "aucun fait, chiffre ou source externe.\n"
+            "— Quand tu affirmes qu'un média ignore un aspect, précise que c'est "
+            "\"d'après son titre et résumé\" (tu n'as pas l'article complet).\n"
+            "— Écris de façon fluide et naturelle, comme un journaliste qui "
+            "explique à un ami curieux. Évite le jargon analytique.\n"
+            "— Ne juge pas la qualité des sources.\n"
+            "— Ne commence PAS par un titre ou une ligne en gras. "
+            "Commence directement par l'introduction.\n"
+            "— Écris en français."
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
         user_message = (
-            f'Article lu : "{article_title}" ({source_name}, {source_stance})'
+            "Sujet d'actualité couvert par plusieurs médias.\n\n"
+            f'Article de référence : "{article_title}" ({source_name}, {source_stance})'
         )
         if article_description:
-            user_message += f"\nRésumé : {article_description[:200]}"
-        user_message += f"\n\nAutres traitements :\n{perspectives_text}"
+            user_message += f"\nRésumé : {article_description[:500]}"
+        user_message += f"\n\nCouverture par d'autres médias :\n{perspectives_text}"
 
         try:
             result = await client.chat_text(
@@ -273,7 +291,7 @@ class PerspectiveService:
                 user_message=user_message,
                 model="mistral-large-latest",
                 temperature=0.4,
-                max_tokens=200,
+                max_tokens=650,
             )
             return result
         except Exception as e:

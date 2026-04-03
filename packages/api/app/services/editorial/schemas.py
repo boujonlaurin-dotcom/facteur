@@ -24,6 +24,7 @@ class SelectedTopic(BaseModel):
     label: str  # 5-8 words
     selection_reason: str
     deep_angle: str  # systemic angle to search for in deep sources
+    source_count: int = 0  # number of unique sources covering this topic
 
 
 class MatchedActuArticle(BaseModel):
@@ -57,6 +58,8 @@ class EditorialSubject(BaseModel):
     label: str
     selection_reason: str
     deep_angle: str
+    source_count: int = 0  # number of unique sources covering this topic
+    is_a_la_une: bool = False  # headline subject (rank 1, most covered)
     # Editorial text fields — populated by WriterService (ÉTAPE 4)
     intro_text: str | None = None
     transition_text: str | None = None

@@ -12,11 +12,15 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../../../config/theme.dart';
+import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../feed/models/content_model.dart';
+import '../../../core/providers/navigation_providers.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -26,6 +30,9 @@ import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
+import '../../digest/widgets/editorial_badge.dart';
+import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
@@ -54,8 +61,11 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
       _ContentDetailScreenState();
 }
 
+/// Height of the header content area (below the status bar).
+const double _kHeaderContentHeight = 50;
+
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _fabController;
   late Animation<double> _fabAnimation;
   late AnimationController _bookmarkBounceController;
@@ -64,8 +74,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   late Animation<double> _likeScaleAnimation;
   late AnimationController _fabReappearController;
   late Animation<double> _fabReappearScale;
+  late AnimationController _shareFabController;
+  late Animation<double> _shareFabScale;
+  late AnimationController _exitAnimController;
+  bool _isExitAnimating = false;
 
   bool _showFab = false;
+  bool _showShareFab = false;
+  bool _isShortArticle = false;
   bool _showNoteWelcome = false;
   bool _premiumRedirectScheduled = false;
   bool _webFallbackRedirectScheduled = false;
@@ -86,22 +102,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
-  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.12);
+  Timer? _headerScrollStopTimer;
+  final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
+  final ValueNotifier<double> _headerOpacity = ValueNotifier<double>(1.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
-  bool _endNudgeShown = false;
   static const int _consumptionThreshold = 30; // seconds
   static const int _noteNudgeDelay = 20; // seconds
 
   // Reading progress tracking (0.0 - 1.0)
   // Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
   final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
-  int _webViewProgress = 0; // from WebView JS bridge (0-100)
+  double _webViewProgress = 0; // from WebView JS bridge (0-100)
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
+  bool _isVideoPlaying = false;
+  Timer? _videoPlayHideTimer;
 
   Content? _content;
+  bool _contentResolved = false;
 
   // Perspectives pill state
   PerspectivesResponse? _perspectivesResponse;
@@ -187,6 +207,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
     ]).animate(_fabReappearController);
 
+    // Share FAB entrance animation (triggered at 90% reading progress)
+    _shareFabController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _shareFabScale = CurvedAnimation(
+      parent: _shareFabController,
+      curve: Curves.elasticOut,
+    );
+
+    _exitAnimController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    WidgetsBinding.instance.addObserver(this);
+
     // Show FAB after delay — start transparent, fade+scale in after 2s
     Future.delayed(const Duration(milliseconds: 2000), () {
       if (mounted) {
@@ -227,6 +264,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
 
+    // Share FAB: show only after 90% reading on long articles
+    _readingProgress.addListener(_onShareFabProgress);
+
+    // Detect short articles after first layout
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkShortArticle();
+    });
+
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
   }
@@ -266,7 +311,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
           lastTouchY = currentY;
         }, { passive: true });
-        // Reading progress tracking (throttled to every 500ms)
+        // Reading progress tracking (throttled to every 150ms for smooth updates)
         var progressTimer = null;
         window.addEventListener('scroll', function() {
           if (progressTimer) return;
@@ -274,14 +319,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             progressTimer = null;
             var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
             if (maxScroll > 0) {
-              var pct = Math.round((window.scrollY / maxScroll) * 100);
+              var pct = parseFloat((window.scrollY / maxScroll * 100).toFixed(1));
               pct = Math.min(100, Math.max(0, pct));
               if (pct > lastProgress) {
                 lastProgress = pct;
                 ScrollBridge.postMessage('progress:' + pct);
               }
             }
-          }, 500);
+            ScrollBridge.postMessage('scroll_active');
+          }, 150);
         }, { passive: true });
       })();
     ''');
@@ -290,8 +336,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
+    if (msg == 'scroll_active') {
+      _onScrollFabOpacity();
+      return;
+    }
     if (msg.startsWith('progress:')) {
-      final pct = int.tryParse(msg.substring(9));
+      final pct = double.tryParse(msg.substring(9));
       if (pct != null && pct > _webViewProgress) {
         _webViewProgress = pct;
         // For partial content: WebView scroll maps to 25%-100% of total progress
@@ -333,25 +383,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Show a contextual nudge when user reads >= 90% of the article.
+  /// Previously showed a contextual nudge SnackBar at 90% reading progress.
+  /// Replaced by a permanent Share FAB in the FAB column.
   void _onReadingProgressNudge() {
-    if (_endNudgeShown || _readingProgress.value < 0.9) return;
-    _endNudgeShown = true;
-    final content = _content;
-    if (content == null || !mounted) return;
+    // No-op: end-of-article notification removed in favor of Share FAB.
+  }
 
-    if (!content.hasNote) {
-      NotificationService.showInfo(
-        'Article terminé. Ajouter une note ?',
-        actionLabel: 'Ajouter une note',
-        onAction: _openNoteSheet,
-      );
-    } else if (!content.isSaved) {
-      NotificationService.showInfo(
-        'Article terminé. Ajouter une note ?',
-        actionLabel: 'Enregistrer',
-        onAction: _toggleBookmark,
-      );
+  /// Show Share FAB when user reaches 90% of article (long articles only).
+  void _onShareFabProgress() {
+    if (_showShareFab || _isShortArticle) return;
+    if (_readingProgress.value >= 0.9) {
+      setState(() => _showShareFab = true);
+      _shareFabController.forward();
+    }
+  }
+
+  /// Detect short articles that don't need scrolling.
+  void _checkShortArticle() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.maxScrollExtent < 50) {
+      _isShortArticle = true;
     }
   }
 
@@ -394,19 +445,66 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Fade FABs to near-transparent during scroll, restore on stop.
+  /// Fade FABs + header during scroll, restore on stop with differentiated delays.
   /// Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
-  void _onScrollFabOpacity() {
-    if (_fabOpacity.value != 0.12) {
-      _fabOpacity.value = 0.12;
+  /// Auto-hide header/FABs during video playback for immersion.
+  void _onVideoPlayStateChanged(bool isPlaying) {
+    _isVideoPlaying = isPlaying;
+    _videoPlayHideTimer?.cancel();
+
+    if (isPlaying) {
+      _videoPlayHideTimer = Timer(const Duration(milliseconds: 2500), () {
+        if (mounted && _isVideoPlaying) {
+          // Keep header visible in video readers (fullscreen is handled natively).
+          _fabOpacity.value = 0.07;
+        }
+      });
+    } else {
+      _headerOpacity.value = 1.0;
+      _fabOpacity.value = 1.0;
+      _headerScrollStopTimer?.cancel();
+      _scrollStopTimer?.cancel();
     }
+  }
+
+  void _onScrollFabOpacity() {
+    final isVideo = _content?.isVideo ?? false;
+    _videoPlayHideTimer?.cancel();
+    if (_fabOpacity.value != 0.07) {
+      _fabOpacity.value = 0.07;
+    }
+    // In video readers the header stays visible at all times (only native
+    // fullscreen covers it, which is handled by the system).
+    if (!isVideo && _headerOpacity.value != 0.0) {
+      _headerOpacity.value = 0.0;
+    }
+    // Header reappears after 1s (non-video only)
+    _headerScrollStopTimer?.cancel();
+    if (!isVideo) {
+      _headerScrollStopTimer = Timer(const Duration(milliseconds: 1000), () {
+        if (mounted) {
+          _headerOpacity.value = 1.0;
+        }
+      });
+    }
+    // FABs reappear after 2.5s
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 800), () {
+    _scrollStopTimer = Timer(const Duration(milliseconds: 2500), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
       }
     });
+  }
+
+  /// Returns whichever of [a] or [b] has the longest plain-text content.
+  /// Falls back to the non-null value if one is empty/null.
+  static String? _pickLongest(String? a, String? b) {
+    final aLen = plainTextLength(a);
+    final bLen = plainTextLength(b);
+    if (aLen >= bLen && aLen > 0) return a;
+    if (bLen > 0) return b;
+    return a ?? b;
   }
 
   Future<void> _fetchContent() async {
@@ -418,21 +516,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
       if (mounted) {
         if (content != null) {
-          // Merge: preserve description/htmlContent from initial content
-          // if the API response has less data (e.g. on-demand enrichment failed)
-          // Guard against empty strings (not just null) to prevent losing initial data
+          // Merge: keep the longest text between initial content and API response.
+          // Fixes cases where RSS provides longer htmlContent than the API
+          // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description:
-                (content.description != null && content.description!.isNotEmpty)
-                    ? content.description
-                    : _content?.description,
-            htmlContent:
-                (content.htmlContent != null && content.htmlContent!.isNotEmpty)
-                    ? content.htmlContent
-                    : _content?.htmlContent,
+            description: _pickLongest(content.description, _content?.description),
+            htmlContent: _pickLongest(content.htmlContent, _content?.htmlContent),
+            editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
             _content = merged;
+            _contentResolved = true;
             _isConsumed = _content!.status == ContentStatus.consumed;
           });
           final isVideoFetched = _content!.isVideo;
@@ -440,6 +534,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               !_isConsumed) {
             _startReadingTimer();
           }
+          // Re-check short article after content loads and renders
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _checkShortArticle();
+          });
           // Pre-load WebView if not already initialized
           if (_webViewController == null) {
             _initScrollToSiteWebView();
@@ -452,6 +550,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           }
         } else {
           // Show error and pop if content not found
+          setState(() => _contentResolved = true);
           NotificationService.showError('Contenu introuvable',
               context: context);
           context.pop();
@@ -460,6 +559,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
+        setState(() => _contentResolved = true);
         NotificationService.showError('Erreur de chargement', context: context);
         context.pop();
       }
@@ -647,12 +747,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
+    _headerScrollStopTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _fabReappearController.dispose();
+    _shareFabController.dispose();
+    _exitAnimController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     _fabOpacity.dispose();
+    _headerOpacity.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
@@ -722,13 +829,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isExitAnimating) {
+      _exitAnimController.reset();
+      setState(() {
+        _isExitAnimating = false;
+      });
+    }
+  }
+
+  Future<void> _animateAndLaunch(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    if (!await canLaunchUrl(uri)) return;
+    if (reduceMotion) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    setState(() => _isExitAnimating = true);
+    await _exitAnimController.forward(from: 0.0);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   Future<void> _openOriginalUrl() async {
     final url = _content?.url;
     if (url != null) {
-      final uri = Uri.tryParse(url);
-      if (uri != null && await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      await _animateAndLaunch(url);
     }
   }
 
@@ -751,9 +880,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     setState(() => _perspectivesLoading = true);
 
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
+      final repository = ref.read(feedRepositoryProvider);
 
       final response = await repository.getPerspectives(content.id);
 
@@ -807,9 +934,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
 
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
+      final repository = ref.read(feedRepositoryProvider);
 
       final response = await repository.getPerspectives(content.id);
 
@@ -852,6 +977,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
         sourceName: _content?.source.name ?? '',
+        contentId: widget.contentId,
+        comparisonQuality: response.comparisonQuality,
       ),
     );
   }
@@ -884,9 +1011,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Premium source → redirect to external browser for authenticated access
     final userSources = ref.read(userSourcesProvider).valueOrNull ?? [];
-    final isPremiumSource = userSources
-        .any((s) => s.id == content.source.id && s.hasSubscription);
-    if (isPremiumSource && content.url.isNotEmpty && !_premiumRedirectScheduled) {
+    final isPremiumSource =
+        userSources.any((s) => s.id == content.source.id && s.hasSubscription);
+    if (isPremiumSource &&
+        content.url.isNotEmpty &&
+        !_premiumRedirectScheduled) {
       _premiumRedirectScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final uri = Uri.tryParse(content.url);
@@ -931,8 +1060,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final isVideoContent = content.isVideo;
 
     // Web: no WebView available — auto-redirect to original URL
-    if (kIsWeb && !useScrollToSite && !useInAppReading && !isVideoContent &&
-        content.url.isNotEmpty && !_webFallbackRedirectScheduled) {
+    if (kIsWeb &&
+        !useScrollToSite &&
+        !useInAppReading &&
+        !isVideoContent &&
+        content.url.isNotEmpty &&
+        !_webFallbackRedirectScheduled) {
       _webFallbackRedirectScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final uri = Uri.tryParse(content.url);
@@ -963,7 +1096,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      body: Stack(
+      body: AnimatedBuilder(
+        animation: _exitAnimController,
+        builder: (context, child) {
+          final scale = 1.0 - 0.03 * _exitAnimController.value;
+          return Transform.scale(
+            scale: _isExitAnimating ? scale : 1.0,
+            child: child,
+          );
+        },
+        child: Stack(
         children: [
           NotificationListener<ScrollNotification>(
             onNotification: (notification) {
@@ -983,40 +1125,106 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               }
               return false;
             },
-            child: Builder(builder: (context) {
-              final topInset = MediaQuery.of(context).padding.top;
-              final headerHeight = topInset + 64;
-              return Positioned.fill(
-                child: Padding(
-                  padding: EdgeInsets.only(top: headerHeight),
-                  child: isVideoContent
-                      ? _buildVideoContent(context, content)
-                      : useScrollToSite
-                          ? _buildScrollToSiteContent(context, content)
-                          : useInAppReading
-                              ? _buildInAppContent(context, content)
-                              : _buildWebViewFallback(content),
-                ),
-              );
-            }),
+            child: Positioned.fill(
+              child: isVideoContent
+                  ? _buildVideoContent(context, content)
+                  : useScrollToSite
+                      ? _buildScrollToSiteContent(context, content)
+                      : useInAppReading
+                          ? _buildInAppContent(context, content)
+                          : _buildWebViewFallback(content),
+            ),
           ),
+          // Header — slides up off-screen on scroll, reappears after 1s
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildHeader(context, content),
-                // Reading progress bar — thin line below header
-                if (content.hasInAppContent ||
-                    _isWebViewActive ||
-                    content.isVideo)
-                  _buildReadingProgressBar(colors),
-              ],
+            child: ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, child) => AnimatedSlide(
+                offset: Offset(0, opacity < 0.5 ? -1.0 : 0.0),
+                duration: Duration(milliseconds: opacity < 0.5 ? 200 : 350),
+                curve: opacity < 0.5 ? Curves.easeIn : Curves.easeOut,
+                child: child!,
+              ),
+              child: _buildHeader(context, content),
             ),
           ),
+          // Opaque status-bar backdrop — only when WebView is active and
+          // the header has slid off-screen, so WebView content doesn't
+          // bleed through the transparent status bar zone.
+          if (_isWebViewActive)
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, _) {
+                final statusBarHeight = MediaQuery.of(context).padding.top;
+                final headerVisible = opacity >= 0.5;
+                return Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: headerVisible ? 0.0 : 1.0,
+                      duration: Duration(
+                          milliseconds: headerVisible ? 350 : 200),
+                      curve: headerVisible
+                          ? Curves.easeOut
+                          : Curves.easeIn,
+                      child: SizedBox(
+                        height: statusBarHeight,
+                        child: ColoredBox(color: colors.backgroundPrimary),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          // Reading progress bar — below header when visible, slides to
+          // top of screen (below status bar) when header hides
+          if (content.hasInAppContent ||
+              _isWebViewActive ||
+              isVideoContent ||
+              (!useScrollToSite && !useInAppReading))
+            ValueListenableBuilder<double>(
+              valueListenable: _headerOpacity,
+              builder: (context, opacity, _) {
+                final statusBarHeight = MediaQuery.of(context).padding.top;
+                final topWhenHeaderVisible =
+                    statusBarHeight + _kHeaderContentHeight;
+                final topWhenHeaderHidden = statusBarHeight;
+                final headerVisible = opacity >= 0.5;
+                return AnimatedPositioned(
+                  duration: Duration(
+                      milliseconds: headerVisible ? 350 : 200),
+                  curve: headerVisible ? Curves.easeOut : Curves.easeIn,
+                  top: headerVisible
+                      ? topWhenHeaderVisible
+                      : topWhenHeaderHidden,
+                  left: 0,
+                  right: 0,
+                  child: _buildReadingProgressBar(colors),
+                );
+              },
+            ),
+          // Exit animation overlay — fade-to-white + scale-down
+          if (_isExitAnimating)
+            AnimatedBuilder(
+              animation: _exitAnimController,
+              builder: (context, _) {
+                return Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.white
+                          .withValues(alpha: 0.6 * _exitAnimController.value),
+                    ),
+                  ),
+                );
+              },
+            ),
         ],
+      ),
       ),
       // FABs — vertical column with immersive scroll opacity
       // ValueListenableBuilder isolates FAB opacity rebuilds from the main widget tree.
@@ -1024,129 +1232,160 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ? ValueListenableBuilder<double>(
               valueListenable: _fabOpacity,
               builder: (context, opacity, child) => AnimatedOpacity(
-              opacity: opacity,
-              duration: Duration(milliseconds: opacity < 1.0 ? 150 : 300),
-              child: ScaleTransition(
-                scale: _fabAnimation,
+                opacity: opacity,
+                duration: Duration(milliseconds: opacity < 1.0 ? 150 : 300),
                 child: ScaleTransition(
-                  scale: _fabReappearScale,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Perspectives FAB (articles only) — always just above other FABs
-                    if (content.contentType == ContentType.article) ...[
-                      PerspectivesPill(
-                        biasDistribution:
-                            _perspectivesResponse?.biasDistribution ?? {},
-                        isLoading: _perspectivesLoading,
-                        isEmpty: !_perspectivesLoading &&
-                            _perspectivesResponse != null &&
-                            _perspectivesResponse!.perspectives.isEmpty,
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _showPerspectives(context);
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    // External link FAB — hidden for articles unless WebView is active
-                    if (content.contentType != ContentType.article ||
-                        _showWebView ||
-                        _isWebViewActive) ...[
-                      SizedBox(
-                        width: 55,
-                        height: 55,
-                        child: FloatingActionButton(
-                          onPressed: _openOriginalUrl,
-                          backgroundColor: Colors.white,
-                          foregroundColor: colors.textPrimary,
-                          elevation: 2,
-                          heroTag: 'original_fab',
-                          tooltip: _getFabLabel(),
-                          child: Icon(
-                            PhosphorIcons.arrowSquareOut(
-                                PhosphorIconsStyle.regular),
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    // Like FAB
-                    ScaleTransition(
-                      scale: _likeScaleAnimation,
-                      child: SizedBox(
-                        width: 55,
-                        height: 55,
-                        child: FloatingActionButton(
-                          onPressed: _toggleLike,
-                          backgroundColor: content.isLiked
-                              ? colors.primary
-                              : Colors.white,
-                          foregroundColor:
-                              content.isLiked ? Colors.white : colors.textPrimary,
-                          elevation: content.isLiked ? 4 : 2,
-                          heroTag: 'like_fab',
-                          tooltip: 'J\'aime',
-                          child: Icon(
-                            content.isLiked
-                                ? PhosphorIcons.heart(PhosphorIconsStyle.fill)
-                                : PhosphorIcons.heart(PhosphorIconsStyle.regular),
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (_showNoteWelcome)
-                      NoteWelcomeTooltip(
-                        onDismiss: () =>
-                            setState(() => _showNoteWelcome = false),
-                      ),
-                    // Merged Bookmark + Note FAB (long-press for collection picker)
-                    GestureDetector(
-                      onLongPress: () {
-                        HapticFeedback.mediumImpact();
-                        CollectionPickerSheet.show(
-                          context,
-                          content.id,
-                          onAddNote: () => _openNoteSheet(),
-                        );
-                      },
-                      child: ScaleTransition(
-                        scale: _bookmarkScaleAnimation,
-                        child: SizedBox(
-                          width: 55,
-                          height: 55,
-                          child: FloatingActionButton(
-                            onPressed: _toggleBookmark,
-                            backgroundColor: content.isSaved
-                                ? colors.primary
-                                : Colors.white,
-                            foregroundColor:
-                                content.isSaved ? Colors.white : colors.textPrimary,
-                            elevation: content.isSaved ? 4 : 2,
-                            heroTag: 'bookmark_fab',
-                            tooltip: 'Sauvegarder',
-                            child: Icon(
-                              content.isSaved
-                                  ? PhosphorIcons.bookmarkSimple(
-                                      PhosphorIconsStyle.fill)
-                                  : PhosphorIcons.bookmarkSimple(
+                  scale: _fabAnimation,
+                  child: ScaleTransition(
+                    scale: _fabReappearScale,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // Share FAB — appears after 90% reading on long articles
+                        if (_showShareFab) ...[
+                          ScaleTransition(
+                            scale: _shareFabScale,
+                            child: SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: FloatingActionButton(
+                                onPressed: _shareArticle,
+                                backgroundColor: Colors.white,
+                                foregroundColor: colors.textPrimary,
+                                elevation: 2,
+                                heroTag: 'share_fab',
+                                tooltip: 'Partager',
+                                child: Icon(
+                                  PhosphorIcons.shareNetwork(
                                       PhosphorIconsStyle.regular),
-                              size: 28,
+                                  size: 25,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        // Perspectives FAB (articles only) — always just above other FABs
+                        if (content.contentType == ContentType.article) ...[
+                          PerspectivesPill(
+                            biasDistribution:
+                                _perspectivesResponse?.biasDistribution ?? {},
+                            isLoading: _perspectivesLoading,
+                            isEmpty: !_perspectivesLoading &&
+                                _perspectivesResponse != null &&
+                                _perspectivesResponse!.perspectives.isEmpty,
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              _showPerspectives(context);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        // External link FAB — hidden for articles unless WebView is active
+                        if (content.contentType != ContentType.article ||
+                            _showWebView ||
+                            _isWebViewActive) ...[
+                          SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: FloatingActionButton(
+                              onPressed: _openOriginalUrl,
+                              backgroundColor: Colors.white,
+                              foregroundColor: colors.textPrimary,
+                              elevation: 2,
+                              heroTag: 'original_fab',
+                              tooltip: _getFabLabel(),
+                              child: Icon(
+                                PhosphorIcons.arrowSquareOut(
+                                    PhosphorIconsStyle.regular),
+                                size: 25,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        // Like FAB
+                        ScaleTransition(
+                          scale: _likeScaleAnimation,
+                          child: SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: FloatingActionButton(
+                              onPressed: _toggleLike,
+                              backgroundColor: content.isLiked
+                                  ? colors.primary
+                                  : Colors.white,
+                              foregroundColor: content.isLiked
+                                  ? Colors.white
+                                  : colors.textPrimary,
+                              elevation: content.isLiked ? 4 : 2,
+                              heroTag: 'like_fab',
+                              tooltip: 'J\'aime',
+                              child: Icon(
+                                content.isLiked
+                                    ? PhosphorIcons.heart(
+                                        PhosphorIconsStyle.fill)
+                                    : PhosphorIcons.heart(
+                                        PhosphorIconsStyle.regular),
+                                size: 25,
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 12),
+                        // Merged Bookmark + Note FAB (long-press for collection picker)
+                        GestureDetector(
+                          onLongPress: () {
+                            HapticFeedback.mediumImpact();
+                            CollectionPickerSheet.show(
+                              context,
+                              content.id,
+                              onAddNote: () => _openNoteSheet(),
+                            );
+                          },
+                          child: ScaleTransition(
+                            scale: _bookmarkScaleAnimation,
+                            child: SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: FloatingActionButton(
+                                onPressed: _toggleBookmark,
+                                backgroundColor: content.isSaved
+                                    ? colors.primary
+                                    : Colors.white,
+                                foregroundColor: content.isSaved
+                                    ? Colors.white
+                                    : colors.textPrimary,
+                                elevation: content.isSaved ? 4 : 2,
+                                heroTag: 'bookmark_fab',
+                                tooltip: 'Sauvegarder',
+                                child: Icon(
+                                  content.isSaved
+                                      ? PhosphorIcons.bookmarkSimple(
+                                          PhosphorIconsStyle.fill)
+                                      : PhosphorIcons.bookmarkSimple(
+                                          PhosphorIconsStyle.regular),
+                                  size: 25,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Note welcome tooltip — bottom of FAB column, near the bookmark button
+                        if (_showNoteWelcome) ...[
+                          const SizedBox(height: 12),
+                          NoteWelcomeTooltip(
+                            onDismiss: () =>
+                                setState(() => _showNoteWelcome = false),
+                          ),
+                        ],
+                      ],
                     ),
-                    ],
                   ),
                 ),
               ),
-            ),
-          )
+            )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
@@ -1156,134 +1395,308 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    // Wrap in SafeArea to respect Notch/StatusBar because we are in a Stack now
-    return SafeArea(
-      bottom: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space3,
-        ),
-        decoration: BoxDecoration(
-          color: colors.backgroundPrimary,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
-              child: Row(
-                children: [
-                  // Discreet Back Button (reduced icon, maintained hitbox)
-                  IconButton(
-                    padding: const EdgeInsets.all(8),
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                      size: 16,
-                      color: colors.textSecondary,
-                    ),
-                    onPressed: () => context.pop(_content),
+    // ColoredBox fills the status bar area; SafeArea pushes content below it
+    return ColoredBox(
+      color: colors.backgroundPrimary,
+      child: SafeArea(
+        bottom: false,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space2,
+            vertical: FacteurSpacing.space2,
+          ),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+            child: Row(
+              children: [
+                // Discreet Back Button (reduced icon, maintained hitbox)
+                IconButton(
+                  padding: const EdgeInsets.all(8),
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                    size: 16,
+                    color: colors.textSecondary,
                   ),
-                  const SizedBox(width: 4),
+                  onPressed: () => context.pop(_content),
+                ),
+                const SizedBox(width: 4),
 
-                  // Source logo (reduced from 32 to 28)
-                  if (content.source.logoUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: CachedNetworkImage(
-                        imageUrl: content.source.logoUrl!,
-                        width: 28,
-                        height: 28,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            _buildSourcePlaceholder(colors),
+                // Source logo + name + gear: tappable → filter feed by source
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SourceBadgeNudge(
+                          child: GestureDetector(
+                          onTap: () {
+                            ref.read(feedProvider.notifier).setSource(content.source.id);
+                            ref.read(feedScrollTriggerProvider.notifier).state++;
+                            context.pop(_content);
+                          },
+                          onLongPress: () => TopicChip.showArticleSheet(
+                            context, content,
+                            initialSection: ArticleSheetSection.source,
+                          ),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              // Source logo (reduced from 32 to 28)
+                              if (content.source.logoUrl != null)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: CachedNetworkImage(
+                                    imageUrl: content.source.logoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) =>
+                                        _buildSourcePlaceholder(colors),
+                                  ),
+                                )
+                              else
+                                _buildSourcePlaceholder(colors),
+                              const SizedBox(width: 8),
+
+                              // Source Name + Time + Badges
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Ligne 1 : Nom (mini-chip) + Badges
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Opacity(
+                                            opacity: 0.9,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Text(
+                                                content.source.name,
+                                                style: textTheme.labelMedium?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: colors.textPrimary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        // Bias dot
+                                        if (content.source.biasStance != 'unknown') ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            width: 7,
+                                            height: 7,
+                                            decoration: BoxDecoration(
+                                              color: content.source.getBiasColor(),
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 1),
+                                    // Ligne 2 : Temps relatif (icône + format court)
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
+                                          size: 11,
+                                          color: colors.textTertiary,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          timeago
+                                              .format(content.publishedAt, locale: 'fr_short')
+                                              .replaceAll('il y a ', ''),
+                                          style: textTheme.bodySmall?.copyWith(
+                                            color: colors.textTertiary,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ],
+                            ),
+                        ),
+                        ), // _SourceBadgeNudge
                       ),
-                    )
-                  else
-                    _buildSourcePlaceholder(colors),
-                  const SizedBox(width: 8),
-
-                  // Source Name + Time + Badges
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Ligne 1 : Nom + Badges
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                content.source.name,
-                                style: textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: colors.textPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            // Bias dot
-                            if (content.source.biasStance != 'unknown') ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: content.source.getBiasColor(),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
+                      // Gear icon — aligné à gauche, proche de la source
+                      GestureDetector(
+                        onTap: () => TopicChip.showArticleSheet(
+                          context, content,
+                          initialSection: ArticleSheetSection.source,
                         ),
-                        const SizedBox(height: 1),
-                        // Ligne 2 : Temps relatif (icône + format court)
-                        Row(
-                          children: [
-                            Icon(
-                              PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                              size: 11,
-                              color: colors.textTertiary,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              timeago
-                                  .format(content.publishedAt,
-                                      locale: 'fr_short')
-                                  .replaceAll('il y a ', ''),
-                              style: textTheme.bodySmall?.copyWith(
-                                color: colors.textTertiary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Icon(
+                            PhosphorIcons.gear(PhosphorIconsStyle.regular),
+                            size: 16,
+                            color: colors.textTertiary,
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                ),
 
-                  // Share button — copie le lien dans le presse-papier
-                  IconButton(
-                    padding: const EdgeInsets.all(4),
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(),
-                    onPressed: _shareArticle,
-                    icon: Icon(
-                      PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
-                      size: 22,
-                      color: colors.textSecondary,
-                    ),
+                // Share button — copie le lien dans le presse-papier
+                IconButton(
+                  padding: const EdgeInsets.all(4),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(),
+                  onPressed: _shareArticle,
+                  icon: Icon(
+                    PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
+                    size: 22,
+                    color: colors.textSecondary,
                   ),
-
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Returns individual entity chip widgets (no wrapper) for use in Wrap layouts.
+  /// Tapping any chip opens the full entities sheet.
+  List<Widget> _buildArticleTagWidgets(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final topicsAsync = ref.watch(customTopicsProvider);
+    final followedNames = (topicsAsync.valueOrNull ?? [])
+        .where((t) => t.canonicalName != null)
+        .map((t) => t.canonicalName!.toLowerCase())
+        .toSet();
+
+    const maxVisible = 3;
+    final entities = content.entities;
+    final visible = entities.take(maxVisible).toList();
+    final overflow = entities.length - maxVisible;
+
+    return [
+      // Macro-theme chip (thème du sujet, ex: Cinéma)
+      if (content.topics.isNotEmpty && getTopicMacroTheme(content.topics.first) != null)
+        Builder(builder: (context) {
+          final macroTheme = getTopicMacroTheme(content.topics.first)!;
+          final emoji = getMacroThemeEmoji(macroTheme);
+          return GestureDetector(
+            onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.textTertiary.withValues(alpha: 0.20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme',
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+        }),
+      // Topic chip
+      if (content.topics.isNotEmpty)
+        GestureDetector(
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              getTopicLabel(content.topics.first),
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      // Entity chips
+      ...visible.map((entity) {
+        final isFollowed =
+            followedNames.contains(entity.text.toLowerCase());
+        return GestureDetector(
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isFollowed
+                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
+                  : colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 100),
+                  child: Text(
+                    entity.text,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: isFollowed
+                          ? const Color(0xFFE07A5F)
+                          : colors.textTertiary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (isFollowed) ...[
+                  const SizedBox(width: 3),
+                  Icon(
+                    PhosphorIcons.check(PhosphorIconsStyle.bold),
+                    size: 10,
+                    color: const Color(0xFFE07A5F),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+      if (overflow > 0)
+        GestureDetector(
+          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colors.textTertiary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '+$overflow',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
@@ -1292,13 +1705,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       builder: (context, progress, _) {
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
-        return SizedBox(
-          height: 4.5,
-          child: LinearProgressIndicator(
-            value: progress.clamp(0.0, 1.0),
-            backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(colors.primary.withValues(alpha: 0.7)),
-            minHeight: 4.5,
+        final clamped = progress.clamp(0.0, 1.0);
+        // Grey→primary color with progressive opacity (20%→100%)
+        final alpha = 0.2 + (clamped * 0.8); // 20% at start → 100% at end
+        final barColor = Color.lerp(
+          Colors.grey.shade400,
+          colors.primary,
+          clamped,
+        )!
+            .withValues(alpha: alpha);
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: clamped),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          builder: (context, smoothProgress, _) => SizedBox(
+            height: 6.5,
+            child: LinearProgressIndicator(
+              value: smoothProgress,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              minHeight: 6.5,
+            ),
           ),
         );
       },
@@ -1321,6 +1748,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
+  /// Shimmer skeleton placeholder for the article body while content resolves.
+  Widget _buildArticleBodySkeleton(FacteurColors colors) {
+    final widths = [1.0, 1.0, 0.92, 1.0, 0.85, 1.0, 0.95, 0.6];
+    return _ShimmerSkeleton(
+      children: [
+        const SizedBox(height: 16),
+        for (final w in widths)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: w,
+              child: Container(
+                height: 14,
+                decoration: BoxDecoration(
+                  color: colors.textTertiary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   /// Progressive scroll-to-site layout (inverted stack architecture).
   /// WebView is fixed behind the scrollable article content.
   /// The opaque article container hides the WebView; transparent spacer reveals it.
@@ -1329,7 +1781,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
     final viewportHeight = MediaQuery.of(context).size.height;
     final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + 64;
+    final headerHeight = topInset + _kHeaderContentHeight;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
@@ -1350,18 +1802,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
 
     return Stack(
-        children: [
-          // LAYER 0: WebView — fixed in viewport, always rendered.
-          // Painted first so it appears visually behind the scrollable content.
-          Positioned.fill(
-            child: _buildWebViewLayer(),
-          ),
+      children: [
+        // LAYER 0: WebView — fixed in viewport, always rendered.
+        // Painted first so it appears visually behind the scrollable content.
+        Positioned.fill(
+          child: _buildWebViewLayer(),
+        ),
 
-          // LAYER 1: Scrollable article content with opaque background.
-          // Container color hides WebView entirely before CTA tap;
-          // becomes transparent after tap so spacer reveals WebView.
-          // IgnorePointer lets touches pass through to WebView when active.
-          Positioned.fill(
+        // LAYER 1: Scrollable article content with opaque background.
+        // Container color hides WebView entirely before CTA tap;
+        // becomes transparent after tap so spacer reveals WebView.
+        // IgnorePointer lets touches pass through to WebView when active.
+        // AnimatedOpacity hides article layer when WebView is active to prevent
+        // bottom-of-article content from bleeding through the header status bar area.
+        Positioned.fill(
+          child: AnimatedOpacity(
+            opacity: _isWebViewActive ? 0.0 : 1.0,
+            duration: const Duration(milliseconds: 300),
             child: IgnorePointer(
               ignoring: _isWebViewActive,
               child: ColoredBox(
@@ -1369,152 +1826,199 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ? const Color(0x00000000)
                     : colors.backgroundPrimary,
                 child: SingleChildScrollView(
-                controller: _scrollController,
-                physics: _isWebViewActive
-                    ? const NeverScrollableScrollPhysics()
-                    : const ClampingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // ZONE 1: Article content — opaque background hides WebView
-                    Container(
-                      key: _articleKey,
-                      color: colors.backgroundPrimary,
-                      child: ArticleReaderWidget(
-                        htmlContent: content.htmlContent,
-                        description: content.description,
-                        title: content.title,
-                        shrinkWrap: true,
-                        header: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (content.thumbnailUrl != null) ...[
-                              ClipRRect(
-                                borderRadius:
-                                    BorderRadius.circular(FacteurRadius.large),
-                                child: FacteurThumbnail(
-                                  imageUrl: content.thumbnailUrl,
-                                  aspectRatio: 16 / 9,
-                                ),
-                              ),
-                              const SizedBox(height: FacteurSpacing.space4),
-                            ],
-                            if (isPartial) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      colors.warning.withValues(alpha: 0.12),
+                  controller: _scrollController,
+                  physics: _isWebViewActive
+                      ? const NeverScrollableScrollPhysics()
+                      : const ClampingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Spacer: scrolls with content, initially behind the header overlay
+                      SizedBox(height: headerHeight),
+                      // ZONE 1: Article content — opaque background hides WebView
+                      Container(
+                        key: _articleKey,
+                        color: colors.backgroundPrimary,
+                        child: ArticleReaderWidget(
+                          htmlContent: content.htmlContent,
+                          description: content.description,
+                          title: content.title,
+                          shrinkWrap: true,
+                          onLinkTap: _animateAndLaunch,
+                          bodyPlaceholder: !_contentResolved
+                              ? _buildArticleBodySkeleton(colors)
+                              : null,
+                          header: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Extra breathing room so tag chips aren't clipped by the header overlay
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (content.thumbnailUrl != null) ...[
+                                ClipRRect(
                                   borderRadius: BorderRadius.circular(
-                                      FacteurRadius.pill),
-                                ),
-                                child: Text(
-                                  'Aperçu — contenu partiel',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.warning,
-                                    fontWeight: FontWeight.w600,
+                                      FacteurRadius.large),
+                                  child: FacteurThumbnail(
+                                    imageUrl: content.thumbnailUrl,
+                                    aspectRatio: 16 / 9,
                                   ),
                                 ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              // Entity chips + partial badge row
+                              if (content.entities.isNotEmpty ||
+                                  isPartial) ...[
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    if (isPartial)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colors.warning
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(
+                                              FacteurRadius.pill),
+                                        ),
+                                        child: Text(
+                                          'Aperçu — contenu partiel',
+                                          style:
+                                              textTheme.labelSmall?.copyWith(
+                                            color: colors.warning,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    if (content.entities.isNotEmpty)
+                                      ..._buildArticleTagWidgets(
+                                          context, content),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space4),
+                              ],
+                              // Editorial badge above title (from digest)
+                              if (content.editorialBadge != null) ...[
+                                EditorialBadge.chip(
+                                  content.editorialBadge,
+                                  context: context,
+                                ) ?? const SizedBox.shrink(),
+                                const SizedBox(height: FacteurSpacing.space2),
+                              ],
+                              Text(
+                                content.title,
+                                style: textTheme.displayLarge
+                                    ?.copyWith(fontSize: 24),
                               ),
-                              const SizedBox(height: FacteurSpacing.space3),
-                            ],
-                            Text(
-                              content.title,
-                              style: textTheme.displayLarge
-                                  ?.copyWith(fontSize: 24),
-                            ),
-                            const SizedBox(height: FacteurSpacing.space2),
-                            if (readingTime != null) ...[
-                              Row(
-                                children: [
-                                  Icon(
-                                    PhosphorIcons.timer(
-                                        PhosphorIconsStyle.regular),
-                                    size: 14,
-                                    color: colors.textTertiary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    readingTime,
-                                    style: textTheme.bodySmall?.copyWith(
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (readingTime != null) ...[
+                                Row(
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.timer(
+                                          PhosphorIconsStyle.regular),
+                                      size: 14,
                                       color: colors.textTertiary,
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: FacteurSpacing.space3),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      readingTime,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              Divider(color: colors.border, height: 1),
+                              const SizedBox(height: FacteurSpacing.space4),
                             ],
-                            Divider(color: colors.border, height: 1),
-                            const SizedBox(height: FacteurSpacing.space4),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
 
-                    // ZONE 2: CTA button — intentional transition to WebView
-                    Container(
-                      color: colors.backgroundPrimary,
-                      child: Padding(
-                        key: _bridgeKey,
-                        padding: EdgeInsets.only(
-                          left: FacteurSpacing.space4,
-                          right: FacteurSpacing.space4,
-                          top: FacteurSpacing.space3,
-                          bottom: FacteurSpacing.space3 + bottomInset,
-                        ),
-                        child: GestureDetector(
-                          onTap: () {
-                            if (_offsetsComputed && !_ctaTapped) {
-                              setState(() {
-                                _ctaTapped = true;
-                              });
-                              WidgetsBinding.instance
-                                  .addPostFrameCallback((_) {
-                                if (mounted) {
-                                  _scrollController.animateTo(
-                                    _scrollController
-                                        .position.maxScrollExtent,
-                                    duration:
-                                        const Duration(milliseconds: 500),
-                                    curve: Curves.easeInOutCubic,
-                                  );
-                                }
-                              });
-                            }
-                          },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
+                      // ZONE 2: CTA button — intentional transition to WebView
+                      Container(
+                        color: colors.backgroundPrimary,
+                        child: Padding(
+                          key: _bridgeKey,
+                          padding: EdgeInsets.only(
+                            left: FacteurSpacing.space4,
+                            right: FacteurSpacing.space4,
+                            top: FacteurSpacing.space3,
+                            bottom: FacteurSpacing.space3 + bottomInset,
                           ),
-                          decoration: BoxDecoration(
-                            color: colors.surfaceElevated,
-                            borderRadius:
-                                BorderRadius.circular(FacteurRadius.large),
-                            border: Border.all(
-                              color: colors.border.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              if (content.source.logoUrl != null)
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: CachedNetworkImage(
-                                    imageUrl: content.source.logoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) => Container(
+                          child: GestureDetector(
+                            onTap: () {
+                              if (_offsetsComputed && !_ctaTapped) {
+                                setState(() {
+                                  _ctaTapped = true;
+                                });
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
+                                  if (mounted) {
+                                    _scrollController.animateTo(
+                                      _scrollController
+                                          .position.maxScrollExtent,
+                                      duration:
+                                          const Duration(milliseconds: 500),
+                                      curve: Curves.easeInOutCubic,
+                                    );
+                                  }
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.surfaceElevated,
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.large),
+                                border: Border.all(
+                                  color: colors.border.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  if (content.source.logoUrl != null)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: CachedNetworkImage(
+                                        imageUrl: content.source.logoUrl!,
+                                        width: 28,
+                                        height: 28,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => Container(
+                                          width: 28,
+                                          height: 28,
+                                          decoration: BoxDecoration(
+                                            color: colors.surface,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Icon(
+                                            PhosphorIcons.newspaper(
+                                                PhosphorIconsStyle.regular),
+                                            size: 16,
+                                            color: colors.textTertiary,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
                                       width: 28,
                                       height: 28,
                                       decoration: BoxDecoration(
                                         color: colors.surface,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Icon(
                                         PhosphorIcons.newspaper(
@@ -1523,56 +2027,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         color: colors.textTertiary,
                                       ),
                                     ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Lire sur ${content.source.name}',
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
                                   ),
-                                )
-                              else
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    color: colors.surface,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    PhosphorIcons.newspaper(
+                                  Icon(
+                                    PhosphorIcons.arrowRight(
                                         PhosphorIconsStyle.regular),
-                                    size: 16,
+                                    size: 20,
                                     color: colors.textTertiary,
                                   ),
-                                ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Lire sur ${content.source.name}',
-                                  style: textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.textPrimary,
-                                  ),
-                                ),
+                                ],
                               ),
-                              Icon(
-                                PhosphorIcons.arrowRight(
-                                    PhosphorIconsStyle.regular),
-                                size: 20,
-                                color: colors.textTertiary,
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                        ),
                       ),
-                    ),
 
-                    // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
-                    if (_ctaTapped)
-                      SizedBox(height: availableHeight),
-                  ],
+                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
+                      if (_ctaTapped) SizedBox(height: availableHeight),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-          ),
-        ],
+        ),
+      ],
     );
   }
 
@@ -1601,12 +2088,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Video content layout: sticky player at top, scrollable metadata below.
+  /// Video content layout.
+  /// Regular videos: sticky 16:9 player at top, scrollable metadata below.
+  /// Shorts: full-bleed 9:16 player with overlay metadata bar at bottom.
   Widget _buildVideoContent(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final screenWidth = MediaQuery.of(context).size.width;
-    final playerHeight = screenWidth * 9 / 16;
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+    final isShort = content.isShort;
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
@@ -1614,26 +2105,197 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ? stripHtml(rawDescription).trim()
         : null;
 
-    return Column(
-      children: [
-        // Sticky player container (fixed height, 16:9)
-        SizedBox(
-          width: screenWidth,
-          height: playerHeight,
-          child: YouTubePlayerWidget(
-            videoUrl: content.url,
-            title: content.title,
-            onProgressChanged: _onVideoProgressChanged,
-          ),
-        ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final maxHeight = constraints.maxHeight;
 
-        // Scrollable metadata below the player
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(FacteurSpacing.space4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
+      if (isShort) {
+        // Reserve ~160px below the player for metadata (scrollable, same
+        // pattern as regular videos). FABs float over this Flutter text area
+        // (not an iframe) so they remain clickable.
+        final shortsPlayerHeight = (maxHeight - headerHeight - 140)
+            .clamp(200.0, screenWidth * 16 / 9);
+
+        return Column(
+          children: [
+            // Spacer for header overlay (header sits on this, not on iframe)
+            SizedBox(height: headerHeight),
+
+            // Centered player — bounded height, narrower than screen width
+            SizedBox(
+              height: shortsPlayerHeight,
+              width: screenWidth,
+              child: Center(
+                child: YouTubePlayerWidget(
+                  videoUrl: content.url,
+                  title: content.title,
+                  aspectRatio: 9 / 16,
+                  onProgressChanged: _onVideoProgressChanged,
+                  onPlayStateChanged: _onVideoPlayStateChanged,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: FacteurSpacing.space3),
+
+            // Scrollable metadata — same design as regular video
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Video Title
+                    Text(
+                      content.title,
+                      style: textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+
+                    // Published date
+                    Text(
+                      timeago.format(content.publishedAt, locale: 'fr_short'),
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: FacteurSpacing.space3),
+
+                    // Channel row: avatar + name + optional theme chip
+                    Row(
+                      children: [
+                        if (content.source.logoUrl != null)
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundImage: CachedNetworkImageProvider(
+                                content.source.logoUrl!),
+                            backgroundColor: colors.surfaceElevated,
+                          )
+                        else
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: colors.surfaceElevated,
+                            child: Icon(
+                              PhosphorIcons.user(PhosphorIconsStyle.regular),
+                              size: 16,
+                              color: colors.textTertiary,
+                            ),
+                          ),
+                        const SizedBox(width: FacteurSpacing.space3),
+                        Expanded(
+                          child: Text(
+                            content.source.name,
+                            style: textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (content.source.theme != null &&
+                            content.source.theme!.isNotEmpty) ...[
+                          const SizedBox(width: FacteurSpacing.space2),
+                          Opacity(
+                            opacity: 0.9,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primary,
+                                borderRadius:
+                                    BorderRadius.circular(FacteurRadius.pill),
+                              ),
+                              child: Text(
+                                content.source.getThemeLabel(),
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+
+                    // Expandable description
+                    if (descriptionText != null &&
+                        descriptionText.isNotEmpty) ...[
+                      const SizedBox(height: FacteurSpacing.space3),
+                      Divider(color: colors.border, height: 1),
+                      const SizedBox(height: FacteurSpacing.space3),
+                      Text(
+                        descriptionText,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textSecondary,
+                          height: 1.5,
+                        ),
+                        maxLines: _isDescriptionExpanded ? null : 2,
+                        overflow: _isDescriptionExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _isDescriptionExpanded =
+                              !_isDescriptionExpanded);
+                        },
+                        child: Text(
+                          _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Bottom spacing for FABs
+                    const SizedBox(height: 120),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      // --- Regular video: Column layout ---
+      final playerHeight = screenWidth * 9 / 16;
+
+      return Column(
+        children: [
+          // Push below the header overlay
+          SizedBox(height: headerHeight),
+
+          // Sticky player container
+          SizedBox(
+            width: screenWidth,
+            height: playerHeight,
+            child: YouTubePlayerWidget(
+              videoUrl: content.url,
+              title: content.title,
+              aspectRatio: 16 / 9,
+              onProgressChanged: _onVideoProgressChanged,
+              onPlayStateChanged: _onVideoPlayStateChanged,
+            ),
+          ),
+
+          // Scrollable metadata below the player
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(FacteurSpacing.space4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Video Title
                 Text(
                   content.title,
@@ -1751,7 +2413,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
       ],
     );
+    }); // LayoutBuilder
   }
+
 
   Widget _buildInAppContent(BuildContext context, Content content) {
     final topic = content.progressionTopic;
@@ -1760,6 +2424,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // Logic for topic tracking can be added here if needed for analytics
       // but Footer CTA is removed per User Story 8 Refactor.
     }
+
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
 
     switch (content.contentType) {
       case ContentType.article:
@@ -1778,9 +2445,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
+          onLinkTap: _animateAndLaunch,
+          bodyPlaceholder: !_contentResolved
+              ? _buildArticleBodySkeleton(colors)
+              : null,
           header: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Spacer: scrolls with content, initially behind the header overlay
+              SizedBox(height: headerHeight),
+              // Extra breathing room so tag chips aren't clipped by the header overlay
+              const SizedBox(height: FacteurSpacing.space2),
               // Hero thumbnail image (smooth integration)
               if (content.thumbnailUrl != null) ...[
                 ClipRRect(
@@ -1790,28 +2465,47 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     aspectRatio: 16 / 9,
                   ),
                 ),
+                const SizedBox(height: FacteurSpacing.space3),
+              ],
+              // Entity chips + partial badge row
+              if (content.entities.isNotEmpty || isPartial) ...[
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (isPartial)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.warning.withValues(alpha: 0.12),
+                          borderRadius:
+                              BorderRadius.circular(FacteurRadius.pill),
+                        ),
+                        child: Text(
+                          'Aperçu — contenu partiel',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.warning,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (content.entities.isNotEmpty)
+                      ..._buildArticleTagWidgets(context, content),
+                  ],
+                ),
                 const SizedBox(height: FacteurSpacing.space4),
               ],
-              // "Aperçu" badge for partial content
-              if (isPartial) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.warning.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(FacteurRadius.pill),
-                  ),
-                  child: Text(
-                    'Aperçu — contenu partiel',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.warning,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: FacteurSpacing.space3),
+              // Editorial badge above title (from digest)
+              if (content.editorialBadge != null) ...[
+                EditorialBadge.chip(
+                  content.editorialBadge,
+                  context: context,
+                ) ?? const SizedBox.shrink(),
+                const SizedBox(height: FacteurSpacing.space2),
               ],
               // Title
               Text(
@@ -1844,7 +2538,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ],
           ),
           footer: GestureDetector(
-            onTap: kIsWeb ? _openOriginalUrl : () => setState(() => _showWebView = true),
+            onTap: kIsWeb
+                ? _openOriginalUrl
+                : () => setState(() => _showWebView = true),
             child: Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24,
@@ -1875,8 +2571,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
-                            PhosphorIcons.newspaper(
-                                PhosphorIconsStyle.regular),
+                            PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
                             size: 16,
                             color: colors.textTertiary,
                           ),
@@ -1919,27 +2614,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         );
 
       case ContentType.audio:
-        return AudioPlayerWidget(
-          audioUrl: content.audioUrl!,
-          title: content.title,
-          description: content.description,
-          thumbnailUrl: content.thumbnailUrl,
-          durationSeconds: content.durationSeconds,
+        return Column(
+          children: [
+            SizedBox(height: headerHeight),
+            Expanded(
+              child: AudioPlayerWidget(
+                audioUrl: content.audioUrl!,
+                title: content.title,
+                description: content.description,
+                thumbnailUrl: content.thumbnailUrl,
+                durationSeconds: content.durationSeconds,
+              ),
+            ),
+          ],
         );
 
       case ContentType.youtube:
       case ContentType.video:
-        return YouTubePlayerWidget(
-          videoUrl: content.url,
-          title: content.title,
-          description: content.description,
+        return Column(
+          children: [
+            SizedBox(height: headerHeight),
+            Expanded(
+              child: YouTubePlayerWidget(
+                videoUrl: content.url,
+                title: content.title,
+                description: content.description,
+              ),
+            ),
+          ],
         );
     }
   }
 
   Widget _buildWebViewFallback(Content content) {
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
 
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
@@ -1949,11 +2657,143 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Mobile: Use native WebView
+    // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
     _webViewController ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) => _injectScrollBridgeScript(),
+      ))
+      ..addJavaScriptChannel('ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage)
       ..loadRequest(Uri.parse(content.url));
 
-    return WebViewWidget(controller: _webViewController!);
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+    return Column(
+      children: [
+        SizedBox(height: headerHeight),
+        // Extra breathing room so tag chips aren't clipped by the header overlay
+        const SizedBox(height: FacteurSpacing.space2),
+        if (content.entities.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: 6,
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _buildArticleTagWidgets(context, content),
+            ),
+          ),
+        Expanded(child: WebViewWidget(controller: _webViewController!)),
+      ],
+    );
+  }
+}
+
+/// Subtle periodic nudge on the source badge to hint at long-press.
+class _SourceBadgeNudge extends StatefulWidget {
+  final Widget child;
+
+  const _SourceBadgeNudge({required this.child});
+
+  @override
+  State<_SourceBadgeNudge> createState() => _SourceBadgeNudgeState();
+}
+
+class _SourceBadgeNudgeState extends State<_SourceBadgeNudge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  final math.Random _rng = math.Random();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _scheduleNext();
+      }
+    });
+    _scheduleNext();
+  }
+
+  void _scheduleNext() {
+    final delayMs = 8000 + _rng.nextInt(7000); // 8–15 s
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: delayMs), () {
+      if (mounted) _controller.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 1.0 + 0.02 * math.sin(_controller.value * math.pi);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: widget.child,
+    );
+  }
+}
+
+/// Pulsating shimmer effect for skeleton loading placeholders.
+class _ShimmerSkeleton extends StatefulWidget {
+  final List<Widget> children;
+  const _ShimmerSkeleton({required this.children});
+
+  @override
+  State<_ShimmerSkeleton> createState() => _ShimmerSkeletonState();
+}
+
+class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Opacity(
+          opacity: 0.3 + 0.4 * _controller.value,
+          child: child,
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: widget.children,
+      ),
+    );
   }
 }

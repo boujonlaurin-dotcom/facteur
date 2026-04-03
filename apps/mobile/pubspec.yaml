@@ -43,7 +43,8 @@ dependencies:
   # Story 5.2: In-App Reading Mode
   flutter_html: ^3.0.0-beta.2  # HTML rendering for articles
   just_audio: ^0.9.36          # Audio player for podcasts
-  youtube_player_iframe: ^5.1.2   # YouTube player (all platforms)
+  # youtube_player_iframe removed — replaced by direct webview_flutter usage
+  # to fix YouTube Error 152-4 on Android (missing HTTP Referer header)
   
   # Utils
   intl: ^0.20.2
