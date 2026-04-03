@@ -328,7 +328,7 @@ class TestFallbackYesterday:
         mock_yesterday_digest = Mock()
         mock_yesterday_digest.id = uuid4()
         mock_yesterday_digest.target_date = yesterday
-        mock_yesterday_digest.format_version = "topics_v1"
+        mock_yesterday_digest.format_version = "editorial_v1"
 
         mock_response = Mock()
 
@@ -348,6 +348,10 @@ class TestFallbackYesterday:
                 service, "_get_existing_digest", side_effect=fake_get_existing
             ),
             patch.object(service, "_build_digest_response", mock_build),
+            patch.object(
+                service, "_get_user_digest_format",
+                new_callable=AsyncMock, return_value="editorial",
+            ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
             result = await service.get_or_create_digest(
