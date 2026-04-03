@@ -5,7 +5,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import certifi
@@ -251,29 +251,14 @@ class PerspectiveService:
         perspectives_text = "\n".join(perspectives_lines)
 
         system = (
-            "Tu es un analyste média français qui aide les lecteurs à comprendre "
-            "comment un même sujet d'actualité est traité différemment selon les médias.\n\n"
-            "FORMAT :\n"
-            "1. Une introduction de 2-3 phrases qui pose le contexte du sujet "
-            "(pourquoi il est important, quels enjeux il soulève) puis annonce "
-            "ce que révèle la comparaison des couvertures.\n"
-            '2. Puis 2 à 3 constats "→", chacun rédigé en phrases complètes '
-            "et accessibles. Chaque constat explique :\n"
-            "  — soit un aspect du sujet couvert par certains médias mais absent "
-            "chez d'autres (et lesquels, nommément)\n"
-            "  — soit un même fait présenté très différemment selon les sources "
-            "(en précisant qui dit quoi)\n\n"
-            "RÈGLES :\n"
-            "— Base-toi UNIQUEMENT sur les titres et résumés fournis. N'invente "
-            "aucun fait, chiffre ou source externe.\n"
-            "— Quand tu affirmes qu'un média ignore un aspect, précise que c'est "
-            "\"d'après son titre et résumé\" (tu n'as pas l'article complet).\n"
-            "— Écris de façon fluide et naturelle, comme un journaliste qui "
-            "explique à un ami curieux. Évite le jargon analytique.\n"
-            "— Ne juge pas la qualité des sources.\n"
-            "— Ne commence PAS par un titre ou une ligne en gras. "
-            "Commence directement par l'introduction.\n"
-            "— Écris en français."
+            "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
+            "FORMAT STRICT (court, ~150 mots max) :\n"
+            "1-2 phrases de contexte, puis 2 constats \"→\" nommant les médias.\n"
+            "Chaque constat : un angle couvert par certains mais pas d'autres, "
+            "ou un même fait cadré différemment.\n\n"
+            "RÈGLES : uniquement les titres/résumés fournis, pas de faits inventés. "
+            "Précise \"d'après son titre\" si tu parles d'un angle absent. "
+            "Ton naturel, pas de jargon. Pas de titre en gras. Français."
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
@@ -291,7 +276,7 @@ class PerspectiveService:
                 user_message=user_message,
                 model="mistral-large-latest",
                 temperature=0.4,
-                max_tokens=650,
+                max_tokens=300,
             )
             return result
         except Exception as e:
@@ -398,7 +383,7 @@ class PerspectiveService:
         from app.models.content import Content
         from app.models.source import Source
 
-        cutoff = datetime.now(datetime.UTC) - timedelta(hours=time_window_hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
 
         # Build OR conditions: entities text array contains entity name
         entity_filters = [
