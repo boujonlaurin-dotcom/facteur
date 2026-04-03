@@ -265,88 +265,79 @@ class DigestSelector:
 
             # === EDITORIAL FORMAT: delegate to EditorialPipelineService ===
             if output_format == "editorial":
-                from app.services.editorial.config import load_editorial_config
                 from app.services.editorial.pipeline import EditorialPipelineService
 
-                config = load_editorial_config()
-                if not config.is_enabled_for_user(str(user_id)):
-                    logger.info(
-                        "digest_editorial_not_enabled",
-                        user_id=str(user_id),
-                    )
-                    output_format = "topics"  # Fallback
-                else:
-                    try:
-                        step_start = time.time()
-                        pipeline = EditorialPipelineService(self.session)
+                try:
+                    step_start = time.time()
+                    pipeline = EditorialPipelineService(self.session)
 
-                        if not pipeline.llm.is_ready:
-                            logger.warning("digest_editorial_no_api_key")
+                    if not pipeline.llm.is_ready:
+                        logger.warning("digest_editorial_no_api_key")
+                        output_format = "topics"
+                    else:
+                        # Check cache first, then compute global context
+                        _cache_date = datetime.date.today()
+                        global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
+                        if global_ctx is None:
+                            global_ctx = await pipeline.compute_global_context(
+                                candidates, mode=mode
+                            )
+                            if global_ctx is not None:
+                                _set_cached_editorial_ctx(
+                                    _cache_date, mode, global_ctx
+                                )
+                        if not global_ctx:
+                            logger.warning("digest_editorial_global_ctx_failed")
                             output_format = "topics"
                         else:
-                            # Check cache first, then compute global context
-                            _cache_date = datetime.date.today()
-                            global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
-                            if global_ctx is None:
-                                global_ctx = await pipeline.compute_global_context(
-                                    candidates, mode=mode
-                                )
-                                if global_ctx is not None:
-                                    _set_cached_editorial_ctx(
-                                        _cache_date, mode, global_ctx
-                                    )
-                            if not global_ctx:
-                                logger.warning("digest_editorial_global_ctx_failed")
-                                output_format = "topics"
-                            else:
-                                # MVP V2: global digest — actu already matched
-                                # in compute_global_context(), no per-user phase
-                                from app.services.editorial.schemas import (
-                                    EditorialPipelineResult,
-                                )
+                            # MVP V2: global digest — actu already matched
+                            # in compute_global_context(), no per-user phase
+                            from app.services.editorial.schemas import (
+                                EditorialPipelineResult,
+                            )
 
-                                actu_hits = sum(
-                                    1
-                                    for s in global_ctx.subjects
-                                    if s.actu_article is not None
-                                )
-                                deep_hits = sum(
-                                    1
-                                    for s in global_ctx.subjects
-                                    if s.deep_article is not None
-                                )
-                                result = EditorialPipelineResult(
-                                    subjects=global_ctx.subjects,
-                                    metadata={
-                                        "actu_hits": actu_hits,
-                                        "deep_hits": deep_hits,
-                                        "total_subjects": len(global_ctx.subjects),
-                                        "matching_ms": 0,
-                                    },
-                                    header_text=global_ctx.header_text,
-                                    closure_text=global_ctx.closure_text,
-                                    cta_text=global_ctx.cta_text,
-                                    pepite=global_ctx.pepite,
-                                    coup_de_coeur=global_ctx.coup_de_coeur,
-                                )
-                                editorial_time = time.time() - step_start
-                                total_time = time.time() - start_time
-                                logger.info(
-                                    "digest_editorial_completed",
-                                    user_id=str(user_id),
-                                    subjects=len(result.subjects),
-                                    actu_hits=result.metadata.get("actu_hits", 0),
-                                    deep_hits=result.metadata.get("deep_hits", 0),
-                                    editorial_ms=round(editorial_time * 1000, 2),
-                                    total_ms=round(total_time * 1000, 2),
-                                )
-                                return result
-                    except Exception:
-                        logger.exception(
-                            "digest_editorial_failed_fallback_topics",
-                            user_id=str(user_id),
-                        )
-                        output_format = "topics"
+                            actu_hits = sum(
+                                1
+                                for s in global_ctx.subjects
+                                if s.actu_article is not None
+                            )
+                            deep_hits = sum(
+                                1
+                                for s in global_ctx.subjects
+                                if s.deep_article is not None
+                            )
+                            result = EditorialPipelineResult(
+                                subjects=global_ctx.subjects,
+                                metadata={
+                                    "actu_hits": actu_hits,
+                                    "deep_hits": deep_hits,
+                                    "total_subjects": len(global_ctx.subjects),
+                                    "matching_ms": 0,
+                                },
+                                header_text=global_ctx.header_text,
+                                closure_text=global_ctx.closure_text,
+                                cta_text=global_ctx.cta_text,
+                                pepite=global_ctx.pepite,
+                                coup_de_coeur=global_ctx.coup_de_coeur,
+                            )
+                            editorial_time = time.time() - step_start
+                            total_time = time.time() - start_time
+                            logger.info(
+                                "digest_editorial_completed",
+                                user_id=str(user_id),
+                                subjects=len(result.subjects),
+                                actu_hits=result.metadata.get("actu_hits", 0),
+                                deep_hits=result.metadata.get("deep_hits", 0),
+                                editorial_ms=round(editorial_time * 1000, 2),
+                                total_ms=round(total_time * 1000, 2),
+                            )
+                            return result
+                except Exception:
+                    logger.exception(
+                        "digest_editorial_failed_fallback_topics",
+                        user_id=str(user_id),
+                    )
+                    output_format = "topics"
 
             # === TOPIC FORMAT: delegate to TopicSelector ===
             if output_format == "topics":

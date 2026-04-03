@@ -9,12 +9,5 @@ pipeline:
   actu_max_age_hours: 24         # Age max des articles actu
   deep_jaccard_threshold: 0.04   # Seuil Jaccard pour pré-filtre deep (bas pour maximiser les candidats LLM)
 
-feature_flags:
-  editorial_enabled: true        # ON pour whitelist uniquement
-  editorial_user_ids:            # Whitelist UUID pour test progressif
-    - "cd112c8f-ef87-4dcd-9928-a664b7eefbc0"
-    - "fd6b9d0b-4c16-422b-9688-bae34d63f41c"
-    - "017899e4-c617-4049-bba6-3bb818f46db0"
-
 cost:
   max_llm_calls_per_batch: 10   # Safety cap LLM calls

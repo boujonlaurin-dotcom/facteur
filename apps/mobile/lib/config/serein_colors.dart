@@ -8,34 +8,34 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 class SereinColors {
   SereinColors._();
 
-  // ── Normal (Tout voir) — Palette "Terre & Sauge" ─────────────────
-  static const normalColor = Color(0xFFC4A882);
-  static const normalGlowColor = Color(0xFFC4A882);
-  static const normalCardGlowColor = Color(0x30C4A882);
+  // ── Normal (Tout voir) ────────────────────────────────────────────
+  static const normalColor = Color(0xFFD4944C);
+  static const normalGlowColor = Color(0xFFD4944C);
+  static const normalCardGlowColor = Color(0x30D4944C);
   // Dark
-  static const normalGradientStart = Color(0xFF1E1812);
-  static const normalGradientEnd = Color(0xFF161109);
-  static const normalBackgroundColor = Color(0xFF161109);
+  static const normalGradientStart = Color(0xFF261C0E);
+  static const normalGradientEnd = Color(0xFF1A1408);
+  static const normalBackgroundColor = Color(0xFF1A150C);
   // Light
-  static const normalLightGradientStart = Color(0xFFD4BFA5);
-  static const normalLightGradientEnd = Color(0xFFC2AC8E);
-  static const normalLightBackgroundColor = Color(0xFFD4BFA5);
+  static const normalLightGradientStart = Color(0xFFD9A86A);
+  static const normalLightGradientEnd = Color(0xFFC49050);
+  static const normalLightBackgroundColor = Color(0xFFE0B87A);
 
   static IconData get normalIcon =>
       PhosphorIcons.sunDim(PhosphorIconsStyle.fill);
 
-  // ── Serein — Palette "Terre & Sauge" (vert sauge affirmé) ────────
-  static const sereinColor = Color(0xFF5A9478);
-  static const sereinGlowColor = Color(0xFF5A9478);
-  static const sereinCardGlowColor = Color(0x305A9478);
+  // ── Serein ────────────────────────────────────────────────────────
+  static const sereinColor = Color(0xFF4CAF7D);
+  static const sereinGlowColor = Color(0xFF4CAF7D);
+  static const sereinCardGlowColor = Color(0x304CAF7D);
   // Dark
-  static const sereinGradientStart = Color(0xFF0D1F18);
-  static const sereinGradientEnd = Color(0xFF091710);
-  static const sereinBackgroundColor = Color(0xFF091710);
+  static const sereinGradientStart = Color(0xFF0E2218);
+  static const sereinGradientEnd = Color(0xFF0A1A10);
+  static const sereinBackgroundColor = Color(0xFF0C1A10);
   // Light
-  static const sereinLightGradientStart = Color(0xFF85B8A0);
-  static const sereinLightGradientEnd = Color(0xFF6DAA8E);
-  static const sereinLightBackgroundColor = Color(0xFF85B8A0);
+  static const sereinLightGradientStart = Color(0xFF8CC9A5);
+  static const sereinLightGradientEnd = Color(0xFF72BD90);
+  static const sereinLightBackgroundColor = Color(0xFF7ABF98);
 
   static IconData get sereinIcon =>
       PhosphorIcons.flowerLotus(PhosphorIconsStyle.fill);

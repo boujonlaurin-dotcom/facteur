@@ -66,11 +66,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return await _loadBothDigests();
   }
 
-  static const _digestMaxRetries = 3;
+  static const _digestMaxRetries = 2;
   static const _digestRetryDelays = [
+    Duration(seconds: 3),
     Duration(seconds: 5),
-    Duration(seconds: 10),
-    Duration(seconds: 15),
   ];
 
   Future<DigestResponse?> _loadBothDigests({DateTime? date}) async {
@@ -90,16 +89,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         // Sync toggle with server preference
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         return _activeDigest;
-      } on DigestPreparingException {
-        // 202: digest is being generated in background, retry with longer delays
-        if (attempt < _digestMaxRetries) {
-          // ignore: avoid_print
-          print(
-              'DigestNotifier: 202 preparing, retry ${attempt + 1}/$_digestMaxRetries...');
-          await Future<void>.delayed(_digestRetryDelays[attempt]);
-          continue;
-        }
-        rethrow;
       } on DigestGenerationException {
         if (attempt < _digestMaxRetries) {
           // ignore: avoid_print
@@ -199,23 +188,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     _cachedDate = null;
   }
 
-  /// Apply an action to a digest item (like, unlike, read, save, not_interested, report_not_serene, undo)
+  /// Apply an action to a digest item (like, unlike, read, save, not_interested, undo)
   Future<void> applyAction(String contentId, String action) async {
     final currentDigest = state.value;
     if (currentDigest == null) return;
-
-    // Report not serene: separate API call, no optimistic state change
-    if (action == 'report_not_serene') {
-      try {
-        final repository = ref.read(digestRepositoryProvider);
-        await repository.reportNotSerene(contentId);
-        await HapticFeedback.lightImpact();
-        NotificationService.showSuccess('Merci, nous en prenons note');
-      } catch (e) {
-        NotificationService.showError('Erreur lors du signalement');
-      }
-      return;
-    }
 
     // Optimistic update — apply to flat items
     final updatedItems = currentDigest.items.map((item) {
