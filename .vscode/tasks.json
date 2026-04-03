@@ -23,7 +23,7 @@
     {
       "label": "Launch Android Emulator",
       "type": "shell",
-      "command": "ADB=${env:HOME}/Library/Android/sdk/platform-tools/adb; EMU=${env:HOME}/Library/Android/sdk/emulator/emulator; DEVICE=emulator-5554; if [ \"$($ADB -s $DEVICE get-state 2>/dev/null || true)\" = \"device\" ]; then while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null || true)\" != \"1\" ]; do sleep 2; done; echo 'Emulator already running'; exit 0; fi; $EMU -avd Medium_Phone_API_36.1 -no-snapshot-load -noaudio -gpu swiftshader & $ADB wait-for-device; while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null)\" != \"1\" ]; do sleep 2; done; echo 'Emulator ready'",
+      "command": "ADB=${env:HOME}/Library/Android/sdk/platform-tools/adb; EMU=${env:HOME}/Library/Android/sdk/emulator/emulator; DEVICE=emulator-5554; if [ \"$($ADB -s $DEVICE get-state 2>/dev/null || true)\" = \"device\" ]; then while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null || true)\" != \"1\" ]; do sleep 2; done; echo 'Emulator already running'; exit 0; fi; $EMU -avd Medium_Phone_API_36.1 -no-audio -no-boot-anim -gpu host & $ADB wait-for-device; while [ \"$($ADB -s $DEVICE shell getprop sys.boot_completed 2>/dev/null)\" != \"1\" ]; do sleep 2; done; echo 'Emulator ready'",
       "isBackground": false,
       "presentation": {
         "reveal": "silent",
