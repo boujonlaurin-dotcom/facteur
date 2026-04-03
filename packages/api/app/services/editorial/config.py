@@ -65,6 +65,7 @@ class EditorialConfig:
         )
     )
 
+
 @lru_cache(maxsize=1)
 def load_editorial_config() -> EditorialConfig:
     """Load editorial config from YAML files. Cached."""
