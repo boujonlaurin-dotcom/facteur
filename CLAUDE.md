@@ -91,3 +91,46 @@ bash docs/qa/scripts/verify_<task>.sh
 - [PRD](docs/prd.md) / [Architecture](docs/architecture.md) / [Front-end Spec](docs/front-end-spec.md)
 - Agents BMAD : `.bmad-core/agents/` (dev, po, architect, qa)
 - Scripts QA : `docs/qa/scripts/`
+## 🧪 Validation Feature via Chrome (Agent QA)
+
+Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étape de **validation web automatisée** peut être déclenchée pour les features touchant l'UI.
+
+### Workflow dev → QA
+
+1. **L'agent dev** complète sa feature et écrit un QA Handoff dans `.context/qa-handoff.md` en suivant le template `.context/qa-handoff-template.md`. Ce handoff décrit les écrans impactés, les scénarios de test (happy path + edge cases), et les critères d'acceptation.
+
+2. **L'agent dev STOP** et notifie :
+   "Feature prête pour validation QA web — handoff dans .context/qa-handoff.md. Lancer /validate-feature pour tester via Chrome."
+
+3. **L'utilisateur** lance la commande `/validate-feature` (dans un workspace séparé ou le même en mode QA). L'agent QA :
+   - Ouvre l'app web dans Chrome (viewport mobile 390x844)
+   - Exécute chaque scénario du handoff
+   - Capture des screenshots avant/après chaque interaction
+   - Vérifie les erreurs console et les requêtes réseau
+   - Produit un rapport de validation structuré
+
+4. **Si APPROVED** → merge autorisé (passe à l'étape PR Lifecycle)
+   **Si FAIL** → l'agent QA liste les bugs trouvés, propose de créer des issues GitHub, et l'agent dev reprend le fix.
+
+### Quand utiliser /validate-feature
+
+- Features touchant l'UI mobile (écrans, composants, navigation)
+- Bugs visuels ou d'interaction signalés par les utilisateurs
+- Avant un déploiement en production pour les features critiques
+
+### Quand ne PAS utiliser
+
+- Changements backend-only (API, workers, migrations)
+- Modifications docs-only
+- Refactoring sans impact visuel
+
+### Commande
+
+```
+/validate-feature   # Lit .context/qa-handoff.md et teste via Chrome
+```
+
+### Checklist complémentaire (phase VERIFY)
+
+- [ ] QA Handoff rédigé (`.context/qa-handoff.md`) si feature UI
+- [ ] /validate-feature exécuté si feature UI (rapport QA dans .context/)
