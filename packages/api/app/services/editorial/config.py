@@ -25,14 +25,6 @@ class PipelineConfig:
 
 
 @dataclass(frozen=True)
-class FeatureFlags:
-    """Feature flags for progressive rollout."""
-
-    editorial_enabled: bool = False
-    editorial_user_ids: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
 class PromptConfig:
     """LLM prompt template."""
 
@@ -47,7 +39,6 @@ class EditorialConfig:
     """Full editorial pipeline configuration."""
 
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
-    feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
     curation_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="")
     )
@@ -74,16 +65,6 @@ class EditorialConfig:
         )
     )
 
-    def is_enabled_for_user(self, user_id: str) -> bool:
-        """Check if editorial pipeline is enabled for a specific user."""
-        if not self.feature_flags.editorial_enabled:
-            return False
-        # Empty whitelist = enabled for all (when master switch is on)
-        if not self.feature_flags.editorial_user_ids:
-            return True
-        return user_id in self.feature_flags.editorial_user_ids
-
-
 @lru_cache(maxsize=1)
 def load_editorial_config() -> EditorialConfig:
     """Load editorial config from YAML files. Cached."""
@@ -91,7 +72,6 @@ def load_editorial_config() -> EditorialConfig:
     prompts_path = CONFIG_DIR / "editorial_prompts.yaml"
 
     pipeline_cfg = PipelineConfig()
-    feature_flags = FeatureFlags()
     curation_prompt = PromptConfig(system="")
     deep_matching_prompt = PromptConfig(system="", temperature=0.2, max_tokens=300)
     query_expansion_prompt = PromptConfig(
@@ -116,8 +96,6 @@ def load_editorial_config() -> EditorialConfig:
             raw = yaml.safe_load(config_path.read_text())
             if raw and "pipeline" in raw:
                 pipeline_cfg = PipelineConfig(**raw["pipeline"])
-            if raw and "feature_flags" in raw:
-                feature_flags = FeatureFlags(**raw["feature_flags"])
         except Exception:
             logger.exception("editorial_config_load_failed", path=str(config_path))
 
@@ -150,7 +128,6 @@ def load_editorial_config() -> EditorialConfig:
 
     cfg = EditorialConfig(
         pipeline=pipeline_cfg,
-        feature_flags=feature_flags,
         curation_prompt=curation_prompt,
         deep_matching_prompt=deep_matching_prompt,
         query_expansion_prompt=query_expansion_prompt,
@@ -162,8 +139,6 @@ def load_editorial_config() -> EditorialConfig:
 
     logger.info(
         "editorial_config_loaded",
-        editorial_enabled=cfg.feature_flags.editorial_enabled,
-        whitelist_count=len(cfg.feature_flags.editorial_user_ids),
         has_curation_prompt=bool(cfg.curation_prompt.system),
         has_writing_prompt=bool(cfg.writing_prompt.system),
         has_pepite_prompt=bool(cfg.pepite_prompt.system),
