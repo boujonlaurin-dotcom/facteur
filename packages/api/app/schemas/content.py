@@ -1,5 +1,6 @@
 """Schemas contenu."""
 
+import contextlib
 import json
 from datetime import datetime
 from uuid import UUID
@@ -182,10 +183,8 @@ def parse_entity_strings(entities: list[str]) -> list[dict]:
     """
     result = []
     for item in entities:
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             result.append(json.loads(item))
-        except (json.JSONDecodeError, TypeError):
-            pass
     return result
 
 
