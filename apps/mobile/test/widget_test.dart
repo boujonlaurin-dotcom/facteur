@@ -5,12 +5,25 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'package:facteur/app.dart';
 
 void main() {
+  setUpAll(() async {
+    final dir = await Directory.systemTemp.createTemp('hive_test_smoke_');
+    Hive.init(dir.path);
+    await Hive.openBox<dynamic>('settings');
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+  });
+
   testWidgets('App smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(

@@ -89,9 +89,9 @@ void main() {
       await tester.pumpWidget(createWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Ton algorithme, tes règles.'), findsOneWidget);
+      expect(find.text("Vos centres d'intérêt"), findsOneWidget);
       expect(
-        find.textContaining('Facteur apprend de tes lectures'),
+        find.textContaining('Ajustez vos thèmes'),
         findsOneWidget,
       );
     });

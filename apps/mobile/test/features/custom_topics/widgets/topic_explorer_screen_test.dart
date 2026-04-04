@@ -86,7 +86,7 @@ void main() {
       await tester.pumpWidget(createWidget());
       await tester.pumpAndSettle();
 
-      expect(find.text('Tech & Science'), findsOneWidget);
+      expect(find.text('Technologie'), findsOneWidget);
     });
 
     testWidgets('shows "Suivre ce sujet" button when not followed',

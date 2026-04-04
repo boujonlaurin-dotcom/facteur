@@ -95,7 +95,7 @@ void main() {
       )));
 
       expect(
-        find.text('6 autres articles \u2022 Culture & Idées'),
+        find.text('6 autres articles Culture & Idées'),
         findsOneWidget,
       );
     });
@@ -110,7 +110,7 @@ void main() {
       )));
 
       expect(
-        find.text('4 autres articles \u2022 Justice'),
+        find.text('4 autres articles Justice'),
         findsOneWidget,
       );
     });
@@ -124,7 +124,7 @@ void main() {
       )));
 
       expect(
-        find.text('3 autres articles \u2022 Économie'),
+        find.text('3 autres articles Économie'),
         findsOneWidget,
       );
     });
