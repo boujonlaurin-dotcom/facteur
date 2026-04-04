@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -23,7 +24,7 @@ class AccountScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
-        title: const Text('Compte & Widget'),
+        title: Text(kIsWeb ? 'Compte' : 'Compte & Widget'),
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: Theme.of(context).textTheme.displaySmall,
@@ -92,8 +93,8 @@ class AccountScreen extends ConsumerWidget {
               ),
             ),
 
-            // Section Widget (Android uniquement)
-            if (Platform.isAndroid) ...[
+            // Section Widget (Android uniquement, masquée sur Web)
+            if (!kIsWeb && Platform.isAndroid) ...[
               const SizedBox(height: FacteurSpacing.space6),
               Container(
                 width: double.infinity,
