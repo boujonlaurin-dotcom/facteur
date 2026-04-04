@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -46,6 +47,20 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
   void initState() {
     super.initState();
     _videoId = _extractVideoId(widget.videoUrl);
+  }
+
+  @override
+  void dispose() {
+    // Restore portrait lock in case widget is disposed while in fullscreen.
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.edgeToEdge,
+      overlays: SystemUiOverlay.values,
+    );
+    super.dispose();
   }
 
   /// Extract YouTube video ID from various URL formats.
@@ -201,6 +216,25 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         if (request.isForMainFrame ?? false) {
           if (mounted) setState(() => _hasError = true);
         }
+      },
+      onEnterFullscreen: (controller) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      },
+      onExitFullscreen: (controller) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.edgeToEdge,
+          overlays: SystemUiOverlay.values,
+        );
       },
       shouldOverrideUrlLoading: (controller, navigationAction) async {
         final uri = navigationAction.request.url;
