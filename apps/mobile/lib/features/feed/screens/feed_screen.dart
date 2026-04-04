@@ -957,9 +957,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           notifier.selectedTopic != null ||
                                           notifier.selectedEntity != null,
                                       onFollowSource: !content.isFollowedSource
-                                          ? () async {
-                                              await TopicChip.showArticleSheet(context, content);
-                                              ref.read(feedProvider.notifier).refresh();
+                                          ? () {
+                                              TopicChip.showArticleSheet(context, content);
                                             }
                                           : null,
                                       onSourceTap: () {

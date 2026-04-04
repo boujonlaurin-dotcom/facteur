@@ -5,7 +5,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 
 import certifi
@@ -253,7 +253,7 @@ class PerspectiveService:
         system = (
             "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
             "FORMAT STRICT (court, ~150 mots max) :\n"
-            "1-2 phrases de contexte, puis 2 constats \"→\" nommant les médias.\n"
+            '1-2 phrases de contexte, puis 2 constats "→" nommant les médias.\n'
             "Chaque constat : un angle couvert par certains mais pas d'autres, "
             "ou un même fait cadré différemment.\n\n"
             "RÈGLES : uniquement les titres/résumés fournis, pas de faits inventés. "
@@ -383,7 +383,7 @@ class PerspectiveService:
         from app.models.content import Content
         from app.models.source import Source
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
         # Build OR conditions: entities text array contains entity name
         entity_filters = [

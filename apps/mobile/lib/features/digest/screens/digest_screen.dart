@@ -9,7 +9,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
-import '../../../shared/widgets/mode_accent.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
@@ -18,7 +17,6 @@ import '../../feed/providers/feed_provider.dart';
 import '../../app_update/widgets/update_button.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../onboarding/providers/onboarding_provider.dart';
 import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
@@ -29,6 +27,7 @@ import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
 import '../widgets/digest_personalization_sheet.dart';
+import '../widgets/digest_progress_bar.dart';
 import '../widgets/digest_welcome_modal.dart';
 import '../widgets/widget_pin_nudge.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -238,13 +237,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
-  void _handleReportNotSerene(DigestItem item) {
-    ref.read(digestProvider.notifier).applyAction(
-          item.contentId,
-          'report_not_serene',
-        );
-  }
-
   void _handleNotInterested(DigestItem item) {
     HapticFeedback.lightImpact();
 
@@ -312,15 +304,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         Container(
           color: colors.backgroundPrimary,
         ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: SafeArea(
-            bottom: false,
-            child: ModeAccent(isSerein: sereinState.enabled),
-          ),
-        ),
         Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
@@ -332,27 +315,48 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo, streak, and update button
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space6,
-                        vertical: FacteurSpacing.space3,
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          FacteurLogo(size: 22, showIcon: false),
-                          Row(
+                  // Feed-style header with logo and streak (hidden in editorial mode)
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        final digest = digestAsync.valueOrNull;
+                        if (digest != null && digest.usesEditorial) {
+                          return const SizedBox.shrink();
+                        }
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space6,
+                            vertical: FacteurSpacing.space3,
+                          ),
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               StreakIndicator(),
+                              FacteurLogo(size: 22),
                               UpdateButton(),
                             ],
                           ),
-                        ],
-                      ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Progress bar (hidden in editorial mode)
+                  SliverToBoxAdapter(
+                    child: Builder(
+                      builder: (context) {
+                        final digest = digestAsync.valueOrNull;
+                        if (digest == null ||
+                            digest.usesEditorial ||
+                            (digest.items.isEmpty && digest.topics.isEmpty)) {
+                          return const SizedBox.shrink();
+                        }
+                        final notifier = ref.read(digestProvider.notifier);
+                        return DigestProgressBar(
+                          processedCount: notifier.processedCount,
+                          totalCount: notifier.totalCount,
+                        );
+                      },
                     ),
                   ),
 
@@ -591,29 +595,15 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             return _buildEmptyState(colors);
                           }
 
-                          final notifier = ref.read(digestProvider.notifier);
-                          final total = notifier.totalCount;
-                          final userPref = ref.watch(onboardingProvider).answers.dailyArticleCount ?? 5;
-                          final denominator = total < userPref ? total : userPref;
-
                           return DigestBriefingSection(
                             digest: digest,
                             items: digest.items,
                             topics: digest.usesTopics ? digest.topics : null,
-                            processedCount: notifier.processedCount,
-                            dailyGoal: denominator,
                             onItemTap: _openArticle,
                             onLike: _handleLike,
                             onSave: _handleSave,
                             onNotInterested: _handleNotInterested,
-                            onReportNotSerene: sereinState.enabled
-                                ? _handleReportNotSerene
-                                : null,
                             onSwipeDismiss: _handleSwipeDismiss,
-                            onSourceTap: (sourceId) {
-                              ref.read(feedProvider.notifier).setSource(sourceId);
-                              context.goNamed(RouteNames.feed);
-                            },
                             onMuteSource: (sourceId) => ref
                                 .read(feedProvider.notifier)
                                 .muteSourceById(sourceId),
@@ -790,7 +780,6 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         logoUrl: item.source?.logoUrl,
         theme: item.source?.theme,
       ),
-      editorialBadge: item.badge,
     );
   }
 

@@ -7,8 +7,7 @@ class InterestFilterChip extends StatelessWidget {
   final String? selectedTopicSlug;
   final String? selectedTopicName;
   final bool selectedIsTheme;
-  final void Function(String? slug, String? name, {bool isTheme, bool isEntity})
-      onInterestChanged;
+  final void Function(String? slug, String? name, {bool isTheme, bool isEntity}) onInterestChanged;
 
   const InterestFilterChip({
     super.key,
@@ -82,7 +81,7 @@ class InterestFilterChip extends StatelessWidget {
         size: 14,
         color: colorScheme.onPrimary,
       ),
-      onDeleted: () => onInterestChanged(null, null, isTheme: false, isEntity: false),
+      onDeleted: () => onInterestChanged(null, null),
       onPressed: () => _openSheet(context),
       side: BorderSide.none,
       shape: RoundedRectangleBorder(
@@ -96,9 +95,7 @@ class InterestFilterChip extends StatelessWidget {
     InterestFilterSheet.show(
       context,
       currentTopicSlug: selectedTopicSlug,
-      currentIsTheme: selectedIsTheme,
-      onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) =>
-          onInterestChanged(slug, name, isTheme: isTheme, isEntity: isEntity),
+      onInterestSelected: (slug, name) => onInterestChanged(slug, name),
     );
   }
 }

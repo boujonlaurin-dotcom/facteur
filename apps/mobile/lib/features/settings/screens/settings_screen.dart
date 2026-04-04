@@ -185,7 +185,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       _buildTile(
                         context,
                         icon: Icons.person_outline,
-                        title: 'Compte',
+                        title: 'Compte & Widget',
                         subtitle: 'Gérer vos informations',
                         onTap: () {
                           context.pushNamed(RouteNames.account);

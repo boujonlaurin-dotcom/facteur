@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/services/widget_service.dart';
 import '../providers/user_profile_provider.dart';
 import 'package:facteur/core/ui/notification_service.dart';
 
@@ -19,7 +23,7 @@ class AccountScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
-        title: const Text('Compte'),
+        title: const Text('Compte & Widget'),
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: Theme.of(context).textTheme.displaySmall,
@@ -87,6 +91,77 @@ class AccountScreen extends ConsumerWidget {
                 ],
               ),
             ),
+
+            // Section Widget (Android uniquement)
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: FacteurSpacing.space6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(FacteurSpacing.space4),
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(FacteurRadius.large),
+                  border: Border.all(color: colors.surfaceElevated),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'WIDGET',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.textTertiary,
+                            letterSpacing: 1.5,
+                          ),
+                    ),
+                    const SizedBox(height: FacteurSpacing.space3),
+                    InkWell(
+                      onTap: () async {
+                        await WidgetService.requestPinWidget();
+                      },
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                      child: Row(
+                        children: [
+                          Icon(
+                            PhosphorIcons.squaresFour(PhosphorIconsStyle.fill),
+                            color: colors.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: FacteurSpacing.space3),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Ajouter le widget Facteur',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontWeight: FontWeight.w500),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Affiche ton essentiel du jour sur l\'écran d\'accueil',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: colors.textSecondary),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            PhosphorIcons.arrowSquareOut(
+                                PhosphorIconsStyle.regular),
+                            color: colors.textTertiary,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const Spacer(),
 

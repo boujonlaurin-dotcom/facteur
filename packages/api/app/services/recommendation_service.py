@@ -338,6 +338,29 @@ class RecommendationService:
 
             candidates = [c for c in candidates if _matches_entity(c)]
 
+        # Entity filter: post-filter candidates by entity name in content.entities[]
+        if entity:
+            import json as _json
+
+            entity_lower = entity.lower()
+
+            def _matches_entity(c: Content) -> bool:
+                if not c.entities:
+                    return False
+                for raw in c.entities:
+                    try:
+                        e = _json.loads(raw)
+                        if (
+                            isinstance(e, dict)
+                            and e.get("name", "").lower() == entity_lower
+                        ):
+                            return True
+                    except (ValueError, TypeError):
+                        continue
+                return False
+
+            candidates = [c for c in candidates if _matches_entity(c)]
+
         # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
         if source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT:
