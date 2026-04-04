@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -185,7 +186,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       _buildTile(
                         context,
                         icon: Icons.person_outline,
-                        title: 'Compte',
+                        title: kIsWeb ? 'Compte' : 'Compte & Widget',
                         subtitle: 'Gérer vos informations',
                         onTap: () {
                           context.pushNamed(RouteNames.account);
