@@ -1006,9 +1006,17 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
     final imageVisible = _imageWillRender(article);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: FeedCard(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (badgeChip != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 14),
+            child: badgeChip,
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: FeedCard(
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(article),
             alwaysShowDescription: !imageVisible,
@@ -1036,6 +1044,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ),
             isFollowedSource: article.isFollowedSource,
           ),
+        ),
+      ],
     );
   }
 
