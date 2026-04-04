@@ -332,35 +332,27 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               child: CustomScrollView(
                 controller: _scrollController,
                 slivers: [
-                  // Feed-style header with logo, streak, and update button (hidden in editorial mode)
-                  SliverToBoxAdapter(
-                    child: Builder(
-                      builder: (context) {
-                        final digest = digestAsync.valueOrNull;
-                        if (digest != null && digest.usesEditorial) {
-                          return const SizedBox.shrink();
-                        }
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space6,
-                            vertical: FacteurSpacing.space3,
-                          ),
-                          child: Stack(
-                            alignment: Alignment.center,
+                  // Feed-style header with logo, streak, and update button
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space6,
+                        vertical: FacteurSpacing.space3,
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          FacteurLogo(size: 22, showIcon: false),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              FacteurLogo(size: 22, showIcon: false),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  StreakIndicator(),
-                                  UpdateButton(),
-                                ],
-                              ),
+                              StreakIndicator(),
+                              UpdateButton(),
                             ],
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
                   ),
 
