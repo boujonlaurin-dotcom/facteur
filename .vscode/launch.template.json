@@ -1,0 +1,108 @@
+{
+  // Template générique — copier vers .vscode/launch.json sur un nouveau projet.
+  // Remplacer les placeholders <...> par les valeurs du projet.
+  // Ou lancer : bash scripts/init-vscode.sh
+  "version": "0.2.0",
+  "configurations": [
+    // ─────────────────────────────────────────────
+    // CHROME — Web preview (mobile viewport)
+    // ─────────────────────────────────────────────
+    {
+      "name": "Chrome — Production",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>",
+        "--web-browser-flag",
+        "--disable-web-security"
+      ]
+    },
+    {
+      "name": "Chrome — Local API",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Start Backend API",
+      "args": [
+        "-d",
+        "chrome",
+        "--dart-define=API_BASE_URL=http://localhost:8080/api/",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>",
+        "--web-browser-flag",
+        "--disable-web-security"
+      ]
+    },
+
+    // ─────────────────────────────────────────────
+    // iOS SIMULATOR
+    // ─────────────────────────────────────────────
+    {
+      "name": "iOS Simulator — Production",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "args": [
+        "-d",
+        "iPhone",
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
+      ]
+    },
+    {
+      "name": "iOS Simulator — Local API",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Start Backend API",
+      "args": [
+        "-d",
+        "iPhone",
+        // localhost est accessible depuis le simulateur iOS sans IP spéciale
+        "--dart-define=API_BASE_URL=http://localhost:8080/api/",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
+      ]
+    },
+
+    // ─────────────────────────────────────────────
+    // ANDROID EMULATOR
+    // Note: l'émulateur Android accède au host via 10.0.2.2 (pas localhost)
+    // ─────────────────────────────────────────────
+    {
+      "name": "Android Emulator — Production",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Launch Android Emulator",
+      "args": [
+        "-d",
+        "emulator-5554",
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
+      ]
+    },
+    {
+      "name": "Android Emulator — Local API",
+      "request": "launch",
+      "type": "dart",
+      "program": "apps/mobile/lib/main.dart",
+      "preLaunchTask": "Android Emulator + Backend API",
+      "args": [
+        "-d",
+        "emulator-5554",
+        // 10.0.2.2 = adresse du host machine depuis l'émulateur Android
+        "--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
+      ]
+    }
+  ]
+}
