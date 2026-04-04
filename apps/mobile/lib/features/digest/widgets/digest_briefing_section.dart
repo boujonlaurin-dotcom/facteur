@@ -3,9 +3,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
@@ -32,9 +32,11 @@ class DigestBriefingSection extends StatefulWidget {
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onReportNotSerene;
   final void Function(DigestItem)? onSwipeDismiss;
   final void Function(String sourceId)? onMuteSource;
   final void Function(String topic)? onMuteTopic;
+  final void Function(String sourceId)? onSourceTap;
   final bool isSerein;
   final bool usesEditorial;
   final PepiteResponse? pepite;
@@ -42,6 +44,8 @@ class DigestBriefingSection extends StatefulWidget {
   final String? headerText;
   final String? closureText;
   final String? ctaText;
+  final int processedCount;
+  final int dailyGoal;
 
   const DigestBriefingSection({
     super.key,
@@ -52,9 +56,11 @@ class DigestBriefingSection extends StatefulWidget {
     this.onSave,
     this.onLike,
     this.onNotInterested,
+    this.onReportNotSerene,
     this.onSwipeDismiss,
     this.onMuteSource,
     this.onMuteTopic,
+    this.onSourceTap,
     this.isSerein = false,
     this.usesEditorial = false,
     this.pepite,
@@ -62,6 +68,8 @@ class DigestBriefingSection extends StatefulWidget {
     this.headerText,
     this.closureText,
     this.ctaText,
+    this.processedCount = 0,
+    this.dailyGoal = 5,
   });
 
   @override
@@ -171,10 +179,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         // crème transparaître. Plus léger en haut, plus teinté en bas.
         final topColor = isDark
             ? baseColor
-            : baseColor.withValues(alpha: 0.35);
+            : baseColor.withValues(alpha: 0.15);
         final bottomColor = isDark
             ? blendedEnd
-            : blendedEnd.withValues(alpha: 0.55);
+            : blendedEnd.withValues(alpha: 0.30);
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
@@ -214,28 +222,17 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   // Left: title (dynamic in editorial mode)
                   Expanded(
                     child: Text(
-                      widget.usesEditorial && widget.headerText != null
-                          ? widget.headerText!
-                          : "L'Essentiel du jour",
+                      "L'Essentiel du jour",
                       style: Theme.of(context)
                           .textTheme
                           .displaySmall
                           ?.copyWith(
-                            fontSize: (widget.usesEditorial &&
-                                    widget.headerText != null)
-                                ? 20
-                                : 23,
-                            fontWeight: (widget.usesEditorial &&
-                                    widget.headerText != null)
-                                ? FontWeight.w700
-                                : FontWeight.w800,
-                            letterSpacing: -0.5,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
                             color: textPrimary,
                           ),
-                      maxLines: (widget.usesEditorial &&
-                              widget.headerText != null)
-                          ? 3
-                          : 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -244,6 +241,12 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 ],
               ),
               ),
+              // Compact progress counter below title
+              if (widget.dailyGoal > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 14, top: 6),
+                  child: _buildCompactCounter(colors),
+                ),
               const SizedBox(height: 10),
 
               // Content area with crossfade on serein toggle
@@ -297,9 +300,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
         onArticleTap: widget.onItemTap,
-        onLike: widget.onLike,
         onSave: widget.onSave,
         onNotInterested: widget.onNotInterested,
+        onSourceTap: widget.onSourceTap,
         onSwipeDismiss: widget.onSwipeDismiss != null
             ? _handleLocalSwipeDismiss
             : null,
@@ -313,6 +316,42 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
   }
 
   /// Editorial layout: prose + DigestCards + pépite + coup de cœur + closure
+  Widget _buildCompactCounter(FacteurColors colors) {
+    final processed = widget.processedCount;
+    final denominator = widget.dailyGoal;
+    final isComplete = processed >= denominator;
+    final color = isComplete ? colors.success : colors.primary;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$processed/$denominator',
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 5),
+        ...List.generate(denominator, (i) {
+          final isDone = i < processed;
+          return Container(
+            width: 8,
+            height: 2,
+            margin: EdgeInsets.only(right: i < denominator - 1 ? 2 : 0),
+            decoration: BoxDecoration(
+              color: isDone
+                  ? (isComplete ? colors.success : color)
+                  : colors.textTertiary.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(1.25),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildEditorialLayout() {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
@@ -333,9 +372,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           editorialMode: true,
           isSerene: isSerene,
           onArticleTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
           onSwipeDismiss: widget.onSwipeDismiss != null
               ? _handleLocalSwipeDismiss
               : null,
@@ -365,9 +405,10 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           pepite: widget.pepite!,
           isSerene: isSerene,
           onTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
         ),
       );
     }
@@ -379,22 +420,21 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           coupDeCoeur: widget.coupDeCoeur!,
           isSerene: isSerene,
           onTap: widget.onItemTap,
-          onLike: widget.onLike,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
         ),
       );
     }
 
-    // Closure block
-    if (widget.closureText != null) {
-      sections.add(
-        ClosureBlock(
-          closureText: widget.closureText!,
-          ctaText: widget.ctaText,
-        ),
-      );
-    }
+    // Closure block (always shown with fallback)
+    sections.add(
+      ClosureBlock(
+        closureText: widget.closureText ?? 'Bonne lecture !',
+        ctaText: widget.ctaText,
+      ),
+    );
 
     return ListView.separated(
       shrinkWrap: true,
@@ -480,17 +520,21 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           )
         else
         // The card with save/not interested actions and long-press for preview
-        SwipeToOpenCard(
-          onSwipeOpen: () => widget.onItemTap(item),
-          onSwipeDismiss: widget.onSwipeDismiss != null
-              ? () => _handleLocalSwipeDismiss(item)
-              : null,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Opacity(
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
-              boxShadow: const [],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
               content: _convertToContent(item),
+              descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),
+              onSourceTap: widget.onSourceTap != null && item.source?.id != null
+                  ? () => widget.onSourceTap!(item.source!.id!)
+                  : null,
+              onSourceLongPress: () => TopicChip.showArticleSheet(
+                  context, _convertToContent(item),
+                  initialSection: ArticleSheetSection.source),
               onLongPressStart: (_) => ArticlePreviewOverlay.show(
                 context,
                 _convertToContent(item),
@@ -500,13 +544,15 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 details.localOffsetFromOrigin.dy,
               ),
               onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike: widget.onLike != null ? () => widget.onLike!(item) : null,
-              isLiked: item.isLiked,
               onSave: widget.onSave != null ? () => widget.onSave!(item) : null,
               onSaveLongPress: () =>
                   CollectionPickerSheet.show(context, item.contentId),
               onNotInterested: widget.onNotInterested != null
                   ? () => widget.onNotInterested!(item)
+                  : null,
+              isSerene: widget.isSerein,
+              onReportNotSerene: widget.onReportNotSerene != null
+                  ? () => widget.onReportNotSerene!(item)
                   : null,
               isSaved: item.isSaved,
             ),

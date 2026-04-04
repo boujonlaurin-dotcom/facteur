@@ -3,13 +3,16 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../../widgets/design/facteur_thumbnail.dart';
+import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'article_thumbs_feedback.dart';
+import 'editorial_badge.dart';
 
 /// A single topic section in the digest topics layout.
 ///
@@ -23,12 +26,14 @@ class TopicSection extends StatefulWidget {
   final void Function(DigestItem)? onLike;
   final void Function(DigestItem)? onSave;
   final void Function(DigestItem)? onNotInterested;
+  final void Function(DigestItem)? onReportNotSerene;
   final void Function(DigestItem)? onSwipeDismiss;
   final String? activeDismissalId;
   final VoidCallback? onDismissUndo;
   final VoidCallback? onDismissAutoResolve;
   final VoidCallback? onDismissMuteSource;
   final void Function(String topic)? onDismissMuteTopic;
+  final void Function(String sourceId)? onSourceTap;
   final bool editorialMode;
   final bool isSerene;
 
@@ -39,12 +44,14 @@ class TopicSection extends StatefulWidget {
     this.onLike,
     this.onSave,
     this.onNotInterested,
+    this.onReportNotSerene,
     this.onSwipeDismiss,
     this.activeDismissalId,
     this.onDismissUndo,
     this.onDismissAutoResolve,
     this.onDismissMuteSource,
     this.onDismissMuteTopic,
+    this.onSourceTap,
     this.editorialMode = false,
     this.isSerene = false,
   });
@@ -56,6 +63,9 @@ class TopicSection extends StatefulWidget {
 class _TopicSectionState extends State<TopicSection> {
   late final PageController _pageController;
   int _currentPage = 0;
+
+  /// Content IDs whose images failed to load (detected at runtime).
+  final Set<String> _collapsedImages = {};
 
   @override
   void initState() {
@@ -71,11 +81,74 @@ class _TopicSectionState extends State<TopicSection> {
     super.dispose();
   }
 
-  /// Estimated body + footer height for FeedCard WITH image.
-  /// Body: padding (24) + title 3×24px (72) + SizedBox (8) + meta row (20) = 124
-  /// Footer: border (1) + padding (8) + row with buttons (32) = 41
-  /// Small buffer for content variation = 5
-  static const double _bodyFooterHeight = 170.0;
+  /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
+  static const double _footerHeight = 57.0;
+
+  /// Body padding top + bottom (FacteurSpacing.space3 × 2 = 24)
+  static const double _bodyPadding = 24.0;
+
+  /// Meta row: type icon + duration text
+  static const double _metaRowHeight = 20.0;
+
+  /// SizedBox spacers inside body (space2 = 8 each)
+  static const double _spacer = 8.0;
+
+  /// Returns true if this article's image is expected to render.
+  bool _imageWillRender(DigestItem article) {
+    final url = article.thumbnailUrl;
+    return url != null &&
+        url.isNotEmpty &&
+        !FacteurThumbnail.failedUrls.contains(url) &&
+        !_collapsedImages.contains(article.contentId);
+  }
+
+  /// Called by FeedCard when FacteurThumbnail reports an image error.
+  void _onImageError(String contentId) {
+    if (mounted && !_collapsedImages.contains(contentId)) {
+      setState(() => _collapsedImages.add(contentId));
+    }
+  }
+
+  /// Estimate a single card's height based on its content.
+  double _estimateCardHeight(DigestItem article, double cardWidth) {
+    final hasImage = _imageWillRender(article);
+
+    // Title: fontSize 20, lineHeight 1.2, maxLines 3
+    // Estimate line count from title length vs available width.
+    // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
+    final charsPerLine = (cardWidth - _bodyPadding) / 10;
+    final titleLines =
+        (article.title.length / charsPerLine).ceil().clamp(1, 3);
+    final titleHeight = titleLines * 20.0 * 1.2;
+
+    double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
+
+    // Description only shown when no image (alwaysShowDescription: !imageVisible)
+    if (!hasImage) {
+      final desc = article.description ?? '';
+      if (desc.isNotEmpty) {
+        final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
+        final descLines =
+            (desc.length / descCharsPerLine).ceil().clamp(1, 4);
+        // descriptionFontSize: 15, lineHeight: 1.3
+        final descHeight = descLines * 15.0 * 1.3;
+        bodyHeight += _spacer + descHeight;
+      }
+    }
+
+    final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
+    return imageHeight + bodyHeight + _footerHeight;
+  }
+
+  /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
+  double _computeHeight(List<DigestItem> articles, double cardWidth) {
+    double maxH = 0;
+    for (final article in articles) {
+      final h = _estimateCardHeight(article, cardWidth);
+      if (h > maxH) maxH = h;
+    }
+    return maxH;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,31 +179,38 @@ class _TopicSectionState extends State<TopicSection> {
 
           // Article card(s)
           if (isMulti)
-            // Multi-article: PageView needs a fixed height
+            // Multi-article: PageView with dynamic height
             LayoutBuilder(
               builder: (context, constraints) {
                 final cardWidth = constraints.maxWidth * 0.88;
-                final hasAnyImage = topic.articles.any((a) =>
-                    a.thumbnailUrl != null && a.thumbnailUrl!.isNotEmpty);
-                final imageHeight = hasAnyImage ? cardWidth / (16 / 9) : 0.0;
-                const bodyHeight = _bodyFooterHeight;
-                final computedHeight = imageHeight + bodyHeight;
+                final computedHeight =
+                    _computeHeight(topic.articles, cardWidth);
 
-                return SizedBox(
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeInOut,
                   height: computedHeight,
-                  child: _buildPageView(topic),
+                  child: ClipRect(
+                    child: _buildPageView(topic),
+                  ),
                 );
               },
             )
           else if (!topic.articles.first.isDismissed)
-            // Singleton: no PageView, let the card size itself naturally
             _buildSingleArticle(topic.articles.first),
 
           // Page indicator dots (only for multi-article)
           if (isMulti) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
             _buildPageIndicator(colors, topic.articles.length),
           ],
+
+          // Article feedback thumbs (1 per topic group)
+          ArticleThumbsFeedback(
+            contentId: isMulti
+                ? topic.articles[_currentPage].contentId
+                : topic.articles.first.contentId,
+          ),
         ],
       ),
     );
@@ -284,6 +364,7 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
+  /// Singleton card — natural height, no fixed SizedBox.
   Widget _buildSingleArticle(DigestItem article) {
     // Show dismiss banner if this article is being dismissed
     if (widget.activeDismissalId == article.contentId) {
@@ -299,31 +380,49 @@ class _TopicSectionState extends State<TopicSection> {
       );
     }
 
-    return SwipeToOpenCard(
-      onSwipeOpen: () => widget.onArticleTap(article),
-      onSwipeDismiss: widget.onSwipeDismiss != null
-          ? () => widget.onSwipeDismiss!(article)
-          : null,
-      child: FeedCard(
-        boxShadow: const [],
-        content: _convertToContent(article),
-        onTap: () => widget.onArticleTap(article),
-        onLongPressStart: (_) =>
-            ArticlePreviewOverlay.show(context, _convertToContent(article)),
-        onLongPressMoveUpdate: (details) => ArticlePreviewOverlay.updateScroll(
-            details.localOffsetFromOrigin.dy),
-        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-        onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
-        isLiked: article.isLiked,
-        onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
-        onSaveLongPress: () =>
-            CollectionPickerSheet.show(context, article.contentId),
-        isSaved: article.isSaved,
-        onNotInterested: widget.onNotInterested != null
-            ? () => widget.onNotInterested!(article)
-            : null,
-        isFollowedSource: article.isFollowedSource,
-      ),
+    final imageVisible = _imageWillRender(article);
+    final badgeChip = EditorialBadge.chip(article.badge, context: context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (badgeChip != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 6),
+            child: badgeChip,
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: FeedCard(
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+            content: _convertToContent(article),
+            alwaysShowDescription: !imageVisible,
+            descriptionFontSize: 15,
+            onImageError: () => _onImageError(article.contentId),
+            onTap: () => widget.onArticleTap(article),
+            onSourceTap: widget.onSourceTap != null && article.source?.id != null
+                ? () => widget.onSourceTap!(article.source!.id!)
+                : null,
+            onSourceLongPress: () => TopicChip.showArticleSheet(
+                context, _convertToContent(article),
+                initialSection: ArticleSheetSection.source),
+            onLongPressStart: (_) =>
+                ArticlePreviewOverlay.show(context, _convertToContent(article)),
+            onLongPressMoveUpdate: (details) =>
+                ArticlePreviewOverlay.updateScroll(
+                    details.localOffsetFromOrigin.dy),
+            onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+            onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+            onSaveLongPress: () =>
+                CollectionPickerSheet.show(context, article.contentId),
+            isSaved: article.isSaved,
+            onNotInterested: widget.onNotInterested != null
+                ? () => widget.onNotInterested!(article)
+                : null,
+            isFollowedSource: article.isFollowedSource,
+          ),
+        ),
+      ],
     );
   }
 
@@ -334,32 +433,53 @@ class _TopicSectionState extends State<TopicSection> {
       itemCount: topic.articles.length,
       itemBuilder: (context, index) {
         final article = topic.articles[index];
+        final imageVisible = _imageWillRender(article);
+        final badgeChip = EditorialBadge.chip(article.badge, context: context);
+        final card = FeedCard(
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          content: _convertToContent(article),
+          alwaysShowDescription: !imageVisible,
+          descriptionFontSize: 15,
+          onImageError: () => _onImageError(article.contentId),
+          onTap: () => widget.onArticleTap(article),
+          onSourceTap: widget.onSourceTap != null && article.source?.id != null
+              ? () => widget.onSourceTap!(article.source!.id!)
+              : null,
+          onSourceLongPress: () => TopicChip.showArticleSheet(
+              context, _convertToContent(article),
+              initialSection: ArticleSheetSection.source),
+          onLongPressStart: (_) => ArticlePreviewOverlay.show(
+              context, _convertToContent(article)),
+          onLongPressMoveUpdate: (details) =>
+              ArticlePreviewOverlay.updateScroll(
+                  details.localOffsetFromOrigin.dy),
+          onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+          onSave: widget.onSave != null
+              ? () => widget.onSave!(article)
+              : null,
+          onSaveLongPress: () =>
+              CollectionPickerSheet.show(context, article.contentId),
+          isSaved: article.isSaved,
+          onNotInterested: widget.onNotInterested != null
+              ? () => widget.onNotInterested!(article)
+              : null,
+          isFollowedSource: article.isFollowedSource,
+        );
         return Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
-            child: FeedCard(
-              boxShadow: const [],
-              content: _convertToContent(article),
-              onTap: () => widget.onArticleTap(article),
-              onLongPressStart: (_) => ArticlePreviewOverlay.show(
-                  context, _convertToContent(article)),
-              onLongPressMoveUpdate: (details) =>
-                  ArticlePreviewOverlay.updateScroll(
-                      details.localOffsetFromOrigin.dy),
-              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-              onLike:
-                  widget.onLike != null ? () => widget.onLike!(article) : null,
-              isLiked: article.isLiked,
-              onSave:
-                  widget.onSave != null ? () => widget.onSave!(article) : null,
-              onSaveLongPress: () =>
-                  CollectionPickerSheet.show(context, article.contentId),
-              isSaved: article.isSaved,
-              onNotInterested: widget.onNotInterested != null
-                  ? () => widget.onNotInterested!(article)
-                  : null,
-              isFollowedSource: article.isFollowedSource,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (badgeChip != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: badgeChip,
+                  ),
+                card,
+              ],
             ),
           ),
         );
@@ -374,14 +494,14 @@ class _TopicSectionState extends State<TopicSection> {
         final isActive = index == _currentPage;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: isActive ? 16 : 6,
-          height: 6,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          width: isActive ? 24 : 10,
+          height: 10,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
           decoration: BoxDecoration(
             color: isActive
                 ? colors.primary
                 : colors.textTertiary.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(3),
+            borderRadius: BorderRadius.circular(5),
           ),
         );
       }),
