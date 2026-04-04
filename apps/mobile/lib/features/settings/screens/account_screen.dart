@@ -24,7 +24,7 @@ class AccountScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       appBar: AppBar(
-        title: const Text(kIsWeb ? 'Compte' : 'Compte & Widget'),
+        title: Text(kIsWeb ? 'Compte' : 'Compte & Widget'),
         backgroundColor: colors.backgroundPrimary,
         elevation: 0,
         titleTextStyle: Theme.of(context).textTheme.displaySmall,
