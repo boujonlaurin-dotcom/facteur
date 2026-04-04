@@ -8,6 +8,40 @@ Pour configurer votre environnement de développement et commencer à contribuer
 
 👉 **[Guide de Contribution (Onboarding)](CONTRIBUTING.md)**
 
+## 🖥 Setup IDE (Cursor / VS Code)
+
+Les launch configurations sont versionnées dans `.vscode/launch.json` et se synchronisent automatiquement via Git — aucune reconfiguration manuelle sur un nouveau Mac.
+
+### Configs disponibles
+
+| Nom | Cible | API |
+|-----|-------|-----|
+| Chrome — Production | Web (Chrome) | Railway prod |
+| Chrome — Local API | Web (Chrome) | `localhost:8080` |
+| iOS Simulator — Production | Simulateur iPhone | Railway prod |
+| iOS Simulator — Local API | Simulateur iPhone | `localhost:8080` |
+| Android Emulator — Production | `emulator-5554` | Railway prod |
+| Android Emulator — Local API | `emulator-5554` | `10.0.2.2:8080` |
+
+### Nouveau projet Flutter
+
+Pour initialiser `.vscode/launch.json` sur un projet qui n'en a pas encore :
+
+```bash
+bash scripts/init-vscode.sh
+# puis remplacer les placeholders <...> dans .vscode/launch.json
+```
+
+### Synchronisation globale des configs Cursor
+
+Pour partager les préférences Cursor (thème, keybindings) entre tous vos Macs :
+
+```
+Cmd+Shift+P → "Settings Sync: Turn On"
+```
+
+> Note : `.vscode/settings.json` et `.vscode/extensions.json` restent ignorés par Git (préférences locales). Seuls `launch.json` et `tasks.json` sont versionnés.
+
 ## 📁 Structure du Projet
 
 - `apps/mobile/` : Application mobile Flutter.

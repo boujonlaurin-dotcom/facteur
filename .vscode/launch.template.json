@@ -1,4 +1,7 @@
 {
+  // Template générique — copier vers .vscode/launch.json sur un nouveau projet.
+  // Remplacer les placeholders <...> par les valeurs du projet.
+  // Ou lancer : bash scripts/init-vscode.sh
   "version": "0.2.0",
   "configurations": [
     // ─────────────────────────────────────────────
@@ -12,9 +15,9 @@
       "args": [
         "-d",
         "chrome",
-        "--dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k",
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>",
         "--web-browser-flag",
         "--disable-web-security"
       ]
@@ -29,8 +32,8 @@
         "-d",
         "chrome",
         "--dart-define=API_BASE_URL=http://localhost:8080/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>",
         "--web-browser-flag",
         "--disable-web-security"
       ]
@@ -47,9 +50,9 @@
       "args": [
         "-d",
         "iPhone",
-        "--dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
       ]
     },
     {
@@ -63,14 +66,14 @@
         "iPhone",
         // localhost est accessible depuis le simulateur iOS sans IP spéciale
         "--dart-define=API_BASE_URL=http://localhost:8080/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
       ]
     },
 
     // ─────────────────────────────────────────────
     // ANDROID EMULATOR
-    // Note: l'emulateur Android accède au host via 10.0.2.2 (pas localhost)
+    // Note: l'émulateur Android accède au host via 10.0.2.2 (pas localhost)
     // ─────────────────────────────────────────────
     {
       "name": "Android Emulator — Production",
@@ -81,9 +84,9 @@
       "args": [
         "-d",
         "emulator-5554",
-        "--dart-define=API_BASE_URL=https://facteur-production.up.railway.app/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+        "--dart-define=API_BASE_URL=<https://your-api.railway.app/api/>",
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
       ]
     },
     {
@@ -97,8 +100,8 @@
         "emulator-5554",
         // 10.0.2.2 = adresse du host machine depuis l'émulateur Android
         "--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/",
-        "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
-        "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
+        "--dart-define=SUPABASE_URL=<https://your-project.supabase.co>",
+        "--dart-define=SUPABASE_ANON_KEY=<your-supabase-anon-key>"
       ]
     }
   ]
