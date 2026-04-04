@@ -297,7 +297,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
               children: [
                 if (badgeChip != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: 14),
                     child: badgeChip,
                   ),
                 wrappedCard,
@@ -385,7 +385,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
         children: [
           if (badgeChip != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(bottom: 14),
               child: badgeChip,
             ),
           wrappedCard,
