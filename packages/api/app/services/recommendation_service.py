@@ -6,7 +6,7 @@ import unicodedata
 from uuid import UUID
 
 import structlog
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -944,8 +944,6 @@ class RecommendationService:
 
         Returns: (filtered_result, carousel_dicts)
         """
-        import json as _json
-
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
@@ -1216,13 +1214,13 @@ class RecommendationService:
                         select(
                             Content.id,
                             func.sum(
-                                func.case(
+                                case(
                                     (UserContentStatus.is_saved.is_(True), 1),
                                     else_=0,
                                 )
                             ).label("save_count"),
                             func.sum(
-                                func.case(
+                                case(
                                     (UserContentStatus.is_liked.is_(True), 1),
                                     else_=0,
                                 )
@@ -1240,7 +1238,7 @@ class RecommendationService:
                         .group_by(Content.id)
                         .having(
                             func.sum(
-                                func.case(
+                                case(
                                     (UserContentStatus.is_saved.is_(True), 1),
                                     else_=0,
                                 )
@@ -1250,13 +1248,13 @@ class RecommendationService:
                         .order_by(
                             (
                                 func.sum(
-                                    func.case(
+                                    case(
                                         (UserContentStatus.is_saved.is_(True), 1),
                                         else_=0,
                                     )
                                 )
                                 + func.sum(
-                                    func.case(
+                                    case(
                                         (UserContentStatus.is_liked.is_(True), 1),
                                         else_=0,
                                     )
@@ -2201,8 +2199,6 @@ class RecommendationService:
 
     def _source_affinity_stmt(self, user_id: UUID):
         """Build the source affinity query statement (reusable for parallel execution)."""
-        from sqlalchemy import case
-
         return (
             select(
                 Content.source_id,
