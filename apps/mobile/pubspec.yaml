@@ -51,6 +51,9 @@ dependencies:
   url_launcher: ^6.2.5
   flutter_secure_storage: ^10.0.0
   
+  # Home Screen Widget
+  home_widget: ^0.7.0
+
   # Push Notifications (local, no FCM)
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0

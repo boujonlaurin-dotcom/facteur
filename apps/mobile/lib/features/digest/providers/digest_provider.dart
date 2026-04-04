@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/digest_models.dart';
 import '../repositories/digest_repository.dart';
@@ -88,6 +89,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         _cachedDate = _todayDateString;
         // Sync toggle with server preference
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
+        // Push to home screen widget
+        _syncWidget();
         return _activeDigest;
       } on DigestGenerationException {
         if (attempt < _digestMaxRetries) {
@@ -181,6 +184,12 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
+  /// Push current digest state to the home screen widget.
+  void _syncWidget() {
+    final digest = state.value;
+    WidgetService.updateWidget(digest: digest);
+  }
+
   /// Clear the in-memory cache (forces next load to call API).
   void _clearCache() {
     _normalDigest = null;
@@ -257,6 +266,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       // Trigger haptic feedback on success
       await _triggerHaptic(action);
       _showActionNotification(action);
+
+      // Push updated state to home screen widget
+      _syncWidget();
 
       // Check for completion
       _checkAndHandleCompletion();
@@ -335,6 +347,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       );
       state = AsyncData(completedDigest);
       _updateActiveCache(completedDigest);
+
+      // Push completed state to home screen widget
+      _syncWidget();
 
       // Show completion notification
       NotificationService.showSuccess('Briefing terminé !');

@@ -21,6 +21,7 @@ credentials.json
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+!.vscode/launch.template.json
 !.vscode/tasks.json
 .cursor/
 .idea/
