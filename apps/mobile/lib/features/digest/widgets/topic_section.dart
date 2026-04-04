@@ -93,6 +93,9 @@ class _TopicSectionState extends State<TopicSection> {
   /// SizedBox spacers inside body (space2 = 8 each)
   static const double _spacer = 8.0;
 
+  /// Badge chip above card (chip height + bottom padding)
+  static const double _badgeHeight = 30.0;
+
   /// Returns true if this article's image is expected to render.
   bool _imageWillRender(DigestItem article) {
     final url = article.thumbnailUrl;
@@ -137,7 +140,8 @@ class _TopicSectionState extends State<TopicSection> {
     }
 
     final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
-    return imageHeight + bodyHeight + _footerHeight;
+    // Badge chip above card + 8px safety margin for text estimation variance
+    return imageHeight + bodyHeight + _footerHeight + _badgeHeight + 8.0;
   }
 
   /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
@@ -388,7 +392,7 @@ class _TopicSectionState extends State<TopicSection> {
       children: [
         if (badgeChip != null)
           Padding(
-            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 6),
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 14),
             child: badgeChip,
           ),
         Padding(
@@ -416,9 +420,9 @@ class _TopicSectionState extends State<TopicSection> {
             onSaveLongPress: () =>
                 CollectionPickerSheet.show(context, article.contentId),
             isSaved: article.isSaved,
-            onNotInterested: widget.onNotInterested != null
-                ? () => widget.onNotInterested!(article)
-                : null,
+            topicChipWidget: TopicChip(
+              content: _convertToContent(article),
+            ),
             isFollowedSource: article.isFollowedSource,
           ),
         ),
@@ -460,9 +464,9 @@ class _TopicSectionState extends State<TopicSection> {
           onSaveLongPress: () =>
               CollectionPickerSheet.show(context, article.contentId),
           isSaved: article.isSaved,
-          onNotInterested: widget.onNotInterested != null
-              ? () => widget.onNotInterested!(article)
-              : null,
+          topicChipWidget: TopicChip(
+            content: _convertToContent(article),
+          ),
           isFollowedSource: article.isFollowedSource,
         );
         return Padding(
@@ -475,7 +479,7 @@ class _TopicSectionState extends State<TopicSection> {
               children: [
                 if (badgeChip != null)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.only(bottom: 14),
                     child: badgeChip,
                   ),
                 card,
@@ -528,6 +532,7 @@ class _TopicSectionState extends State<TopicSection> {
       ),
       isLiked: item.isLiked,
       isSaved: item.isSaved,
+      topics: item.topics,
     );
   }
 

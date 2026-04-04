@@ -15,7 +15,9 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
 
 import '../../feed/providers/feed_provider.dart';
+import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_button.dart';
+import '../../app_update/widgets/update_modal.dart';
 import '../../gamification/widgets/streak_indicator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
@@ -48,6 +50,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _showWelcome = false;
   bool _hasCheckedWelcome = false;
   bool _notifBannerDismissed = false;
+  bool _hasCheckedUpdate = false;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -291,6 +294,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
 
     // Listen to scroll to top trigger
     ref.listen(digestScrollTriggerProvider, (_, __) => _scrollToTop());
+
+    // Show update modal at launch when an update is available
+    ref.listen(appUpdateProvider, (previous, next) {
+      if (_hasCheckedUpdate) return;
+      next.whenData((info) {
+        if (info != null && info.updateAvailable && UpdateModal.shouldShow()) {
+          _hasCheckedUpdate = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              UpdateModal.show(context, info: info);
+            }
+          });
+        }
+      });
+    });
 
     debugPrint('DigestScreen: digestAsync state = ${digestAsync.toString()}');
 
