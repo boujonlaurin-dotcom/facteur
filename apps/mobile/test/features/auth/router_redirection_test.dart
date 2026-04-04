@@ -1,35 +1,20 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/core/auth/auth_state.dart';
 import 'package:facteur/features/auth/screens/email_confirmation_screen.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
+// For debugPrint
 
-// Lightweight fake that never calls _init() or touches Supabase
-class FakeAuthStateNotifier extends StateNotifier<AuthState>
-    implements AuthStateNotifier {
-  FakeAuthStateNotifier(AuthState initialState) : super(initialState);
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+// Simple stub for AuthStateNotifier to control state in tests
+class FakeAuthStateNotifier extends AuthStateNotifier {
+  FakeAuthStateNotifier(AuthState initialState) : super() {
+    state = initialState;
+  }
 }
 
 void main() {
-  late Directory tempDir;
-
-  setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('hive_router_test_');
-    Hive.init(tempDir.path);
-    await Hive.openBox<dynamic>('settings');
-  });
-
-  tearDown(() async {
-    await Hive.close();
-    await tempDir.delete(recursive: true);
-  });
   testWidgets(
       'Router should redirect to EmailConfirmationScreen if user is logged in but unconfirmed',
       (WidgetTester tester) async {

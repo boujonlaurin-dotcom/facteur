@@ -162,7 +162,7 @@ void main() {
         () {
       const state = AuthState(isLoading: true);
       // Simulation de la logique router : if (authState.isLoading) return splash
-      final shouldShowSplash = state.isLoading;
+      const shouldShowSplash = state.isLoading;
       expect(shouldShowSplash, isTrue,
           reason:
               'Pendant l\'init, le router doit attendre sur splash et ne pas'

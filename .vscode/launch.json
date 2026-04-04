@@ -1,8 +1,11 @@
 {
   "version": "0.2.0",
   "configurations": [
+    // ─────────────────────────────────────────────
+    // CHROME — Web preview (mobile viewport)
+    // ─────────────────────────────────────────────
     {
-      "name": "Facteur (Chrome)",
+      "name": "Chrome — Production",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -17,7 +20,7 @@
       ]
     },
     {
-      "name": "Facteur (Chrome — Local API)",
+      "name": "Chrome — Local API",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -32,8 +35,12 @@
         "--disable-web-security"
       ]
     },
+
+    // ─────────────────────────────────────────────
+    // iOS SIMULATOR
+    // ─────────────────────────────────────────────
     {
-      "name": "Facteur (iOS Simulator)",
+      "name": "iOS Simulator — Production",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -46,7 +53,7 @@
       ]
     },
     {
-      "name": "Facteur (iOS Simulator — Local API)",
+      "name": "iOS Simulator — Local API",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -54,13 +61,19 @@
       "args": [
         "-d",
         "iPhone",
+        // localhost est accessible depuis le simulateur iOS sans IP spéciale
         "--dart-define=API_BASE_URL=http://localhost:8080/api/",
         "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
         "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"
       ]
     },
+
+    // ─────────────────────────────────────────────
+    // ANDROID EMULATOR
+    // Note: l'emulateur Android accède au host via 10.0.2.2 (pas localhost)
+    // ─────────────────────────────────────────────
     {
-      "name": "Facteur (Android)",
+      "name": "Android Emulator — Production",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -74,7 +87,7 @@
       ]
     },
     {
-      "name": "Facteur (Android — Local API)",
+      "name": "Android Emulator — Local API",
       "request": "launch",
       "type": "dart",
       "program": "apps/mobile/lib/main.dart",
@@ -82,6 +95,7 @@
       "args": [
         "-d",
         "emulator-5554",
+        // 10.0.2.2 = adresse du host machine depuis l'émulateur Android
         "--dart-define=API_BASE_URL=http://10.0.2.2:8080/api/",
         "--dart-define=SUPABASE_URL=https://ykuadtelnzavrqzbfdve.supabase.co",
         "--dart-define=SUPABASE_ANON_KEY=sb_publishable_0L_kPMbe0Pk9eBdzeEsIZg_0pogzm3k"

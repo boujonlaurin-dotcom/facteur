@@ -79,7 +79,7 @@ void main() {
       ));
 
       expect(
-        find.text('4 articles récents sur Intelligence artificielle'),
+        find.text('4 articles récents sur \u2022 Intelligence artificielle'),
         findsOneWidget,
       );
     });
@@ -94,7 +94,7 @@ void main() {
       ));
 
       expect(
-        find.text('2 articles récents sur Climat'),
+        find.text('2 autres articles sur \u2022 Climat'),
         findsOneWidget,
       );
     });
@@ -108,7 +108,7 @@ void main() {
         ),
       ));
 
-      await tester.tap(find.textContaining('3 articles récents'));
+      await tester.tap(find.textContaining('3 autres articles'));
       await tester.pumpAndSettle();
 
       // ClusterViewScreen should be pushed
