@@ -11,6 +11,8 @@ from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
 from app.schemas.content import FeedRefreshRequest
 from app.schemas.feed import (
+    CarouselInfo,
+    CarouselItemBadge,
     ClusterInfo,
     EntityOverflowInfo,
     FeedResponse,
@@ -60,6 +62,10 @@ async def get_personalized_feed(
     """
     service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
+
+    # serein=True overrides mode to use the serein filter (same as INSPIRATION)
+    if serein and not mode:
+        mode = FeedFilterMode.INSPIRATION
 
     # Get Feed Items only - briefing moved to dedicated digest endpoint
     feed_items = await service.get_feed(
@@ -130,6 +136,20 @@ async def get_personalized_feed(
                 sources=sources,
             )
         )
+    # Carousels from overflow group promotion
+    carousels_data = []
+    for c in service.carousels:
+        carousels_data.append(
+            CarouselInfo(
+                carousel_type=c["carousel_type"],
+                title=c["title"],
+                emoji=c["emoji"],
+                position=c["position"],
+                items=c["items"],
+                badges=[CarouselItemBadge(**b) for b in c["badges"]],
+            )
+        )
+
     return FeedResponse(
         items=feed_items,
         pagination=PaginationMeta(
@@ -143,6 +163,7 @@ async def get_personalized_feed(
         topic_overflow=topic_overflow_data,
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
+        carousels=carousels_data,
     )
 
 

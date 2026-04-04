@@ -84,6 +84,7 @@ class FeedRepository {
         print('[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
 
         List<Content> itemsList = [];
+        List<FeedCarouselData> carousels = [];
 
         // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
         if (data is List) {
@@ -370,6 +371,22 @@ class FeedRepository {
               }
             }
           }
+          // Carousels from overflow group promotion
+          final carouselsRaw = data['carousels'];
+          if (carouselsRaw is List) {
+            for (final c in carouselsRaw) {
+              try {
+                if (c is Map<String, dynamic>) {
+                  carousels.add(FeedCarouselData.fromJson(c));
+                }
+              } catch (err) {
+                print('FeedRepository: Skipping corrupt carousel: $err');
+              }
+            }
+            if (carousels.isNotEmpty) {
+              print('[DEBUG] FeedRepository: ${carousels.length} carousels parsed');
+            }
+          }
         } else if (data == null) {
           // Empty response
           itemsList = [];
@@ -388,6 +405,7 @@ class FeedRepository {
             total: 0, // Inconnu
             hasNext: hasNext,
           ),
+          carousels: carousels,
         );
       }
       throw Exception('Failed to load feed: ${response.statusCode}');

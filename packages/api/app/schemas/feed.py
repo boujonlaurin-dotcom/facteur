@@ -86,6 +86,25 @@ class EntityOverflowInfo(BaseModel):
     sources: list[OverflowSourceInfo] = []
 
 
+class CarouselItemBadge(BaseModel):
+    """Badge contextuel pour un item de carrousel."""
+
+    code: str  # "actu_chaude", "focus_topic", "autre_angle", etc.
+    label: str  # "Actu chaude", "Startups", "Autre angle"
+    emoji: str  # "🔴", "🎯", "🔍"
+
+
+class CarouselInfo(BaseModel):
+    """Carrousel thématique à intercaler dans le feed."""
+
+    carousel_type: str  # "hot" | "favorite" | "deep"
+    title: str  # "Actu chaude : Trump"
+    emoji: str  # "🔴"
+    position: int  # Position suggérée dans le feed (0-indexed)
+    items: list[FeedItemResponse]  # Articles complets (3-5)
+    badges: list[CarouselItemBadge]  # 1 badge par item (même index)
+
+
 class FeedResponse(BaseModel):
     """Réponse feed paginé."""
 
@@ -96,6 +115,7 @@ class FeedResponse(BaseModel):
     topic_overflow: list[TopicOverflowInfo] = []
     keyword_overflow: list[KeywordOverflowInfo] = []
     entity_overflow: list[EntityOverflowInfo] = []
+    carousels: list[CarouselInfo] = []
 
 
 class FeedFilters(BaseModel):

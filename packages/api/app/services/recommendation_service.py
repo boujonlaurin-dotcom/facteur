@@ -60,6 +60,7 @@ class RecommendationService:
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
         self.keyword_overflow: list[dict] = []  # Populated by keyword regroupement
         self.entity_overflow: list[dict] = []  # Populated by entity regroupement
+        self.carousels: list[dict] = []  # Populated by _build_carousels()
         # Initialisation du moteur avec les couches configurées
         # L'ordre n'affecte pas le score (somme), mais affecte les logs/debugging
         self.scoring_engine = ScoringEngine(
@@ -388,6 +389,9 @@ class RecommendationService:
             user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
             self.user_custom_topics = user_custom_topics
 
+            # Snapshot all articles before regroupement removes hidden ones
+            pre_regroup_map = {a.id: a for a in result}
+
             # Phase 1.5: Entity regroupement (highest thematic priority)
             result, entity_overflow, assigned_ids, entity_ctas = (
                 self._apply_entity_regroupement(result, ScoringWeights.MAX_TOTAL_CTAS)
@@ -407,6 +411,14 @@ class RecommendationService:
             self.keyword_overflow = keyword_overflow
             self.topic_overflow = topic_overflow
 
+            # Phase 2.5: Promote overflow groups to carousels
+            has_filter = any([theme, topic, source_id, entity, keyword, saved_only])
+            if not has_filter:
+                result, carousel_data = await self._build_carousels(
+                    result, pre_regroup_map, user_id=user_id
+                )
+                self.carousels = carousel_data
+
             # Phase 3: Suppress redundant source CTAs
             self._suppress_redundant_source_overflow()
 
@@ -423,6 +435,17 @@ class RecommendationService:
                 mode="chronological",
                 keyword_overflow_count=len(keyword_overflow),
                 topic_overflow_count=len(topic_overflow),
+                entity_overflow_count=len(entity_overflow),
+                entity_overflow_details=[
+                    {
+                        "name": g["entity_name"],
+                        "hidden": g["hidden_count"],
+                        "sources": len(g.get("sources", [])),
+                    }
+                    for g in entity_overflow[:5]
+                ],
+                carousel_count=len(self.carousels),
+                carousel_types=[c["carousel_type"] for c in self.carousels],
             )
             return result
 
@@ -839,6 +862,7 @@ class RecommendationService:
                     "display_label": display_label,
                     "hidden_count": len(to_hide),
                     "hidden_ids": [a.id for a in to_hide],
+                    "representative_id": representative.id,
                     "sources": sources_list,
                 }
             )
@@ -880,6 +904,444 @@ class RecommendationService:
             if str(source_id) not in thematic_source_ids:
                 updated[source_id] = count
         self.source_overflow = updated
+
+    async def _build_carousels(
+        self,
+        result: list[Content],
+        pre_regroup_map: dict[UUID, Content],
+        user_id: UUID | None = None,
+        max_carousels: int = 6,
+    ) -> tuple[list[Content], list[dict]]:
+        """
+        Promote overflow groups to horizontal carousels.
+
+        Phase A: up to 3 carousels from entity/keyword overflow (hot/favorite/deep).
+        Phase B: up to 3 DB-driven carousels (new_source/gems/saved).
+
+        Returns: (filtered_result, carousel_dicts)
+        """
+        import json as _json
+
+        MIN_CAROUSEL_ITEMS = 3  # Minimum items in carousel (rep + hidden)
+        MAX_CAROUSEL_ITEMS = 5
+        carousels: list[dict] = []
+        promoted_ids: set[UUID] = set()
+        used_group_keys: set[str] = set()  # Prevent same group in hot + deep
+
+        # --- hot: entity with highest hidden_count ---
+        hot_candidates = sorted(
+            self.entity_overflow,
+            key=lambda g: g["hidden_count"],
+            reverse=True,
+        )
+        for group in hot_candidates:
+            if len(carousels) >= max_carousels:
+                break
+            # hidden_count + 1 (representative) = total items in carousel
+            if group["hidden_count"] + 1 < MIN_CAROUSEL_ITEMS:
+                continue
+            rep_id = group.get("representative_id")
+            if not rep_id or rep_id not in pre_regroup_map:
+                continue
+
+            items = [pre_regroup_map[rep_id]]
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
+                if hid in pre_regroup_map:
+                    items.append(pre_regroup_map[hid])
+            if len(items) < MIN_CAROUSEL_ITEMS:
+                continue
+
+            # Extract display name from entity_name
+            display_name = group["entity_name"].title()
+            for raw in items[0].entities:
+                try:
+                    obj = _json.loads(raw)
+                    if obj.get("name", "").lower() == group["entity_name"]:
+                        display_name = obj["name"]
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+            badge = {
+                "code": "actu_chaude",
+                "label": "Actu chaude",
+                "emoji": "\U0001f534",
+            }
+            carousels.append(
+                {
+                    "carousel_type": "hot",
+                    "title": f"Actu chaude : {display_name}",
+                    "emoji": "\U0001f534",
+                    "position": 5,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
+            for item in items:
+                promoted_ids.add(item.id)
+            used_group_keys.add(f"entity:{group['entity_name']}")
+            break  # Only 1 hot carousel
+
+        # --- favorite: keyword_overflow with is_custom_topic == True ---
+        for group in self.keyword_overflow:
+            if len(carousels) >= max_carousels:
+                break
+            if not group.get("is_custom_topic"):
+                continue
+            if group["hidden_count"] + 1 < MIN_CAROUSEL_ITEMS:
+                continue
+            rep_id = group.get("representative_id")
+            if not rep_id or rep_id not in pre_regroup_map:
+                continue
+
+            items = [pre_regroup_map[rep_id]]
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
+                if hid in pre_regroup_map:
+                    items.append(pre_regroup_map[hid])
+            if len(items) < MIN_CAROUSEL_ITEMS:
+                continue
+
+            topic_name = group["keyword"]
+            badge = {
+                "code": "focus_topic",
+                "label": topic_name,
+                "emoji": "\U0001f3af",
+            }
+            carousels.append(
+                {
+                    "carousel_type": "favorite",
+                    "title": f"Focus sur {topic_name}",
+                    "emoji": "\U0001f3af",
+                    "position": 10,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
+            for item in items:
+                promoted_ids.add(item.id)
+            used_group_keys.add(f"keyword:{group['filter_keyword']}")
+            break  # Only 1 favorite carousel
+
+        # --- deep: overflow group with ≥3 different sources, not already used ---
+        deep_candidates = []
+        for group in self.entity_overflow:
+            key = f"entity:{group['entity_name']}"
+            if key in used_group_keys:
+                continue
+            if (
+                group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS
+                and len(group.get("sources", [])) >= 3
+            ):
+                deep_candidates.append(("entity", group))
+        for group in self.keyword_overflow:
+            key = f"keyword:{group['filter_keyword']}"
+            if key in used_group_keys:
+                continue
+            if (
+                group["hidden_count"] + 1 >= MIN_CAROUSEL_ITEMS
+                and len(group.get("sources", [])) >= 3
+            ):
+                deep_candidates.append(("keyword", group))
+
+        # Sort by source count desc (most diverse first)
+        deep_candidates.sort(key=lambda x: len(x[1].get("sources", [])), reverse=True)
+
+        for _kind, group in deep_candidates:
+            if len(carousels) >= max_carousels:
+                break
+            rep_id = group.get("representative_id")
+            if not rep_id or rep_id not in pre_regroup_map:
+                continue
+
+            items = [pre_regroup_map[rep_id]]
+            for hid in group["hidden_ids"][: MAX_CAROUSEL_ITEMS - 1]:
+                if hid in pre_regroup_map and hid not in promoted_ids:
+                    items.append(pre_regroup_map[hid])
+            if len(items) < MIN_CAROUSEL_ITEMS:
+                continue
+
+            display_name = group.get("keyword", group.get("entity_name", "")).title()
+            # Try to get original casing from entity
+            if "entity_name" in group:
+                for raw in items[0].entities:
+                    try:
+                        obj = _json.loads(raw)
+                        if obj.get("name", "").lower() == group["entity_name"]:
+                            display_name = obj["name"]
+                            break
+                    except (ValueError, TypeError):
+                        continue
+
+            badge = {
+                "code": "autre_angle",
+                "label": "Autre angle",
+                "emoji": "\U0001f50d",
+            }
+            carousels.append(
+                {
+                    "carousel_type": "deep",
+                    "title": f"D\u2019autres angles sur {display_name}",
+                    "emoji": "\U0001f50d",
+                    "position": 15,
+                    "items": items,
+                    "badges": [badge] * len(items),
+                }
+            )
+            for item in items:
+                promoted_ids.add(item.id)
+            break  # Only 1 deep carousel
+
+        # ================================================================
+        # Phase B: DB-driven carousels (require user_id + async queries)
+        # ================================================================
+        logger.info(
+            "carousels_phase_b_start",
+            user_id=str(user_id) if user_id else None,
+            phase_a_count=len(carousels),
+            budget_remaining=max_carousels - len(carousels),
+        )
+        if user_id is not None:
+            # --- new_source: articles from recently added sources ---
+            if len(carousels) < max_carousels:
+                seven_days_ago = datetime.datetime.now(
+                    datetime.UTC
+                ) - datetime.timedelta(days=7)
+                new_src_rows = (
+                    await self.session.execute(
+                        select(UserSource.source_id, Source.name)
+                        .join(Source, Source.id == UserSource.source_id)
+                        .where(
+                            UserSource.user_id == user_id,
+                            UserSource.added_at > seven_days_ago,
+                        )
+                    )
+                ).all()
+
+                logger.info(
+                    "carousel_new_source_query",
+                    new_sources_found=len(new_src_rows),
+                    source_names=[r.name for r in new_src_rows[:5]],
+                )
+                if new_src_rows:
+                    new_src_ids = [r.source_id for r in new_src_rows]
+                    src_name_map = {r.source_id: r.name for r in new_src_rows}
+
+                    new_articles = list(
+                        (
+                            await self.session.scalars(
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(
+                                    Content.source_id.in_(new_src_ids),
+                                    Content.published_at > seven_days_ago,
+                                )
+                                .order_by(Content.published_at.desc())
+                                .limit(MAX_CAROUSEL_ITEMS)
+                            )
+                        ).all()
+                    )
+
+                    items = [a for a in new_articles if a.id not in promoted_ids][
+                        :MAX_CAROUSEL_ITEMS
+                    ]
+                    logger.info(
+                        "carousel_new_source_articles",
+                        raw_count=len(new_articles),
+                        after_exclusion=len(items),
+                        min_required=MIN_CAROUSEL_ITEMS,
+                    )
+                    if len(items) >= MIN_CAROUSEL_ITEMS:
+                        first_src_name = src_name_map.get(
+                            items[0].source_id, "nouvelle source"
+                        )
+                        badge = {
+                            "code": "new_source",
+                            "label": "Nouvelle source",
+                            "emoji": "\U0001f195",
+                        }
+                        carousels.append(
+                            {
+                                "carousel_type": "new_source",
+                                "title": f"Récemment ajouté : {first_src_name}",
+                                "emoji": "\U0001f195",
+                                "position": 3,
+                                "items": items,
+                                "badges": [badge] * len(items),
+                            }
+                        )
+                        for item in items:
+                            promoted_ids.add(item.id)
+
+            # --- gems: community favorites (most saved by all users) ---
+            if len(carousels) < max_carousels:
+                thirty_days_ago = datetime.datetime.now(
+                    datetime.UTC
+                ) - datetime.timedelta(days=30)
+                exclusion = Content.id.notin_(promoted_ids) if promoted_ids else True
+                gem_rows = (
+                    await self.session.execute(
+                        select(
+                            Content.id,
+                            func.count(UserContentStatus.id).label("save_count"),
+                        )
+                        .join(
+                            UserContentStatus,
+                            UserContentStatus.content_id == Content.id,
+                        )
+                        .where(
+                            UserContentStatus.is_saved.is_(True),
+                            UserContentStatus.saved_at >= thirty_days_ago,
+                            exclusion,
+                        )
+                        .group_by(Content.id)
+                        .having(func.count(UserContentStatus.id) >= 1)
+                        .order_by(func.count(UserContentStatus.id).desc())
+                        .limit(MAX_CAROUSEL_ITEMS)
+                    )
+                ).all()
+
+                logger.info(
+                    "carousel_gems_query",
+                    gems_found=len(gem_rows),
+                    min_required=MIN_CAROUSEL_ITEMS,
+                    save_counts=[r.save_count for r in gem_rows[:5]],
+                )
+                if len(gem_rows) >= MIN_CAROUSEL_ITEMS:
+                    gem_ids = [r.id for r in gem_rows]
+                    gem_contents = list(
+                        (
+                            await self.session.scalars(
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(Content.id.in_(gem_ids))
+                            )
+                        ).all()
+                    )
+                    # Maintain save_count order
+                    id_order = {gid: i for i, gid in enumerate(gem_ids)}
+                    items = sorted(
+                        gem_contents,
+                        key=lambda c: id_order.get(c.id, 99),
+                    )
+
+                    badge = {
+                        "code": "pepite",
+                        "label": "Pépite",
+                        "emoji": "\U0001f48e",
+                    }
+                    carousels.append(
+                        {
+                            "carousel_type": "gems",
+                            "title": "Pépites de la communauté",
+                            "emoji": "\U0001f48e",
+                            "position": 15,
+                            "items": items,
+                            "badges": [badge] * len(items),
+                        }
+                    )
+                    for item in items:
+                        promoted_ids.add(item.id)
+
+            # --- saved: user's saved but unconsumed articles ---
+            if len(carousels) < max_carousels:
+                saved_articles = list(
+                    (
+                        await self.session.scalars(
+                            select(Content)
+                            .options(selectinload(Content.source))
+                            .join(
+                                UserContentStatus,
+                                UserContentStatus.content_id == Content.id,
+                            )
+                            .where(
+                                UserContentStatus.user_id == user_id,
+                                UserContentStatus.is_saved.is_(True),
+                                UserContentStatus.status != ContentStatus.CONSUMED,
+                            )
+                            .order_by(UserContentStatus.created_at.asc())
+                            .limit(MAX_CAROUSEL_ITEMS)
+                        )
+                    ).all()
+                )
+
+                items = [a for a in saved_articles if a.id not in promoted_ids][
+                    :MAX_CAROUSEL_ITEMS
+                ]
+                logger.info(
+                    "carousel_saved_query",
+                    raw_count=len(saved_articles),
+                    after_exclusion=len(items),
+                    min_required=MIN_CAROUSEL_ITEMS,
+                )
+                if len(items) >= MIN_CAROUSEL_ITEMS:
+                    badges = []
+                    for item in items:
+                        ct = item.content_type
+                        if ct == ContentType.YOUTUBE:
+                            badges.append(
+                                {
+                                    "code": "saved_video",
+                                    "label": "Vidéo sauvegardée",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
+                        elif ct == ContentType.PODCAST:
+                            badges.append(
+                                {
+                                    "code": "saved_audio",
+                                    "label": "Audio sauvegardé",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
+                        else:
+                            badges.append(
+                                {
+                                    "code": "saved_article",
+                                    "label": "Article sauvegardé",
+                                    "emoji": "\U0001f4cc",
+                                }
+                            )
+
+                    carousels.append(
+                        {
+                            "carousel_type": "saved",
+                            "title": "Plus tard, c\u2019est maintenant !",
+                            "emoji": "\U0001f4cc",
+                            "position": 20,
+                            "items": items,
+                            "badges": badges,
+                        }
+                    )
+                    for item in items:
+                        promoted_ids.add(item.id)
+
+        # Remove promoted articles from the main feed
+        if promoted_ids:
+            result = [a for a in result if a.id not in promoted_ids]
+
+        # Convert Content objects to serializable dicts for CarouselInfo
+        carousel_dicts = []
+        for c in carousels:
+            carousel_dicts.append(
+                {
+                    "carousel_type": c["carousel_type"],
+                    "title": c["title"],
+                    "emoji": c["emoji"],
+                    "position": c["position"],
+                    "items": c[
+                        "items"
+                    ],  # Content objects — router will serialize via Pydantic
+                    "badges": c["badges"],
+                }
+            )
+
+        logger.info(
+            "carousels_built",
+            count=len(carousel_dicts),
+            types=[c["carousel_type"] for c in carousel_dicts],
+        )
+
+        return result, carousel_dicts
 
     @staticmethod
     def _apply_source_safety_net(
@@ -1039,6 +1501,7 @@ class RecommendationService:
                     "display_label": display_label,
                     "hidden_count": len(to_hide),
                     "hidden_ids": [a.id for a in to_hide],
+                    "representative_id": available[0].id,
                     "sources": sources_list,
                     "is_custom_topic": is_custom,
                 }

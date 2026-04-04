@@ -733,6 +733,73 @@ class SourceOverflow {
   }
 }
 
+class CarouselItemBadge {
+  final String code;
+  final String label;
+  final String emoji;
+
+  CarouselItemBadge({
+    required this.code,
+    required this.label,
+    required this.emoji,
+  });
+
+  factory CarouselItemBadge.fromJson(Map<String, dynamic> json) {
+    return CarouselItemBadge(
+      code: (json['code'] as String?) ?? '',
+      label: (json['label'] as String?) ?? '',
+      emoji: (json['emoji'] as String?) ?? '',
+    );
+  }
+}
+
+class FeedCarouselData {
+  final String carouselType;
+  final String title;
+  final String emoji;
+  final int position;
+  final List<Content> items;
+  final List<CarouselItemBadge> badges;
+
+  FeedCarouselData({
+    required this.carouselType,
+    required this.title,
+    required this.emoji,
+    required this.position,
+    required this.items,
+    required this.badges,
+  });
+
+  factory FeedCarouselData.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? [];
+    final parsedItems = rawItems
+        .whereType<Map<String, dynamic>>()
+        .map((e) => Content.fromJson(e))
+        .toList();
+    if (parsedItems.length != rawItems.length) {
+      print('[WARN] FeedCarouselData: ${rawItems.length - parsedItems.length}/${rawItems.length} items dropped (not Map<String,dynamic>)');
+    }
+
+    final rawBadges = json['badges'] as List<dynamic>? ?? [];
+    final parsedBadges = rawBadges
+        .whereType<Map<String, dynamic>>()
+        .map((e) => CarouselItemBadge.fromJson(e))
+        .toList();
+    if (parsedBadges.length != rawBadges.length) {
+      print('[WARN] FeedCarouselData: ${rawBadges.length - parsedBadges.length}/${rawBadges.length} badges dropped');
+    }
+
+    return FeedCarouselData(
+      carouselType: (json['carousel_type'] as String?) ?? '',
+      title: (json['title'] as String?) ?? '',
+      emoji: (json['emoji'] as String?) ?? '',
+      position: (json['position'] as int?) ?? 5,
+      items: parsedItems,
+      badges: parsedBadges,
+    );
+  }
+}
+
 class FeedResponse {
   final List<Content> items;
   final Pagination pagination;
@@ -740,6 +807,7 @@ class FeedResponse {
   final List<SourceOverflow> sourceOverflow;
   final List<TopicOverflow> topicOverflow;
   final List<KeywordOverflow> keywordOverflow;
+  final List<FeedCarouselData> carousels;
 
   FeedResponse({
     required this.items,
@@ -748,6 +816,7 @@ class FeedResponse {
     this.sourceOverflow = const [],
     this.topicOverflow = const [],
     this.keywordOverflow = const [],
+    this.carousels = const [],
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -777,6 +846,11 @@ class FeedResponse {
       keywordOverflow: (json['keyword_overflow'] as List<dynamic>?)
               ?.whereType<Map<String, dynamic>>()
               .map((e) => KeywordOverflow.fromJson(e))
+              .toList() ??
+          const [],
+      carousels: (json['carousels'] as List<dynamic>?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((e) => FeedCarouselData.fromJson(e))
               .toList() ??
           const [],
     );

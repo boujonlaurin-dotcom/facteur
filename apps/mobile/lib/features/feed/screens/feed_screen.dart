@@ -43,6 +43,7 @@ import '../widgets/source_overflow_chip.dart';
 import '../widgets/topic_overflow_chip.dart';
 import '../widgets/keyword_overflow_chip.dart';
 import '../widgets/entity_overflow_chip.dart';
+import '../widgets/feed_carousel.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../providers/theme_filters_provider.dart';
 import '../widgets/source_filter_chip.dart';
@@ -637,20 +638,28 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
-                        // childCount calculé dynamiquement pour garantir exactement 1 slot
-                        // trailing (loader ou spacer). CaughtUp et SavedNudge sont
-                        // mutuellement exclusifs → intercalatedCount ≤ 1.
-                        final int intercalatedCount =
-                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0);
-                        final int effectiveChildCount =
-                            contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
-
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
                             notifier.selectedTheme != null ||
                                 notifier.selectedTopic != null ||
                                 notifier.selectedEntity != null ||
                                 notifier.selectedSourceId != null;
+
+                        // Carousels: sorted by position, hidden when filter active
+                        final sortedCarousels = hasActiveFilter
+                            ? <FeedCarouselData>[]
+                            : ([...state.carousels]
+                                .where((c) => c.items.isNotEmpty)
+                                .toList()
+                                ..sort((a, b) => a.position.compareTo(b.position)));
+
+                        // childCount calculé dynamiquement pour garantir exactement 1 slot
+                        // trailing (loader ou spacer). CaughtUp et SavedNudge sont
+                        // mutuellement exclusifs → intercalatedCount ≤ 1.
+                        final int intercalatedCount =
+                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0) + sortedCarousels.length;
+                        final int effectiveChildCount =
+                            contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
 
                         if (contents.isEmpty && hasActiveFilter) {
                           // Resolve source name from ID for display
@@ -754,6 +763,25 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     );
                                   }
                                   if (listIndex > savedNudgeEffectivePos) {
+                                    contentOffset++;
+                                  }
+                                }
+
+                                // Carousels at their designated positions
+                                for (final carousel in sortedCarousels) {
+                                  final effectivePos = carousel.position.clamp(0, contents.length) + contentOffset;
+                                  if (listIndex == effectivePos) {
+                                    contentOffset++;
+                                    return Padding(
+                                      key: ValueKey('carousel_${carousel.carouselType}'),
+                                      padding: const EdgeInsets.only(bottom: 16),
+                                      child: FeedCarousel(
+                                        data: carousel,
+                                        onArticleTap: (c) => _showArticleModal(c),
+                                      ),
+                                    );
+                                  }
+                                  if (listIndex > effectivePos) {
                                     contentOffset++;
                                   }
                                 }
