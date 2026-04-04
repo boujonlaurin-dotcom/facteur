@@ -12,6 +12,7 @@ import '../../features/gamification/models/streak_model.dart';
 /// Data flows: Flutter → SharedPreferences (via home_widget) → FacteurWidget.kt
 class WidgetService {
   static const _androidName = 'FacteurWidget';
+  static final _dio = Dio();
 
   /// Update the home screen widget with the latest digest and streak data.
   static Future<void> updateWidget({
@@ -19,11 +20,14 @@ class WidgetService {
     StreakModel? streak,
   }) async {
     try {
-      // Extract first topic's first article
+      // Extract first two topics' first articles
       final firstTopic = digest?.topics.firstOrNull;
+      final secondTopic =
+          (digest?.topics.length ?? 0) > 1 ? digest!.topics[1] : null;
       final firstArticle = firstTopic?.articles.firstOrNull;
+      final secondArticle = secondTopic?.articles.firstOrNull;
 
-      // Article data
+      // Article 1 data
       await HomeWidget.saveWidgetData(
         'article_title',
         firstArticle?.title ?? '',
@@ -37,16 +41,79 @@ class WidgetService {
         firstTopic?.label ?? '',
       );
 
-      // Download thumbnail locally for widget access
+      // Article 1 thumbnail
       if (firstArticle?.thumbnailUrl != null &&
           firstArticle!.thumbnailUrl!.isNotEmpty) {
-        final imagePath = await _downloadImage(firstArticle.thumbnailUrl!);
+        final imagePath = await _downloadImage(
+          firstArticle.thumbnailUrl!,
+          'widget_thumbnail_1.jpg',
+        );
         if (imagePath != null) {
           await HomeWidget.saveWidgetData('article_image_path', imagePath);
         }
       }
 
+      // Article 1 source logo
+      if (firstArticle?.source?.logoUrl != null &&
+          firstArticle!.source!.logoUrl!.isNotEmpty) {
+        final logoPath = await _downloadImage(
+          firstArticle.source!.logoUrl!,
+          'widget_logo_1.png',
+        );
+        if (logoPath != null) {
+          await HomeWidget.saveWidgetData('article_logo_path', logoPath);
+        }
+      }
+
+      // Article 2 data
+      if (secondArticle != null) {
+        await HomeWidget.saveWidgetData(
+          'article_2_title',
+          secondArticle.title ?? '',
+        );
+        await HomeWidget.saveWidgetData(
+          'article_2_source',
+          secondArticle.source?.name ?? '',
+        );
+        await HomeWidget.saveWidgetData(
+          'article_2_topic',
+          secondTopic?.label ?? '',
+        );
+
+        // Article 2 thumbnail
+        if (secondArticle.thumbnailUrl != null &&
+            secondArticle.thumbnailUrl!.isNotEmpty) {
+          final imagePath2 = await _downloadImage(
+            secondArticle.thumbnailUrl!,
+            'widget_thumbnail_2.jpg',
+          );
+          if (imagePath2 != null) {
+            await HomeWidget.saveWidgetData('article_2_image_path', imagePath2);
+          }
+        }
+
+        // Article 2 source logo
+        if (secondArticle.source?.logoUrl != null &&
+            secondArticle.source!.logoUrl!.isNotEmpty) {
+          final logoPath2 = await _downloadImage(
+            secondArticle.source!.logoUrl!,
+            'widget_logo_2.png',
+          );
+          if (logoPath2 != null) {
+            await HomeWidget.saveWidgetData('article_2_logo_path', logoPath2);
+          }
+        }
+      } else {
+        // Clean stale article 2 data
+        await HomeWidget.saveWidgetData('article_2_title', '');
+        await HomeWidget.saveWidgetData('article_2_source', '');
+        await HomeWidget.saveWidgetData('article_2_topic', '');
+        await HomeWidget.saveWidgetData('article_2_image_path', '');
+        await HomeWidget.saveWidgetData('article_2_logo_path', '');
+      }
+
       // Digest status
+      final shownCount = secondArticle != null ? 2 : 1;
       await HomeWidget.saveWidgetData(
         'digest_status',
         _computeStatus(digest),
@@ -57,7 +124,7 @@ class WidgetService {
       );
       await HomeWidget.saveWidgetData(
         'remaining_count',
-        _computeRemaining(digest),
+        _computeRemaining(digest, shownCount),
       );
 
       // Streak
@@ -78,7 +145,6 @@ class WidgetService {
     if (digest.isCompleted) return 'completed';
 
     // Count processed items (read, saved, or dismissed)
-    final total = _totalArticleCount(digest);
     final processed = _processedArticleCount(digest);
     if (processed > 0) return 'in_progress';
     return 'available';
@@ -91,14 +157,13 @@ class WidgetService {
     return '$processed/$total';
   }
 
-  static String _computeRemaining(DigestResponse? digest) {
+  static String _computeRemaining(DigestResponse? digest, int shownCount) {
     if (digest == null) return '0';
-    // Total articles minus the 1 shown in the widget
     final totalArticles = digest.topics.fold<int>(
       0,
       (sum, topic) => sum + topic.articles.length,
     );
-    final remaining = (totalArticles - 1).clamp(0, 99);
+    final remaining = (totalArticles - shownCount).clamp(0, 99);
     return '$remaining';
   }
 
@@ -144,13 +209,15 @@ class WidgetService {
   }
 
   /// Download an image to local storage and return the file path.
-  static Future<String?> _downloadImage(String url) async {
+  static Future<String?> _downloadImage(
+    String url, [
+    String filename = 'widget_thumbnail.jpg',
+  ]) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/widget_thumbnail.jpg');
+      final file = File('${dir.path}/$filename');
 
-      final dio = Dio();
-      final response = await dio.get<List<int>>(
+      final response = await _dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
       );
