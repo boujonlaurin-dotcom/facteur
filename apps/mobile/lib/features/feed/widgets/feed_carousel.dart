@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
@@ -16,11 +18,39 @@ class FeedCarousel extends StatefulWidget {
   final void Function(Content) onArticleTap;
   final void Function(String sourceId)? onSourceTap;
 
+  // T1: Full card feature parity callbacks
+  final void Function(Content, LongPressStartDetails)? onLongPressStart;
+  final void Function(LongPressMoveUpdateDetails)? onLongPressMoveUpdate;
+  final void Function(LongPressEndDetails)? onLongPressEnd;
+  final void Function(Content)? onSave;
+  final void Function(Content)? onSaveLongPress;
+  final void Function(Content)? onLike;
+  final void Function(Content)? onSourceLongPress;
+  final Widget Function(Content)? topicChipBuilder;
+  final void Function(Content)? onFollowSource;
+  final Set<String>? subscribedSourceIds;
+  final bool hasActiveFilter;
+  final bool isSerene;
+  final void Function(Content)? onReportNotSerene;
+
   const FeedCarousel({
     super.key,
     required this.data,
     required this.onArticleTap,
     this.onSourceTap,
+    this.onLongPressStart,
+    this.onLongPressMoveUpdate,
+    this.onLongPressEnd,
+    this.onSave,
+    this.onSaveLongPress,
+    this.onLike,
+    this.onSourceLongPress,
+    this.topicChipBuilder,
+    this.onFollowSource,
+    this.subscribedSourceIds,
+    this.hasActiveFilter = false,
+    this.isSerene = false,
+    this.onReportNotSerene,
   });
 
   @override
@@ -118,10 +148,17 @@ class _FeedCarouselState extends State<FeedCarousel> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              Text(
-                data.emoji,
-                style: const TextStyle(fontSize: 20),
-              ),
+              if (data.carouselType == 'saved')
+                Icon(
+                  PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
+                  size: 22,
+                  color: colors.warning,
+                )
+              else
+                Text(
+                  data.emoji,
+                  style: const TextStyle(fontSize: 20),
+                ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -190,6 +227,10 @@ class _FeedCarouselState extends State<FeedCarousel> {
           );
         }
 
+        // T5: Grey out reference_read articles
+        final isReference = index < widget.data.badges.length &&
+            widget.data.badges[index].code == 'reference_read';
+
         final card = FeedCard(
           boxShadow: [
             BoxShadow(
@@ -198,18 +239,53 @@ class _FeedCarouselState extends State<FeedCarousel> {
               offset: const Offset(0, 2),
             ),
           ],
+          backgroundColor:
+              isReference ? Colors.grey.withValues(alpha: 0.1) : null,
           content: article,
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
           onImageError: () => _onImageError(article.id),
           onTap: () => widget.onArticleTap(article),
+          // T1: Full card feature parity
+          onLongPressStart: widget.onLongPressStart != null
+              ? (details) => widget.onLongPressStart!(article, details)
+              : null,
+          onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
+          onLongPressEnd: widget.onLongPressEnd,
+          onSave:
+              widget.onSave != null ? () => widget.onSave!(article) : null,
+          onSaveLongPress: widget.onSaveLongPress != null
+              ? () => widget.onSaveLongPress!(article)
+              : null,
+          onLike:
+              widget.onLike != null ? () => widget.onLike!(article) : null,
           onSourceTap: widget.onSourceTap != null
               ? () => widget.onSourceTap!(article.source.id)
               : null,
+          onSourceLongPress: widget.onSourceLongPress != null
+              ? () => widget.onSourceLongPress!(article)
+              : null,
+          topicChipWidget: widget.topicChipBuilder?.call(article),
+          clusterChipWidget: const SizedBox.shrink(),
           isFollowedSource: article.isFollowedSource,
           isSaved: article.isSaved,
           isLiked: article.isLiked,
+          isSourceSubscribed:
+              widget.subscribedSourceIds?.contains(article.source.id) ??
+                  false,
+          hasActiveFilter: widget.hasActiveFilter,
+          onFollowSource:
+              widget.onFollowSource != null && !article.isFollowedSource
+                  ? () => widget.onFollowSource!(article)
+                  : null,
+          isSerene: widget.isSerene,
+          onReportNotSerene: widget.onReportNotSerene != null
+              ? () => widget.onReportNotSerene!(article)
+              : null,
         );
+
+        final wrappedCard =
+            isReference ? Opacity(opacity: 0.65, child: card) : card;
 
         return Padding(
           padding: const EdgeInsets.only(right: 8),
@@ -224,7 +300,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
                     padding: const EdgeInsets.only(bottom: 6),
                     child: badgeChip,
                   ),
-                card,
+                wrappedCard,
               ],
             ),
           ),
@@ -244,6 +320,63 @@ class _FeedCarouselState extends State<FeedCarousel> {
       );
     }
 
+    // T5: Grey out reference_read articles
+    final isReference = badgeIndex < widget.data.badges.length &&
+        widget.data.badges[badgeIndex].code == 'reference_read';
+
+    final card = FeedCard(
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ],
+      backgroundColor:
+          isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+      content: article,
+      alwaysShowDescription: !imageVisible,
+      descriptionFontSize: 15,
+      onImageError: () => _onImageError(article.id),
+      onTap: () => widget.onArticleTap(article),
+      // T1: Full card feature parity
+      onLongPressStart: widget.onLongPressStart != null
+          ? (details) => widget.onLongPressStart!(article, details)
+          : null,
+      onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
+      onLongPressEnd: widget.onLongPressEnd,
+      onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
+      onSaveLongPress: widget.onSaveLongPress != null
+          ? () => widget.onSaveLongPress!(article)
+          : null,
+      onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
+      onSourceTap: widget.onSourceTap != null
+          ? () => widget.onSourceTap!(article.source.id)
+          : null,
+      onSourceLongPress: widget.onSourceLongPress != null
+          ? () => widget.onSourceLongPress!(article)
+          : null,
+      topicChipWidget: widget.topicChipBuilder?.call(article),
+      clusterChipWidget: const SizedBox.shrink(),
+      isFollowedSource: article.isFollowedSource,
+      isSaved: article.isSaved,
+      isLiked: article.isLiked,
+      isSourceSubscribed:
+          widget.subscribedSourceIds?.contains(article.source.id) ?? false,
+      hasActiveFilter: widget.hasActiveFilter,
+      onFollowSource:
+          widget.onFollowSource != null && !article.isFollowedSource
+              ? () => widget.onFollowSource!(article)
+              : null,
+      isSerene: widget.isSerene,
+      onReportNotSerene: widget.onReportNotSerene != null
+          ? () => widget.onReportNotSerene!(article)
+          : null,
+    );
+
+    final wrappedCard =
+        isReference ? Opacity(opacity: 0.65, child: card) : card;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -255,26 +388,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
               padding: const EdgeInsets.only(bottom: 6),
               child: badgeChip,
             ),
-          FeedCard(
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-            content: article,
-            alwaysShowDescription: !imageVisible,
-            descriptionFontSize: 15,
-            onImageError: () => _onImageError(article.id),
-            onTap: () => widget.onArticleTap(article),
-            onSourceTap: widget.onSourceTap != null
-                ? () => widget.onSourceTap!(article.source.id)
-                : null,
-            isFollowedSource: article.isFollowedSource,
-            isSaved: article.isSaved,
-            isLiked: article.isLiked,
-          ),
+          wrappedCard,
         ],
       ),
     );

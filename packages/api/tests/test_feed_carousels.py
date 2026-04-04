@@ -3,6 +3,7 @@
 import json
 import pytest
 from collections import namedtuple
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4, UUID
 from unittest.mock import MagicMock, AsyncMock
 
@@ -25,6 +26,7 @@ class MockContent:
         entities=None,
         content_id=None,
         content_type="article",
+        published_at=None,
     ):
         self.id = content_id or uuid4()
         self.title = title
@@ -32,6 +34,7 @@ class MockContent:
         self.source_id = self.source.id
         self.entities = entities or []
         self.content_type = content_type
+        self.published_at = published_at or datetime.now(UTC)
 
 
 def _make_entity_group(
@@ -128,7 +131,7 @@ class TestBuildCarouselsHot:
         c = carousels[0]
         assert c["carousel_type"] == "hot"
         assert "Trump" in c["title"]
-        assert c["emoji"] == "\U0001f534"
+        assert c["emoji"] == "\U0001f50d"
         assert c["position"] == 5
         assert len(c["items"]) == 5  # rep + 4 hidden
         assert len(c["badges"]) == len(c["items"])
@@ -244,12 +247,13 @@ class TestBuildCarouselsDeep:
 
     @pytest.mark.asyncio
     async def test_deep_carousel_from_second_entity_group(self):
+        """With user_id=None, only hot carousel is created (deep requires perspectives)."""
         service = _setup_service()
         # Group 1: hot candidate (highest hidden_count)
         rep1 = MockContent(title="Trump article")
         hidden1 = [MockContent(title=f"Trump {i}") for i in range(5)]
 
-        # Group 2: deep candidate (multi-source)
+        # Group 2: would have been deep in old code, now needs perspectives
         rep2 = MockContent(title="Iran article")
         hidden2 = [MockContent(title=f"Iran {i}") for i in range(3)]
 
@@ -265,8 +269,8 @@ class TestBuildCarouselsDeep:
         _, carousels = await service._build_carousels([], pre_regroup_map)
         types = [c["carousel_type"] for c in carousels]
         assert "hot" in types
-        assert "deep" in types
-        assert len(carousels) == 2
+        # deep requires user_id + find_perspectives_for_read_article (DB-driven)
+        assert len(carousels) == 1
 
 
 class TestBuildCarouselsBudgetAndRemoval:
@@ -349,8 +353,8 @@ class TestBuildCarouselsNoFilter:
 # ================================================================
 
 # Named tuples to mimic DB row results
-_SourceRow = namedtuple("_SourceRow", ["source_id", "name"])
-_GemRow = namedtuple("_GemRow", ["id", "save_count"])
+_SourceRow = namedtuple("_SourceRow", ["source_id", "name", "added_at"])
+_GemRow = namedtuple("_GemRow", ["id", "save_count", "like_count"])
 
 
 def _setup_service_with_no_overflow():
@@ -369,9 +373,15 @@ def _mock_scalars_result(items):
 
 
 def _mock_execute_result(rows):
-    """Create a mock that behaves like session.execute() result."""
+    """Create a mock that behaves like session.execute() result.
+
+    Handles both .all() and .scalars().all() chains.
+    """
     mock_result = MagicMock()
     mock_result.all.return_value = rows
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = rows
+    mock_result.scalars.return_value = mock_scalars
     return mock_result
 
 
@@ -382,8 +392,9 @@ class TestBuildCarouselsNewSource:
         user_id = uuid4()
         src_id = uuid4()
 
-        # Mock: UserSource query returns 1 new source
-        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch")]
+        # Mock: UserSource query returns 1 new source (added 2 days ago → position 3)
+        two_days_ago = datetime.now(UTC) - timedelta(days=2)
+        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch", added_at=two_days_ago)]
         # Mock: Content query returns 4 articles from that source
         articles = [
             MockContent(
@@ -401,7 +412,10 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            if execute_calls == 1:
+            # 1: consumed_ids, 2: perspectives consumed_rows → empty
+            if execute_calls <= 2:
+                return _mock_execute_result([])
+            if execute_calls == 3:
                 return _mock_execute_result(src_rows)  # new_source
             return _mock_execute_result([])  # gems (empty)
 
@@ -428,7 +442,8 @@ class TestBuildCarouselsNewSource:
         user_id = uuid4()
         src_id = uuid4()
 
-        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch")]
+        two_days_ago = datetime.now(UTC) - timedelta(days=2)
+        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch", added_at=two_days_ago)]
         articles = [
             MockContent(
                 title="Only one",
@@ -442,9 +457,11 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            if execute_calls == 1:
+            if execute_calls <= 2:
+                return _mock_execute_result([])  # consumed_ids + perspectives
+            if execute_calls == 3:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # gems (empty)
+            return _mock_execute_result([])  # gems
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -463,9 +480,10 @@ class TestBuildCarouselsNewSource:
         user_id = uuid4()
 
         # All queries return empty
-        service.session.execute = AsyncMock(
-            return_value=_mock_execute_result([]),
-        )
+        async def mock_execute(stmt):
+            return _mock_execute_result([])
+
+        service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
             return_value=_mock_scalars_result([]),
         )
@@ -483,10 +501,11 @@ class TestBuildCarouselsGems:
         service = _setup_service_with_no_overflow()
         user_id = uuid4()
 
-        # Mock gems: 4 articles with 2+ saves
+        # Mock gems: 4 articles with saves and likes
         gem_articles = [MockContent(title=f"Gem {i}") for i in range(4)]
         gem_rows = [
-            _GemRow(id=a.id, save_count=5 - i) for i, a in enumerate(gem_articles)
+            _GemRow(id=a.id, save_count=5 - i, like_count=i + 1)
+            for i, a in enumerate(gem_articles)
         ]
 
         call_count = 0
@@ -494,10 +513,10 @@ class TestBuildCarouselsGems:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                # First call: new_source query (no results)
+            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            if call_count <= 3:
                 return _mock_execute_result([])
-            # Second call: gems query
+            # 4: gems query
             return _mock_execute_result(gem_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
@@ -525,7 +544,7 @@ class TestBuildCarouselsGems:
         # Only 2 gems (below MIN_CAROUSEL_ITEMS=3)
         gem_articles = [MockContent(title=f"Gem {i}") for i in range(2)]
         gem_rows = [
-            _GemRow(id=a.id, save_count=1) for a in gem_articles
+            _GemRow(id=a.id, save_count=1, like_count=0) for a in gem_articles
         ]
 
         call_count = 0
@@ -533,9 +552,11 @@ class TestBuildCarouselsGems:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                return _mock_execute_result([])  # new_source
-            return _mock_execute_result(gem_rows)  # gems
+            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            if call_count <= 3:
+                return _mock_execute_result([])
+            # 4: gems
+            return _mock_execute_result(gem_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -561,23 +582,14 @@ class TestBuildCarouselsSaved:
             MockContent(title="Saved podcast", content_type="podcast"),
         ]
 
-        call_count = 0
-        scalars_count = 0
-
+        # All execute calls return empty (consumed_ids, perspectives, new_source, gems)
         async def mock_execute(stmt):
-            nonlocal call_count
-            call_count += 1
-            # new_source and gems queries return empty
             return _mock_execute_result([])
 
-        async def mock_scalars(stmt):
-            nonlocal scalars_count
-            scalars_count += 1
-            # saved query returns saved items
-            return _mock_scalars_result(saved_items)
-
         service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(side_effect=mock_scalars)
+        service.session.scalars = AsyncMock(
+            return_value=_mock_scalars_result(saved_items),
+        )
 
         _, carousels = await service._build_carousels(
             [], {}, user_id=user_id,
@@ -634,14 +646,25 @@ class TestBuildCarouselsPhaseB_Integration:
 
         # new_source returns enough articles
         src_id = uuid4()
-        src_rows = [_SourceRow(source_id=src_id, name="Src")]
+        two_days_ago = datetime.now(UTC) - timedelta(days=2)
+        src_rows = [_SourceRow(source_id=src_id, name="Src", added_at=two_days_ago)]
         articles = [MockContent(title=f"Art {i}") for i in range(5)]
         for a in articles:
             a.source_id = src_id
 
-        service.session.execute = AsyncMock(
-            return_value=_mock_execute_result(src_rows),
-        )
+        execute_calls = 0
+
+        async def mock_execute(stmt):
+            nonlocal execute_calls
+            execute_calls += 1
+            # 1: consumed_ids, 2: perspectives → empty
+            if execute_calls <= 2:
+                return _mock_execute_result([])
+            if execute_calls == 3:
+                return _mock_execute_result(src_rows)  # new_source
+            return _mock_execute_result([])  # gems
+
+        service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
             return_value=_mock_scalars_result(articles),
         )

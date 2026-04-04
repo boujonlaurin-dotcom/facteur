@@ -778,6 +778,97 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       child: FeedCarousel(
                                         data: carousel,
                                         onArticleTap: (c) => _showArticleModal(c),
+                                        // T1: Full card feature parity
+                                        onLongPressStart: (c, _) =>
+                                            ArticlePreviewOverlay.show(context, c),
+                                        onLongPressMoveUpdate: (details) =>
+                                            ArticlePreviewOverlay.updateScroll(
+                                                details.localOffsetFromOrigin.dy),
+                                        onLongPressEnd: (_) =>
+                                            ArticlePreviewOverlay.dismiss(),
+                                        onLike: (c) {
+                                          final wasLiked = c.isLiked;
+                                          ref.read(feedProvider.notifier).toggleLike(c);
+                                          NotificationService.showInfo(
+                                            wasLiked
+                                                ? 'Retiré de vos contenus favoris'
+                                                : 'Ajouté à vos contenus favoris',
+                                          );
+                                          ref.invalidate(collectionsProvider);
+                                        },
+                                        onSave: (c) async {
+                                          final wasSaved = c.isSaved;
+                                          ref.read(feedProvider.notifier).toggleSave(c);
+                                          if (!wasSaved) {
+                                            final defaultCol =
+                                                ref.read(defaultCollectionProvider);
+                                            if (defaultCol != null) {
+                                              final colRepo = ref
+                                                  .read(collectionsRepositoryProvider);
+                                              await colRepo.addToCollection(
+                                                  defaultCol.id, c.id);
+                                              ref.invalidate(collectionsProvider);
+                                            }
+                                            if (context.mounted) {
+                                              CollectionPickerSheet.show(
+                                                  context, c.id);
+                                            }
+                                          }
+                                        },
+                                        onSaveLongPress: (c) =>
+                                            CollectionPickerSheet.show(context, c.id),
+                                        onSourceTap: (sourceId) {
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .setSource(sourceId);
+                                          _scrollToTop();
+                                        },
+                                        onSourceLongPress: (c) =>
+                                            TopicChip.showArticleSheet(context, c,
+                                                initialSection:
+                                                    ArticleSheetSection.source),
+                                        topicChipBuilder: (c) => TopicChip(
+                                          content: c,
+                                          isFollowed: c.topics.isNotEmpty &&
+                                              followedTopics.any((t) =>
+                                                  t.slugParent == c.topics.first ||
+                                                  t.name.toLowerCase() ==
+                                                      getTopicLabel(c.topics.first)
+                                                          .toLowerCase()),
+                                          onTap: c.topics.isNotEmpty
+                                              ? () {
+                                                  final slug = c.topics.first;
+                                                  setState(() {
+                                                    _selectedInterestName =
+                                                        getTopicLabel(slug);
+                                                    _selectedIsTheme = false;
+                                                  });
+                                                  ref
+                                                      .read(feedProvider.notifier)
+                                                      .setTopic(slug);
+                                                  _scrollToTop();
+                                                }
+                                              : null,
+                                        ),
+                                        onFollowSource: (c) =>
+                                            TopicChip.showArticleSheet(context, c),
+                                        subscribedSourceIds: subscribedSourceIds,
+                                        hasActiveFilter: hasActiveFilter,
+                                        isSerene:
+                                            ref.watch(sereinToggleProvider).enabled,
+                                        onReportNotSerene: (c) async {
+                                          HapticFeedback.lightImpact();
+                                          try {
+                                            final feedRepo =
+                                                ref.read(feedRepositoryProvider);
+                                            await feedRepo.reportNotSerene(c.id);
+                                            NotificationService.showSuccess(
+                                                'Merci, nous en prenons note');
+                                          } catch (e) {
+                                            NotificationService.showError(
+                                                'Erreur lors du signalement');
+                                          }
+                                        },
                                       ),
                                     );
                                   }
