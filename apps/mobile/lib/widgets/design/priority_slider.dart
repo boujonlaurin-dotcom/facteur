@@ -202,8 +202,6 @@ class _PrioritySliderState extends State<PrioritySlider>
     final shouldPop = _poppedBlock == cran && _popController.isAnimating;
     final scale = shouldPop ? _popAnimation.value : 1.0;
     final fillRatio = _blockFillRatio(cran);
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
     return Transform.scale(
       scale: scale,
       child: SizedBox(
@@ -229,7 +227,7 @@ class _PrioritySliderState extends State<PrioritySlider>
                   bottom: 0,
                   width: _blockWidth * fillRatio,
                   child: Container(
-                    color: primaryColor.withValues(alpha: filled ? 0.4 : 0.6),
+                    color: colors.textSecondary.withValues(alpha: filled ? 0.5 : 0.3),
                   ),
                 ),
             ],

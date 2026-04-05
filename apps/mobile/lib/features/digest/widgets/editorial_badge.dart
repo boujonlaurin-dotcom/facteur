@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../feed/models/content_model.dart';
 
@@ -38,8 +37,6 @@ class EditorialBadge {
         return '\u{1F4CC} Vid\u00e9o sauvegard\u00e9e';
       case 'saved_audio':
         return '\u{1F4CC} Audio sauvegard\u00e9';
-      case 'reference_read':
-        return '\u{1F4D6} Car vous avez lu';
       default:
         return null;
     }
@@ -55,45 +52,11 @@ class EditorialBadge {
   }
 
   /// Returns a chip for a carousel badge (uses badge's own label/emoji).
-  /// Saved badges (saved_article, saved_video, saved_audio) use the
-  /// PhosphorIcons bookmark icon instead of the pin emoji.
   static Widget carouselChip(
     CarouselItemBadge badge, {
     required BuildContext context,
   }) {
     final color = _colorForCode(badge.code, context);
-    final isSavedBadge = badge.code.startsWith('saved_');
-
-    if (isSavedBadge) {
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: isDark ? 0.15 : 0.10),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
-              size: 14,
-              color: color,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              badge.label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     final config = _ChipConfig(
       label: '${badge.emoji} ${badge.label}',
       color: color,
@@ -124,10 +87,9 @@ class EditorialBadge {
     final colors = context.facteurColors;
     switch (code) {
       case 'actu':
+      case 'actu_chaude':
       case 'focus_topic':
         return colors.primary;
-      case 'actu_chaude':
-        return colors.textSecondary; // T4: grey/neutral instead of red
       case 'pas_de_recul':
       case 'autre_angle':
       case 'new_source':
@@ -140,8 +102,6 @@ class EditorialBadge {
       case 'saved_video':
       case 'saved_audio':
         return colors.warning;
-      case 'reference_read':
-        return colors.textTertiary; // T5: muted grey for read reference
       default:
         return colors.textSecondary;
     }
@@ -209,11 +169,6 @@ class EditorialBadge {
         return _ChipConfig(
           label: '\u{1F4CC} Audio sauvegard\u00e9',
           color: colors.warning,
-        );
-      case 'reference_read':
-        return _ChipConfig(
-          label: '\u{1F4D6} Car vous avez lu',
-          color: colors.textTertiary,
         );
       default:
         return null;
