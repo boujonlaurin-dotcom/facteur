@@ -4,6 +4,14 @@
 
 ---
 
+## BRANCHE PAR DÉFAUT — RÈGLE ABSOLUE
+
+> **`staging` est DÉPRÉCIÉ. NE JAMAIS merger, créer de PR, ni pousser vers `staging`.**
+> **Toute PR DOIT cibler `main` avec `--base main`.**
+> Un hook (`pre-bash-no-staging.sh`) bloque automatiquement les `gh pr create` sans `--base main`.
+
+---
+
 ## Contraintes Techniques (LOCKED)
 
 - Python **3.12.x** uniquement (3.13+ casse pydantic)
@@ -42,7 +50,7 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 ### 3. PR (confirmation requise)
 
-1. Crée la PR vers `main` — **toujours spécifier `--base main`** (`staging` est la branche par défaut du repo GitHub, `gh pr create` prend `staging` si `--base` n'est pas précisé)
+1. Crée la PR vers `main` — **OBLIGATOIRE : `--base main`** (`staging` est DÉPRÉCIÉ, le hook `pre-bash-no-staging.sh` bloquera toute PR sans `--base main`)
 2. **STOP → Notifie "PR #XX prête pour review"**
 3. Attends CI green + Peer Review APPROVED avant merge
 
@@ -56,6 +64,7 @@ Après le GO utilisateur, implémente et teste en autonomie :
 | `post-edit-python-guardrails.sh` | Après Edit/Write | Bloque si `List[]`/`Dict[]` from typing |
 | `post-edit-alembic-heads.sh` | Après Edit/Write | Bloque si >1 head Alembic |
 | `post-edit-auto-test.sh` | Après Edit/Write | Lance auto les tests du fichier modifié |
+| `pre-bash-no-staging.sh` | Avant Bash | Bloque `gh pr create` sans `--base main` |
 | `stop-verify-tests.sh` | Avant fin réponse | Bloque si tests échouent |
 
 ## MCP Servers
