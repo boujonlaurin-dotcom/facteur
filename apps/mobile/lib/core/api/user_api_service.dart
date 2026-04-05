@@ -76,23 +76,29 @@ class UserApiService {
   }
 
   /// Formate les réponses pour l'API (camelCase → snake_case)
+  ///
+  /// Null values are omitted so the backend preserves existing profile data
+  /// during partial re-onboarding (e.g. Section 3 only for v3 upgrade).
   Map<String, dynamic> _formatAnswersForApi(OnboardingAnswers answers) {
-    return {
+    final map = <String, dynamic>{
       'objective': answers.objectives?.join(','),
       'age_range': answers.ageRange,
       'gender': answers.gender,
       'approach': answers.approach,
       'perspective': answers.perspective,
       'response_style': answers.responseStyle,
-      'content_recency': answers.contentRecency ?? 'recent',
+      'content_recency': answers.contentRecency,
       'gamification_enabled': answers.gamificationEnabled,
-      'daily_article_count': answers.dailyArticleCount,
+      'weekly_goal': answers.dailyArticleCount,
       'digest_mode': answers.digestMode,
       'themes': answers.themes,
       'subtopics': answers.subtopics,
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
     };
+    // Remove null entries so backend uses existing values or defaults
+    map.removeWhere((_, v) => v == null);
+    return map;
   }
 
   /// Gère les erreurs Dio et retourne un OnboardingResult approprié

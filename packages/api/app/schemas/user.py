@@ -62,18 +62,22 @@ class OnboardingAnswers(BaseModel):
     """Réponses du questionnaire d'onboarding."""
 
     # Section 1 - Overview
-    objective: str = Field(..., description="Objectif : learn, culture, professional")
+    # These fields are optional to support partial re-onboarding (Section 3 only)
+    # when existing users upgrade to onboarding v3.
+    objective: str | None = Field(
+        None, description="Objectif : learn, culture, professional"
+    )
     age_range: str | None = Field(
         None, description="Tranche d'âge (removed in onboarding v3)"
     )
     gender: str | None = None
-    approach: str = Field(..., description="direct ou detailed")
+    approach: str | None = Field(None, description="direct ou detailed")
 
     # Section 2 - App Preferences
     perspective: str | None = Field(
         None, description="big_picture ou detail_oriented (removed in onboarding v3)"
     )
-    response_style: str = Field(..., description="decisive ou nuanced")
+    response_style: str | None = Field(None, description="decisive ou nuanced")
     content_recency: str | None = Field(
         None, description="recent ou evergreen (deprecated)"
     )

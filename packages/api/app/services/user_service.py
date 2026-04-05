@@ -101,14 +101,31 @@ class UserService:
         return profile
 
     async def save_onboarding(self, user_id: str, answers: OnboardingAnswers) -> dict:
-        """Sauvegarde les réponses de l'onboarding."""
+        """Sauvegarde les réponses de l'onboarding.
+
+        Supports partial re-onboarding (e.g. Section 3 only for v3 upgrade):
+        fields that are None are preserved from the existing profile/preferences.
+        """
         profile = await self.get_or_create_profile(user_id)
 
-        # Mettre à jour le profil (Idempotent)
-        profile.age_range = answers.age_range
-        profile.gender = answers.gender
-        profile.gamification_enabled = answers.gamification_enabled
-        profile.weekly_goal = answers.weekly_goal or 5
+        # For partial re-onboarding, load existing preferences to preserve them
+        existing_prefs: dict[str, str] = {}
+        if profile.onboarding_completed:
+            rows = await self.db.execute(
+                select(UserPreference.preference_key, UserPreference.preference_value)
+                .where(UserPreference.user_id == UUID(user_id))
+            )
+            existing_prefs = {r.preference_key: r.preference_value for r in rows.all()}
+
+        # Mettre à jour le profil (Idempotent) — only overwrite non-None values
+        if answers.age_range is not None:
+            profile.age_range = answers.age_range
+        if answers.gender is not None:
+            profile.gender = answers.gender
+        if answers.gamification_enabled is not None:
+            profile.gamification_enabled = answers.gamification_enabled
+        if answers.weekly_goal is not None:
+            profile.weekly_goal = answers.weekly_goal
         profile.onboarding_completed = True
 
         # Nettoyer les anciennes préférences et intérêts pour garantir l'idempotence
@@ -127,15 +144,21 @@ class UserService:
         # to preserve manual priority changes made post-onboarding.
 
         # Sauvegarder les préférences
+        # For partial re-onboarding, fall back to existing values when answers are None
         preferences = {
-            "objective": answers.objective,
-            "approach": answers.approach,
-            "perspective": answers.perspective,
-            "response_style": answers.response_style,
-            "content_recency": answers.content_recency,
-            "format_preference": answers.format_preference,
-            "personal_goal": answers.personal_goal,
-            "serein_enabled": getattr(answers, "serein_enabled", None),
+            "objective": answers.objective or existing_prefs.get("objective"),
+            "approach": answers.approach or existing_prefs.get("approach"),
+            "perspective": answers.perspective or existing_prefs.get("perspective"),
+            "response_style": answers.response_style
+            or existing_prefs.get("response_style"),
+            "content_recency": answers.content_recency
+            or existing_prefs.get("content_recency"),
+            "format_preference": answers.format_preference
+            or existing_prefs.get("format_preference"),
+            "personal_goal": answers.personal_goal
+            or existing_prefs.get("personal_goal"),
+            "serein_enabled": getattr(answers, "serein_enabled", None)
+            or existing_prefs.get("serein_enabled"),
         }
 
         pref_count = 0
