@@ -955,13 +955,17 @@ class RecommendationService:
         consumed_ids: set[UUID] = set()
         if user_id is not None:
             consumed_rows = (
-                await self.session.execute(
-                    select(UserContentStatus.content_id).where(
-                        UserContentStatus.user_id == user_id,
-                        UserContentStatus.status == ContentStatus.CONSUMED,
+                (
+                    await self.session.execute(
+                        select(UserContentStatus.content_id).where(
+                            UserContentStatus.user_id == user_id,
+                            UserContentStatus.status == ContentStatus.CONSUMED,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             consumed_ids = set(consumed_rows)
 
         # --- hot: biggest entity cluster within 36h (T4) ---
@@ -1053,13 +1057,14 @@ class RecommendationService:
                 find_perspectives_for_read_article,
             )
 
-            ref_article, perspective_articles = (
-                await find_perspectives_for_read_article(
-                    self.session,
-                    user_id,
-                    pre_regroup_map,
-                    max_items=MAX_CAROUSEL_ITEMS,
-                )
+            (
+                ref_article,
+                perspective_articles,
+            ) = await find_perspectives_for_read_article(
+                self.session,
+                user_id,
+                pre_regroup_map,
+                max_items=MAX_CAROUSEL_ITEMS,
             )
             if ref_article and perspective_articles:
                 # T2: filter consumed perspectives (reference is consumed by definition)
@@ -1208,7 +1213,9 @@ class RecommendationService:
                     datetime.UTC
                 ) - datetime.timedelta(days=30)
                 exclusion = Content.id.notin_(promoted_ids) if promoted_ids else True
-                consumed_excl = Content.id.notin_(consumed_ids) if consumed_ids else True
+                consumed_excl = (
+                    Content.id.notin_(consumed_ids) if consumed_ids else True
+                )
                 gem_rows = (
                     await self.session.execute(
                         select(
