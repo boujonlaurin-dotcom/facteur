@@ -19,6 +19,15 @@ class DigestGenerationException implements Exception {
   String toString() => message;
 }
 
+/// Exception thrown when digest is being prepared (202)
+class DigestPreparingException implements Exception {
+  final String message;
+  DigestPreparingException(
+      [this.message = 'Votre briefing est en cours de préparation']);
+  @override
+  String toString() => message;
+}
+
 /// Repository for digest-related API operations
 class DigestRepository {
   final ApiClient _apiClient;
@@ -42,6 +51,9 @@ class DigestRepository {
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
+      if (response.statusCode == 202) {
+        throw DigestPreparingException();
+      }
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         // ignore: avoid_print
@@ -223,6 +235,9 @@ class DigestRepository {
         queryParameters: queryParams.isNotEmpty ? queryParams : null,
       );
 
+      if (response.statusCode == 202) {
+        throw DigestPreparingException();
+      }
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         return DualDigestResponse.fromJson(data);
@@ -239,6 +254,36 @@ class DigestRepository {
     }
   }
 
+  /// Submit article-level feedback (thumbs up/down + optional reasons)
+  Future<void> submitArticleFeedback({
+    required String contentId,
+    required String sentiment,
+    List<String> reasons = const [],
+    String? comment,
+  }) async {
+    try {
+      await _apiClient.dio.post<dynamic>(
+        'contents/$contentId/feedback',
+        data: {
+          'sentiment': sentiment,
+          'reasons': reasons,
+          if (comment != null) 'comment': comment,
+        },
+      );
+    } catch (e) {
+      // Fail silently — feedback should never block the digest flow
+      // ignore: avoid_print
+      print('DigestRepository: submitArticleFeedback failed: $e');
+    }
+  }
+
+  /// Report an article as not serene (misclassified)
+  Future<void> reportNotSerene(String contentId) async {
+    await _apiClient.dio.post<dynamic>(
+      'contents/$contentId/report-not-serene',
+    );
+  }
+
   /// Update a user preference (key-value)
   Future<void> updatePreference({
     required String key,
@@ -247,23 +292,6 @@ class DigestRepository {
     await _apiClient.dio.put<dynamic>(
       'users/preferences',
       data: {'key': key, 'value': value},
-    );
-  }
-
-  /// Submit article feedback (sentiment, reasons, optional comment)
-  Future<void> submitArticleFeedback({
-    required String contentId,
-    required String sentiment,
-    required List<String> reasons,
-    String? comment,
-  }) async {
-    await _apiClient.dio.post<dynamic>(
-      'articles/$contentId/feedback',
-      data: {
-        'sentiment': sentiment,
-        'reasons': reasons,
-        if (comment != null) 'comment': comment,
-      },
     );
   }
 }
