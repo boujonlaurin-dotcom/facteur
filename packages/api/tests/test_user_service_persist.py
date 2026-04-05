@@ -21,7 +21,14 @@ async def test_save_onboarding_persists_subtopics():
     # If mock_db is an AsyncMock, then mock_db.add matches as AsyncMock which expects await.
     # We should configure add to be a MagicMock (synchronous).
     mock_db.add = MagicMock()
-    
+
+    # Mock the execute() results for existing preferences query and delete queries
+    mock_result = MagicMock()
+    mock_result.all.return_value = []  # No existing preferences
+    mock_db.execute = AsyncMock(return_value=mock_result)
+    # Mock scalar() for UserTopicProfile existence check
+    mock_db.scalar = AsyncMock(return_value=None)
+
     service.get_or_create_profile = AsyncMock(return_value=mock_profile)
     
     user_id = str(uuid4())
