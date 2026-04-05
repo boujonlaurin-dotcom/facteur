@@ -146,17 +146,21 @@ async def find_perspectives_for_read_article(
 
     # Get recently consumed article IDs
     consumed_rows = (
-        await session.execute(
-            select(UserContentStatus.content_id)
-            .where(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.status == ContentStatus.CONSUMED,
-                UserContentStatus.updated_at >= cutoff,
+        (
+            await session.execute(
+                select(UserContentStatus.content_id)
+                .where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.status == ContentStatus.CONSUMED,
+                    UserContentStatus.updated_at >= cutoff,
+                )
+                .order_by(UserContentStatus.updated_at.desc())
+                .limit(50)  # Cap for performance
             )
-            .order_by(UserContentStatus.updated_at.desc())
-            .limit(50)  # Cap for performance
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not consumed_rows:
         logger.info("perspectives_no_consumed", user_id=str(user_id))
