@@ -21,12 +21,12 @@ class ArticleCountQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          const SizedBox(height: FacteurSpacing.space6),
 
           Text(
             OnboardingStrings.articleCountTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -37,7 +37,7 @@ class ArticleCountQuestion extends ConsumerWidget {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),

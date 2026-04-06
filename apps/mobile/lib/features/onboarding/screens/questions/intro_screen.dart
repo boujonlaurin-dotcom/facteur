@@ -51,7 +51,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!_showManifesto) ...[
-            const Spacer(flex: 1),
+            const SizedBox(height: FacteurSpacing.space6),
 
             // Logo
             const Center(child: FacteurLogo(size: 42)),
@@ -69,18 +69,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             Text(
               OnboardingStrings.welcomeTitle,
               style: Theme.of(context).textTheme.displayLarge,
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.start,
             ),
 
-            const SizedBox(height: FacteurSpacing.space6),
+            const SizedBox(height: FacteurSpacing.space3),
 
             Text(
               OnboardingStrings.welcomeSubtitle,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
-                    height: 1.6,
                   ),
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.start,
             ),
             const Spacer(flex: 2),
           ] else ...[
@@ -173,13 +172,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               ref.read(onboardingProvider.notifier).continueToIntro2();
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.welcomeStartButton,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.welcomeStartButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),
@@ -240,23 +235,22 @@ class IntroScreen2 extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          const SizedBox(height: FacteurSpacing.space6),
 
           Text(
             OnboardingStrings.intro2Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space3),
 
           Text(
             OnboardingStrings.intro2Subtitle,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
-                  height: 1.6,
                 ),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const Spacer(flex: 3),
@@ -266,13 +260,9 @@ class IntroScreen2 extends ConsumerWidget {
               ref.read(onboardingProvider.notifier).continueAfterIntro();
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.intro2Button,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.intro2Button),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

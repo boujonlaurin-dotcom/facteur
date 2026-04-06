@@ -51,7 +51,7 @@ class _ObjectiveQuestionState extends ConsumerState<ObjectiveQuestion> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          const SizedBox(height: FacteurSpacing.space6),
 
           // Question
           Text(
@@ -60,7 +60,17 @@ class _ObjectiveQuestionState extends ConsumerState<ObjectiveQuestion> {
             textAlign: TextAlign.start,
           ),
 
-          const SizedBox(height: FacteurSpacing.space8),
+          const SizedBox(height: FacteurSpacing.space3),
+
+          Text(
+            OnboardingStrings.q1Subtitle,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+            textAlign: TextAlign.start,
+          ),
+
+          const SizedBox(height: FacteurSpacing.space6),
 
           // Options
           SelectionCard(
@@ -103,8 +113,7 @@ class _ObjectiveQuestionState extends ConsumerState<ObjectiveQuestion> {
                         .continueAfterObjectives();
                   },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
             child: Text(
               OnboardingStrings.selectedCount(_selectedObjectives.length),

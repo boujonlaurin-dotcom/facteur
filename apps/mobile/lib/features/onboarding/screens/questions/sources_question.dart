@@ -139,7 +139,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
           child: ElevatedButton(
             onPressed: _continue,
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
             child: Text(
               _selectedSourceIds.isEmpty
@@ -167,7 +167,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
           Text(
             OnboardingStrings.q9Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
           const SizedBox(height: FacteurSpacing.space3),
           Text(
@@ -176,7 +176,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           // Section: Pour vous

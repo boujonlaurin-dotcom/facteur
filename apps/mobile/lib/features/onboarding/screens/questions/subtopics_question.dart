@@ -158,12 +158,12 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 1),
+          const SizedBox(height: FacteurSpacing.space6),
 
           Text(
             OnboardingStrings.subtopicsTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -174,7 +174,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space6),
@@ -205,7 +205,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           ElevatedButton(
             onPressed: _saving ? null : _continue,
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
             child: _saving
                 ? const SizedBox(

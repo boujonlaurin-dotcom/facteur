@@ -55,13 +55,8 @@ class _ReactionScreenState extends State<ReactionScreen>
       curve: Curves.easeOut,
     );
 
-    _fadeController.forward().then((_) {
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted) {
-          _buttonController.forward();
-        }
-      });
-    });
+    _fadeController.forward();
+    _buttonController.forward();
 
     if (widget.autoContinue) {
       Future.delayed(widget.autoContinueDelay, () {
@@ -81,47 +76,34 @@ class _ReactionScreenState extends State<ReactionScreen>
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+
     return Padding(
-      padding: const EdgeInsets.all(FacteurSpacing.space6),
+      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
-
-          FadeTransition(
-            opacity: _fadeAnimation,
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space8),
+          const SizedBox(height: FacteurSpacing.space6),
 
           FadeTransition(
             opacity: _fadeAnimation,
             child: Text(
               widget.title,
-              style: Theme.of(context).textTheme.displayMedium,
-              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.displayLarge,
+              textAlign: TextAlign.start,
             ),
           ),
 
-          const SizedBox(height: FacteurSpacing.space4),
+          const SizedBox(height: FacteurSpacing.space3),
 
           FadeTransition(
             opacity: _fadeAnimation,
             child: Text(
               widget.message,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: context.facteurColors.textSecondary,
-                    height: 1.6,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
                   ),
-              textAlign: TextAlign.center,
+              textAlign: TextAlign.start,
             ),
           ),
 
@@ -137,15 +119,12 @@ class _ReactionScreenState extends State<ReactionScreen>
 
           FadeTransition(
             opacity: _buttonAnimation,
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: widget.onContinue,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(OnboardingStrings.continueButton),
+            child: ElevatedButton(
+              onPressed: widget.onContinue,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 24),
               ),
+              child: const Text(OnboardingStrings.continueButton),
             ),
           ),
 

@@ -19,20 +19,12 @@ class DigestModeQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
-
-          Icon(
-            SereinColors.sereinIcon,
-            size: 48,
-            color: SereinColors.sereinColor,
-          ),
-
           const SizedBox(height: FacteurSpacing.space6),
 
           Text(
-            'Rester serein ?',
+            '🌿 Rester serein ?',
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -40,13 +32,13 @@ class DigestModeQuestion extends ConsumerWidget {
           Text(
             'Certains sujets peuvent être difficiles à lire. '
             'Active le mode serein pour filtrer les contenus anxiogènes.\n\n'
-            'Tu pourras changer d\'avis à tout moment avec le toggle 🌿 '
-            'en haut de ton digest.',
+            'Tu pourras changer d\'avis à tout moment grâce au bouton dédié '
+            'en haut de ton essentiel et du flux.',
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
@@ -62,7 +54,7 @@ class DigestModeQuestion extends ConsumerWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: SereinColors.sereinColor,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24),
               textStyle: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -87,7 +79,7 @@ class DigestModeQuestion extends ConsumerWidget {
             label: const Text('Non, tout voir'),
             style: OutlinedButton.styleFrom(
               foregroundColor: colors.textPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24),
               textStyle: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,

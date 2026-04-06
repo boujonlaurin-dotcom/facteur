@@ -15,30 +15,18 @@ class ApproachQuestion extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(onboardingProvider);
     final selectedApproach = state.answers.approach;
-    final colors = context.facteurColors;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
+          const SizedBox(height: FacteurSpacing.space6),
 
           // Question
           Text(
             OnboardingStrings.q4Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.q4Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
+            textAlign: TextAlign.start,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
