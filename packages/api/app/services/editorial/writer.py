@@ -106,7 +106,7 @@ class EditorialWriterService:
 
         user_message = (
             f"Jour : {day_name}\n\n"
-            "Voici les 3 sujets du jour avec leurs articles :\n\n"
+            "Voici les 5 sujets du jour avec leurs articles :\n\n"
             f"{json.dumps(subjects_data, ensure_ascii=False, indent=2)}\n\n"
             "Génère le texte éditorial au format JSON."
         )

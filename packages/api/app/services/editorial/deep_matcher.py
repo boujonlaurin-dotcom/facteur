@@ -93,11 +93,14 @@ class DeepMatcher:
         candidates_per_topic: dict[str, list[tuple[Content, float]]] = {}
 
         for topic in selected_topics:
+            # Boost prefilter for "à la une" topic: wider net, lower threshold
+            topic_limit = prefilter_limit * 2 if topic.is_a_la_une else prefilter_limit
+            topic_threshold = threshold / 2 if topic.is_a_la_une else threshold
             candidates = self._prefilter(
                 topic=topic,
                 articles=deep_articles,
-                limit=prefilter_limit,
-                threshold=threshold,
+                limit=topic_limit,
+                threshold=topic_threshold,
                 extra_tokens=expanded_tokens.get(topic.topic_id, set()),
                 cluster_entities=_cluster_entities.get(topic.topic_id),
             )

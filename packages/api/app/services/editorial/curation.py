@@ -1,6 +1,6 @@
 """ÉTAPE 2 — LLM topic curation.
 
-Selects 3 topics from hot topic clusters using Claude.
+Selects topics from hot topic clusters using LLM.
 Fallback: deterministic selection by source count.
 """
 
@@ -42,6 +42,7 @@ def _cluster_to_une_topic(cluster: TopicCluster) -> SelectedTopic:
         selection_reason=f"Traité par {len(cluster.source_ids)} sources",
         deep_angle=deep_angle,
         source_count=len(cluster.source_ids),
+        is_a_la_une=True,
     )
 
 
@@ -121,6 +122,7 @@ class CurationService:
             selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
             deep_angle=deep_angle,
             source_count=len(cluster.source_ids),
+            is_a_la_une=True,
         )
 
     async def select_topics(
@@ -133,7 +135,7 @@ class CurationService:
 
         Args:
             clusters: All topic clusters, sorted by size desc.
-            subjects_count: Override from config (default: 3).
+            subjects_count: Override from config (default: 5).
             excluded_cluster_ids: Cluster IDs to exclude (e.g. À la Une already picked).
 
         Returns:

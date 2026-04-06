@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/widgets/feed_card.dart';
+import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/dismiss_banner.dart';
+import '../../feed/widgets/feed_card.dart';
+import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'article_thumbs_feedback.dart';
+import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
+import 'pas_de_recul_block.dart';
+import 'source_coverage_badge.dart';
 
 /// A single topic section in the digest topics layout.
 ///
@@ -20,7 +27,11 @@ import 'editorial_badge.dart';
 /// 1. Header: rank + reason + topic label + badges
 /// 2. Horizontal PageView of article cards
 /// 3. Page indicator dots for multi-article topics
-class TopicSection extends StatefulWidget {
+///
+/// In editorial mode, supports expand/collapse toggle:
+/// - Compact (default): small image + title + badges + 1-line description
+/// - Expanded: full FeedCard + divergence analysis + pas de recul
+class TopicSection extends ConsumerStatefulWidget {
   final DigestTopic topic;
   final void Function(DigestItem) onArticleTap;
   final void Function(DigestItem)? onLike;
@@ -57,12 +68,17 @@ class TopicSection extends StatefulWidget {
   });
 
   @override
-  State<TopicSection> createState() => _TopicSectionState();
+  ConsumerState<TopicSection> createState() => _TopicSectionState();
 }
 
-class _TopicSectionState extends State<TopicSection> {
+class _TopicSectionState extends ConsumerState<TopicSection>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => widget.editorialMode;
+
   late final PageController _pageController;
   int _currentPage = 0;
+  bool _isExpanded = false;
 
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
@@ -156,6 +172,7 @@ class _TopicSectionState extends State<TopicSection> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final topic = widget.topic;
@@ -169,17 +186,45 @@ class _TopicSectionState extends State<TopicSection> {
     final allDismissed = topic.articles.every((a) => a.isDismissed);
     if (allDismissed) return const SizedBox.shrink();
 
+    // Editorial mode: toggle expand/collapse
+    if (widget.editorialMode) {
+      final actuArticles = topic.articles
+          .where((a) => a.badge != 'pas_de_recul')
+          .toList();
+      if (actuArticles.isEmpty) return const SizedBox.shrink();
+      final isActuMulti = actuArticles.length > 1;
+      return AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context, colors, isDark, topic),
+            const SizedBox(height: 8),
+            if (_isExpanded)
+              _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
+            else
+              _buildCompactEditorialCard(colors, isDark, topic, actuArticles),
+            ArticleThumbsFeedback(
+              contentId: isActuMulti
+                  ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
+                  : actuArticles.first.contentId,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Non-editorial mode: unchanged
     return AnimatedOpacity(
-      opacity: (!widget.editorialMode && topic.isCovered) ? 0.7 : 1.0,
+      opacity: topic.isCovered ? 0.7 : 1.0,
       duration: const Duration(milliseconds: 300),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (flat, no card wrapper) — hidden in editorial mode
-          if (!widget.editorialMode) ...[
-            _buildHeader(context, colors, isDark, topic),
-            const SizedBox(height: 8),
-          ],
+          _buildHeader(context, colors, isDark, topic),
+          const SizedBox(height: 8),
 
           // Article card(s)
           if (isMulti)
@@ -195,7 +240,7 @@ class _TopicSectionState extends State<TopicSection> {
                   curve: Curves.easeInOut,
                   height: computedHeight,
                   child: ClipRect(
-                    child: _buildPageView(topic),
+                    child: _buildPageView(topic.articles),
                   ),
                 );
               },
@@ -219,6 +264,447 @@ class _TopicSectionState extends State<TopicSection> {
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Editorial mode: compact card (closed state)
+  // ---------------------------------------------------------------------------
+
+  Widget _buildCompactEditorialCard(
+    FacteurColors colors,
+    bool isDark,
+    DigestTopic topic,
+    List<DigestItem> actuArticles,
+  ) {
+    final safeIndex = _currentPage.clamp(0, actuArticles.length - 1);
+    final article = actuArticles[safeIndex];
+    final hasImage = _imageWillRender(article);
+    final description = article.description ?? topic.introText ?? '';
+    final sourceName = article.source?.name;
+    final timeAgo = article.publishedAt != null
+        ? timeago
+            .format(article.publishedAt!, locale: 'fr_short')
+            .replaceAll('il y a ', '')
+        : null;
+
+    return GestureDetector(
+      onTap: () => setState(() => _isExpanded = true),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: hasImage
+            ? _buildCompactWithImage(
+                colors, isDark, article, topic, description, sourceName, timeAgo)
+            : _buildCompactWithoutImage(
+                colors, isDark, article, topic, description, sourceName, timeAgo),
+      ),
+    );
+  }
+
+  Widget _buildCompactWithImage(
+    FacteurColors colors,
+    bool isDark,
+    DigestItem article,
+    DigestTopic topic,
+    String description,
+    String? sourceName,
+    String? timeAgo,
+  ) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Left: compact image (2:1 ratio, ~120px width)
+          SizedBox(
+            width: 120,
+            child: FacteurThumbnail(
+              imageUrl: article.thumbnailUrl,
+              aspectRatio: 1.0,
+              borderRadius: BorderRadius.zero,
+              onError: () => _onImageError(article.contentId),
+            ),
+          ),
+          // Right: text content
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Title
+                  Text(
+                    article.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      height: 1.3,
+                      color: isDark ? Colors.white : colors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Badges row
+                  _buildCompactBadgesRow(colors, isDark, topic),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  // Footer: source · time · expand icon
+                  _buildCompactFooter(colors, isDark, sourceName, timeAgo),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactWithoutImage(
+    FacteurColors colors,
+    bool isDark,
+    DigestItem article,
+    DigestTopic topic,
+    String description,
+    String? sourceName,
+    String? timeAgo,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            article.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              height: 1.3,
+              color: isDark ? Colors.white : colors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildCompactBadgesRow(colors, isDark, topic),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          _buildCompactFooter(colors, isDark, sourceName, timeAgo),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactBadgesRow(
+    FacteurColors colors,
+    bool isDark,
+    DigestTopic topic,
+  ) {
+    final perspCount = topic.perspectiveCount;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        if (perspCount > 1)
+          SourceCoverageBadge(
+            perspectiveCount: perspCount,
+            isTrending: topic.isTrending,
+          ),
+        if (topic.isUne)
+          EditorialBadge.chip('actu', context: context) ?? const SizedBox.shrink(),
+      ],
+    );
+  }
+
+  Widget _buildCompactFooter(
+    FacteurColors colors,
+    bool isDark,
+    String? sourceName,
+    String? timeAgo,
+  ) {
+    return Row(
+      children: [
+        if (sourceName != null)
+          Flexible(
+            child: Text(
+              sourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+        if (sourceName != null && timeAgo != null)
+          Text(
+            ' \u00b7 ',
+            style: TextStyle(
+              fontSize: 12,
+              color: colors.textSecondary.withValues(alpha: 0.5),
+            ),
+          ),
+        if (timeAgo != null)
+          Text(
+            timeAgo,
+            style: TextStyle(
+              fontSize: 12,
+              color: colors.textSecondary,
+            ),
+          ),
+        const Spacer(),
+        Icon(
+          PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+          size: 14,
+          color: colors.textSecondary,
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Editorial mode: expanded state
+  // ---------------------------------------------------------------------------
+
+  Widget _buildExpandedEditorial(
+    FacteurColors colors,
+    bool isDark,
+    DigestTopic topic,
+    List<DigestItem> actuArticles,
+    bool isActuMulti,
+  ) {
+    final deepArticle = topic.articles
+        .where((a) => a.badge == 'pas_de_recul')
+        .cast<DigestItem?>()
+        .firstOrNull;
+    final perspCount = topic.perspectiveCount;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Full article card(s) — only actu articles (deep shown separately)
+        if (isActuMulti) ...[
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = constraints.maxWidth * 0.88;
+              final computedHeight =
+                  _computeHeight(actuArticles, cardWidth);
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                height: computedHeight,
+                child: ClipRect(child: _buildPageView(actuArticles)),
+              );
+            },
+          ),
+          const SizedBox(height: 2),
+          _buildPageIndicator(colors, actuArticles.length),
+        ] else if (!actuArticles.first.isDismissed)
+          _buildSingleArticle(actuArticles.first),
+
+        const SizedBox(height: 12),
+
+        // Badges row
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              if (perspCount > 1)
+                SourceCoverageBadge(
+                  perspectiveCount: perspCount,
+                  isTrending: topic.isTrending,
+                ),
+              if (topic.isUne)
+                EditorialBadge.chip('actu', context: context) ??
+                    const SizedBox.shrink(),
+            ],
+          ),
+        ),
+
+        // Full intro text
+        if (topic.introText != null) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              topic.introText!,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : colors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+
+        // Divergence analysis
+        if (topic.divergenceAnalysis != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DivergenceAnalysisBlock(
+              divergenceAnalysis: topic.divergenceAnalysis,
+              biasHighlights: topic.biasHighlights,
+              onCompare: _handleCompare,
+            ),
+          ),
+        ],
+
+        // Pas de recul
+        if (deepArticle != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: PasDeReculBlock(
+              deepArticle: deepArticle,
+              onTap: () => widget.onArticleTap(deepArticle),
+            ),
+          ),
+        ],
+
+        // Collapse footer
+        const SizedBox(height: 8),
+        _buildCollapseFooter(colors, isDark, topic),
+      ],
+    );
+  }
+
+  Widget _buildCollapseFooter(
+    FacteurColors colors,
+    bool isDark,
+    DigestTopic topic,
+  ) {
+    final article = topic.articles[_currentPage];
+    final sourceName = article.source?.name;
+    final timeAgo = article.publishedAt != null
+        ? timeago
+            .format(article.publishedAt!, locale: 'fr_short')
+            .replaceAll('il y a ', '')
+        : null;
+
+    return GestureDetector(
+      onTap: () => setState(() => _isExpanded = false),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            if (sourceName != null)
+              Text(
+                sourceName,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                ),
+              ),
+            if (sourceName != null && timeAgo != null)
+              Text(
+                ' \u00b7 ',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            if (timeAgo != null)
+              Text(
+                timeAgo,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                ),
+              ),
+            const Spacer(),
+            Icon(
+              PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+              size: 14,
+              color: colors.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // "Comparer les sources" handler
+  // ---------------------------------------------------------------------------
+
+  Future<void> _handleCompare() async {
+    final articles = widget.editorialMode
+        ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
+        : widget.topic.articles;
+    if (articles.isEmpty) return;
+    final article = articles[_currentPage.clamp(0, articles.length - 1)];
+    if (article.contentId.isEmpty) return;
+    final repository = ref.read(feedRepositoryProvider);
+    final response = await repository.getPerspectives(article.contentId);
+
+    if (!context.mounted) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => PerspectivesBottomSheet(
+        perspectives: response.perspectives
+            .map((p) => Perspective(
+                  title: p.title,
+                  url: p.url,
+                  sourceName: p.sourceName,
+                  sourceDomain: p.sourceDomain,
+                  biasStance: p.biasStance,
+                  publishedAt: p.publishedAt,
+                ))
+            .toList(),
+        biasDistribution: response.biasDistribution,
+        keywords: response.keywords,
+        sourceBiasStance: response.sourceBiasStance,
+        sourceName: article.source?.name ?? '',
+        contentId: article.contentId,
+        comparisonQuality: response.comparisonQuality,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Header
+  // ---------------------------------------------------------------------------
 
   Widget _buildHeader(
     BuildContext context,
@@ -368,6 +854,10 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Article card builders (shared between editorial expanded + non-editorial)
+  // ---------------------------------------------------------------------------
+
   /// Singleton card — natural height, no fixed SizedBox.
   Widget _buildSingleArticle(DigestItem article) {
     // Show dismiss banner if this article is being dismissed
@@ -430,13 +920,13 @@ class _TopicSectionState extends State<TopicSection> {
     );
   }
 
-  Widget _buildPageView(DigestTopic topic) {
+  Widget _buildPageView(List<DigestItem> articles) {
     return PageView.builder(
       controller: _pageController,
       onPageChanged: (index) => setState(() => _currentPage = index),
-      itemCount: topic.articles.length,
+      itemCount: articles.length,
       itemBuilder: (context, index) {
-        final article = topic.articles[index];
+        final article = articles[index];
         final imageVisible = _imageWillRender(article);
         final badgeChip = EditorialBadge.chip(article.badge, context: context);
         final card = FeedCard(
@@ -511,6 +1001,10 @@ class _TopicSectionState extends State<TopicSection> {
       }),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Utilities
+  // ---------------------------------------------------------------------------
 
   /// Converts DigestItem to Content for FeedCard compatibility
   Content _convertToContent(DigestItem item) {

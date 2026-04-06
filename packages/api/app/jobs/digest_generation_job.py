@@ -18,6 +18,9 @@ import asyncio
 import datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_PARIS_TZ = ZoneInfo("Europe/Paris")
 
 import structlog
 from sqlalchemy import select
@@ -78,7 +81,7 @@ class DigestGenerationJob:
             Statistiques d'exécution
         """
         if target_date is None:
-            target_date = datetime.date.today()
+            target_date = datetime.datetime.now(_PARIS_TZ).date()
 
         logger.info(
             "digest_generation_job_started",
@@ -491,7 +494,7 @@ async def generate_digest_for_user(
         ... )
     """
     if target_date is None:
-        target_date = datetime.date.today()
+        target_date = datetime.datetime.now(_PARIS_TZ).date()
 
     async with async_session_maker() as session:
         try:

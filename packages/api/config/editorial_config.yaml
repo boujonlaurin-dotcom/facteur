@@ -2,7 +2,7 @@
 # Paramètres du pipeline de curation éditorialisée.
 
 pipeline:
-  subjects_count: 3              # Nombre de sujets dans le digest
+  subjects_count: 5              # Nombre de sujets dans le digest
   cluster_input_limit: 15        # Top N clusters envoyés au LLM
   deep_candidates_prefilter: 10  # Top N candidats deep avant LLM
   deep_required: false           # Sujet peut exister sans deep match

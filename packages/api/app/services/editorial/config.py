@@ -16,7 +16,7 @@ CONFIG_DIR = Path(__file__).parent.parent.parent.parent / "config"
 class PipelineConfig:
     """Pipeline parameters."""
 
-    subjects_count: int = 3
+    subjects_count: int = 5
     cluster_input_limit: int = 15
     deep_candidates_prefilter: int = 10
     deep_required: bool = False

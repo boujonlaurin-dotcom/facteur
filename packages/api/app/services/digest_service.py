@@ -967,6 +967,10 @@ class DigestService:
                     "is_a_la_une": s.is_a_la_une,
                     "intro_text": s.intro_text,
                     "transition_text": s.transition_text,
+                    "perspective_count": s.perspective_count,
+                    "bias_distribution": s.bias_distribution,
+                    "bias_highlights": s.bias_highlights,
+                    "divergence_analysis": s.divergence_analysis,
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1399,6 +1403,10 @@ class DigestService:
                     articles=topic_articles,
                     intro_text=subject.get("intro_text"),
                     transition_text=subject.get("transition_text"),
+                    perspective_count=subject.get("perspective_count", 0),
+                    bias_distribution=subject.get("bias_distribution"),
+                    bias_highlights=subject.get("bias_highlights"),
+                    divergence_analysis=subject.get("divergence_analysis"),
                 )
             )
 
@@ -1431,6 +1439,7 @@ class DigestService:
                     title=pepite_content.title,
                     url=pepite_content.url,
                     thumbnail_url=pepite_content.thumbnail_url,
+                    published_at=pepite_content.published_at,
                     source=pepite_content.source,
                     is_read=pepite_action["is_read"],
                     is_saved=pepite_action["is_saved"],
@@ -1491,6 +1500,7 @@ class DigestService:
                     save_count=coup_de_coeur_data.get("save_count", 0),
                     url=cdc_content.url,
                     thumbnail_url=cdc_content.thumbnail_url,
+                    published_at=cdc_content.published_at,
                     source=cdc_content.source,
                     is_read=cdc_action["is_read"],
                     is_saved=cdc_action["is_saved"],

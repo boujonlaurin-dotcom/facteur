@@ -144,6 +144,13 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
           const [],
       introText: json['intro_text'] as String?,
       transitionText: json['transition_text'] as String?,
+      perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
+      biasDistribution:
+          (json['bias_distribution'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, (e as num).toInt()),
+      ),
+      biasHighlights: json['bias_highlights'] as String?,
+      divergenceAnalysis: json['divergence_analysis'] as String?,
     );
 
 Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
@@ -160,6 +167,10 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'articles': instance.articles,
       'intro_text': instance.introText,
       'transition_text': instance.transitionText,
+      'perspective_count': instance.perspectiveCount,
+      'bias_distribution': instance.biasDistribution,
+      'bias_highlights': instance.biasHighlights,
+      'divergence_analysis': instance.divergenceAnalysis,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
@@ -224,6 +235,9 @@ _$PepiteResponseImpl _$$PepiteResponseImplFromJson(Map<String, dynamic> json) =>
       title: json['title'] as String? ?? '',
       url: json['url'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String?,
+      publishedAt: json['published_at'] == null
+          ? null
+          : DateTime.parse(json['published_at'] as String),
       source: json['source'] == null
           ? null
           : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
@@ -242,6 +256,7 @@ Map<String, dynamic> _$$PepiteResponseImplToJson(
       'title': instance.title,
       'url': instance.url,
       'thumbnail_url': instance.thumbnailUrl,
+      'published_at': instance.publishedAt?.toIso8601String(),
       'source': instance.source,
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
@@ -259,6 +274,9 @@ _$CoupDeCoeurResponseImpl _$$CoupDeCoeurResponseImplFromJson(
       badge: json['badge'] as String? ?? 'coup_de_coeur',
       url: json['url'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String?,
+      publishedAt: json['published_at'] == null
+          ? null
+          : DateTime.parse(json['published_at'] as String),
       source: json['source'] == null
           ? null
           : SourceMini.fromJson(json['source'] as Map<String, dynamic>),
@@ -278,6 +296,7 @@ Map<String, dynamic> _$$CoupDeCoeurResponseImplToJson(
       'badge': instance.badge,
       'url': instance.url,
       'thumbnail_url': instance.thumbnailUrl,
+      'published_at': instance.publishedAt?.toIso8601String(),
       'source': instance.source,
       'is_read': instance.isRead,
       'is_saved': instance.isSaved,
