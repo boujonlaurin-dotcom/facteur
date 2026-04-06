@@ -119,8 +119,18 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
           'Onboarding sauvegardé avec succès ! '
           'Profil: ${result.profile!.id}, '
           'Intérêts: ${result.interestsCreated}, '
-          'Préférences: ${result.preferencesCreated}',
+          'Préférences: ${result.preferencesCreated}, '
+          'Sources: ${result.sourcesCreated}',
         );
+
+        // Alerte si l'utilisateur avait sélectionné des sources mais aucune n'a été créée
+        if ((answers.preferredSources?.isNotEmpty ?? false) &&
+            (result.sourcesCreated ?? 0) == 0) {
+          debugPrint(
+            '⚠️ ATTENTION: ${answers.preferredSources!.length} sources sélectionnées '
+            'mais 0 créées côté serveur !',
+          );
+        }
         return; // Succès, on sort
       }
 

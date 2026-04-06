@@ -1,13 +1,13 @@
 """Service utilisateur."""
 
-import logging
 from uuid import UUID, uuid4
 
+import structlog
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.source import UserSource
+from app.models.source import Source, UserSource
 from app.models.user import (
     UserInterest,
     UserPreference,
@@ -19,7 +19,7 @@ from app.models.user_topic_profile import UserTopicProfile
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 from app.services.ml.classification_service import SLUG_TO_LABEL
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class UserService:
@@ -202,23 +202,54 @@ class UserService:
         # Sauvegarder les sources sélectionnées (UserSource)
         # Atomique avec le reste de l'onboarding — pas de race condition
         sources_created = 0
+        sources_removed = 0
         if answers.preferred_sources:
-            # Vérifier quelles sources existent et sont actives
-            valid_source_ids = set()
+            # Valider les UUIDs
+            valid_source_ids: set[UUID] = set()
+            invalid_sids: list[str] = []
             for sid in answers.preferred_sources:
                 try:
                     valid_source_ids.add(UUID(sid))
                 except ValueError:
-                    continue
+                    invalid_sids.append(sid)
+
+            if invalid_sids:
+                logger.warning(
+                    "onboarding_invalid_source_ids",
+                    user_id=user_id,
+                    invalid_ids=invalid_sids,
+                )
 
             if valid_source_ids:
-                existing_result = await self.db.execute(
+                # Vérifier que les sources existent réellement en DB (évite FK violation)
+                existing_sources_result = await self.db.execute(
+                    select(Source.id).where(
+                        Source.id.in_(list(valid_source_ids)),
+                        Source.is_active,
+                    )
+                )
+                existing_source_ids = set(existing_sources_result.scalars().all())
+
+                # Log les sources qui n'existent pas/plus
+                missing = valid_source_ids - existing_source_ids
+                if missing:
+                    logger.warning(
+                        "onboarding_sources_not_found",
+                        user_id=user_id,
+                        missing_source_ids=[str(s) for s in missing],
+                    )
+                # Ne garder que les sources valides
+                valid_source_ids = existing_source_ids
+
+            if valid_source_ids:
+                # Vérifier lesquelles l'utilisateur a déjà
+                already_result = await self.db.execute(
                     select(UserSource.source_id).where(
                         UserSource.user_id == UUID(user_id),
                         UserSource.source_id.in_(list(valid_source_ids)),
                     )
                 )
-                already_trusted = set(existing_result.scalars().all())
+                already_trusted = set(already_result.scalars().all())
 
                 for source_id in valid_source_ids - already_trusted:
                     user_source = UserSource(
@@ -230,13 +261,46 @@ class UserService:
                     self.db.add(user_source)
                     sources_created += 1
 
+            # Supprimer les sources désélectionnées (sync re-onboarding)
+            # Ne supprime que les sources non-custom ajoutées via onboarding
+            all_user_sources_result = await self.db.execute(
+                select(UserSource).where(
+                    UserSource.user_id == UUID(user_id),
+                    UserSource.is_custom.is_(False),
+                )
+            )
+            all_user_sources = all_user_sources_result.scalars().all()
+            for us in all_user_sources:
+                if us.source_id not in valid_source_ids:
+                    await self.db.delete(us)
+                    sources_removed += 1
+        else:
+            logger.warning(
+                "onboarding_no_preferred_sources",
+                user_id=user_id,
+                preferred_sources_raw=answers.preferred_sources,
+            )
+
         await self.db.flush()
+
+        logger.info(
+            "onboarding_saved",
+            user_id=user_id,
+            interests_created=interest_count,
+            subtopics_created=subtopic_count,
+            preferences_created=pref_count,
+            sources_created=sources_created,
+            sources_removed=sources_removed,
+            preferred_sources_count=len(answers.preferred_sources) if answers.preferred_sources else 0,
+        )
+
         return {
             "profile": profile,
             "interests_created": interest_count,
             "subtopics_created": subtopic_count,
             "preferences_created": pref_count,
             "sources_created": sources_created,
+            "sources_removed": sources_removed,
         }
 
     async def get_preferences(self, user_id: str) -> list[UserPreference]:
