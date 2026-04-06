@@ -12,8 +12,8 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../../feed/repositories/personalization_repository.dart';
-import '../models/topic_models.dart';
+import '../../../core/api/providers.dart';
+import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
@@ -23,8 +23,8 @@ import '../../sources/providers/sources_providers.dart';
 /// Terracotta accent color for custom topics.
 const Color _terracotta = Color(0xFFE07A5F);
 
-/// Which section of the ArticleSheet should be initially expanded.
-enum ArticleSheetSection { topic, source, entities, breakdown, personalize }
+/// Which section of the article sheet to expand initially.
+enum ArticleSheetSection { topic, entities, source }
 
 /// Discreet topic tag in the feed card footer.
 ///
@@ -35,14 +35,12 @@ class TopicChip extends StatelessWidget {
   final Content content;
   final bool isFollowed;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
 
   const TopicChip({
     super.key,
     required this.content,
     this.isFollowed = false,
     this.onTap,
-    this.onLongPress,
   });
 
   @override
@@ -53,45 +51,54 @@ class TopicChip extends StatelessWidget {
     final topicLabel = getTopicLabel(topicSlug);
     final colors = context.facteurColors;
 
+    final icon = isFollowed
+        ? PhosphorIcons.check(PhosphorIconsStyle.bold)
+        : PhosphorIcons.plus(PhosphorIconsStyle.bold);
+
     return GestureDetector(
       onTap: onTap ?? () => showArticleSheet(context, content),
-      onLongPress: onLongPress ??
-          () => showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.topic),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isFollowed
-              ? Color.lerp(colors.backgroundSecondary, Colors.black, 0.008)!
-              : Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
+          color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.008)!,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 80),
-          child: Text(
-            topicLabel,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 80),
+              child: Text(
+                topicLabel,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              icon,
+              size: 12,
+              color: colors.textTertiary,
+            ),
+          ],
         ),
       ),
     );
   }
 
   /// Opens the unified article sheet with blur backdrop.
-  static Future<void> showArticleSheet(
+  static void showArticleSheet(
     BuildContext context,
     Content content, {
     ArticleSheetSection initialSection = ArticleSheetSection.topic,
   }) {
-    final topicSlug = content.topics.isNotEmpty ? content.topics.first : '';
-    final topicLabel =
-        topicSlug.isNotEmpty ? getTopicLabel(topicSlug) : '';
-    return showModalBottomSheet<void>(
+    final topicSlug = content.topics.first;
+    final topicLabel = getTopicLabel(topicSlug);
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -109,11 +116,11 @@ class TopicChip extends StatelessWidget {
   }
 }
 
-/// Unified modal sheet combining topic controls + source controls +
-/// entity follow/unfollow + article personalization.
+/// Unified modal sheet combining topic controls + article personalization.
 ///
-/// All sections are collapsible. [initialSection] determines which one
-/// starts expanded; the others start collapsed.
+/// Section 1: Topic follow/priority controls (always visible)
+/// Section 2: "Pourquoi cet article ?" (collapsible breakdown)
+/// Section 3: "Personnaliser mon flux" (collapsible actions)
 class ArticleSheet extends ConsumerStatefulWidget {
   final Content content;
   final String topicSlug;
@@ -133,22 +140,19 @@ class ArticleSheet extends ConsumerStatefulWidget {
 }
 
 class _ArticleSheetState extends ConsumerState<ArticleSheet> {
-  late bool _topicExpanded;
-  late bool _sourceExpanded;
-  late bool _entitiesExpanded;
   late bool _breakdownExpanded;
   bool _breakdownShowAll = false;
-  late bool _personalizeExpanded;
+  bool _personalizeExpanded = true;
 
   @override
   void initState() {
     super.initState();
-    _topicExpanded = widget.initialSection == ArticleSheetSection.topic;
-    _sourceExpanded = widget.initialSection == ArticleSheetSection.source;
-    _entitiesExpanded = widget.initialSection == ArticleSheetSection.entities;
-    _breakdownExpanded = widget.initialSection == ArticleSheetSection.breakdown;
-    _personalizeExpanded =
-        widget.initialSection == ArticleSheetSection.personalize;
+    final reason = widget.content.recommendationReason;
+    _breakdownExpanded = widget.initialSection == ArticleSheetSection.entities &&
+        reason != null &&
+        reason.breakdown.isNotEmpty;
+    _personalizeExpanded = widget.initialSection == ArticleSheetSection.source ||
+        widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -199,146 +203,513 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               ),
               const SizedBox(height: FacteurSpacing.space3),
 
-              // ── Section 1: Topic ──
-              if (widget.topicSlug.isNotEmpty) ...[
-                _buildSectionHeader(
-                  context,
-                  titleWidget: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: widget.topicLabel,
-                          style: textTheme.displaySmall?.copyWith(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '  (sujet)',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
+              // ── Section 1: Topic (always visible) ──
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: widget.topicLabel,
+                      style: textTheme.displaySmall?.copyWith(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    TextSpan(
+                      text: '  (sujet)',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (parentLabel != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${parentEmoji.isNotEmpty ? '$parentEmoji ' : ''}$parentLabel',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.textTertiary,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ],
+              const SizedBox(height: FacteurSpacing.space4),
+
+              // Follow / Priority control
+              if (isFollowed && matchedTopic != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _terracotta.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(
+                      color: _terracotta.withValues(alpha: 0.2),
                     ),
                   ),
-                  subtitle: parentLabel != null
-                      ? '${parentEmoji.isNotEmpty ? '$parentEmoji ' : ''}$parentLabel'
-                      : null,
-                  isExpanded: _topicExpanded,
-                  onToggle: () =>
-                      setState(() => _topicExpanded = !_topicExpanded),
-                ),
-                if (_topicExpanded) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  _buildTopicContent(
-                    isFollowed: isFollowed,
-                    matchedTopic: matchedTopic,
-                    colorScheme: colorScheme,
-                    colors: colors,
-                    textTheme: textTheme,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Left: dot + "Suivi"
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: const BoxDecoration(
+                                color: _terracotta,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Suivi',
+                              style: textTheme.labelMedium?.copyWith(
+                                color: _terracotta,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // Right: priority slider (self-labeled)
+                      Builder(builder: (context) {
+                        final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                        final topicSlug = matchedTopic.slugParent;
+                        final topicUsage = algoProfile != null &&
+                                algoProfile.subtopicWeights.containsKey(topicSlug)
+                            ? algoProfile.normalizeWeight(
+                                algoProfile.subtopicWeights[topicSlug]!)
+                            : null;
+                        return TopicPrioritySlider(
+                          currentMultiplier: matchedTopic.priorityMultiplier,
+                          onChanged: (multiplier) async {
+                            try {
+                              await ref
+                                  .read(customTopicsProvider.notifier)
+                                  .updatePriority(matchedTopic.id, multiplier);
+                            } on DioException catch (e) {
+                              if (context.mounted) {
+                                final detail = e.response?.data;
+                                final msg =
+                                    (detail is Map && detail['detail'] is String)
+                                        ? detail['detail'] as String
+                                        : 'Erreur lors de la mise à jour';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(msg),
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          usageWeight: topicUsage,
+                          onReset: topicUsage != null
+                              ? () async {
+                                  final client = ref.read(apiClientProvider);
+                                  await client.post('/users/subtopics/$topicSlug/reset');
+                                  ref.invalidate(algorithmProfileProvider);
+                                }
+                              : null,
+                        );
+                      }),
+                    ],
                   ),
-                ],
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(customTopicsProvider.notifier)
+                            .followTopic(widget.topicLabel,
+                                slugParent: widget.topicSlug);
+                      } on DioException catch (e) {
+                        if (context.mounted) {
+                          final detail = e.response?.data;
+                          final msg = (detail is Map &&
+                                  detail['detail'] is String)
+                              ? detail['detail'] as String
+                              : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: Icon(
+                      PhosphorIcons.plus(),
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Suivre ce sujet',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.medium),
+                      ),
+                    ),
+                  ),
+                ),
+
+              if (!isFollowed) ...[
+                const SizedBox(height: FacteurSpacing.space2),
+                Center(
+                  child: Text(
+                    'Recevez plus d\'articles sur ${widget.topicLabel}',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textTertiary,
+                    ),
+                  ),
+                ),
               ],
 
-              // ── Section 2: Source ──
+              // "Gérer mes intérêts" CTA
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.pushNamed(RouteNames.myInterests);
+                  },
+                  icon: Icon(
+                    PhosphorIcons.gear(),
+                    size: 14,
+                    color: colors.textSecondary,
+                  ),
+                  label: Text(
+                    'Gérer mes intérêts',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Section Source ──
               if (widget.content.source.name.isNotEmpty) ...[
                 const SizedBox(height: FacteurSpacing.space2),
                 Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  titleWidget: Row(
-                    children: [
-                      if (widget.content.source.logoUrl != null &&
-                          widget.content.source.logoUrl!.isNotEmpty) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            widget.content.source.logoUrl!,
-                            width: 28,
-                            height: 28,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RichText(
-                              text: TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: widget.content.source.name,
-                                    style: textTheme.displaySmall?.copyWith(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: '  (source)',
-                                    style: textTheme.labelSmall?.copyWith(
-                                      color: colors.textTertiary,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (widget.content.source.theme != null &&
-                                widget.content.source.theme!.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.content.source.getThemeLabel(),
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.textTertiary,
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                            ],
-                          ],
+
+                // Source header: logo + name + theme
+                Row(
+                  children: [
+                    if (widget.content.source.logoUrl != null &&
+                        widget.content.source.logoUrl!.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          widget.content.source.logoUrl!,
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const SizedBox.shrink(),
                         ),
                       ),
+                      const SizedBox(width: 10),
                     ],
-                  ),
-                  isExpanded: _sourceExpanded,
-                  onToggle: () =>
-                      setState(() => _sourceExpanded = !_sourceExpanded),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: widget.content.source.name,
+                                  style: textTheme.displaySmall?.copyWith(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '  (source)',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (widget.content.source.theme != null &&
+                              widget.content.source.theme!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.content.source.getThemeLabel(),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.textTertiary,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                if (_sourceExpanded) ...[
-                  const SizedBox(height: FacteurSpacing.space3),
-                  _buildSourceContent(colorScheme: colorScheme, colors: colors, textTheme: textTheme),
-                ],
-              ],
-
-              // ── Section 3: Entities ──
-              if (widget.content.entities.isNotEmpty) ...[
-                const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  icon:
-                      PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
-                  iconColor: colors.textSecondary,
-                  title: 'Sujets de cet article',
-                  isExpanded: _entitiesExpanded,
-                  onToggle: () =>
-                      setState(() => _entitiesExpanded = !_entitiesExpanded),
+
+                // Source card (slider + mute inside)
+                Builder(builder: (context) {
+                  final sourcesAsync = ref.watch(userSourcesProvider);
+                  final sourceMatch = sourcesAsync.whenOrNull(
+                    data: (sources) => sources
+                        .where((s) => s.id == widget.content.source.id)
+                        .firstOrNull,
+                  );
+                  final currentMultiplier =
+                      sourceMatch?.priorityMultiplier ?? 1.0;
+                  final isTrustedAndActive =
+                      sourceMatch?.isTrusted == true &&
+                          sourceMatch?.isMuted != true;
+                  final isSubscribed =
+                      sourceMatch?.hasSubscription ?? false;
+
+                  if (!isTrustedAndActive) {
+                    // Not trusted: standalone mute button
+                    return _buildActionOption(
+                      context,
+                      icon: PhosphorIcons.prohibit(
+                          PhosphorIconsStyle.regular),
+                      label:
+                          'Ne plus afficher ${widget.content.source.name}',
+                      isDestructive: true,
+                      onTap: () async {
+                        Navigator.pop(context);
+                        try {
+                          await ref
+                              .read(feedProvider.notifier)
+                              .muteSource(widget.content);
+                          NotificationService.showInfo(
+                              'Source ${widget.content.source.name} masquée');
+                        } catch (e) {
+                          NotificationService.showError(
+                              'Impossible de masquer la source');
+                        }
+                      },
+                      colors: colors,
+                    );
+                  }
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _terracotta.withValues(alpha: 0.08),
+                      borderRadius:
+                          BorderRadius.circular(FacteurRadius.medium),
+                      border: Border.all(
+                        color: _terracotta.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // Left: dot + "Suivie" / mute link
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        color: _terracotta,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Suivie',
+                                      style: textTheme.labelMedium
+                                          ?.copyWith(
+                                        color: _terracotta,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '/',
+                                      style: textTheme.labelSmall
+                                          ?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        try {
+                                          await ref
+                                              .read(
+                                                  feedProvider.notifier)
+                                              .muteSource(
+                                                  widget.content);
+                                          NotificationService.showInfo(
+                                            'Source ${widget.content.source.name} masquée',
+                                          );
+                                        } catch (e) {
+                                          NotificationService
+                                              .showError(
+                                            'Impossible de masquer la source',
+                                          );
+                                        }
+                                      },
+                                      child: Text(
+                                        'Masquer',
+                                        style: textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: colors.error,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // Right: priority slider (self-labeled)
+                            Builder(builder: (context) {
+                              final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                              final sourceId = widget.content.source.id;
+                              final sourceUsage = algoProfile?.sourceAffinities[sourceId];
+                              return PrioritySlider(
+                                currentMultiplier: currentMultiplier,
+                                onChanged: (multiplier) {
+                                  ref
+                                      .read(userSourcesProvider.notifier)
+                                      .updateWeight(
+                                        widget.content.source.id,
+                                        multiplier,
+                                      );
+                                },
+                                usageWeight: sourceUsage,
+                              );
+                            }),
+                          ],
+                        ),
+                        // Subscription toggle
+                        Divider(
+                          color: _terracotta.withValues(alpha: 0.15),
+                          height: 1,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              isSubscribed
+                                  ? PhosphorIcons.crown(
+                                      PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.crown(
+                                      PhosphorIconsStyle.regular),
+                              size: 18,
+                              color: isSubscribed
+                                  ? colorScheme.primary
+                                  : colors.textSecondary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "J'y suis abonné(e)",
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: isSubscribed,
+                              onChanged: (value) {
+                                ref
+                                    .read(userSourcesProvider.notifier)
+                                    .toggleSubscription(
+                                      widget.content.source.id,
+                                      isSubscribed,
+                                    );
+                              },
+                              activeTrackColor: colorScheme.primary,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+                // CTA: "Gérer mes sources"
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      context.pushNamed(RouteNames.sources);
+                    },
+                    icon: Icon(
+                      PhosphorIcons.gear(),
+                      size: 14,
+                      color: colors.textSecondary,
+                    ),
+                    label: Text(
+                      'Gérer mes sources',
+                      style: textTheme.labelMedium?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ),
                 ),
-                if (_entitiesExpanded) ...[
-                  const SizedBox(height: 12),
-                  _buildEntitiesContent(
-                      topics: topics, colors: colors, textTheme: textTheme),
-                ],
               ],
 
-              // ── Section 4: "Pourquoi cet article ?" ──
+              // ── Section 2: "Pourquoi cet article ?" ──
               if (reason != null && reason.breakdown.isNotEmpty) ...[
                 const SizedBox(height: FacteurSpacing.space2),
                 Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
@@ -376,7 +747,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 ],
               ],
 
-              // ── Section 5: "Personnaliser mon flux" ──
+              // ── Section 3: "Personnaliser mon flux" ──
               const SizedBox(height: FacteurSpacing.space2),
               Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
               const SizedBox(height: FacteurSpacing.space3),
@@ -409,6 +780,28 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   },
                   colors: colors,
                 ),
+                if (widget.content.topics.isNotEmpty)
+                  _buildActionOption(
+                    context,
+                    icon: PhosphorIcons.thumbsDown(PhosphorIconsStyle.regular),
+                    label: "Je n'aime pas le sujet",
+                    isDestructive: true,
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        for (final topicSlug in widget.content.topics) {
+                          await ref
+                              .read(feedProvider.notifier)
+                              .muteTopic(topicSlug);
+                        }
+                        NotificationService.showInfo('Sujets masqués');
+                      } catch (e) {
+                        NotificationService.showError(
+                            'Impossible de masquer les sujets');
+                      }
+                    },
+                    colors: colors,
+                  ),
               ],
 
               const SizedBox(height: FacteurSpacing.space2),
@@ -419,782 +812,54 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     );
   }
 
-  // ── Topic content ──
-
-  Widget _buildTopicContent({
-    required bool isFollowed,
-    required UserTopicProfile? matchedTopic,
-    required ColorScheme colorScheme,
-    required FacteurColors colors,
-    required TextTheme textTheme,
-  }) {
-    if (isFollowed && matchedTopic != null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: _terracotta.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              border: Border.all(color: _terracotta.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: const BoxDecoration(
-                          color: _terracotta,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Suivi',
-                        style: textTheme.labelMedium?.copyWith(
-                          color: _terracotta,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '/',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: () async {
-                          Navigator.pop(context);
-                          try {
-                            await ref
-                                .read(customTopicsProvider.notifier)
-                                .unfollowTopic(matchedTopic.id);
-                            NotificationService.showInfo(
-                              '${widget.topicLabel} retiré de vos sujets',
-                            );
-                          } catch (e) {
-                            NotificationService.showError(
-                              'Impossible de retirer le sujet',
-                            );
-                          }
-                        },
-                        child: Text(
-                          'Ne plus suivre',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.error,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                TopicPrioritySlider(
-                  currentMultiplier: matchedTopic.priorityMultiplier,
-                  onChanged: (multiplier) async {
-                    try {
-                      await ref
-                          .read(customTopicsProvider.notifier)
-                          .updatePriority(matchedTopic.id, multiplier);
-                    } on DioException catch (e) {
-                      if (context.mounted) {
-                        final detail = e.response?.data;
-                        final msg =
-                            (detail is Map && detail['detail'] is String)
-                                ? detail['detail'] as String
-                                : 'Erreur lors de la mise à jour';
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(msg),
-                            duration: const Duration(seconds: 3),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () {
-                final router = GoRouter.of(context);
-                Navigator.of(context).pop();
-                router.pushNamed(RouteNames.myInterests);
-              },
-              icon: Icon(
-                PhosphorIcons.gear(),
-                size: 14,
-                color: colors.textSecondary,
-              ),
-              label: Text(
-                'Gérer mes intérêts',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () async {
-              try {
-                await ref
-                    .read(customTopicsProvider.notifier)
-                    .followTopic(widget.topicLabel,
-                        slugParent: widget.topicSlug);
-              } on DioException catch (e) {
-                if (context.mounted) {
-                  final detail = e.response?.data;
-                  final msg = (detail is Map && detail['detail'] is String)
-                      ? detail['detail'] as String
-                      : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(msg),
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-                }
-              }
-            },
-            icon: Icon(
-              PhosphorIcons.plus(),
-              size: 16,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Suivre ce sujet',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-              ),
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: GestureDetector(
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                final repo = ref.read(personalizationRepositoryProvider);
-                for (final topicSlug in widget.content.topics) {
-                  await repo.muteTopic(topicSlug);
-                }
-                ref.invalidate(personalizationProvider);
-                NotificationService.showInfo('Sujet masqué');
-              } catch (e) {
-                NotificationService.showError(
-                  'Impossible de masquer le sujet',
-                );
-              }
-            },
-            child: Text(
-              'Masquer ce sujet',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.error,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: () {
-              final router = GoRouter.of(context);
-              Navigator.of(context).pop();
-              router.pushNamed(RouteNames.myInterests);
-            },
-            icon: Icon(
-              PhosphorIcons.gear(),
-              size: 14,
-              color: colors.textSecondary,
-            ),
-            label: Text(
-              'Gérer mes intérêts',
-              style: textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Source content ──
-
-  Widget _buildSourceContent({
-    required ColorScheme colorScheme,
-    required FacteurColors colors,
-    required TextTheme textTheme,
-  }) {
-    return Builder(builder: (context) {
-      final sourcesAsync = ref.watch(userSourcesProvider);
-      final sourceMatch = sourcesAsync.whenOrNull(
-        data: (sources) => sources
-            .where((s) => s.id == widget.content.source.id)
-            .firstOrNull,
-      );
-      final currentMultiplier = sourceMatch?.priorityMultiplier ?? 1.0;
-      final isTrustedAndActive =
-          sourceMatch?.isTrusted == true && sourceMatch?.isMuted != true;
-      final isSubscribed = sourceMatch?.hasSubscription ?? false;
-
-      if (!isTrustedAndActive) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  await ref
-                      .read(userSourcesProvider.notifier)
-                      .toggleTrust(widget.content.source.id, false);
-                  ref.invalidate(userSourcesProvider);
-                },
-                icon: Icon(
-                  PhosphorIcons.plus(),
-                  size: 16,
-                  color: Colors.white,
-                ),
-                label: const Text(
-                  'Suivre cette source',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(FacteurRadius.medium),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: FacteurSpacing.space2),
-            _buildActionOption(
-              context,
-              icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
-              label: 'Ne plus afficher ${widget.content.source.name}',
-              isDestructive: true,
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  final repo = ref.read(personalizationRepositoryProvider);
-                  await repo.muteSource(widget.content.source.id);
-                  ref.invalidate(personalizationProvider);
-                  NotificationService.showInfo(
-                      'Source ${widget.content.source.name} masquée');
-                } catch (e) {
-                  NotificationService.showError(
-                      'Impossible de masquer la source');
-                }
-              },
-              colors: colors,
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  context.pushNamed(RouteNames.sources);
-                },
-                icon: Icon(
-                  PhosphorIcons.gear(),
-                  size: 14,
-                  color: colors.textSecondary,
-                ),
-                label: Text(
-                  'Gérer mes sources',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      }
-
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: _terracotta.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              border:
-                  Border.all(color: _terracotta.withValues(alpha: 0.2)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: const BoxDecoration(
-                                color: _terracotta,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Suivie',
-                              style: textTheme.labelMedium?.copyWith(
-                                color: _terracotta,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '/',
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colors.textTertiary,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: () async {
-                                Navigator.pop(context);
-                                try {
-                                  await ref
-                                      .read(userSourcesProvider.notifier)
-                                      .toggleTrust(
-                                          widget.content.source.id, true);
-                                  NotificationService.showInfo(
-                                    '${widget.content.source.name} retirée de vos sources',
-                                  );
-                                } catch (e) {
-                                  NotificationService.showError(
-                                    'Impossible de retirer la source',
-                                  );
-                                }
-                              },
-                              child: Text(
-                                'Ne plus suivre',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.error,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    PrioritySlider(
-                      currentMultiplier: currentMultiplier,
-                      onChanged: (multiplier) {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .updateWeight(
-                              widget.content.source.id,
-                              multiplier,
-                            );
-                      },
-                    ),
-                  ],
-                ),
-                Divider(
-                  color: _terracotta.withValues(alpha: 0.15),
-                  height: 1,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      isSubscribed
-                          ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
-                          : PhosphorIcons.crown(
-                              PhosphorIconsStyle.regular),
-                      size: 18,
-                      color: isSubscribed
-                          ? colorScheme.primary
-                          : colors.textSecondary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        "J'ai un abonnement payant",
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Switch.adaptive(
-                      value: isSubscribed,
-                      onChanged: (value) {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .toggleSubscription(
-                              widget.content.source.id,
-                              isSubscribed,
-                            );
-                      },
-                      activeTrackColor: colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.pushNamed(RouteNames.sources);
-              },
-              icon: Icon(
-                PhosphorIcons.gear(),
-                size: 14,
-                color: colors.textSecondary,
-              ),
-              label: Text(
-                'Gérer mes sources',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
-  // ── Entities content (ported from ArticleEntitiesSheet) ──
-
-  Widget _buildEntitiesContent({
-    required List<UserTopicProfile> topics,
-    required FacteurColors colors,
-    required TextTheme textTheme,
-  }) {
-    final perso = ref.watch(personalizationProvider).valueOrNull;
-    final mutedTopics = perso?.mutedTopics ?? {};
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: widget.content.entities.map((entity) {
-        final isEntityFollowed = topics.any(
-          (t) =>
-              t.canonicalName?.toLowerCase() == entity.text.toLowerCase(),
-        );
-        final isMuted = mutedTopics.contains(entity.text.toLowerCase());
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Opacity(
-                  opacity: isMuted ? 0.5 : 1.0,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        entity.text,
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (entity.label.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.textTertiary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            getEntityTypeLabel(entity.label),
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.textTertiary,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              if (isMuted)
-                // Muted state: show unmute button
-                GestureDetector(
-                  onTap: () async {
-                    final repo = ref.read(personalizationRepositoryProvider);
-                    try {
-                      await repo.unmuteTopic(entity.text.toLowerCase());
-                      ref.invalidate(personalizationProvider);
-                    } catch (_) {}
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.textTertiary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-                          size: 14,
-                          color: colors.textTertiary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Masqué',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else ...[
-                // Mute button
-                GestureDetector(
-                  onTap: () async {
-                    final repo = ref.read(personalizationRepositoryProvider);
-                    try {
-                      await repo.muteTopic(entity.text.toLowerCase());
-                      ref.invalidate(personalizationProvider);
-                    } catch (_) {}
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 4),
-                    child: Icon(
-                      PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-                      size: 16,
-                      color: colors.textTertiary,
-                    ),
-                  ),
-                ),
-                // Follow / Followed indicator
-                if (isEntityFollowed)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _terracotta.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          PhosphorIcons.check(PhosphorIconsStyle.bold),
-                          size: 14,
-                          color: _terracotta,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Suivi',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: _terracotta,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  TextButton.icon(
-                    onPressed: () {
-                      ref
-                          .read(customTopicsProvider.notifier)
-                          .followEntity(entity.text, entity.label);
-                    },
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: Icon(
-                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
-                      size: 14,
-                      color: _terracotta,
-                    ),
-                    label: Text(
-                      'Suivre',
-                      style: textTheme.labelSmall?.copyWith(
-                        color: _terracotta,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  // ── Shared helpers ──
-
   /// Builds a collapsible section header.
   Widget _buildSectionHeader(
     BuildContext context, {
     IconData? icon,
     Color? iconColor,
-    String? title,
-    Widget? titleWidget,
-    String? subtitle,
+    required String title,
     Widget? trailing,
     required bool isExpanded,
     required VoidCallback onToggle,
   }) {
     final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
 
     return GestureDetector(
       onTap: onToggle,
       behavior: HitTestBehavior.opaque,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: iconColor ?? colors.textPrimary, size: 24),
-                const SizedBox(width: 12),
-              ],
-              if (titleWidget != null)
-                Expanded(child: titleWidget)
-              else
-                Expanded(
-                  child: Text(
-                    title ?? '',
-                    style: icon != null
-                        ? TextStyle(
-                            color: colors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          )
-                        : TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                  ),
-                ),
-              if (trailing != null) ...[
-                trailing,
-                const SizedBox(width: 8),
-              ],
-              Icon(
-                isExpanded
-                    ? PhosphorIcons.caretUp(PhosphorIconsStyle.bold)
-                    : PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-                size: 16,
-                color: colors.textTertiary,
-              ),
-            ],
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
-                letterSpacing: 1.0,
-              ),
-            ),
+          if (icon != null) ...[
+            Icon(icon, color: iconColor ?? colors.textPrimary, size: 24),
+            const SizedBox(width: 12),
           ],
+          Expanded(
+            child: Text(
+              title,
+              style: icon != null
+                  ? TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    )
+                  : TextStyle(
+                      color: colors.textSecondary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+            ),
+          ),
+          if (trailing != null) ...[
+            trailing,
+            const SizedBox(width: 8),
+          ],
+          Icon(
+            isExpanded
+                ? PhosphorIcons.caretUp(PhosphorIconsStyle.bold)
+                : PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
+            size: 16,
+            color: colors.textTertiary,
+          ),
         ],
       ),
     );

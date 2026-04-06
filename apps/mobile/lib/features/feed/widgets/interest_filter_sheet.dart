@@ -9,23 +9,18 @@ import '../../custom_topics/providers/custom_topics_provider.dart';
 
 class InterestFilterSheet extends ConsumerStatefulWidget {
   final String? currentTopicSlug;
-  final bool currentIsTheme;
-  final void Function(String slug, String name, {bool isTheme, bool isEntity})
-      onInterestSelected;
+  final void Function(String slug, String name) onInterestSelected;
 
   const InterestFilterSheet({
     super.key,
     this.currentTopicSlug,
-    this.currentIsTheme = false,
     required this.onInterestSelected,
   });
 
   static Future<void> show(
     BuildContext context, {
     String? currentTopicSlug,
-    bool currentIsTheme = false,
-    required void Function(String slug, String name, {bool isTheme, bool isEntity})
-        onInterestSelected,
+    required void Function(String slug, String name) onInterestSelected,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -34,7 +29,6 @@ class InterestFilterSheet extends ConsumerStatefulWidget {
       useSafeArea: true,
       builder: (_) => InterestFilterSheet(
         currentTopicSlug: currentTopicSlug,
-        currentIsTheme: currentIsTheme,
         onInterestSelected: onInterestSelected,
       ),
     );
@@ -57,41 +51,51 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
     super.dispose();
   }
 
-  /// Build quick picks: entities first, then high-priority topics.
-  /// Excludes topics whose slugParent matches a macro-theme slug (those appear in the themes grid).
-  List<UserTopicProfile> _getQuickPicks(List<UserTopicProfile> allTopics) {
-    final themeApiSlugs = macroThemeToApiSlug.values.toSet();
-    final nonThemeTopics = allTopics
-        .where((t) => !themeApiSlugs.contains(t.slugParent))
-        .toList();
+  /// Filter and group topics by macro-theme.
+  Map<String, List<UserTopicProfile>> _getGroupedTopics(
+      List<UserTopicProfile> allTopics) {
+    // Filter by search query
+    final filtered = _searchQuery.isEmpty
+        ? allTopics
+        : allTopics
+            .where(
+                (t) => t.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .toList();
 
-    final entities = nonThemeTopics
-        .where((t) => t.entityType != null)
-        .toList()
-      ..sort((a, b) => b.compositeScore.compareTo(a.compositeScore));
+    // Group by macro-theme
+    final groups = <String, List<UserTopicProfile>>{};
+    for (final topic in filtered) {
+      final macroTheme =
+          getTopicMacroTheme(topic.slugParent ?? '') ?? 'Autre';
+      groups.putIfAbsent(macroTheme, () => []);
+      groups[macroTheme]!.add(topic);
+    }
 
-    final entityIds = entities.map((e) => e.id).toSet();
-    final highPriority = nonThemeTopics
-        .where((t) =>
-            !entityIds.contains(t.id) && t.priorityMultiplier >= 2.0)
-        .toList()
-      ..sort((a, b) => b.priorityMultiplier.compareTo(a.priorityMultiplier));
+    // Sort items within each group alphabetically
+    for (final list in groups.values) {
+      list.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
 
-    return [...entities, ...highPriority];
+    return groups;
   }
 
-  /// Filter quick picks by search query.
-  List<UserTopicProfile> _filterQuickPicks(List<UserTopicProfile> picks) {
-    if (_searchQuery.isEmpty) return picks;
-    final q = _searchQuery.toLowerCase();
-    return picks.where((t) => t.name.toLowerCase().contains(q)).toList();
-  }
-
-  /// Filter macro-themes by search query.
-  List<String> _filterThemes() {
-    if (_searchQuery.isEmpty) return macroThemeOrder;
-    final q = _searchQuery.toLowerCase();
-    return macroThemeOrder.where((t) => t.toLowerCase().contains(q)).toList();
+  /// Display label for an entity type.
+  String _entityTypeLabel(String entityType) {
+    switch (entityType.toUpperCase()) {
+      case 'PERSON':
+        return 'personne';
+      case 'ORG':
+        return 'organisation';
+      case 'LOCATION':
+        return 'lieu';
+      case 'EVENT':
+        return 'événement';
+      case 'PRODUCT':
+        return 'produit';
+      default:
+        return entityType.toLowerCase();
+    }
   }
 
   @override
@@ -101,7 +105,7 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.81,
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
       ),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
@@ -132,7 +136,7 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Filtrer parmi vos intérêts',
+                  'Filtrer par sujet',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: colors.textPrimary,
@@ -177,9 +181,8 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                   fillColor: colors.surface,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 6,
+                    vertical: 10,
                   ),
-                  isDense: true,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -193,21 +196,19 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
             ),
             const SizedBox(height: 8),
 
-            // Content
+            // Topics list
             Flexible(
               child: topicsAsync.when(
                 data: (allTopics) {
-                  final quickPicks = _filterQuickPicks(_getQuickPicks(allTopics));
-                  final filteredThemes = _filterThemes();
-                  final topicCounts = countTopicsPerMacroTheme(allTopics);
+                  final grouped = _getGroupedTopics(allTopics);
 
-                  if (quickPicks.isEmpty && filteredThemes.isEmpty) {
+                  if (grouped.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.all(32),
                       child: Text(
                         _searchQuery.isNotEmpty
                             ? 'Aucun sujet trouvé'
-                            : 'Aucun sujet disponible',
+                            : 'Aucun sujet suivi',
                         style: TextStyle(
                           color: colors.textTertiary,
                           fontSize: 14,
@@ -216,117 +217,58 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                     );
                   }
 
-                  return ListView(
+                  final sortedThemes = grouped.keys.toList()..sort();
+
+                  return ListView.builder(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
+                      horizontal: 12,
                       vertical: 4,
                     ),
                     shrinkWrap: true,
-                    children: [
-                      // Quick picks section
-                      if (quickPicks.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8, bottom: 10),
-                          child: Text(
-                            'VOS FAVORIS',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: colors.textTertiary,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1.2,
-                                ),
+                    itemCount: sortedThemes.length,
+                    itemBuilder: (context, index) {
+                      final theme = sortedThemes[index];
+                      final topics = grouped[theme]!;
+                      final emoji = getMacroThemeEmoji(theme);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Section header
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                            child: Text(
+                              '$emoji $theme',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.5,
+                                  ),
+                            ),
                           ),
-                        ),
-                        SizedBox(
-                          height: 40,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: quickPicks.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final topic = quickPicks[index];
-                              final isEntity = topic.entityType != null;
-                              final selectedSlug = isEntity
-                                  ? (topic.canonicalName ?? topic.name)
-                                  : topic.slugParent;
-                              final isSelected = !widget.currentIsTheme &&
-                                  selectedSlug == widget.currentTopicSlug;
-                              return _QuickPickChip(
+                          // Topic items
+                          ...topics.map((topic) => _InterestItem(
                                 topic: topic,
-                                isEntity: isEntity,
-                                isSelected: isSelected,
+                                isSelected:
+                                    topic.slugParent == widget.currentTopicSlug,
+                                entityTypeLabel: topic.entityType != null
+                                    ? _entityTypeLabel(topic.entityType!)
+                                    : null,
                                 colors: colors,
                                 onTap: () {
                                   widget.onInterestSelected(
-                                    isEntity
-                                        ? topic.canonicalName ?? topic.name
-                                        : topic.slugParent ?? topic.id,
+                                    topic.slugParent ?? topic.id,
                                     topic.name,
-                                    isTheme: false,
-                                    isEntity: isEntity,
                                   );
                                   Navigator.of(context).pop();
                                 },
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Themes grid section
-                      if (filteredThemes.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Text(
-                            'THÈMES',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(
-                                  color: colors.textTertiary,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1.2,
-                                ),
-                          ),
-                        ),
-                        GridView.count(
-                          crossAxisCount: 3,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 1.05,
-                          children: filteredThemes.map((themeLabel) {
-                            final slug = macroThemeToApiSlug[themeLabel];
-                            final isSelected = widget.currentIsTheme &&
-                                slug == widget.currentTopicSlug;
-                            final count = topicCounts[themeLabel] ?? 0;
-                            return _ThemeCard(
-                              label: themeLabel,
-                              emoji: getMacroThemeEmoji(themeLabel),
-                              topicCount: count,
-                              isSelected: isSelected,
-                              colors: colors,
-                              onTap: () {
-                                if (slug == null) return;
-                                widget.onInterestSelected(
-                                  slug,
-                                  themeLabel,
-                                  isTheme: true,
-                                );
-                                Navigator.of(context).pop();
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      ],
-
-                      const SizedBox(height: 16),
-                    ],
+                              )),
+                        ],
+                      );
+                    },
                   );
                 },
                 loading: () => const Padding(
@@ -349,130 +291,95 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
   }
 }
 
-class _QuickPickChip extends StatelessWidget {
+class _InterestItem extends StatelessWidget {
   final UserTopicProfile topic;
-  final bool isEntity;
   final bool isSelected;
+  final String? entityTypeLabel;
   final FacteurColors colors;
   final VoidCallback onTap;
 
-  const _QuickPickChip({
+  const _InterestItem({
     required this.topic,
-    required this.isEntity,
     required this.isSelected,
+    this.entityTypeLabel,
     required this.colors,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color bgColor;
-    final Color borderColor;
-    final Color textColor;
-
-    if (isSelected) {
-      bgColor = isEntity ? Colors.orange.shade600 : Colors.green.shade600;
-      borderColor = bgColor;
-      textColor = Colors.white;
-    } else {
-      bgColor = isEntity ? Colors.orange.shade50 : Colors.green.shade50;
-      borderColor = isEntity ? Colors.orange.shade300 : Colors.green.shade300;
-      textColor = isEntity ? Colors.orange.shade800 : Colors.green.shade800;
-    }
-
-    final emoji = isEntity
-        ? getEntityTypeEmoji(topic.entityType)
-        : getMacroThemeEmoji(getTopicMacroTheme(topic.slugParent ?? '') ?? '');
-
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: bgColor,
-          border: Border.all(color: borderColor, width: 1.5),
-          borderRadius: BorderRadius.circular(20),
-        ),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
-            Text(
-              topic.name,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+            // Icon based on entity type
+            Icon(
+              entityTypeLabel != null
+                  ? _iconForEntityType(topic.entityType)
+                  : PhosphorIcons.hash(PhosphorIconsStyle.regular),
+              color: isSelected ? colors.primary : colors.textTertiary,
+              size: 18,
+            ),
+            const SizedBox(width: 12),
+
+            // Name + optional entity type label
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: topic.name,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight:
+                                isSelected ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                    ),
+                    if (entityTypeLabel != null)
+                      TextSpan(
+                        text: ' ($entityTypeLabel)',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.textTertiary,
+                              fontWeight: FontWeight.w400,
+                            ),
+                      ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+
+            // Check mark
+            if (isSelected)
+              Icon(
+                PhosphorIcons.check(PhosphorIconsStyle.bold),
+                color: colors.primary,
+                size: 20,
+              ),
           ],
         ),
       ),
     );
   }
-}
 
-class _ThemeCard extends StatelessWidget {
-  final String label;
-  final String emoji;
-  final int topicCount;
-  final bool isSelected;
-  final FacteurColors colors;
-  final VoidCallback onTap;
-
-  const _ThemeCard({
-    required this.label,
-    required this.emoji,
-    required this.topicCount,
-    required this.isSelected,
-    required this.colors,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFF8EB) : colors.surface,
-          border: Border.all(
-            color: isSelected ? colors.primary : colors.border,
-            width: isSelected ? 2 : 1.5,
-          ),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 28)),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: colors.textSecondary,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-            if (topicCount > 0) ...[
-              const SizedBox(height: 2),
-              Text(
-                topicCount == 1 ? '1 sujet' : '$topicCount sujets',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  IconData _iconForEntityType(String? entityType) {
+    switch (entityType?.toUpperCase()) {
+      case 'PERSON':
+        return PhosphorIcons.user(PhosphorIconsStyle.regular);
+      case 'ORG':
+        return PhosphorIcons.buildings(PhosphorIconsStyle.regular);
+      case 'LOCATION':
+        return PhosphorIcons.mapPin(PhosphorIconsStyle.regular);
+      case 'EVENT':
+        return PhosphorIcons.calendarBlank(PhosphorIconsStyle.regular);
+      case 'PRODUCT':
+        return PhosphorIcons.package(PhosphorIconsStyle.regular);
+      default:
+        return PhosphorIcons.hash(PhosphorIconsStyle.regular);
+    }
   }
 }

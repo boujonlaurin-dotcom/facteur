@@ -53,10 +53,6 @@ class EditorialPipelineService:
         )
         self.deep_matcher = DeepMatcher(session, self.llm, self.config)
 
-    def is_enabled_for_user(self, user_id: str) -> bool:
-        """Check if editorial pipeline is enabled for a user."""
-        return self.config.is_enabled_for_user(user_id) and self.llm.is_ready
-
     async def compute_global_context(
         self,
         contents: list[Content],

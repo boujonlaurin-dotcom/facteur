@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.services.editorial.config import EditorialConfig, FeatureFlags, PipelineConfig, PromptConfig
+from app.services.editorial.config import EditorialConfig, PipelineConfig, PromptConfig
 from app.services.editorial.curation import CurationService, THEME_DEEP_ANGLES, DEFAULT_DEEP_ANGLE
 from app.services.editorial.schemas import SelectedTopic
 

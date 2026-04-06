@@ -63,10 +63,9 @@ def mock_dependencies():
         patch("app.services.editorial.pipeline.PerspectiveService") as mock_perspective_cls,
     ):
         # Config
-        from app.services.editorial.config import EditorialConfig, FeatureFlags, PipelineConfig
+        from app.services.editorial.config import EditorialConfig, PipelineConfig
         config = EditorialConfig(
             pipeline=PipelineConfig(),
-            feature_flags=FeatureFlags(editorial_enabled=True),
         )
         mock_config.return_value = config
 
@@ -106,24 +105,6 @@ def mock_dependencies():
             "actu": mock_actu,
             "perspective": mock_perspective,
         }
-
-
-class TestIsEnabledForUser:
-    def test_enabled_when_config_and_llm_ready(self, mock_dependencies):
-        from app.services.editorial.pipeline import EditorialPipelineService
-        session = AsyncMock()
-        svc = EditorialPipelineService(session)
-
-        assert svc.is_enabled_for_user("any-user") is True
-
-    def test_disabled_when_llm_not_ready(self, mock_dependencies):
-        mock_dependencies["llm"].is_ready = False
-
-        from app.services.editorial.pipeline import EditorialPipelineService
-        session = AsyncMock()
-        svc = EditorialPipelineService(session)
-
-        assert svc.is_enabled_for_user("any-user") is False
 
 
 class TestComputeGlobalContext:

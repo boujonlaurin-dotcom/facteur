@@ -100,12 +100,13 @@ class TestUserTopicProfileModel:
         assert result.priority_multiplier == 1.0
 
     @pytest.mark.asyncio
-    async def test_unique_constraint_user_slug(self, db_session, test_user):
-        """Test that (user_id, slug_parent) UniqueConstraint works."""
+    async def test_unique_constraint_user_canonical_name(self, db_session, test_user):
+        """Test that (user_id, canonical_name) partial unique index works."""
         topic1 = UserTopicProfile(
             user_id=test_user.user_id,
             topic_name="IA",
             slug_parent="ai",
+            canonical_name="artificial-intelligence",
             keywords=["GPT"],
         )
         db_session.add(topic1)
@@ -114,7 +115,8 @@ class TestUserTopicProfileModel:
         topic2 = UserTopicProfile(
             user_id=test_user.user_id,
             topic_name="Machine Learning",
-            slug_parent="ai",  # Same slug_parent
+            slug_parent="ml",
+            canonical_name="artificial-intelligence",  # Same canonical_name
             keywords=["ML"],
         )
         db_session.add(topic2)

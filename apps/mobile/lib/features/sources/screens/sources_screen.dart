@@ -5,6 +5,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
+import '../../custom_topics/providers/algorithm_profile_provider.dart';
 import '../../settings/providers/paid_content_provider.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -399,8 +400,11 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
   }
 
   Widget _buildSourceItem(Source source) {
+    final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+    final sourceUsage = algoProfile?.sourceAffinities[source.id];
     return SourceListItem(
       source: source,
+      usageWeight: sourceUsage,
       onTap: () {
         ref
             .read(userSourcesProvider.notifier)

@@ -6,7 +6,6 @@ import pytest
 
 from app.services.editorial.config import (
     EditorialConfig,
-    FeatureFlags,
     PipelineConfig,
     PromptConfig,
     load_editorial_config,
@@ -32,47 +31,12 @@ class TestPipelineConfig:
         assert cfg.deep_jaccard_threshold == 0.10
 
 
-class TestFeatureFlags:
-    def test_defaults(self):
-        ff = FeatureFlags()
-        assert ff.editorial_enabled is False
-        assert ff.editorial_user_ids == []
-
-
 class TestPromptConfig:
     def test_defaults(self):
         pc = PromptConfig(system="You are an editor.")
         assert pc.model == "mistral-large-latest"
         assert pc.temperature == 0.3
         assert pc.max_tokens == 1000
-
-
-class TestEditorialConfig:
-    def test_is_enabled_disabled(self):
-        cfg = EditorialConfig()
-        assert cfg.is_enabled_for_user("any-user") is False
-
-    def test_is_enabled_empty_whitelist(self):
-        cfg = EditorialConfig(
-            feature_flags=FeatureFlags(editorial_enabled=True, editorial_user_ids=[])
-        )
-        assert cfg.is_enabled_for_user("any-user") is True
-
-    def test_is_enabled_whitelist_match(self):
-        cfg = EditorialConfig(
-            feature_flags=FeatureFlags(
-                editorial_enabled=True, editorial_user_ids=["user-123"]
-            )
-        )
-        assert cfg.is_enabled_for_user("user-123") is True
-
-    def test_is_enabled_whitelist_miss(self):
-        cfg = EditorialConfig(
-            feature_flags=FeatureFlags(
-                editorial_enabled=True, editorial_user_ids=["user-123"]
-            )
-        )
-        assert cfg.is_enabled_for_user("user-999") is False
 
 
 class TestLoadEditorialConfig:
@@ -93,10 +57,6 @@ class TestLoadEditorialConfig:
 pipeline:
   subjects_count: 5
   cluster_input_limit: 20
-feature_flags:
-  editorial_enabled: true
-  editorial_user_ids:
-    - "user-a"
 """
         yaml_prompts = """
 curation:
@@ -131,5 +91,3 @@ deep_matching:
             cfg = load_editorial_config()
 
         assert cfg.pipeline.subjects_count == 5
-        assert cfg.feature_flags.editorial_enabled is True
-        assert "user-a" in cfg.feature_flags.editorial_user_ids

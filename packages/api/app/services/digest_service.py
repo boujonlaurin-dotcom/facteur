@@ -1980,11 +1980,4 @@ class DigestService:
         if value in ("topics", "flat", "editorial"):
             return value
 
-        # Auto-select editorial for whitelisted users when feature is enabled
-        from app.services.editorial.config import load_editorial_config
-
-        editorial_config = load_editorial_config()
-        if editorial_config.is_enabled_for_user(str(user_id)):
-            return "editorial"
-
-        return "topics"
+        return "editorial"

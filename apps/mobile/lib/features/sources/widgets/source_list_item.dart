@@ -13,10 +13,13 @@ class SourceListItem extends StatelessWidget {
   final VoidCallback? onToggleMute;
   final ValueChanged<double>? onWeightChanged;
   final VoidCallback? onToggleSubscription;
+  final double? usageWeight;
+
   const SourceListItem({
     super.key,
     required this.source,
     this.onTap,
+    this.usageWeight,
     this.onToggleMute,
     this.onWeightChanged,
     this.onToggleSubscription,
@@ -54,6 +57,7 @@ class SourceListItem extends StatelessWidget {
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
             onToggleSubscription: onToggleSubscription,
+            usageWeight: usageWeight,
           ),
         );
       },
@@ -62,8 +66,8 @@ class SourceListItem extends StatelessWidget {
         opacity: isMuted ? 0.5 : 1.0,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: isMuted
                 ? colors.surface
@@ -83,11 +87,11 @@ class SourceListItem extends StatelessWidget {
             children: [
               // Logo or Placeholder
               Container(
-                width: 48,
-                height: 48,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: colors.backgroundSecondary,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: source.logoUrl != null && source.logoUrl!.isNotEmpty
@@ -105,9 +109,9 @@ class SourceListItem extends StatelessWidget {
                           ),
                         ),
                         errorWidget: (context) =>
-                            Icon(_typeIcon, color: colors.secondary, size: 24),
+                            Icon(_typeIcon, color: colors.secondary, size: 20),
                       )
-                    : Icon(_typeIcon, color: colors.secondary, size: 24),
+                    : Icon(_typeIcon, color: colors.secondary, size: 20),
               ),
               const SizedBox(width: 12),
 
@@ -161,6 +165,7 @@ class SourceListItem extends StatelessWidget {
                   key: ValueKey(source.priorityMultiplier),
                   currentMultiplier: source.priorityMultiplier,
                   onChanged: onWeightChanged!,
+                  usageWeight: usageWeight,
                 ),
               ],
 

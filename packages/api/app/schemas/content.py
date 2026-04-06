@@ -1,5 +1,6 @@
 """Schemas contenu."""
 
+import contextlib
 import json
 from datetime import datetime
 from uuid import UUID
@@ -14,22 +15,6 @@ from app.models.enums import (
     HiddenReason,
     ReliabilityScore,
 )
-
-
-def parse_entity_strings(raw_entities: list[str] | None) -> list[dict]:
-    """Parse JSON-encoded entity strings to {text, label} dicts for mobile."""
-    if not raw_entities:
-        return []
-    result = []
-    for raw in raw_entities:
-        try:
-            parsed = json.loads(raw)
-            result.append(
-                {"text": parsed.get("name", raw), "label": parsed.get("type", "")}
-            )
-        except (json.JSONDecodeError, AttributeError):
-            result.append({"text": raw, "label": ""})
-    return result
 
 
 class HideContentRequest(BaseModel):
@@ -114,7 +99,6 @@ class ContentResponse(BaseModel):
     reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
-    is_followed_source: bool = False  # Feed fallback: source suivie par l'utilisateur
 
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:
@@ -122,8 +106,9 @@ class ContentResponse(BaseModel):
         return value if value is not None else []
 
     @field_serializer("entities", when_used="always")
-    def serialize_entities(self, value: list[str] | None) -> list[dict]:
-        return parse_entity_strings(value)
+    def serialize_entities(self, value: list[str] | None) -> list[str]:
+        """ORM entities peut être NULL en base → toujours retourner une liste."""
+        return value if value is not None else []
 
     class Config:
         from_attributes = True
@@ -163,8 +148,8 @@ class ContentDetailResponse(BaseModel):
         return value if value is not None else []
 
     @field_serializer("entities", when_used="always")
-    def serialize_entities(self, value: list[str] | None) -> list[dict]:
-        return parse_entity_strings(value)
+    def serialize_entities(self, value: list[str] | None) -> list[str]:
+        return value if value is not None else []
 
     class Config:
         from_attributes = True
@@ -190,13 +175,26 @@ class DailyTop3Response(BaseModel):
         from_attributes = True
 
 
-class ArticleFeedbackRequest(BaseModel):
-    """Feedback utilisateur sur un article (thumbs up/down + raisons optionnelles)."""
+def parse_entity_strings(entities: list[str]) -> list[dict]:
+    """Parse entity JSON strings into dicts for serialization.
 
-    sentiment: str = Field(..., pattern=r"^(positive|negative)$")
-    reasons: list[str] = []
+    Each element is a JSON string like '{"name": "Macron", "type": "PERSON"}'.
+    Returns a list of parsed dicts, silently skipping malformed entries.
+    """
+    result = []
+    for item in entities:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            result.append(json.loads(item))
+    return result
+
+
+class ArticleFeedbackRequest(BaseModel):
+    """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
+
+    sentiment: str  # "positive" | "negative"
+    reasons: list[str] | None = None
     comment: str | None = None
-    digest_date: str | None = None
+    digest_date: str | None = None  # ISO date string "YYYY-MM-DD"
 
 
 class FeedRefreshRequest(BaseModel):
