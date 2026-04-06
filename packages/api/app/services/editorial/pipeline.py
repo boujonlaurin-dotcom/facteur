@@ -34,7 +34,6 @@ from app.services.editorial.schemas import (
     compute_bias_distribution,
     compute_bias_highlights,
 )
-from app.services.perspective_service import PerspectiveService
 from app.services.editorial.writer import EditorialWriterService
 from app.services.perspective_service import PerspectiveService
 
