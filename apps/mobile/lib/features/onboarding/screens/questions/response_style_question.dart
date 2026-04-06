@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -20,13 +21,13 @@ class ResponseStyleQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           // Question
           Text(
             OnboardingStrings.q6Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
@@ -67,6 +68,15 @@ class ResponseStyleQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedStyle != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectResponseStyle(selectedStyle!);
+            },
+          ),
         ],
       ),
     );

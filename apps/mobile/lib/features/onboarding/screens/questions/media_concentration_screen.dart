@@ -24,7 +24,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
           Text(
             OnboardingStrings.mediaConcentrationTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -114,7 +114,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const Spacer(flex: 1),

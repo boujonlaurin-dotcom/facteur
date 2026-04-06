@@ -252,12 +252,12 @@ class _RestartWelcomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           Text(
             OnboardingStrings.restartWelcomeTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -267,7 +267,7 @@ class _RestartWelcomeScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const Spacer(flex: 3),

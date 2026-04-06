@@ -27,12 +27,12 @@ class FinalizeQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           Text(
             OnboardingStrings.finalizeTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -43,7 +43,7 @@ class FinalizeQuestion extends ConsumerWidget {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),

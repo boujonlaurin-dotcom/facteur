@@ -51,7 +51,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!_showManifesto) ...[
-            const SizedBox(height: FacteurSpacing.space6),
+            const Spacer(flex: 2),
 
             // Logo
             const Center(child: FacteurLogo(size: 42)),
@@ -69,7 +69,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             Text(
               OnboardingStrings.welcomeTitle,
               style: Theme.of(context).textTheme.displayLarge,
-              textAlign: TextAlign.start,
+              textAlign: TextAlign.center,
             ),
 
             const SizedBox(height: FacteurSpacing.space3),
@@ -79,7 +79,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
-              textAlign: TextAlign.start,
+              textAlign: TextAlign.center,
             ),
             const Spacer(flex: 2),
           ] else ...[
@@ -235,12 +235,12 @@ class IntroScreen2 extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           Text(
             OnboardingStrings.intro2Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -250,7 +250,7 @@ class IntroScreen2 extends ConsumerWidget {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
                 ),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const Spacer(flex: 3),

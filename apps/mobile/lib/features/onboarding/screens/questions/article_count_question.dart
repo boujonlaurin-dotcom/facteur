@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -21,12 +22,12 @@ class ArticleCountQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           Text(
             OnboardingStrings.articleCountTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -37,7 +38,7 @@ class ArticleCountQuestion extends ConsumerWidget {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
@@ -108,6 +109,15 @@ class ArticleCountQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedCount != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectDailyArticleCount(selectedCount!);
+            },
+          ),
         ],
       ),
     );

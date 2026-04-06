@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/serein_colors.dart';
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 
 /// Emotional binary screen: "Rester serein ?" with two buttons.
 class DigestModeQuestion extends ConsumerWidget {
@@ -12,6 +13,8 @@ class DigestModeQuestion extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(onboardingProvider);
+    final selectedMode = state.answers.digestMode;
     final colors = context.facteurColors;
 
     return Padding(
@@ -19,26 +22,26 @@ class DigestModeQuestion extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           Text(
             '🌿 Rester serein ?',
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
 
           Text(
             'Certains sujets peuvent être difficiles à lire. '
-            'Active le mode serein pour filtrer les contenus anxiogènes.\n\n'
-            'Tu pourras changer d\'avis à tout moment grâce au bouton dédié '
-            'en haut de ton essentiel et du flux.',
+            'Activez le mode serein pour filtrer les contenus anxiogènes.\n\n'
+            'Vous pourrez changer d\'avis à tout moment grâce au bouton dédié '
+            'en haut de votre essentiel et du flux.',
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space8),
@@ -94,6 +97,15 @@ class DigestModeQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedMode != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectDigestMode(selectedMode!);
+            },
+          ),
         ],
       ),
     );

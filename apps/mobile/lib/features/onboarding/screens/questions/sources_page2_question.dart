@@ -204,7 +204,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
           Text(
             OnboardingStrings.sourcesPage2Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: FacteurSpacing.space3),
           Text(
@@ -213,7 +213,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space6),

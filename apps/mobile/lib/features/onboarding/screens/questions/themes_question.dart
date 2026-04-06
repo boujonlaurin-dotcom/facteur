@@ -62,7 +62,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
           Text(
             OnboardingStrings.q10Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -72,7 +72,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space6),

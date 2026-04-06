@@ -167,7 +167,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
           Text(
             OnboardingStrings.q9Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: FacteurSpacing.space3),
           Text(
@@ -176,7 +176,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           // Section: Pour vous

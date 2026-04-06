@@ -163,7 +163,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           Text(
             OnboardingStrings.subtopicsTitle,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space3),
@@ -174,7 +174,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.start,
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: FacteurSpacing.space6),

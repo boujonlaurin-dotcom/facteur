@@ -83,14 +83,14 @@ class _ReactionScreenState extends State<ReactionScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: FacteurSpacing.space6),
+          const Spacer(flex: 2),
 
           FadeTransition(
             opacity: _fadeAnimation,
             child: Text(
               widget.title,
               style: Theme.of(context).textTheme.displayLarge,
-              textAlign: TextAlign.start,
+              textAlign: TextAlign.center,
             ),
           ),
 
@@ -103,7 +103,7 @@ class _ReactionScreenState extends State<ReactionScreen>
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
-              textAlign: TextAlign.start,
+              textAlign: TextAlign.center,
             ),
           ),
 

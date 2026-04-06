@@ -20,7 +20,7 @@ class OnboardingStrings {
   static const String welcomeStartButton = 'Commencer';
 
   // Intro Screen 2
-  static const String intro2Title = 'Ton hub d\'infos fiables';
+  static const String intro2Title = 'Votre hub d\'infos fiables';
   static const String intro2Subtitle =
       'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
   static const String intro2Button = 'Découvrir Facteur';
@@ -47,7 +47,7 @@ class OnboardingStrings {
 
   // Q2: Age
   static const String q2Title = 'Apprenons à se connaitre';
-  static const String q2Subtitle = 'Où est-ce que tu te situes ?';
+  static const String q2Subtitle = 'Où est-ce que vous vous situez ?';
   static const String q2Option18_24 = '18 - 24 ans';
   static const String q2Option25_34 = '25 - 34 ans';
   static const String q2Option35_44 = '35 - 44 ans';
@@ -79,15 +79,15 @@ class OnboardingStrings {
 
   // Q8: Gamification
   static const String q8Title = 'Bien s\'informer, ça se travaille !';
-  static const String q8SubtitlePart1 = 'Facteur t\'accompagne avec une ';
+  static const String q8SubtitlePart1 = 'Facteur vous accompagne avec une ';
   static const String q8SubtitleBold1 = '🔥 streak quotidienne';
   static const String q8SubtitlePart2 = ' pour garder le rythme, et une ';
   static const String q8SubtitleBold2 = '📊 progression hebdomadaire';
   static const String q8SubtitlePart3 =
-      ' pour valider que tu retiens vraiment l\'info.';
+      ' pour valider que vous retenez vraiment l\'info.';
   static const String q8YesLabel = 'Essayons !';
   static const String q8NoLabel = 'Je préfère sans';
-  static const String q8NoSubtitle = 'Tu pourras activer ça plus tard';
+  static const String q8NoSubtitle = 'Vous pourrez activer ça plus tard';
 
   // Article Count (replaces Weekly Goal)
   static const String articleCountTitle = 'Combien d\'articles par jour ?';
@@ -163,9 +163,9 @@ class OnboardingStrings {
   static const String restartStartButton = 'C\'est parti !';
 
   // Subtopics Screen (Screen B)
-  static const String subtopicsTitle = 'Affine tes centres d\'intérêt';
+  static const String subtopicsTitle = 'Affinez vos centres d\'intérêt';
   static const String subtopicsSubtitle =
-      'Indique quels sujets tu veux le plus voir apparaitre dans ton flux.';
+      'Indiquez quels sujets vous voulez le plus voir apparaitre dans votre flux.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
 
