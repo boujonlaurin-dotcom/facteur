@@ -160,40 +160,62 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info("lifespan_starting_scheduler")
     start_scheduler()
 
-    # Startup catch-up: si les digests du jour n'existent pas encore
-    # (cron raté, deploy, restart), lancer la génération immédiatement en background.
+    # Startup catch-up: vérifie la couverture digest (pas juste l'existence).
+    # Si < 90 % des users actifs ont un digest, relance la génération.
     if _has_explicit_db:
 
         async def _startup_digest_catchup() -> None:
-            """Vérifie si les digests du jour existent, sinon lance la génération."""
+            """Vérifie la couverture digest du jour et relance si insuffisante."""
             try:
                 from datetime import datetime
                 from zoneinfo import ZoneInfo
 
+                from sqlalchemy import func
                 from sqlalchemy import select as sa_select
 
                 from app.database import async_session_maker
                 from app.jobs.digest_generation_job import run_digest_generation
                 from app.models.daily_digest import DailyDigest
+                from app.models.user import UserProfile
 
                 async with async_session_maker() as session:
                     today = datetime.now(ZoneInfo("Europe/Paris")).date()
-                    exists = await session.scalar(
-                        sa_select(DailyDigest.id)
-                        .where(DailyDigest.target_date == today)
-                        .limit(1)
+
+                    total_users = await session.scalar(
+                        sa_select(func.count()).select_from(UserProfile)
                     )
-                    if not exists:
+                    if not total_users:
+                        logger.info("digest_startup_catchup_no_users")
+                        return
+
+                    digest_count = await session.scalar(
+                        sa_select(func.count(func.distinct(DailyDigest.user_id))).where(
+                            DailyDigest.target_date == today
+                        )
+                    )
+
+                    coverage = digest_count / total_users
+                    logger.info(
+                        "digest_startup_catchup_check",
+                        target_date=str(today),
+                        total_users=total_users,
+                        digest_count=digest_count,
+                        coverage_pct=round(coverage * 100, 1),
+                    )
+
+                    if coverage < 0.90:
                         logger.info(
                             "digest_startup_catchup_triggered",
                             target_date=str(today),
+                            missing=total_users - digest_count,
                         )
                         await run_digest_generation(target_date=today)
                         logger.info("digest_startup_catchup_completed")
                     else:
                         logger.info(
                             "digest_startup_catchup_skipped",
-                            reason="digests_exist",
+                            reason="coverage_ok",
+                            coverage_pct=round(coverage * 100, 1),
                         )
             except Exception:
                 logger.exception("digest_startup_catchup_failed")

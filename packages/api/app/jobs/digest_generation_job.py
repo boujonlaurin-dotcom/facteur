@@ -183,6 +183,8 @@ class DigestGenerationJob:
 
         Utilise un semaphore pour limiter le nombre de digests générés
         simultanément et éviter de surcharger la base de données.
+        Après le premier passage, vérifie quels users n'ont toujours pas
+        de digest et les retry (max 2 tentatives, backoff exponentiel).
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 
@@ -192,11 +194,63 @@ class DigestGenerationJob:
                     session, user_id, target_date, global_trending_context
                 )
 
-        # Créer les tâches
+        # Premier passage
         tasks = [process_with_limit(uid) for uid in user_ids]
-
-        # Exécuter toutes les tâches du batch
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Retry : vérifier quels users n'ont pas encore de digest (normal)
+        for attempt in range(1, 3):
+            covered_ids = set(
+                (
+                    await session.execute(
+                        select(DailyDigest.user_id).where(
+                            DailyDigest.target_date == target_date,
+                            DailyDigest.user_id.in_(user_ids),
+                            DailyDigest.is_serene.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            missing_ids = [uid for uid in user_ids if uid not in covered_ids]
+
+            if not missing_ids:
+                break
+
+            backoff_seconds = 2**attempt  # 2s, 4s
+            logger.info(
+                "digest_generation_retry",
+                attempt=attempt,
+                missing_count=len(missing_ids),
+                backoff_seconds=backoff_seconds,
+            )
+            await asyncio.sleep(backoff_seconds)
+
+            retry_tasks = [process_with_limit(uid) for uid in missing_ids]
+            await asyncio.gather(*retry_tasks, return_exceptions=True)
+
+        # Log final des users sans digest après tous les retries
+        final_covered = set(
+            (
+                await session.execute(
+                    select(DailyDigest.user_id).where(
+                        DailyDigest.target_date == target_date,
+                        DailyDigest.user_id.in_(user_ids),
+                        DailyDigest.is_serene.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        final_missing = [uid for uid in user_ids if uid not in final_covered]
+        if final_missing:
+            logger.error(
+                "digest_generation_retry_exhausted",
+                permanently_failed=len(final_missing),
+                user_ids=[str(uid) for uid in final_missing],
+            )
 
     async def _generate_digest_for_user(
         self,

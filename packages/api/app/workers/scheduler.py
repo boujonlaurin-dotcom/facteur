@@ -15,7 +15,65 @@ from app.workers.top3_job import generate_daily_top3_job
 logger = structlog.get_logger()
 settings = get_settings()
 
+_PARIS_TZ = pytz.timezone("Europe/Paris")
+
 scheduler: AsyncIOScheduler | None = None
+
+
+async def _digest_watchdog() -> None:
+    """Watchdog 7h30 : vérifie la couverture digest et relance si nécessaire.
+
+    Compte le ratio (digests générés / users actifs) pour aujourd'hui.
+    Si < 90 %, relance run_digest_generation() qui skip les users déjà traités.
+    """
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import func, select
+
+    from app.database import async_session_maker
+    from app.models.daily_digest import DailyDigest
+    from app.models.user import UserProfile
+
+    try:
+        async with async_session_maker() as session:
+            today = datetime.datetime.now(ZoneInfo("Europe/Paris")).date()
+
+            total_users = await session.scalar(
+                select(func.count()).select_from(UserProfile)
+            )
+            if not total_users:
+                logger.info("digest_watchdog_no_users")
+                return
+
+            digest_count = await session.scalar(
+                select(func.count(func.distinct(DailyDigest.user_id))).where(
+                    DailyDigest.target_date == today
+                )
+            )
+
+            coverage = digest_count / total_users if total_users else 0
+            logger.info(
+                "digest_watchdog_check",
+                target_date=str(today),
+                total_users=total_users,
+                digest_count=digest_count,
+                coverage_pct=round(coverage * 100, 1),
+            )
+
+            if coverage < 0.90:
+                logger.warning(
+                    "digest_watchdog_low_coverage_triggering_generation",
+                    coverage_pct=round(coverage * 100, 1),
+                    missing=total_users - digest_count,
+                )
+                await run_digest_generation(target_date=today)
+                logger.info("digest_watchdog_generation_completed")
+            else:
+                logger.info("digest_watchdog_coverage_ok")
+
+    except Exception:
+        logger.exception("digest_watchdog_failed")
 
 
 def start_scheduler() -> None:
@@ -36,30 +94,40 @@ def start_scheduler() -> None:
     # Job Top 3 Briefing Quotidien (8h00 Paris)
     scheduler.add_job(
         generate_daily_top3_job,
-        trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
+        trigger=CronTrigger(hour=8, minute=0, timezone=_PARIS_TZ),
         id="daily_top3",
         name="Daily Top 3 Briefing",
         replace_existing=True,
     )
 
-    # Job Digest Quotidien (8h00 Paris)
-    # misfire_grace_time=3600: si le container redémarre entre 8h00 et 9h00,
-    # le job est quand même exécuté (au lieu d'être silencieusement droppé).
+    # Job Digest Quotidien (6h00 Paris — avancé de 8h pour pré-générer avant le réveil)
+    # misfire_grace_time=14400 (4h): couvre les redémarrages Railway longs.
     # coalesce=True: pas de double exécution si plusieurs triggers rattrapés.
     scheduler.add_job(
         run_digest_generation,
-        trigger=CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Paris")),
+        trigger=CronTrigger(hour=6, minute=0, timezone=_PARIS_TZ),
         id="daily_digest",
         name="Daily Digest Generation",
         replace_existing=True,
-        misfire_grace_time=3600,
+        misfire_grace_time=14400,
+        coalesce=True,
+    )
+
+    # Watchdog 7h30 — vérifie la couverture et relance si < 90%
+    scheduler.add_job(
+        _digest_watchdog,
+        trigger=CronTrigger(hour=7, minute=30, timezone=_PARIS_TZ),
+        id="digest_watchdog",
+        name="Digest Generation Watchdog",
+        replace_existing=True,
+        misfire_grace_time=14400,
         coalesce=True,
     )
 
     # Job Storage Cleanup Quotidien (3h00 Paris - heure creuse)
     scheduler.add_job(
         cleanup_old_articles,
-        trigger=CronTrigger(hour=3, minute=0, timezone=pytz.timezone("Europe/Paris")),
+        trigger=CronTrigger(hour=3, minute=0, timezone=_PARIS_TZ),
         id="storage_cleanup",
         name="Storage Cleanup",
         replace_existing=True,
@@ -69,6 +137,8 @@ def start_scheduler() -> None:
     logger.info(
         "Scheduler started",
         rss_interval_minutes=settings.rss_sync_interval_minutes,
+        digest_cron="06:00 Europe/Paris",
+        watchdog_cron="07:30 Europe/Paris",
     )
 
 

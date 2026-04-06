@@ -16,7 +16,7 @@ class EditorialBadge {
       case 'actu':
         return "\u{1F534} L'actu du jour";
       case 'pas_de_recul':
-        return '\u{1F52D} Le pas de recul';
+        return '\u{1F52D} Prendre du recul';
       case 'pepite':
         return '\u{1F340} P\u00e9pite du jour';
       case 'coup_de_coeur':
@@ -117,7 +117,7 @@ class EditorialBadge {
         );
       case 'pas_de_recul':
         return _ChipConfig(
-          label: '\u{1F52D} Le pas de recul',
+          label: '\u{1F52D} Prendre du recul',
           color: colors.info,
         );
       case 'pepite':

@@ -137,12 +137,12 @@ class Source {
         scoreIndependence: (json['score_independence'] as num?)?.toDouble(),
         scoreRigor: (json['score_rigor'] as num?)?.toDouble(),
         scoreUx: (json['score_ux'] as num?)?.toDouble(),
-        granularTopics: (json['granular_topics'] as List<dynamic>?)
-                ?.cast<String>() ??
-            const [],
-        secondaryThemes: (json['secondary_themes'] as List<dynamic>?)
-                ?.cast<String>() ??
-            const [],
+        granularTopics:
+            (json['granular_topics'] as List<dynamic>?)?.cast<String>() ??
+                const [],
+        secondaryThemes:
+            (json['secondary_themes'] as List<dynamic>?)?.cast<String>() ??
+                const [],
         sourceTier: (json['source_tier'] as String?) ?? 'mainstream',
         followerCount: (json['follower_count'] as int?) ?? 0,
         priorityMultiplier:
@@ -220,10 +220,10 @@ class Source {
   String getReliabilityLabel() {
     switch (reliabilityScore) {
       case 'high':
-        return 'Fiabilité Élevée';
+        return 'Élevée';
       case 'medium':
       case 'mixed':
-        return 'Fiabilité Moyenne';
+        return 'Moyenne';
       case 'low':
         return 'Controversé';
       default:

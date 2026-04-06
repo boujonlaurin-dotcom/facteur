@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
@@ -101,8 +100,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
     final hasImage = _imageWillRender(article);
 
     final charsPerLine = (cardWidth - _bodyPadding) / 10;
-    final titleLines =
-        (article.title.length / charsPerLine).ceil().clamp(1, 3);
+    final titleLines = (article.title.length / charsPerLine).ceil().clamp(1, 3);
     final titleHeight = titleLines * 20.0 * 1.2;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
@@ -111,8 +109,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
       final desc = article.description ?? '';
       if (desc.isNotEmpty) {
         final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
-        final descLines =
-            (desc.length / descCharsPerLine).ceil().clamp(1, 4);
+        final descLines = (desc.length / descCharsPerLine).ceil().clamp(1, 4);
         final descHeight = descLines * 15.0 * 1.3;
         bodyHeight += _spacer + descHeight;
       }
@@ -252,13 +249,11 @@ class _FeedCarouselState extends State<FeedCarousel> {
               : null,
           onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
           onLongPressEnd: widget.onLongPressEnd,
-          onSave:
-              widget.onSave != null ? () => widget.onSave!(article) : null,
+          onSave: widget.onSave != null ? () => widget.onSave!(article) : null,
           onSaveLongPress: widget.onSaveLongPress != null
               ? () => widget.onSaveLongPress!(article)
               : null,
-          onLike:
-              widget.onLike != null ? () => widget.onLike!(article) : null,
+          onLike: widget.onLike != null ? () => widget.onLike!(article) : null,
           onSourceTap: widget.onSourceTap != null
               ? () => widget.onSourceTap!(article.source.id)
               : null,
@@ -271,8 +266,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           isSaved: article.isSaved,
           isLiked: article.isLiked,
           isSourceSubscribed:
-              widget.subscribedSourceIds?.contains(article.source.id) ??
-                  false,
+              widget.subscribedSourceIds?.contains(article.source.id) ?? false,
           hasActiveFilter: widget.hasActiveFilter,
           onFollowSource:
               widget.onFollowSource != null && !article.isFollowedSource
@@ -332,8 +326,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           offset: const Offset(0, 2),
         ),
       ],
-      backgroundColor:
-          isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+      backgroundColor: isReference ? Colors.grey.withValues(alpha: 0.1) : null,
       content: article,
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
@@ -364,10 +357,9 @@ class _FeedCarouselState extends State<FeedCarousel> {
       isSourceSubscribed:
           widget.subscribedSourceIds?.contains(article.source.id) ?? false,
       hasActiveFilter: widget.hasActiveFilter,
-      onFollowSource:
-          widget.onFollowSource != null && !article.isFollowedSource
-              ? () => widget.onFollowSource!(article)
-              : null,
+      onFollowSource: widget.onFollowSource != null && !article.isFollowedSource
+          ? () => widget.onFollowSource!(article)
+          : null,
       isSerene: widget.isSerene,
       onReportNotSerene: widget.onReportNotSerene != null
           ? () => widget.onReportNotSerene!(article)
