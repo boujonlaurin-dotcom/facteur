@@ -1,6 +1,13 @@
 """Router pour les endpoints Custom Topics (Epic 11).
 
 CRUD pour les topics personnalisés + endpoint suggestions + popular entities.
+
+⚠️  ROUTE ORDERING CRITICAL — DO NOT MOVE /{topic_id} ROUTES ⚠️
+FastAPI matches routes in registration order. Parameterized routes like
+PUT /{topic_id} MUST be registered LAST in this file, after all static
+routes (/popular-entities, /disambiguate, /suggestions, etc.).
+Otherwise static paths match /{topic_id} and return 405.
+This bug has regressed 3 times — see docs/bugs/bug-custom-topics-405-recurring.md
 """
 
 import json
@@ -10,13 +17,14 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
+from app.models.user import UserSubtopic
 from app.models.user_topic_profile import UserTopicProfile
 from app.services.ml.classification_service import (
     SLUG_TO_LABEL,
@@ -37,6 +45,18 @@ router = APIRouter()
 class CreateTopicRequest(BaseModel):
     name: str
     entity_type: str | None = None
+    priority_multiplier: float | None = None
+
+    @field_validator("priority_multiplier")
+    @classmethod
+    def validate_create_multiplier(cls, v: float | None) -> float | None:
+        if v is not None:
+            allowed = {0.5, 1.0, 2.0}
+            if v not in allowed:
+                raise ValueError(
+                    f"priority_multiplier doit être 0.5, 1.0 ou 2.0 (reçu: {v})"
+                )
+        return v
 
     @field_validator("name")
     @classmethod
@@ -260,7 +280,9 @@ async def create_topic(
         entity_type=entity_type,
         canonical_name=canonical_name,
         source_type="explicit",
-        priority_multiplier=1.0,
+        priority_multiplier=request.priority_multiplier
+        if request.priority_multiplier is not None
+        else 1.0,
         composite_score=0.0,
     )
     db.add(topic)
@@ -278,66 +300,59 @@ async def create_topic(
     return _topic_to_response(topic)
 
 
-@router.put("/{topic_id}", response_model=TopicResponse)
-async def update_topic(
-    topic_id: UUID,
-    request: UpdateTopicRequest,
-    db: AsyncSession = Depends(get_db),
+# --- Disambiguation ---
+
+
+class DisambiguateRequest(BaseModel):
+    name: str
+    theme: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) < 2:
+            raise ValueError("Le nom doit contenir au moins 2 caractères")
+        if len(v) > 200:
+            raise ValueError("Le nom ne peut pas dépasser 200 caractères")
+        return v
+
+
+class DisambiguationSuggestionResponse(BaseModel):
+    canonical_name: str
+    entity_type: str | None = None
+    description: str
+    slug_parent: str
+
+
+@router.post("/disambiguate")
+async def disambiguate_topic(
+    request: DisambiguateRequest,
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Met à jour le priority_multiplier d'un custom topic."""
-    user_uuid = UUID(current_user_id)
+    """Désambiguïse un nom de sujet libre via LLM.
 
-    topic = await db.scalar(
-        select(UserTopicProfile).where(
-            UserTopicProfile.id == topic_id,
-            UserTopicProfile.user_id == user_uuid,
+    Retourne 1-3 suggestions selon l'ambiguïté du terme.
+    """
+    enrichment_service = get_topic_enrichment_service()
+    try:
+        candidates = await enrichment_service.disambiguate(
+            request.name, theme=request.theme
         )
-    )
-    if not topic:
-        raise HTTPException(status_code=404, detail="Topic non trouvé")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-    topic.priority_multiplier = request.priority_multiplier
-    await db.flush()
-    await db.refresh(topic)
-
-    logger.info(
-        "custom_topic_updated",
-        user_id=current_user_id,
-        topic_id=str(topic_id),
-        multiplier=request.priority_multiplier,
-    )
-
-    return _topic_to_response(topic)
-
-
-@router.delete("/{topic_id}", status_code=200)
-async def delete_topic(
-    topic_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """Supprime un custom topic."""
-    user_uuid = UUID(current_user_id)
-
-    topic = await db.scalar(
-        select(UserTopicProfile).where(
-            UserTopicProfile.id == topic_id,
-            UserTopicProfile.user_id == user_uuid,
-        )
-    )
-    if not topic:
-        raise HTTPException(status_code=404, detail="Topic non trouvé")
-
-    await db.delete(topic)
-
-    logger.info(
-        "custom_topic_deleted",
-        user_id=current_user_id,
-        topic_id=str(topic_id),
-    )
-
-    return {"message": "Topic supprimé avec succès"}
+    return {
+        "suggestions": [
+            DisambiguationSuggestionResponse(
+                canonical_name=c.canonical_name,
+                entity_type=c.entity_type,
+                description=c.description,
+                slug_parent=c.slug_parent,
+            ).model_dump()
+            for c in candidates
+        ]
+    }
 
 
 @router.get("/suggestions", response_model=list[TopicSuggestion])
@@ -409,3 +424,82 @@ async def get_suggestions(
             break
 
     return suggestions
+
+
+# ⚠️  PARAMETERIZED ROUTES — MUST BE LAST ⚠️
+# /{topic_id} matches ANY path segment. If placed before /disambiguate or
+# /suggestions, those static paths match /{topic_id} instead → 405.
+# This has caused 3 regressions. DO NOT move these routes up.
+
+
+@router.put("/{topic_id}", response_model=TopicResponse)
+async def update_topic(
+    topic_id: UUID,
+    request: UpdateTopicRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Met à jour le priority_multiplier d'un custom topic."""
+    user_uuid = UUID(current_user_id)
+
+    topic = await db.scalar(
+        select(UserTopicProfile).where(
+            UserTopicProfile.id == topic_id,
+            UserTopicProfile.user_id == user_uuid,
+        )
+    )
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic non trouvé")
+
+    topic.priority_multiplier = request.priority_multiplier
+    await db.flush()
+    await db.refresh(topic)
+
+    logger.info(
+        "custom_topic_updated",
+        user_id=current_user_id,
+        topic_id=str(topic_id),
+        multiplier=request.priority_multiplier,
+    )
+
+    return _topic_to_response(topic)
+
+
+@router.delete("/{topic_id}", status_code=200)
+async def delete_topic(
+    topic_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Supprime un custom topic."""
+    user_uuid = UUID(current_user_id)
+
+    topic = await db.scalar(
+        select(UserTopicProfile).where(
+            UserTopicProfile.id == topic_id,
+            UserTopicProfile.user_id == user_uuid,
+        )
+    )
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic non trouvé")
+
+    # Also remove matching UserSubtopic so the algorithm
+    # no longer weights this topic in recommendations
+    slug = topic.slug_parent
+    await db.delete(topic)
+    if slug:
+        await db.execute(
+            delete(UserSubtopic).where(
+                UserSubtopic.user_id == user_uuid,
+                UserSubtopic.topic_slug == slug,
+            )
+        )
+
+    logger.info(
+        "custom_topic_deleted",
+        user_id=current_user_id,
+        topic_id=str(topic_id),
+        slug_parent=slug,
+    )
+
+    return {"message": "Topic supprimé avec succès"}
