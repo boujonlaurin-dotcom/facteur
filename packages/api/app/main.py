@@ -163,7 +163,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup catch-up: vérifie la couverture digest (pas juste l'existence).
     # Si < 90 % des users actifs ont un digest, relance la génération.
     if _has_explicit_db:
-
         async def _startup_digest_catchup() -> None:
             """Vérifie la couverture digest du jour et relance si insuffisante."""
             try:
