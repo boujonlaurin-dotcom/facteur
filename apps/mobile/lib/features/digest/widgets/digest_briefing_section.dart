@@ -76,8 +76,6 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
-  bool get _usesEditorial => widget.digest?.usesEditorial == true;
-
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
