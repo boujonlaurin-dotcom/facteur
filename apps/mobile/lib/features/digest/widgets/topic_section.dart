@@ -11,7 +11,6 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/keyword_overflow_chip.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
@@ -201,10 +200,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!_isExpanded)
-              _buildHeader(context, colors, isDark, topic),
-            if (!_isExpanded)
-              const SizedBox(height: 8),
+            _buildHeader(context, colors, isDark, topic),
+            const SizedBox(height: 8),
             if (_isExpanded)
               _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
             else
@@ -281,13 +278,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final safeIndex = _currentPage.clamp(0, actuArticles.length - 1);
     final article = actuArticles[safeIndex];
     final hasImage = _imageWillRender(article);
+    final description = article.description ?? topic.introText ?? '';
+    final sourceName = article.source?.name;
     final timeAgo = article.publishedAt != null
         ? timeago
             .format(article.publishedAt!, locale: 'fr_short')
             .replaceAll('il y a ', '')
         : null;
-
-    final isHero = topic.isUne && hasImage;
 
     return GestureDetector(
       onTap: () => setState(() => _isExpanded = true),
@@ -296,11 +293,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: isHero
-              ? Border(
-                  left: BorderSide(width: 3, color: colors.primary),
-                )
-              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -310,17 +302,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: topic.isUne
-            ? (hasImage
-                ? _buildCompactHeroCard(
-                    colors, isDark, article, topic, timeAgo)
-                : _buildCompactHeroNoImage(
-                    colors, isDark, article, topic, timeAgo))
-            : (hasImage
-                ? _buildCompactWithImage(
-                    colors, isDark, article, topic, timeAgo)
-                : _buildCompactWithoutImage(
-                    colors, isDark, article, topic, timeAgo)),
+        child: hasImage
+            ? _buildCompactWithImage(
+                colors, isDark, article, topic, description, sourceName, timeAgo)
+            : _buildCompactWithoutImage(
+                colors, isDark, article, topic, description, sourceName, timeAgo),
       ),
     );
   }
@@ -330,13 +316,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     bool isDark,
     DigestItem article,
     DigestTopic topic,
+    String description,
+    String? sourceName,
     String? timeAgo,
   ) {
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Left: compact image (1:1 ratio, ~120px width)
+          // Left: compact image (2:1 ratio, ~120px width)
           SizedBox(
             width: 120,
             child: FacteurThumbnail(
@@ -357,7 +345,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   // Title
                   Text(
                     article.title,
-                    maxLines: 4,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
@@ -367,8 +355,23 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                     ),
                   ),
                   const SizedBox(height: 6),
-                  // Footer: source logos · time · expand icon
-                  _buildCompactFooter(colors, isDark, topic, timeAgo),
+                  // Badges row
+                  _buildCompactBadgesRow(colors, isDark, topic),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  // Footer: source · time · expand icon
+                  _buildCompactFooter(colors, isDark, sourceName, timeAgo),
                 ],
               ),
             ),
@@ -383,6 +386,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     bool isDark,
     DigestItem article,
     DigestTopic topic,
+    String description,
+    String? sourceName,
     String? timeAgo,
   ) {
     return Padding(
@@ -392,7 +397,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         children: [
           Text(
             article.title,
-            maxLines: 4,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 15,
@@ -402,124 +407,21 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ),
           ),
           const SizedBox(height: 6),
-          _buildCompactFooter(colors, isDark, topic, timeAgo),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCompactHeroCard(
-    FacteurColors colors,
-    bool isDark,
-    DigestItem article,
-    DigestTopic topic,
-    String? timeAgo,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Full-width 16:9 image with gradient overlay + title
-        Stack(
-          alignment: Alignment.bottomLeft,
-          children: [
-            FacteurThumbnail(
-              imageUrl: article.thumbnailUrl,
-              aspectRatio: 16 / 9,
-              borderRadius: BorderRadius.zero,
-              onError: () => _onImageError(article.contentId),
-            ),
-            // Gradient overlay
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                    ],
-                    stops: const [0.4, 1.0],
-                  ),
-                ),
-              ),
-            ),
-            // Badge "À la Une" + title
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: colors.primary,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'À la Une',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    article.title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
+          _buildCompactBadgesRow(colors, isDark, topic),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: colors.textSecondary,
               ),
             ),
           ],
-        ),
-        // Footer: source logos + time + chevron
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: _buildCompactFooter(colors, isDark, topic, timeAgo),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCompactHeroNoImage(
-    FacteurColors colors,
-    bool isDark,
-    DigestItem article,
-    DigestTopic topic,
-    String? timeAgo,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          EditorialBadge.chip('actu', context: context) ??
-              const SizedBox.shrink(),
-          const SizedBox(height: 8),
-          Text(
-            article.title,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              height: 1.3,
-              color: isDark ? Colors.white : colors.textPrimary,
-            ),
-          ),
           const SizedBox(height: 6),
-          _buildCompactFooter(colors, isDark, topic, timeAgo),
+          _buildCompactFooter(colors, isDark, sourceName, timeAgo),
         ],
       ),
     );
@@ -549,40 +451,24 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   Widget _buildCompactFooter(
     FacteurColors colors,
     bool isDark,
-    DigestTopic topic,
+    String? sourceName,
     String? timeAgo,
   ) {
-    final seen = <String>{};
-    final logoSources = <KeywordOverflowSource>[];
-    for (final a in topic.articles) {
-      final s = a.source;
-      if (s != null && s.id != null && seen.add(s.id!)) {
-        logoSources.add(KeywordOverflowSource(
-          sourceId: s.id!,
-          sourceName: s.name,
-          sourceLogoUrl: s.logoUrl,
-          articleCount: 1,
-        ));
-      }
-    }
-
-    final extraSources = topic.perspectiveCount - logoSources.length;
-
     return Row(
       children: [
-        if (logoSources.isNotEmpty)
-          SourceLogos(sources: logoSources, colors: colors),
-        if (extraSources > 0) ...[
-          const SizedBox(width: 4),
-          Text(
-            '+$extraSources source${extraSources > 1 ? 's' : ''}',
-            style: TextStyle(
-              fontSize: 11,
-              color: colors.textSecondary.withValues(alpha: 0.7),
+        if (sourceName != null)
+          Flexible(
+            child: Text(
+              sourceName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: colors.textSecondary,
+              ),
             ),
           ),
-        ],
-        if (logoSources.isNotEmpty && timeAgo != null)
+        if (sourceName != null && timeAgo != null)
           Text(
             ' \u00b7 ',
             style: TextStyle(
@@ -623,145 +509,150 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         .where((a) => a.badge == 'pas_de_recul')
         .cast<DigestItem?>()
         .firstOrNull;
+    final perspCount = topic.perspectiveCount;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? colors.surface.withValues(alpha: 0.3)
-            : colors.surface.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.border.withValues(alpha: 0.15),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Full article card(s) — only actu articles (deep shown separately)
+        if (isActuMulti) ...[
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = constraints.maxWidth * 0.88;
+              final computedHeight =
+                  _computeHeight(actuArticles, cardWidth);
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                height: computedHeight,
+                child: ClipRect(child: _buildPageView(actuArticles)),
+              );
+            },
+          ),
+          const SizedBox(height: 2),
+          _buildPageIndicator(colors, actuArticles.length),
+        ] else if (!actuArticles.first.isDismissed)
+          _buildSingleArticle(actuArticles.first),
+
+        const SizedBox(height: 12),
+
+        // Badges row
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              if (perspCount > 1)
+                SourceCoverageBadge(
+                  perspectiveCount: perspCount,
+                  isTrending: topic.isTrending,
+                ),
+              if (topic.isUne)
+                EditorialBadge.chip('actu', context: context) ??
+                    const SizedBox.shrink(),
+            ],
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header fermeture ──
-          _buildExpandedHeader(colors, isDark, topic),
 
-          // ── Articles (avant "De quoi on parle") ──
-          const SizedBox(height: 4),
-          if (isActuMulti) ...[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final cardWidth = constraints.maxWidth * 0.88;
-                final computedHeight =
-                    _computeHeight(actuArticles, cardWidth);
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  height: computedHeight,
-                  child: ClipRect(child: _buildPageView(actuArticles)),
-                );
-              },
-            ),
-            const SizedBox(height: 2),
-            _buildPageIndicator(colors, actuArticles.length),
-          ] else if (!actuArticles.first.isDismissed)
-            _buildSingleArticle(actuArticles.first),
-
-          const SizedBox(height: 12),
-
-          // ── Carte "De quoi on parle ?" ──
-          if (topic.introText != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colors.textSecondary.withValues(alpha: isDark ? 0.08 : 0.05),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'De quoi on parle ?',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: colors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      topic.introText!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.5,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.7)
-                            : colors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+        // Full intro text
+        if (topic.introText != null) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              topic.introText!,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : colors.textSecondary,
               ),
             ),
-          ],
-
-          // Divergence analysis
-          if (topic.divergenceAnalysis != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: DivergenceAnalysisBlock(
-                divergenceAnalysis: topic.divergenceAnalysis,
-                biasHighlights: topic.biasHighlights,
-                onCompare: _handleCompare,
-                perspectiveCount: topic.perspectiveCount,
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          // Pas de recul
-          if (deepArticle != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: PasDeReculBlock(
-                deepArticle: deepArticle,
-                onTap: () => widget.onArticleTap(deepArticle),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
+          ),
         ],
-      ),
+
+        // Divergence analysis
+        if (topic.divergenceAnalysis != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DivergenceAnalysisBlock(
+              divergenceAnalysis: topic.divergenceAnalysis,
+              biasHighlights: topic.biasHighlights,
+              onCompare: _handleCompare,
+            ),
+          ),
+        ],
+
+        // Pas de recul
+        if (deepArticle != null) ...[
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: PasDeReculBlock(
+              deepArticle: deepArticle,
+              onTap: () => widget.onArticleTap(deepArticle),
+            ),
+          ),
+        ],
+
+        // Collapse footer
+        const SizedBox(height: 8),
+        _buildCollapseFooter(colors, isDark, topic),
+      ],
     );
   }
 
-  Widget _buildExpandedHeader(
+  Widget _buildCollapseFooter(
     FacteurColors colors,
     bool isDark,
     DigestTopic topic,
   ) {
+    final article = topic.articles[_currentPage];
+    final sourceName = article.source?.name;
+    final timeAgo = article.publishedAt != null
+        ? timeago
+            .format(article.publishedAt!, locale: 'fr_short')
+            .replaceAll('il y a ', '')
+        : null;
+
     return GestureDetector(
       onTap: () => setState(() => _isExpanded = false),
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
           children: [
-            Expanded(
-              child: Text(
-                _computeSubjects(topic) ?? topic.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            if (sourceName != null)
+              Text(
+                sourceName,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : colors.textPrimary,
+                  fontSize: 12,
+                  color: colors.textSecondary,
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
+            if (sourceName != null && timeAgo != null)
+              Text(
+                ' \u00b7 ',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            if (timeAgo != null)
+              Text(
+                timeAgo,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                ),
+              ),
+            const Spacer(),
             Icon(
               PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-              size: 16,
+              size: 14,
               color: colors.textSecondary,
             ),
           ],

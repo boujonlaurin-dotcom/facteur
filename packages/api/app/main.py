@@ -180,9 +180,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
                 async with async_session_maker() as session:
                     today = datetime.now(ZoneInfo("Europe/Paris")).date()
-
-                    total_users = await session.scalar(
-                        sa_select(func.count()).select_from(UserProfile)
+                    exists = await session.scalar(
+                        sa_select(DailyDigest.id)
+                        .where(DailyDigest.target_date == today)
+                        .limit(1)
                     )
                     if not total_users:
                         logger.info("digest_startup_catchup_no_users")

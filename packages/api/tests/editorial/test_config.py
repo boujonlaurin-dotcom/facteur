@@ -50,6 +50,7 @@ class TestLoadEditorialConfig:
             cfg = load_editorial_config()
 
         assert cfg.pipeline.subjects_count == 5
+        assert cfg.feature_flags.editorial_enabled is False
 
     def test_loads_from_yaml(self):
         yaml_config = """

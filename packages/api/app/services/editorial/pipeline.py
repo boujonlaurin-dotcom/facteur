@@ -34,6 +34,7 @@ from app.services.editorial.schemas import (
     compute_bias_distribution,
     compute_bias_highlights,
 )
+from app.services.perspective_service import PerspectiveService
 from app.services.editorial.writer import EditorialWriterService
 from app.services.perspective_service import PerspectiveService
 
@@ -261,14 +262,18 @@ class EditorialPipelineService:
 
             subject.perspective_count = len(perspectives)
             subject.bias_distribution = compute_bias_distribution(perspectives)
-            subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
+            subject.bias_highlights = compute_bias_highlights(
+                subject.bias_distribution
+            )
 
             if len(perspectives) >= 3:
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",
                         source_name=(
-                            representative.source.name if representative.source else ""
+                            representative.source.name
+                            if representative.source
+                            else ""
                         ),
                     )
                     subject.divergence_analysis = (
@@ -303,7 +308,10 @@ class EditorialPipelineService:
                     subject.divergence_analysis = None
 
         await asyncio.gather(
-            *(_process_perspectives(s, cluster_map.get(s.topic_id)) for s in subjects),
+            *(
+                _process_perspectives(s, cluster_map.get(s.topic_id))
+                for s in subjects
+            ),
             return_exceptions=True,
         )
 
