@@ -17,7 +17,6 @@ import '../../../core/api/providers.dart';
 import '../models/topic_models.dart';
 import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
-import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -145,12 +144,14 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
   @override
   void initState() {
     super.initState();
-    _topicExpanded = widget.initialSection == ArticleSheetSection.topic;
-    _sourceExpanded = widget.initialSection == ArticleSheetSection.source;
-    _entitiesExpanded = widget.initialSection == ArticleSheetSection.entities;
-    _breakdownExpanded = widget.initialSection == ArticleSheetSection.breakdown;
+    final reason = widget.content.recommendationReason;
+    _breakdownExpanded =
+        widget.initialSection == ArticleSheetSection.entities &&
+            reason != null &&
+            reason.breakdown.isNotEmpty;
     _personalizeExpanded =
-        widget.initialSection == ArticleSheetSection.personalize;
+        widget.initialSection == ArticleSheetSection.source ||
+            widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -215,14 +216,103 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        TextSpan(
-                          text: '  (sujet)',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
+                      ),
+                      const Spacer(),
+                      // Right: priority slider (self-labeled)
+                      Builder(builder: (context) {
+                        final algoProfile =
+                            ref.watch(algorithmProfileProvider).valueOrNull;
+                        final topicSlug = matchedTopic.slugParent;
+                        final topicUsage = algoProfile != null &&
+                                algoProfile.subtopicWeights
+                                    .containsKey(topicSlug)
+                            ? algoProfile.normalizeWeight(
+                                algoProfile.subtopicWeights[topicSlug]!)
+                            : null;
+                        return TopicPrioritySlider(
+                          currentMultiplier: matchedTopic.priorityMultiplier,
+                          onChanged: (multiplier) async {
+                            try {
+                              await ref
+                                  .read(customTopicsProvider.notifier)
+                                  .updatePriority(matchedTopic.id, multiplier);
+                            } on DioException catch (e) {
+                              if (context.mounted) {
+                                final detail = e.response?.data;
+                                final msg = (detail is Map &&
+                                        detail['detail'] is String)
+                                    ? detail['detail'] as String
+                                    : 'Erreur lors de la mise à jour';
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(msg),
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          usageWeight: topicUsage,
+                          onReset: topicUsage != null
+                              ? () async {
+                                  final client = ref.read(apiClientProvider);
+                                  await client.post(
+                                      '/users/subtopics/$topicSlug/reset');
+                                  ref.invalidate(algorithmProfileProvider);
+                                }
+                              : null,
+                        );
+                      }),
+                    ],
+                  ),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(customTopicsProvider.notifier)
+                            .followTopic(widget.topicLabel,
+                                slugParent: widget.topicSlug);
+                      } on DioException catch (e) {
+                        if (context.mounted) {
+                          final detail = e.response?.data;
+                          final msg = (detail is Map &&
+                                  detail['detail'] is String)
+                              ? detail['detail'] as String
+                              : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: Icon(
+                      PhosphorIcons.plus(),
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Suivre ce sujet',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: colorScheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.medium),
+                      ),
                     ),
                   ),
                   subtitle: parentLabel != null
@@ -249,22 +339,245 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 const SizedBox(height: FacteurSpacing.space2),
                 Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
-                _buildSectionHeader(
-                  context,
-                  titleWidget: Row(
-                    children: [
-                      if (widget.content.source.logoUrl != null &&
-                          widget.content.source.logoUrl!.isNotEmpty) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            widget.content.source.logoUrl!,
-                            width: 28,
-                            height: 28,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const SizedBox.shrink(),
+
+                // Source header: logo + name + theme
+                Row(
+                  children: [
+                    if (widget.content.source.logoUrl != null &&
+                        widget.content.source.logoUrl!.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.network(
+                          widget.content.source.logoUrl!,
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: widget.content.source.name,
+                                  style: textTheme.displaySmall?.copyWith(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '  (source)',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.textTertiary,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          if (widget.content.source.theme != null &&
+                              widget.content.source.theme!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.content.source.getThemeLabel(),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: colors.textTertiary,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: FacteurSpacing.space3),
+
+                // Source card (slider + mute inside)
+                Builder(builder: (context) {
+                  final sourcesAsync = ref.watch(userSourcesProvider);
+                  final sourceMatch = sourcesAsync.whenOrNull(
+                    data: (sources) => sources
+                        .where((s) => s.id == widget.content.source.id)
+                        .firstOrNull,
+                  );
+                  final currentMultiplier =
+                      sourceMatch?.priorityMultiplier ?? 1.0;
+                  final isTrustedAndActive = sourceMatch?.isTrusted == true &&
+                      sourceMatch?.isMuted != true;
+                  final isSubscribed = sourceMatch?.hasSubscription ?? false;
+
+                  if (!isTrustedAndActive) {
+                    // Not trusted: standalone mute button
+                    return _buildActionOption(
+                      context,
+                      icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
+                      label: 'Ne plus afficher ${widget.content.source.name}',
+                      isDestructive: true,
+                      onTap: () async {
+                        Navigator.pop(context);
+                        try {
+                          await ref
+                              .read(feedProvider.notifier)
+                              .muteSource(widget.content);
+                          NotificationService.showInfo(
+                              'Source ${widget.content.source.name} masquée');
+                        } catch (e) {
+                          NotificationService.showError(
+                              'Impossible de masquer la source');
+                        }
+                      },
+                      colors: colors,
+                    );
+                  }
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _terracotta.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                      border: Border.all(
+                        color: _terracotta.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // Left: dot + "Suivie" / mute link
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: const BoxDecoration(
+                                        color: _terracotta,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Suivie',
+                                      style: textTheme.labelMedium?.copyWith(
+                                        color: _terracotta,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '/',
+                                      style: textTheme.labelSmall?.copyWith(
+                                        color: colors.textTertiary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        try {
+                                          await ref
+                                              .read(feedProvider.notifier)
+                                              .muteSource(widget.content);
+                                          NotificationService.showInfo(
+                                            'Source ${widget.content.source.name} masquée',
+                                          );
+                                        } catch (e) {
+                                          NotificationService.showError(
+                                            'Impossible de masquer la source',
+                                          );
+                                        }
+                                      },
+                                      child: Text(
+                                        'Masquer',
+                                        style: textTheme.labelSmall?.copyWith(
+                                          color: colors.error,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // Right: priority slider (self-labeled)
+                            Builder(builder: (context) {
+                              final algoProfile = ref
+                                  .watch(algorithmProfileProvider)
+                                  .valueOrNull;
+                              final sourceId = widget.content.source.id;
+                              final sourceUsage =
+                                  algoProfile?.sourceAffinities[sourceId];
+                              return PrioritySlider(
+                                currentMultiplier: currentMultiplier,
+                                onChanged: (multiplier) {
+                                  ref
+                                      .read(userSourcesProvider.notifier)
+                                      .updateWeight(
+                                        widget.content.source.id,
+                                        multiplier,
+                                      );
+                                },
+                                usageWeight: sourceUsage,
+                              );
+                            }),
+                          ],
+                        ),
+                        // Subscription toggle
+                        Divider(
+                          color: _terracotta.withValues(alpha: 0.15),
+                          height: 1,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              isSubscribed
+                                  ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
+                                  : PhosphorIcons.crown(
+                                      PhosphorIconsStyle.regular),
+                              size: 18,
+                              color: isSubscribed
+                                  ? colorScheme.primary
+                                  : colors.textSecondary,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "J'y suis abonné(e)",
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: isSubscribed,
+                              onChanged: (value) {
+                                ref
+                                    .read(userSourcesProvider.notifier)
+                                    .toggleSubscription(
+                                      widget.content.source.id,
+                                      isSubscribed,
+                                    );
+                              },
+                              activeTrackColor: colorScheme.primary,
+                            ),
+                          ],
                         ),
                         const SizedBox(width: 10),
                       ],
