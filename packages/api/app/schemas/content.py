@@ -1,6 +1,5 @@
 """Schemas contenu."""
 
-import contextlib
 import json
 from datetime import datetime
 from uuid import UUID
@@ -15,6 +14,22 @@ from app.models.enums import (
     HiddenReason,
     ReliabilityScore,
 )
+
+
+def parse_entity_strings(raw_entities: list[str] | None) -> list[dict]:
+    """Parse JSON-encoded entity strings to {text, label} dicts for mobile."""
+    if not raw_entities:
+        return []
+    result = []
+    for raw in raw_entities:
+        try:
+            parsed = json.loads(raw)
+            result.append(
+                {"text": parsed.get("name", raw), "label": parsed.get("type", "")}
+            )
+        except (json.JSONDecodeError, AttributeError):
+            result.append({"text": raw, "label": ""})
+    return result
 
 
 class HideContentRequest(BaseModel):
@@ -106,9 +121,8 @@ class ContentResponse(BaseModel):
         return value if value is not None else []
 
     @field_serializer("entities", when_used="always")
-    def serialize_entities(self, value: list[str] | None) -> list[str]:
-        """ORM entities peut être NULL en base → toujours retourner une liste."""
-        return value if value is not None else []
+    def serialize_entities(self, value: list[str] | None) -> list[dict]:
+        return parse_entity_strings(value)
 
     class Config:
         from_attributes = True
@@ -148,8 +162,8 @@ class ContentDetailResponse(BaseModel):
         return value if value is not None else []
 
     @field_serializer("entities", when_used="always")
-    def serialize_entities(self, value: list[str] | None) -> list[str]:
-        return value if value is not None else []
+    def serialize_entities(self, value: list[str] | None) -> list[dict]:
+        return parse_entity_strings(value)
 
     class Config:
         from_attributes = True
@@ -173,19 +187,6 @@ class DailyTop3Response(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-def parse_entity_strings(entities: list[str]) -> list[dict]:
-    """Parse entity JSON strings into dicts for serialization.
-
-    Each element is a JSON string like '{"name": "Macron", "type": "PERSON"}'.
-    Returns a list of parsed dicts, silently skipping malformed entries.
-    """
-    result = []
-    for item in entities:
-        with contextlib.suppress(json.JSONDecodeError, TypeError):
-            result.append(json.loads(item))
-    return result
 
 
 class ArticleFeedbackRequest(BaseModel):
