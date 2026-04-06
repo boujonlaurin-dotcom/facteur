@@ -23,7 +23,7 @@ def clear_config_cache():
 class TestPipelineConfig:
     def test_defaults(self):
         cfg = PipelineConfig()
-        assert cfg.subjects_count == 3
+        assert cfg.subjects_count == 5
         assert cfg.cluster_input_limit == 15
         assert cfg.deep_candidates_prefilter == 10
         assert cfg.deep_required is False
@@ -49,7 +49,7 @@ class TestLoadEditorialConfig:
 
             cfg = load_editorial_config()
 
-        assert cfg.pipeline.subjects_count == 3
+        assert cfg.pipeline.subjects_count == 5
 
     def test_loads_from_yaml(self):
         yaml_config = """

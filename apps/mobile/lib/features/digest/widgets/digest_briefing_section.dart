@@ -12,7 +12,6 @@ import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'closure_block.dart';
 import 'coup_de_coeur_block.dart';
-import 'intro_text.dart';
 import 'pepite_block.dart';
 import 'section_divider.dart';
 import 'serein_toggle_chip.dart';
@@ -77,8 +76,6 @@ class DigestBriefingSection extends StatefulWidget {
 }
 
 class _DigestBriefingSectionState extends State<DigestBriefingSection> {
-  bool get _usesEditorial => widget.digest?.usesEditorial == true;
-
   bool get _usesTopics =>
       widget.topics != null && widget.topics!.isNotEmpty;
 
@@ -361,12 +358,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     for (int i = 0; i < widget.topics!.length; i++) {
       final topic = widget.topics![i];
 
-      // Intro text above the topic
-      if (topic.introText != null) {
-        sections.add(IntroText(text: topic.introText!));
-      }
-
-      // Topic section with editorial cards
+      // Topic section with editorial cards (intro handled inside TopicSection)
       sections.add(
         TopicSection(
           topic: topic,

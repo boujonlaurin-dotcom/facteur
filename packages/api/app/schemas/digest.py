@@ -103,6 +103,11 @@ class DigestTopic(BaseModel):
     articles: list[DigestTopicArticle] = Field(default_factory=list)
     intro_text: str | None = None
     transition_text: str | None = None
+    # Perspective analysis fields
+    perspective_count: int = 0
+    bias_distribution: dict[str, int] | None = None
+    bias_highlights: str | None = None
+    divergence_analysis: str | None = None
 
     class Config:
         from_attributes = True
@@ -169,6 +174,7 @@ class PepiteResponse(BaseModel):
     title: str
     url: str
     thumbnail_url: str | None = None
+    published_at: datetime | None = None
     source: SourceMini
     is_read: bool = False
     is_saved: bool = False
@@ -186,6 +192,7 @@ class CoupDeCoeurResponse(BaseModel):
     badge: str = "coup_de_coeur"
     url: str
     thumbnail_url: str | None = None
+    published_at: datetime | None = None
     source: SourceMini
     is_read: bool = False
     is_saved: bool = False

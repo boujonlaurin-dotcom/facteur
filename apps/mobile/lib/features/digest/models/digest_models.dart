@@ -103,6 +103,10 @@ class DigestTopic with _$DigestTopic {
     @Default([]) List<DigestItem> articles,
     @JsonKey(name: 'intro_text') String? introText,
     @JsonKey(name: 'transition_text') String? transitionText,
+    @JsonKey(name: 'perspective_count') @Default(0) int perspectiveCount,
+    @JsonKey(name: 'bias_distribution') Map<String, int>? biasDistribution,
+    @JsonKey(name: 'bias_highlights') String? biasHighlights,
+    @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
   }) = _DigestTopic;
 
   /// A topic is "covered" when at least one article has been interacted with
@@ -166,6 +170,7 @@ class PepiteResponse with _$PepiteResponse {
     @Default('') String title,
     @Default('') String url,
     @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+    @JsonKey(name: 'published_at') DateTime? publishedAt,
     SourceMini? source,
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
@@ -188,6 +193,7 @@ class CoupDeCoeurResponse with _$CoupDeCoeurResponse {
     @Default('coup_de_coeur') String badge,
     @Default('') String url,
     @JsonKey(name: 'thumbnail_url') String? thumbnailUrl,
+    @JsonKey(name: 'published_at') DateTime? publishedAt,
     SourceMini? source,
     @JsonKey(name: 'is_read') @Default(false) bool isRead,
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,

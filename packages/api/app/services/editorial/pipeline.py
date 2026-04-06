@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -30,8 +31,11 @@ from app.services.editorial.schemas import (
     EditorialSubject,
     PepiteArticle,
     WritingOutput,
+    compute_bias_distribution,
+    compute_bias_highlights,
 )
 from app.services.editorial.writer import EditorialWriterService
+from app.services.perspective_service import PerspectiveService
 
 logger = structlog.get_logger()
 
@@ -112,7 +116,7 @@ class EditorialPipelineService:
         # ÉTAPE 2: LLM curation — select remaining topics
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
-        remaining_count = 2 if a_la_une_topic else 3
+        remaining_count = 4 if a_la_une_topic else 5
         selected_topics = await self.curation.select_topics(
             clusters,
             subjects_count=remaining_count,
@@ -215,6 +219,99 @@ class EditorialPipelineService:
                     topic_id=s.topic_id,
                     label=s.label,
                 )
+
+        # ÉTAPE 3C: Perspective analysis (batch, parallel)
+        perspective_service = PerspectiveService(db=self.session)
+        step_start = time.time()
+
+        async def _process_perspectives(
+            subject: EditorialSubject,
+            cluster: TopicCluster | None,
+        ) -> None:
+            """Enrich one subject with perspective data. Fallback on error."""
+            if not cluster or not cluster.contents:
+                return
+
+            representative = sorted(
+                cluster.contents, key=lambda c: c.published_at, reverse=True
+            )[0]
+
+            exclude_domain = None
+            if representative.source and representative.source.url:
+                try:
+                    parsed = urlparse(representative.source.url)
+                    exclude_domain = parsed.netloc
+                    if exclude_domain and exclude_domain.startswith("www."):
+                        exclude_domain = exclude_domain[4:]
+                except Exception:
+                    pass
+
+            try:
+                perspectives, _ = await perspective_service.get_perspectives_hybrid(
+                    content=representative,
+                    exclude_domain=exclude_domain,
+                )
+            except Exception:
+                logger.warning(
+                    "editorial_pipeline.perspectives_fallback",
+                    topic_id=subject.topic_id,
+                )
+                subject.perspective_count = len(cluster.source_ids)
+                return
+
+            subject.perspective_count = len(perspectives)
+            subject.bias_distribution = compute_bias_distribution(perspectives)
+            subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
+
+            if len(perspectives) >= 3:
+                try:
+                    source_bias = await perspective_service.resolve_bias(
+                        domain=exclude_domain or "",
+                        source_name=(
+                            representative.source.name if representative.source else ""
+                        ),
+                    )
+                    subject.divergence_analysis = (
+                        await perspective_service.analyze_divergences(
+                            article_title=representative.title,
+                            source_name=(
+                                representative.source.name
+                                if representative.source
+                                else ""
+                            ),
+                            source_bias=source_bias,
+                            perspectives=[
+                                {
+                                    "title": p.title,
+                                    "url": p.url,
+                                    "source_name": p.source_name,
+                                    "source_domain": p.source_domain,
+                                    "bias_stance": p.bias_stance,
+                                    "published_at": p.published_at,
+                                    "description": p.description,
+                                }
+                                for p in perspectives
+                            ],
+                            article_description=representative.description,
+                        )
+                    )
+                except Exception:
+                    logger.warning(
+                        "editorial_pipeline.divergence_analysis_failed",
+                        topic_id=subject.topic_id,
+                    )
+                    subject.divergence_analysis = None
+
+        await asyncio.gather(
+            *(_process_perspectives(s, cluster_map.get(s.topic_id)) for s in subjects),
+            return_exceptions=True,
+        )
+
+        perspective_time = time.time() - step_start
+        logger.info(
+            "editorial_pipeline.perspectives_done",
+            duration_ms=round(perspective_time * 1000, 2),
+        )
 
         # Serialize cluster data (clusters are dataclasses)
         cluster_data = [

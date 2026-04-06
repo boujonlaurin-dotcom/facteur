@@ -167,7 +167,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         async def _startup_digest_catchup() -> None:
             """Vérifie si les digests du jour existent, sinon lance la génération."""
             try:
-                from datetime import date
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
 
                 from sqlalchemy import select as sa_select
 
@@ -176,7 +177,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                 from app.models.daily_digest import DailyDigest
 
                 async with async_session_maker() as session:
-                    today = date.today()
+                    today = datetime.now(ZoneInfo("Europe/Paris")).date()
                     exists = await session.scalar(
                         sa_select(DailyDigest.id)
                         .where(DailyDigest.target_date == today)

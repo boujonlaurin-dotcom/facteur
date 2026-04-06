@@ -35,7 +35,7 @@ def _make_cluster(
 
 
 def _make_config(**overrides) -> EditorialConfig:
-    pipeline_kwargs = {"subjects_count": 3, "cluster_input_limit": 15}
+    pipeline_kwargs = {"subjects_count": 5, "cluster_input_limit": 15}
     pipeline_kwargs.update(overrides)
     return EditorialConfig(
         pipeline=PipelineConfig(**pipeline_kwargs),
@@ -45,12 +45,14 @@ def _make_config(**overrides) -> EditorialConfig:
 
 class TestSelectTopics:
     @pytest.mark.asyncio
-    async def test_llm_valid_3_topics(self):
+    async def test_llm_valid_topics(self):
         clusters = [
             _make_cluster("c1", "Retraites", 6, "politique"),
             _make_cluster("c2", "Inflation", 4, "economie"),
             _make_cluster("c3", "Canicule", 3, "environnement"),
             _make_cluster("c4", "IA Europe", 5, "technologie"),
+            _make_cluster("c5", "Logement", 4, "societe"),
+            _make_cluster("c6", "Éducation", 3, "education"),
         ]
 
         llm = MagicMock()
@@ -60,13 +62,15 @@ class TestSelectTopics:
                 {"topic_id": "c1", "label": "Retraites: vote décisif", "selection_reason": "Impact", "deep_angle": "Modèle social"},
                 {"topic_id": "c4", "label": "Europe et IA", "selection_reason": "Tech", "deep_angle": "Souveraineté"},
                 {"topic_id": "c3", "label": "Chaleur record", "selection_reason": "Climat", "deep_angle": "Réchauffement"},
+                {"topic_id": "c5", "label": "Crise du logement", "selection_reason": "Social", "deep_angle": "Urbanisme"},
+                {"topic_id": "c2", "label": "Hausse des prix", "selection_reason": "Économie", "deep_angle": "Inflation"},
             ]
         })
 
         svc = CurationService(llm, _make_config())
         result = await svc.select_topics(clusters)
 
-        assert len(result) == 3
+        assert len(result) == 5
         assert all(isinstance(t, SelectedTopic) for t in result)
         assert result[0].topic_id == "c1"
         assert result[1].topic_id == "c4"
@@ -89,7 +93,7 @@ class TestSelectTopics:
             ]
         })
 
-        svc = CurationService(llm, _make_config())
+        svc = CurationService(llm, _make_config(subjects_count=3))
         result = await svc.select_topics(clusters)
 
         assert len(result) == 3
@@ -109,7 +113,7 @@ class TestSelectTopics:
         llm.is_ready = True
         llm.chat_json = AsyncMock(return_value=None)  # LLM failed
 
-        svc = CurationService(llm, _make_config())
+        svc = CurationService(llm, _make_config(subjects_count=3))
         result = await svc.select_topics(clusters)
 
         assert len(result) == 3
@@ -151,7 +155,7 @@ class TestSelectTopics:
             ]
         })
 
-        svc = CurationService(llm, _make_config())
+        svc = CurationService(llm, _make_config(subjects_count=3))
         result = await svc.select_topics(clusters)
 
         assert len(result) == 3

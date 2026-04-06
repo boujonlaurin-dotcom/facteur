@@ -103,6 +103,8 @@ writing:
         Phrase 2 = ce qu'eclaire l'article de fond, en variant la formulation
         (voir PONTS ci-dessous).
       * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * NE PAS mentionner le nombre de sources ni les divergences
+        mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null (pas de transition entre sujets)
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
@@ -163,6 +165,8 @@ writing:
       "subjects": [
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
       ],
       "closure_text": "Bonne lecture !",
@@ -208,6 +212,8 @@ writing_serene:
         Phrase 2 = ce qu'eclaire l'article de fond (solutions, perspectives),
         en variant la formulation (voir PONTS ci-dessous).
       * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * NE PAS mentionner le nombre de sources ni les divergences
+        mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
@@ -265,6 +271,8 @@ writing_serene:
       "subjects": [
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
         {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
       ],
       "closure_text": "Bonne lecture !",
@@ -279,7 +287,7 @@ pepite:
     Selectionne la "pepite du jour" pour le digest Facteur :
     un article surprenant, original ou meconnu qui merite d'etre decouvert.
 
-    La pepite doit etre DIFFERENTE des 3 sujets principaux du digest.
+    La pepite doit etre DIFFERENTE des 5 sujets principaux du digest.
     Elle apporte un angle inattendu, une decouverte, un sujet de niche interessant.
 
     Parmi les articles candidats, selectionne le plus surprenant et ecris
