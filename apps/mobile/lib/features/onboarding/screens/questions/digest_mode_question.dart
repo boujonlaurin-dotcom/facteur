@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/serein_colors.dart';
 import '../../../../config/theme.dart';
+import '../../onboarding_strings.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/delayed_continue_button.dart';
 
@@ -32,15 +33,35 @@ class DigestModeQuestion extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space3),
 
-          Text(
-            'Certains sujets peuvent être difficiles à lire. '
-            'Activez le mode serein pour filtrer les contenus anxiogènes.\n\n'
-            'Vous pourrez changer d\'avis à tout moment grâce au bouton dédié '
-            'en haut de votre essentiel et du flux.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.textSecondary),
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: colors.textSecondary),
+              children: [
+                const TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart1),
+                TextSpan(
+                  text: OnboardingStrings.digestModeSereinBold1,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart2),
+                TextSpan(
+                  text: OnboardingStrings.digestModeSereinBold2,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart3),
+                TextSpan(
+                  text: OnboardingStrings.digestModeSereinBold3,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart4),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 

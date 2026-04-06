@@ -245,11 +245,40 @@ class IntroScreen2 extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space3),
 
-          Text(
-            OnboardingStrings.intro2Subtitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              children: [
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart1),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold1,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart2),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold2,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart3),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold3,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart4),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold4,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart5),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold5,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart6),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 

@@ -109,11 +109,22 @@ class MediaConcentrationScreen extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space4),
 
           // Explanatory text
-          Text(
-            OnboardingStrings.mediaConcentrationText,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              children: [
+                const TextSpan(
+                    text: OnboardingStrings.mediaConcentrationTextPart1),
+                TextSpan(
+                  text: OnboardingStrings.mediaConcentrationTextBold1,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+                const TextSpan(
+                    text: OnboardingStrings.mediaConcentrationTextPart2),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 
