@@ -191,7 +191,7 @@ def parse_entity_strings(entities: list[str]) -> list[dict]:
 class ArticleFeedbackRequest(BaseModel):
     """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
 
-    sentiment: str  # "positive" | "negative"
+    sentiment: str = Field(..., pattern=r"^(positive|negative)$")
     reasons: list[str] | None = None
     comment: str | None = None
     digest_date: str | None = None  # ISO date string "YYYY-MM-DD"

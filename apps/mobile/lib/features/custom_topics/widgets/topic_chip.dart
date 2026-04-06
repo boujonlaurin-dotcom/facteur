@@ -15,7 +15,6 @@ import '../../feed/providers/feed_provider.dart';
 import '../../../core/api/providers.dart';
 import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
-import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
 import '../../../widgets/design/priority_slider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -148,11 +147,13 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
   void initState() {
     super.initState();
     final reason = widget.content.recommendationReason;
-    _breakdownExpanded = widget.initialSection == ArticleSheetSection.entities &&
-        reason != null &&
-        reason.breakdown.isNotEmpty;
-    _personalizeExpanded = widget.initialSection == ArticleSheetSection.source ||
-        widget.initialSection == ArticleSheetSection.topic;
+    _breakdownExpanded =
+        widget.initialSection == ArticleSheetSection.entities &&
+            reason != null &&
+            reason.breakdown.isNotEmpty;
+    _personalizeExpanded =
+        widget.initialSection == ArticleSheetSection.source ||
+            widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -281,10 +282,12 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       const Spacer(),
                       // Right: priority slider (self-labeled)
                       Builder(builder: (context) {
-                        final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                        final algoProfile =
+                            ref.watch(algorithmProfileProvider).valueOrNull;
                         final topicSlug = matchedTopic.slugParent;
                         final topicUsage = algoProfile != null &&
-                                algoProfile.subtopicWeights.containsKey(topicSlug)
+                                algoProfile.subtopicWeights
+                                    .containsKey(topicSlug)
                             ? algoProfile.normalizeWeight(
                                 algoProfile.subtopicWeights[topicSlug]!)
                             : null;
@@ -298,10 +301,10 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             } on DioException catch (e) {
                               if (context.mounted) {
                                 final detail = e.response?.data;
-                                final msg =
-                                    (detail is Map && detail['detail'] is String)
-                                        ? detail['detail'] as String
-                                        : 'Erreur lors de la mise à jour';
+                                final msg = (detail is Map &&
+                                        detail['detail'] is String)
+                                    ? detail['detail'] as String
+                                    : 'Erreur lors de la mise à jour';
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(msg),
@@ -315,7 +318,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                           onReset: topicUsage != null
                               ? () async {
                                   final client = ref.read(apiClientProvider);
-                                  await client.post('/users/subtopics/$topicSlug/reset');
+                                  await client.post(
+                                      '/users/subtopics/$topicSlug/reset');
                                   ref.invalidate(algorithmProfileProvider);
                                 }
                               : null,
@@ -435,8 +439,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                           width: 28,
                           height: 28,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const SizedBox.shrink(),
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -493,20 +496,16 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   );
                   final currentMultiplier =
                       sourceMatch?.priorityMultiplier ?? 1.0;
-                  final isTrustedAndActive =
-                      sourceMatch?.isTrusted == true &&
-                          sourceMatch?.isMuted != true;
-                  final isSubscribed =
-                      sourceMatch?.hasSubscription ?? false;
+                  final isTrustedAndActive = sourceMatch?.isTrusted == true &&
+                      sourceMatch?.isMuted != true;
+                  final isSubscribed = sourceMatch?.hasSubscription ?? false;
 
                   if (!isTrustedAndActive) {
                     // Not trusted: standalone mute button
                     return _buildActionOption(
                       context,
-                      icon: PhosphorIcons.prohibit(
-                          PhosphorIconsStyle.regular),
-                      label:
-                          'Ne plus afficher ${widget.content.source.name}',
+                      icon: PhosphorIcons.prohibit(PhosphorIconsStyle.regular),
+                      label: 'Ne plus afficher ${widget.content.source.name}',
                       isDestructive: true,
                       onTap: () async {
                         Navigator.pop(context);
@@ -532,8 +531,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     ),
                     decoration: BoxDecoration(
                       color: _terracotta.withValues(alpha: 0.08),
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.medium),
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
                       border: Border.all(
                         color: _terracotta.withValues(alpha: 0.2),
                       ),
@@ -547,8 +545,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             // Left: dot + "Suivie" / mute link
                             Expanded(
                               child: Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.only(bottom: 12),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -563,8 +560,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                     const SizedBox(width: 6),
                                     Text(
                                       'Suivie',
-                                      style: textTheme.labelMedium
-                                          ?.copyWith(
+                                      style: textTheme.labelMedium?.copyWith(
                                         color: _terracotta,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -572,8 +568,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                     const SizedBox(width: 6),
                                     Text(
                                       '/',
-                                      style: textTheme.labelSmall
-                                          ?.copyWith(
+                                      style: textTheme.labelSmall?.copyWith(
                                         color: colors.textTertiary,
                                       ),
                                     ),
@@ -583,24 +578,20 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                                         Navigator.pop(context);
                                         try {
                                           await ref
-                                              .read(
-                                                  feedProvider.notifier)
-                                              .muteSource(
-                                                  widget.content);
+                                              .read(feedProvider.notifier)
+                                              .muteSource(widget.content);
                                           NotificationService.showInfo(
                                             'Source ${widget.content.source.name} masquée',
                                           );
                                         } catch (e) {
-                                          NotificationService
-                                              .showError(
+                                          NotificationService.showError(
                                             'Impossible de masquer la source',
                                           );
                                         }
                                       },
                                       child: Text(
                                         'Masquer',
-                                        style: textTheme.labelSmall
-                                            ?.copyWith(
+                                        style: textTheme.labelSmall?.copyWith(
                                           color: colors.error,
                                           fontWeight: FontWeight.w500,
                                         ),
@@ -612,9 +603,12 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             ),
                             // Right: priority slider (self-labeled)
                             Builder(builder: (context) {
-                              final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                              final algoProfile = ref
+                                  .watch(algorithmProfileProvider)
+                                  .valueOrNull;
                               final sourceId = widget.content.source.id;
-                              final sourceUsage = algoProfile?.sourceAffinities[sourceId];
+                              final sourceUsage =
+                                  algoProfile?.sourceAffinities[sourceId];
                               return PrioritySlider(
                                 currentMultiplier: currentMultiplier,
                                 onChanged: (multiplier) {
@@ -640,8 +634,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                           children: [
                             Icon(
                               isSubscribed
-                                  ? PhosphorIcons.crown(
-                                      PhosphorIconsStyle.fill)
+                                  ? PhosphorIcons.crown(PhosphorIconsStyle.fill)
                                   : PhosphorIcons.crown(
                                       PhosphorIconsStyle.regular),
                               size: 18,

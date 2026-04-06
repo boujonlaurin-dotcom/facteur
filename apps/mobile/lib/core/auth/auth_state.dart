@@ -234,6 +234,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
                   ?.any((p) => p != 'email') ==
               true;
 
+      // Capturer AVANT la mise à jour du state pour détecter les transitions
+      final bool isNewSignIn = state.user == null && user != null;
+
       state = state.copyWith(
         user: user,
         isLoading: false,
@@ -241,8 +244,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       );
 
       if (user != null) {
-        // Only check onboarding on actual sign-in (new user), not token refreshes
-        if (state.user?.id != user.id) {
+        // Check onboarding on first sign-in (new user appearing)
+        if (isNewSignIn) {
           _checkOnboardingStatus();
         }
         _startProactiveRefreshTimer();
@@ -580,6 +583,15 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Mettre à jour le cache local
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_completed', !value);
+
+    // Quand on quitte l'onboarding (dismiss), marquer la version comme à jour
+    // pour éviter que "Facteur fait peau neuve" ne se ré-affiche en boucle
+    if (!value) {
+      await box.put('onboarding_app_version', _requiredOnboardingVersion);
+      // Nettoyer le flag is_restart dans la box onboarding
+      final onboardingBox = await Hive.openBox('onboarding');
+      await onboardingBox.put('is_restart', false);
+    }
   }
 
   void clearError() {
