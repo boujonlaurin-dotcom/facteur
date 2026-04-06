@@ -87,10 +87,29 @@ class ApiClient {
               onAuthError!(401);
             }
           } else if (statusCode == 403) {
+            // 403 = backend says email not confirmed. But the JWT might
+            // be stale (confirmed in Supabase but old token cached).
+            // Try refreshing the session and retrying ONCE before
+            // triggering forceUnconfirmed.
+            try {
+              final refreshed = await _supabase.auth
+                  .refreshSession()
+                  .timeout(const Duration(seconds: 5));
+              if (refreshed.session != null) {
+                final opts = error.requestOptions;
+                opts.headers['Authorization'] =
+                    'Bearer ${refreshed.session!.accessToken}';
+                final response = await _dio.fetch<dynamic>(opts);
+                return handler.resolve(response);
+              }
+            } catch (_) {
+              // Refresh failed or retry still got 403
+            }
+            // Still 403 after refresh — email genuinely not confirmed
             if (onAuthError != null) {
               // ignore: avoid_print
               print(
-                  '⛔️ ApiClient: Auth Error (403). Triggering onAuthError...');
+                  '⛔️ ApiClient: Auth Error (403) after refresh+retry. Triggering onAuthError...');
               onAuthError!(403);
             }
           }

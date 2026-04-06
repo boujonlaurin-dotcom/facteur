@@ -76,12 +76,10 @@ class ThemeSection extends ConsumerWidget {
                     .unmuteTheme(themeSlug);
                 ref.invalidate(personalizationProvider);
               },
-              child: Text(
-                '\u{1F441}\u{0338}',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: colors.textTertiary,
-                ),
+              child: Icon(
+                PhosphorIcons.plusCircle(PhosphorIconsStyle.regular),
+                size: 20,
+                color: colors.textTertiary,
               ),
             ),
           ),
@@ -123,6 +121,30 @@ class ThemeSection extends ConsumerWidget {
                     ),
                   ),
                 ),
+                GestureDetector(
+                  onTap: () async {
+                    await ref
+                        .read(personalizationRepositoryProvider)
+                        .muteTheme(themeSlug);
+                    ref.invalidate(personalizationProvider);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Thème retiré'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(
+                      PhosphorIcons.minusCircle(PhosphorIconsStyle.regular),
+                      size: 16,
+                      color: const Color(0xFFE07A5F),
+                    ),
+                  ),
+                ),
                 TopicPrioritySlider(
                   currentMultiplier: themePriorities[themeLabel] ?? 1.0,
                   onChanged: (multiplier) async {
@@ -161,22 +183,38 @@ class ThemeSection extends ConsumerWidget {
                     topic: topic,
                     usageWeight: topicUsage,
                     isMuted: topicMuted,
-                    onMute: topicSlug != null
-                        ? () async {
-                            await ref
-                                .read(personalizationRepositoryProvider)
-                                .muteTopic(topicSlug);
-                            ref.invalidate(personalizationProvider);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Sujet masqué'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          }
-                        : null,
+                    onMute: () async {
+                      // For entities, mute by canonical name (matches backend entity filtering).
+                      // For regular topics, mute by slug_parent.
+                      final slug = topic.canonicalName?.toLowerCase() ??
+                          topicSlug ??
+                          getTopicSlug(topic.name);
+                      final repo = ref.read(personalizationRepositoryProvider);
+                      try {
+                        await repo.muteTopic(slug);
+                        await ref
+                            .read(customTopicsProvider.notifier)
+                            .unfollowTopic(topic.id);
+                        ref.invalidate(personalizationProvider);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Sujet masqué'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Erreur lors du masquage'),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      }
+                    },
                     onUnmute: topicSlug != null
                         ? () async {
                             await ref
@@ -213,10 +251,30 @@ class ThemeSection extends ConsumerWidget {
                         }
                       }
                     },
-                    onUnfollow: () {
-                      ref
+                    onUnfollow: () async {
+                      await ref
                           .read(customTopicsProvider.notifier)
                           .unfollowTopic(topic.id);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Sujet retiré'),
+                            duration: const Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'Annuler',
+                              onPressed: () {
+                                ref
+                                    .read(customTopicsProvider.notifier)
+                                    .followTopic(
+                                      topic.name,
+                                      slugParent: topic.slugParent,
+                                      priorityMultiplier: topic.priorityMultiplier,
+                                    );
+                              },
+                            ),
+                          ),
+                        );
+                      }
                     },
                   );
               }),

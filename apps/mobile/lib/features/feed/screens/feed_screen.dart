@@ -619,12 +619,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 InterestFilterSheet.show(
                                   context,
                                   currentTopicSlug: null,
-                                  onInterestSelected: (slug, name) {
+                                  onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) {
                                     setState(() {
                                       _selectedInterestName = name;
-                                      _selectedIsTheme = false;
+                                      _selectedIsTheme = isTheme;
                                     });
-                                    notifier.setTopic(slug);
+                                    if (isTheme) {
+                                      notifier.setTheme(slug);
+                                    } else {
+                                      notifier.setTopic(slug);
+                                    }
                                   },
                                 );
                               },

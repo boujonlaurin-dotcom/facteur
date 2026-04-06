@@ -94,6 +94,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   final _supabase = Supabase.instance.client;
   Timer? _refreshTimer;
 
+  /// Timestamp of the last forceUnconfirmed set. Used to debounce
+  /// repeated 403s and avoid redirect loops.
+  DateTime? _lastForceUnconfirmedAt;
+
   /// Version minimale de l'onboarding requise.
   /// Incrémentée lors de changements majeurs pour forcer les users existants
   /// à repasser par l'onboarding (skip vers Section 3 uniquement).
@@ -629,12 +633,18 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     } on AuthException catch (e) {
       debugPrint(
           'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');
-      // Détecter si le refresh token est expiré/invalide
+      // Détecter si le refresh token est expiré/invalide.
+      // IMPORTANT: Ne matcher que des messages spécifiques à l'expiration
+      // de session. "invalid" seul est trop large et cause des déconnexions
+      // intempestives sur des erreurs transitoires.
       final msg = e.message.toLowerCase();
       if (msg.contains('refresh_token') ||
           msg.contains('token has expired') ||
-          msg.contains('invalid') ||
-          msg.contains('session not found')) {
+          msg.contains('invalid refresh token') ||
+          msg.contains('invalid claim') ||
+          msg.contains('session_not_found') ||
+          msg.contains('session not found') ||
+          msg.contains('user not found')) {
         debugPrint(
             'AuthStateNotifier: Refresh token expired. Ending session.');
         await handleSessionExpired();
@@ -645,13 +655,28 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend)
+  /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend).
+  /// Debounce de 30s : si on vient de reset forceUnconfirmed (user a confirmé
+  /// son email et refreshUser() a détecté la confirmation), on ignore les 403
+  /// pendant 30s pour laisser le temps au backend de propager la confirmation.
   void setForceUnconfirmed() {
-    if (!state.forceUnconfirmed) {
-      debugPrint(
-          'AuthStateNotifier: ⛔️ Backend returned 403. Forcing UNCONFIRMED state.');
-      state = state.copyWith(forceUnconfirmed: true);
+    if (state.forceUnconfirmed) return;
+
+    // Cooldown: ignore 403 si on a récemment été marqué comme non-confirmé
+    // puis re-confirmé (évite les boucles confirmation→403→confirmation)
+    if (_lastForceUnconfirmedAt != null) {
+      final elapsed = DateTime.now().difference(_lastForceUnconfirmedAt!);
+      if (elapsed.inSeconds < 30) {
+        debugPrint(
+            'AuthStateNotifier: Ignoring 403 — cooldown active (${elapsed.inSeconds}s < 30s).');
+        return;
+      }
     }
+
+    debugPrint(
+        'AuthStateNotifier: ⛔️ Backend returned 403. Forcing UNCONFIRMED state.');
+    _lastForceUnconfirmedAt = DateTime.now();
+    state = state.copyWith(forceUnconfirmed: true);
   }
 }
 

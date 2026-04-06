@@ -4,7 +4,7 @@ import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/widgets/pas_de_recul_block.dart';
 
 void main() {
-  const article = DigestItem(
+  final article = DigestItem(
     contentId: 'test-123',
     title: 'Un article d\'analyse approfondie sur la r\u00e9forme',
     url: 'https://example.com/article',
@@ -57,7 +57,7 @@ void main() {
     });
 
     testWidgets('handles article without source', (tester) async {
-      const noSourceArticle = DigestItem(
+      final noSourceArticle = DigestItem(
         contentId: 'test-456',
         title: 'Article sans source',
         url: 'https://example.com',

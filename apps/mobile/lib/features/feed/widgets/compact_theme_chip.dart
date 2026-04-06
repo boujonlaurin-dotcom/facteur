@@ -118,8 +118,9 @@ class CompactThemeChip extends StatelessWidget {
     InterestFilterSheet.show(
       context,
       currentTopicSlug: selectedSlug,
-      onInterestSelected: (slug, name) =>
-          onInterestChanged(slug, name, isTheme: false, isEntity: false),
+      currentIsTheme: selectedIsTheme,
+      onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) =>
+          onInterestChanged(slug, name, isTheme: isTheme, isEntity: isEntity),
     );
   }
 }

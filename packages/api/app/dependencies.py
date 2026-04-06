@@ -82,8 +82,12 @@ async def _check_email_confirmed_with_retry(
                 row = result.fetchone()
                 is_confirmed = row is not None and row[0] is not None
 
-                # Cache the result
-                _email_confirmed_cache[user_id] = (is_confirmed, current_time)
+                # Only cache positive (confirmed) results.
+                # Never cache false — if user just confirmed, we must
+                # pick it up on the next request instead of blocking
+                # them for up to 5 minutes.
+                if is_confirmed:
+                    _email_confirmed_cache[user_id] = (True, current_time)
 
                 return is_confirmed
 
