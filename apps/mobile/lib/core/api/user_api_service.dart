@@ -42,6 +42,7 @@ class UserApiService {
         profile: profile,
         interestsCreated: data['interests_created'] as int?,
         preferencesCreated: data['preferences_created'] as int?,
+        sourcesCreated: data['sources_created'] as int?,
       );
     } on DioException catch (e) {
       return _handleDioError(e);
@@ -92,6 +93,7 @@ class UserApiService {
       'subtopics': answers.subtopics,
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
+      'personal_goal': answers.personalGoal,
     };
   }
 
