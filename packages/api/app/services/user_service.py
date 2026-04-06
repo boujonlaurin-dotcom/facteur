@@ -291,7 +291,9 @@ class UserService:
             preferences_created=pref_count,
             sources_created=sources_created,
             sources_removed=sources_removed,
-            preferred_sources_count=len(answers.preferred_sources) if answers.preferred_sources else 0,
+            preferred_sources_count=len(answers.preferred_sources)
+            if answers.preferred_sources
+            else 0,
         )
 
         return {
