@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 import structlog
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -865,8 +866,23 @@ class DigestService:
             generated_at=datetime.now(UTC),
         )
 
-        self.session.add(digest)
-        await self.session.flush()
+        try:
+            self.session.add(digest)
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.warning(
+                "digest_insert_race_condition_flat",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
+            if existing:
+                return existing
+            raise
 
         return digest
 
@@ -929,8 +945,23 @@ class DigestService:
             generated_at=datetime.now(UTC),
         )
 
-        self.session.add(digest)
-        await self.session.flush()
+        try:
+            self.session.add(digest)
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.warning(
+                "digest_insert_race_condition_topics",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
+            if existing:
+                return existing
+            raise
 
         return digest
 
@@ -1032,8 +1063,23 @@ class DigestService:
             generated_at=datetime.now(UTC),
         )
 
-        self.session.add(digest)
-        await self.session.flush()
+        try:
+            self.session.add(digest)
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.warning(
+                "digest_insert_race_condition_editorial",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
+            if existing:
+                return existing
+            raise
 
         return digest
 
