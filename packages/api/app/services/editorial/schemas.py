@@ -49,6 +49,7 @@ class MatchedDeepArticle(BaseModel):
     published_at: datetime
     match_reason: str
     description: str | None = None
+    recul_intro: str | None = None
 
 
 class EditorialSubject(BaseModel):
@@ -72,6 +73,8 @@ class EditorialSubject(BaseModel):
     bias_distribution: dict[str, int] | None = None
     bias_highlights: str | None = None
     divergence_analysis: str | None = None
+    divergence_level: str | None = None  # "low" | "medium" | "high"
+    perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
 
 
 # --- Story 10.24: LLM writing output schemas ---
@@ -83,6 +86,7 @@ class SubjectWriting(BaseModel):
     topic_id: str
     intro_text: str
     transition_text: str | None = None  # null for last subject
+    recul_intro: str | None = None
 
 
 class WritingOutput(BaseModel):
@@ -149,6 +153,19 @@ class EditorialPipelineResult(BaseModel):
 # --- Perspective helpers ---
 
 
+class PerspectiveSourceMini(BaseModel):
+    """Lightweight source info extracted from a Perspective.
+
+    Distinct from SourceMini (which requires a UUID id) because Google News
+    perspectives don't have a source_id in our DB.
+    """
+
+    name: str
+    domain: str
+    bias_stance: str = "unknown"
+    logo_url: str | None = None
+
+
 def compute_bias_distribution(perspectives: list) -> dict[str, int]:
     """Count perspectives by bias stance."""
     dist = {"left": 0, "center-left": 0, "center": 0, "center-right": 0, "right": 0}
@@ -183,3 +200,31 @@ def compute_bias_highlights(dist: dict[str, int]) -> str:
         return "Très couvert à droite"
 
     return "Couverture équilibrée"
+
+
+def compute_divergence_level(dist: dict[str, int]) -> str:
+    """Derive divergence level from bias distribution spread.
+
+    Returns "low", "medium", or "high" based on how much the left/right
+    sides are both represented.
+    """
+    total = sum(dist.values())
+    if total < 2:
+        return "low"
+
+    left = dist.get("left", 0) + dist.get("center-left", 0)
+    right = dist.get("right", 0) + dist.get("center-right", 0)
+
+    # Only one side represented → low divergence
+    if left == 0 or right == 0:
+        return "low"
+
+    # Both sides represented — check ratio of minority side
+    minority = min(left, right)
+    ratio = minority / total
+
+    if ratio >= 0.3:
+        return "high"
+    elif ratio >= 0.15:
+        return "medium"
+    return "low"

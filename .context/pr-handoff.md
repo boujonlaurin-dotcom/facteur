@@ -1,107 +1,100 @@
-# PR — Story 10.29 : Refonte Digest Journal + fixes pipeline reliability
+# Handoff — Ajustements visuels carte expanded digest
 
-## Quoi
+## Contexte
+Après la PR `recul_intro`, plusieurs ajustements visuels sont nécessaires sur la carte expanded des topics du digest éditorial. Les changements concernent uniquement le mobile Flutter.
 
-Implémentation complète de la story 10.29 "Digest Journal" : toggle compact/étendu pour chaque topic, passage de 3 à 5 sujets actus, intégration des perspectives médiatiques (bias distribution, divergence analysis) en batch, nouveaux blocs UI (`DivergenceAnalysisBlock`, `PasDeReculBlock`, `SourceCoverageBadge`).
-En parallèle : fix de fiabilité pipeline digest (cron 8h → 6h, watchdog 7h30, retry avec backoff, catch-up coverage-based).
+---
 
-## Pourquoi
+## Tâches à réaliser
 
-Le digest éditorial manquait de hiérarchie visuelle (toutes les cartes identiques), cachait la comparaison de sources (différenciant Facteur), et ne donnait pas de sentiment de complétude (3 sujets insuffisants). Sur le backend, des digests étaient silencieusement sautés à cause d'APScheduler fragile sur Railway et d'un catch-up trop grossier.
+### 1. Retirer le texte "Sujets : ..." après ouverture de la carte
+**Fichier :** `apps/mobile/lib/features/digest/widgets/topic_section.dart`
+- La méthode `_computeSubjects()` (lignes 1186-1191) est du dead code — elle existe mais n'est jamais appelée.
+- Si le texte "Sujets : ..." apparaît malgré tout dans l'UI, il est probable qu'il vienne du champ `DigestTopic.subjects` (liste de strings, ligne 103 de `digest_models.dart`) rendu par un widget parent ou par le `topic.label`.
+- **Action :** Supprimer la méthode `_computeSubjects()` (dead code), puis chercher dans l'app où `topic.subjects` ou un texte "Sujets" est affiché à l'ouverture de la carte — possiblement dans `_buildExpandedHeader` ou dans le widget parent `digest_briefing_section.dart`.
 
-## Fichiers modifiés
+### 2. Réduire l'opacité du fond de la carte expanded à 5%/3%
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedEditorial()` (lignes 649-660)
+```dart
+// Actuel :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.3)
+    : colors.surface.withValues(alpha: 0.4),
+// Cible :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.05)
+    : colors.surface.withValues(alpha: 0.03),
+```
 
-**Backend :**
-- `packages/api/app/services/editorial/pipeline.py` — Étape 3C : enrichissement perspectives en batch (asyncio.gather), passage 3→5 sujets, helpers bias
-- `packages/api/app/services/editorial/schemas.py` — 4 nouveaux champs sur `EditorialSubject` + helpers `compute_bias_distribution` / `compute_bias_highlights`
-- `packages/api/app/services/editorial/config.py` — `subjects_count: 3 → 5`
-- `packages/api/app/services/editorial/deep_matcher.py` — Seuils élargis pour le sujet "À la Une", seuil minimum absolu 0.08
-- `packages/api/app/services/editorial/curation.py` — Adaptation au count dynamique
-- `packages/api/app/services/digest_service.py` — Mapping des 4 champs perspectives vers `DigestTopic`
-- `packages/api/app/schemas/digest.py` — Ajout champs perspectives dans le schéma API
-- `packages/api/app/workers/scheduler.py` — Cron 8h→6h, watchdog 7h30 (coverage < 90%), misfire 4h, coalesce
-- `packages/api/app/main.py` — Catch-up coverage-based (< 90% users)
-- `packages/api/app/jobs/digest_generation_job.py` — Retry 2× avec backoff exponentiel
-- `packages/api/config/editorial_config.yaml` / `editorial_prompts.yaml` — 5 sujets, prompt intro revu (2 phrases max, no mention sources)
+### 3. Repositionner le bouton Toggle (caret up) après retrait du titre
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedHeader()` (lignes 773-807)
+- Actuellement : Row avec `topic.label` (Expanded) + caret up icon
+- Après retrait du titre "Sujets : ...", le toggle "flotte" seul à droite
+- **Action :** Repositionner le caret up de façon propre — par exemple l'aligner à droite dans un Row avec un Spacer, ou l'intégrer dans la première carte article comme un bouton overlay en haut à droite. Vérifier le design avec Laurin.
 
-**Mobile :**
-- `apps/mobile/lib/features/digest/widgets/topic_section.dart` — Réécriture majeure : état compact (4 variantes : image/no-image × hero/standard), état étendu avec header toggle, carrousel articles, carte "De quoi on parle ?", blocs divergence/pas-de-recul
-- `apps/mobile/lib/features/digest/widgets/divergence_analysis_block.dart` — Nouveau bloc : analyse médiatique avec Markdown, CTA "Comparer les sources"
-- `apps/mobile/lib/features/digest/widgets/pas_de_recul_block.dart` — Nouveau bloc : article de fond
-- `apps/mobile/lib/features/digest/widgets/source_coverage_badge.dart` — Nouveau badge "X sources"
-- `apps/mobile/lib/features/digest/models/digest_models.dart` + `.freezed.dart` + `.g.dart` — 4 nouveaux champs `DigestTopic` + `publishedAt` sur Pepite/CoupDeCoeur
-- `apps/mobile/lib/features/digest/widgets/digest_briefing_section.dart` — Retrait getter `_usesEditorial` stale
-- `apps/mobile/lib/core/auth/auth_state.dart` — Fix bug : détection `isNewSignIn` avant `state.copyWith`, marquage version onboarding au dismiss
+### 4. Aligner les paddings entre les 4 cartes (articles, "De quoi on parle", analyse Facteur, prendre du recul)
+**Fichiers concernés :**
+- `topic_section.dart` — "De quoi on parle ?" : `EdgeInsets.fromLTRB(16, 0, 16, 12)` + inner padding `EdgeInsets.all(12)` (lignes 693-696)
+- `topic_section.dart` — DivergenceAnalysisBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 737)
+- `divergence_analysis_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 48)
+- `topic_section.dart` — PasDeReculBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 759)
+- `pas_de_recul_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 35)
+- Articles (carousel/single) : `EdgeInsets.symmetric(horizontal: 12)` (ligne 1031)
+- **Action :** Uniformiser le padding horizontal externe à 16px pour les 4 blocs, et le padding interne à 12px.
 
-**Tests :**
-- `apps/mobile/test/features/digest/widgets/divergence_analysis_block_test.dart` — 74 lignes
-- `apps/mobile/test/features/digest/widgets/pas_de_recul_block_test.dart` — 70 lignes
-- `apps/mobile/test/features/digest/widgets/source_coverage_badge_test.dart` — 44 lignes
-- `packages/api/tests/editorial/test_schemas.py` — 142 lignes (helpers bias)
-- `packages/api/tests/editorial/test_pipeline.py` / `test_curation.py` / `test_config.py` — MAJ assertions 3→5
-- `packages/api/tests/workers/test_scheduler.py` — Tests watchdog + cron 6h
+### 5. CTA "Lire la suite…" — trop voyant et répétitif
+**Fichier :** `divergence_analysis_block.dart` (lignes 139-149)
+- Actuellement : texte bold en `colors.primary`, fontSize 13, fontWeight w600
+- **Action :** Réduire la visibilité — passer en `colors.textSecondary`, fontSize 12, fontWeight w500 pour en faire un nudge discret. Ou le retirer complètement si le tap sur le texte tronqué suffit comme affordance.
 
-**Config/Docs :**
-- `docs/stories/core/10.digest-central/10.29.refonte-digest-journal.story.md`
-- `docs/bugs/bug-digest-pipeline-reliability.md`
-- `docs/bugs/bug-digest-post-e2e-adjustments.md`
+### 6. Bouton "Toutes les perspectives" — réduire la hauteur uniquement
+**Fichier :** `divergence_analysis_block.dart` (lignes 155-182)
+- Actuellement : `Row` avec logos + texte + flèche, pas de padding contraint
+- Le bouton doit rester un plain button centré
+- **Action :** Réduire l'espacement autour — changer le `SizedBox(height: 8)` avant le bouton (ligne 156) en `SizedBox(height: 4)`, et éventuellement réduire la taille des logos de 18px à 16px.
 
-## Zones à risque
+### 7. Augmenter l'opacité de la border du container "Analyse Facteur"
+**Fichier :** `divergence_analysis_block.dart` (lignes 64-67)
+```dart
+// Actuel :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.2),
+  width: 1,
+),
+// Cible (plus visible) :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
+  width: 1,
+),
+```
 
-1. **`pipeline.py` Étape 3C** — `asyncio.gather` sur 5 appels `PerspectiveService` parallèles peut significativement allonger la génération digest. Le fallback est en place mais la latence est à surveiller en prod.
+### 8. Renommer le titre "🔍 L'analyse Facteur" → "🔍 Analyse de biais (N sources)"
+**Fichier :** `divergence_analysis_block.dart` (lignes 75-81)
+```dart
+// Actuel :
+Text(
+  "\u{1F50D} L'analyse Facteur",
+  ...
+),
+// Cible :
+Text(
+  "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
+  ...
+),
+```
 
-2. **`scheduler.py` — Watchdog 7h30** — Vérifie que `run_digest_generation()` est bien idempotent (skip les users déjà traités). Risque de double génération si non.
+---
 
-3. **`digest_generation_job.py` — Retry avec backoff** — Le retry est DB-based (check digest existant). Confirmer que le skip est correct avant retry pour éviter les doublons.
-
-4. **`topic_section.dart` — 800+ lignes** — Condition `widget.editorialMode` protège les formats anciens (`topics_v1`, `flat_v1`). Bien vérifier que le toggle n'impacte pas ces formats.
-
-5. **`auth_state.dart` — isNewSignIn** — `isNewSignIn` capturé AVANT `state = state.copyWith(...)`. Vérifier que le cas token refresh (user déjà loggé, nouveau JWT) ne déclenche pas `_checkOnboardingStatus()` par erreur.
-
-## Points d'attention pour le reviewer
-
-- **Backward compat API** : tous les nouveaux champs (`perspective_count`, `bias_distribution`, etc.) ont des defaults. Anciens digests en DB (JSON sans ces champs) restent lisibles côté mobile grâce aux `@Default` Freezed. Pas de migration Alembic — les champs vivent dans le JSON `topics_data` existant.
-
-- **`compute_bias_distribution` et `compute_bias_highlights`** dans `schemas.py` : bien testés dans `test_schemas.py`. Vérifier les cas limites : liste vide, un seul biais, tous neutres.
-
-- **Deep matcher** — `prefilter_limit ×2` et `threshold /2` pour "À la Une" peuvent faire remonter des faux positifs. À valider sur données réelles.
-
-- **Toggle state local** — `_isExpanded` est un `StatefulWidget` local. Si l'utilisateur scrolle loin puis revient, le state est reset (tout repasse compact). Intentionnel pour l'instant ?
-
-- **Prompt `editorial_prompts.yaml`** — L'intro ne doit plus mentionner les sources/divergences. Anciens digests avec mentions = affichage redondant mais pas cassé.
-
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-
-- **Formats `topics_v1` et `flat_v1`** : `TopicSection` est paramétré par `widget.editorialMode`. Les formats anciens ne passent pas par le toggle compact/étendu.
-- **`PepiteBlock` et `CoupDeCoeurBlock`** : touches mineures (ajout import), aucun changement de comportement.
-- **`feed_repository.dart`** : nettoyage de code mort (`recommendation_service`, `_usesEditorial`), aucune logique business modifiée.
-- **Alembic** : aucune migration. Les 4 nouveaux champs perspectives vivent dans le champ JSON `topics_data` existant.
+## Fichiers à modifier
+| Fichier | Tâches |
+|---------|--------|
+| `topic_section.dart` | #1, #2, #3, #4 |
+| `divergence_analysis_block.dart` | #5, #6, #7, #8 |
+| `pas_de_recul_block.dart` | #4 (padding si nécessaire) |
 
 ## Comment tester
-
-### Backend
 ```bash
-cd packages/api
-pytest tests/editorial/ -v         # Schemas, pipeline, curation, config
-pytest tests/workers/test_scheduler.py -v  # Watchdog + cron timing
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test
 ```
-
-### Mobile (unitaire)
-```bash
-cd apps/mobile
-flutter test test/features/digest/widgets/  # Nouveaux blocs
-flutter analyze
-```
-
-### E2E Manuel
-1. Ouvrir le digest éditorial d'un user avec digest du jour
-2. Vérifier état compact par défaut : titre, logos sources, time, caret
-3. Taper sur un topic → état étendu : header avec X, "De quoi on parle ?", carrousel, `DivergenceAnalysisBlock`
-4. Vérifier topic `isUne` : badge "À la Une" + border left en compact
-5. Vérifier topic avec `pas_de_recul` : bloc visible en état étendu
-6. Vérifier formats anciens (`topics_v1`) : aucun toggle, comportement inchangé
-
-### Pipeline reliability (staging)
-- Forcer redémarrage Railway entre 6h et 10h → watchdog 7h30 doit relancer si coverage < 90%
-- Vérifier logs : `digest_watchdog_check`, `digest_watchdog_low_coverage_triggering_generation`
-- Vérifier catch-up au startup : log `digest_startup_catchup` si users manquants
+Puis vérifier visuellement sur iOS/Android : ouvrir un digest éditorial, expand une carte, vérifier les 8 points.

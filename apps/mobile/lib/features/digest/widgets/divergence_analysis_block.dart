@@ -1,28 +1,45 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_image.dart';
+import '../../feed/widgets/initial_circle.dart';
+import '../models/digest_models.dart';
+import 'bias_spectrum_bar.dart';
+import 'divergence_chip.dart';
 import 'markdown_text.dart';
-import 'source_coverage_badge.dart';
 
 /// Block displaying a quick analysis of media divergences on a topic.
 /// Hidden when [divergenceAnalysis] is null.
-class DivergenceAnalysisBlock extends StatelessWidget {
+class DivergenceAnalysisBlock extends StatefulWidget {
   final String? divergenceAnalysis;
   final String? biasHighlights;
+  final Map<String, int>? biasDistribution;
+  final String? divergenceLevel;
   final VoidCallback? onCompare;
   final int perspectiveCount;
+  final List<SourceMini> perspectiveSources;
 
   const DivergenceAnalysisBlock({
     super.key,
     this.divergenceAnalysis,
     this.biasHighlights,
+    this.biasDistribution,
+    this.divergenceLevel,
     this.onCompare,
     this.perspectiveCount = 0,
+    this.perspectiveSources = const [],
   });
 
   @override
+  State<DivergenceAnalysisBlock> createState() =>
+      _DivergenceAnalysisBlockState();
+}
+
+class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
+  bool _isExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    if (divergenceAnalysis == null) return const SizedBox.shrink();
+    if (widget.divergenceAnalysis == null) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -30,109 +47,218 @@ class DivergenceAnalysisBlock extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colors.textSecondary.withValues(alpha: isDark ? 0.08 : 0.05),
+        gradient: LinearGradient(
+          colors: isDark
+              ? [
+                  colors.primary.withValues(alpha: 0.12),
+                  colors.primary.withValues(alpha: 0.06),
+                ]
+              : [
+                  colors.primary.withValues(alpha: 0.08),
+                  colors.primary.withValues(alpha: 0.03),
+                ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Text(
-            "\u{1F50D} L'analyse Facteur",
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: colors.textSecondary,
+          // Header with info tooltip
+          Row(
+            children: [
+              Text(
+                "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: colors.textSecondary,
+                ),
+              ),
+              const Spacer(),
+              Tooltip(
+                message: 'Analyse générée via Mistral Medium',
+                child: Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+
+          // Divergence chip
+          if (widget.divergenceLevel != null) ...[
+            const SizedBox(height: 8),
+            DivergenceChip(divergenceLevel: widget.divergenceLevel),
+          ],
+
+          // Bias spectrum bar
+          if (widget.biasDistribution != null) ...[
+            const SizedBox(height: 8),
+            BiasSpectrumBar(biasDistribution: widget.biasDistribution),
+          ],
+
+          // Analysis text — collapsed (3 lines) or expanded
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            behavior: HitTestBehavior.opaque,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_isExpanded)
+                  MarkdownText(
+                    text: widget.divergenceAnalysis!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : colors.textSecondary,
+                    ),
+                  )
+                else
+                  MarkdownText(
+                    text: widget.divergenceAnalysis!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : colors.textSecondary,
+                    ),
+                  ),
+                if (!_isExpanded) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Lire la suite…',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
 
-          // Bias highlights badge
-          if (biasHighlights != null) ...[
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: colors.textSecondary.withValues(alpha: isDark ? 0.10 : 0.06),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                biasHighlights!,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  color: colors.textSecondary,
+          // CTA button — primary filled, centered with logos
+          if (widget.onCompare != null && widget.perspectiveCount > 1) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: GestureDetector(
+                onTap: widget.onCompare,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ..._buildLogoRow(colors, isDark),
+                      if (widget.perspectiveSources.isNotEmpty)
+                        const SizedBox(width: 8),
+                      const Text(
+                        'Toutes les perspectives',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 11,
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ],
-
-          // Analysis text
-          const SizedBox(height: 8),
-          MarkdownText(
-            text: divergenceAnalysis!,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : colors.textSecondary,
-            ),
-          ),
-
-          // CTA + source coverage badge row
-          if (onCompare != null || perspectiveCount > 1) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (onCompare != null)
-                  GestureDetector(
-                    onTap: onCompare,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: colors.textSecondary.withValues(alpha: isDark ? 0.12 : 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(PhosphorIcons.arrowSquareOut(), size: 13, color: colors.textSecondary),
-                          const SizedBox(width: 5),
-                          Text(
-                            'Comparer les sources',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (onCompare != null && perspectiveCount > 1)
-                  const SizedBox(width: 8),
-                if (perspectiveCount > 1)
-                  SourceCoverageBadge(
-                    perspectiveCount: perspectiveCount,
-                    isTrending: false,
-                  ),
-              ],
-            ),
-          ],
-
-          // Mistral attribution
-          const SizedBox(height: 8),
-          Text(
-            'Généré via modèle Mistral Medium',
-            style: TextStyle(
-              fontSize: 10,
-              color: colors.textSecondary.withValues(alpha: 0.4),
-              fontStyle: FontStyle.italic,
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  List<Widget> _buildLogoRow(FacteurColors colors, bool isDark) {
+    final sources = widget.perspectiveSources;
+    if (sources.isEmpty) return [];
+
+    const maxLogos = 3;
+    final visible = sources.take(maxLogos).toList();
+    final extraCount = sources.length - visible.length;
+
+    return [
+      for (var i = 0; i < visible.length; i++) ...[
+        if (i > 0) const SizedBox(width: 2),
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+          ),
+          child: _buildLogoCircle(
+            name: visible[i].name,
+            logoUrl: visible[i].logoUrl,
+            size: 16.0,
+            colors: colors,
+          ),
+        ),
+      ],
+      if (extraCount > 0) ...[
+        const SizedBox(width: 4),
+        Text(
+          '+$extraCount',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.white.withValues(alpha: 0.8),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Widget _buildLogoCircle({
+    required String name,
+    required String? logoUrl,
+    required double size,
+    required FacteurColors colors,
+  }) {
+    final hasLogo = logoUrl != null && logoUrl.isNotEmpty;
+    if (hasLogo) {
+      return ClipOval(
+        child: FacteurImage(
+          imageUrl: logoUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorWidget: (context) => InitialCircle(
+            initial: name.isNotEmpty ? name[0].toUpperCase() : '?',
+            colors: colors,
+            size: size,
+          ),
+        ),
+      );
+    }
+    return InitialCircle(
+      initial: name.isNotEmpty ? name[0].toUpperCase() : '?',
+      colors: colors,
+      size: size,
     );
   }
 }

@@ -145,12 +145,21 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
   @override
   void initState() {
     super.initState();
-    _topicExpanded = widget.initialSection == ArticleSheetSection.topic;
-    _sourceExpanded = widget.initialSection == ArticleSheetSection.source;
-    _entitiesExpanded = widget.initialSection == ArticleSheetSection.entities;
-    _breakdownExpanded = widget.initialSection == ArticleSheetSection.breakdown;
+    final reason = widget.content.recommendationReason;
+    _topicExpanded =
+        widget.initialSection == ArticleSheetSection.topic;
+    _sourceExpanded =
+        widget.initialSection == ArticleSheetSection.source;
+    _entitiesExpanded =
+        widget.initialSection == ArticleSheetSection.entities;
+    _breakdownExpanded =
+        widget.initialSection == ArticleSheetSection.breakdown &&
+            reason != null &&
+            reason.breakdown.isNotEmpty;
     _personalizeExpanded =
-        widget.initialSection == ArticleSheetSection.personalize;
+        widget.initialSection == ArticleSheetSection.personalize ||
+            widget.initialSection == ArticleSheetSection.source ||
+            widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -170,8 +179,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     final isFollowed = matchingTopics.isNotEmpty;
     final matchedTopic = isFollowed ? matchingTopics.first : null;
     final parentLabel = getTopicMacroTheme(widget.topicSlug);
-    final parentEmoji =
-        parentLabel != null ? getMacroThemeEmoji(parentLabel) : '';
 
     return Container(
       constraints: BoxConstraints(
@@ -226,7 +233,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     ),
                   ),
                   subtitle: parentLabel != null
-                      ? '${parentEmoji.isNotEmpty ? '$parentEmoji ' : ''}$parentLabel'
+                      ? '${getMacroThemeEmoji(parentLabel)} $parentLabel'
                       : null,
                   isExpanded: _topicExpanded,
                   onToggle: () =>
@@ -314,7 +321,10 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 ),
                 if (_sourceExpanded) ...[
                   const SizedBox(height: FacteurSpacing.space3),
-                  _buildSourceContent(colorScheme: colorScheme, colors: colors, textTheme: textTheme),
+                  _buildSourceContent(
+                      colorScheme: colorScheme,
+                      colors: colors,
+                      textTheme: textTheme),
                 ],
               ],
 
@@ -325,8 +335,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 const SizedBox(height: FacteurSpacing.space3),
                 _buildSectionHeader(
                   context,
-                  icon:
-                      PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
+                  icon: PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
                   iconColor: colors.textSecondary,
                   title: 'Sujets de cet article',
                   isExpanded: _entitiesExpanded,
@@ -382,7 +391,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               const SizedBox(height: FacteurSpacing.space2),
               Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
               const SizedBox(height: FacteurSpacing.space3),
-
               _buildSectionHeader(
                 context,
                 title: 'PERSONNALISER MON FLUX',
@@ -421,6 +429,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     );
   }
 
+  // ── Compact badges row (unused for now) ──
+  // ignore: unused_element
+  Widget _buildCompactBadgesRow() => const SizedBox.shrink();
   // ── Topic content ──
 
   Widget _buildTopicContent({

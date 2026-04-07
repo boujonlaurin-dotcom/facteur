@@ -95,6 +95,7 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : DigestRecommendationReason.fromJson(
               json['recommendation_reason'] as Map<String, dynamic>),
       noteText: json['note_text'] as String?,
+      reculIntro: json['recul_intro'] as String?,
       badge: json['badge'] as String?,
     );
 
@@ -121,6 +122,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
       'note_text': instance.noteText,
+      'recul_intro': instance.reculIntro,
       'badge': instance.badge,
     };
 
@@ -151,6 +153,11 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
       ),
       biasHighlights: json['bias_highlights'] as String?,
       divergenceAnalysis: json['divergence_analysis'] as String?,
+      perspectiveSources: (json['perspective_sources'] as List<dynamic>?)
+              ?.map((e) => SourceMini.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      divergenceLevel: json['divergence_level'] as String?,
     );
 
 Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
@@ -171,6 +178,8 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'bias_distribution': instance.biasDistribution,
       'bias_highlights': instance.biasHighlights,
       'divergence_analysis': instance.divergenceAnalysis,
+      'perspective_sources': instance.perspectiveSources,
+      'divergence_level': instance.divergenceLevel,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>

@@ -11,7 +11,8 @@ import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
-import '../../feed/widgets/keyword_overflow_chip.dart';
+import '../../feed/widgets/initial_circle.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
@@ -20,7 +21,7 @@ import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
 import 'pas_de_recul_block.dart';
-import 'source_coverage_badge.dart';
+import 'topic_theme_chip.dart';
 
 /// A single topic section in the digest topics layout.
 ///
@@ -48,6 +49,7 @@ class TopicSection extends ConsumerStatefulWidget {
   final void Function(String sourceId)? onSourceTap;
   final bool editorialMode;
   final bool isSerene;
+  final int totalTopics;
 
   const TopicSection({
     super.key,
@@ -66,6 +68,7 @@ class TopicSection extends ConsumerStatefulWidget {
     this.onSourceTap,
     this.editorialMode = false,
     this.isSerene = false,
+    this.totalTopics = 5,
   });
 
   @override
@@ -504,9 +507,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          EditorialBadge.chip('actu', context: context) ??
-              const SizedBox.shrink(),
-          const SizedBox(height: 8),
           Text(
             article.title,
             maxLines: 4,
@@ -525,64 +525,57 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     );
   }
 
-  Widget _buildCompactBadgesRow(
-    FacteurColors colors,
-    bool isDark,
-    DigestTopic topic,
-  ) {
-    final perspCount = topic.perspectiveCount;
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      children: [
-        if (perspCount > 1)
-          SourceCoverageBadge(
-            perspectiveCount: perspCount,
-            isTrending: topic.isTrending,
-          ),
-        if (topic.isUne)
-          EditorialBadge.chip('actu', context: context) ?? const SizedBox.shrink(),
-      ],
-    );
-  }
-
   Widget _buildCompactFooter(
     FacteurColors colors,
     bool isDark,
     DigestTopic topic,
     String? timeAgo,
   ) {
-    final seen = <String>{};
-    final logoSources = <KeywordOverflowSource>[];
-    for (final a in topic.articles) {
-      final s = a.source;
-      if (s != null && s.id != null && seen.add(s.id!)) {
-        logoSources.add(KeywordOverflowSource(
-          sourceId: s.id!,
-          sourceName: s.name,
-          sourceLogoUrl: s.logoUrl,
-          articleCount: 1,
-        ));
+    // Use perspectiveSources if available, fallback to article sources
+    final List<({String? id, String name, String? logoUrl})> allSources;
+    if (topic.perspectiveSources.isNotEmpty) {
+      final seen = <String>{};
+      allSources = topic.perspectiveSources
+          .where((s) => seen.add(s.name))
+          .map((s) => (id: s.id, name: s.name, logoUrl: s.logoUrl))
+          .toList();
+    } else {
+      final seen = <String>{};
+      allSources = <({String? id, String name, String? logoUrl})>[];
+      for (final a in topic.articles) {
+        final s = a.source;
+        if (s != null && s.id != null && seen.add(s.id!)) {
+          allSources.add((id: s.id, name: s.name, logoUrl: s.logoUrl));
+        }
       }
     }
 
-    final extraSources = topic.perspectiveCount - logoSources.length;
+    const maxLogos = 4;
+    final visible = allSources.take(maxLogos).toList();
+    final extraCount = allSources.length - visible.length;
 
     return Row(
       children: [
-        if (logoSources.isNotEmpty)
-          SourceLogos(sources: logoSources, colors: colors),
-        if (extraSources > 0) ...[
+        for (var i = 0; i < visible.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          _buildLogoCircle(
+            name: visible[i].name,
+            logoUrl: visible[i].logoUrl,
+            size: i == 0 ? 20.0 : 14.0,
+            colors: colors,
+          ),
+        ],
+        if (extraCount > 0) ...[
           const SizedBox(width: 4),
           Text(
-            '+$extraSources source${extraSources > 1 ? 's' : ''}',
+            '+$extraCount',
             style: TextStyle(
               fontSize: 11,
               color: colors.textSecondary.withValues(alpha: 0.7),
             ),
           ),
         ],
-        if (logoSources.isNotEmpty && timeAgo != null)
+        if (visible.isNotEmpty && timeAgo != null)
           Text(
             ' \u00b7 ',
             style: TextStyle(
@@ -608,6 +601,35 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     );
   }
 
+  Widget _buildLogoCircle({
+    required String name,
+    required String? logoUrl,
+    required double size,
+    required FacteurColors colors,
+  }) {
+    final hasLogo = logoUrl != null && logoUrl.isNotEmpty;
+    if (hasLogo) {
+      return ClipOval(
+        child: FacteurImage(
+          imageUrl: logoUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorWidget: (context) => InitialCircle(
+            initial: name.isNotEmpty ? name[0].toUpperCase() : '?',
+            colors: colors,
+            size: size,
+          ),
+        ),
+      );
+    }
+    return InitialCircle(
+      initial: name.isNotEmpty ? name[0].toUpperCase() : '?',
+      colors: colors,
+      size: size,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Editorial mode: expanded state
   // ---------------------------------------------------------------------------
@@ -628,22 +650,21 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: isDark
-            ? colors.surface.withValues(alpha: 0.3)
-            : colors.surface.withValues(alpha: 0.4),
+            ? colors.surface.withValues(alpha: 0.05)
+            : colors.surface.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: colors.border.withValues(alpha: 0.15),
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
+      child: Stack(
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header fermeture ──
-          _buildExpandedHeader(colors, isDark, topic),
-
           // ── Articles (avant "De quoi on parle") ──
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           if (isActuMulti) ...[
             LayoutBuilder(
               builder: (context, constraints) {
@@ -663,17 +684,17 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ] else if (!actuArticles.first.isDismissed)
             _buildSingleArticle(actuArticles.first),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           // ── Carte "De quoi on parle ?" ──
           if (topic.introText != null) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colors.textSecondary.withValues(alpha: isDark ? 0.08 : 0.05),
+                  color: colors.textSecondary.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -683,8 +704,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                       'De quoi on parle ?',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                        color: colors.textSecondary.withValues(alpha: 0.7),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -702,70 +723,62 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 ),
               ),
             ),
+            const SizedBox(height: 8),
           ],
 
-          // Divergence analysis
+          // ── Analyse Facteur ──
           if (topic.divergenceAnalysis != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: DivergenceAnalysisBlock(
                 divergenceAnalysis: topic.divergenceAnalysis,
                 biasHighlights: topic.biasHighlights,
+                biasDistribution: topic.biasDistribution,
+                divergenceLevel: topic.divergenceLevel,
                 onCompare: _handleCompare,
                 perspectiveCount: topic.perspectiveCount,
+                perspectiveSources: topic.perspectiveSources,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
 
-          // Pas de recul
+          // ── Pas de recul ──
           if (deepArticle != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: PasDeReculBlock(
                 deepArticle: deepArticle,
+                reculIntro: deepArticle.reculIntro,
                 onTap: () => widget.onArticleTap(deepArticle),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildExpandedHeader(
-    FacteurColors colors,
-    bool isDark,
-    DigestTopic topic,
-  ) {
-    return GestureDetector(
-      onTap: () => setState(() => _isExpanded = false),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _computeSubjects(topic) ?? topic.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : colors.textPrimary,
+          // ── Toggle overlay top-right ──
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: () => setState(() => _isExpanded = false),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+                  size: 14,
+                  color: colors.textSecondary,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-              size: 16,
-              color: colors.textSecondary,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -826,25 +839,31 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final dotColor = isDark ? const Color(0x33FFFFFF) : const Color(0x332C1E10);
     final isSingleton = topic.articles.length == 1;
 
-    // Editorial mode: simplified header (no rank, no trending badges)
+    // Editorial mode: rank + badge + theme chip
     if (widget.editorialMode) {
+      final mainBadge =
+          topic.articles.isNotEmpty ? topic.articles.first.badge : null;
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           children: [
-            Expanded(
-              child: Text(
-                _computeSubjects(topic) ?? _simplifyReason(topic.reason),
-                style: TextStyle(
-                  color: labelColor,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  letterSpacing: 0.3,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            Text(
+              '${topic.rank}',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
               ),
             ),
+            Text(
+              ' \u2013 ',
+              style: TextStyle(color: colors.textSecondary),
+            ),
+            EditorialBadge.chip(mainBadge, context: context) ??
+                const SizedBox.shrink(),
+            const SizedBox(width: 8),
+            TopicThemeChip(themeSlug: topic.theme),
+            const Spacer(),
             if (topic.isCovered)
               Icon(
                 PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
@@ -885,7 +904,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _computeSubjects(topic) ?? _simplifyReason(topic.reason),
+                  _simplifyReason(topic.reason),
                   style: TextStyle(
                     color: labelColor,
                     fontWeight: FontWeight.w600,
@@ -984,19 +1003,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
 
     final imageVisible = _imageWillRender(article);
-    final badgeChip = EditorialBadge.chip(article.badge, context: context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (badgeChip != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 14),
-            child: badgeChip,
-          ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: FeedCard(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: FeedCard(
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(article),
             alwaysShowDescription: !imageVisible,
@@ -1024,8 +1034,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ),
             isFollowedSource: article.isFollowedSource,
           ),
-        ),
-      ],
     );
   }
 
@@ -1152,12 +1160,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
   }
 
-  /// Returns "Sujets : X, Y, Z" from backend-computed keywords, null if empty.
-  String? _computeSubjects(DigestTopic topic) {
-    final subjects = topic.subjects.where((s) => s.isNotEmpty).toList();
-    if (subjects.isEmpty) return null;
-    return 'Sujets\u00a0: ${subjects.join(', ')}';
-  }
 
   /// Clean up reason strings for display.
   static String _simplifyReason(String reason) {

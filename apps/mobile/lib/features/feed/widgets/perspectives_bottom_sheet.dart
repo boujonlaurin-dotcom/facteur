@@ -989,11 +989,11 @@ class _PerspectiveCard extends ConsumerWidget {
                       child: Text(
                         perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
                         style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                           color: colors.textPrimary,
-                          fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 3,
+                          fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 1,
                         ),
-                        maxLines: 3,
+                        maxLines: 4,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
