@@ -1610,6 +1610,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             ),
                                           ),
                                         ],
+                                        // Gear icon — same scale as bias dot
+                                        const SizedBox(width: 4),
+                                        Material(
+                                          color: Colors.transparent,
+                                          shape: const CircleBorder(),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: InkWell(
+                                            onTap: () => TopicChip.showArticleSheet(
+                                              context, content,
+                                              initialSection: ArticleSheetSection.source,
+                                            ),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(3),
+                                              child: Icon(
+                                                PhosphorIcons.gear(PhosphorIconsStyle.regular),
+                                                size: 11,
+                                                color: colors.textTertiary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                     const SizedBox(height: 1),
@@ -1640,26 +1661,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                         ),
                         ), // _SourceBadgeNudge
-                      ),
-                      // Gear icon — aligné à gauche, proche de la source
-                      IconButton(
-                        padding: const EdgeInsets.all(8),
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(),
-                        style: IconButton.styleFrom(
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          minimumSize: const Size(38, 38),
-                          shape: const CircleBorder(),
-                        ),
-                        onPressed: () => TopicChip.showArticleSheet(
-                          context, content,
-                          initialSection: ArticleSheetSection.source,
-                        ),
-                        icon: Icon(
-                          PhosphorIcons.gear(PhosphorIconsStyle.regular),
-                          size: 22,
-                          color: colors.textSecondary,
-                        ),
                       ),
                     ],
                   ),
