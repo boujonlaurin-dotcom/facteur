@@ -107,6 +107,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
   Timer? _inactivityTimer;
+  double _webScrollY = 0.0;
   late AnimationController _headerAutoController;
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
@@ -350,7 +351,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             var currentScrollY = window.scrollY;
             var scrollDelta = currentScrollY - lastScrollY;
             if (scrollDelta !== 0) {
-              ScrollBridge.postMessage('scroll_delta:' + scrollDelta);
+              ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
             }
             lastScrollY = currentScrollY;
           }, 150);
@@ -363,8 +364,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
     if (msg.startsWith('scroll_delta:')) {
-      final delta = double.tryParse(msg.substring(13));
+      final parts = msg.substring(13).split(':');
+      final delta = double.tryParse(parts[0]);
       if (delta != null) {
+        if (parts.length > 1) {
+          _webScrollY = double.tryParse(parts[1]) ?? _webScrollY;
+        }
         _onScrollDelta(delta);
       }
       return;
@@ -533,11 +538,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fabReappearController.forward(from: 0);
       }
     });
-    // Auto-hide header after 3s of inactivity (no scroll)
+    // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
     if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _headerOffset.value < 1.0) {
+        final nativeOffset = _scrollController.hasClients
+            ? _scrollController.offset
+            : double.infinity;
+        final isAtTop = _webScrollY <= 0 && nativeOffset <= 0;
+        if (mounted && !isAtTop && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });
