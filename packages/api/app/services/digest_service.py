@@ -1392,29 +1392,36 @@ class DigestService:
                     )
                 )
 
-            response_topics.append(
-                DigestTopic(
+            if topic_articles:
+                response_topics.append(
+                    DigestTopic(
+                        topic_id=subject.get("topic_id", ""),
+                        label=subject.get("label", ""),
+                        rank=subject.get("rank", 0),
+                        reason=subject.get("selection_reason", ""),
+                        is_trending=subject.get("is_a_la_une", False),
+                        is_une=subject.get("is_a_la_une", False),
+                        source_count=subject.get("source_count", 0),
+                        theme=None,
+                        topic_score=0.0,
+                        subjects=[subject.get("deep_angle", "")],
+                        articles=topic_articles,
+                        intro_text=subject.get("intro_text"),
+                        transition_text=subject.get("transition_text"),
+                        perspective_count=subject.get("perspective_count", 0),
+                        bias_distribution=subject.get("bias_distribution"),
+                        bias_highlights=subject.get("bias_highlights"),
+                        divergence_analysis=subject.get("divergence_analysis"),
+                        divergence_level=subject.get("divergence_level"),
+                        perspective_sources=subject.get("perspective_sources"),
+                    )
+                )
+            else:
+                logger.warning(
+                    "editorial_topic_no_articles_skipped",
                     topic_id=subject.get("topic_id", ""),
                     label=subject.get("label", ""),
-                    rank=subject.get("rank", 0),
-                    reason=subject.get("selection_reason", ""),
-                    is_trending=subject.get("is_a_la_une", False),
-                    is_une=subject.get("is_a_la_une", False),
-                    source_count=subject.get("source_count", 0),
-                    theme=None,
-                    topic_score=0.0,
-                    subjects=[subject.get("deep_angle", "")],
-                    articles=topic_articles,
-                    intro_text=subject.get("intro_text"),
-                    transition_text=subject.get("transition_text"),
-                    perspective_count=subject.get("perspective_count", 0),
-                    bias_distribution=subject.get("bias_distribution"),
-                    bias_highlights=subject.get("bias_highlights"),
-                    divergence_analysis=subject.get("divergence_analysis"),
-                    divergence_level=subject.get("divergence_level"),
-                    perspective_sources=subject.get("perspective_sources"),
                 )
-            )
 
         # Build pepite response
         default_action = {

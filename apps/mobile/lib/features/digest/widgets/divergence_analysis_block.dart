@@ -50,19 +50,19 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         gradient: LinearGradient(
           colors: isDark
               ? [
-                  colors.primary.withValues(alpha: 0.12),
-                  colors.primary.withValues(alpha: 0.06),
+                  colors.primary.withValues(alpha: 0.10),
+                  FacteurColors.sWarning.withValues(alpha: 0.12),
                 ]
               : [
-                  colors.primary.withValues(alpha: 0.08),
-                  colors.primary.withValues(alpha: 0.03),
+                  colors.primary.withValues(alpha: 0.06),
+                  FacteurColors.sWarning.withValues(alpha: 0.08),
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
+          color: FacteurColors.sWarning.withValues(alpha: isDark ? 0.35 : 0.25),
           width: 1,
         ),
       ),
@@ -73,7 +73,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           Row(
             children: [
               Text(
-                "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
+                '\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -159,9 +159,10 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                 onTap: widget.onCompare,
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: colors.primary,
+                    color: colors.textSecondary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -169,20 +170,20 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                     children: [
                       ..._buildLogoRow(colors, isDark),
                       if (widget.perspectiveSources.isNotEmpty)
-                        const SizedBox(width: 8),
-                      const Text(
+                        const SizedBox(width: 6),
+                      Text(
                         'Toutes les perspectives',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: colors.textSecondary,
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(
+                      Icon(
                         Icons.arrow_forward_ios,
-                        size: 11,
-                        color: Colors.white,
+                        size: 10,
+                        color: colors.textSecondary,
                       ),
                     ],
                   ),
@@ -209,7 +210,8 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.5), width: 1),
           ),
           child: _buildLogoCircle(
             name: visible[i].name,
