@@ -649,9 +649,7 @@ async def get_perspectives(
 
     cached_analysis = None
     analysis_result = await db.execute(
-        select(PerspectiveAnalysis).where(
-            PerspectiveAnalysis.content_id == content_id
-        )
+        select(PerspectiveAnalysis).where(PerspectiveAnalysis.content_id == content_id)
     )
     cached_row = analysis_result.scalars().first()
     if cached_row:
@@ -708,9 +706,7 @@ async def analyze_perspectives(
 
     # L2: Check DB for persisted analysis
     existing = await db.execute(
-        select(PerspectiveAnalysis).where(
-            PerspectiveAnalysis.content_id == content_id
-        )
+        select(PerspectiveAnalysis).where(PerspectiveAnalysis.content_id == content_id)
     )
     cached_row = existing.scalars().first()
     if cached_row:
