@@ -6,18 +6,24 @@ class MarkdownText extends StatelessWidget {
   final String text;
   final TextStyle style;
   final TextAlign textAlign;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   const MarkdownText({
     super.key,
     required this.text,
     required this.style,
     this.textAlign = TextAlign.start,
+    this.maxLines,
+    this.overflow,
   });
 
   @override
   Widget build(BuildContext context) {
     return RichText(
       textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: overflow ?? TextOverflow.clip,
       text: TextSpan(
         style: style,
         children: _parse(text, style),

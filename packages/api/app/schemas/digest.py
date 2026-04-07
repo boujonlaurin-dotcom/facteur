@@ -68,6 +68,7 @@ class DigestTopicArticle(BaseModel):
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
     badge: str | None = None  # "actu" | "pas_de_recul"
+    recul_intro: str | None = None
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
@@ -103,6 +104,13 @@ class DigestTopic(BaseModel):
     articles: list[DigestTopicArticle] = Field(default_factory=list)
     intro_text: str | None = None
     transition_text: str | None = None
+    # Perspective analysis fields
+    perspective_count: int = 0
+    bias_distribution: dict[str, int] | None = None
+    bias_highlights: str | None = None
+    divergence_analysis: str | None = None
+    divergence_level: str | None = None  # "low" | "medium" | "high"
+    perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
 
     class Config:
         from_attributes = True
@@ -145,6 +153,7 @@ class DigestItem(BaseModel):
         None, description="Detailed scoring breakdown with contributions"
     )
     badge: str | None = None  # "actu" | "pas_de_recul" | "pepite" | "coup_de_coeur"
+    recul_intro: str | None = None
 
     # User action tracking (default: no action yet)
     is_read: bool = False
@@ -169,6 +178,7 @@ class PepiteResponse(BaseModel):
     title: str
     url: str
     thumbnail_url: str | None = None
+    published_at: datetime | None = None
     source: SourceMini
     is_read: bool = False
     is_saved: bool = False
@@ -186,6 +196,7 @@ class CoupDeCoeurResponse(BaseModel):
     badge: str = "coup_de_coeur"
     url: str
     thumbnail_url: str | None = None
+    published_at: datetime | None = None
     source: SourceMini
     is_read: bool = False
     is_saved: bool = False

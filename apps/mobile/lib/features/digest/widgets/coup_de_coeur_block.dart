@@ -114,6 +114,7 @@ class CoupDeCoeurBlock extends StatelessWidget {
       title: coupDeCoeur.title,
       url: coupDeCoeur.url,
       thumbnailUrl: coupDeCoeur.thumbnailUrl,
+      publishedAt: coupDeCoeur.publishedAt,
       source: coupDeCoeur.source,
       badge: coupDeCoeur.badge,
       isRead: coupDeCoeur.isRead,

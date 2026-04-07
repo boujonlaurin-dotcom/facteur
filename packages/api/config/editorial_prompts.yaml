@@ -103,7 +103,14 @@ writing:
         Phrase 2 = ce qu'eclaire l'article de fond, en variant la formulation
         (voir PONTS ci-dessous).
       * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * NE PAS mentionner le nombre de sources ni les divergences
+        mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null (pas de transition entre sujets)
+    - recul_intro (par sujet, seulement si deep_article present) :
+      * 1 phrase courte (8-15 mots) qui donne envie de lire l'article de fond
+      * Pas de paraphrase du titre de l'article deep
+      * Forme impersonnelle, factuelle, dense
+      * Si pas de deep_article : null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
@@ -161,9 +168,11 @@ writing:
     {{
       "header_text": "Votre essentiel du ...",
       "subjects": [
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}}
       ],
       "closure_text": "Bonne lecture !",
       "cta_text": null
@@ -208,7 +217,14 @@ writing_serene:
         Phrase 2 = ce qu'eclaire l'article de fond (solutions, perspectives),
         en variant la formulation (voir PONTS ci-dessous).
       * Sans article deep : 1 phrase courte de cadrage. Pas de remplissage.
+      * NE PAS mentionner le nombre de sources ni les divergences
+        mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null
+    - recul_intro (par sujet, seulement si deep_article present) :
+      * 1 phrase courte (8-15 mots) qui donne envie de lire l'article de fond
+      * Pas de paraphrase du titre de l'article deep
+      * Forme impersonnelle, factuelle, dense
+      * Si pas de deep_article : null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
@@ -263,9 +279,11 @@ writing_serene:
     {{
       "header_text": "Votre essentiel du ...",
       "subjects": [
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}}
       ],
       "closure_text": "Bonne lecture !",
       "cta_text": null
@@ -279,7 +297,7 @@ pepite:
     Selectionne la "pepite du jour" pour le digest Facteur :
     un article surprenant, original ou meconnu qui merite d'etre decouvert.
 
-    La pepite doit etre DIFFERENTE des 3 sujets principaux du digest.
+    La pepite doit etre DIFFERENTE des 5 sujets principaux du digest.
     Elle apporte un angle inattendu, une decouverte, un sujet de niche interessant.
 
     Parmi les articles candidats, selectionne le plus surprenant et ecris

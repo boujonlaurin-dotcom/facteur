@@ -23,6 +23,7 @@ class OnboardingResult {
   final ErrorType? errorType;
   final int? interestsCreated;
   final int? preferencesCreated;
+  final int? sourcesCreated;
 
   const OnboardingResult._({
     required this.success,
@@ -31,6 +32,7 @@ class OnboardingResult {
     this.errorType,
     this.interestsCreated,
     this.preferencesCreated,
+    this.sourcesCreated,
   });
 
   /// Créer un résultat de succès
@@ -38,12 +40,14 @@ class OnboardingResult {
     required UserProfile profile,
     int? interestsCreated,
     int? preferencesCreated,
+    int? sourcesCreated,
   }) {
     return OnboardingResult._(
       success: true,
       profile: profile,
       interestsCreated: interestsCreated,
       preferencesCreated: preferencesCreated,
+      sourcesCreated: sourcesCreated,
     );
   }
 
@@ -79,7 +83,7 @@ class OnboardingResult {
   @override
   String toString() {
     if (success) {
-      return 'OnboardingResult.success(profile: ${profile?.id}, interests: $interestsCreated, preferences: $preferencesCreated)';
+      return 'OnboardingResult.success(profile: ${profile?.id}, interests: $interestsCreated, preferences: $preferencesCreated, sources: $sourcesCreated)';
     } else {
       return 'OnboardingResult.error(type: $errorType, message: $errorMessage)';
     }

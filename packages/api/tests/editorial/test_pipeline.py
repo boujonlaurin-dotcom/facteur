@@ -60,12 +60,12 @@ def mock_dependencies():
         patch("app.services.editorial.pipeline.CurationService") as mock_curation_cls,
         patch("app.services.editorial.pipeline.DeepMatcher") as mock_deep_cls,
         patch("app.services.editorial.pipeline.ActuMatcher") as mock_actu_cls,
+        patch("app.services.editorial.pipeline.PerspectiveService") as mock_perspective_cls,
     ):
         # Config
-        from app.services.editorial.config import EditorialConfig, FeatureFlags, PipelineConfig
+        from app.services.editorial.config import EditorialConfig, PipelineConfig
         config = EditorialConfig(
             pipeline=PipelineConfig(),
-            feature_flags=FeatureFlags(editorial_enabled=True),
         )
         mock_config.return_value = config
 
@@ -90,31 +90,21 @@ def mock_dependencies():
         mock_actu = MagicMock()
         mock_actu_cls.return_value = mock_actu
 
+        # Perspective service
+        mock_perspective = MagicMock()
+        mock_perspective.get_perspectives_hybrid = AsyncMock(return_value=([], []))
+        mock_perspective.resolve_bias = AsyncMock(return_value="center")
+        mock_perspective.analyze_divergences = AsyncMock(return_value=None)
+        mock_perspective_cls.return_value = mock_perspective
+
         yield {
             "config": config,
             "llm": mock_llm,
             "curation": mock_curation,
             "deep": mock_deep,
             "actu": mock_actu,
+            "perspective": mock_perspective,
         }
-
-
-class TestIsEnabledForUser:
-    def test_enabled_when_config_and_llm_ready(self, mock_dependencies):
-        from app.services.editorial.pipeline import EditorialPipelineService
-        session = AsyncMock()
-        svc = EditorialPipelineService(session)
-
-        assert svc.is_enabled_for_user("any-user") is True
-
-    def test_disabled_when_llm_not_ready(self, mock_dependencies):
-        mock_dependencies["llm"].is_ready = False
-
-        from app.services.editorial.pipeline import EditorialPipelineService
-        session = AsyncMock()
-        svc = EditorialPipelineService(session)
-
-        assert svc.is_enabled_for_user("any-user") is False
 
 
 class TestComputeGlobalContext:
@@ -130,13 +120,15 @@ class TestComputeGlobalContext:
             _make_cluster_mock("c1", "Retraites"),
             _make_cluster_mock("c2", "Inflation", theme="economie"),
             _make_cluster_mock("c3", "Climat", theme="environnement"),
+            _make_cluster_mock("c4", "Education", theme="societe"),
+            _make_cluster_mock("c5", "Tech", theme="technologie"),
         ]
         with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = clusters
             mock_detector_cls.return_value = mock_detector
 
-            # Mock curation: À la Une picks c1, LLM picks remaining 2
+            # Mock curation: À la Une picks c1, LLM picks remaining 4
             mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
                 topic_id="c1", label="Retraites", selection_reason="Traité par 1 sources",
                 deep_angle="D", source_count=1,
@@ -144,6 +136,8 @@ class TestComputeGlobalContext:
             remaining_topics = [
                 SelectedTopic(topic_id="c2", label="Inflation", selection_reason="R", deep_angle="D"),
                 SelectedTopic(topic_id="c3", label="Climat", selection_reason="R", deep_angle="D"),
+                SelectedTopic(topic_id="c4", label="Education", selection_reason="R", deep_angle="D"),
+                SelectedTopic(topic_id="c5", label="Tech", selection_reason="R", deep_angle="D"),
             ]
             mock_dependencies["curation"].select_topics.return_value = remaining_topics
 
@@ -158,6 +152,8 @@ class TestComputeGlobalContext:
                 "c1": deep_1,
                 "c2": None,
                 "c3": deep_3,
+                "c4": None,
+                "c5": None,
             }
 
             # match_global is now called in global phase — pass subjects through
@@ -170,7 +166,7 @@ class TestComputeGlobalContext:
 
         assert result is not None
         assert isinstance(result, EditorialGlobalContext)
-        assert len(result.subjects) == 3
+        assert len(result.subjects) == 5
         assert result.subjects[0].topic_id == "c1"
         assert result.generated_at is not None
 

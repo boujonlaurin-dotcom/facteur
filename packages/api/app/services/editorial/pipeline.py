@@ -11,12 +11,15 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
+from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
@@ -29,9 +32,14 @@ from app.services.editorial.schemas import (
     EditorialPipelineResult,
     EditorialSubject,
     PepiteArticle,
+    PerspectiveSourceMini,
     WritingOutput,
+    compute_bias_distribution,
+    compute_bias_highlights,
+    compute_divergence_level,
 )
 from app.services.editorial.writer import EditorialWriterService
+from app.services.perspective_service import PerspectiveService
 
 logger = structlog.get_logger()
 
@@ -48,10 +56,6 @@ class EditorialPipelineService:
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours
         )
         self.deep_matcher = DeepMatcher(session, self.llm, self.config)
-
-    def is_enabled_for_user(self, user_id: str) -> bool:
-        """Check if editorial pipeline is enabled for a user."""
-        return self.config.is_enabled_for_user(user_id) and self.llm.is_ready
 
     async def compute_global_context(
         self,
@@ -116,7 +120,7 @@ class EditorialPipelineService:
         # ÉTAPE 2: LLM curation — select remaining topics
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
-        remaining_count = 2 if a_la_une_topic else 3
+        remaining_count = 4 if a_la_une_topic else 5
         selected_topics = await self.curation.select_topics(
             clusters,
             subjects_count=remaining_count,
@@ -220,6 +224,158 @@ class EditorialPipelineService:
                     label=s.label,
                 )
 
+        # ÉTAPE 3C: Perspective analysis (batch, parallel)
+        perspective_service = PerspectiveService(db=self.session)
+        step_start = time.time()
+
+        async def _process_perspectives(
+            subject: EditorialSubject,
+            cluster: TopicCluster | None,
+        ) -> None:
+            """Enrich one subject with perspective data. Fallback on error."""
+            if not cluster or not cluster.contents:
+                return
+
+            representative = sorted(
+                cluster.contents, key=lambda c: c.published_at, reverse=True
+            )[0]
+
+            exclude_domain = None
+            if representative.source and representative.source.url:
+                try:
+                    parsed = urlparse(representative.source.url)
+                    exclude_domain = parsed.netloc
+                    if exclude_domain and exclude_domain.startswith("www."):
+                        exclude_domain = exclude_domain[4:]
+                except Exception:
+                    pass
+
+            try:
+                perspectives, _ = await perspective_service.get_perspectives_hybrid(
+                    content=representative,
+                    exclude_domain=exclude_domain,
+                )
+            except Exception:
+                logger.warning(
+                    "editorial_pipeline.perspectives_fallback",
+                    topic_id=subject.topic_id,
+                )
+                subject.perspective_count = len(cluster.source_ids)
+                return
+
+            subject.perspective_count = len(perspectives)
+            subject.bias_distribution = compute_bias_distribution(perspectives)
+            subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
+
+            # Build perspective_sources — max 6, deduplicated by domain
+            seen_domains: set[str] = set()
+            unique_perspectives = []
+            for p in perspectives:
+                if p.source_domain not in seen_domains:
+                    seen_domains.add(p.source_domain)
+                    unique_perspectives.append(p)
+                if len(unique_perspectives) >= 6:
+                    break
+
+            # Best-effort logo resolution from DB
+            logo_map: dict[str, str] = {}
+            if unique_perspectives:
+                try:
+                    domain_patterns = [
+                        f"%{p.source_domain}%" for p in unique_perspectives
+                    ]
+                    stmt = select(Source.url, Source.logo_url).where(
+                        or_(
+                            *[Source.url.ilike(pattern) for pattern in domain_patterns]
+                        ),
+                        Source.logo_url.is_not(None),
+                    )
+                    result = await self.session.execute(stmt)
+                    for row in result.all():
+                        try:
+                            parsed = urlparse(row.url)
+                            domain = parsed.netloc
+                            if domain.startswith("www."):
+                                domain = domain[4:]
+                            if domain and domain not in logo_map:
+                                logo_map[domain] = row.logo_url
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.warning(
+                        "editorial_pipeline.logo_resolution_failed",
+                        topic_id=subject.topic_id,
+                    )
+
+            subject.perspective_sources = [
+                PerspectiveSourceMini(
+                    name=p.source_name,
+                    domain=p.source_domain,
+                    bias_stance=p.bias_stance,
+                    logo_url=logo_map.get(p.source_domain),
+                ).model_dump(mode="json")
+                for p in unique_perspectives
+            ]
+
+            if len(perspectives) >= 3:
+                try:
+                    source_bias = await perspective_service.resolve_bias(
+                        domain=exclude_domain or "",
+                        source_name=(
+                            representative.source.name if representative.source else ""
+                        ),
+                    )
+                    divergence_result = await perspective_service.analyze_divergences(
+                        article_title=representative.title,
+                        source_name=(
+                            representative.source.name if representative.source else ""
+                        ),
+                        source_bias=source_bias,
+                        perspectives=[
+                            {
+                                "title": p.title,
+                                "url": p.url,
+                                "source_name": p.source_name,
+                                "source_domain": p.source_domain,
+                                "bias_stance": p.bias_stance,
+                                "published_at": p.published_at,
+                                "description": p.description,
+                            }
+                            for p in perspectives
+                        ],
+                        article_description=representative.description,
+                    )
+                    if isinstance(divergence_result, dict):
+                        subject.divergence_analysis = divergence_result.get("analysis")
+                        subject.divergence_level = divergence_result.get(
+                            "divergence_level"
+                        )
+                    elif isinstance(divergence_result, str):
+                        subject.divergence_analysis = divergence_result
+                except Exception:
+                    logger.warning(
+                        "editorial_pipeline.divergence_analysis_failed",
+                        topic_id=subject.topic_id,
+                    )
+                    subject.divergence_analysis = None
+
+            # Fallback: derive divergence_level from stats if LLM didn't provide it
+            if subject.divergence_level is None and subject.bias_distribution:
+                subject.divergence_level = compute_divergence_level(
+                    subject.bias_distribution
+                )
+
+        await asyncio.gather(
+            *(_process_perspectives(s, cluster_map.get(s.topic_id)) for s in subjects),
+            return_exceptions=True,
+        )
+
+        perspective_time = time.time() - step_start
+        logger.info(
+            "editorial_pipeline.perspectives_done",
+            duration_ms=round(perspective_time * 1000, 2),
+        )
+
         # Serialize cluster data (clusters are dataclasses)
         cluster_data = [
             {
@@ -267,6 +423,8 @@ class EditorialPipelineService:
                 if sw:
                     s.intro_text = sw.intro_text
                     s.transition_text = sw.transition_text
+                    if sw.recul_intro and s.deep_article:
+                        s.deep_article.recul_intro = sw.recul_intro
         elif isinstance(writing_raw, Exception):
             logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
 
