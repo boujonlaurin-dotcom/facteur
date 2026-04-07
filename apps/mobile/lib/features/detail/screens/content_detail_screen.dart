@@ -542,11 +542,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _inactivityTimer?.cancel();
     if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        final nativeOffset = _scrollController.hasClients
-            ? _scrollController.offset
-            : double.infinity;
-        final isAtTop = _webScrollY <= 0 && nativeOffset <= 0;
-        if (mounted && !isAtTop && _headerOffset.value < 1.0) {
+        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });
