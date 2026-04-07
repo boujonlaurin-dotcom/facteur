@@ -349,12 +349,9 @@ class DigestGenerationJob:
                 )
 
                 # Determine expected format version for this user
-                expected_version = (
-                    "editorial_v1"
-                    if editorial_config
-                    and editorial_config.is_enabled_for_user(str(user_id))
-                    else "topics_v1"
-                )
+                # NOTE: editorial_config.is_enabled_for_user() not yet implemented;
+                # default to topics_v1 for now.
+                expected_version = "topics_v1"
 
                 if existing and existing.format_version != expected_version:
                     logger.info(
