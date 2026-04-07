@@ -105,9 +105,9 @@ class RecommendationService:
         3. Appliquer la pénalité de fatigue de source (Diversité).
         4. Trier et paginer.
         """
-        # 1. Fetch user context in parallel using separate sessions
-        # Each query gets its own session from the pool to avoid AsyncSession
-        # concurrency issues while cutting ~800ms of sequential round-trips.
+        # 1. Fetch user context in parallel using 2 batched sessions
+        # Queries are grouped into 2 sessions (instead of 5) to limit pool
+        # pressure while still cutting latency vs fully sequential execution.
         from datetime import date as date_module
 
         from sqlalchemy.orm import joinedload
@@ -137,30 +137,25 @@ class RecommendationService:
             DailyDigest.target_date == date_module.today(),
         )
 
-        async def _pread_scalar(stmt):
+        async def _batch_user_context():
             async with async_session_maker() as s:
-                return await s.scalar(stmt)
+                profile = await s.scalar(profile_stmt)
+                sources = (await s.execute(sources_stmt)).all()
+                subtopics = (await s.scalars(subtopics_stmt)).all()
+                return profile, sources, subtopics
 
-        async def _pread_rows(stmt):
+        async def _batch_personalization():
             async with async_session_maker() as s:
-                return (await s.execute(stmt)).all()
-
-        async def _pread_scalars_all(stmt):
-            async with async_session_maker() as s:
-                return (await s.scalars(stmt)).all()
+                pz = await s.scalar(personalization_stmt)
+                digest = await s.scalar(digest_stmt)
+                return pz, digest
 
         (
-            user_profile,
-            followed_sources_rows,
-            subtopics_rows,
-            personalization,
-            digest_row,
+            (user_profile, followed_sources_rows, subtopics_rows),
+            (personalization, digest_row),
         ) = await asyncio.gather(
-            _pread_scalar(profile_stmt),
-            _pread_rows(sources_stmt),
-            _pread_scalars_all(subtopics_stmt),
-            _pread_scalar(personalization_stmt),
-            _pread_scalar(digest_stmt),
+            _batch_user_context(),
+            _batch_personalization(),
         )
 
         t1 = time.monotonic()
@@ -386,7 +381,8 @@ class RecommendationService:
             custom_topics_stmt = select(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_id
             )
-            user_custom_topics = list(await _pread_scalars_all(custom_topics_stmt))
+            async with async_session_maker() as s:
+                user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
             self.user_custom_topics = user_custom_topics
 
             # Snapshot all articles before regroupement removes hidden ones
@@ -460,7 +456,7 @@ class RecommendationService:
         scored_candidates = []
         now = datetime.datetime.now(datetime.UTC)
 
-        # Phase 3: Parallel scoring context queries (separate sessions)
+        # Phase 3: Parallel scoring context queries (2 batched sessions)
         from app.models.user_topic_profile import UserTopicProfile
 
         source_affinity_stmt = self._source_affinity_stmt(user_id)
@@ -469,12 +465,13 @@ class RecommendationService:
             UserTopicProfile.user_id == user_id
         )
 
-        async def _pread_source_affinity():
+        async def _batch_scoring_context():
             async with async_session_maker() as s:
-                rows = (await s.execute(source_affinity_stmt)).all()
-                return self._normalize_affinity(rows)
+                affinity_rows = (await s.execute(source_affinity_stmt)).all()
+                custom_rows = (await s.scalars(custom_topics_stmt)).all()
+                return self._normalize_affinity(affinity_rows), list(custom_rows)
 
-        async def _pread_impressions():
+        async def _batch_impressions():
             if not impression_ids:
                 return {}
             async with async_session_maker() as s:
@@ -494,15 +491,12 @@ class RecommendationService:
                 }
 
         (
-            source_affinity_scores,
+            (source_affinity_scores, user_custom_topics),
             impression_data,
-            user_custom_topics_rows,
         ) = await asyncio.gather(
-            _pread_source_affinity(),
-            _pread_impressions(),
-            _pread_scalars_all(custom_topics_stmt),
+            _batch_scoring_context(),
+            _batch_impressions(),
         )
-        user_custom_topics = list(user_custom_topics_rows)
         self.user_custom_topics = user_custom_topics  # Expose for caller reuse
 
         t4 = time.monotonic()

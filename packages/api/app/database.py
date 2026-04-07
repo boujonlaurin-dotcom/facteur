@@ -45,9 +45,10 @@ if _use_queue_pool:
         # Use AsyncAdaptedQueuePool for proper connection management
         poolclass=AsyncAdaptedQueuePool,
         # Pool size optimized for Supabase PgBouncer (60 connection limit shared)
-        # Conservative sizing to avoid overwhelming Supabase connection pooler
-        pool_size=5,
-        max_overflow=5,
+        # Feed endpoint uses ~3 connections per request (2 batched parallel sessions + 1 main)
+        # pool_size=10 + max_overflow=10 = 20 max → supports ~6 concurrent feed requests
+        pool_size=10,
+        max_overflow=10,
         # Connection timeout - increased to prevent pool exhaustion
         pool_timeout=30,
         # Recycle connections frequently to prevent Supabase from killing them
