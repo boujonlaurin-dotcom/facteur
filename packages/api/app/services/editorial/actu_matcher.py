@@ -83,10 +83,12 @@ class ActuMatcher:
                     cutoff=cutoff,
                     max_extra=2,
                 )
-                updated = subject.model_copy(update={
-                    "actu_article": matched,
-                    "extra_actu_articles": extras,
-                })
+                updated = subject.model_copy(
+                    update={
+                        "actu_article": matched,
+                        "extra_actu_articles": extras,
+                    }
+                )
             else:
                 updated = subject
 
@@ -162,10 +164,14 @@ class ActuMatcher:
                     cutoff=cutoff,
                     max_extra=2,
                 )
-                result.append(subject.model_copy(update={
-                    "actu_article": best,
-                    "extra_actu_articles": extras,
-                }))
+                result.append(
+                    subject.model_copy(
+                        update={
+                            "actu_article": best,
+                            "extra_actu_articles": extras,
+                        }
+                    )
+                )
             else:
                 logger.warning(
                     "actu_matcher.no_global_match",
@@ -244,14 +250,18 @@ class ActuMatcher:
             if content.source_id in used_sources:
                 continue
             used_sources.add(content.source_id)
-            extras.append(MatchedActuArticle(
-                content_id=content.id,
-                title=content.title,
-                source_name=content.source.name if content.source else "Source inconnue",
-                source_id=content.source_id,
-                is_user_source=False,
-                published_at=content.published_at,
-            ))
+            extras.append(
+                MatchedActuArticle(
+                    content_id=content.id,
+                    title=content.title,
+                    source_name=content.source.name
+                    if content.source
+                    else "Source inconnue",
+                    source_id=content.source_id,
+                    is_user_source=False,
+                    published_at=content.published_at,
+                )
+            )
             if len(extras) >= max_extra:
                 break
 
