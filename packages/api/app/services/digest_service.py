@@ -995,6 +995,7 @@ class DigestService:
                     "selection_reason": s.selection_reason,
                     "deep_angle": s.deep_angle,
                     "source_count": s.source_count,
+                    "theme": s.theme,
                     "is_a_la_une": s.is_a_la_une,
                     "intro_text": s.intro_text,
                     "transition_text": s.transition_text,
@@ -1015,6 +1016,18 @@ class DigestService:
                     }
                     if s.actu_article
                     else None,
+                    "extra_actu_articles": [
+                        {
+                            "content_id": str(a.content_id),
+                            "title": a.title,
+                            "source_name": a.source_name,
+                            "source_id": str(a.source_id),
+                            "is_user_source": a.is_user_source,
+                            "badge": "actu",
+                            "published_at": a.published_at.isoformat(),
+                        }
+                        for a in s.extra_actu_articles
+                    ],
                     "deep_article": {
                         "content_id": str(s.deep_article.content_id),
                         "title": s.deep_article.title,
@@ -1303,6 +1316,8 @@ class DigestService:
         for subject in subjects_data:
             if subject.get("actu_article"):
                 all_content_ids.append(UUID(subject["actu_article"]["content_id"]))
+            for extra in subject.get("extra_actu_articles", []):
+                all_content_ids.append(UUID(extra["content_id"]))
             if subject.get("deep_article"):
                 all_content_ids.append(UUID(subject["deep_article"]["content_id"]))
 
@@ -1343,12 +1358,16 @@ class DigestService:
         for subject in subjects_data:
             topic_articles: list[DigestTopicArticle] = []
 
-            # Process actu article
-            for art_key in ("actu_article", "deep_article"):
-                art_data = subject.get(art_key)
-                if not art_data:
-                    continue
+            # Build ordered article list: actu → extras → deep
+            art_entries: list[tuple[str, dict]] = []
+            if subject.get("actu_article"):
+                art_entries.append(("actu_article", subject["actu_article"]))
+            for extra in subject.get("extra_actu_articles", []):
+                art_entries.append(("extra_actu_article", extra))
+            if subject.get("deep_article"):
+                art_entries.append(("deep_article", subject["deep_article"]))
 
+            for art_idx, (art_key, art_data) in enumerate(art_entries):
                 content_id = UUID(art_data["content_id"])
                 content = content_map.get(content_id)
                 if not content:
@@ -1396,7 +1415,7 @@ class DigestService:
                     published_at=content.published_at,
                     is_paid=content.is_paid if hasattr(content, "is_paid") else False,
                     source=content.source,
-                    rank=1 if art_key == "actu_article" else 2,
+                    rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
                     recul_intro=art_data.get("recul_intro"),
@@ -1448,7 +1467,7 @@ class DigestService:
                         is_trending=subject.get("is_a_la_une", False),
                         is_une=subject.get("is_a_la_une", False),
                         source_count=subject.get("source_count", 0),
-                        theme=None,
+                        theme=subject.get("theme"),
                         topic_score=0.0,
                         subjects=[subject.get("deep_angle", "")],
                         articles=topic_articles,

@@ -186,6 +186,7 @@ class EditorialPipelineService:
                 deep_article=deep_matches.get(topic.topic_id),
                 source_count=topic.source_count
                 or cluster_map_counts.get(topic.topic_id, 0),
+                theme=topic.theme,
                 is_a_la_une=(i == 0 and a_la_une_topic is not None),
             )
             for i, topic in enumerate(selected_topics)

@@ -59,21 +59,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             const SizedBox(height: FacteurSpacing.space6),
           ] else ...[
             const SizedBox(height: FacteurSpacing.space4),
-
             const Center(child: FacteurLogo(size: 28)),
-
             const SizedBox(height: FacteurSpacing.space3),
           ],
-
           if (!_showManifesto) ...[
             Text(
               OnboardingStrings.welcomeTitle,
               style: Theme.of(context).textTheme.displayLarge,
               textAlign: TextAlign.center,
             ),
-
             const SizedBox(height: FacteurSpacing.space3),
-
             Text(
               OnboardingStrings.welcomeSubtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -137,7 +132,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               ),
             ),
           ],
-
           TextButton(
             onPressed: _toggleManifesto,
             style: TextButton.styleFrom(
@@ -164,9 +158,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-
           ElevatedButton(
             onPressed: () {
               ref.read(onboardingProvider.notifier).continueToIntro2();
@@ -176,7 +168,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             ),
             child: const Text(OnboardingStrings.welcomeStartButton),
           ),
-
           const SizedBox(height: FacteurSpacing.space4),
         ],
       ),
@@ -236,54 +227,49 @@ class IntroScreen2 extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Spacer(flex: 2),
-
           Text(
             OnboardingStrings.intro2Title,
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
-
           const SizedBox(height: FacteurSpacing.space3),
-
           Text.rich(
             TextSpan(
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
-              children: [
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart1),
+              children: const [
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart1),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold1,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart2),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart2),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold2,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart3),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart3),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold3,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart4),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart4),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold4,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart5),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart5),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold5,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(text: OnboardingStrings.intro2SubtitlePart6),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart6),
               ],
             ),
             textAlign: TextAlign.center,
           ),
-
           const Spacer(flex: 3),
-
           ElevatedButton(
             onPressed: () {
               ref.read(onboardingProvider.notifier).continueAfterIntro();
@@ -293,7 +279,6 @@ class IntroScreen2 extends ConsumerWidget {
             ),
             child: const Text(OnboardingStrings.intro2Button),
           ),
-
           const SizedBox(height: FacteurSpacing.space4),
         ],
       ),

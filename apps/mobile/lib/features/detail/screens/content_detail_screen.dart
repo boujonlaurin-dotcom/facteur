@@ -32,6 +32,7 @@ import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
+import '../../digest/widgets/article_thumbs_feedback.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -2077,6 +2078,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ],
                           ),
                         ),
+                      ),
+
+                      // Article feedback thumbs
+                      Container(
+                        color: colors.backgroundPrimary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FacteurSpacing.space4,
+                        ),
+                        child: ArticleThumbsFeedback(contentId: content.id),
                       ),
 
                       // ZONE 2: CTA button — intentional transition to WebView

@@ -550,6 +550,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   ? () => widget.onReportNotSerene!(item)
                   : null,
               isSaved: item.isSaved,
+              topicChipWidget: TopicChip(
+                content: _convertToContent(item),
+              ),
             ),
           ),
         ),
@@ -577,6 +580,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       ),
       isLiked: item.isLiked,
       isSaved: item.isSaved,
+      topics: item.topics,
     );
   }
 

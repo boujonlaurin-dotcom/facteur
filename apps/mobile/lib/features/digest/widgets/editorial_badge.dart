@@ -14,7 +14,7 @@ class EditorialBadge {
   static String? labelFor(String? badge) {
     switch (badge) {
       case 'actu':
-        return "\u{1F534} L'actu du jour";
+        return "L'actu du jour";
       case 'pas_de_recul':
         return '\u{1F52D} Prendre du recul';
       case 'pepite':
@@ -112,7 +112,7 @@ class EditorialBadge {
     switch (badge) {
       case 'actu':
         return _ChipConfig(
-          label: "\u{1F534} L'actu du jour",
+          label: "L'actu du jour",
           color: colors.primary,
         );
       case 'pas_de_recul':

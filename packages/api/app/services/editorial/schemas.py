@@ -25,6 +25,7 @@ class SelectedTopic(BaseModel):
     selection_reason: str
     deep_angle: str  # systemic angle to search for in deep sources
     source_count: int = 0  # number of unique sources covering this topic
+    theme: str | None = None
     is_a_la_une: bool = False
 
 
@@ -61,12 +62,14 @@ class EditorialSubject(BaseModel):
     selection_reason: str
     deep_angle: str
     source_count: int = 0  # number of unique sources covering this topic
+    theme: str | None = None
     is_a_la_une: bool = False  # headline subject (rank 1, most covered)
     # Editorial text fields — populated by WriterService (ÉTAPE 4)
     intro_text: str | None = None
     transition_text: str | None = None
     # Matched articles
     actu_article: MatchedActuArticle | None = None
+    extra_actu_articles: list[MatchedActuArticle] = []
     deep_article: MatchedDeepArticle | None = None
     # Perspective analysis — populated by PerspectiveService (ÉTAPE 3C)
     perspective_count: int = 0

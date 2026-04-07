@@ -5,7 +5,6 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
-import 'article_thumbs_feedback.dart';
 import 'editorial_badge.dart';
 
 /// Editorial wrapper for the coup de cœur article.
@@ -94,9 +93,6 @@ class CoupDeCoeurBlock extends StatelessWidget {
             editorialBadgeLabel: null,
           ),
         ),
-
-        // Article feedback thumbs
-        ArticleThumbsFeedback(contentId: coupDeCoeur.contentId),
       ],
     );
   }

@@ -45,28 +45,34 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isDark
               ? [
-                  colors.primary.withValues(alpha: 0.10),
-                  FacteurColors.sWarning.withValues(alpha: 0.12),
+                  colors.primary.withValues(alpha: 0.15),
+                  FacteurColors.sWarning.withValues(alpha: 0.18),
                 ]
               : [
-                  colors.primary.withValues(alpha: 0.06),
-                  FacteurColors.sWarning.withValues(alpha: 0.08),
+                  colors.primary.withValues(alpha: 0.08),
+                  FacteurColors.sWarning.withValues(alpha: 0.12),
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: FacteurColors.sWarning.withValues(alpha: isDark ? 0.35 : 0.25),
-          width: 1,
-        ),
       ),
-      child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              width: 3,
+              color: FacteurColors.sWarning.withValues(alpha: isDark ? 0.60 : 0.50),
+            ),
+          ),
+        ),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header with info tooltip
@@ -75,7 +81,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
               Text(
                 '\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)',
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: colors.textSecondary,
                 ),
@@ -119,7 +125,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                       fontSize: 14,
                       height: 1.5,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.7)
+                          ? Colors.white.withValues(alpha: 0.85)
                           : colors.textSecondary,
                     ),
                   )
@@ -132,7 +138,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                       fontSize: 14,
                       height: 1.5,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.7)
+                          ? Colors.white.withValues(alpha: 0.85)
                           : colors.textSecondary,
                     ),
                   ),
@@ -192,6 +198,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
             ),
           ],
         ],
+      ),
       ),
     );
   }

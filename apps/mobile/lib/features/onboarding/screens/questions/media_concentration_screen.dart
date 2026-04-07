@@ -38,29 +38,26 @@ class MediaConcentrationScreen extends ConsumerWidget {
                 children: [
                   Center(
                     child: ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.medium),
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
                       child: Image.asset(
                         'assets/images/media_concentration_map.png',
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => Container(
                           decoration: BoxDecoration(
                             color: colors.surface,
-                            borderRadius: BorderRadius.circular(
-                                FacteurRadius.medium),
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.medium),
                           ),
                           child: Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(Icons.image_outlined,
-                                    size: 48,
-                                    color: colors.textTertiary),
+                                    size: 48, color: colors.textTertiary),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Carte des médias',
-                                  style: TextStyle(
-                                      color: colors.textTertiary),
+                                  style: TextStyle(color: colors.textTertiary),
                                 ),
                               ],
                             ),
@@ -77,17 +74,14 @@ class MediaConcentrationScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color:
-                            colors.textPrimary.withValues(alpha: 0.6),
-                        borderRadius:
-                            BorderRadius.circular(FacteurRadius.pill),
+                        color: colors.textPrimary.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(FacteurRadius.pill),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.zoom_in,
-                              size: 14,
-                              color: colors.backgroundPrimary),
+                              size: 14, color: colors.backgroundPrimary),
                           const SizedBox(width: 4),
                           Text(
                             'Agrandir',
@@ -114,15 +108,13 @@ class MediaConcentrationScreen extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                   ),
-              children: [
-                const TextSpan(
-                    text: OnboardingStrings.mediaConcentrationTextPart1),
+              children: const [
+                TextSpan(text: OnboardingStrings.mediaConcentrationTextPart1),
                 TextSpan(
                   text: OnboardingStrings.mediaConcentrationTextBold1,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(
-                    text: OnboardingStrings.mediaConcentrationTextPart2),
+                TextSpan(text: OnboardingStrings.mediaConcentrationTextPart2),
               ],
             ),
             textAlign: TextAlign.center,
@@ -203,8 +195,7 @@ class _FullscreenImageViewer extends StatelessWidget {
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: IconButton.styleFrom(
-                    backgroundColor:
-                        colors.textPrimary.withValues(alpha: 0.5),
+                    backgroundColor: colors.textPrimary.withValues(alpha: 0.5),
                   ),
                   icon: Icon(Icons.close,
                       color: colors.backgroundPrimary, size: 22),

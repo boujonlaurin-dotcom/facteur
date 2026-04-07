@@ -42,6 +42,7 @@ def _cluster_to_une_topic(cluster: TopicCluster) -> SelectedTopic:
         selection_reason=f"Traité par {len(cluster.source_ids)} sources",
         deep_angle=deep_angle,
         source_count=len(cluster.source_ids),
+        theme=cluster.theme,
         is_a_la_une=True,
     )
 
@@ -122,6 +123,7 @@ class CurationService:
             selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
             deep_angle=deep_angle,
             source_count=len(cluster.source_ids),
+            theme=cluster.theme,
             is_a_la_une=True,
         )
 
@@ -214,8 +216,9 @@ class CurationService:
 
         # Validate and parse
         valid_topic_ids = {c.cluster_id for c in clusters}
-        # Build source_count lookup
+        # Build source_count and theme lookups from cluster data
         cluster_source_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
+        cluster_themes = {c.cluster_id: c.theme for c in clusters}
         selected: list[SelectedTopic] = []
 
         for item in topics_list[:count]:
@@ -229,10 +232,11 @@ class CurationService:
                         valid_ids=list(valid_topic_ids)[:5],
                     )
                     continue
-                # Populate source_count from cluster data
+                # Populate source_count and theme from cluster data
                 topic = topic.model_copy(
                     update={
-                        "source_count": cluster_source_counts.get(topic.topic_id, 0)
+                        "source_count": cluster_source_counts.get(topic.topic_id, 0),
+                        "theme": cluster_themes.get(topic.topic_id),
                     }
                 )
                 selected.append(topic)
@@ -284,6 +288,7 @@ class CurationService:
                     selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
                     deep_angle=deep_angle,
                     source_count=len(cluster.source_ids),
+                    theme=cluster.theme,
                 )
             )
             used_themes.add(cluster.theme)
@@ -306,6 +311,7 @@ class CurationService:
                         selection_reason=f"Couvert par {len(cluster.source_ids)} sources",
                         deep_angle=deep_angle,
                         source_count=len(cluster.source_ids),
+                        theme=cluster.theme,
                     )
                 )
 

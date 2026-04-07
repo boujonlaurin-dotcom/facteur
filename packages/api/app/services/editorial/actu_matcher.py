@@ -72,7 +72,23 @@ class ActuMatcher:
 
             if matched:
                 used_source_ids.add(matched.source_id)
-                updated = subject.model_copy(update={"actu_article": matched})
+                # Find up to 2 extra articles from other sources
+                extra_excluded_sources = set(used_source_ids)
+                if subject.deep_article is not None:
+                    extra_excluded_sources.add(subject.deep_article.source_id)
+                extras = self._find_extra_articles_global(
+                    cluster=cluster,
+                    excluded_source_ids=extra_excluded_sources,
+                    excluded_content_ids=excluded_content_ids | {matched.content_id},
+                    cutoff=cutoff,
+                    max_extra=2,
+                )
+                updated = subject.model_copy(
+                    update={
+                        "actu_article": matched,
+                        "extra_actu_articles": extras,
+                    }
+                )
             else:
                 updated = subject
 
@@ -139,7 +155,23 @@ class ActuMatcher:
             )
             if best:
                 used_source_ids.add(best.source_id)
-                result.append(subject.model_copy(update={"actu_article": best}))
+                # Find up to 2 extra articles from other sources
+                extra_excluded_sources = per_subject_excluded | {best.source_id}
+                extras = self._find_extra_articles_global(
+                    cluster=cluster,
+                    excluded_source_ids=extra_excluded_sources,
+                    excluded_content_ids=_excluded_content | {best.content_id},
+                    cutoff=cutoff,
+                    max_extra=2,
+                )
+                result.append(
+                    subject.model_copy(
+                        update={
+                            "actu_article": best,
+                            "extra_actu_articles": extras,
+                        }
+                    )
+                )
             else:
                 logger.warning(
                     "actu_matcher.no_global_match",
@@ -186,6 +218,54 @@ class ActuMatcher:
             total=len(subjects),
         )
         return result
+
+    def _find_extra_articles_global(
+        self,
+        cluster: TopicCluster,
+        excluded_source_ids: set[UUID],
+        excluded_content_ids: set[UUID],
+        cutoff: datetime,
+        max_extra: int = 2,
+    ) -> list[MatchedActuArticle]:
+        """Find extra actu articles from different sources within a cluster.
+
+        Same filters as _find_best_article_global but returns up to
+        max_extra articles, each from a distinct source.
+        """
+        used_sources: set[UUID] = set(excluded_source_ids)
+        candidates = []
+        for content in cluster.contents:
+            if content.id in excluded_content_ids:
+                continue
+            if content.is_paid:
+                continue
+            if content.published_at.replace(tzinfo=UTC) < cutoff:
+                continue
+            candidates.append(content)
+
+        candidates.sort(key=lambda c: c.published_at, reverse=True)
+
+        extras: list[MatchedActuArticle] = []
+        for content in candidates:
+            if content.source_id in used_sources:
+                continue
+            used_sources.add(content.source_id)
+            extras.append(
+                MatchedActuArticle(
+                    content_id=content.id,
+                    title=content.title,
+                    source_name=content.source.name
+                    if content.source
+                    else "Source inconnue",
+                    source_id=content.source_id,
+                    is_user_source=False,
+                    published_at=content.published_at,
+                )
+            )
+            if len(extras) >= max_extra:
+                break
+
+        return extras
 
     def _find_best_article_global(
         self,
