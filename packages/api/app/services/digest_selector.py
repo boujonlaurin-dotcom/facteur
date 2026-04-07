@@ -280,17 +280,13 @@ class DigestSelector:
                         _cache_date = datetime.date.today()
                         global_ctx = editorial_global_ctx
                         if global_ctx is None:
-                            global_ctx = _get_cached_editorial_ctx(
-                                _cache_date, mode
-                            )
+                            global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
                         if global_ctx is None:
                             global_ctx = await pipeline.compute_global_context(
                                 candidates, mode=mode
                             )
                             if global_ctx is not None:
-                                _set_cached_editorial_ctx(
-                                    _cache_date, mode, global_ctx
-                                )
+                                _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
                         if not global_ctx:
                             logger.warning("digest_editorial_global_ctx_failed")
                             output_format = "topics"
