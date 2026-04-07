@@ -119,11 +119,62 @@ class DigestGenerationJob:
                 logger.error("digest_generation_global_context_failed", error=str(e))
                 # Graceful degradation: continue without trending
 
+            # 1.6 Pre-compute editorial global context ONCE for the batch
+            editorial_global_ctx = None
+            try:
+                from app.services.editorial.pipeline import EditorialPipelineService
+
+                pipeline = EditorialPipelineService(session)
+                if pipeline.llm.is_ready and user_ids:
+                    temp_selector = DigestSelector(session)
+                    ctx = await temp_selector._build_digest_context(
+                        user_ids[0], mode="pour_vous"
+                    )
+                    if ctx.user_profile:
+                        candidates = await temp_selector._get_candidates(
+                            user_id=user_ids[0],
+                            context=ctx,
+                            hours_lookback=self.hours_lookback,
+                            min_pool_size=5,
+                            mode="pour_vous",
+                        )
+                        if candidates:
+                            editorial_global_ctx = (
+                                await pipeline.compute_global_context(
+                                    candidates, mode="pour_vous"
+                                )
+                            )
+                            if editorial_global_ctx:
+                                from app.services.digest_selector import (
+                                    _set_cached_editorial_ctx,
+                                )
+
+                                _set_cached_editorial_ctx(
+                                    target_date,
+                                    "pour_vous",
+                                    editorial_global_ctx,
+                                )
+                                logger.info(
+                                    "digest_generation_editorial_ctx_precomputed",
+                                    subjects=len(editorial_global_ctx.subjects),
+                                )
+                    await pipeline.close()
+                else:
+                    logger.warning("digest_generation_editorial_no_api_key")
+            except Exception as e:
+                logger.error(
+                    "digest_generation_editorial_precompute_failed", error=str(e)
+                )
+
             # 2. Traiter par batches pour limiter la charge mémoire
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i : i + self.batch_size]
                 await self._process_batch(
-                    session, batch, target_date, global_trending_context
+                    session,
+                    batch,
+                    target_date,
+                    global_trending_context,
+                    editorial_global_ctx,
                 )
 
                 # Commit après chaque batch
@@ -178,6 +229,7 @@ class DigestGenerationJob:
         user_ids: list[UUID],
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
+        editorial_global_ctx=None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
 
@@ -191,7 +243,11 @@ class DigestGenerationJob:
         async def process_with_limit(user_id: UUID) -> None:
             async with semaphore:
                 await self._generate_digest_for_user(
-                    session, user_id, target_date, global_trending_context
+                    session,
+                    user_id,
+                    target_date,
+                    global_trending_context,
+                    editorial_global_ctx,
                 )
 
         # Premier passage
@@ -258,6 +314,7 @@ class DigestGenerationJob:
         user_id: UUID,
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
+        editorial_global_ctx=None,
     ) -> None:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
@@ -266,6 +323,7 @@ class DigestGenerationJob:
             user_id: ID de l'utilisateur
             target_date: Date du digest
             global_trending_context: Contexte trending pré-calculé
+            editorial_global_ctx: Contexte éditorial global pré-calculé (partagé entre tous les users)
         """
         self.stats["processed"] += 1
 
@@ -322,6 +380,10 @@ class DigestGenerationJob:
                     hours_lookback=self.hours_lookback,
                     mode=digest_mode,
                     global_trending_context=global_trending_context
+                    if not is_serene
+                    else None,
+                    output_format="editorial",
+                    editorial_global_ctx=editorial_global_ctx
                     if not is_serene
                     else None,
                 )

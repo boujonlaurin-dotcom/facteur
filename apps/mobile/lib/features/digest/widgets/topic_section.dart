@@ -201,23 +201,45 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
         alignment: Alignment.topCenter,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!_isExpanded)
-              _buildHeader(context, colors, isDark, topic),
-            if (!_isExpanded)
-              const SizedBox(height: 8),
-            if (_isExpanded)
-              _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
-            else
-              _buildCompactEditorialCard(colors, isDark, topic, actuArticles),
-            ArticleThumbsFeedback(
-              contentId: isActuMulti
-                  ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
-                  : actuArticles.first.contentId,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: colors.border.withValues(alpha: isDark ? 0.20 : 0.15),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header always inside the container
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: _buildHeader(context, colors, isDark, topic),
+              ),
+              const SizedBox(height: 8),
+              if (_isExpanded)
+                _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
+              else
+                _buildCompactEditorialCard(colors, isDark, topic, actuArticles),
+              ArticleThumbsFeedback(
+                contentId: isActuMulti
+                    ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
+                    : actuArticles.first.contentId,
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -295,22 +317,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return GestureDetector(
       onTap: () => setState(() => _isExpanded = true),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           border: isHero
               ? Border(
                   left: BorderSide(width: 3, color: colors.primary),
                 )
               : null,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: topic.isUne
@@ -646,140 +661,127 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         .cast<DigestItem?>()
         .firstOrNull;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark
-            ? colors.surface.withValues(alpha: 0.05)
-            : colors.surface.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colors.border.withValues(alpha: 0.15),
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Articles (avant "De quoi on parle") ──
+            const SizedBox(height: 8),
+            if (isActuMulti) ...[
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardWidth = constraints.maxWidth * 0.88;
+                  final computedHeight =
+                      _computeHeight(actuArticles, cardWidth);
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    height: computedHeight,
+                    child: ClipRect(child: _buildPageView(actuArticles)),
+                  );
+                },
+              ),
+              const SizedBox(height: 2),
+              _buildPageIndicator(colors, actuArticles.length),
+            ] else if (!actuArticles.first.isDismissed)
+              _buildSingleArticle(actuArticles.first),
+
+            const SizedBox(height: 8),
+
+            // ── Carte "De quoi on parle ?" ──
+            if (topic.introText != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.textSecondary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'De quoi on parle ?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textSecondary.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        topic.introText!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // ── Analyse Facteur ──
+            if (topic.divergenceAnalysis != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: DivergenceAnalysisBlock(
+                  divergenceAnalysis: topic.divergenceAnalysis,
+                  biasHighlights: topic.biasHighlights,
+                  biasDistribution: topic.biasDistribution,
+                  divergenceLevel: topic.divergenceLevel,
+                  onCompare: _handleCompare,
+                  perspectiveCount: topic.perspectiveCount,
+                  perspectiveSources: topic.perspectiveSources,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // ── Pas de recul ──
+            if (deepArticle != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: PasDeReculBlock(
+                  deepArticle: deepArticle,
+                  reculIntro: deepArticle.reculIntro,
+                  onTap: () => widget.onArticleTap(deepArticle),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Articles (avant "De quoi on parle") ──
-          const SizedBox(height: 8),
-          if (isActuMulti) ...[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final cardWidth = constraints.maxWidth * 0.88;
-                final computedHeight =
-                    _computeHeight(actuArticles, cardWidth);
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  height: computedHeight,
-                  child: ClipRect(child: _buildPageView(actuArticles)),
-                );
-              },
-            ),
-            const SizedBox(height: 2),
-            _buildPageIndicator(colors, actuArticles.length),
-          ] else if (!actuArticles.first.isDismissed)
-            _buildSingleArticle(actuArticles.first),
-
-          const SizedBox(height: 8),
-
-          // ── Carte "De quoi on parle ?" ──
-          if (topic.introText != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colors.textSecondary.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'De quoi on parle ?',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: colors.textSecondary.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      topic.introText!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.5,
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.7)
-                            : colors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+        // ── Toggle overlay top-right ──
+        Positioned(
+          top: 4,
+          right: 4,
+          child: GestureDetector(
+            onTap: () => setState(() => _isExpanded = false),
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                shape: BoxShape.circle,
               ),
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // ── Analyse Facteur ──
-          if (topic.divergenceAnalysis != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: DivergenceAnalysisBlock(
-                divergenceAnalysis: topic.divergenceAnalysis,
-                biasHighlights: topic.biasHighlights,
-                biasDistribution: topic.biasDistribution,
-                divergenceLevel: topic.divergenceLevel,
-                onCompare: _handleCompare,
-                perspectiveCount: topic.perspectiveCount,
-                perspectiveSources: topic.perspectiveSources,
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // ── Pas de recul ──
-          if (deepArticle != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: PasDeReculBlock(
-                deepArticle: deepArticle,
-                reculIntro: deepArticle.reculIntro,
-                onTap: () => widget.onArticleTap(deepArticle),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ],
-      ),
-          // ── Toggle overlay top-right ──
-          Positioned(
-            top: 4,
-            right: 4,
-            child: GestureDetector(
-              onTap: () => setState(() => _isExpanded = false),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-                  size: 14,
-                  color: colors.textSecondary,
-                ),
+              child: Icon(
+                PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+                size: 14,
+                color: colors.textSecondary,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1005,7 +1007,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final imageVisible = _imageWillRender(article);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: FeedCard(
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(article),

@@ -171,6 +171,7 @@ class DigestSelector:
         mode: str = "pour_vous",
         global_trending_context: GlobalTrendingContext | None = None,
         output_format: str = "topics",
+        editorial_global_ctx: object | None = None,
     ) -> list:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
@@ -275,15 +276,21 @@ class DigestSelector:
                         logger.warning("digest_editorial_no_api_key")
                         output_format = "topics"
                     else:
-                        # Check cache first, then compute global context
+                        # Use injected context (batch), then cache, then compute
                         _cache_date = datetime.date.today()
-                        global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
+                        global_ctx = editorial_global_ctx
+                        if global_ctx is None:
+                            global_ctx = _get_cached_editorial_ctx(
+                                _cache_date, mode
+                            )
                         if global_ctx is None:
                             global_ctx = await pipeline.compute_global_context(
                                 candidates, mode=mode
                             )
                             if global_ctx is not None:
-                                _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
+                                _set_cached_editorial_ctx(
+                                    _cache_date, mode, global_ctx
+                                )
                         if not global_ctx:
                             logger.warning("digest_editorial_global_ctx_failed")
                             output_format = "topics"

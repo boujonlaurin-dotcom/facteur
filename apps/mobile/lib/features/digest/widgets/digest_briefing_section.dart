@@ -294,7 +294,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.topics!.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      separatorBuilder: (_, __) => const SizedBox(height: 6),
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
         totalTopics: widget.topics!.length,
@@ -435,7 +435,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: sections.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
+      separatorBuilder: (_, __) => const SizedBox(height: 6),
       itemBuilder: (_, i) => sections[i],
     );
   }
