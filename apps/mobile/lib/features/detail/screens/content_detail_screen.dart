@@ -102,9 +102,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
-  Timer? _headerScrollStopTimer;
+
   final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
-  final ValueNotifier<double> _headerOpacity = ValueNotifier<double>(1.0);
+  /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
+  final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
   static const int _consumptionThreshold = 30; // seconds
@@ -112,8 +113,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Reading progress tracking (0.0 - 1.0)
   // Uses ValueNotifier to avoid rebuilding the entire widget tree on each scroll pixel.
+  // _readingProgress reflects actual scroll position (moves forward and backward).
+  // _maxReadingProgress tracks the high-water mark (for share FAB, analytics, etc).
   final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
-  double _webViewProgress = 0; // from WebView JS bridge (0-100)
+  double _maxReadingProgress = 0;
 
   // Video detail screen state
   bool _isDescriptionExpanded = false;
@@ -313,6 +316,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         }, { passive: true });
         // Reading progress tracking (throttled to every 150ms for smooth updates)
         var progressTimer = null;
+        var lastScrollY = window.scrollY;
         window.addEventListener('scroll', function() {
           if (progressTimer) return;
           progressTimer = setTimeout(function() {
@@ -321,12 +325,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             if (maxScroll > 0) {
               var pct = parseFloat((window.scrollY / maxScroll * 100).toFixed(1));
               pct = Math.min(100, Math.max(0, pct));
-              if (pct > lastProgress) {
+              if (pct !== lastProgress) {
                 lastProgress = pct;
                 ScrollBridge.postMessage('progress:' + pct);
               }
             }
-            ScrollBridge.postMessage('scroll_active');
+            var currentScrollY = window.scrollY;
+            var scrollDelta = currentScrollY - lastScrollY;
+            if (scrollDelta !== 0) {
+              ScrollBridge.postMessage('scroll_delta:' + scrollDelta);
+            }
+            lastScrollY = currentScrollY;
           }, 150);
         }, { passive: true });
       })();
@@ -336,14 +345,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
-    if (msg == 'scroll_active') {
-      _onScrollFabOpacity();
+    if (msg.startsWith('scroll_delta:')) {
+      final delta = double.tryParse(msg.substring(13));
+      if (delta != null) {
+        _onScrollDelta(delta);
+      }
       return;
     }
     if (msg.startsWith('progress:')) {
       final pct = double.tryParse(msg.substring(9));
-      if (pct != null && pct > _webViewProgress) {
-        _webViewProgress = pct;
+      if (pct != null) {
         // For partial content: WebView scroll maps to 25%-100% of total progress
         // For full content: WebView scroll maps to the full 0%-100%
         final double normalized;
@@ -352,8 +363,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         } else {
           normalized = pct / 100.0;
         }
-        if (normalized > _readingProgress.value) {
-          _readingProgress.value = normalized.clamp(0.0, 1.0);
+        final clamped = normalized.clamp(0.0, 1.0);
+        _readingProgress.value = clamped;
+        if (clamped > _maxReadingProgress) {
+          _maxReadingProgress = clamped;
         }
       }
     }
@@ -378,8 +391,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final progress = _isPartialContent
         ? (rawProgress * 0.25).clamp(0.0, 0.25)
         : rawProgress.clamp(0.0, 1.0);
-    if (progress > _readingProgress.value) {
-      _readingProgress.value = progress;
+    _readingProgress.value = progress;
+    if (progress > _maxReadingProgress) {
+      _maxReadingProgress = progress;
     }
   }
 
@@ -392,7 +406,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Show Share FAB when user reaches 90% of article (long articles only).
   void _onShareFabProgress() {
     if (_showShareFab || _isShortArticle) return;
-    if (_readingProgress.value >= 0.9) {
+    if (_maxReadingProgress >= 0.9) {
       setState(() => _showShareFab = true);
       _shareFabController.forward();
     }
@@ -460,14 +474,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         }
       });
     } else {
-      _headerOpacity.value = 1.0;
+      _headerOffset.value = 0.0;
       _fabOpacity.value = 1.0;
-      _headerScrollStopTimer?.cancel();
+
       _scrollStopTimer?.cancel();
     }
   }
 
-  void _onScrollFabOpacity() {
+  /// Update header offset and FAB opacity based on scroll delta (in pixels).
+  /// Positive delta = scrolling down, negative = scrolling up.
+  void _onScrollDelta(double delta) {
     final isVideo = _content?.isVideo ?? false;
     _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
@@ -475,17 +491,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     // In video readers the header stays visible at all times (only native
     // fullscreen covers it, which is handled by the system).
-    if (!isVideo && _headerOpacity.value != 0.0) {
-      _headerOpacity.value = 0.0;
-    }
-    // Header reappears after 1s (non-video only)
-    _headerScrollStopTimer?.cancel();
-    if (!isVideo) {
-      _headerScrollStopTimer = Timer(const Duration(milliseconds: 1000), () {
-        if (mounted) {
-          _headerOpacity.value = 1.0;
-        }
-      });
+    // For short articles that don't need scrolling, keep header visible.
+    if (!isVideo && !_isShortArticle) {
+      final headerHeight =
+          MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+      final shift = delta / headerHeight;
+      _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
     }
     // FABs reappear after 2.5s
     _scrollStopTimer?.cancel();
@@ -741,13 +752,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   @override
   void dispose() {
-    // Capture progress value before disposing ValueNotifier
-    final progressPct = (_readingProgress.value * 100).round().clamp(0, 100);
+    // Capture max progress reached before disposing ValueNotifier
+    final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
 
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
-    _headerScrollStopTimer?.cancel();
     _videoPlayHideTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
@@ -757,7 +767,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _exitAnimController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _fabOpacity.dispose();
-    _headerOpacity.dispose();
+    _headerOffset.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.removeListener(_onShareFabProgress);
     _readingProgress.dispose();
@@ -801,8 +811,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final currentPct = (_readingProgress.value * 100).round();
 
     // Update the reading progress notifier
-    if (progress > _readingProgress.value) {
-      _readingProgress.value = progress;
+    _readingProgress.value = progress;
+    if (progress > _maxReadingProgress) {
+      _maxReadingProgress = progress;
     }
 
     // Persist at thresholds: 25%, 50%, 75%, 100%
@@ -1110,7 +1121,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
-                _onScrollFabOpacity();
+                final delta = notification.scrollDelta ?? 0.0;
+                _onScrollDelta(delta);
                 // Track reading progress from any scrollable (including in-app reader)
                 final metrics = notification.metrics;
                 if (metrics.maxScrollExtent > 0) {
@@ -1118,8 +1130,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   final capped = _isPartialContent
                       ? (progress * 0.25).clamp(0.0, 0.25)
                       : progress.clamp(0.0, 1.0);
-                  if (capped > _readingProgress.value) {
-                    _readingProgress.value = capped;
+                  _readingProgress.value = capped;
+                  if (capped > _maxReadingProgress) {
+                    _maxReadingProgress = capped;
                   }
                 }
               }
@@ -1135,19 +1148,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           : _buildWebViewFallback(content),
             ),
           ),
-          // Header — slides up off-screen on scroll, reappears after 1s
+          // Header — follows scroll: slides up on scroll-down, back on scroll-up
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: ValueListenableBuilder<double>(
-              valueListenable: _headerOpacity,
-              builder: (context, opacity, child) => AnimatedSlide(
-                offset: Offset(0, opacity < 0.5 ? -1.0 : 0.0),
-                duration: Duration(milliseconds: opacity < 0.5 ? 200 : 350),
-                curve: opacity < 0.5 ? Curves.easeIn : Curves.easeOut,
-                child: child!,
-              ),
+              valueListenable: _headerOffset,
+              builder: (context, offset, child) {
+                final headerHeight =
+                    MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+                return Transform.translate(
+                  offset: Offset(0, -offset * headerHeight),
+                  child: child!,
+                );
+              },
               child: _buildHeader(context, content),
             ),
           ),
@@ -1156,22 +1171,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // bleed through the transparent status bar zone.
           if (_isWebViewActive)
             ValueListenableBuilder<double>(
-              valueListenable: _headerOpacity,
-              builder: (context, opacity, _) {
+              valueListenable: _headerOffset,
+              builder: (context, offset, _) {
                 final statusBarHeight = MediaQuery.of(context).padding.top;
-                final headerVisible = opacity >= 0.5;
                 return Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
                   child: IgnorePointer(
-                    child: AnimatedOpacity(
-                      opacity: headerVisible ? 0.0 : 1.0,
-                      duration: Duration(
-                          milliseconds: headerVisible ? 350 : 200),
-                      curve: headerVisible
-                          ? Curves.easeOut
-                          : Curves.easeIn,
+                    child: Opacity(
+                      opacity: offset,
                       child: SizedBox(
                         height: statusBarHeight,
                         child: ColoredBox(color: colors.backgroundPrimary),
@@ -1181,27 +1190,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 );
               },
             ),
-          // Reading progress bar — below header when visible, slides to
-          // top of screen (below status bar) when header hides
+          // Reading progress bar — follows header position continuously
           if (content.hasInAppContent ||
               _isWebViewActive ||
               isVideoContent ||
               (!useScrollToSite && !useInAppReading))
             ValueListenableBuilder<double>(
-              valueListenable: _headerOpacity,
-              builder: (context, opacity, _) {
+              valueListenable: _headerOffset,
+              builder: (context, offset, _) {
                 final statusBarHeight = MediaQuery.of(context).padding.top;
                 final topWhenHeaderVisible =
                     statusBarHeight + _kHeaderContentHeight;
                 final topWhenHeaderHidden = statusBarHeight;
-                final headerVisible = opacity >= 0.5;
-                return AnimatedPositioned(
-                  duration: Duration(
-                      milliseconds: headerVisible ? 350 : 200),
-                  curve: headerVisible ? Curves.easeOut : Curves.easeIn,
-                  top: headerVisible
-                      ? topWhenHeaderVisible
-                      : topWhenHeaderHidden,
+                final top = topWhenHeaderVisible -
+                    offset * (topWhenHeaderVisible - topWhenHeaderHidden);
+                return Positioned(
+                  top: top,
                   left: 0,
                   right: 0,
                   child: _buildReadingProgressBar(colors),
@@ -1533,18 +1537,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ), // _SourceBadgeNudge
                       ),
                       // Gear icon — aligné à gauche, proche de la source
-                      GestureDetector(
-                        onTap: () => TopicChip.showArticleSheet(
+                      IconButton(
+                        padding: const EdgeInsets.all(8),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const Size(38, 38),
+                          shape: const CircleBorder(),
+                        ),
+                        onPressed: () => TopicChip.showArticleSheet(
                           context, content,
                           initialSection: ArticleSheetSection.source,
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Icon(
-                            PhosphorIcons.gear(PhosphorIconsStyle.regular),
-                            size: 16,
-                            color: colors.textTertiary,
-                          ),
+                        icon: Icon(
+                          PhosphorIcons.gear(PhosphorIconsStyle.regular),
+                          size: 22,
+                          color: colors.textSecondary,
                         ),
                       ),
                     ],
@@ -1553,9 +1562,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                 // Share button — copie le lien dans le presse-papier
                 IconButton(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(8),
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints(),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize: const Size(38, 38),
+                    shape: const CircleBorder(),
+                  ),
                   onPressed: _shareArticle,
                   icon: Icon(
                     PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
