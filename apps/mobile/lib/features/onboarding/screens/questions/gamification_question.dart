@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -33,41 +34,35 @@ class GamificationQuestion extends ConsumerWidget {
 
           const SizedBox(height: FacteurSpacing.space3),
 
-          Text(
-            OnboardingStrings.q8Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+          Text.rich(
+            TextSpan(
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+              children: [
+                const TextSpan(text: OnboardingStrings.q8SubtitlePart1),
+                TextSpan(
+                  text: OnboardingStrings.q8SubtitleBold1,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const TextSpan(text: OnboardingStrings.q8SubtitlePart2),
+                TextSpan(
+                  text: OnboardingStrings.q8SubtitleBold2,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const TextSpan(text: OnboardingStrings.q8SubtitlePart3),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
-
-          // Features gamification
-          Container(
-            padding: const EdgeInsets.all(FacteurSpacing.space4),
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(FacteurRadius.medium),
-            ),
-            child: const Column(
-              children: [
-                _FeatureRow(
-                  emoji: '🔥', // Streak
-                  title: OnboardingStrings.q8StreakTitle,
-                  description: OnboardingStrings.q8StreakDesc,
-                ),
-                SizedBox(height: FacteurSpacing.space3),
-                _FeatureRow(
-                  emoji: '📊', // Weekly stats
-                  title: OnboardingStrings.q8WeeklyTitle,
-                  description: OnboardingStrings.q8WeeklyDesc,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space8),
 
           // Options
           SelectionCard(
@@ -92,49 +87,17 @@ class GamificationQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: gamificationEnabled != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectGamification(gamificationEnabled!);
+            },
+          ),
         ],
       ),
-    );
-  }
-}
-
-class _FeatureRow extends StatelessWidget {
-  final String emoji;
-  final String title;
-  final String description;
-
-  const _FeatureRow({
-    required this.emoji,
-    required this.title,
-    required this.description,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 24)),
-        const SizedBox(width: FacteurSpacing.space3),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                description,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: context.facteurColors.textSecondary,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

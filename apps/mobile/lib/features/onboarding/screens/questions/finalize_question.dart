@@ -41,7 +41,7 @@ class FinalizeQuestion extends ConsumerWidget {
             OnboardingStrings.finalizeSubtitle,
             style: Theme.of(context)
                 .textTheme
-                .bodyLarge
+                .bodyMedium
                 ?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
@@ -88,20 +88,9 @@ class FinalizeQuestion extends ConsumerWidget {
               context.goNamed(RouteNames.onboardingConclusion);
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  OnboardingStrings.finalizeButton,
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-                ),
-                SizedBox(width: FacteurSpacing.space2),
-                Icon(Icons.arrow_forward_rounded, size: 20),
-              ],
-            ),
+            child: const Text(OnboardingStrings.finalizeButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

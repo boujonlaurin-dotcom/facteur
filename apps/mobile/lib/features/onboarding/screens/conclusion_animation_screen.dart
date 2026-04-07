@@ -179,7 +179,7 @@ class _ErrorView extends ConsumerWidget {
                 ref.read(conclusionNotifierProvider.notifier).retry();
               },
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 24),
                 backgroundColor: colors.primary,
               ),
               child: const Text(

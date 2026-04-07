@@ -57,7 +57,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 1),
+          const SizedBox(height: FacteurSpacing.space6),
 
           Text(
             OnboardingStrings.q10Title,
@@ -119,7 +119,7 @@ class _ThemesQuestionState extends ConsumerState<ThemesQuestion> {
             child: ElevatedButton(
               onPressed: canContinue ? _continue : null,
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 24),
               ),
               child: Text(
                 OnboardingStrings.selectedCount(_selectedThemes.length),

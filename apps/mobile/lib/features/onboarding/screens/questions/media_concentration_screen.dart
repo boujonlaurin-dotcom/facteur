@@ -18,7 +18,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 1),
+          const SizedBox(height: FacteurSpacing.space6),
 
           // Title
           Text(
@@ -27,7 +27,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space3),
 
           // Media concentration map image (tap to zoom)
           Expanded(
@@ -109,12 +109,22 @@ class MediaConcentrationScreen extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space4),
 
           // Explanatory text
-          Text(
-            OnboardingStrings.mediaConcentrationText,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.6,
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              children: [
+                const TextSpan(
+                    text: OnboardingStrings.mediaConcentrationTextPart1),
+                TextSpan(
+                  text: OnboardingStrings.mediaConcentrationTextBold1,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+                const TextSpan(
+                    text: OnboardingStrings.mediaConcentrationTextPart2),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 
@@ -128,13 +138,9 @@ class MediaConcentrationScreen extends ConsumerWidget {
                   .continueAfterMediaConcentration();
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.mediaConcentrationButton,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.mediaConcentrationButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

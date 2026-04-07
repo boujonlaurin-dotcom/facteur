@@ -46,7 +46,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 left: FacteurSpacing.space2,
                 right: FacteurSpacing.space6,
                 top: FacteurSpacing.space6,
-                bottom: FacteurSpacing.space4,
+                bottom: 0,
               ),
               child: Row(
                 children: [
@@ -63,7 +63,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     const SizedBox(width: 48),
                   Expanded(
                     child: OnboardingProgressBar(
-                      progress: state.progress,
+                      sectionProgress: state.sectionProgress,
                       section: state.currentSection,
                     ),
                   ),
@@ -75,6 +75,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ],
               ),
             ),
+
+            Text(
+              state.currentSection.label,
+              style: Theme.of(context).textTheme.labelMedium,
+              textAlign: TextAlign.center,
+            ),
+
+            const SizedBox(height: FacteurSpacing.space2),
 
             Expanded(
               child: AnimatedSwitcher(
@@ -171,8 +179,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           },
         );
 
-      case Section1Question.approach:
-        return const ApproachQuestion(key: ValueKey('approach'));
     }
   }
 
@@ -181,6 +187,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final question = state.currentSection2Question;
 
     switch (question) {
+      case Section2Question.approach:
+        return const ApproachQuestion(key: ValueKey('approach'));
+
       case Section2Question.responseStyle:
         return const ResponseStyleQuestion(key: ValueKey('response_style'));
 
@@ -245,27 +254,18 @@ class _RestartWelcomeScreen extends StatelessWidget {
         children: [
           const Spacer(flex: 2),
 
-          Icon(
-            Icons.auto_awesome,
-            size: 48,
-            color: colors.primary,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space6),
-
           Text(
             OnboardingStrings.restartWelcomeTitle,
             style: Theme.of(context).textTheme.displayLarge,
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space3),
 
           Text(
             OnboardingStrings.restartWelcomeSubtitle,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.textSecondary,
-                  height: 1.6,
                 ),
             textAlign: TextAlign.center,
           ),
@@ -275,13 +275,9 @@ class _RestartWelcomeScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: onContinue,
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.restartStartButton,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.restartStartButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

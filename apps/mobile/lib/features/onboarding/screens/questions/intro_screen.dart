@@ -51,7 +51,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!_showManifesto) ...[
-            const Spacer(flex: 1),
+            const Spacer(flex: 2),
 
             // Logo
             const Center(child: FacteurLogo(size: 42)),
@@ -72,13 +72,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               textAlign: TextAlign.center,
             ),
 
-            const SizedBox(height: FacteurSpacing.space6),
+            const SizedBox(height: FacteurSpacing.space3),
 
             Text(
               OnboardingStrings.welcomeSubtitle,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
-                    height: 1.6,
                   ),
               textAlign: TextAlign.center,
             ),
@@ -173,13 +172,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               ref.read(onboardingProvider.notifier).continueToIntro2();
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.welcomeStartButton,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.welcomeStartButton),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),
@@ -248,14 +243,42 @@ class IntroScreen2 extends ConsumerWidget {
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: FacteurSpacing.space6),
+          const SizedBox(height: FacteurSpacing.space3),
 
-          Text(
-            OnboardingStrings.intro2Subtitle,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.6,
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              children: [
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart1),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold1,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart2),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold2,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart3),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold3,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart4),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold4,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart5),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold5,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const TextSpan(text: OnboardingStrings.intro2SubtitlePart6),
+              ],
+            ),
             textAlign: TextAlign.center,
           ),
 
@@ -266,13 +289,9 @@ class IntroScreen2 extends ConsumerWidget {
               ref.read(onboardingProvider.notifier).continueAfterIntro();
             },
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              backgroundColor: colors.primary,
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
-            child: const Text(
-              OnboardingStrings.intro2Button,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-            ),
+            child: const Text(OnboardingStrings.intro2Button),
           ),
 
           const SizedBox(height: FacteurSpacing.space4),

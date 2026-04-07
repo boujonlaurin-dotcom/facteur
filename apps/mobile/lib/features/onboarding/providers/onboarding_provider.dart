@@ -138,18 +138,18 @@ enum OnboardingSection {
   const OnboardingSection(this.number, this.label);
 }
 
-/// Questions de la Section 1 (Overview) — 6 étapes
+/// Questions de la Section 1 (Overview) — 5 étapes
 enum Section1Question {
   intro1, // Intro: Welcome
   intro2, // Intro: Mission
   mediaConcentration, // Carte concentration médias
   objective, // Q1: Multi-select diagnostic
   objectiveReaction, // R1: Réaction personnalisée
-  approach, // Q3: Tu préfères...
 }
 
-/// Questions de la Section 2 (App Preferences) — 4 étapes
+/// Questions de la Section 2 (App Preferences) — 5 étapes
 enum Section2Question {
+  approach, // Q3: Tu préfères...
   responseStyle, // Q6: Tranchées vs nuancées
   gamification, // Q8: Activer la gamification ?
   articleCount, // 3/5/7 articles par jour
@@ -185,10 +185,10 @@ class OnboardingState {
   });
 
   /// Nombre total de questions dans la Section 1
-  static const int section1QuestionCount = 6;
+  static const int section1QuestionCount = 5;
 
   /// Nombre total de questions dans la Section 2
-  static const int section2QuestionCount = 4;
+  static const int section2QuestionCount = 5;
 
   /// Index de la question actuelle dans toutes les sections
   int get globalQuestionIndex {
@@ -214,11 +214,11 @@ class OnboardingState {
   double get sectionProgress {
     switch (currentSection) {
       case OnboardingSection.overview:
-        return (currentQuestionIndex + 1) / section1QuestionCount;
+        return currentQuestionIndex / section1QuestionCount;
       case OnboardingSection.appPreferences:
-        return (currentQuestionIndex + 1) / section2QuestionCount;
+        return currentQuestionIndex / section2QuestionCount;
       case OnboardingSection.sourcePreferences:
-        return (currentQuestionIndex + 1) / 5;
+        return currentQuestionIndex / 5;
     }
   }
 
@@ -391,16 +391,17 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
   }
 
-  /// Continue après la réaction (après R1)
+  /// Continue après la réaction (après R1) → transition vers Section 2
   void continueAfterReaction() {
     state = state.copyWith(
-      currentQuestionIndex: Section1Question.approach.index,
+      currentSection: OnboardingSection.appPreferences,
+      currentQuestionIndex: Section2Question.approach.index,
       showReaction: false,
       isTransitioning: false,
     );
   }
 
-  /// Sélectionne l'approche (Q3) - dernière question Section 1
+  /// Sélectionne l'approche (Q3) - première question Section 2
   void selectApproach(String approach) {
     state = state.copyWith(
       answers: state.answers.copyWith(approach: approach),
@@ -408,11 +409,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Transition vers Section 2
+    // Passe à la question suivante dans Section 2
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentSection: OnboardingSection.appPreferences,
-        currentQuestionIndex: 0,
+        currentQuestionIndex: Section2Question.responseStyle.index,
         isTransitioning: false,
       );
     });
@@ -448,7 +448,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       } else if (state.currentSection == OnboardingSection.appPreferences) {
         state = state.copyWith(
           currentSection: OnboardingSection.overview,
-          currentQuestionIndex: Section1Question.approach.index,
+          currentQuestionIndex: Section1Question.objectiveReaction.index,
         );
       }
     }
