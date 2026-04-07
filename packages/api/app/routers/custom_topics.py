@@ -1,6 +1,13 @@
 """Router pour les endpoints Custom Topics (Epic 11).
 
 CRUD pour les topics personnalisés + endpoint suggestions + popular entities.
+
+⚠️  ROUTE ORDERING CRITICAL — DO NOT MOVE /{topic_id} ROUTES ⚠️
+FastAPI matches routes in registration order. Parameterized routes like
+PUT /{topic_id} MUST be registered LAST in this file, after all static
+routes (/popular-entities, /disambiguate, /suggestions, etc.).
+Otherwise static paths match /{topic_id} and return 405.
+This bug has regressed 3 times — see docs/bugs/bug-custom-topics-405-recurring.md
 """
 
 import json
@@ -419,7 +426,10 @@ async def get_suggestions(
     return suggestions
 
 
-# --- Parameterized routes (MUST be last to avoid matching static paths) ---
+# ⚠️  PARAMETERIZED ROUTES — MUST BE LAST ⚠️
+# /{topic_id} matches ANY path segment. If placed before /disambiguate or
+# /suggestions, those static paths match /{topic_id} instead → 405.
+# This has caused 3 regressions. DO NOT move these routes up.
 
 
 @router.put("/{topic_id}", response_model=TopicResponse)

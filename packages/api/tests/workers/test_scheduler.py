@@ -5,7 +5,7 @@ to trigger at the expected times with correct timezones.
 
 Tests:
 - Scheduler job configuration
-- Daily digest job at 8am Europe/Paris
+- Daily digest job at 6am Europe/Paris
 - Job trigger parameters
 """
 
@@ -22,7 +22,7 @@ class TestScheduler:
     """Tests for the background job scheduler configuration."""
     
     def test_scheduler_has_daily_digest_job(self):
-        """TEST-01: Verify daily digest job is scheduled at 8am Paris time."""
+        """TEST-01: Verify daily digest job is scheduled at 6am Paris time."""
         with patch('app.workers.scheduler.AsyncIOScheduler') as mock_scheduler_class:
             # Create a mock scheduler instance
             mock_scheduler = Mock()
@@ -74,36 +74,36 @@ class TestScheduler:
                 f"Expected replace_existing=True, got {job['replace_existing']}"
     
     def test_daily_digest_job_trigger_params(self):
-        """TEST-01: Verify digest job triggers at exactly 8:00 daily."""
+        """TEST-01: Verify digest job triggers at exactly 6:00 daily."""
         with patch('app.workers.scheduler.AsyncIOScheduler') as mock_scheduler_class:
             mock_scheduler = Mock()
             mock_scheduler_class.return_value = mock_scheduler
-            
+
             captured_jobs = {}
             def capture_add_job(*args, **kwargs):
                 job_id = kwargs.get('id')
                 if job_id:
                     captured_jobs[job_id] = kwargs
-            
+
             mock_scheduler.add_job = capture_add_job
-            
+
             start_scheduler()
-            
+
             # Find the daily_digest job
             assert 'daily_digest' in captured_jobs, \
                 f"daily_digest job not found. Jobs: {list(captured_jobs.keys())}"
-            
+
             digest_job = captured_jobs['daily_digest']
             trigger = digest_job['trigger']
-            
+
             # Verify it's a CronTrigger
             assert isinstance(trigger, CronTrigger), \
                 f"Expected CronTrigger, got {type(trigger)}"
-            
+
             # CronTrigger fields: [year, month, day, week, day_of_week, hour, minute, second]
-            # Verify hour=8, minute=0
-            assert str(trigger.fields[5]) == '8', \
-                f"Expected hour=8, got {trigger.fields[5]}"
+            # Verify hour=6, minute=0
+            assert str(trigger.fields[5]) == '6', \
+                f"Expected hour=6, got {trigger.fields[5]}"
             assert str(trigger.fields[6]) == '0', \
                 f"Expected minute=0, got {trigger.fields[6]}"
     
@@ -183,28 +183,54 @@ class TestDigestJobConfiguration:
                 f"Expected Europe/Paris timezone, got {digest_trigger.timezone}"
     
     def test_digest_job_cron_expression(self):
-        """TEST-01: Verify digest job cron expression is 0 8 * * * (8am daily)."""
+        """TEST-01: Verify digest job cron expression is 0 6 * * * (6am daily)."""
         with patch('app.workers.scheduler.AsyncIOScheduler') as mock_scheduler_class:
             mock_scheduler = Mock()
             mock_scheduler_class.return_value = mock_scheduler
-            
+
             captured_triggers = {}
             def capture_add_job(*args, **kwargs):
                 job_id = kwargs.get('id')
                 if job_id:
                     captured_triggers[job_id] = kwargs.get('trigger')
-            
+
             mock_scheduler.add_job = capture_add_job
-            
+
             start_scheduler()
-            
+
             # Check the daily_digest trigger
             digest_trigger = captured_triggers.get('daily_digest')
             assert digest_trigger is not None, "daily_digest trigger not found"
-            
+
             # CronTrigger fields: [year, month, day, week, day_of_week, hour, minute, second]
-            # Verify hour=8 (index 5), minute=0 (index 6)
-            assert str(digest_trigger.fields[5]) == '8', \
-                f"Expected hour=8, got {digest_trigger.fields[5]}"
+            # Verify hour=6 (index 5), minute=0 (index 6)
+            assert str(digest_trigger.fields[5]) == '6', \
+                f"Expected hour=6, got {digest_trigger.fields[5]}"
             assert str(digest_trigger.fields[6]) == '0', \
                 f"Expected minute=0, got {digest_trigger.fields[6]}"
+
+    def test_scheduler_includes_watchdog_job(self):
+        """Verify digest watchdog job is scheduled at 7:30am."""
+        with patch('app.workers.scheduler.AsyncIOScheduler') as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured_jobs = {}
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get('id')
+                if job_id:
+                    captured_jobs[job_id] = kwargs
+
+            mock_scheduler.add_job = capture_add_job
+
+            start_scheduler()
+
+            assert 'digest_watchdog' in captured_jobs, \
+                f"digest_watchdog job not found. Jobs: {list(captured_jobs.keys())}"
+
+            trigger = captured_jobs['digest_watchdog']['trigger']
+            assert isinstance(trigger, CronTrigger)
+            assert str(trigger.fields[5]) == '7', \
+                f"Expected hour=7, got {trigger.fields[5]}"
+            assert str(trigger.fields[6]) == '30', \
+                f"Expected minute=30, got {trigger.fields[6]}"

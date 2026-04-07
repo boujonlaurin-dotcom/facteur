@@ -93,11 +93,14 @@ class DeepMatcher:
         candidates_per_topic: dict[str, list[tuple[Content, float]]] = {}
 
         for topic in selected_topics:
+            # Boost prefilter for "à la une" topic: wider net, lower threshold
+            topic_limit = prefilter_limit * 2 if topic.is_a_la_une else prefilter_limit
+            topic_threshold = threshold / 2 if topic.is_a_la_une else threshold
             candidates = self._prefilter(
                 topic=topic,
                 articles=deep_articles,
-                limit=prefilter_limit,
-                threshold=threshold,
+                limit=topic_limit,
+                threshold=topic_threshold,
                 extra_tokens=expanded_tokens.get(topic.topic_id, set()),
                 cluster_entities=_cluster_entities.get(topic.topic_id),
             )
@@ -139,7 +142,7 @@ class DeepMatcher:
                     topic=topic,
                     articles=deep_articles,
                     limit=prefilter_limit * 2,
-                    threshold=threshold * 0.5,
+                    threshold=threshold * 0.7,
                     extra_tokens=expanded_tokens.get(topic.topic_id, set()),
                     cluster_entities=_cluster_entities.get(topic.topic_id),
                 )
@@ -149,6 +152,15 @@ class DeepMatcher:
                         "deep_matcher.broader_fallback_hit",
                         topic_id=topic.topic_id,
                         candidates=len(broader_candidates),
+                    )
+
+            # Log topics that ended up with no match
+            for topic in selected_topics:
+                if matches.get(topic.topic_id) is None:
+                    logger.info(
+                        "deep_matcher.no_match_found",
+                        topic_id=topic.topic_id,
+                        label=topic.label,
                     )
 
             return matches
@@ -318,12 +330,24 @@ class DeepMatcher:
     @staticmethod
     def _fallback_pick(
         candidates: list[tuple[Content, float]],
+        min_score: float = 0.08,
     ) -> MatchedDeepArticle | None:
-        """Fallback: pick top Jaccard candidate."""
+        """Fallback: pick top Jaccard candidate if above minimum threshold."""
         if not candidates:
             return None
 
-        content, _score = candidates[0]
+        content, score = candidates[0]
+
+        # Reject weak matches — better no deep article than a bad one
+        if score < min_score:
+            logger.info(
+                "deep_matcher.fallback_rejected",
+                content_id=content.id,
+                score=score,
+                min_score=min_score,
+            )
+            return None
+
         source_name = content.source.name if content.source else "Source inconnue"
 
         return MatchedDeepArticle(

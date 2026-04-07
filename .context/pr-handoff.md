@@ -1,80 +1,100 @@
-# PR — Mute topics/entités + limite 3 topics par thème
+# Handoff — Ajustements visuels carte expanded digest
 
-## Quoi
+## Contexte
+Après la PR `recul_intro`, plusieurs ajustements visuels sont nécessaires sur la carte expanded des topics du digest éditorial. Les changements concernent uniquement le mobile Flutter.
 
-Ajout de la capacité à masquer (muter) des sujets et entités depuis MyInterests, l'article sheet, et l'entities sheet. Trois bugs identifiés en test ont été corrigés : un sujet muté restait affiché dans les suivis, la casse était perdue ("Nba" au lieu de "NBA"), et la limite de topics non-entité par catégorie passe de 1 à 3. Le scoring backend applique désormais les malus sur les entités mutées.
+---
 
-## Pourquoi
+## Tâches à réaliser
 
-- **Bug A** : Muter un sujet suivi devait aussi le retirer de la liste des suivis (cohérence UX + scoring)
-- **Bug B** : Le slug muté était stocké en lowercase, le fallback `slug[0].toUpperCase()` produisait "Nba" — perte du nom original
-- **Feature** : 1 topic non-entité par thème était trop restrictif ; passage à 3 avec message d'erreur clair côté backend
-- **Scoring** : Les entités mutées (stockées en JSON dans `content.entities`) n'étaient pas matchées dans PersonalizationLayer ni PenaltyPass
+### 1. Retirer le texte "Sujets : ..." après ouverture de la carte
+**Fichier :** `apps/mobile/lib/features/digest/widgets/topic_section.dart`
+- La méthode `_computeSubjects()` (lignes 1186-1191) est du dead code — elle existe mais n'est jamais appelée.
+- Si le texte "Sujets : ..." apparaît malgré tout dans l'UI, il est probable qu'il vienne du champ `DigestTopic.subjects` (liste de strings, ligne 103 de `digest_models.dart`) rendu par un widget parent ou par le `topic.label`.
+- **Action :** Supprimer la méthode `_computeSubjects()` (dead code), puis chercher dans l'app où `topic.subjects` ou un texte "Sujets" est affiché à l'ouverture de la carte — possiblement dans `_buildExpandedHeader` ou dans le widget parent `digest_briefing_section.dart`.
 
-## Fichiers modifiés
+### 2. Réduire l'opacité du fond de la carte expanded à 5%/3%
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedEditorial()` (lignes 649-660)
+```dart
+// Actuel :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.3)
+    : colors.surface.withValues(alpha: 0.4),
+// Cible :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.05)
+    : colors.surface.withValues(alpha: 0.03),
+```
 
-**Backend :**
-- `packages/api/app/models/user_topic_profile.py` — suppression de `ix_utp_unique_topic` (index unique partiel)
-- `packages/api/app/routers/custom_topics.py` — check d'existence → count ≥ 3 + nouveau message 409
-- `packages/api/app/services/recommendation/layers/personalization.py` — ajout du parsing JSON des entités pour appliquer `MUTED_TOPIC_MALUS`
-- `packages/api/app/services/recommendation/pillars/penalties.py` — idem dans le PenaltyPass
-- `packages/api/alembic/versions/ht01_drop_unique_topic_per_category.py` — migration (à appliquer via Supabase SQL Editor, **pas via Railway**)
+### 3. Repositionner le bouton Toggle (caret up) après retrait du titre
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedHeader()` (lignes 773-807)
+- Actuellement : Row avec `topic.label` (Expanded) + caret up icon
+- Après retrait du titre "Sujets : ...", le toggle "flotte" seul à droite
+- **Action :** Repositionner le caret up de façon propre — par exemple l'aligner à droite dans un Row avec un Spacer, ou l'intégrer dans la première carte article comme un bouton overlay en haut à droite. Vérifier le design avec Laurin.
 
-**Mobile :**
-- `widgets/topic_row.dart` — ajout callback `onMute` sur `TopicRow` et `DismissibleTopicRow`
-- `widgets/theme_section.dart` — handler `onMute` (muteTopic + unfollowTopic + invalidate) ; `mutedTopicSlugs` passe de `List<String>` à `Map<String, String>` (slug → label original)
-- `screens/my_interests_screen.dart` — construction de `mutedByTheme` avec résolution du label original depuis les topics suivis
-- `widgets/article_entities_sheet.dart` — ajout mute/unmute sur chaque entité, opacité 0.5 si muté
-- `widgets/topic_chip.dart` — refactor mute topic/source (passe par `personalizationRepositoryProvider` directement, plus par `feedProvider.notifier`) + invalidation de `personalizationProvider`
-- `widgets/suggestion_row.dart` — ajout mute sur les suggestions
-- `config/topic_labels.dart` — ajout de nouveaux labels de topics
+### 4. Aligner les paddings entre les 4 cartes (articles, "De quoi on parle", analyse Facteur, prendre du recul)
+**Fichiers concernés :**
+- `topic_section.dart` — "De quoi on parle ?" : `EdgeInsets.fromLTRB(16, 0, 16, 12)` + inner padding `EdgeInsets.all(12)` (lignes 693-696)
+- `topic_section.dart` — DivergenceAnalysisBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 737)
+- `divergence_analysis_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 48)
+- `topic_section.dart` — PasDeReculBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 759)
+- `pas_de_recul_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 35)
+- Articles (carousel/single) : `EdgeInsets.symmetric(horizontal: 12)` (ligne 1031)
+- **Action :** Uniformiser le padding horizontal externe à 16px pour les 4 blocs, et le padding interne à 12px.
 
-## Zones à risque
+### 5. CTA "Lire la suite…" — trop voyant et répétitif
+**Fichier :** `divergence_analysis_block.dart` (lignes 139-149)
+- Actuellement : texte bold en `colors.primary`, fontSize 13, fontWeight w600
+- **Action :** Réduire la visibilité — passer en `colors.textSecondary`, fontSize 12, fontWeight w500 pour en faire un nudge discret. Ou le retirer complètement si le tap sur le texte tronqué suffit comme affordance.
 
-- **`custom_topics.py` router** : le `count` remplace un `select(UserTopicProfile)` qui retournait l'objet — vérifier qu'aucun code en aval n'utilisait `existing.topic_name` après ce bloc
-- **`personalization.py` + `penalties.py`** : parsing JSON des entités dupliqué dans deux couches — si le format de `content.entities` change, les deux doivent être mis à jour
-- **`theme_section.dart`** : signature de `mutedTopicSlugs` changée (`List` → `Map`) — tout callsite qui passerait une liste échouerait à la compilation (vérification statique OK via `flutter analyze`)
+### 6. Bouton "Toutes les perspectives" — réduire la hauteur uniquement
+**Fichier :** `divergence_analysis_block.dart` (lignes 155-182)
+- Actuellement : `Row` avec logos + texte + flèche, pas de padding contraint
+- Le bouton doit rester un plain button centré
+- **Action :** Réduire l'espacement autour — changer le `SizedBox(height: 8)` avant le bouton (ligne 156) en `SizedBox(height: 4)`, et éventuellement réduire la taille des logos de 18px à 16px.
 
-## Points d'attention pour le reviewer
+### 7. Augmenter l'opacité de la border du container "Analyse Facteur"
+**Fichier :** `divergence_analysis_block.dart` (lignes 64-67)
+```dart
+// Actuel :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.2),
+  width: 1,
+),
+// Cible (plus visible) :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
+  width: 1,
+),
+```
 
-1. **Bug B — résolution du label** : le map `mutedByTheme` est construit dans `my_interests_screen.dart` sur le snapshot courant de `topics` (avant que l'UI ait reflété le `unfollowTopic` optimiste). Cela fonctionne car le prochain rebuild recalcule le map avec les nouvelles données du provider.
+### 8. Renommer le titre "🔍 L'analyse Facteur" → "🔍 Analyse de biais (N sources)"
+**Fichier :** `divergence_analysis_block.dart` (lignes 75-81)
+```dart
+// Actuel :
+Text(
+  "\u{1F50D} L'analyse Facteur",
+  ...
+),
+// Cible :
+Text(
+  "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
+  ...
+),
+```
 
-2. **`unfollowTopic` dans `onMute`** : ordre `muteTopic` → `unfollowTopic` → `invalidate`. Si `unfollowTopic` échoue après que `muteTopic` a réussi, le topic sera muté backend mais encore visible dans les suivis. Pas de rollback compensatoire (cas rare, acceptable).
+---
 
-3. **Migration `ht01`** : uniquement `DROP INDEX`, pas d'index non-unique en remplacement. La limite à 3 est gérée applicativement via count — pas besoin d'index pour cette requête ponctuelle.
-
-4. **Entités mutées dans le scoring** : match via `entity_names & set(context.muted_topics)` (intersection de sets lowercased). Les items non-JSON dans `content.entities` sont silencieusement ignorés.
-
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-
-- `feed_provider.dart` et `collection_detail_screen.dart` sont modifiés mais ces changements appartiennent à d'autres parties de la branche (non liés aux bugs A/B/C)
-- Le mute des **sources** (`muteSource`) dans `topic_chip.dart` a été refactoré pour passer par `personalizationRepositoryProvider` — comportement identique, chemin d'appel simplifié
-- `pubspec.lock` : retrait de 16 lignes = nettoyage de dépendances, non lié au feature
+## Fichiers à modifier
+| Fichier | Tâches |
+|---------|--------|
+| `topic_section.dart` | #1, #2, #3, #4 |
+| `divergence_analysis_block.dart` | #5, #6, #7, #8 |
+| `pas_de_recul_block.dart` | #4 (padding si nécessaire) |
 
 ## Comment tester
-
-**SQL à appliquer sur Supabase avant test staging :**
-```sql
-DROP INDEX IF EXISTS ix_utp_unique_topic;
-```
-
-**Bug A — sujet muté disparaît des suivis :**
-1. Suivre un topic custom (ex: "NBA") dans MyInterests
-2. Swipe-left pour le muter → il doit disparaître de "Suivis" ET apparaître dans "Sujets masqués"
-
-**Bug B — casse correcte :**
-1. Après le test ci-dessus, vérifier que le label affiche "NBA" (pas "Nba")
-
-**Feature C — limite 3 topics :**
-1. Ajouter 3 topics dans le même thème → les 3 doivent s'enregistrer
-2. Ajouter un 4e → SnackBar : `"3 sujets personnalisés maximum par thème (Sport)"`
-
-**Entités mutées dans le scoring :**
-1. Muter une entité (ex: "Emmanuel Macron") depuis l'entities sheet
-2. Vérifier dans les logs de scoring que les articles contenant cette entité reçoivent un malus
-
-**Tests automatisés :**
 ```bash
-cd packages/api && pytest -v
-cd apps/mobile && flutter test && flutter analyze
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test
 ```
+Puis vérifier visuellement sur iOS/Android : ouvrir un digest éditorial, expand une carte, vérifier les 8 points.

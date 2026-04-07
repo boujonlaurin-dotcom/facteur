@@ -998,6 +998,12 @@ class DigestService:
                     "is_a_la_une": s.is_a_la_une,
                     "intro_text": s.intro_text,
                     "transition_text": s.transition_text,
+                    "perspective_count": s.perspective_count,
+                    "bias_distribution": s.bias_distribution,
+                    "bias_highlights": s.bias_highlights,
+                    "divergence_analysis": s.divergence_analysis,
+                    "divergence_level": s.divergence_level,
+                    "perspective_sources": s.perspective_sources,
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1017,6 +1023,7 @@ class DigestService:
                         "badge": "pas_de_recul",
                         "match_reason": s.deep_article.match_reason,
                         "published_at": s.deep_article.published_at.isoformat(),
+                        "recul_intro": s.deep_article.recul_intro,
                     }
                     if s.deep_article
                     else None,
@@ -1392,6 +1399,7 @@ class DigestService:
                     rank=1 if art_key == "actu_article" else 2,
                     reason=reason,
                     badge=art_data.get("badge"),
+                    recul_intro=art_data.get("recul_intro"),
                     is_followed_source=art_data.get("is_user_source", False),
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
@@ -1430,23 +1438,36 @@ class DigestService:
                     )
                 )
 
-            response_topics.append(
-                DigestTopic(
+            if topic_articles:
+                response_topics.append(
+                    DigestTopic(
+                        topic_id=subject.get("topic_id", ""),
+                        label=subject.get("label", ""),
+                        rank=subject.get("rank", 0),
+                        reason=subject.get("selection_reason", ""),
+                        is_trending=subject.get("is_a_la_une", False),
+                        is_une=subject.get("is_a_la_une", False),
+                        source_count=subject.get("source_count", 0),
+                        theme=None,
+                        topic_score=0.0,
+                        subjects=[subject.get("deep_angle", "")],
+                        articles=topic_articles,
+                        intro_text=subject.get("intro_text"),
+                        transition_text=subject.get("transition_text"),
+                        perspective_count=subject.get("perspective_count", 0),
+                        bias_distribution=subject.get("bias_distribution"),
+                        bias_highlights=subject.get("bias_highlights"),
+                        divergence_analysis=subject.get("divergence_analysis"),
+                        divergence_level=subject.get("divergence_level"),
+                        perspective_sources=subject.get("perspective_sources"),
+                    )
+                )
+            else:
+                logger.warning(
+                    "editorial_topic_no_articles_skipped",
                     topic_id=subject.get("topic_id", ""),
                     label=subject.get("label", ""),
-                    rank=subject.get("rank", 0),
-                    reason=subject.get("selection_reason", ""),
-                    is_trending=subject.get("is_a_la_une", False),
-                    is_une=subject.get("is_a_la_une", False),
-                    source_count=subject.get("source_count", 0),
-                    theme=None,
-                    topic_score=0.0,
-                    subjects=[subject.get("deep_angle", "")],
-                    articles=topic_articles,
-                    intro_text=subject.get("intro_text"),
-                    transition_text=subject.get("transition_text"),
                 )
-            )
 
         # Build pepite response
         default_action = {
@@ -1477,6 +1498,7 @@ class DigestService:
                     title=pepite_content.title,
                     url=pepite_content.url,
                     thumbnail_url=pepite_content.thumbnail_url,
+                    published_at=pepite_content.published_at,
                     source=pepite_content.source,
                     is_read=pepite_action["is_read"],
                     is_saved=pepite_action["is_saved"],
@@ -1537,6 +1559,7 @@ class DigestService:
                     save_count=coup_de_coeur_data.get("save_count", 0),
                     url=cdc_content.url,
                     thumbnail_url=cdc_content.thumbnail_url,
+                    published_at=cdc_content.published_at,
                     source=cdc_content.source,
                     is_read=cdc_action["is_read"],
                     is_saved=cdc_action["is_saved"],
@@ -2016,11 +2039,4 @@ class DigestService:
         if value in ("topics", "flat", "editorial"):
             return value
 
-        # Auto-select editorial for whitelisted users when feature is enabled
-        from app.services.editorial.config import load_editorial_config
-
-        editorial_config = load_editorial_config()
-        if editorial_config.is_enabled_for_user(str(user_id)):
-            return "editorial"
-
-        return "topics"
+        return "editorial"

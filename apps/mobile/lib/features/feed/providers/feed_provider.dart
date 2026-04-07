@@ -287,6 +287,23 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await repository.impressContent(contentId);
   }
 
+  /// T1: Update a content item inside carousel data (optimistic sync).
+  List<FeedCarouselData> _updateCarouselItem(
+    List<FeedCarouselData> carousels,
+    String contentId,
+    Content Function(Content) updater,
+  ) {
+    return carousels.map((carousel) {
+      final hasItem = carousel.items.any((item) => item.id == contentId);
+      if (!hasItem) return carousel;
+      final updatedItems = carousel.items.map((item) {
+        if (item.id == contentId) return updater(item);
+        return item;
+      }).toList();
+      return carousel.copyWith(items: updatedItems);
+    }).toList();
+  }
+
   Future<void> toggleSave(Content content) async {
     final currentState = state.value;
     if (currentState == null) return;
@@ -312,8 +329,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       }
     }
 
+    // T1: Sync carousel items too
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      content.id,
+      (c) => c.copyWith(isSaved: newIsSaved),
+    );
+
     // Mise à jour optimiste immédiate
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -344,8 +368,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       updatedItems[index] = content.copyWith(isLiked: newIsLiked);
     }
 
+    // T1: Sync carousel items too
+    final updatedCarousels = _updateCarouselItem(
+      currentState.carousels,
+      content.id,
+      (c) => c.copyWith(isLiked: newIsLiked),
+    );
+
     // Optimistic update
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
 
     try {
       final repository = ref.read(feedRepositoryProvider);

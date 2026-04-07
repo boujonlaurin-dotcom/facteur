@@ -112,6 +112,7 @@ class PepiteBlock extends StatelessWidget {
       title: pepite.title,
       url: pepite.url,
       thumbnailUrl: pepite.thumbnailUrl,
+      publishedAt: pepite.publishedAt,
       source: pepite.source,
       badge: pepite.badge,
       isRead: pepite.isRead,

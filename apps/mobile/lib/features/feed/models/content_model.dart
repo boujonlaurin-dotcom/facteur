@@ -770,6 +770,24 @@ class FeedCarouselData {
     required this.badges,
   });
 
+  FeedCarouselData copyWith({
+    String? carouselType,
+    String? title,
+    String? emoji,
+    int? position,
+    List<Content>? items,
+    List<CarouselItemBadge>? badges,
+  }) {
+    return FeedCarouselData(
+      carouselType: carouselType ?? this.carouselType,
+      title: title ?? this.title,
+      emoji: emoji ?? this.emoji,
+      position: position ?? this.position,
+      items: items ?? this.items,
+      badges: badges ?? this.badges,
+    );
+  }
+
   factory FeedCarouselData.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? [];
     final parsedItems = rawItems

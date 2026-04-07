@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -15,8 +16,6 @@ class ApproachQuestion extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(onboardingProvider);
     final selectedApproach = state.answers.approach;
-    final colors = context.facteurColors;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
       child: Column(
@@ -28,16 +27,6 @@ class ApproachQuestion extends ConsumerWidget {
           Text(
             OnboardingStrings.q4Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.q4Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -80,6 +69,15 @@ class ApproachQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedApproach != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectApproach(selectedApproach!);
+            },
+          ),
         ],
       ),
     );

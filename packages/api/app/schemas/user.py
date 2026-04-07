@@ -122,6 +122,7 @@ class OnboardingResponse(BaseModel):
     subtopics_created: int
     preferences_created: int
     sources_created: int = 0
+    sources_removed: int = 0
 
 
 class UserStatsResponse(BaseModel):

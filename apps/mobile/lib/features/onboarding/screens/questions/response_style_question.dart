@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -15,8 +16,6 @@ class ResponseStyleQuestion extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(onboardingProvider);
     final selectedStyle = state.answers.responseStyle;
-    final colors = context.facteurColors;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
       child: Column(
@@ -24,20 +23,10 @@ class ResponseStyleQuestion extends ConsumerWidget {
         children: [
           const Spacer(flex: 2),
 
-          // Question (larger without emoji)
+          // Question
           Text(
             OnboardingStrings.q6Title,
             style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.q6Subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
             textAlign: TextAlign.center,
           ),
 
@@ -79,6 +68,15 @@ class ResponseStyleQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedStyle != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectResponseStyle(selectedStyle!);
+            },
+          ),
         ],
       ),
     );

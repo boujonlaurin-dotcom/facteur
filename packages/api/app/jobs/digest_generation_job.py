@@ -18,6 +18,9 @@ import asyncio
 import datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
+
+_PARIS_TZ = ZoneInfo("Europe/Paris")
 
 import structlog
 from sqlalchemy import select
@@ -78,7 +81,7 @@ class DigestGenerationJob:
             Statistiques d'exécution
         """
         if target_date is None:
-            target_date = datetime.date.today()
+            target_date = datetime.datetime.now(_PARIS_TZ).date()
 
         logger.info(
             "digest_generation_job_started",
@@ -116,22 +119,51 @@ class DigestGenerationJob:
                 logger.error("digest_generation_global_context_failed", error=str(e))
                 # Graceful degradation: continue without trending
 
-            # 1.6 Pre-compute editorial global context (Story 10.23)
-            # This avoids redundant LLM calls when generating editorial digests
-            # for multiple users in the same batch.
-            # TODO(10.23): Pass editorial_global_ctx to DigestSelector to avoid
-            # per-user recomputation. For now, editorial pipeline handles caching
-            # internally via on-demand computation in digest_selector.py.
-            editorial_config = None
+            # 1.6 Pre-compute editorial global context ONCE for the batch
+            editorial_global_ctx = None
             try:
-                from app.services.editorial.config import load_editorial_config
+                from app.services.editorial.pipeline import EditorialPipelineService
 
-                editorial_config = load_editorial_config()
-                if editorial_config.feature_flags.editorial_enabled:
-                    logger.info("digest_generation_editorial_enabled")
+                pipeline = EditorialPipelineService(session)
+                if pipeline.llm.is_ready and user_ids:
+                    temp_selector = DigestSelector(session)
+                    ctx = await temp_selector._build_digest_context(
+                        user_ids[0], mode="pour_vous"
+                    )
+                    if ctx.user_profile:
+                        candidates = await temp_selector._get_candidates(
+                            user_id=user_ids[0],
+                            context=ctx,
+                            hours_lookback=self.hours_lookback,
+                            min_pool_size=5,
+                            mode="pour_vous",
+                        )
+                        if candidates:
+                            editorial_global_ctx = (
+                                await pipeline.compute_global_context(
+                                    candidates, mode="pour_vous"
+                                )
+                            )
+                            if editorial_global_ctx:
+                                from app.services.digest_selector import (
+                                    _set_cached_editorial_ctx,
+                                )
+
+                                _set_cached_editorial_ctx(
+                                    target_date,
+                                    "pour_vous",
+                                    editorial_global_ctx,
+                                )
+                                logger.info(
+                                    "digest_generation_editorial_ctx_precomputed",
+                                    subjects=len(editorial_global_ctx.subjects),
+                                )
+                    await pipeline.close()
+                else:
+                    logger.warning("digest_generation_editorial_no_api_key")
             except Exception as e:
-                logger.warning(
-                    "digest_generation_editorial_config_failed", error=str(e)
+                logger.error(
+                    "digest_generation_editorial_precompute_failed", error=str(e)
                 )
 
             # 2. Traiter par batches pour limiter la charge mémoire
@@ -142,7 +174,7 @@ class DigestGenerationJob:
                     batch,
                     target_date,
                     global_trending_context,
-                    editorial_config,
+                    editorial_global_ctx,
                 )
 
                 # Commit après chaque batch
@@ -197,12 +229,14 @@ class DigestGenerationJob:
         user_ids: list[UUID],
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_config=None,
+        editorial_global_ctx=None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
 
         Utilise un semaphore pour limiter le nombre de digests générés
         simultanément et éviter de surcharger la base de données.
+        Après le premier passage, vérifie quels users n'ont toujours pas
+        de digest et les retry (max 2 tentatives, backoff exponentiel).
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 
@@ -213,14 +247,66 @@ class DigestGenerationJob:
                     user_id,
                     target_date,
                     global_trending_context,
-                    editorial_config,
+                    editorial_global_ctx,
                 )
 
-        # Créer les tâches
+        # Premier passage
         tasks = [process_with_limit(uid) for uid in user_ids]
-
-        # Exécuter toutes les tâches du batch
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Retry : vérifier quels users n'ont pas encore de digest (normal)
+        for attempt in range(1, 3):
+            covered_ids = set(
+                (
+                    await session.execute(
+                        select(DailyDigest.user_id).where(
+                            DailyDigest.target_date == target_date,
+                            DailyDigest.user_id.in_(user_ids),
+                            DailyDigest.is_serene.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            missing_ids = [uid for uid in user_ids if uid not in covered_ids]
+
+            if not missing_ids:
+                break
+
+            backoff_seconds = 2**attempt  # 2s, 4s
+            logger.info(
+                "digest_generation_retry",
+                attempt=attempt,
+                missing_count=len(missing_ids),
+                backoff_seconds=backoff_seconds,
+            )
+            await asyncio.sleep(backoff_seconds)
+
+            retry_tasks = [process_with_limit(uid) for uid in missing_ids]
+            await asyncio.gather(*retry_tasks, return_exceptions=True)
+
+        # Log final des users sans digest après tous les retries
+        final_covered = set(
+            (
+                await session.execute(
+                    select(DailyDigest.user_id).where(
+                        DailyDigest.target_date == target_date,
+                        DailyDigest.user_id.in_(user_ids),
+                        DailyDigest.is_serene.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        final_missing = [uid for uid in user_ids if uid not in final_covered]
+        if final_missing:
+            logger.error(
+                "digest_generation_retry_exhausted",
+                permanently_failed=len(final_missing),
+                user_ids=[str(uid) for uid in final_missing],
+            )
 
     async def _generate_digest_for_user(
         self,
@@ -228,7 +314,7 @@ class DigestGenerationJob:
         user_id: UUID,
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_config=None,
+        editorial_global_ctx=None,
     ) -> None:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
@@ -237,7 +323,7 @@ class DigestGenerationJob:
             user_id: ID de l'utilisateur
             target_date: Date du digest
             global_trending_context: Contexte trending pré-calculé
-            editorial_config: Pre-loaded editorial config (avoids per-user YAML parse)
+            editorial_global_ctx: Contexte éditorial global pré-calculé (partagé entre tous les users)
         """
         self.stats["processed"] += 1
 
@@ -295,14 +381,6 @@ class DigestGenerationJob:
 
                 digest_mode = "serein" if is_serene else "pour_vous"
 
-                # Determine output_format based on editorial whitelist
-                output_format = (
-                    "editorial"
-                    if editorial_config
-                    and editorial_config.is_enabled_for_user(str(user_id))
-                    else "topics"
-                )
-
                 # Sélectionner les articles via DigestSelector
                 selector = DigestSelector(session)
                 digest_items = await selector.select_for_user(
@@ -313,7 +391,10 @@ class DigestGenerationJob:
                     global_trending_context=global_trending_context
                     if not is_serene
                     else None,
-                    output_format=output_format,
+                    output_format="editorial",
+                    editorial_global_ctx=editorial_global_ctx
+                    if not is_serene
+                    else None,
                 )
 
                 # Handle editorial pipeline result (Pydantic object, not a list)
@@ -335,31 +416,6 @@ class DigestGenerationJob:
                             user_id=str(user_id),
                             target_date=str(target_date),
                             is_serene=is_serene,
-                        )
-                    else:
-                        self.stats["failed"] += 1
-                    continue
-
-                # Handle TopicGroup list (output_format="topics")
-                if digest_items and hasattr(digest_items[0], "articles"):
-                    from app.services.digest_service import DigestService
-
-                    svc = DigestService(session)
-                    digest = await svc._create_digest_record_topics(
-                        user_id,
-                        target_date,
-                        digest_items,
-                        mode=digest_mode,
-                        is_serene=is_serene,
-                    )
-                    if digest:
-                        self.stats["success"] += 1
-                        logger.debug(
-                            "digest_generation_topics_success",
-                            user_id=str(user_id),
-                            target_date=str(target_date),
-                            is_serene=is_serene,
-                            topic_count=len(digest_items),
                         )
                     else:
                         self.stats["failed"] += 1
@@ -500,7 +556,7 @@ async def generate_digest_for_user(
         ... )
     """
     if target_date is None:
-        target_date = datetime.date.today()
+        target_date = datetime.datetime.now(_PARIS_TZ).date()
 
     async with async_session_maker() as session:
         try:

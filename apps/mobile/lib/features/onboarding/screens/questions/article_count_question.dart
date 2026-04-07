@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
@@ -108,6 +109,15 @@ class ArticleCountQuestion extends ConsumerWidget {
           ),
 
           const Spacer(flex: 3),
+
+          DelayedContinueButton(
+            visible: selectedCount != null,
+            onPressed: () {
+              ref
+                  .read(onboardingProvider.notifier)
+                  .selectDailyArticleCount(selectedCount!);
+            },
+          ),
         ],
       ),
     );

@@ -13,7 +13,9 @@ import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../../core/api/providers.dart';
 import '../models/topic_models.dart';
+import '../providers/algorithm_profile_provider.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import 'topic_priority_slider.dart';
@@ -143,12 +145,21 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
   @override
   void initState() {
     super.initState();
-    _topicExpanded = widget.initialSection == ArticleSheetSection.topic;
-    _sourceExpanded = widget.initialSection == ArticleSheetSection.source;
-    _entitiesExpanded = widget.initialSection == ArticleSheetSection.entities;
-    _breakdownExpanded = widget.initialSection == ArticleSheetSection.breakdown;
+    final reason = widget.content.recommendationReason;
+    _topicExpanded =
+        widget.initialSection == ArticleSheetSection.topic;
+    _sourceExpanded =
+        widget.initialSection == ArticleSheetSection.source;
+    _entitiesExpanded =
+        widget.initialSection == ArticleSheetSection.entities;
+    _breakdownExpanded =
+        widget.initialSection == ArticleSheetSection.breakdown &&
+            reason != null &&
+            reason.breakdown.isNotEmpty;
     _personalizeExpanded =
-        widget.initialSection == ArticleSheetSection.personalize;
+        widget.initialSection == ArticleSheetSection.personalize ||
+            widget.initialSection == ArticleSheetSection.source ||
+            widget.initialSection == ArticleSheetSection.topic;
   }
 
   @override
@@ -168,8 +179,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     final isFollowed = matchingTopics.isNotEmpty;
     final matchedTopic = isFollowed ? matchingTopics.first : null;
     final parentLabel = getTopicMacroTheme(widget.topicSlug);
-    final parentEmoji =
-        parentLabel != null ? getMacroThemeEmoji(parentLabel) : '';
 
     return Container(
       constraints: BoxConstraints(
@@ -224,7 +233,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     ),
                   ),
                   subtitle: parentLabel != null
-                      ? '${parentEmoji.isNotEmpty ? '$parentEmoji ' : ''}$parentLabel'
+                      ? '${getMacroThemeEmoji(parentLabel)} $parentLabel'
                       : null,
                   isExpanded: _topicExpanded,
                   onToggle: () =>
@@ -312,7 +321,10 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 ),
                 if (_sourceExpanded) ...[
                   const SizedBox(height: FacteurSpacing.space3),
-                  _buildSourceContent(colorScheme: colorScheme, colors: colors, textTheme: textTheme),
+                  _buildSourceContent(
+                      colorScheme: colorScheme,
+                      colors: colors,
+                      textTheme: textTheme),
                 ],
               ],
 
@@ -323,8 +335,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 const SizedBox(height: FacteurSpacing.space3),
                 _buildSectionHeader(
                   context,
-                  icon:
-                      PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
+                  icon: PhosphorIcons.userCircle(PhosphorIconsStyle.regular),
                   iconColor: colors.textSecondary,
                   title: 'Sujets de cet article',
                   isExpanded: _entitiesExpanded,
@@ -380,7 +391,6 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               const SizedBox(height: FacteurSpacing.space2),
               Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
               const SizedBox(height: FacteurSpacing.space3),
-
               _buildSectionHeader(
                 context,
                 title: 'PERSONNALISER MON FLUX',
@@ -419,6 +429,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     );
   }
 
+  // ── Compact badges row (unused for now) ──
+  // ignore: unused_element
+  Widget _buildCompactBadgesRow() => const SizedBox.shrink();
   // ── Topic content ──
 
   Widget _buildTopicContent({
@@ -499,30 +512,47 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   ),
                 ),
                 const Spacer(),
-                TopicPrioritySlider(
-                  currentMultiplier: matchedTopic.priorityMultiplier,
-                  onChanged: (multiplier) async {
-                    try {
-                      await ref
-                          .read(customTopicsProvider.notifier)
-                          .updatePriority(matchedTopic.id, multiplier);
-                    } on DioException catch (e) {
-                      if (context.mounted) {
-                        final detail = e.response?.data;
-                        final msg =
-                            (detail is Map && detail['detail'] is String)
-                                ? detail['detail'] as String
-                                : 'Erreur lors de la mise à jour';
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(msg),
-                            duration: const Duration(seconds: 3),
-                          ),
-                        );
+                Builder(builder: (context) {
+                  final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                  final topicSlug = matchedTopic.slugParent;
+                  final topicUsage = algoProfile != null &&
+                          algoProfile.subtopicWeights.containsKey(topicSlug)
+                      ? algoProfile.normalizeWeight(
+                          algoProfile.subtopicWeights[topicSlug]!)
+                      : null;
+                  return TopicPrioritySlider(
+                    currentMultiplier: matchedTopic.priorityMultiplier,
+                    onChanged: (multiplier) async {
+                      try {
+                        await ref
+                            .read(customTopicsProvider.notifier)
+                            .updatePriority(matchedTopic.id, multiplier);
+                      } on DioException catch (e) {
+                        if (context.mounted) {
+                          final detail = e.response?.data;
+                          final msg =
+                              (detail is Map && detail['detail'] is String)
+                                  ? detail['detail'] as String
+                                  : 'Erreur lors de la mise à jour';
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
                       }
-                    }
-                  },
-                ),
+                    },
+                    usageWeight: topicUsage,
+                    onReset: topicUsage != null
+                        ? () async {
+                            final client = ref.read(apiClientProvider);
+                            await client.post('/users/subtopics/$topicSlug/reset');
+                            ref.invalidate(algorithmProfileProvider);
+                          }
+                        : null,
+                  );
+                }),
               ],
             ),
           ),
@@ -849,17 +879,23 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         ),
                       ),
                     ),
-                    PrioritySlider(
-                      currentMultiplier: currentMultiplier,
-                      onChanged: (multiplier) {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .updateWeight(
-                              widget.content.source.id,
-                              multiplier,
-                            );
-                      },
-                    ),
+                    Builder(builder: (context) {
+                      final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
+                      final sourceId = widget.content.source.id;
+                      final sourceUsage = algoProfile?.sourceAffinities[sourceId];
+                      return PrioritySlider(
+                        currentMultiplier: currentMultiplier,
+                        onChanged: (multiplier) {
+                          ref
+                              .read(userSourcesProvider.notifier)
+                              .updateWeight(
+                                widget.content.source.id,
+                                multiplier,
+                              );
+                        },
+                        usageWeight: sourceUsage,
+                      );
+                    }),
                   ],
                 ),
                 Divider(

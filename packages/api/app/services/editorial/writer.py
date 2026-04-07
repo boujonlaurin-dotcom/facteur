@@ -106,7 +106,7 @@ class EditorialWriterService:
 
         user_message = (
             f"Jour : {day_name}\n\n"
-            "Voici les 3 sujets du jour avec leurs articles :\n\n"
+            "Voici les 5 sujets du jour avec leurs articles :\n\n"
             f"{json.dumps(subjects_data, ensure_ascii=False, indent=2)}\n\n"
             "Génère le texte éditorial au format JSON."
         )
@@ -130,6 +130,7 @@ class EditorialWriterService:
                     topic_id=s.get("topic_id", ""),
                     intro_text=s.get("intro_text", ""),
                     transition_text=s.get("transition_text"),
+                    recul_intro=s.get("recul_intro"),
                 )
                 for s in raw_subjects
                 if s.get("topic_id") and s.get("intro_text")

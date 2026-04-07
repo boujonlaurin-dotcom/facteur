@@ -172,7 +172,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
           child: ElevatedButton(
             onPressed: _continue,
             style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.symmetric(vertical: 24),
             ),
             child: Text(
               _selectedSourceIds.isEmpty

@@ -310,6 +310,27 @@ graph TD
 
 **Dépendances :** 10.22 → 10.23 → 10.24 → 10.25 → 10.26/10.27 (parallèle) → 10.28
 
+### Phase 6 — Refonte Digest "Journal" (10.29)
+
+> **Origine :** Brainstorm CEO + Claude, 05/04/2026
+> **Objectif :** Transformer le digest en briefing compact scannable en 2 min, avec comparaison de sources intégrée
+
+**Changement de paradigme :** Le digest passe de "cartes pleine page scrollables" à "briefing journal compact avec toggle". Chaque sujet est condensé par défaut (titre + badge sources + 1 ligne d'intro), avec expansion pour l'analyse médiatique complète. La comparaison de sources — différenciant Facteur — devient accessible directement depuis le digest via un CTA visible et une analyse des divergences générée en batch.
+
+**Changements clés :**
+1. **5+2 articles** — 5 sujets (au lieu de 3) + pépite + coup de cœur
+2. **Toggle compact/étendu** — cartes fermées par défaut, expandables
+3. **PerspectiveService en batch** — source_count, bias_distribution, divergence_analysis par sujet
+4. **Badge "Couvert par X sources"** — icône trending, visible en état compact
+5. **CTA "Comparer les sources"** — directement dans le digest (état étendu)
+6. **"À la Une"** — badge + deep matcher boost pour le sujet principal
+
+| # | Story | Priorité | Type | Impacte |
+|---|-------|----------|------|---------|
+| 10.29 | Refonte Digest "Journal" — Toggle compact, perspectives batch, 5+2 articles | P0 | Full-stack | Pipeline éditorial, prompts LLM, TopicSection, DigestTopic model |
+
+**Dépendances :** 10.23-10.27 (Phase 5 DONE) → 10.29
+
 ---
 
 ## Change Log
@@ -319,3 +340,4 @@ graph TD
 | 31/01/2026 | 1.0 | Création Epic suite session BMad | BMad Master |
 | 09/02/2026 | 2.0 | Alignement BMAD avec implémentation GSD (Phases 01-03). Ajout Phase 4 (stories 10.19-10.21). Décisions validées (decay, analytics, notifications). | BMad Master |
 | 10/03/2026 | 3.0 | Ajout Phase 5 — Digest Éditorialisé (stories 10.22-10.28). Design docs dans docs/design/editorial-digest/. | Brainstorm Laurin + Claude |
+| 05/04/2026 | 4.0 | Ajout Phase 6 — Refonte Digest "Journal" (story 10.29). Toggle compact, perspectives batch, 5+2 articles, CTA comparaison intégré. | Brainstorm Laurin + Claude |

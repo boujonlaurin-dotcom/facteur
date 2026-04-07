@@ -114,7 +114,6 @@ class ContentResponse(BaseModel):
     reading_progress: int = 0
     note_text: str | None = None
     note_updated_at: datetime | None = None
-    is_followed_source: bool = False  # Feed fallback: source suivie par l'utilisateur
 
     @field_serializer("topics", when_used="always")
     def serialize_topics(self, value: list[str] | None) -> list[str]:
@@ -191,12 +190,12 @@ class DailyTop3Response(BaseModel):
 
 
 class ArticleFeedbackRequest(BaseModel):
-    """Feedback utilisateur sur un article (thumbs up/down + raisons optionnelles)."""
+    """Requête de feedback utilisateur sur un article (pouce haut/bas)."""
 
     sentiment: str = Field(..., pattern=r"^(positive|negative)$")
-    reasons: list[str] = []
+    reasons: list[str] | None = None
     comment: str | None = None
-    digest_date: str | None = None
+    digest_date: str | None = None  # ISO date string "YYYY-MM-DD"
 
 
 class FeedRefreshRequest(BaseModel):

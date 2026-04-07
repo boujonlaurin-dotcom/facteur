@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+
+import 'package:facteur/config/theme.dart';
+
 import '../features/custom_topics/models/topic_models.dart';
 
 /// Mapping des slugs de topics ML vers les labels français lisibles.
@@ -245,4 +249,18 @@ Map<String, int> countTopicsPerMacroTheme(List<UserTopicProfile> topics) {
     }
   }
   return counts;
+}
+
+/// Returns the semantic color for a topic slug based on its macro-theme.
+Color getThemeColor(String? themeSlug, FacteurColors colors) {
+  if (themeSlug == null) return colors.textSecondary;
+  final macro = _slugToMacroTheme[themeSlug];
+  return switch (macro) {
+    'Politique' || 'Géopolitique' => colors.primary,
+    'Économie' => colors.warning,
+    'Environnement' => colors.success,
+    'Technologie' || 'Sciences' => colors.info,
+    'Culture' || 'Sport' || 'Société' => colors.textSecondary,
+    _ => colors.textSecondary,
+  };
 }

@@ -13,7 +13,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
-import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -22,7 +21,9 @@ import '../../../widgets/design/facteur_logo.dart';
 import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
-import '../widgets/filter_bar.dart';
+import '../widgets/compact_source_chip.dart';
+import '../widgets/compact_search_chip.dart';
+import '../widgets/compact_theme_chip.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../widgets/swipe_to_open_card.dart';
@@ -35,8 +36,6 @@ import '../../saved/providers/saved_summary_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
-import '../../settings/providers/user_profile_provider.dart';
-import '../providers/user_bias_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
@@ -45,10 +44,7 @@ import '../widgets/keyword_overflow_chip.dart';
 import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
-import '../providers/theme_filters_provider.dart';
-import '../widgets/source_filter_chip.dart';
 import '../widgets/empty_filter_state.dart';
-import '../widgets/interest_filter_chip.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
@@ -362,50 +358,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Builder(
-                                builder: (context) {
-                                  final profile =
-                                      ref.watch(userProfileProvider);
-                                  final authUser =
-                                      ref.watch(authStateProvider).user;
-
-                                  String displayName = 'Vous';
-                                  if (profile.displayName != null &&
-                                      profile.displayName!.isNotEmpty) {
-                                    displayName = profile.displayName!;
-                                  } else if (authUser?.userMetadata != null &&
-                                      authUser!.userMetadata!['first_name'] !=
-                                          null &&
-                                      (authUser.userMetadata!['first_name']
-                                              as String)
-                                          .isNotEmpty) {
-                                    final firstName = authUser
-                                        .userMetadata!['first_name'] as String;
-                                    displayName = firstName[0].toUpperCase() +
-                                        firstName.substring(1).toLowerCase();
-                                  } else if (authUser?.email != null) {
-                                    final part = authUser!.email!.split('@')[0];
-                                    final subParts = part.contains('.')
-                                        ? part.split('.')
-                                        : part.split('-');
-                                    if (subParts.length > 1) {
-                                      final candidate = subParts.last.length > 2
-                                          ? subParts.last
-                                          : subParts.first;
-                                      displayName = candidate[0].toUpperCase() +
-                                          candidate.substring(1).toLowerCase();
-                                    } else {
-                                      displayName = part[0].toUpperCase() +
-                                          part.substring(1).toLowerCase();
-                                    }
-                                  }
-                                  return Text(
-                                    'Bonjour $displayName,',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displayMedium,
-                                  );
-                                },
+                              child: Text(
+                                'Bonjour,',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .displayMedium,
                               ),
                             ),
                             const SereinToggleChip(),
@@ -417,7 +374,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          'Vos news personnalisées du jour.',
+                          'Votre flux issu de vos sources de confiance.',
                           style: Theme.of(context)
                               .textTheme
                               .bodyMedium
@@ -427,14 +384,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0, vertical: 8.0),
                         child: Builder(builder: (context) {
-                          // Theme filters from API (Epic 11)
-                          final themeFiltersAsync =
-                              ref.watch(themeFiltersProvider);
-                          final themeFilters =
-                              themeFiltersAsync.valueOrNull ?? [];
-
                           final notifier = ref.read(feedProvider.notifier);
 
                           // Sync local display state with notifier — reset if no filter active
@@ -452,11 +404,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                               .where((s) =>
                                   (s.isTrusted || s.isCustom) && !s.isMuted)
                               .toList();
-                          final hasFollowedSources = followedSources.isNotEmpty;
-                          final subscribedSourceIds = allSources
-                              .where((s) => s.hasSubscription)
-                              .map((s) => s.id)
-                              .toSet();
                           final selectedSourceId = notifier.selectedSourceId;
                           final selectedSourceName = selectedSourceId != null
                               ? followedSources
@@ -471,115 +418,63 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   ?.logoUrl
                               : null;
 
-                          // When source filter is active: show only the source chip
-                          if (selectedSourceId != null) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0, vertical: 8.0),
-                              child: Row(
-                                children: [
-                                  SourceFilterChip(
-                                    selectedSourceId: selectedSourceId,
-                                    selectedSourceName: selectedSourceName,
-                                    selectedSourceLogoUrl: selectedSourceLogoUrl,
-                                    onSourceChanged: (sourceId) {
-                                      if (sourceId != null) {
-                                        notifier.setSource(sourceId);
-                                      } else {
-                                        notifier.setSource(null);
-                                      }
-                                      _scrollToTop();
-                                    },
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: Icon(
-                                      PhosphorIcons.gear(),
-                                      size: 20,
-                                      color: colors.textSecondary,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    onPressed: () {
-                                      final firstContent = ref.read(feedProvider).valueOrNull?.items.firstOrNull;
-                                      if (firstContent != null) {
-                                        TopicChip.showArticleSheet(context, firstContent);
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-
-                          // Only keep "Pour vous" as a chip — themes/topics
-                          // are now accessed via the "Mes intérêts" sheet.
+                          // Interest filter state
                           final customTopics =
                               ref.watch(customTopicsProvider).valueOrNull ?? [];
-                          final mergedFilters = themeFilters
-                              .where((f) => f.key == 'pour_vous')
-                              .toList();
 
-                          // No source active: show source chip + filter bar
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            mainAxisSize: MainAxisSize.min,
+                          return Row(
                             children: [
-                              FilterBar(
-                                selectedFilter:
-                                    notifier.selectedFilter == 'pour_vous'
-                                        ? 'pour_vous'
-                                        : notifier.selectedTheme ??
-                                            notifier.selectedTopic,
-                                userBias:
-                                    ref.watch(userBiasProvider).valueOrNull,
-                                availableFilters: mergedFilters,
-                                sourceFilterChip: hasFollowedSources
-                                    ? SourceFilterChip(
-                                        onSourceChanged: (sourceId) {
-                                          if (sourceId != null) {
-                                            _withFeedLoading(() => notifier.setSource(sourceId));
-                                          }
-                                          _scrollToTop();
-                                        },
-                                      )
-                                    : null,
-                                interestFilterChip: InterestFilterChip(
-                                  selectedTopicSlug:
-                                      notifier.selectedTopic ??
-                                          notifier.selectedTheme ??
-                                          notifier.selectedEntity,
-                                  selectedTopicName: _selectedInterestName,
-                                  selectedIsTheme: _selectedIsTheme,
-                                  onInterestChanged:
-                                      (slug, name, {isTheme = false, isEntity = false}) {
-                                    setState(() {
-                                      _selectedInterestName = name;
-                                      _selectedIsTheme = isTheme;
-                                    });
-                                    _withFeedLoading(() async {
-                                      if (slug == null) {
-                                        await notifier.setTopic(null);
-                                        await notifier.setTheme(null);
-                                        await notifier.setEntity(null);
-                                      } else if (isTheme) {
-                                        await notifier.setTheme(slug);
-                                      } else if (isEntity) {
-                                        await notifier.setEntity(slug);
-                                      } else {
-                                        await notifier.setTopic(slug);
-                                      }
-                                    });
-                                    _scrollToTop();
-                                  },
-                                ),
-                                onFilterChanged: (String? filter) {
-                                  _withFeedLoading(() {
-                                    if (filter == 'pour_vous') {
-                                      return notifier.setFilter('pour_vous');
+                              CompactSourceChip(
+                                followedSources: followedSources,
+                                selectedSourceId: selectedSourceId,
+                                selectedSourceName: selectedSourceName,
+                                selectedSourceLogoUrl: selectedSourceLogoUrl,
+                                onSourceChanged: (sourceId) {
+                                  if (sourceId != null) {
+                                    _withFeedLoading(
+                                        () => notifier.setSource(sourceId));
+                                  } else {
+                                    notifier.setSource(null);
+                                  }
+                                  _scrollToTop();
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              CompactThemeChip(
+                                followedTopics: customTopics,
+                                selectedSlug: notifier.selectedTopic ??
+                                    notifier.selectedTheme ??
+                                    notifier.selectedEntity,
+                                selectedName: _selectedInterestName,
+                                selectedIsTheme: _selectedIsTheme,
+                                onInterestChanged: (slug, name,
+                                    {isTheme = false, isEntity = false}) {
+                                  setState(() {
+                                    _selectedInterestName = name;
+                                    _selectedIsTheme = isTheme;
+                                  });
+                                  _withFeedLoading(() async {
+                                    if (slug == null) {
+                                      await notifier.setTopic(null);
+                                      await notifier.setTheme(null);
+                                      await notifier.setEntity(null);
+                                    } else if (isTheme) {
+                                      await notifier.setTheme(slug);
+                                    } else if (isEntity) {
+                                      await notifier.setEntity(slug);
                                     } else {
-                                      return notifier.setFilter(null);
+                                      await notifier.setTopic(slug);
                                     }
                                   });
+                                  _scrollToTop();
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              CompactSearchChip(
+                                activeKeyword: notifier.selectedKeyword,
+                                onSearchChanged: (keyword) {
+                                  _withFeedLoading(
+                                      () => notifier.setKeyword(keyword));
                                   _scrollToTop();
                                 },
                               ),
@@ -692,17 +587,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 InterestFilterSheet.show(
                                   context,
                                   currentTopicSlug: null,
-                                  onInterestSelected: (slug, name,
-                                      {bool isTheme = false,
-                                      bool isEntity = false}) {
+                                  onInterestSelected: (slug, name, {bool isTheme = false, bool isEntity = false}) {
                                     setState(() {
                                       _selectedInterestName = name;
                                       _selectedIsTheme = isTheme;
                                     });
                                     if (isTheme) {
                                       notifier.setTheme(slug);
-                                    } else if (isEntity) {
-                                      notifier.setEntity(slug);
                                     } else {
                                       notifier.setTopic(slug);
                                     }
@@ -778,6 +669,97 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       child: FeedCarousel(
                                         data: carousel,
                                         onArticleTap: (c) => _showArticleModal(c),
+                                        // T1: Full card feature parity
+                                        onLongPressStart: (c, _) =>
+                                            ArticlePreviewOverlay.show(context, c),
+                                        onLongPressMoveUpdate: (details) =>
+                                            ArticlePreviewOverlay.updateScroll(
+                                                details.localOffsetFromOrigin.dy),
+                                        onLongPressEnd: (_) =>
+                                            ArticlePreviewOverlay.dismiss(),
+                                        onLike: (c) {
+                                          final wasLiked = c.isLiked;
+                                          ref.read(feedProvider.notifier).toggleLike(c);
+                                          NotificationService.showInfo(
+                                            wasLiked
+                                                ? 'Retiré de vos contenus favoris'
+                                                : 'Ajouté à vos contenus favoris',
+                                          );
+                                          ref.invalidate(collectionsProvider);
+                                        },
+                                        onSave: (c) async {
+                                          final wasSaved = c.isSaved;
+                                          ref.read(feedProvider.notifier).toggleSave(c);
+                                          if (!wasSaved) {
+                                            final defaultCol =
+                                                ref.read(defaultCollectionProvider);
+                                            if (defaultCol != null) {
+                                              final colRepo = ref
+                                                  .read(collectionsRepositoryProvider);
+                                              await colRepo.addToCollection(
+                                                  defaultCol.id, c.id);
+                                              ref.invalidate(collectionsProvider);
+                                            }
+                                            if (context.mounted) {
+                                              CollectionPickerSheet.show(
+                                                  context, c.id);
+                                            }
+                                          }
+                                        },
+                                        onSaveLongPress: (c) =>
+                                            CollectionPickerSheet.show(context, c.id),
+                                        onSourceTap: (sourceId) {
+                                          ref
+                                              .read(feedProvider.notifier)
+                                              .setSource(sourceId);
+                                          _scrollToTop();
+                                        },
+                                        onSourceLongPress: (c) =>
+                                            TopicChip.showArticleSheet(context, c,
+                                                initialSection:
+                                                    ArticleSheetSection.source),
+                                        topicChipBuilder: (c) => TopicChip(
+                                          content: c,
+                                          isFollowed: c.topics.isNotEmpty &&
+                                              followedTopics.any((t) =>
+                                                  t.slugParent == c.topics.first ||
+                                                  t.name.toLowerCase() ==
+                                                      getTopicLabel(c.topics.first)
+                                                          .toLowerCase()),
+                                          onTap: c.topics.isNotEmpty
+                                              ? () {
+                                                  final slug = c.topics.first;
+                                                  setState(() {
+                                                    _selectedInterestName =
+                                                        getTopicLabel(slug);
+                                                    _selectedIsTheme = false;
+                                                  });
+                                                  ref
+                                                      .read(feedProvider.notifier)
+                                                      .setTopic(slug);
+                                                  _scrollToTop();
+                                                }
+                                              : null,
+                                        ),
+                                        onFollowSource: (c) =>
+                                            TopicChip.showArticleSheet(context, c),
+                                        subscribedSourceIds: subscribedSourceIds,
+                                        hasActiveFilter: hasActiveFilter,
+                                        isSerene:
+                                            ref.watch(sereinToggleProvider).enabled,
+                                        onReportNotSerene: (c) async {
+                                          HapticFeedback.lightImpact();
+                                          try {
+                                            final feedRepo =
+                                                ref.read(feedRepositoryProvider);
+                                            await feedRepo.reportNotSerene(c.id);
+                                            NotificationService.showSuccess(
+                                                'Merci, nous en prenons note');
+                                          } catch (e) {
+                                            NotificationService.showError(
+                                                'Erreur lors du signalement');
+                                          }
+                                        },
                                       ),
                                     );
                                   }
@@ -957,9 +939,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           notifier.selectedTopic != null ||
                                           notifier.selectedEntity != null,
                                       onFollowSource: !content.isFollowedSource
-                                          ? () async {
-                                              await TopicChip.showArticleSheet(context, content);
-                                              ref.read(feedProvider.notifier).refresh();
+                                          ? () {
+                                              TopicChip.showArticleSheet(context, content);
                                             }
                                           : null,
                                       onSourceTap: () {

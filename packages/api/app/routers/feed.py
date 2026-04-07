@@ -22,6 +22,7 @@ from app.schemas.feed import (
     PaginationMeta,
     SourceOverflowInfo,
     TopicOverflowInfo,
+    TrendingTopicResponse,
 )
 from app.services.recommendation_service import RecommendationService
 
@@ -257,3 +258,58 @@ async def mark_briefing_item_read(
         )
 
     return {"message": "Briefing item marked as read", "updated": result.rowcount}
+
+
+@router.get("/trending-topics", response_model=list[TrendingTopicResponse])
+async def get_trending_topics(
+    limit: int = Query(8, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retourne les sujets tendance du moment (clusters multi-sources des dernières 24h)."""
+    from sqlalchemy import select
+
+    from app.models.content import Content
+    from app.services.briefing.importance_detector import ImportanceDetector
+
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    stmt = (
+        select(Content)
+        .where(Content.published_at >= cutoff)
+        .order_by(Content.published_at.desc())
+    )
+    result = await db.execute(stmt)
+    contents = list(result.scalars().all())
+
+    if not contents:
+        return []
+
+    detector = ImportanceDetector()
+    clusters = detector.build_topic_clusters(contents)
+    trending = [c for c in clusters if c.is_trending]
+
+    response = []
+    for cluster in trending[:limit]:
+        best_content = max(cluster.contents, key=lambda c: c.published_at)
+        topic_slug = None
+        for content in cluster.contents:
+            if content.topics:
+                topic_slug = content.topics[0]
+                break
+
+        response.append(
+            TrendingTopicResponse(
+                label=best_content.title,
+                article_count=len(cluster.contents),
+                source_count=len(cluster.source_ids),
+                topic_slug=topic_slug,
+                theme=cluster.theme,
+            )
+        )
+
+    logger.info(
+        "trending_topics_served",
+        total_contents=len(contents),
+        trending_count=len(response),
+    )
+    return response

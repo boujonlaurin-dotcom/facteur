@@ -81,10 +81,11 @@ class FeedRepository {
       if (response.statusCode == 200) {
         final data = response.data;
         final responseSize = response.data.toString().length;
-        print('[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
+        print(
+            '[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
 
         List<Content> itemsList = [];
-        List<FeedCarouselData> carousels = [];
+        final List<FeedCarouselData> carousels = [];
 
         // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
         if (data is List) {
@@ -124,7 +125,8 @@ class FeedRepository {
               try {
                 if (c is Map<String, dynamic>) {
                   final cluster = FeedCluster.fromJson(c);
-                  print('[DEBUG] Cluster "${cluster.topicSlug}": sources=${cluster.sources.length}, raw_sources=${(c['sources'] as List?)?.length ?? 0}');
+                  print(
+                      '[DEBUG] Cluster "${cluster.topicSlug}": sources=${cluster.sources.length}, raw_sources=${(c['sources'] as List?)?.length ?? 0}');
                   clusters.add(cluster);
                 }
               } catch (err) {
@@ -145,12 +147,14 @@ class FeedRepository {
                   // Fallback: if backend sends empty sources, use article's own source
                   final sources = cluster.sources.isNotEmpty
                       ? cluster.sources
-                      : [KeywordOverflowSource(
-                          sourceId: item.source.id,
-                          sourceName: item.source.name,
-                          sourceLogoUrl: item.source.logoUrl,
-                          articleCount: 1,
-                        )];
+                      : [
+                          KeywordOverflowSource(
+                            sourceId: item.source.id,
+                            sourceName: item.source.name,
+                            sourceLogoUrl: item.source.logoUrl,
+                            articleCount: 1,
+                          )
+                        ];
                   return item.copyWith(
                     clusterTopic: cluster.topicSlug,
                     clusterHiddenCount: cluster.hiddenCount,
@@ -208,7 +212,8 @@ class FeedRepository {
               try {
                 if (t is Map<String, dynamic>) {
                   final tof = TopicOverflow.fromJson(t);
-                  print('[DEBUG] TopicOverflow "${tof.groupLabel}": sources=${tof.sources.length}, raw_sources=${(t['sources'] as List?)?.length ?? 0}');
+                  print(
+                      '[DEBUG] TopicOverflow "${tof.groupLabel}": sources=${tof.sources.length}, raw_sources=${(t['sources'] as List?)?.length ?? 0}');
                   topicOverflows.add(tof);
                 }
               } catch (err) {
@@ -226,8 +231,8 @@ class FeedRepository {
                   final item = itemsList[i];
                   bool matches = false;
                   if (overflow.groupType == 'topic') {
-                    matches = item.topics.any(
-                        (t) => t.toLowerCase() == overflow.groupKey);
+                    matches = item.topics
+                        .any((t) => t.toLowerCase() == overflow.groupKey);
                   } else {
                     // theme match via source.theme
                     matches = (item.source.theme?.toLowerCase() ?? '') ==
@@ -245,12 +250,14 @@ class FeedRepository {
                     // Fallback: if backend sends empty sources, use article's own source
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
-                        : [KeywordOverflowSource(
-                            sourceId: item.source.id,
-                            sourceName: item.source.name,
-                            sourceLogoUrl: item.source.logoUrl,
-                            articleCount: 1,
-                          )];
+                        : [
+                            KeywordOverflowSource(
+                              sourceId: item.source.id,
+                              sourceName: item.source.name,
+                              sourceLogoUrl: item.source.logoUrl,
+                              articleCount: 1,
+                            )
+                          ];
                     itemsList[lastMatchIdx] = item.copyWith(
                       topicOverflowCount: overflow.hiddenCount,
                       topicOverflowLabel: overflow.groupLabel,
@@ -301,12 +308,14 @@ class FeedRepository {
                   if (item.clusterHiddenCount == 0) {
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
-                        : [KeywordOverflowSource(
-                            sourceId: item.source.id,
-                            sourceName: item.source.name,
-                            sourceLogoUrl: item.source.logoUrl,
-                            articleCount: 1,
-                          )];
+                        : [
+                            KeywordOverflowSource(
+                              sourceId: item.source.id,
+                              sourceName: item.source.name,
+                              sourceLogoUrl: item.source.logoUrl,
+                              articleCount: 1,
+                            )
+                          ];
                     itemsList[lastMatchIdx] = item.copyWith(
                       entityOverflowCount: overflow.hiddenCount,
                       entityOverflowLabel: overflow.displayLabel,
@@ -329,7 +338,8 @@ class FeedRepository {
                   keywordOverflows.add(KeywordOverflow.fromJson(k));
                 }
               } catch (err) {
-                print('FeedRepository: Skipping corrupt keyword_overflow: $err');
+                print(
+                    'FeedRepository: Skipping corrupt keyword_overflow: $err');
               }
             }
 
@@ -352,12 +362,14 @@ class FeedRepository {
                   if (item.clusterHiddenCount == 0) {
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
-                        : [KeywordOverflowSource(
-                            sourceId: item.source.id,
-                            sourceName: item.source.name,
-                            sourceLogoUrl: item.source.logoUrl,
-                            articleCount: 1,
-                          )];
+                        : [
+                            KeywordOverflowSource(
+                              sourceId: item.source.id,
+                              sourceName: item.source.name,
+                              sourceLogoUrl: item.source.logoUrl,
+                              articleCount: 1,
+                            )
+                          ];
                     itemsList[lastMatchIdx] = item.copyWith(
                       keywordOverflowCount: overflow.hiddenCount,
                       keywordOverflowLabel: overflow.displayLabel,
@@ -384,7 +396,8 @@ class FeedRepository {
               }
             }
             if (carousels.isNotEmpty) {
-              print('[DEBUG] FeedRepository: ${carousels.length} carousels parsed');
+              print(
+                  '[DEBUG] FeedRepository: ${carousels.length} carousels parsed');
             }
           }
         } else if (data == null) {
@@ -655,10 +668,8 @@ class PerspectivesResponse {
       perspectives: perspectivesList,
       keywords: keywordsList,
       biasDistribution: biasMap,
-      sourceBiasStance:
-          (json['source_bias_stance'] as String?) ?? 'unknown',
-      comparisonQuality:
-          (json['comparison_quality'] as String?) ?? 'low',
+      sourceBiasStance: (json['source_bias_stance'] as String?) ?? 'unknown',
+      comparisonQuality: (json['comparison_quality'] as String?) ?? 'low',
     );
   }
 }

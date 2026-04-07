@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/design/facteur_card.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
@@ -142,8 +143,8 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
 enum _AnalysisState { idle, loading, done, error }
 
 class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomSheet> {
-  /// Active filter: 'gauche', 'centre', 'droite', or null (show all)
-  String? _activeBiasFilter;
+  /// Collapsed groups: each group can be independently collapsed
+  final Set<String> _collapsedGroups = {};
 
   /// Analysis state
   _AnalysisState _analysisState = _AnalysisState.idle;
@@ -151,10 +152,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
   bool _isAnalysisExpanded = true;
 
   List<Perspective> get _filteredPerspectives {
-    if (_activeBiasFilter == null) return widget.perspectives;
-    return widget.perspectives
-        .where((p) => p.biasGroup == _activeBiasFilter)
-        .toList();
+    return widget.perspectives;
   }
 
   /// Compute merged 3-segment distribution from the 5-segment API data
@@ -513,18 +511,17 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           if (groups.containsKey(entry.$1)) ...[
             // Section header (tappable toggle collapse/expand)
             () {
-              final isExpanded =
-                  _activeBiasFilter == null || _activeBiasFilter == entry.$1;
+              final isCollapsed = _collapsedGroups.contains(entry.$1);
               return Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: GestureDetector(
                   onTap: () {
                     setState(() {
-                      if (_activeBiasFilter == entry.$1) {
-                        _activeBiasFilter = null;
+                      if (isCollapsed) {
+                        _collapsedGroups.remove(entry.$1);
                       } else {
-                        _activeBiasFilter = entry.$1;
+                        _collapsedGroups.add(entry.$1);
                       }
                     });
                   },
@@ -532,9 +529,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _activeBiasFilter == entry.$1
-                          ? colors.primary.withValues(alpha: 0.08)
-                          : Colors.transparent,
+                      color: Colors.transparent,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -545,21 +540,17 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                           style: textTheme.labelMedium?.copyWith(
                             fontWeight: FontWeight.w500,
                             fontSize: 12,
-                            color: _activeBiasFilter == entry.$1
-                                ? colors.primary
-                                : colors.textSecondary,
+                            color: colors.textSecondary,
                           ),
                         ),
                         const SizedBox(width: 4),
                         AnimatedRotation(
-                          turns: isExpanded ? 0.25 : 0,
+                          turns: isCollapsed ? 0 : 0.25,
                           duration: const Duration(milliseconds: 200),
                           child: Icon(
                             PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
                             size: 12,
-                            color: _activeBiasFilter == entry.$1
-                                ? colors.primary
-                                : colors.textSecondary,
+                            color: colors.textSecondary,
                           ),
                         ),
                       ],
@@ -568,9 +559,8 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                 ),
               );
             }(),
-            // Cards (only shown when expanded)
-            if (_activeBiasFilter == null ||
-                _activeBiasFilter == entry.$1)
+            // Cards (only shown when not collapsed)
+            if (!_collapsedGroups.contains(entry.$1))
               for (final p in groups[entry.$1]!) ...[
                 _PerspectiveCard(perspective: p),
                 const SizedBox(height: 8),
@@ -651,44 +641,27 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
             children: List.generate(segments.length, (i) {
               final seg = segments[i];
               final count = merged[seg.$1] ?? 0;
-              final isSelected = _activeBiasFilter == seg.$1;
-              final hasFilter = _activeBiasFilter != null;
-
               return Expanded(
                 flex: flexValues[i],
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (_activeBiasFilter == seg.$1) {
-                        _activeBiasFilter = null;
-                      } else {
-                        _activeBiasFilter = seg.$1;
-                      }
-                    });
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                    height: isSelected ? 18 : 12,
-                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                    decoration: BoxDecoration(
-                      color: count > 0
-                          ? seg.$3.withValues(
-                              alpha: hasFilter && !isSelected
-                                  ? 0.3
-                                  : (count == 1
-                                      ? 0.55
-                                      : (count == 2 ? 0.8 : 1.0)))
-                          : seg.$3.withValues(
-                              alpha: hasFilter && !isSelected ? 0.1 : 0.25),
-                      borderRadius: BorderRadius.circular(6),
-                      border: count > 0
-                          ? Border.all(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              width: 0.8,
-                            )
-                          : null,
-                    ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  height: 12,
+                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                  decoration: BoxDecoration(
+                    color: count > 0
+                        ? seg.$3.withValues(
+                            alpha: count == 1
+                                ? 0.55
+                                : (count == 2 ? 0.8 : 1.0))
+                        : seg.$3.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(6),
+                    border: count > 0
+                        ? Border.all(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            width: 0.8,
+                          )
+                        : null,
                   ),
                 ),
               );
@@ -763,43 +736,6 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
 
   Widget _buildEmptyState(
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    // If filtered to empty but there are perspectives, show filter message
-    if (_activeBiasFilter != null && widget.perspectives.isNotEmpty) {
-      final labels = {
-        'gauche': 'Gauche',
-        'centre': 'Centre',
-        'droite': 'Droite',
-      };
-      final label = labels[_activeBiasFilter] ?? _activeBiasFilter!;
-      return Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.funnel(PhosphorIconsStyle.duotone),
-              size: 48,
-              color: colors.textSecondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Aucune perspective "$label"',
-              style: textTheme.titleSmall?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tape sur la barre pour voir toutes les perspectives.',
-              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -955,143 +891,142 @@ class _PerspectiveCard extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Material(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () async {
-            final uri = Uri.parse(perspective.url);
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title area
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      child: FacteurCard(
+        padding: EdgeInsets.zero,
+        borderRadius: FacteurRadius.small,
+        onTap: () async {
+          final uri = Uri.parse(perspective.url);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title area
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: IntrinsicHeight(
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Bias indicator
-                    Container(
-                      width: 4,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: perspective.getBiasColor(colors),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Bias indicator
+                  Container(
+                    width: 4,
+                    decoration: BoxDecoration(
+                      color: perspective.getBiasColor(colors),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 12),
-                    // Title
-                    Expanded(
-                      child: Text(
-                        perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colors.textPrimary,
-                          fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 3,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(width: 12),
+                  // Title
+                  Expanded(
+                    child: Text(
+                      perspective.title.replaceAll(RegExp(r'\s*[-–|]\s*[^-–|]+$'), '').trim(),
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: colors.textPrimary,
+                        fontSize: (textTheme.bodyMedium?.fontSize ?? 14) + 1,
                       ),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Icon(
+                  ),
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: Icon(
                       PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
                       size: 16,
                       color: colors.textTertiary,
                     ),
+                  ),
+                ],
+              ),
+              ),
+            ),
+
+            // Footer — source info, tappable if source found in DB
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: matchedSource != null
+                  ? () => _showSourceDetail(context, ref, matchedSource)
+                  : null,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                  border: Border(
+                    top: BorderSide(
+                      color: colors.textSecondary.withValues(alpha: 0.1),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    // Bias badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: perspective
+                            .getBiasColor(colors)
+                            .withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        perspective.getBiasLabel(),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: perspective.getBiasColor(colors),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Favicon
+                    if (perspective.sourceDomain.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
+                          width: 14,
+                          height: 14,
+                          errorBuilder: (_, __, ___) =>
+                              _buildSourcePlaceholder(colors),
+                        ),
+                      ),
+                    ] else
+                      _buildSourcePlaceholder(colors),
+                    const SizedBox(width: 6),
+                    // Source name
+                    Flexible(
+                      child: Text(
+                        perspective.sourceName,
+                        style: textTheme.labelMedium?.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: (textTheme.labelMedium?.fontSize ?? 12) - 0.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Info hint (only if source is tappable)
+                    if (matchedSource != null) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        PhosphorIcons.info(PhosphorIconsStyle.regular),
+                        size: 11,
+                        color: colors.textTertiary,
+                      ),
+                    ],
                   ],
                 ),
               ),
-
-              // Footer — source info, tappable if source found in DB
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: matchedSource != null
-                    ? () => _showSourceDetail(context, ref, matchedSource)
-                    : null,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
-                    border: Border(
-                      top: BorderSide(
-                        color: colors.textSecondary.withValues(alpha: 0.1),
-                        width: 1,
-                      ),
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      // Favicon
-                      if (perspective.sourceDomain.isNotEmpty) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: Image.network(
-                            'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
-                            width: 14,
-                            height: 14,
-                            errorBuilder: (_, __, ___) =>
-                                _buildSourcePlaceholder(colors),
-                          ),
-                        ),
-                      ] else
-                        _buildSourcePlaceholder(colors),
-                      const SizedBox(width: 8),
-                      // Source name
-                      Flexible(
-                        child: Text(
-                          perspective.sourceName,
-                          style: textTheme.labelMedium?.copyWith(
-                            color: colors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: (textTheme.labelMedium?.fontSize ?? 12) - 0.5,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // Info hint (only if source is tappable)
-                      if (matchedSource != null) ...[
-                        const SizedBox(width: 4),
-                        Icon(
-                          PhosphorIcons.info(PhosphorIconsStyle.regular),
-                          size: 11,
-                          color: colors.textTertiary,
-                        ),
-                      ],
-                      const SizedBox(width: 8),
-                      // Bias badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: perspective
-                              .getBiasColor(colors)
-                              .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          perspective.getBiasLabel(),
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: perspective.getBiasColor(colors),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
