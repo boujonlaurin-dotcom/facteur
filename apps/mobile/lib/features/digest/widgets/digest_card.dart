@@ -398,7 +398,7 @@ class DigestCard extends StatelessWidget {
         final showEmoji = !isSerene ||
             item.badge == 'pepite' ||
             item.badge == 'coup_de_coeur';
-        final label = showEmoji
+        final label = showEmoji && config.emoji.isNotEmpty
             ? '${config.emoji} ${config.label}'
             : config.label;
         return Container(
@@ -446,9 +446,9 @@ class DigestCard extends StatelessWidget {
     switch (badge) {
       case 'actu':
         return _BadgeConfig(
-          emoji: '🔴',
+          emoji: '',
           label: "L'actu du jour",
-          backgroundColor: colors.primary.withValues(alpha: alpha),
+          backgroundColor: colors.primary.withValues(alpha: alpha * 0.7),
           textColor: colors.primary,
         );
       case 'pas_de_recul':

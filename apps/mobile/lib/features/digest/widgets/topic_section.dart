@@ -233,11 +233,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
               else
                 _buildCompactEditorialCard(colors, isDark, topic, actuArticles),
-              ArticleThumbsFeedback(
-                contentId: isActuMulti
-                    ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
-                    : actuArticles.first.contentId,
-              ),
             ],
           ),
         ),
@@ -281,13 +276,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             const SizedBox(height: 2),
             _buildPageIndicator(colors, topic.articles.length),
           ],
-
-          // Article feedback thumbs (1 per topic group)
-          ArticleThumbsFeedback(
-            contentId: isMulti
-                ? topic.articles[_currentPage].contentId
-                : topic.articles.first.contentId,
-          ),
         ],
       ),
     );
@@ -661,11 +649,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         .cast<DigestItem?>()
         .firstOrNull;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
             // ── Articles (avant "De quoi on parle") ──
             const SizedBox(height: 8),
             if (isActuMulti) ...[
@@ -689,47 +675,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
             const SizedBox(height: 8),
 
-            // ── Carte "De quoi on parle ?" ──
-            if (topic.introText != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'De quoi on parle ?',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: colors.textSecondary.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        topic.introText!,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.5,
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.7)
-                              : colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            // ── Analyse Facteur ──
+            // ── Analyse Facteur (juste sous les carrousels) ──
             if (topic.divergenceAnalysis != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -741,6 +687,52 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   onCompare: _handleCompare,
                   perspectiveCount: topic.perspectiveCount,
                   perspectiveSources: topic.perspectiveSources,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // ── Carte "De quoi on parle ?" ──
+            if (topic.introText != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.textSecondary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border(
+                      left: BorderSide(
+                        width: 3,
+                        color: colors.textSecondary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'De quoi on parle ?',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: colors.textSecondary.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        topic.introText!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.85)
+                              : colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -758,30 +750,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               ),
               const SizedBox(height: 8),
             ],
-          ],
-        ),
-        // ── Toggle overlay top-right ──
-        Positioned(
-          top: 4,
-          right: 4,
-          child: GestureDetector(
-            onTap: () => setState(() => _isExpanded = false),
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-                size: 14,
-                color: colors.textSecondary,
-              ),
+
+            // ── Thumbs feedback ──
+            ArticleThumbsFeedback(
+              contentId: isActuMulti
+                  ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
+                  : actuArticles.first.contentId,
             ),
-          ),
-        ),
-      ],
+          ],
     );
   }
 
@@ -867,10 +843,30 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             TopicThemeChip(themeSlug: topic.theme),
             const Spacer(),
             if (topic.isCovered)
-              Icon(
-                PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
-                size: 16,
-                color: colors.success,
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Icon(
+                  PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                  size: 16,
+                  color: colors.success,
+                ),
+              ),
+            if (_isExpanded)
+              GestureDetector(
+                onTap: () => setState(() => _isExpanded = false),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+                    size: 14,
+                    color: colors.textSecondary,
+                  ),
+                ),
               ),
           ],
         ),
@@ -888,10 +884,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               Text(
                 'N\u00B0${topic.rank}',
                 style: TextStyle(
-                  color: colors.primary.withValues(alpha: 0.9),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                  letterSpacing: 1.0,
+                  color: colors.primary.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(width: 8),
@@ -1010,7 +1006,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (badgeChip != null)
+        if (badgeChip != null && !widget.editorialMode)
           Padding(
             padding: const EdgeInsets.only(left: 12, right: 12, bottom: 14),
             child: badgeChip,

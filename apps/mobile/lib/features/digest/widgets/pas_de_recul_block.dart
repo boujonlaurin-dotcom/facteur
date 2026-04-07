@@ -53,10 +53,10 @@ class PasDeReculBlock extends StatelessWidget {
               Text(
                 reculIntro!,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   fontStyle: FontStyle.italic,
                   color: isDark
-                      ? Colors.white.withValues(alpha: 0.7)
+                      ? Colors.white.withValues(alpha: 0.85)
                       : colors.textSecondary,
                 ),
               ),
@@ -77,8 +77,8 @@ class PasDeReculBlock extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                           color: isDark ? Colors.white : colors.textSecondary,
                         ),
                       ),

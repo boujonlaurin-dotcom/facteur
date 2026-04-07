@@ -39,27 +39,23 @@ class DigestModeQuestion extends ConsumerWidget {
                   .textTheme
                   .bodyMedium
                   ?.copyWith(color: colors.textSecondary),
-              children: [
-                const TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart1),
+              children: const [
+                TextSpan(text: OnboardingStrings.digestModeSereinPart1),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold1,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart2),
+                TextSpan(text: OnboardingStrings.digestModeSereinPart2),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold2,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart3),
+                TextSpan(text: OnboardingStrings.digestModeSereinPart3),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold3,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const TextSpan(
-                    text: OnboardingStrings.digestModeSereinPart4),
+                TextSpan(text: OnboardingStrings.digestModeSereinPart4),
               ],
             ),
             textAlign: TextAlign.center,
