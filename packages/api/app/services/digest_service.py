@@ -971,6 +971,8 @@ class DigestService:
                     "bias_distribution": s.bias_distribution,
                     "bias_highlights": s.bias_highlights,
                     "divergence_analysis": s.divergence_analysis,
+                    "divergence_level": s.divergence_level,
+                    "perspective_sources": s.perspective_sources,
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -990,6 +992,7 @@ class DigestService:
                         "badge": "pas_de_recul",
                         "match_reason": s.deep_article.match_reason,
                         "published_at": s.deep_article.published_at.isoformat(),
+                        "recul_intro": s.deep_article.recul_intro,
                     }
                     if s.deep_article
                     else None,
@@ -1350,6 +1353,7 @@ class DigestService:
                     rank=1 if art_key == "actu_article" else 2,
                     reason=reason,
                     badge=art_data.get("badge"),
+                    recul_intro=art_data.get("recul_intro"),
                     is_followed_source=art_data.get("is_user_source", False),
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
@@ -1407,6 +1411,8 @@ class DigestService:
                     bias_distribution=subject.get("bias_distribution"),
                     bias_highlights=subject.get("bias_highlights"),
                     divergence_analysis=subject.get("divergence_analysis"),
+                    divergence_level=subject.get("divergence_level"),
+                    perspective_sources=subject.get("perspective_sources"),
                 )
             )
 
