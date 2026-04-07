@@ -644,6 +644,19 @@ async def get_perspectives(
         keywords=keywords,
     )
 
+    # Check if a cached Mistral analysis exists in DB
+    from app.models.perspective_analysis import PerspectiveAnalysis
+
+    cached_analysis = None
+    analysis_result = await db.execute(
+        select(PerspectiveAnalysis).where(
+            PerspectiveAnalysis.content_id == content_id
+        )
+    )
+    cached_row = analysis_result.scalars().first()
+    if cached_row:
+        cached_analysis = cached_row.analysis_text
+
     response = {
         "content_id": cache_key,
         "keywords": keywords,
@@ -662,6 +675,8 @@ async def get_perspectives(
         ],
         "bias_distribution": bias_distribution,
         "comparison_quality": comparison_quality,
+        "analysis": cached_analysis,
+        "analysis_cached": cached_analysis is not None,
     }
 
     # Store in cache (TTLCache handles expiration automatically)
@@ -678,29 +693,46 @@ async def analyze_perspectives(
 ):
     """
     Analyse LLM des divergences éditoriales entre perspectives.
-    Cache in-memory (2h TTL). Réutilise le cache perspectives si disponible.
+    Persiste en DB pour réutilisation inter-utilisateurs.
+    Cache in-memory L1 (2h TTL) pour éviter des hits DB répétés.
     """
+    from app.models.perspective_analysis import PerspectiveAnalysis
     from app.services.perspective_service import PerspectiveService
 
     cache_key = str(content_id)
 
-    # Check analysis cache (TTLCache handles expiration automatically)
+    # L1: Check in-memory cache
     cached_response = _analysis_cache.get(cache_key)
     if cached_response is not None:
         return cached_response
 
-    # Get perspectives (from cache or fresh)
+    # L2: Check DB for persisted analysis
+    existing = await db.execute(
+        select(PerspectiveAnalysis).where(
+            PerspectiveAnalysis.content_id == content_id
+        )
+    )
+    cached_row = existing.scalars().first()
+    if cached_row:
+        response = {
+            "content_id": cache_key,
+            "analysis": cached_row.analysis_text,
+            "cached": True,
+        }
+        _analysis_cache[cache_key] = response
+        return response
+
+    # No cache — generate via Mistral
     perspectives_data = _perspectives_cache.get(cache_key)
 
     if perspectives_data is None:
-        # Fetch fresh perspectives via the existing endpoint logic
         perspectives_data = await get_perspectives(
             content_id=content_id, db=db, current_user_id=current_user_id
         )
 
     perspectives_list = perspectives_data.get("perspectives", [])
     if not perspectives_list:
-        response = {"content_id": cache_key, "analysis": None}
+        response = {"content_id": cache_key, "analysis": None, "cached": False}
         _analysis_cache[cache_key] = response
         return response
 
@@ -728,6 +760,26 @@ async def analyze_perspectives(
         article_description=content.description,
     )
 
-    response = {"content_id": cache_key, "analysis": analysis}
+    # Persist to DB for future users (ON CONFLICT DO NOTHING for concurrent requests)
+    if analysis:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        stmt = (
+            pg_insert(PerspectiveAnalysis)
+            .values(content_id=content_id, analysis_text=analysis)
+            .on_conflict_do_nothing(constraint="uq_perspective_analyses_content_id")
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    response = {
+        "content_id": cache_key,
+        "analysis": analysis,
+        "cached": False,
+    }
     _analysis_cache[cache_key] = response
+
+    # Invalidate perspectives cache so next get_perspectives includes the analysis
+    _perspectives_cache.pop(cache_key, None)
+
     return response
