@@ -165,7 +165,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     if _has_explicit_db:
 
         async def _startup_digest_catchup() -> None:
-            """Vérifie si les digests du jour existent, sinon lance la génération."""
+            """Vérifie si les digests du jour existent, sinon lance la génération.
+
+            Waits 60s after startup to avoid saturating the DB connection pool
+            while the container is handling its first user requests.
+            """
             try:
                 from datetime import date
 
@@ -174,6 +178,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                 from app.database import async_session_maker
                 from app.jobs.digest_generation_job import run_digest_generation
                 from app.models.daily_digest import DailyDigest
+
+                await asyncio.sleep(60)
 
                 async with async_session_maker() as session:
                     today = date.today()

@@ -249,7 +249,9 @@ async def create_topic(
             )
     else:
         count = await db.scalar(
-            select(func.count()).select_from(UserTopicProfile).where(
+            select(func.count())
+            .select_from(UserTopicProfile)
+            .where(
                 UserTopicProfile.user_id == user_uuid,
                 UserTopicProfile.slug_parent == result.slug_parent,
                 UserTopicProfile.canonical_name.is_(None),
