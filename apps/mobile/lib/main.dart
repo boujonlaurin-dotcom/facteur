@@ -44,10 +44,11 @@ Future<void> main() async {
   await Hive.initFlutter();
 
   // Pré-ouvrir les boxes et vérifier leur contenu
+  // Try-catch avec fallback : si un box est corrompu, on le recrée vide
   debugPrint('Main: Opening Hive boxes...');
-  await Hive.openBox<dynamic>('settings');
-  final authBox = await Hive.openBox<dynamic>('auth_prefs');
-  final supabaseBox = await Hive.openBox<String>('supabase_auth_persistence');
+  await _openBoxSafe<dynamic>('settings');
+  final authBox = await _openBoxSafe<dynamic>('auth_prefs');
+  final supabaseBox = await _openBoxSafe<String>('supabase_auth_persistence');
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
@@ -153,6 +154,17 @@ Future<void> main() async {
 Future<void> homeWidgetBackgroundCallback(Uri? uri) async {
   // Widget taps are handled via PendingIntents in Kotlin, so this is a no-op.
   debugPrint('HomeWidget callback: $uri');
+}
+
+/// Open a Hive box safely — if corrupted, delete and recreate it.
+Future<Box<T>> _openBoxSafe<T>(String name) async {
+  try {
+    return await Hive.openBox<T>(name);
+  } catch (e) {
+    debugPrint('Main: Hive box "$name" corrupted, recreating: $e');
+    await Hive.deleteBoxFromDisk(name);
+    return await Hive.openBox<T>(name);
+  }
 }
 
 void _runErrorApp(String message) {
