@@ -27,7 +27,8 @@ class FacteurWidget : AppWidgetProvider() {
     ) {
         for (appWidgetId in appWidgetIds) {
             try {
-                val widgetData = HomeWidgetPlugin.getData(context) ?: run {
+                val widgetData = HomeWidgetPlugin.getData(context)
+                if (widgetData == null) {
                     Log.w(TAG, "Widget data unavailable, skipping update")
                     continue
                 }
