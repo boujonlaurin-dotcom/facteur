@@ -83,6 +83,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showShareFab = false;
   bool _isShortArticle = false;
   bool _showNoteWelcome = false;
+  bool _linkCopiedFab = false;
+  bool _linkCopiedHeader = false;
+  Timer? _linkCopiedFabTimer;
+  Timer? _linkCopiedHeaderTimer;
   bool _premiumRedirectScheduled = false;
   bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
@@ -102,6 +106,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
+  Timer? _inactivityTimer;
+  late AnimationController _headerAutoController;
+  double _headerAutoStart = 0.0;
+  double _headerAutoTarget = 0.0;
 
   final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
@@ -224,6 +232,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
+
+    _headerAutoController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _headerAutoController.addListener(() {
+      _headerOffset.value = _headerAutoStart +
+          (_headerAutoTarget - _headerAutoStart) * _headerAutoController.value;
+    });
 
     WidgetsBinding.instance.addObserver(this);
 
@@ -397,10 +414,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Previously showed a contextual nudge SnackBar at 90% reading progress.
-  /// Replaced by a permanent Share FAB in the FAB column.
+  /// Show header when user reaches the bottom of the article (progress ≥ 98%).
   void _onReadingProgressNudge() {
-    // No-op: end-of-article notification removed in favor of Share FAB.
+    if (_readingProgress.value >= 0.98 && _headerOffset.value > 0.0) {
+      _inactivityTimer?.cancel();
+      _animateHeaderTo(0.0);
+    }
   }
 
   /// Show Share FAB when user reaches 90% of article (long articles only).
@@ -481,6 +500,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  /// Smoothly animate the header to [target] offset (0.0 = visible, 1.0 = hidden).
+  void _animateHeaderTo(double target) {
+    _headerAutoController.stop();
+    _headerAutoStart = _headerOffset.value;
+    _headerAutoTarget = target;
+    _headerAutoController.forward(from: 0);
+  }
+
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
@@ -506,6 +533,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fabReappearController.forward(from: 0);
       }
     });
+    // Auto-hide header after 3s of inactivity (no scroll)
+    _inactivityTimer?.cancel();
+    if (!isVideo && !_isShortArticle) {
+      _inactivityTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && _headerOffset.value < 1.0) {
+          _animateHeaderTo(1.0);
+        }
+      });
+    }
   }
 
   /// Returns whichever of [a] or [b] has the longest plain-text content.
@@ -686,14 +722,56 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _shareArticle() async {
+  Future<void> _shareArticle({bool isFab = false}) async {
     final content = _content;
     if (content == null) return;
 
     await Clipboard.setData(ClipboardData(text: content.url));
     if (mounted) {
-      NotificationService.showInfo('Lien copié !');
+      if (isFab) {
+        setState(() => _linkCopiedFab = true);
+        _linkCopiedFabTimer?.cancel();
+        _linkCopiedFabTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _linkCopiedFab = false);
+        });
+      } else {
+        setState(() => _linkCopiedHeader = true);
+        _linkCopiedHeaderTimer?.cancel();
+        _linkCopiedHeaderTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _linkCopiedHeader = false);
+        });
+      }
     }
+  }
+
+  Widget _buildLinkCopiedTooltip(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.inverseSurface,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+            size: 14,
+            color: colorScheme.onInverseSurface,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Lien copié !',
+            style: TextStyle(
+              color: colorScheme.onInverseSurface,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openNoteSheet() async {
@@ -758,13 +836,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
+    _inactivityTimer?.cancel();
     _videoPlayHideTimer?.cancel();
+    _linkCopiedFabTimer?.cancel();
+    _linkCopiedHeaderTimer?.cancel();
     _fabController.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _fabReappearController.dispose();
     _shareFabController.dispose();
     _exitAnimController.dispose();
+    _headerAutoController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _fabOpacity.dispose();
     _headerOffset.dispose();
@@ -1122,6 +1204,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
                 final delta = notification.scrollDelta ?? 0.0;
+                // Sync short-article flag from live scroll metrics (catches cases
+                // where the postFrameCallback hasn't fired yet).
+                if (!_isShortArticle &&
+                    notification.metrics.maxScrollExtent < 50) {
+                  _isShortArticle = true;
+                  _headerOffset.value = 0.0;
+                }
                 _onScrollDelta(delta);
                 // Track reading progress from any scrollable (including in-app reader)
                 final metrics = notification.metrics;
@@ -1149,6 +1238,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ),
           // Header — follows scroll: slides up on scroll-down, back on scroll-up
+          // For short articles the header stays pinned (offset is never updated).
           Positioned(
             top: 0,
             left: 0,
@@ -1248,25 +1338,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       children: [
                         // Share FAB — appears after 90% reading on long articles
                         if (_showShareFab) ...[
-                          ScaleTransition(
-                            scale: _shareFabScale,
-                            child: SizedBox(
-                              width: 50,
-                              height: 50,
-                              child: FloatingActionButton(
-                                onPressed: _shareArticle,
-                                backgroundColor: Colors.white,
-                                foregroundColor: colors.textPrimary,
-                                elevation: 2,
-                                heroTag: 'share_fab',
-                                tooltip: 'Partager',
-                                child: Icon(
-                                  PhosphorIcons.shareNetwork(
-                                      PhosphorIconsStyle.regular),
-                                  size: 25,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              if (_linkCopiedFab) ...[
+                                _buildLinkCopiedTooltip(context),
+                                const SizedBox(width: 16),
+                              ],
+                              ScaleTransition(
+                                scale: _shareFabScale,
+                                child: SizedBox(
+                                  width: 50,
+                                  height: 50,
+                                  child: FloatingActionButton(
+                                    onPressed: () => _shareArticle(isFab: true),
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: colors.textPrimary,
+                                    elevation: 2,
+                                    heroTag: 'share_fab',
+                                    tooltip: 'Partager',
+                                    child: Icon(
+                                      PhosphorIcons.shareNetwork(
+                                          PhosphorIconsStyle.regular),
+                                      size: 25,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -1400,7 +1500,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final textTheme = Theme.of(context).textTheme;
 
     // ColoredBox fills the status bar area; SafeArea pushes content below it
-    return ColoredBox(
+    final headerContent = ColoredBox(
       color: colors.backgroundPrimary,
       child: SafeArea(
         bottom: false,
@@ -1582,6 +1682,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         ),
       ),
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        headerContent,
+        if (_linkCopiedHeader)
+          Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 16, right: 16),
+              child: _buildLinkCopiedTooltip(context),
+            ),
+          ),
+      ],
     );
   }
 
