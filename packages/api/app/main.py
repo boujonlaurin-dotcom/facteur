@@ -189,9 +189,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                         return
 
                     digest_count = await session.scalar(
-                        sa_select(
-                            func.count(func.distinct(DailyDigest.user_id))
-                        ).where(DailyDigest.target_date == today)
+                        sa_select(func.count(func.distinct(DailyDigest.user_id))).where(
+                            DailyDigest.target_date == today
+                        )
                     )
 
                     coverage = digest_count / total_users

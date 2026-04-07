@@ -286,10 +286,7 @@ class EditorialPipelineService:
                     ]
                     stmt = select(Source.url, Source.logo_url).where(
                         or_(
-                            *[
-                                Source.url.ilike(pattern)
-                                for pattern in domain_patterns
-                            ]
+                            *[Source.url.ilike(pattern) for pattern in domain_patterns]
                         ),
                         Source.logo_url.is_not(None),
                     )
@@ -328,34 +325,28 @@ class EditorialPipelineService:
                             representative.source.name if representative.source else ""
                         ),
                     )
-                    divergence_result = (
-                        await perspective_service.analyze_divergences(
-                            article_title=representative.title,
-                            source_name=(
-                                representative.source.name
-                                if representative.source
-                                else ""
-                            ),
-                            source_bias=source_bias,
-                            perspectives=[
-                                {
-                                    "title": p.title,
-                                    "url": p.url,
-                                    "source_name": p.source_name,
-                                    "source_domain": p.source_domain,
-                                    "bias_stance": p.bias_stance,
-                                    "published_at": p.published_at,
-                                    "description": p.description,
-                                }
-                                for p in perspectives
-                            ],
-                            article_description=representative.description,
-                        )
+                    divergence_result = await perspective_service.analyze_divergences(
+                        article_title=representative.title,
+                        source_name=(
+                            representative.source.name if representative.source else ""
+                        ),
+                        source_bias=source_bias,
+                        perspectives=[
+                            {
+                                "title": p.title,
+                                "url": p.url,
+                                "source_name": p.source_name,
+                                "source_domain": p.source_domain,
+                                "bias_stance": p.bias_stance,
+                                "published_at": p.published_at,
+                                "description": p.description,
+                            }
+                            for p in perspectives
+                        ],
+                        article_description=representative.description,
                     )
                     if isinstance(divergence_result, dict):
-                        subject.divergence_analysis = divergence_result.get(
-                            "analysis"
-                        )
+                        subject.divergence_analysis = divergence_result.get("analysis")
                         subject.divergence_level = divergence_result.get(
                             "divergence_level"
                         )
