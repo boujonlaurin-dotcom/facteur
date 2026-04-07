@@ -262,13 +262,22 @@ class DigestGenerationJob:
                     )
                 )
 
-                if existing and existing.format_version != "editorial_v1":
+                # Determine expected format version for this user
+                expected_version = (
+                    "editorial_v1"
+                    if editorial_config
+                    and editorial_config.is_enabled_for_user(str(user_id))
+                    else "topics_v1"
+                )
+
+                if existing and existing.format_version != expected_version:
                     logger.info(
                         "digest_generation_stale_format_deleted",
                         user_id=str(user_id),
                         target_date=str(target_date),
                         is_serene=is_serene,
                         cached=existing.format_version,
+                        expected=expected_version,
                     )
                     await session.delete(existing)
                     await session.flush()
