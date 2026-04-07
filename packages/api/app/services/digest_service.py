@@ -877,7 +877,9 @@ class DigestService:
                 target_date=str(target_date),
                 is_serene=is_serene,
             )
-            existing = await self._get_existing_digest(user_id, target_date, is_serene=is_serene)
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
             if existing:
                 return existing
             raise
@@ -954,7 +956,9 @@ class DigestService:
                 target_date=str(target_date),
                 is_serene=is_serene,
             )
-            existing = await self._get_existing_digest(user_id, target_date, is_serene=is_serene)
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
             if existing:
                 return existing
             raise
@@ -1063,7 +1067,9 @@ class DigestService:
                 target_date=str(target_date),
                 is_serene=is_serene,
             )
-            existing = await self._get_existing_digest(user_id, target_date, is_serene=is_serene)
+            existing = await self._get_existing_digest(
+                user_id, target_date, is_serene=is_serene
+            )
             if existing:
                 return existing
             raise
