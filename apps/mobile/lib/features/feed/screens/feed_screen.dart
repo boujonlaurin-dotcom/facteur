@@ -13,7 +13,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
-import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
@@ -23,6 +22,7 @@ import '../../../widgets/design/facteur_button.dart';
 import '../models/content_model.dart';
 import '../widgets/feed_card.dart';
 import '../widgets/compact_source_chip.dart';
+import '../widgets/compact_search_chip.dart';
 import '../widgets/compact_theme_chip.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
@@ -36,7 +36,6 @@ import '../../saved/providers/saved_summary_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
-import '../../settings/providers/user_profile_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
 import '../widgets/source_overflow_chip.dart';
@@ -359,52 +358,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Builder(
-                                builder: (context) {
-                                  final profile =
-                                      ref.watch(userProfileProvider);
-                                  final authUser =
-                                      ref.watch(authStateProvider).user;
-
-                                  String displayName = 'Vous';
-                                  if (profile.displayName != null &&
-                                      profile.displayName!.isNotEmpty) {
-                                    displayName = profile.displayName!;
-                                  } else if (authUser?.userMetadata != null &&
-                                      authUser!.userMetadata!['first_name'] !=
-                                          null &&
-                                      (authUser.userMetadata!['first_name']
-                                              as String)
-                                          .isNotEmpty) {
-                                    final firstName = authUser
-                                        .userMetadata!['first_name'] as String;
-                                    displayName = firstName[0].toUpperCase() +
-                                        firstName.substring(1).toLowerCase();
-                                  } else if (authUser?.email != null) {
-                                    final part = authUser!.email!.split('@')[0];
-                                    final subParts = part.contains('.')
-                                        ? part.split('.')
-                                        : part.split('-');
-                                    if (subParts.length > 1) {
-                                      final candidate = subParts.last.length > 2
-                                          ? subParts.last
-                                          : subParts.first;
-                                      displayName = candidate[0].toUpperCase() +
-                                          candidate.substring(1).toLowerCase();
-                                    } else {
-                                      displayName = part[0].toUpperCase() +
-                                          part.substring(1).toLowerCase();
-                                    }
-                                  }
-                                  return Text(
-                                    'Bonjour $displayName,',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .displayMedium,
-                                  );
-                                },
+                              child: Text(
+                                'Bonjour,',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .displayMedium,
                               ),
                             ),
+                            const SereinToggleChip(),
                           ],
                         ),
                       ),
@@ -508,8 +469,15 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   _scrollToTop();
                                 },
                               ),
-                              const Spacer(),
-                              const SereinToggleChip(),
+                              const SizedBox(width: 8),
+                              CompactSearchChip(
+                                activeKeyword: notifier.selectedKeyword,
+                                onSearchChanged: (keyword) {
+                                  _withFeedLoading(
+                                      () => notifier.setKeyword(keyword));
+                                  _scrollToTop();
+                                },
+                              ),
                             ],
                           );
                         }),
