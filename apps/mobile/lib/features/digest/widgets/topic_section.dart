@@ -650,22 +650,21 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: isDark
-            ? colors.surface.withValues(alpha: 0.3)
-            : colors.surface.withValues(alpha: 0.4),
+            ? colors.surface.withValues(alpha: 0.05)
+            : colors.surface.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: colors.border.withValues(alpha: 0.15),
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
+      child: Stack(
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header fermeture ──
-          _buildExpandedHeader(colors, isDark, topic),
-
           // ── Articles (avant "De quoi on parle") ──
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           if (isActuMulti) ...[
             LayoutBuilder(
               builder: (context, constraints) {
@@ -685,17 +684,17 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ] else if (!actuArticles.first.isDismissed)
             _buildSingleArticle(actuArticles.first),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           // ── Carte "De quoi on parle ?" ──
           if (topic.introText != null) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colors.textSecondary.withValues(alpha: 0.10),
+                  color: colors.textSecondary.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -705,8 +704,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                       'De quoi on parle ?',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textSecondary.withValues(alpha: 0.5),
+                        fontWeight: FontWeight.w700,
+                        color: colors.textSecondary.withValues(alpha: 0.7),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -724,15 +723,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 ),
               ),
             ),
+            const SizedBox(height: 8),
           ],
 
-          // Divider before analysis
+          // ── Analyse Facteur ──
           if (topic.divergenceAnalysis != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Divider(height: 1, thickness: 0.5, color: colors.textSecondary.withValues(alpha: 0.1)),
-            ),
-            const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: DivergenceAnalysisBlock(
@@ -745,16 +740,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 perspectiveSources: topic.perspectiveSources,
               ),
             ),
+            const SizedBox(height: 8),
           ],
 
-          // Pas de recul
+          // ── Pas de recul ──
           if (deepArticle != null) ...[
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Divider(height: 1, thickness: 0.5, color: colors.textSecondary.withValues(alpha: 0.1)),
-            ),
-            const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: PasDeReculBlock(
@@ -763,45 +753,32 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 onTap: () => widget.onArticleTap(deepArticle),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildExpandedHeader(
-    FacteurColors colors,
-    bool isDark,
-    DigestTopic topic,
-  ) {
-    return GestureDetector(
-      onTap: () => setState(() => _isExpanded = false),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                topic.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : colors.textPrimary,
+          // ── Toggle overlay top-right ──
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: () => setState(() => _isExpanded = false),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
+                  size: 14,
+                  color: colors.textSecondary,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              PhosphorIcons.caretUp(PhosphorIconsStyle.bold),
-              size: 16,
-              color: colors.textSecondary,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1028,7 +1005,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final imageVisible = _imageWillRender(article);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: FeedCard(
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(article),
@@ -1183,12 +1160,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
   }
 
-  /// Returns "Sujets : X, Y, Z" from backend-computed keywords, null if empty.
-  String? _computeSubjects(DigestTopic topic) {
-    final subjects = topic.subjects.where((s) => s.isNotEmpty).toList();
-    if (subjects.isEmpty) return null;
-    return 'Sujets\u00a0: ${subjects.join(', ')}';
-  }
 
   /// Clean up reason strings for display.
   static String _simplifyReason(String reason) {

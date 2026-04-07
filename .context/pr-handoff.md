@@ -1,55 +1,100 @@
-# PR — Backend: ajout `recul_intro` au pipeline éditorial
+# Handoff — Ajustements visuels carte expanded digest
 
-## Quoi
+## Contexte
+Après la PR `recul_intro`, plusieurs ajustements visuels sont nécessaires sur la carte expanded des topics du digest éditorial. Les changements concernent uniquement le mobile Flutter.
 
-Ajout du champ `recul_intro` (1 phrase courte générée par le LLM) à toute la chaîne backend : schemas éditoriaux → prompt writing → parser → pipeline injection → digest_service → API response. Le champ donne une accroche engageante pour l'article de fond ("Prendre du recul").
+---
 
-## Pourquoi
+## Tâches à réaliser
 
-Le bloc "Prendre du recul" dans la carte expanded est quasi invisible (simple chip + titre + "Lire →"). Pour créer une hiérarchie visuelle et rendre le recul engageant, le LLM génère désormais une phrase d'accroche courte (8-15 mots) par sujet ayant un deep article. Le mobile pourra l'afficher sous le titre de l'article de fond.
+### 1. Retirer le texte "Sujets : ..." après ouverture de la carte
+**Fichier :** `apps/mobile/lib/features/digest/widgets/topic_section.dart`
+- La méthode `_computeSubjects()` (lignes 1186-1191) est du dead code — elle existe mais n'est jamais appelée.
+- Si le texte "Sujets : ..." apparaît malgré tout dans l'UI, il est probable qu'il vienne du champ `DigestTopic.subjects` (liste de strings, ligne 103 de `digest_models.dart`) rendu par un widget parent ou par le `topic.label`.
+- **Action :** Supprimer la méthode `_computeSubjects()` (dead code), puis chercher dans l'app où `topic.subjects` ou un texte "Sujets" est affiché à l'ouverture de la carte — possiblement dans `_buildExpandedHeader` ou dans le widget parent `digest_briefing_section.dart`.
 
-## Fichiers modifiés
-
-**Backend :**
-- `packages/api/app/services/editorial/schemas.py` — `recul_intro: str | None = None` sur `MatchedDeepArticle` et `SubjectWriting`
-- `packages/api/app/services/editorial/writer.py` — parsing `recul_intro` depuis le JSON LLM
-- `packages/api/app/services/editorial/pipeline.py` — injection `sw.recul_intro → s.deep_article.recul_intro`
-- `packages/api/app/services/digest_service.py` — propagation dans le dict deep_article + construction `DigestTopicArticle`
-- `packages/api/app/schemas/digest.py` — `recul_intro` ajouté à `DigestTopicArticle` et `DigestItem`
-
-**Config :**
-- `packages/api/config/editorial_prompts.yaml` — instructions `recul_intro` + JSON output mis à jour dans `writing` et `writing_serene`
-
-## Zones à risque
-
-1. **`editorial_prompts.yaml`** — Le LLM (Mistral Large) doit respecter le nouveau champ `recul_intro` dans le JSON output. Si le modèle ne le produit pas, le champ reste `None` (backward compat OK). À valider sur un digest réel.
-
-2. **`pipeline.py` injection** — L'injection ne se fait que si `sw.recul_intro AND s.deep_article` existent. Pas de risque de crash, mais vérifier que le LLM génère bien `null` (et non une string vide) quand il n'y a pas de deep article.
-
-## Points d'attention pour le reviewer
-
-- **Backward compat totale** : tous les ajouts sont `str | None = None`. Les anciens digests en DB, les anciens JSON sans `recul_intro` restent lisibles. Aucune migration Alembic nécessaire.
-
-- **Prompt instructions** : les instructions demandent "8-15 mots, pas de paraphrase du titre, forme impersonnelle, factuelle, dense". Identiques dans `writing` et `writing_serene`.
-
-- **JSON output template** : le format passe de `"transition_text": null` à `"transition_text": null, "recul_intro": "...ou null"`. Le LLM pourrait omettre le champ → `s.get("recul_intro")` retourne `None`, ce qui est le comportement voulu.
-
-## Ce qui N'A PAS changé (mais pourrait sembler affecté)
-
-- **`EditorialSubject`** : pas de champ `recul_intro` ajouté ici — il vit sur `MatchedDeepArticle` (le deep article lui-même), pas sur le subject.
-- **Mobile** : aucun changement Flutter dans cette PR. Le champ sera consommé dans un PR suivant.
-- **Tests existants** : 77 tests editorial passent sans modification. Le champ est optionnel avec default `None`.
-
-## Comment tester
-
-### Backend
-```bash
-cd packages/api
-pytest tests/editorial/ -v    # 77 tests, tous passent
+### 2. Réduire l'opacité du fond de la carte expanded à 5%/3%
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedEditorial()` (lignes 649-660)
+```dart
+// Actuel :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.3)
+    : colors.surface.withValues(alpha: 0.4),
+// Cible :
+color: isDark
+    ? colors.surface.withValues(alpha: 0.05)
+    : colors.surface.withValues(alpha: 0.03),
 ```
 
-### Validation fonctionnelle
-1. Déclencher un digest éditorial (ou attendre le cron)
-2. Vérifier dans les logs que le JSON retourné par le LLM contient `recul_intro` pour les sujets avec deep article
-3. Vérifier via l'API `/digests/{id}` que le champ `recul_intro` apparaît dans les articles avec badge `pas_de_recul`
-4. Vérifier qu'un sujet sans deep article a bien `recul_intro: null`
+### 3. Repositionner le bouton Toggle (caret up) après retrait du titre
+**Fichier :** `topic_section.dart`, méthode `_buildExpandedHeader()` (lignes 773-807)
+- Actuellement : Row avec `topic.label` (Expanded) + caret up icon
+- Après retrait du titre "Sujets : ...", le toggle "flotte" seul à droite
+- **Action :** Repositionner le caret up de façon propre — par exemple l'aligner à droite dans un Row avec un Spacer, ou l'intégrer dans la première carte article comme un bouton overlay en haut à droite. Vérifier le design avec Laurin.
+
+### 4. Aligner les paddings entre les 4 cartes (articles, "De quoi on parle", analyse Facteur, prendre du recul)
+**Fichiers concernés :**
+- `topic_section.dart` — "De quoi on parle ?" : `EdgeInsets.fromLTRB(16, 0, 16, 12)` + inner padding `EdgeInsets.all(12)` (lignes 693-696)
+- `topic_section.dart` — DivergenceAnalysisBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 737)
+- `divergence_analysis_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 48)
+- `topic_section.dart` — PasDeReculBlock : `EdgeInsets.symmetric(horizontal: 16)` (ligne 759)
+- `pas_de_recul_block.dart` — inner padding : `EdgeInsets.all(12)` (ligne 35)
+- Articles (carousel/single) : `EdgeInsets.symmetric(horizontal: 12)` (ligne 1031)
+- **Action :** Uniformiser le padding horizontal externe à 16px pour les 4 blocs, et le padding interne à 12px.
+
+### 5. CTA "Lire la suite…" — trop voyant et répétitif
+**Fichier :** `divergence_analysis_block.dart` (lignes 139-149)
+- Actuellement : texte bold en `colors.primary`, fontSize 13, fontWeight w600
+- **Action :** Réduire la visibilité — passer en `colors.textSecondary`, fontSize 12, fontWeight w500 pour en faire un nudge discret. Ou le retirer complètement si le tap sur le texte tronqué suffit comme affordance.
+
+### 6. Bouton "Toutes les perspectives" — réduire la hauteur uniquement
+**Fichier :** `divergence_analysis_block.dart` (lignes 155-182)
+- Actuellement : `Row` avec logos + texte + flèche, pas de padding contraint
+- Le bouton doit rester un plain button centré
+- **Action :** Réduire l'espacement autour — changer le `SizedBox(height: 8)` avant le bouton (ligne 156) en `SizedBox(height: 4)`, et éventuellement réduire la taille des logos de 18px à 16px.
+
+### 7. Augmenter l'opacité de la border du container "Analyse Facteur"
+**Fichier :** `divergence_analysis_block.dart` (lignes 64-67)
+```dart
+// Actuel :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.2),
+  width: 1,
+),
+// Cible (plus visible) :
+border: Border.all(
+  color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
+  width: 1,
+),
+```
+
+### 8. Renommer le titre "🔍 L'analyse Facteur" → "🔍 Analyse de biais (N sources)"
+**Fichier :** `divergence_analysis_block.dart` (lignes 75-81)
+```dart
+// Actuel :
+Text(
+  "\u{1F50D} L'analyse Facteur",
+  ...
+),
+// Cible :
+Text(
+  "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
+  ...
+),
+```
+
+---
+
+## Fichiers à modifier
+| Fichier | Tâches |
+|---------|--------|
+| `topic_section.dart` | #1, #2, #3, #4 |
+| `divergence_analysis_block.dart` | #5, #6, #7, #8 |
+| `pas_de_recul_block.dart` | #4 (padding si nécessaire) |
+
+## Comment tester
+```bash
+cd apps/mobile && flutter analyze
+cd apps/mobile && flutter test
+```
+Puis vérifier visuellement sur iOS/Android : ouvrir un digest éditorial, expand une carte, vérifier les 8 points.

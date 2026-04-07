@@ -62,7 +62,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         ),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: colors.primary.withValues(alpha: isDark ? 0.3 : 0.2),
+          color: colors.primary.withValues(alpha: isDark ? 0.5 : 0.4),
           width: 1,
         ),
       ),
@@ -73,7 +73,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           Row(
             children: [
               Text(
-                "\u{1F50D} L'analyse Facteur",
+                "\u{1F50D} Analyse de biais (${widget.perspectiveCount} sources)",
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -141,9 +141,9 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                   Text(
                     'Lire la suite…',
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: colors.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: colors.textSecondary,
                     ),
                   ),
                 ],
@@ -151,32 +151,42 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
             ),
           ),
 
-          // CTA button
+          // CTA button — primary filled, centered with logos
           if (widget.onCompare != null && widget.perspectiveCount > 1) ...[
             const SizedBox(height: 8),
-            GestureDetector(
-              onTap: widget.onCompare,
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                children: [
-                  // Logo row
-                  ..._buildLogoRow(colors, isDark),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Toutes les perspectives',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: colors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 12,
+            Center(
+              child: GestureDetector(
+                onTap: widget.onCompare,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
                     color: colors.primary,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ..._buildLogoRow(colors, isDark),
+                      if (widget.perspectiveSources.isNotEmpty)
+                        const SizedBox(width: 8),
+                      const Text(
+                        'Toutes les perspectives',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 11,
+                        color: Colors.white,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -196,11 +206,17 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
     return [
       for (var i = 0; i < visible.length; i++) ...[
         if (i > 0) const SizedBox(width: 2),
-        _buildLogoCircle(
-          name: visible[i].name,
-          logoUrl: visible[i].logoUrl,
-          size: 18.0,
-          colors: colors,
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+          ),
+          child: _buildLogoCircle(
+            name: visible[i].name,
+            logoUrl: visible[i].logoUrl,
+            size: 16.0,
+            colors: colors,
+          ),
         ),
       ],
       if (extraCount > 0) ...[
@@ -210,7 +226,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: colors.textSecondary.withValues(alpha: 0.7),
+            color: Colors.white.withValues(alpha: 0.8),
           ),
         ),
       ],
