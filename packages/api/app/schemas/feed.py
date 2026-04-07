@@ -118,6 +118,16 @@ class FeedResponse(BaseModel):
     carousels: list[CarouselInfo] = []
 
 
+class TrendingTopicResponse(BaseModel):
+    """Un sujet tendance détecté par clustering de titres."""
+
+    label: str
+    article_count: int
+    source_count: int
+    topic_slug: str | None = None
+    theme: str | None = None
+
+
 class FeedFilters(BaseModel):
     """Filtres du feed."""
 
