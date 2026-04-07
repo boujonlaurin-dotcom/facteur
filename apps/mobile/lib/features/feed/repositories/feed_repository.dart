@@ -636,6 +636,8 @@ class PerspectivesResponse {
   final Map<String, int> biasDistribution;
   final String sourceBiasStance;
   final String comparisonQuality;
+  final String? analysis;
+  final bool analysisCached;
 
   PerspectivesResponse({
     required this.perspectives,
@@ -643,6 +645,8 @@ class PerspectivesResponse {
     required this.biasDistribution,
     this.sourceBiasStance = 'unknown',
     this.comparisonQuality = 'low',
+    this.analysis,
+    this.analysisCached = false,
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -670,6 +674,8 @@ class PerspectivesResponse {
       biasDistribution: biasMap,
       sourceBiasStance: (json['source_bias_stance'] as String?) ?? 'unknown',
       comparisonQuality: (json['comparison_quality'] as String?) ?? 'low',
+      analysis: json['analysis'] as String?,
+      analysisCached: (json['analysis_cached'] as bool?) ?? false,
     );
   }
 }
