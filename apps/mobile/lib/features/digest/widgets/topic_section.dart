@@ -1005,6 +1005,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
 
     final imageVisible = _imageWillRender(article);
+    final badgeChip = EditorialBadge.chip(article.badge, context: context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
