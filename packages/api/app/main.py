@@ -171,8 +171,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             while the container is handling its first user requests.
             """
             try:
-                import asyncio as _asyncio
-
                 from datetime import date
 
                 from sqlalchemy import select as sa_select
@@ -181,7 +179,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                 from app.jobs.digest_generation_job import run_digest_generation
                 from app.models.daily_digest import DailyDigest
 
-                await _asyncio.sleep(60)
+                await asyncio.sleep(60)
 
                 async with async_session_maker() as session:
                     today = date.today()
