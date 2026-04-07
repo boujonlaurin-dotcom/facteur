@@ -227,8 +227,14 @@ class PerspectiveService:
         source_bias: str,
         perspectives: list[dict],  # [{title, source_name, bias_stance, description?}]
         article_description: str | None = None,
-    ) -> str | None:
-        """Generate a short LLM analysis of editorial divergences."""
+    ) -> dict | None:
+        """Generate a short LLM analysis of editorial divergences.
+
+        Returns a dict with keys:
+        - "analysis": str — the editorial divergence text (~150 words)
+        - "divergence_level": str — "low", "medium", or "high"
+        Or None on failure.
+        """
         from app.services.editorial.llm_client import EditorialLLMClient
 
         if not perspectives:
@@ -252,10 +258,14 @@ class PerspectiveService:
 
         system = (
             "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
-            "FORMAT STRICT (court, ~150 mots max) :\n"
-            '1-2 phrases de contexte, puis 2 constats "→" nommant les médias.\n'
+            "Réponds en JSON avec deux clés :\n"
+            '- "analysis": texte court (~150 mots max), '
+            '1-2 phrases de contexte, puis 2 constats "→" nommant les médias. '
             "Chaque constat : un angle couvert par certains mais pas d'autres, "
-            "ou un même fait cadré différemment.\n\n"
+            "ou un même fait cadré différemment.\n"
+            '- "divergence_level": "low" si les médias couvrent le sujet de manière '
+            'similaire, "medium" si les angles diffèrent sensiblement, '
+            '"high" si les cadrages sont opposés ou contradictoires.\n\n'
             "RÈGLES : uniquement les titres/résumés fournis, pas de faits inventés. "
             "Précise \"d'après son titre\" si tu parles d'un angle absent. "
             "Ton naturel, pas de jargon. Pas de titre en gras. Français."
@@ -271,14 +281,16 @@ class PerspectiveService:
         user_message += f"\n\nCouverture par d'autres médias :\n{perspectives_text}"
 
         try:
-            result = await client.chat_text(
+            result = await client.chat_json(
                 system=system,
                 user_message=user_message,
                 model="mistral-large-latest",
                 temperature=0.4,
-                max_tokens=300,
+                max_tokens=400,
             )
-            return result
+            if isinstance(result, dict) and "analysis" in result:
+                return result
+            return None
         except Exception as e:
             logger.error("analyze_divergences_error", error=str(e))
             return None

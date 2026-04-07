@@ -297,6 +297,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       separatorBuilder: (_, __) => const SizedBox(height: 16),
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
+        totalTopics: widget.topics!.length,
         onArticleTap: widget.onItemTap,
         onSave: widget.onSave,
         onNotInterested: widget.onNotInterested,
@@ -362,6 +363,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       sections.add(
         TopicSection(
           topic: topic,
+          totalTopics: widget.topics!.length,
           editorialMode: true,
           isSerene: isSerene,
           onArticleTap: widget.onItemTap,
