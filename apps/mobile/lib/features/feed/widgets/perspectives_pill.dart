@@ -151,8 +151,8 @@ class _PerspectivesPillState extends State<PerspectivesPill>
           child: ScaleTransition(
             scale: _pulseScale,
             child: SizedBox(
-              width: 55,
-              height: 55,
+              width: 50,
+              height: 50,
               child: FloatingActionButton(
                 onPressed: isActive ? widget.onTap : null,
                 backgroundColor: Colors.white,
