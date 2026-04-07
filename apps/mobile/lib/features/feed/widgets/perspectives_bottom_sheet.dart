@@ -122,6 +122,8 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
+  final String? initialAnalysis;
+  final bool analysisCached;
 
   const PerspectivesBottomSheet({
     super.key,
@@ -132,6 +134,8 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
+    this.initialAnalysis,
+    this.analysisCached = false,
   });
 
   @override
@@ -146,9 +150,22 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
   String? _activeBiasFilter;
 
   /// Analysis state
-  _AnalysisState _analysisState = _AnalysisState.idle;
+  late _AnalysisState _analysisState;
   String? _analysisText;
   bool _isAnalysisExpanded = true;
+  bool _isCachedAnalysis = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialAnalysis != null) {
+      _analysisState = _AnalysisState.done;
+      _analysisText = widget.initialAnalysis;
+      _isCachedAnalysis = widget.analysisCached;
+    } else {
+      _analysisState = _AnalysisState.idle;
+    }
+  }
 
   List<Perspective> get _filteredPerspectives {
     if (_activeBiasFilter == null) return widget.perspectives;
@@ -415,6 +432,37 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (_isCachedAnalysis) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.textTertiary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          PhosphorIcons.clockCounterClockwise(PhosphorIconsStyle.regular),
+                          size: 10,
+                          color: colors.textTertiary,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'en cache',
+                          style: textTheme.labelSmall?.copyWith(
+                            fontSize: 9,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 AnimatedRotation(
                   turns: _isAnalysisExpanded ? 0.25 : 0,

@@ -10,6 +10,7 @@ from app.models.daily_top3 import DailyTop3
 from app.models.digest_completion import DigestCompletion
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
+from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
@@ -57,6 +58,8 @@ __all__ = [
     "CollectionItem",
     # Source Attempt Tracking (Epic 12)
     "FailedSourceAttempt",
+    # Perspective Analysis Cache
+    "PerspectiveAnalysis",
     # Custom Topics (Epic 11)
     "UserTopicProfile",
     # Curation (Backoffice)

@@ -979,6 +979,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sourceName: _content?.source.name ?? '',
         contentId: widget.contentId,
         comparisonQuality: response.comparisonQuality,
+        initialAnalysis: response.analysis,
+        analysisCached: response.analysisCached,
       ),
     );
   }
