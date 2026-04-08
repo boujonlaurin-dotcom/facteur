@@ -168,8 +168,15 @@ class UserService:
 
         # Muter les thèmes non-sélectionnés (pour affichage "Mes Intérêts")
         all_themes = {
-            "tech", "international", "science", "culture",
-            "politics", "society", "environment", "economy", "sport",
+            "tech",
+            "international",
+            "science",
+            "culture",
+            "politics",
+            "society",
+            "environment",
+            "economy",
+            "sport",
         }
         selected_themes = set(answers.themes) if answers.themes else set()
         unselected_themes = sorted(all_themes - selected_themes)
