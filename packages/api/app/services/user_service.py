@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.models.user import (
     UserStreak,
     UserSubtopic,
 )
+from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 from app.services.ml.classification_service import SLUG_TO_LABEL
@@ -171,9 +173,6 @@ class UserService:
         }
         selected_themes = set(answers.themes) if answers.themes else set()
         unselected_themes = sorted(all_themes - selected_themes)
-
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.models.user_personalization import UserPersonalization
 
         stmt = (
             pg_insert(UserPersonalization)
