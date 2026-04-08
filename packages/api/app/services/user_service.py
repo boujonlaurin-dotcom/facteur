@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from app.models.user import (
     UserStreak,
     UserSubtopic,
 )
+from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 from app.services.ml.classification_service import SLUG_TO_LABEL
@@ -163,6 +165,34 @@ class UserService:
                 )
                 self.db.add(interest)
                 interest_count += 1
+
+        # Muter les thèmes non-sélectionnés (pour affichage "Mes Intérêts")
+        all_themes = {
+            "tech",
+            "international",
+            "science",
+            "culture",
+            "politics",
+            "society",
+            "environment",
+            "economy",
+            "sport",
+        }
+        selected_themes = set(answers.themes) if answers.themes else set()
+        unselected_themes = sorted(all_themes - selected_themes)
+
+        stmt = (
+            pg_insert(UserPersonalization)
+            .values(
+                user_id=UUID(user_id),
+                muted_themes=unselected_themes,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={"muted_themes": unselected_themes},
+            )
+        )
+        await self.db.execute(stmt)
 
         # Sauvegarder les sous-thèmes + créer les topic profiles correspondants
         subtopic_count = 0

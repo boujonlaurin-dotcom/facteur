@@ -10,6 +10,7 @@ import '../../../models/onboarding_result.dart';
 import '../../../models/user_profile.dart';
 import '../../../features/sources/providers/sources_providers.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
+import '../../custom_topics/providers/personalization_provider.dart';
 import 'onboarding_provider.dart';
 
 /// État de l'animation de conclusion
@@ -114,6 +115,8 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
         await _trustSelectedSourcesWithTimeout(answers.preferredSources);
         await _ref.read(onboardingProvider.notifier).clearSavedData();
         _ref.invalidate(customTopicsProvider);
+        _ref.invalidate(userSourcesProvider);
+        _ref.invalidate(personalizationProvider);
 
         debugPrint(
           'Onboarding sauvegardé avec succès ! '

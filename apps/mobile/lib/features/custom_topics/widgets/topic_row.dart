@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/topic_models.dart';
@@ -79,11 +80,28 @@ class TopicRow extends StatelessWidget {
             ),
             child: GestureDetector(
               onTap: isMuted ? onUnmute : onMute,
-              child: Text(
-                isMuted ? '\u{1F441}\u{0338} Afficher' : '\u{1F441}\u{0338} Masquer',
-                style: textTheme.labelSmall?.copyWith(
-                  color: colors.textTertiary,
-                  fontSize: 11,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isMuted
+                          ? PhosphorIcons.eye(PhosphorIconsStyle.regular)
+                          : PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+                      size: 14,
+                      color: colors.textTertiary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isMuted ? 'Afficher' : 'Masquer',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

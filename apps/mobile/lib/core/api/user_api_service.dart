@@ -87,7 +87,7 @@ class UserApiService {
       'response_style': answers.responseStyle,
       'content_recency': answers.contentRecency ?? 'recent',
       'gamification_enabled': answers.gamificationEnabled,
-      'daily_article_count': answers.dailyArticleCount,
+      'weekly_goal': answers.dailyArticleCount,
       'digest_mode': answers.digestMode,
       'themes': answers.themes,
       'subtopics': answers.subtopics,

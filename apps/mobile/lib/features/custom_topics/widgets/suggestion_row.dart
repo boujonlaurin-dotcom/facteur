@@ -29,20 +29,30 @@ class SuggestionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            PhosphorIcons.circle(),
-            size: 14,
-            color: colors.textTertiary,
-          ),
-          const SizedBox(width: FacteurSpacing.space2),
           Expanded(
-            child: Text(
-              name,
-              style: textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
+            child: GestureDetector(
+              onTap: onFollow,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  Icon(
+                    PhosphorIcons.circle(),
+                    size: 14,
+                    color: colors.textTertiary,
+                  ),
+                  const SizedBox(width: FacteurSpacing.space2),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
           if (onMute != null)

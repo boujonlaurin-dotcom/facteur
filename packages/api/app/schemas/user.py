@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserProfileCreate(BaseModel):
@@ -98,14 +98,12 @@ class OnboardingAnswers(BaseModel):
     format_preference: str | None = Field("mixed", description="short, long, mixed")
     personal_goal: str | None = Field(None, description="Objectif personnel")
 
-    class Config:
-        populate_by_name = True
-
-        def alias_generator(s):
-            return "".join(
-                word.capitalize() if i > 0 else word
-                for i, word in enumerate(s.split("_"))
-            )
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=lambda s: "".join(
+            word.capitalize() if i > 0 else word for i, word in enumerate(s.split("_"))
+        ),
+    )
 
 
 class OnboardingRequest(BaseModel):
