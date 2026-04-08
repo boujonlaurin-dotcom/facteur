@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
 from app.models.daily_digest import DailyDigest
-from app.services.generation_state import is_generation_running
 from app.schemas.digest import (
     DigestAction,
     DigestActionRequest,
@@ -34,6 +33,7 @@ from app.schemas.digest import (
     DualDigestResponse,
 )
 from app.services.digest_service import DigestService
+from app.services.generation_state import is_generation_running
 
 logger = structlog.get_logger()
 
