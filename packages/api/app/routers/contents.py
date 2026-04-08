@@ -729,7 +729,12 @@ async def analyze_perspectives(
 
     perspectives_list = perspectives_data.get("perspectives", [])
     if not perspectives_list:
-        response = {"content_id": cache_key, "analysis": None, "divergence_level": None, "cached": False}
+        response = {
+            "content_id": cache_key,
+            "analysis": None,
+            "divergence_level": None,
+            "cached": False,
+        }
         _analysis_cache[cache_key] = response
         return response
 
