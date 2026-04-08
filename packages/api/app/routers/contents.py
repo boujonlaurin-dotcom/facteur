@@ -713,6 +713,7 @@ async def analyze_perspectives(
         response = {
             "content_id": cache_key,
             "analysis": cached_row.analysis_text,
+            "divergence_level": None,
             "cached": True,
         }
         _analysis_cache[cache_key] = response
@@ -728,7 +729,7 @@ async def analyze_perspectives(
 
     perspectives_list = perspectives_data.get("perspectives", [])
     if not perspectives_list:
-        response = {"content_id": cache_key, "analysis": None, "cached": False}
+        response = {"content_id": cache_key, "analysis": None, "divergence_level": None, "cached": False}
         _analysis_cache[cache_key] = response
         return response
 
@@ -756,21 +757,30 @@ async def analyze_perspectives(
         article_description=content.description,
     )
 
+    # Extract fields from dict returned by analyze_divergences()
+    analysis_text = analysis.get("analysis") if analysis else None
+    divergence_level = analysis.get("divergence_level") if analysis else None
+
     # Persist to DB for future users (ON CONFLICT DO NOTHING for concurrent requests)
-    if analysis:
+    if analysis_text:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         stmt = (
             pg_insert(PerspectiveAnalysis)
-            .values(content_id=content_id, analysis_text=analysis)
+            .values(content_id=content_id, analysis_text=analysis_text)
             .on_conflict_do_nothing(constraint="uq_perspective_analyses_content_id")
         )
-        await db.execute(stmt)
-        await db.commit()
+        try:
+            await db.execute(stmt)
+            await db.commit()
+        except Exception as e:
+            logger.error("perspective_analysis_persist_error", error=str(e))
+            await db.rollback()
 
     response = {
         "content_id": cache_key,
-        "analysis": analysis,
+        "analysis": analysis_text,
+        "divergence_level": divergence_level,
         "cached": False,
     }
     _analysis_cache[cache_key] = response
