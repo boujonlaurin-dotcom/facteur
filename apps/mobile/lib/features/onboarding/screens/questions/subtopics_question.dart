@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../config/topic_labels.dart';
 import '../../../custom_topics/models/topic_models.dart';
 import '../../../custom_topics/providers/custom_topics_provider.dart';
+import '../../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../data/available_subtopics.dart';
 import '../../onboarding_strings.dart';
@@ -22,9 +24,6 @@ class SubtopicsQuestion extends ConsumerStatefulWidget {
 class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   Set<String> _selectedSubtopics = {};
   final Set<String> _selectedEntities = {};
-  final Map<String, List<String>> _customTopics = {};
-  String? _addingForTheme;
-  final TextEditingController _customController = TextEditingController();
   bool _saving = false;
 
   List<String> get _selectedThemes =>
@@ -50,12 +49,6 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     }
   }
 
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
   void _toggleSubtopic(String slug) {
     HapticFeedback.selectionClick();
     setState(() {
@@ -78,45 +71,12 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     });
   }
 
-  void _startAddingCustom(String themeSlug) {
-    setState(() {
-      _addingForTheme = themeSlug;
-      _customController.clear();
-    });
-  }
-
-  void _submitCustomTopic(String themeSlug) {
-    final name = _customController.text.trim();
-    if (name.isEmpty) return;
-
-    setState(() {
-      _customTopics.putIfAbsent(themeSlug, () => []);
-      _customTopics[themeSlug]!.add(name);
-      _addingForTheme = null;
-      _customController.clear();
-    });
-  }
-
-  void _removeCustomTopic(String themeSlug, String name) {
-    setState(() {
-      _customTopics[themeSlug]?.remove(name);
-    });
-  }
-
   Future<void> _continue() async {
-    // Collect custom topics + entities to save via API BEFORE navigating
+    // Save selected entities via API BEFORE navigating
+    // (Custom topics are already followed via EntityAddSheet)
     final notifier = ref.read(customTopicsProvider.notifier);
     final futures = <Future<dynamic>>[];
 
-    for (final entry in _customTopics.entries) {
-      for (final topicName in entry.value) {
-        futures.add(
-          notifier
-              .followTopic(topicName, slugParent: entry.key)
-              .catchError((_) => null),
-        );
-      }
-    }
     for (final entityName in _selectedEntities) {
       futures.add(
         notifier.followTopic(entityName).catchError((_) => null),
@@ -237,8 +197,6 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       ...defaultEnts
           .where((d) => !backendNames.contains(d.name.toLowerCase())),
     ];
-    final customs = _customTopics[theme.slug] ?? [];
-    final canAddMore = customs.length < 3;
     final colors = context.facteurColors;
 
     return Container(
@@ -319,90 +277,78 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
             ),
           ],
 
-          // Custom topics
-          if (customs.isNotEmpty) ...[
-            const SizedBox(height: FacteurSpacing.space2),
-            Wrap(
-              spacing: FacteurSpacing.space2,
-              runSpacing: FacteurSpacing.space2,
-              children: customs
-                  .map((name) => _RemovableCustomChip(
-                        name: name,
-                        themeColor: theme.color,
-                        onRemove: () =>
-                            _removeCustomTopic(theme.slug, name),
-                      ))
-                  .toList(),
-            ),
-          ],
+          // Custom topics from API (followed via EntityAddSheet)
+          Consumer(
+            builder: (context, ref, _) {
+              final topicsAsync = ref.watch(customTopicsProvider);
+              final customTopics = topicsAsync.valueOrNull
+                      ?.where((t) {
+                        final macroLabel =
+                            getTopicMacroTheme(t.slugParent ?? '');
+                        return macroLabel != null &&
+                            macroThemeToApiSlug[macroLabel] == theme.slug;
+                      })
+                      .toList() ??
+                  [];
+
+              if (customTopics.isEmpty) return const SizedBox.shrink();
+
+              return Padding(
+                padding: const EdgeInsets.only(top: FacteurSpacing.space2),
+                child: Wrap(
+                  spacing: FacteurSpacing.space2,
+                  runSpacing: FacteurSpacing.space2,
+                  children: customTopics.map((topic) {
+                    return _RemovableCustomChip(
+                      name: topic.canonicalName ?? topic.name,
+                      themeColor: theme.color,
+                      onRemove: () {
+                        if (!topic.id.startsWith('temp_')) {
+                          ref
+                              .read(customTopicsProvider.notifier)
+                              .unfollowTopic(topic.id);
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+              );
+            },
+          ),
 
           const SizedBox(height: FacteurSpacing.space2),
 
-          // Add custom topic CTA
-          if (_addingForTheme == theme.slug)
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _customController,
-                    autofocus: true,
-                    scrollPadding: const EdgeInsets.all(100),
-                    decoration: InputDecoration(
-                      hintText: AvailableSubtopics
-                              .customTopicPlaceholders[theme.slug] ??
-                          OnboardingStrings.addCustomTopicHint,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onSubmitted: (_) => _submitCustomTopic(theme.slug),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: () => _submitCustomTopic(theme.slug),
-                  icon: Icon(Icons.check, color: theme.color),
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
-              ],
-            )
-          else if (canAddMore)
-            GestureDetector(
-              onTap: () => _startAddingCustom(theme.slug),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(FacteurRadius.pill),
-                  border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.3),
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, size: 14, color: colors.primary),
-                    const SizedBox(width: 4),
-                    Text(
-                      OnboardingStrings.addCustomTopicHint,
-                      style:
-                          Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: colors.primary,
-                                fontWeight: FontWeight.w500,
-                                fontSize: 12,
-                              ),
-                    ),
-                  ],
+          // Add custom topic CTA — opens EntityAddSheet
+          GestureDetector(
+            onTap: () => EntityAddSheet.show(context, themeSlug: theme.slug),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(FacteurRadius.pill),
+                border: Border.all(
+                  color: colors.primary.withValues(alpha: 0.3),
+                  style: BorderStyle.solid,
                 ),
               ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 14, color: colors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    OnboardingStrings.addCustomTopicHint,
+                    style:
+                        Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                  ),
+                ],
+              ),
             ),
+          ),
         ],
       ),
     );

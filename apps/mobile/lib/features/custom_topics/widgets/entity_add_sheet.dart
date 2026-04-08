@@ -66,22 +66,17 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
 
       if (!mounted) return;
 
-      if (suggestions.length <= 1) {
-        // Unambiguous or empty — follow directly
-        if (suggestions.isNotEmpty) {
-          await _followSuggestion(suggestions[0], 0);
-        } else {
-          // Fallback: follow as plain topic
-          await ref
-              .read(customTopicsProvider.notifier)
-              .followTopic(name, slugParent: widget.themeSlug);
-          if (mounted) {
-            Navigator.of(context).pop();
-            NotificationService.showInfo('"$name" ajouté à vos intérêts');
-          }
+      if (suggestions.isEmpty) {
+        // No suggestions at all — follow as plain topic
+        await ref
+            .read(customTopicsProvider.notifier)
+            .followTopic(name, slugParent: widget.themeSlug);
+        if (mounted) {
+          Navigator.of(context).pop();
+          NotificationService.showInfo('"$name" ajouté à vos intérêts');
         }
       } else {
-        // Ambiguous — show disambiguation UI
+        // Show confirmation/disambiguation UI (even for 1 suggestion)
         setState(() {
           _suggestions = suggestions;
           _loading = false;
@@ -95,6 +90,15 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
             : 'Erreur lors de la recherche';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur inattendue lors de la recherche'),
+            duration: Duration(seconds: 3),
+          ),
         );
       }
     } finally {
@@ -128,6 +132,15 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
             : 'Erreur lors de l\'ajout';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Erreur inattendue lors de l\'ajout'),
+            duration: Duration(seconds: 3),
+          ),
         );
       }
     } finally {
@@ -273,7 +286,9 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
       children: [
         // Title
         Text(
-          'Précisez votre choix',
+          suggestions.length == 1
+              ? 'Confirmez votre choix'
+              : 'Précisez votre choix',
           style: textTheme.displaySmall?.copyWith(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -281,7 +296,9 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Plusieurs résultats pour "$searchedName"',
+          suggestions.length == 1
+              ? 'Résultat pour "$searchedName"'
+              : 'Plusieurs résultats pour "$searchedName"',
           style: textTheme.bodySmall?.copyWith(
             color: colors.textTertiary,
           ),
