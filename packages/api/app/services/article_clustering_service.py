@@ -112,7 +112,7 @@ def find_hot_cluster(
     # Weighted random selection among top candidates
     rng = _random.Random(seed)
     weights = [len(arts) for _, arts in top_candidates]
-    (best_key, best_articles), = rng.choices(top_candidates, weights=weights, k=1)
+    ((best_key, best_articles),) = rng.choices(top_candidates, weights=weights, k=1)
 
     # Deduplicate (article can appear via multiple entities)
     seen_ids: set[UUID] = set()
