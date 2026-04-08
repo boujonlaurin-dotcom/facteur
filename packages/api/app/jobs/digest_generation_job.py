@@ -348,10 +348,8 @@ class DigestGenerationJob:
                     )
                 )
 
-                # Determine expected format version for this user
-                # NOTE: editorial_config.is_enabled_for_user() not yet implemented;
-                # default to topics_v1 for now.
-                expected_version = "topics_v1"
+                # All users get editorial format — no per-user branching
+                expected_version = "editorial_v1"
 
                 if existing and existing.format_version != expected_version:
                     logger.info(
@@ -511,9 +509,16 @@ async def run_digest_generation(
         >>> from datetime import date
         >>> result = await run_digest_generation(target_date=date(2024, 1, 15))
     """
+    from app.services.generation_state import (
+        mark_generation_finished,
+        mark_generation_started,
+    )
+
     job = DigestGenerationJob(
         batch_size=batch_size, concurrency_limit=concurrency_limit
     )
+
+    mark_generation_started()
 
     # Obtenir une session depuis le contexte
     async with async_session_maker() as session:
@@ -524,6 +529,8 @@ async def run_digest_generation(
         except Exception:
             await session.rollback()
             raise
+        finally:
+            mark_generation_finished()
 
 
 # Fonction pour génération manuelle d'un seul utilisateur

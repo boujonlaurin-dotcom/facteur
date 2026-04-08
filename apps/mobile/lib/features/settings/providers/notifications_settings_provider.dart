@@ -58,8 +58,14 @@ class NotificationsSettingsNotifier
           return;
         }
         await pushService.requestExactAlarmPermission();
-        await pushService.scheduleDailyDigestNotification();
-        debugPrint('NotificationsSettings: Digest notification scheduled');
+        final scheduled =
+            await pushService.scheduleDailyDigestNotification();
+        if (!scheduled) {
+          debugPrint(
+              'NotificationsSettings: WARNING — notification not scheduled despite permission granted');
+        }
+        final diag = await pushService.getDiagnostics();
+        debugPrint('NotificationsSettings: Diagnostics: $diag');
       } else {
         await pushService.cancelDigestNotification();
         debugPrint('NotificationsSettings: Digest notification cancelled');

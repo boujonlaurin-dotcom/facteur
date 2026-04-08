@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -111,11 +112,31 @@ class PushNotificationService {
     return true; // Not Android
   }
 
+  /// Vérifie et demande la permission exact alarm si nécessaire.
+  /// Appelé au startup pour s'assurer que la permission n'a pas été révoquée.
+  Future<bool> ensureExactAlarmPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin == null) return true; // Not Android
+
+    final canSchedule =
+        await androidPlugin.canScheduleExactNotifications() ?? false;
+    if (canSchedule) return true;
+
+    // Permission révoquée ou jamais accordée — demander
+    debugPrint(
+        'PushNotificationService: Exact alarm permission lost, re-requesting');
+    final granted =
+        await androidPlugin.requestExactAlarmsPermission() ?? false;
+    debugPrint(
+        'PushNotificationService: Exact alarm re-request result: $granted');
+    return granted;
+  }
+
   /// Planifie la notification quotidienne de digest à 8h Europe/Paris.
   /// Utilise alarmClock (le plus fiable) avec fallback sur inexactAllowWhileIdle.
-  Future<void> scheduleDailyDigestNotification() async {
-    // Vérifier silencieusement si les alarmes exactes sont disponibles
-    // Ne JAMAIS demander la permission ici — uniquement sur action utilisateur
+  /// Retourne true si la notification est effectivement planifiée.
+  Future<bool> scheduleDailyDigestNotification() async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     bool canUseExact = true;
@@ -160,8 +181,54 @@ class PushNotificationService {
     );
 
     debugPrint(
-      'PushNotificationService: Daily digest notification scheduled for $scheduledDate (mode: $scheduleMode)',
+      'PushNotificationService: Scheduled for $scheduledDate (mode: $scheduleMode, exact: $canUseExact)',
     );
+
+    // Vérifier que la notification est bien dans la liste pending
+    final isScheduled = await isDigestNotificationScheduled();
+    if (!isScheduled) {
+      debugPrint(
+        'PushNotificationService: WARNING — notification NOT found in pending list after scheduling!',
+      );
+    }
+
+    return isScheduled;
+  }
+
+  /// Vérifie si la notification digest (id=0) est dans la liste des notifications pending.
+  Future<bool> isDigestNotificationScheduled() async {
+    final pending = await _plugin.pendingNotificationRequests();
+    return pending.any((n) => n.id == 0);
+  }
+
+  /// Retourne l'état complet du système de notifications pour diagnostic.
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    bool? notificationsEnabled;
+    bool? exactAlarmsGranted;
+
+    if (androidPlugin != null) {
+      notificationsEnabled =
+          await androidPlugin.areNotificationsEnabled() ?? false;
+      exactAlarmsGranted =
+          await androidPlugin.canScheduleExactNotifications() ?? false;
+    }
+
+    final pending = await _plugin.pendingNotificationRequests();
+    final digestScheduled = pending.any((n) => n.id == 0);
+    final nextScheduledDate = _nextInstanceOf8AM();
+
+    return {
+      'initialized': _initialized,
+      'platform': defaultTargetPlatform.name,
+      'notificationsEnabled': notificationsEnabled,
+      'exactAlarmsGranted': exactAlarmsGranted,
+      'digestScheduled': digestScheduled,
+      'pendingCount': pending.length,
+      'nextScheduledDate': nextScheduledDate.toString(),
+    };
   }
 
   /// Annule la notification de digest (ID 0).

@@ -194,26 +194,29 @@ class DigestService:
                     await self.session.delete(existing_digest)
                     await self.session.flush()
         # 1b. No digest for today — try serving yesterday's digest instantly
+        # Serve regardless of format_version: better to show yesterday's content
+        # in a slightly different format than to block the user for 20-30s
         if not force_regenerate:
             yesterday = target_date - timedelta(days=1)
             yesterday_digest = await self._get_existing_digest(
                 user_id, yesterday, is_serene=is_serene
             )
-            if yesterday_digest and yesterday_digest.format_version != expected_version:
-                logger.info(
-                    "digest_yesterday_stale_skipping",
-                    user_id=str(user_id),
-                    cached=yesterday_digest.format_version,
-                    expected=expected_version,
-                )
-                yesterday_digest = None
             if yesterday_digest:
                 logger.info(
                     "digest_serving_yesterday_while_generating",
                     user_id=str(user_id),
                     yesterday_date=str(yesterday),
+                    format_version=yesterday_digest.format_version,
+                    expected_version=expected_version,
                 )
-                return await self._build_digest_response(yesterday_digest, user_id)
+                try:
+                    return await self._build_digest_response(yesterday_digest, user_id)
+                except Exception:
+                    logger.warning(
+                        "digest_yesterday_fallback_render_failed",
+                        user_id=str(user_id),
+                        format_version=yesterday_digest.format_version,
+                    )
 
         logger.info(
             "digest_no_existing",
@@ -2040,22 +2043,10 @@ class DigestService:
         return value == "true"
 
     async def _get_user_digest_format(self, user_id: UUID) -> str:
-        """Lit la préférence digest_format depuis user_preferences.
+        """Returns the digest format for a user.
 
-        Returns 'topics' (default) or 'flat'.
+        Legacy note: previously read from user_preferences table, but the
+        digest_format preference has been deprecated. All users now receive
+        the same editorial format for consistency.
         """
-        from app.models.user import UserPreference, UserProfile
-
-        result = await self.session.execute(
-            select(UserPreference.preference_value)
-            .join(UserProfile, UserPreference.user_id == UserProfile.user_id)
-            .where(
-                UserProfile.user_id == user_id,
-                UserPreference.preference_key == "digest_format",
-            )
-        )
-        value = result.scalar_one_or_none()
-        if value in ("topics", "flat", "editorial"):
-            return value
-
         return "editorial"
