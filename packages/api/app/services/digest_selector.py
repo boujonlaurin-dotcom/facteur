@@ -54,25 +54,30 @@ _EDITORIAL_CACHE_TTL = 1800  # 30 minutes
 
 
 def _get_cached_editorial_ctx(target_date: datetime.date, mode: str) -> object | None:
-    """Return cached EditorialGlobalContext if fresh, else None."""
+    """Return cached EditorialGlobalContext if it exists for this date, else None.
+
+    Cache is date-based (no TTL): valid for the entire target_date.
+    The batch at 6 AM warms the cache; it stays valid until the next day.
+    """
     key = (target_date, mode)
     entry = _editorial_ctx_cache.get(key)
     if entry is not None:
-        ts, ctx = entry
-        if time.time() - ts < _EDITORIAL_CACHE_TTL:
-            logger.info(
-                "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
-            )
-            return ctx
-        # Expired — remove
-        del _editorial_ctx_cache[key]
+        _ts, ctx = entry
+        logger.info(
+            "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
+        )
+        return ctx
     return None
 
 
 def _set_cached_editorial_ctx(
     target_date: datetime.date, mode: str, ctx: object
 ) -> None:
-    """Store EditorialGlobalContext in cache."""
+    """Store EditorialGlobalContext in cache, clearing stale entries from previous dates."""
+    # Remove entries for previous dates to avoid memory leak
+    stale_keys = [k for k in _editorial_ctx_cache if k[0] != target_date]
+    for k in stale_keys:
+        del _editorial_ctx_cache[k]
     _editorial_ctx_cache[(target_date, mode)] = (time.time(), ctx)
     logger.info("editorial_ctx_cache_set", target_date=str(target_date), mode=mode)
 

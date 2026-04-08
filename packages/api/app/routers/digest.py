@@ -9,17 +9,21 @@ Follows existing FastAPI patterns from feed.py and personalization.py.
 Safe reuse of existing services through DigestService.
 """
 
+import asyncio
 import time
 from datetime import date
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
+from app.models.daily_digest import DailyDigest
 from app.schemas.digest import (
     DigestAction,
     DigestActionRequest,
@@ -29,6 +33,7 @@ from app.schemas.digest import (
     DualDigestResponse,
 )
 from app.services.digest_service import DigestService
+from app.services.generation_state import is_generation_running
 
 logger = structlog.get_logger()
 
@@ -78,6 +83,31 @@ async def get_digest(
     service = DigestService(db)
     user_uuid = UUID(current_user_id)
     start = time.monotonic()
+
+    # If batch generation is running and no digest exists yet, return 202
+    # so the mobile app retries with backoff instead of blocking for 30s+
+    if is_generation_running():
+        effective_date = target_date or date.today()
+        existing = await db.scalar(
+            select(DailyDigest.id).where(
+                DailyDigest.user_id == user_uuid,
+                DailyDigest.target_date == effective_date,
+                DailyDigest.is_serene == serein,
+            )
+        )
+        if not existing:
+            logger.info(
+                "digest_202_batch_running",
+                user_id=current_user_id,
+                target_date=str(effective_date),
+            )
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "status": "preparing",
+                    "message": "Votre briefing est en cours de préparation...",
+                },
+            )
 
     try:
         digest = await service.get_or_create_digest(
@@ -131,11 +161,48 @@ async def get_both_digests(
     Returns both digests in a single response so the mobile app
     can switch between them without a network round-trip.
     """
-    service = DigestService(db)
     user_uuid = UUID(current_user_id)
 
-    normal = await service.get_or_create_digest(user_uuid, target_date, is_serene=False)
-    serein = await service.get_or_create_digest(user_uuid, target_date, is_serene=True)
+    # If batch generation is running and no digest exists yet, return 202
+    if is_generation_running():
+        effective_date = target_date or date.today()
+        existing = await db.scalar(
+            select(DailyDigest.id).where(
+                DailyDigest.user_id == user_uuid,
+                DailyDigest.target_date == effective_date,
+                DailyDigest.is_serene.is_(False),
+            )
+        )
+        if not existing:
+            logger.info(
+                "digest_202_batch_running_both",
+                user_id=current_user_id,
+                target_date=str(effective_date),
+            )
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "status": "preparing",
+                    "message": "Votre briefing est en cours de préparation...",
+                },
+            )
+
+    # Generate both variants in parallel with separate DB sessions
+    # to avoid SQLAlchemy session conflicts and halve on-demand latency
+    async def _gen_variant(is_serene: bool) -> DigestResponse | None:
+        async with async_session_maker() as session:
+            svc = DigestService(session)
+            return await svc.get_or_create_digest(
+                user_uuid, target_date, is_serene=is_serene
+            )
+
+    normal, serein = await asyncio.gather(
+        _gen_variant(False),
+        _gen_variant(True),
+    )
+
+    # Use the original session for the lightweight preference read
+    service = DigestService(db)
     serein_enabled = await service._get_user_serein_enabled(user_uuid)
 
     return DualDigestResponse(

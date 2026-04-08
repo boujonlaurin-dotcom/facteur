@@ -78,7 +78,25 @@ Future<void> main() async {
     final pushEnabled = settingsBox.get('push_notifications_enabled',
         defaultValue: true) as bool;
     if (pushEnabled) {
-      await pushNotificationService.scheduleDailyDigestNotification();
+      // S'assurer que la permission exact alarm est toujours valide
+      // (peut être révoquée par une mise à jour Android ou un changement système)
+      await pushNotificationService.ensureExactAlarmPermission();
+
+      final scheduled =
+          await pushNotificationService.scheduleDailyDigestNotification();
+      if (!scheduled) {
+        debugPrint(
+            'Main: WARNING — digest notification scheduling failed, retrying...');
+        // Retry après re-demande explicite de permission
+        await pushNotificationService.requestExactAlarmPermission();
+        final retryOk =
+            await pushNotificationService.scheduleDailyDigestNotification();
+        debugPrint('Main: Retry result: $retryOk');
+      }
+
+      // Logger l'état complet pour diagnostic
+      final diag = await pushNotificationService.getDiagnostics();
+      debugPrint('Main: Push diagnostics: $diag');
     }
     debugPrint('Main: Push notifications initialized (enabled: $pushEnabled)');
   } catch (e, s) {
