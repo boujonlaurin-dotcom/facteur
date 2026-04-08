@@ -432,7 +432,7 @@ class TestBuildCarouselsNewSource:
         assert len(new_src) == 1
         c = new_src[0]
         assert "TechCrunch" in c["title"]
-        assert c["position"] == 3
+        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced
         assert c["badges"][0]["code"] == "new_source"
         assert len(c["items"]) == 4
 
@@ -532,7 +532,7 @@ class TestBuildCarouselsGems:
         assert len(gems) == 1
         c = gems[0]
         assert c["title"] == "Pépites de la communauté"
-        assert c["position"] == 15
+        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced; slot shuffled
         assert c["badges"][0]["code"] == "pepite"
         assert len(c["items"]) == 4
 
@@ -599,7 +599,7 @@ class TestBuildCarouselsSaved:
         assert len(saved) == 1
         c = saved[0]
         assert c["title"] == "Plus tard, c\u2019est maintenant !"
-        assert c["position"] == 20
+        assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced; slot shuffled
         assert len(c["items"]) == 3
 
         # Verify per-item badges
@@ -675,3 +675,211 @@ class TestBuildCarouselsPhaseB_Integration:
         )
         assert len(carousels) == 1
         assert carousels[0]["carousel_type"] == "new_source"
+
+
+# ================================================================
+# Engagement: position plancher, daily shuffle, probabilistic content
+# ================================================================
+
+
+class TestMinCarouselPosition:
+    @pytest.mark.asyncio
+    async def test_no_carousel_below_position_4(self):
+        """All carousels must have position >= 4 (MIN_CAROUSEL_POSITION)."""
+        service = _setup_service()
+        rep = MockContent(title="Trump article")
+        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
+        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+
+        service.entity_overflow = [
+            _make_entity_group("trump", 4, rep, hidden)
+        ]
+        service.keyword_overflow = []
+
+        _, carousels = await service._build_carousels([], pre_regroup_map)
+        for c in carousels:
+            assert c["position"] >= 4, (
+                f"Carousel {c['carousel_type']} at position {c['position']} < 4"
+            )
+
+    @pytest.mark.asyncio
+    async def test_hot_position_unchanged_without_user_id(self):
+        """Without user_id, hot carousel keeps its original position (5 >= 4)."""
+        service = _setup_service()
+        rep = MockContent(title="Trump article")
+        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
+        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+
+        service.entity_overflow = [
+            _make_entity_group("trump", 4, rep, hidden)
+        ]
+        service.keyword_overflow = []
+
+        _, carousels = await service._build_carousels([], pre_regroup_map)
+        assert len(carousels) == 1
+        assert carousels[0]["position"] == 5  # No shuffle, 5 >= MIN(4)
+
+
+def _setup_service_with_overflow_and_mocks():
+    """Service with entity overflow + mocked session for Phase B queries."""
+    service = _setup_service()
+    # Mock session for consumed_ids + Phase B queries (all return empty)
+    service.session.execute = AsyncMock(return_value=_mock_execute_result([]))
+    service.session.scalars = AsyncMock(return_value=_mock_scalars_result([]))
+    return service
+
+
+class TestDailySlotShuffle:
+    @pytest.mark.asyncio
+    async def test_shuffle_deterministic_same_day(self):
+        """Same user_id + same day → same positions on repeated calls."""
+        service = _setup_service_with_overflow_and_mocks()
+        user_id = uuid4()
+        rep = MockContent(title="Trump article")
+        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
+        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+
+        service.entity_overflow = [
+            _make_entity_group("trump", 4, rep, hidden)
+        ]
+        service.keyword_overflow = []
+
+        _, carousels1 = await service._build_carousels(
+            [], pre_regroup_map, user_id=user_id,
+        )
+        _, carousels2 = await service._build_carousels(
+            [], pre_regroup_map, user_id=user_id,
+        )
+
+        pos1 = [c["position"] for c in carousels1]
+        pos2 = [c["position"] for c in carousels2]
+        assert pos1 == pos2
+
+    @pytest.mark.asyncio
+    async def test_shuffle_varies_across_users(self):
+        """Different user_ids on the same day may get different positions."""
+        service = _setup_service_with_overflow_and_mocks()
+        rep = MockContent(title="Trump article")
+        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
+        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+
+        service.entity_overflow = [
+            _make_entity_group("trump", 4, rep, hidden)
+        ]
+        service.keyword_overflow = []
+
+        # Run for many different user_ids — at least some should differ
+        positions = set()
+        for _ in range(20):
+            _, carousels = await service._build_carousels(
+                [], pre_regroup_map, user_id=uuid4(),
+            )
+            if carousels:
+                positions.add(carousels[0]["position"])
+
+        # With 20 random user_ids and slots [4-6], we expect multiple distinct positions
+        assert len(positions) > 1, "Positions should vary across different users"
+
+    @pytest.mark.asyncio
+    async def test_all_shuffled_positions_within_slot_ranges(self):
+        """Shuffled positions must fall within defined slot ranges."""
+        service = _setup_service_with_overflow_and_mocks()
+        rep = MockContent(title="Trump article")
+        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
+        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+
+        service.entity_overflow = [
+            _make_entity_group("trump", 4, rep, hidden)
+        ]
+        service.keyword_overflow = []
+
+        VALID_RANGES = [(4, 6), (8, 11), (14, 17)]
+        for _ in range(20):
+            _, carousels = await service._build_carousels(
+                [], pre_regroup_map, user_id=uuid4(),
+            )
+            for c in carousels:
+                pos = c["position"]
+                in_any_range = any(lo <= pos <= hi for lo, hi in VALID_RANGES)
+                assert in_any_range, (
+                    f"Position {pos} not in any valid slot range {VALID_RANGES}"
+                )
+
+
+class TestProbabilisticHotCluster:
+    def test_selects_among_top_clusters(self):
+        """With multiple eligible clusters, different seeds may select different ones."""
+        from app.services.article_clustering_service import find_hot_cluster
+
+        source = MockSource(name="Source")
+        entity_json_trump = json.dumps({"name": "Trump", "type": "PERSON"})
+        entity_json_iran = json.dumps({"name": "Iran", "type": "LOCATION"})
+        entity_json_ai = json.dumps({"name": "AI", "type": "TECHNOLOGY"})
+
+        now = datetime.now(UTC)
+        # 3 clusters of size 5, 4, 3
+        trump_arts = [
+            MockContent(title=f"Trump {i}", source=source, published_at=now)
+            for i in range(5)
+        ]
+        for a in trump_arts:
+            a.entities = [entity_json_trump]
+
+        iran_arts = [
+            MockContent(title=f"Iran {i}", source=source, published_at=now)
+            for i in range(4)
+        ]
+        for a in iran_arts:
+            a.entities = [entity_json_iran]
+
+        ai_arts = [
+            MockContent(title=f"AI {i}", source=source, published_at=now)
+            for i in range(3)
+        ]
+        for a in ai_arts:
+            a.entities = [entity_json_ai]
+
+        all_articles = trump_arts + iran_arts + ai_arts
+
+        # Run with many seeds — should sometimes select non-trump clusters
+        selected_entities = set()
+        for seed in range(100):
+            entity_key, _, articles = find_hot_cluster(
+                all_articles, seed=seed,
+            )
+            if entity_key:
+                selected_entities.add(entity_key)
+
+        # With weighted random among 3 clusters, we expect at least 2 different selections
+        assert len(selected_entities) >= 2, (
+            f"Expected variety in cluster selection, got only: {selected_entities}"
+        )
+
+    def test_deterministic_with_same_seed(self):
+        """Same seed always selects the same cluster."""
+        from app.services.article_clustering_service import find_hot_cluster
+
+        source = MockSource(name="Source")
+        entity_json_a = json.dumps({"name": "Alpha", "type": "PERSON"})
+        entity_json_b = json.dumps({"name": "Beta", "type": "PERSON"})
+        now = datetime.now(UTC)
+
+        arts_a = [
+            MockContent(title=f"A {i}", source=source, published_at=now)
+            for i in range(4)
+        ]
+        for a in arts_a:
+            a.entities = [entity_json_a]
+
+        arts_b = [
+            MockContent(title=f"B {i}", source=source, published_at=now)
+            for i in range(3)
+        ]
+        for a in arts_b:
+            a.entities = [entity_json_b]
+
+        all_articles = arts_a + arts_b
+
+        key1, _, _ = find_hot_cluster(all_articles, seed=42)
+        key2, _, _ = find_hot_cluster(all_articles, seed=42)
+        assert key1 == key2

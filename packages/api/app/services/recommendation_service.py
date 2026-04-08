@@ -915,9 +915,12 @@ class RecommendationService:
 
         Returns: (filtered_result, carousel_dicts)
         """
+        import random as _random
+
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
+        MIN_CAROUSEL_POSITION = 4  # No carousel before position 4
         carousels: list[dict] = []
         promoted_ids: set[UUID] = set()
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
@@ -939,7 +942,12 @@ class RecommendationService:
             )
             consumed_ids = set(consumed_rows)
 
-        # --- hot: biggest entity cluster within 36h (T4) ---
+        # Daily seed for deterministic randomization (stable within a day per user)
+        daily_seed: int | None = None
+        if user_id is not None:
+            daily_seed = hash(f"{user_id}{datetime.date.today().isoformat()}")
+
+        # --- hot: entity cluster within 36h, probabilistic selection (T4) ---
         # T4C: skip hot carousel entirely in serein mode
         if not serein:
             from app.services.article_clustering_service import find_hot_cluster
@@ -949,6 +957,7 @@ class RecommendationService:
                 window_hours=36,
                 max_items=MAX_CAROUSEL_ITEMS,
                 min_items=MIN_CAROUSEL_ITEMS,
+                seed=daily_seed,
             )
             if hot_articles:
                 # T2: filter consumed articles
@@ -1264,12 +1273,14 @@ class RecommendationService:
                             )
                         ).all()
                     )
-                    # Maintain score order
+                    # Maintain score order, then shuffle for daily variety
                     id_order = {gid: i for i, gid in enumerate(gem_ids)}
                     items = sorted(
                         gem_contents,
                         key=lambda c: id_order.get(c.id, 99),
                     )
+                    if daily_seed is not None:
+                        _random.Random(daily_seed).shuffle(items)
 
                     # T6: Differentiated badges per article
                     avg_saves = (
@@ -1390,6 +1401,23 @@ class RecommendationService:
         if promoted_ids:
             result = [a for a in result if a.id not in promoted_ids]
 
+        # --- Daily slot shuffle (B2) ---
+        # Assign carousels to shuffled slot positions for variety.
+        # Slots define position ranges; each day the carousel-to-slot mapping changes.
+        # Deterministic per user+day so pull-to-refresh stays stable.
+        CAROUSEL_SLOTS = [(4, 6), (8, 11), (14, 17)]
+        if daily_seed is not None and len(carousels) > 0:
+            rng = _random.Random(daily_seed)
+            # Build slot assignments: shuffle slot order, assign to carousels
+            slot_indices = list(range(len(CAROUSEL_SLOTS)))
+            rng.shuffle(slot_indices)
+            for i, c in enumerate(carousels):
+                if i < len(slot_indices):
+                    slot_min, slot_max = CAROUSEL_SLOTS[slot_indices[i]]
+                    c["position"] = rng.randint(slot_min, slot_max)
+                # Carousels beyond slot count keep their original position
+        # --- End daily slot shuffle ---
+
         # Convert Content objects to serializable dicts for CarouselInfo
         carousel_dicts = []
         for c in carousels:
@@ -1398,7 +1426,7 @@ class RecommendationService:
                     "carousel_type": c["carousel_type"],
                     "title": c["title"],
                     "emoji": c["emoji"],
-                    "position": c["position"],
+                    "position": max(c["position"], MIN_CAROUSEL_POSITION),
                     "items": c[
                         "items"
                     ],  # Content objects — router will serialize via Pydantic
@@ -1410,6 +1438,7 @@ class RecommendationService:
             "carousels_built",
             count=len(carousel_dicts),
             types=[c["carousel_type"] for c in carousel_dicts],
+            positions=[c["position"] for c in carousel_dicts],
         )
 
         return result, carousel_dicts

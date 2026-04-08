@@ -63,9 +63,7 @@ def _get_cached_editorial_ctx(target_date: datetime.date, mode: str) -> object |
     entry = _editorial_ctx_cache.get(key)
     if entry is not None:
         _ts, ctx = entry
-        logger.info(
-            "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
-        )
+        logger.info("editorial_ctx_cache_hit", target_date=str(target_date), mode=mode)
         return ctx
     return None
 

@@ -48,19 +48,26 @@ def find_hot_cluster(
     window_hours: int = 36,
     max_items: int = 5,
     min_items: int = 3,
+    seed: int | None = None,
 ) -> tuple[str | None, str | None, list[Content]]:
-    """Find the biggest cluster of articles sharing entities within a time window.
+    """Find a hot cluster of articles sharing entities within a time window.
+
+    Selects probabilistically among the top-3 eligible clusters (weighted by
+    size) instead of always picking the largest. This adds daily variety.
 
     Args:
         articles: Pool of candidate articles (from pre_regroup_map.values())
         window_hours: Only consider articles published within this window
         max_items: Maximum articles to return
         min_items: Minimum articles for a valid cluster
+        seed: Optional RNG seed for deterministic selection (e.g. hash of user_id+date)
 
     Returns:
         (entity_key, entity_display_name, clustered_articles)
         Returns (None, None, []) if no cluster found with >= min_items articles.
     """
+    import random as _random
+
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
 
     # Filter to recent articles only
@@ -89,12 +96,23 @@ def find_hot_cluster(
     if not entity_to_articles:
         return None, None, []
 
-    # Find entity with most articles
-    best_key = max(entity_to_articles, key=lambda k: len(entity_to_articles[k]))
-    best_articles = entity_to_articles[best_key]
-
-    if len(best_articles) < min_items:
+    # Find top-3 eligible clusters, select one weighted by size
+    eligible = [
+        (key, arts)
+        for key, arts in entity_to_articles.items()
+        if len(arts) >= min_items
+    ]
+    if not eligible:
         return None, None, []
+
+    # Sort by size DESC, take top 3
+    eligible.sort(key=lambda x: len(x[1]), reverse=True)
+    top_candidates = eligible[:3]
+
+    # Weighted random selection among top candidates
+    rng = _random.Random(seed)
+    weights = [len(arts) for _, arts in top_candidates]
+    ((best_key, best_articles),) = rng.choices(top_candidates, weights=weights, k=1)
 
     # Deduplicate (article can appear via multiple entities)
     seen_ids: set[UUID] = set()
@@ -114,6 +132,7 @@ def find_hot_cluster(
         display_name=entity_display.get(best_key),
         cluster_size=len(unique),
         returned=len(result),
+        candidates_considered=len(top_candidates),
     )
 
     return best_key, entity_display.get(best_key, best_key.title()), result
