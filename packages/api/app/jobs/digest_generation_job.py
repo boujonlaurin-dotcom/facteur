@@ -117,11 +117,17 @@ class DigestGenerationJob:
                 target_date=str(target_date),
             )
 
-            # Seed generation-state rows for every user as "pending" so
-            # observability queries can distinguish "never attempted" from
-            # "not yet run".
+            # Retention: prune the rotation-memory table so it doesn't
+            # grow forever. 30 days covers any reasonable rotation window
+            # plus a month of observability for post-mortem.
+            await self._prune_old_highlights(session, target_date)
+
+            # Seed generation-state rows for every (user, variant) as
+            # "pending" so observability queries can distinguish "never
+            # attempted" from "not yet run".
             for uid in user_ids:
-                await state_mark_pending(session, uid, target_date)
+                for is_ser in (False, True):
+                    await state_mark_pending(session, uid, target_date, is_ser)
             await session.commit()
 
             # 1.5 Build global trending context ONCE for the entire batch
@@ -155,10 +161,7 @@ class DigestGenerationJob:
 
                 pipeline = EditorialPipelineService(session)
                 if pipeline.llm.is_ready and user_ids:
-                    temp_selector = DigestSelector(session)
-                    global_candidates = await self._get_global_candidates(
-                        temp_selector, session
-                    )
+                    global_candidates = await self._get_global_candidates(session)
                     if global_candidates:
                         for mode in ("pour_vous", "serein"):
                             try:
@@ -245,7 +248,6 @@ class DigestGenerationJob:
 
     async def _get_global_candidates(
         self,
-        selector: "DigestSelector",
         session: AsyncSession,
     ) -> list[Any]:
         """Fetch a user-agnostic global candidate pool for editorial context.
@@ -255,13 +257,15 @@ class DigestGenerationJob:
         Falls back to a broad recent-content query so the pipeline never
         cold-paths because of one unlucky user.
         """
-        from datetime import timedelta
+        from datetime import UTC, timedelta
 
         from sqlalchemy.orm import selectinload
 
         from app.models.content import Content
 
-        cutoff = datetime.datetime.utcnow() - timedelta(hours=self.hours_lookback)
+        # Content.published_at is stored as tz-aware, so the comparison
+        # value must also be tz-aware (and utcnow() is deprecated in 3.12).
+        cutoff = datetime.datetime.now(UTC) - timedelta(hours=self.hours_lookback)
         stmt = (
             select(Content)
             .options(selectinload(Content.source))
@@ -277,6 +281,39 @@ class DigestGenerationJob:
                 "digest_generation_global_candidates_failed", error=str(e)
             )
             return []
+
+    async def _prune_old_highlights(
+        self,
+        session: AsyncSession,
+        target_date: datetime.date,
+    ) -> None:
+        """Delete rotation-memory rows older than 30 days.
+
+        `editorial_highlights_history` is append-only (one row per featured
+        article per day) and only the last few days are ever read, so
+        anything beyond a month is dead weight. Runs at batch start, once
+        per day, so the cost is trivial.
+        """
+        from datetime import timedelta
+
+        from sqlalchemy import delete
+
+        from app.models.editorial_highlights_history import (
+            EditorialHighlightsHistory,
+        )
+
+        cutoff = target_date - timedelta(days=30)
+        try:
+            await session.execute(
+                delete(EditorialHighlightsHistory).where(
+                    EditorialHighlightsHistory.target_date < cutoff
+                )
+            )
+            await session.commit()
+        except Exception:
+            # Non-fatal: if retention fails the batch can still run.
+            logger.exception("editorial_highlights_history_prune_failed")
+            await session.rollback()
 
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).
@@ -335,16 +372,20 @@ class DigestGenerationJob:
                         target_date=str(target_date),
                         error=str(e),
                     )
-                    # Record the failure in the observability table via
-                    # a separate session so the rollback doesn't erase it.
+                    # Catastrophic user-level failure (e.g. profile load
+                    # crashed before the variant loop ran). Record both
+                    # variants as failed in a fresh session so rollback
+                    # doesn't erase the observability row.
                     try:
                         async with async_session_maker() as state_session:
-                            await state_mark_failed(
-                                state_session,
-                                user_id,
-                                target_date,
-                                str(e),
-                            )
+                            for is_ser in (False, True):
+                                await state_mark_failed(
+                                    state_session,
+                                    user_id,
+                                    target_date,
+                                    is_ser,
+                                    str(e),
+                                )
                             await state_session.commit()
                     except Exception:
                         logger.exception(
@@ -425,15 +466,6 @@ class DigestGenerationJob:
         """
         self.stats["processed"] += 1
 
-        await state_mark_in_progress(session, user_id, target_date)
-        # Flush the state row so the "in_progress" mark is visible even if
-        # the main work later raises (state is committed by the caller
-        # unless we rollback, but we also record failure via a fresh session).
-        await session.flush()
-
-        any_success = False
-        last_error: str | None = None
-
         try:
             # Load user profile to get per-user daily article count
             user_profile = await session.scalar(
@@ -446,6 +478,22 @@ class DigestGenerationJob:
             )
 
             for is_serene in [False, True]:
+                # Mark this specific variant as in-progress. Wrapped in
+                # try/except and a best-effort flush so that a state-write
+                # failure can never crash the real work. Observability is
+                # supposed to surface bugs, not cause them.
+                try:
+                    await state_mark_in_progress(
+                        session, user_id, target_date, is_serene
+                    )
+                    await session.flush()
+                except Exception:
+                    logger.exception(
+                        "digest_generation_state_mark_in_progress_crashed",
+                        user_id=str(user_id),
+                        is_serene=is_serene,
+                    )
+
                 try:
                     # Vérifier si un digest existe déjà pour cette variante
                     existing = await session.scalar(
@@ -480,7 +528,9 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         self.stats["skipped"] += 1
-                        any_success = True
+                        await state_mark_success(
+                            session, user_id, target_date, is_serene
+                        )
                         continue
 
                     digest_mode = "serein" if is_serene else "pour_vous"
@@ -516,7 +566,9 @@ class DigestGenerationJob:
                         )
                         if digest:
                             self.stats["success"] += 1
-                            any_success = True
+                            await state_mark_success(
+                                session, user_id, target_date, is_serene
+                            )
                             logger.debug(
                                 "digest_generation_editorial_success",
                                 user_id=str(user_id),
@@ -525,6 +577,13 @@ class DigestGenerationJob:
                             )
                         else:
                             self.stats["failed"] += 1
+                            await state_mark_failed(
+                                session,
+                                user_id,
+                                target_date,
+                                is_serene,
+                                "editorial record creation returned None",
+                            )
                         continue
 
                     if not digest_items:
@@ -535,6 +594,13 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         self.stats["failed"] += 1
+                        await state_mark_failed(
+                            session,
+                            user_id,
+                            target_date,
+                            is_serene,
+                            "selector returned empty digest",
+                        )
                         continue
 
                     # Construire les items JSONB
@@ -577,11 +643,12 @@ class DigestGenerationJob:
                     )
 
                     self.stats["success"] += 1
-                    any_success = True
+                    await state_mark_success(
+                        session, user_id, target_date, is_serene
+                    )
                 except Exception as variant_err:
                     # Record the variant error but keep going so the other
                     # variant still has a chance to generate.
-                    last_error = f"{'serein' if is_serene else 'pour_vous'}: {variant_err}"
                     logger.exception(
                         "digest_generation_variant_failed",
                         user_id=str(user_id),
@@ -589,17 +656,25 @@ class DigestGenerationJob:
                         is_serene=is_serene,
                     )
                     self.stats["failed"] += 1
-
-            # Update state row based on overall outcome for this user
-            if any_success:
-                await state_mark_success(session, user_id, target_date)
-            else:
-                await state_mark_failed(
-                    session,
-                    user_id,
-                    target_date,
-                    last_error or "no variant succeeded",
-                )
+                    # Record the per-variant failure via a fresh session
+                    # so this user's main session can continue with the
+                    # other variant cleanly.
+                    try:
+                        async with async_session_maker() as variant_state_session:
+                            await state_mark_failed(
+                                variant_state_session,
+                                user_id,
+                                target_date,
+                                is_serene,
+                                str(variant_err),
+                            )
+                            await variant_state_session.commit()
+                    except Exception:
+                        logger.exception(
+                            "digest_generation_variant_state_record_failed",
+                            user_id=str(user_id),
+                            is_serene=is_serene,
+                        )
 
         except Exception as e:
             logger.error(

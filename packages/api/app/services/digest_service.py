@@ -12,6 +12,7 @@ Safe reuse patterns:
 - Uses existing StreakService for gamification updates
 """
 
+import asyncio
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -58,6 +59,13 @@ logger = structlog.get_logger()
 _BG_REGEN_RATE_LIMIT: dict[tuple[UUID, date, bool], float] = {}
 _BG_REGEN_COOLDOWN_S = 60.0  # 1 spawn per minute per (user, date, variant)
 
+# Strong references to in-flight background regen tasks. asyncio only holds
+# a WEAK reference to tasks spawned by create_task(), so without this set
+# the GC can cancel the regeneration mid-execution — which would defeat the
+# whole "stop serving stale content silently" fix. Tasks auto-remove
+# themselves via add_done_callback.
+_BG_REGEN_TASKS: set["asyncio.Task[None]"] = set()
+
 
 def _schedule_background_regen(
     user_id: UUID,
@@ -71,8 +79,9 @@ def _schedule_background_regen(
     survives the request session being closed.
 
     Rate-limited per (user, date, is_serene) to a single spawn per minute.
+    The spawned task is pinned in `_BG_REGEN_TASKS` so the event loop's weak
+    reference doesn't let it be garbage-collected mid-run.
     """
-    import asyncio
     import time as _time
 
     key = (user_id, target_date, is_serene)
@@ -123,7 +132,7 @@ def _schedule_background_regen(
                 bg_svc = DigestService(bg_session)
                 try:
                     await _state_mark_in_progress(
-                        bg_session, user_id, target_date
+                        bg_session, user_id, target_date, is_serene
                     )
                     # force_regenerate=True bypasses the yesterday fallback
                     # and goes straight to real generation. There is no
@@ -135,7 +144,7 @@ def _schedule_background_regen(
                         force_regenerate=True,
                     )
                     await _state_mark_success(
-                        bg_session, user_id, target_date
+                        bg_session, user_id, target_date, is_serene
                     )
                     await bg_session.commit()
                     logger.info(
@@ -154,6 +163,7 @@ def _schedule_background_regen(
                                 err_session,
                                 user_id,
                                 target_date,
+                                is_serene,
                                 str(e),
                             )
                             await err_session.commit()
@@ -172,7 +182,14 @@ def _schedule_background_regen(
             )
 
     try:
-        asyncio.create_task(_regen())
+        task = asyncio.create_task(
+            _regen(),
+            name=f"digest_regen:{user_id}:{target_date}:{is_serene}",
+        )
+        # Pin the task so the event loop's weak reference can't let the GC
+        # cancel it mid-run. The done-callback cleans up after completion.
+        _BG_REGEN_TASKS.add(task)
+        task.add_done_callback(_BG_REGEN_TASKS.discard)
         logger.info(
             "digest_background_regen_scheduled",
             user_id=str(user_id),
@@ -497,9 +514,20 @@ class DigestService:
                     stale_format=stale_format_digest.format_version,
                 )
                 try:
-                    return await self._build_digest_response(
+                    response = await self._build_digest_response(
                         stale_format_digest, user_id
                     )
+                    # Mark as stale so the mobile client auto-refetches, and
+                    # fire a background regen so the next poll has fresh
+                    # content. Without this the user is silently stuck on
+                    # wrong-format content for the rest of the day.
+                    response.is_stale_fallback = True
+                    _schedule_background_regen(
+                        user_id=user_id,
+                        target_date=target_date,
+                        is_serene=is_serene,
+                    )
+                    return response
                 except Exception:
                     logger.exception(
                         "digest_stale_format_fallback_render_failed",

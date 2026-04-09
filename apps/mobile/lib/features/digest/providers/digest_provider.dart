@@ -35,7 +35,23 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// Timer scheduled when a stale fallback digest is shown, to auto-refetch
   /// fresh content generated in the background.
   Timer? _staleFallbackRefetchTimer;
-  static const Duration _staleFallbackRefetchDelay = Duration(seconds: 20);
+
+  /// Number of consecutive stale-fallback refetch attempts that still came
+  /// back stale. Capped by [_staleFallbackMaxAttempts] so a broken backend
+  /// can't cause an indefinite polling loop on the mobile client.
+  int _staleFallbackAttempts = 0;
+  static const int _staleFallbackMaxAttempts = 5;
+
+  /// Exponential backoff for the stale-fallback auto-refetch. Each entry is
+  /// the delay before attempt N+1. If all attempts fail, the next manual
+  /// refresh or app open will retry cleanly.
+  static const List<Duration> _staleFallbackBackoff = [
+    Duration(seconds: 20),
+    Duration(seconds: 40),
+    Duration(seconds: 80),
+    Duration(seconds: 160),
+    Duration(seconds: 300),
+  ];
 
   /// Get today's date as a string for cache comparison.
   String get _todayDateString {
@@ -52,6 +68,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
 
   @override
   FutureOr<DigestResponse?> build() async {
+    // Cancel any in-flight stale-fallback timer when the notifier is
+    // disposed (user logout, provider invalidation, app backgrounded). Without
+    // this, the Timer holds a reference to `this` and fires after dispose,
+    // leaking state and potentially stomping a fresh load.
+    ref.onDispose(() {
+      _staleFallbackRefetchTimer?.cancel();
+      _staleFallbackRefetchTimer = null;
+    });
+
     // Watch auth state to handle logout/user change
     final authState = ref.watch(authStateProvider);
 
@@ -218,21 +243,39 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     _cachedDate = null;
     _staleFallbackRefetchTimer?.cancel();
     _staleFallbackRefetchTimer = null;
+    _staleFallbackAttempts = 0;
   }
 
   /// If the current normal or serein digest is marked as `is_stale_fallback`
   /// (yesterday's content being served while today's regenerates in the
   /// background), schedule a silent refetch so the fresh version appears
   /// without the user pulling to refresh.
+  ///
+  /// Uses exponential backoff and caps total attempts at
+  /// [_staleFallbackMaxAttempts] — a prolonged backend outage will stop
+  /// polling rather than spin forever. The counter resets as soon as a
+  /// fresh (non-stale) response arrives or on manual cache clear.
   void _maybeScheduleStaleFallbackRefetch() {
     final isStale = (_normalDigest?.isStaleFallback ?? false) ||
         (_sereinDigest?.isStaleFallback ?? false);
     _staleFallbackRefetchTimer?.cancel();
     if (!isStale) {
+      // Fresh response: reset the attempt budget so a future stale window
+      // gets the full retry quota.
+      _staleFallbackAttempts = 0;
       _staleFallbackRefetchTimer = null;
       return;
     }
-    _staleFallbackRefetchTimer = Timer(_staleFallbackRefetchDelay, () async {
+    if (_staleFallbackAttempts >= _staleFallbackMaxAttempts) {
+      // Budget exhausted — stop auto-polling. User-triggered refresh or
+      // next app open will retry from scratch.
+      _staleFallbackRefetchTimer = null;
+      return;
+    }
+    final delay = _staleFallbackBackoff[
+        _staleFallbackAttempts.clamp(0, _staleFallbackBackoff.length - 1)];
+    _staleFallbackAttempts++;
+    _staleFallbackRefetchTimer = Timer(delay, () async {
       // Only auto-refetch if still authenticated and same day, and the
       // current state is not loading (avoid stomping an in-flight request).
       if (state.isLoading) return;

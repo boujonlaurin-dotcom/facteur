@@ -1,12 +1,15 @@
 """Service layer for the `digest_generation_state` observability table.
 
 Used by the digest batch and the on-read background regen to record where
-each user is in the generation lifecycle, so operators can answer:
+each user variant is in the generation lifecycle, so operators can answer:
 
     "Why is user X still on yesterday's digest at 10am?"
 
-...without scanning logs. All helpers UPSERT and are safe to call many times
-per user per day.
+...without scanning logs. All helpers UPSERT on
+`(user_id, target_date, is_serene)` and are safe to call many times per
+variant per day. `is_serene` is required so the pour_vous and serein
+variants are tracked independently — a half-broken user must not look
+identical to a fully-working one.
 """
 
 from __future__ import annotations
@@ -23,26 +26,30 @@ from app.models.digest_generation_state import DigestGenerationState
 
 logger = structlog.get_logger()
 
+_CONFLICT_COLS = ["user_id", "target_date", "is_serene"]
+
 
 async def mark_pending(
     session: AsyncSession,
     user_id: UUID,
     target_date: datetime.date,
+    is_serene: bool,
 ) -> None:
-    """Record that a user is queued for generation (no attempt yet)."""
+    """Record that a (user, variant) is queued for generation (no attempt yet)."""
     now = datetime.datetime.utcnow()
     stmt = (
         pg_insert(DigestGenerationState)
         .values(
             user_id=user_id,
             target_date=target_date,
+            is_serene=is_serene,
             status="pending",
             attempts=0,
             created_at=now,
             updated_at=now,
         )
         .on_conflict_do_update(
-            index_elements=["user_id", "target_date"],
+            index_elements=_CONFLICT_COLS,
             set_={"status": "pending", "updated_at": now},
         )
     )
@@ -53,6 +60,7 @@ async def mark_pending(
             "digest_generation_state_mark_pending_failed",
             user_id=str(user_id),
             target_date=str(target_date),
+            is_serene=is_serene,
         )
 
 
@@ -60,14 +68,16 @@ async def mark_in_progress(
     session: AsyncSession,
     user_id: UUID,
     target_date: datetime.date,
+    is_serene: bool,
 ) -> None:
-    """Record that a worker has picked up this user."""
+    """Record that a worker has picked up this (user, variant)."""
     now = datetime.datetime.utcnow()
     stmt = (
         pg_insert(DigestGenerationState)
         .values(
             user_id=user_id,
             target_date=target_date,
+            is_serene=is_serene,
             status="in_progress",
             attempts=1,
             started_at=now,
@@ -75,7 +85,7 @@ async def mark_in_progress(
             updated_at=now,
         )
         .on_conflict_do_update(
-            index_elements=["user_id", "target_date"],
+            index_elements=_CONFLICT_COLS,
             set_={
                 "status": "in_progress",
                 "attempts": DigestGenerationState.attempts + 1,
@@ -91,6 +101,7 @@ async def mark_in_progress(
             "digest_generation_state_mark_in_progress_failed",
             user_id=str(user_id),
             target_date=str(target_date),
+            is_serene=is_serene,
         )
 
 
@@ -98,14 +109,16 @@ async def mark_success(
     session: AsyncSession,
     user_id: UUID,
     target_date: datetime.date,
+    is_serene: bool,
 ) -> None:
-    """Record successful generation for this (user, date)."""
+    """Record successful generation for this (user, variant)."""
     now = datetime.datetime.utcnow()
     stmt = (
         pg_insert(DigestGenerationState)
         .values(
             user_id=user_id,
             target_date=target_date,
+            is_serene=is_serene,
             status="success",
             attempts=1,
             finished_at=now,
@@ -113,7 +126,7 @@ async def mark_success(
             updated_at=now,
         )
         .on_conflict_do_update(
-            index_elements=["user_id", "target_date"],
+            index_elements=_CONFLICT_COLS,
             set_={
                 "status": "success",
                 "last_error": None,
@@ -129,6 +142,7 @@ async def mark_success(
             "digest_generation_state_mark_success_failed",
             user_id=str(user_id),
             target_date=str(target_date),
+            is_serene=is_serene,
         )
 
 
@@ -136,6 +150,7 @@ async def mark_failed(
     session: AsyncSession,
     user_id: UUID,
     target_date: datetime.date,
+    is_serene: bool,
     error: str,
 ) -> None:
     """Record a failed generation attempt with the error message."""
@@ -147,6 +162,7 @@ async def mark_failed(
         .values(
             user_id=user_id,
             target_date=target_date,
+            is_serene=is_serene,
             status="failed",
             attempts=1,
             last_error=truncated,
@@ -155,7 +171,7 @@ async def mark_failed(
             updated_at=now,
         )
         .on_conflict_do_update(
-            index_elements=["user_id", "target_date"],
+            index_elements=_CONFLICT_COLS,
             set_={
                 "status": "failed",
                 "last_error": truncated,
@@ -172,20 +188,26 @@ async def mark_failed(
             "digest_generation_state_mark_failed_failed",
             user_id=str(user_id),
             target_date=str(target_date),
+            is_serene=is_serene,
         )
 
 
-async def get_failed_users(
+async def get_failed_variants(
     session: AsyncSession,
     target_date: datetime.date,
-) -> list[UUID]:
-    """Return user ids whose last attempt for `target_date` failed.
+) -> list[tuple[UUID, bool]]:
+    """Return (user_id, is_serene) pairs whose last attempt for `target_date` failed.
 
-    Used by observability / dashboard queries.
+    Returns pairs rather than distinct users so the caller can see exactly
+    which variant is broken (one user can have pour_vous success + serein
+    failed).
     """
-    stmt = select(DigestGenerationState.user_id).where(
+    stmt = select(
+        DigestGenerationState.user_id,
+        DigestGenerationState.is_serene,
+    ).where(
         DigestGenerationState.target_date == target_date,
         DigestGenerationState.status == "failed",
     )
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    return [(row.user_id, row.is_serene) for row in result]

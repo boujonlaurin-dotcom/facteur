@@ -51,20 +51,19 @@ async def _digest_watchdog() -> None:
                 return
 
             # Expected coverage = 2 digests per user (normal + serein).
+            # Count distinct (user_id, is_serene) pairs via a GROUP BY
+            # subquery rather than string-concat casts — clearer intent,
+            # no implicit bool→text coercion, portable across backends.
             expected_pairs = total_users * 2
-            pair_count = await session.scalar(
-                select(
-                    func.count(
-                        func.distinct(
-                            func.concat(
-                                DailyDigest.user_id,
-                                ":",
-                                DailyDigest.is_serene,
-                            )
-                        )
-                    )
-                ).where(DailyDigest.target_date == today)
+            pair_subq = (
+                select(DailyDigest.user_id, DailyDigest.is_serene)
+                .where(DailyDigest.target_date == today)
+                .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+                .subquery()
             )
+            pair_count = await session.scalar(
+                select(func.count()).select_from(pair_subq)
+            ) or 0
 
             coverage = pair_count / expected_pairs if expected_pairs else 0
             logger.info(
@@ -80,7 +79,7 @@ async def _digest_watchdog() -> None:
                 logger.warning(
                     "digest_watchdog_low_coverage_triggering_generation",
                     coverage_pct=round(coverage * 100, 1),
-                    missing=expected_pairs - (pair_count or 0),
+                    missing=expected_pairs - pair_count,
                 )
                 await run_digest_generation(target_date=today)
                 logger.info("digest_watchdog_generation_completed")

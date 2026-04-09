@@ -162,11 +162,17 @@ class EditorialWriterService:
     # ------------------------------------------------------------------
 
     async def _recent_highlight_content_ids(self, kind: str) -> set[UUID]:
-        """Return content_ids featured as `kind` in the last N days."""
+        """Return content_ids featured as `kind` in the last N days.
+
+        With `_HIGHLIGHTS_ROTATION_DAYS = 3` and today = D, we want to
+        exclude articles used on D, D-1 and D-2 (a rolling 3-day window).
+        A `>= D - 3` filter would also include D-3, giving 4 days of
+        exclusion; the strict `> D - 3` hits exactly 3 days.
+        """
         cutoff = today_paris() - timedelta(days=_HIGHLIGHTS_ROTATION_DAYS)
         stmt = select(EditorialHighlightsHistory.content_id).where(
             EditorialHighlightsHistory.kind == kind,
-            EditorialHighlightsHistory.target_date >= cutoff,
+            EditorialHighlightsHistory.target_date > cutoff,
         )
         try:
             result = await self._session.execute(stmt)
@@ -274,9 +280,11 @@ class EditorialWriterService:
             f"{json.dumps(candidates_data, ensure_ascii=False, indent=2)}"
         )
 
-        # Use a slightly bumped temperature so that identical candidate
-        # pools don't collapse to the same deterministic pick each day.
-        effective_temp = max(prompt_cfg.temperature or 0.3, 0.6)
+        # Use the dedicated rotation temperature (from editorial config) so
+        # identical candidate pools don't collapse to the same deterministic
+        # pick each day. Operators can tune via `pepite_rotation_temperature`
+        # in editorial_prompts.yaml without fighting the base prompt settings.
+        effective_temp = self._config.pepite_rotation_temperature
         raw = await self._llm.chat_json(
             system=prompt_cfg.system,
             user_message=user_message,

@@ -52,6 +52,10 @@ def mock_config():
         temperature=0.3,
         max_tokens=500,
     )
+    # Dedicated rotation temperature — see EditorialConfig.pepite_rotation_temperature.
+    # Kept at 0.6 here to match the default so existing assertions
+    # (`temperature >= 0.6`) remain valid.
+    config.pepite_rotation_temperature = 0.6
     return config
 
 

@@ -1,14 +1,26 @@
-"""DigestGenerationState model — per-user observability for the digest batch.
+"""DigestGenerationState model — per-variant observability for the digest batch.
 
-Tracks the generation lifecycle for each (user, target_date) pair so we can
-answer "why is this user still on yesterday's digest?" without scanning logs.
+Tracks the generation lifecycle for each (user_id, target_date, is_serene)
+triplet so we can answer "why is this user still on yesterday's digest?"
+without scanning logs. One row per variant means a user who succeeds on
+pour_vous but fails on serein is correctly surfaced as half-broken instead
+of being collapsed into a single ambiguous row.
 """
 
 import uuid
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,12 +28,12 @@ from app.database import Base
 
 
 class DigestGenerationState(Base):
-    """Tracks digest generation attempts and outcomes per user per day.
+    """Tracks digest generation attempts and outcomes per user per variant.
 
     Statuses:
         - "pending"     : enqueued, not yet started
-        - "in_progress" : worker picked up the user
-        - "success"     : both variants generated successfully
+        - "in_progress" : worker picked up this (user, variant)
+        - "success"     : variant generated successfully
         - "failed"      : last attempt failed; see last_error
         - "skipped"     : intentionally skipped (e.g. cold user)
     """
@@ -31,7 +43,8 @@ class DigestGenerationState(Base):
         UniqueConstraint(
             "user_id",
             "target_date",
-            name="uq_digest_generation_state_user_date",
+            "is_serene",
+            name="uq_digest_generation_state_user_date_variant",
         ),
         Index("ix_digest_generation_state_target_date", "target_date"),
         Index("ix_digest_generation_state_status", "status"),
@@ -42,6 +55,9 @@ class DigestGenerationState(Base):
     )
     user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    is_serene: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending", server_default="pending"
     )

@@ -200,9 +200,8 @@ class TestGlobalCandidatePool:
         """DB failure should return empty list rather than raise."""
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(side_effect=Exception("db down"))
-        mock_selector = Mock()
 
-        result = await job._get_global_candidates(mock_selector, mock_session)
+        result = await job._get_global_candidates(mock_session)
         assert result == []
 
     @pytest.mark.asyncio
@@ -215,7 +214,6 @@ class TestGlobalCandidatePool:
         result_mock = MagicMock()
         result_mock.scalars = MagicMock(return_value=scalars_mock)
         mock_session.execute = AsyncMock(return_value=result_mock)
-        mock_selector = Mock()
 
-        result = await job._get_global_candidates(mock_selector, mock_session)
+        result = await job._get_global_candidates(mock_session)
         assert len(result) == 3
