@@ -1117,7 +1117,9 @@ class RecommendationService:
                     {
                         "code": "satire" if a.source.tone == "satirical" else "decale",
                         "label": "Satire" if a.source.tone == "satirical" else "Décalé",
-                        "emoji": "\U0001f60f" if a.source.tone == "satirical" else "\U0001f604",
+                        "emoji": "\U0001f60f"
+                        if a.source.tone == "satirical"
+                        else "\U0001f604",
                     }
                     for a in decale_articles
                 ]

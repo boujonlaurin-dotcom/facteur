@@ -76,7 +76,8 @@ def _load_quotes() -> list[dict]:
             with open(_QUOTES_PATH) as f:
                 data = yaml.safe_load(f)
             _QUOTES = [
-                q for q in (data.get("quotes", []) if data else [])
+                q
+                for q in (data.get("quotes", []) if data else [])
                 if q.get("text") and q.get("author")
             ]
         except Exception:
@@ -90,9 +91,7 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     quotes = _load_quotes()
     if not quotes:
         return None
-    seed = int(
-        hashlib.sha256(f"{user_id}:{target_date}".encode()).hexdigest(), 16
-    )
+    seed = int(hashlib.sha256(f"{user_id}:{target_date}".encode()).hexdigest(), 16)
     rng = random.Random(seed)
     return rng.choice(quotes)
 
@@ -280,7 +279,9 @@ class DigestService:
         )
         _st_raw = _st_result.scalar_one_or_none()
         try:
-            sensitive_themes: list[str] | None = _json.loads(_st_raw) if _st_raw else None
+            sensitive_themes: list[str] | None = (
+                _json.loads(_st_raw) if _st_raw else None
+            )
         except _json.JSONDecodeError:
             logger.warning("sensitive_themes malformed for user %s, ignoring", user_id)
             sensitive_themes = None
@@ -377,7 +378,9 @@ class DigestService:
                 user_id=str(user_id),
             )
             digest_items = await self._get_emergency_candidates(
-                user_id=user_id, limit=target_size, is_serene=is_serene,
+                user_id=user_id,
+                limit=target_size,
+                is_serene=is_serene,
                 sensitive_themes=sensitive_themes,
             )
             is_topics_format = False  # Emergency fallback always returns flat items
@@ -438,7 +441,10 @@ class DigestService:
         return await self._build_digest_response(digest, user_id)
 
     async def _get_emergency_candidates(
-        self, user_id: UUID, limit: int = 5, is_serene: bool = False,
+        self,
+        user_id: UUID,
+        limit: int = 5,
+        is_serene: bool = False,
         sensitive_themes: list[str] | None = None,
     ) -> list[Any]:
         """Last resort: get most recent content from user's followed sources first.
@@ -512,7 +518,9 @@ class DigestService:
                     Content.id.notin_(list(existing_ids))
                 )
             if is_serene:
-                curated_query = apply_serein_filter(curated_query, sensitive_themes=sensitive_themes)
+                curated_query = apply_serein_filter(
+                    curated_query, sensitive_themes=sensitive_themes
+                )
             stmt = curated_query
 
             result = await self.session.execute(stmt)
@@ -539,7 +547,9 @@ class DigestService:
                     Content.id.notin_(list(existing_ids))
                 )
             if is_serene:
-                any_source_query = apply_serein_filter(any_source_query, sensitive_themes=sensitive_themes)
+                any_source_query = apply_serein_filter(
+                    any_source_query, sensitive_themes=sensitive_themes
+                )
 
             result = await self.session.execute(any_source_query)
             all_contents.extend(result.scalars().all())
@@ -1750,9 +1760,7 @@ class DigestService:
         # Quote for serein digest only
         quote_response = None
         if digest.is_serene:
-            q = _select_daily_quote(
-                str(digest.user_id), str(digest.target_date)
-            )
+            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
             if q:
                 quote_response = QuoteResponse(
                     text=q["text"],
@@ -1941,9 +1949,7 @@ class DigestService:
         # Quote for serein digest only
         quote_response = None
         if digest.is_serene:
-            q = _select_daily_quote(
-                str(digest.user_id), str(digest.target_date)
-            )
+            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
             if q:
                 quote_response = QuoteResponse(
                     text=q["text"],

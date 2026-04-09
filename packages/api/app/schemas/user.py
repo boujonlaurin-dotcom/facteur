@@ -85,7 +85,8 @@ class OnboardingAnswers(BaseModel):
         "pour_vous", description="pour_vous, serein, perspective"
     )
     sensitive_themes: list[str] | None = Field(
-        None, description="Thèmes sensibles pour le mode serein (personnalisation utilisateur)"
+        None,
+        description="Thèmes sensibles pour le mode serein (personnalisation utilisateur)",
     )
 
     # Section 3 - Source Preferences

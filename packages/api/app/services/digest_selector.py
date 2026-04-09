@@ -63,9 +63,7 @@ def _get_cached_editorial_ctx(target_date: datetime.date, mode: str) -> object |
     entry = _editorial_ctx_cache.get(key)
     if entry is not None:
         _ts, ctx = entry
-        logger.info(
-            "editorial_ctx_cache_hit", target_date=str(target_date), mode=mode
-        )
+        logger.info("editorial_ctx_cache_hit", target_date=str(target_date), mode=mode)
         return ctx
     return None
 
@@ -728,7 +726,9 @@ class DigestSelector:
 
             # Appliquer le filtre serein si demandé
             if mode == "serein":
-                user_sources_query = apply_serein_filter(user_sources_query, sensitive_themes=sensitive_themes)
+                user_sources_query = apply_serein_filter(
+                    user_sources_query, sensitive_themes=sensitive_themes
+                )
 
             result = await self.session.execute(user_sources_query)
             user_candidates = list(result.scalars().all())
@@ -798,7 +798,9 @@ class DigestSelector:
 
         # Appliquer le filtre serein si demandé
         if mode == "serein":
-            curated_query = apply_serein_filter(curated_query, sensitive_themes=sensitive_themes)
+            curated_query = apply_serein_filter(
+                curated_query, sensitive_themes=sensitive_themes
+            )
 
         result = await self.session.execute(curated_query)
         curated_candidates = list(result.scalars().all())

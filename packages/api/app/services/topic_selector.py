@@ -163,7 +163,9 @@ class TopicSelector:
 
         for cluster in clusters:
             # Mode serein : exclure les clusters anxiogènes
-            if mode == "serein" and not is_cluster_serein_compatible(cluster, sensitive_themes=sensitive_themes):
+            if mode == "serein" and not is_cluster_serein_compatible(
+                cluster, sensitive_themes=sensitive_themes
+            ):
                 continue
 
             score = 0.0

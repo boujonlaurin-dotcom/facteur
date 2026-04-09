@@ -419,7 +419,9 @@ class EditorialWriterService:
             )
 
         content_id_str = raw.get("selected_content_id")
-        mini_editorial = raw.get("mini_editorial", "Pour finir sur une note légère\u2026")
+        mini_editorial = raw.get(
+            "mini_editorial", "Pour finir sur une note légère\u2026"
+        )
 
         if not content_id_str:
             logger.info("editorial_writer.actu_decalee_no_selection_fallback")
@@ -443,11 +445,7 @@ class EditorialWriterService:
 
         if not any(c.id == content_id for c in eligible):
             prefix = content_id_str[:8]
-            match = next(
-                (c for c in eligible if str(c.id).startswith(prefix)), None
-            )
+            match = next((c for c in eligible if str(c.id).startswith(prefix)), None)
             content_id = match.id if match else eligible[0].id
 
-        return ActuDecaleeArticle(
-            content_id=content_id, mini_editorial=mini_editorial
-        )
+        return ActuDecaleeArticle(content_id=content_id, mini_editorial=mini_editorial)
