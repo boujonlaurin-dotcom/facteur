@@ -173,9 +173,7 @@ class DigestGenerationJob:
                                         _set_cached_editorial_ctx,
                                     )
 
-                                    _set_cached_editorial_ctx(
-                                        target_date, mode, ctx
-                                    )
+                                    _set_cached_editorial_ctx(target_date, mode, ctx)
                                     if mode == "pour_vous":
                                         editorial_ctx_pour_vous = ctx
                                     else:
@@ -277,9 +275,7 @@ class DigestGenerationJob:
             result = await session.execute(stmt)
             return list(result.scalars().all())
         except Exception as e:
-            logger.error(
-                "digest_generation_global_candidates_failed", error=str(e)
-            )
+            logger.error("digest_generation_global_candidates_failed", error=str(e))
             return []
 
     async def _prune_old_highlights(
@@ -399,9 +395,7 @@ class DigestGenerationJob:
 
         async def _missing_pairs() -> list[tuple[UUID, bool]]:
             """Return (user_id, is_serene) pairs missing from daily_digest."""
-            expected = {
-                (uid, is_ser) for uid in user_ids for is_ser in (False, True)
-            }
+            expected = {(uid, is_ser) for uid in user_ids for is_ser in (False, True)}
             async with async_session_maker() as ro_session:
                 result = await ro_session.execute(
                     select(DailyDigest.user_id, DailyDigest.is_serene).where(
@@ -661,9 +655,7 @@ class DigestGenerationJob:
                     )
 
                     self.stats["success"] += 1
-                    await state_mark_success(
-                        session, user_id, target_date, is_serene
-                    )
+                    await state_mark_success(session, user_id, target_date, is_serene)
                 except Exception as variant_err:
                     # Record the variant error but keep going so the other
                     # variant still has a chance to generate.

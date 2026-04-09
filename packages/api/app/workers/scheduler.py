@@ -61,9 +61,9 @@ async def _digest_watchdog() -> None:
                 .group_by(DailyDigest.user_id, DailyDigest.is_serene)
                 .subquery()
             )
-            pair_count = await session.scalar(
-                select(func.count()).select_from(pair_subq)
-            ) or 0
+            pair_count = (
+                await session.scalar(select(func.count()).select_from(pair_subq)) or 0
+            )
 
             coverage = pair_count / expected_pairs if expected_pairs else 0
             logger.info(

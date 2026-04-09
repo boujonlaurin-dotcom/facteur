@@ -366,13 +366,9 @@ class EditorialWriterService:
         window_start = datetime.now(UTC) - timedelta(days=3)
 
         # Combine caller-provided exclusions with the rotation memory.
-        recent_highlights = await self._recent_highlight_content_ids(
-            "coup_de_coeur"
-        )
+        recent_highlights = await self._recent_highlight_content_ids("coup_de_coeur")
         all_excluded: set[UUID] = set(excluded_content_ids) | recent_highlights
-        exclusion_filter = (
-            Content.id.notin_(all_excluded) if all_excluded else True
-        )
+        exclusion_filter = Content.id.notin_(all_excluded) if all_excluded else True
 
         # Time-decayed score: sum(1.0 - age_in_days / 3.0), clamped to 0.
         # A save from 0 days ago counts 1.0; 3 days ago counts 0.0.
