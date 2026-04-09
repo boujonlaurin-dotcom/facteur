@@ -15,9 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
+from app.models.source import Source
 from app.services.editorial.config import EditorialConfig
 from app.services.editorial.llm_client import EditorialLLMClient
-from app.models.source import Source
 from app.services.editorial.schemas import (
     ActuDecaleeArticle,
     CoupDeCoeurArticle,

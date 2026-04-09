@@ -12,14 +12,13 @@ Safe reuse patterns:
 - Uses existing StreakService for gamification updates
 """
 
+import hashlib
+import random
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
-
-import hashlib
-import random
 
 import structlog
 import yaml
@@ -37,7 +36,6 @@ from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
 from app.schemas.digest import (
     CoupDeCoeurResponse,
-    QuoteResponse,
     DigestAction,
     DigestItem,
     DigestRecommendationReason,
@@ -46,6 +44,7 @@ from app.schemas.digest import (
     DigestTopic,
     DigestTopicArticle,
     PepiteResponse,
+    QuoteResponse,
 )
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
