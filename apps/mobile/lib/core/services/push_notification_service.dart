@@ -170,6 +170,35 @@ class PushNotificationService {
     debugPrint('PushNotificationService: Digest notification cancelled');
   }
 
+  /// Affiche une notification persistante pendant le téléchargement d'une MAJ.
+  Future<void> showUpdateDownloadNotification() async {
+    const androidDetails = AndroidNotificationDetails(
+      'update_download_channel',
+      'Mise à jour',
+      channelDescription: 'Téléchargement de la mise à jour en cours',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showProgress: true,
+      indeterminate: true,
+      maxProgress: 100,
+      progress: 0,
+    );
+
+    await _plugin.show(
+      id: 2,
+      title: 'Mise à jour en cours',
+      body: 'Téléchargement — gardez l\'app ouverte',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
+
+  /// Annule la notification de téléchargement de MAJ (ID 2).
+  Future<void> cancelUpdateDownloadNotification() async {
+    await _plugin.cancel(id: 2);
+  }
+
   /// Calcule la prochaine occurrence de 8h00 Europe/Paris.
   tz.TZDateTime _nextInstanceOf8AM() {
     final paris = tz.getLocation('Europe/Paris');

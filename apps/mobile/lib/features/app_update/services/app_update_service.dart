@@ -20,11 +20,11 @@ class AppUpdateService {
 
   AppUpdateService(this._apiClient);
 
-  /// Download the latest APK and trigger Android install.
+  /// Download the latest APK and return the local file path.
   ///
   /// [onProgress] receives (received, total) bytes for progress display.
   /// Throws on failure.
-  Future<void> downloadAndInstall({
+  Future<String> downloadApk({
     required void Function(int received, int total) onProgress,
   }) async {
     // 1. Get temporary download URL from backend
@@ -47,7 +47,13 @@ class AppUpdateService {
       onReceiveProgress: onProgress,
     );
 
-    // 4. Trigger Android install intent
+    return filePath;
+  }
+
+  /// Trigger Android install intent for an already-downloaded APK.
+  ///
+  /// Throws [AppUpdateInstallException] if the system refuses to install.
+  Future<void> installApk(String filePath) async {
     final result = await OpenFilex.open(filePath);
     if (result.type != ResultType.done) {
       throw AppUpdateInstallException(

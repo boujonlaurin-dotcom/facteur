@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../providers/app_update_provider.dart';
 import '../services/app_update_service.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-enum _UpdateState { idle, downloading, done, error, incompatible }
+enum _UpdateState { idle, downloading, downloaded, done, error, incompatible }
 
 /// Bottom sheet showing update details and download progress.
 class UpdateBottomSheet extends ConsumerStatefulWidget {
@@ -33,18 +34,30 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
   _UpdateState _state = _UpdateState.idle;
   double _progress = 0;
   String? _errorMessage;
+  String? _apkFilePath;
+  bool _isDownloading = false;
 
-  Future<void> _startUpdate() async {
+  Future<void> _startDownload() async {
+    if (_isDownloading) return;
+    _isDownloading = true;
+
     setState(() {
       _state = _UpdateState.downloading;
       _progress = 0;
+      _errorMessage = null;
     });
+
+    try {
+      await PushNotificationService().showUpdateDownloadNotification();
+    } catch (_) {
+      // Notification failure is non-fatal
+    }
 
     try {
       final apiClient = ref.read(apiClientProvider);
       final service = AppUpdateService(apiClient);
 
-      await service.downloadAndInstall(
+      final filePath = await service.downloadApk(
         onProgress: (received, total) {
           if (total > 0 && mounted) {
             setState(() => _progress = received / total);
@@ -53,11 +66,39 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
       );
 
       if (mounted) {
-        setState(() => _state = _UpdateState.done);
-        // Close sheet after a short delay since Android installer is opening
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) Navigator.of(context).pop();
+        setState(() {
+          _apkFilePath = filePath;
+          _state = _UpdateState.downloaded;
         });
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('AppUpdate: download failed: $e');
+      if (mounted) {
+        setState(() {
+          _state = _UpdateState.error;
+          _errorMessage = 'Le téléchargement a échoué. Vérifiez votre connexion.';
+        });
+      }
+    } finally {
+      _isDownloading = false;
+      try {
+        await PushNotificationService().cancelUpdateDownloadNotification();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _triggerInstall() async {
+    final path = _apkFilePath;
+    if (path == null) return;
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final service = AppUpdateService(apiClient);
+      await service.installApk(path);
+
+      if (mounted) {
+        setState(() => _state = _UpdateState.done);
       }
     } on AppUpdateInstallException catch (e) {
       // ignore: avoid_print
@@ -72,11 +113,11 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
       }
     } catch (e) {
       // ignore: avoid_print
-      print('AppUpdate: download failed: $e');
+      print('AppUpdate: install failed: $e');
       if (mounted) {
         setState(() {
           _state = _UpdateState.error;
-          _errorMessage = 'Le telechargement a echoue. Verifiez votre connexion.';
+          _errorMessage = 'L\'installation a échoué. Réessayez.';
         });
       }
     }
@@ -114,7 +155,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
 
               // Title
               Text(
-                'Mise a jour disponible',
+                'Mise à jour disponible',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -159,7 +200,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
         return SizedBox(
           width: double.infinity,
           child: FilledButton(
-            onPressed: _startUpdate,
+            onPressed: _startDownload,
             style: FilledButton.styleFrom(
               backgroundColor: colors.primary,
               foregroundColor: Colors.white,
@@ -168,7 +209,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Mettre a jour'),
+            child: const Text('Mettre à jour'),
           ),
         );
 
@@ -186,25 +227,99 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Telechargement... ${(_progress * 100).toInt()}%',
+              'Téléchargement... ${(_progress * 100).toInt()}%',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.textSecondary,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Gardez l\'app ouverte pendant le téléchargement',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                    fontSize: 11,
                   ),
             ),
           ],
         );
 
-      case _UpdateState.done:
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+      case _UpdateState.downloaded:
+        return Column(
           children: [
-            Icon(Icons.check_circle, color: colors.success, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Installation en cours...',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.success,
+            Row(
+              children: [
+                Icon(
+                  PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                  color: colors.success,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Téléchargement terminé',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.success,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _triggerInstall,
+                style: FilledButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                ),
+                child: const Text('Installer maintenant'),
+              ),
+            ),
+          ],
+        );
+
+      case _UpdateState.done:
+        return Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, color: colors.success, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'L\'installation a démarré',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.success,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Suivez les instructions sur votre écran',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Fermer'),
+              ),
             ),
           ],
         );
@@ -228,10 +343,10 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Cette mise a jour n\'est pas compatible avec la version installee.\n\n'
-              'Desinstallez l\'app depuis les Parametres Android, '
-              'puis reinstallez-la depuis le lien de telechargement.\n\n'
-              'Vos donnees sont sauvegardees sur le serveur, rien ne sera perdu.',
+              'Cette mise à jour n\'est pas compatible avec la version installée.\n\n'
+              'Désinstallez l\'app depuis les Paramètres Android, '
+              'puis réinstallez-la depuis le lien de téléchargement.\n\n'
+              'Vos données sont sauvegardées sur le serveur, rien ne sera perdu.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.textSecondary,
                     height: 1.4,
@@ -245,7 +360,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
         return Column(
           children: [
             Text(
-              _errorMessage ?? 'Erreur lors du telechargement',
+              _errorMessage ?? 'Erreur lors du téléchargement',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: colors.error,
                   ),
@@ -255,7 +370,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(
-                onPressed: _startUpdate,
+                onPressed: _apkFilePath != null ? _triggerInstall : _startDownload,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: colors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
@@ -263,7 +378,7 @@ class _UpdateBottomSheetState extends ConsumerState<UpdateBottomSheet> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Reessayer'),
+                child: Text(_apkFilePath != null ? 'Réessayer l\'installation' : 'Réessayer'),
               ),
             ),
           ],
