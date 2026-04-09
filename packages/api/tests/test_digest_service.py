@@ -427,3 +427,187 @@ class TestFallbackYesterday:
 
         # _build_digest_response should NOT have been called (no yesterday digest to serve)
         mock_build.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stale_fallback_sets_is_stale_flag_and_schedules_regen(
+        self, service, mock_session
+    ):
+        """Yesterday fallback must set is_stale_fallback=True AND schedule bg regen."""
+        from app.schemas.digest import DigestResponse
+
+        user_id = uuid4()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        mock_yesterday_digest = Mock()
+        mock_yesterday_digest.id = uuid4()
+        mock_yesterday_digest.target_date = yesterday
+        mock_yesterday_digest.format_version = "editorial_v1"
+
+        # Build a real DigestResponse so we can observe is_stale_fallback
+        response = DigestResponse(
+            digest_id=uuid4(),
+            user_id=user_id,
+            target_date=yesterday,
+            generated_at=datetime.utcnow(),
+            items=[],
+        )
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            if d == today:
+                return None
+            if d == yesterday:
+                return mock_yesterday_digest
+            return None
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service, "_build_digest_response",
+                new_callable=AsyncMock, return_value=response,
+            ),
+            patch.object(
+                service, "_get_user_digest_format",
+                new_callable=AsyncMock, return_value="editorial",
+            ),
+            patch(
+                "app.services.digest_service._schedule_background_regen"
+            ) as mock_schedule,
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today
+            )
+
+        assert result is not None
+        assert result.is_stale_fallback is True
+        mock_schedule.assert_called_once()
+        # Check kwargs were forwarded correctly
+        call_kwargs = mock_schedule.call_args.kwargs
+        assert call_kwargs["user_id"] == user_id
+        assert call_kwargs["target_date"] == today
+        assert call_kwargs["is_serene"] is False
+
+
+# ─── Tests: background regen rate limiting ────────────────────────────────────
+
+
+class TestBackgroundRegenRateLimit:
+    """_schedule_background_regen enforces one spawn per minute per key."""
+
+    def test_rate_limit_blocks_repeat_calls_within_cooldown(self):
+        """Second call within cooldown window is a no-op."""
+        from app.services import digest_service
+
+        # Reset rate limit dict
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+
+        with patch("asyncio.create_task") as mock_create_task:
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+            # First call spawned a task; second was blocked by rate limit
+            assert mock_create_task.call_count == 1
+
+    def test_rate_limit_independent_per_serene_variant(self):
+        """(user, date, False) and (user, date, True) are separate buckets."""
+        from app.services import digest_service
+
+        digest_service._BG_REGEN_RATE_LIMIT.clear()
+
+        user_id = uuid4()
+        target_date = date.today()
+
+        with patch("asyncio.create_task") as mock_create_task:
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=False
+            )
+            digest_service._schedule_background_regen(
+                user_id=user_id, target_date=target_date, is_serene=True
+            )
+            # Both should go through — different variants
+            assert mock_create_task.call_count == 2
+
+
+# ─── Tests: Phase 5.2 — deferred stale-format deletion ────────────────────────
+
+
+class TestDeferredStaleFormatDeletion:
+    """Stale-format digest should only be deleted after new one succeeds."""
+
+    @pytest.mark.asyncio
+    async def test_stale_format_not_deleted_on_generation_failure(
+        self, service, mock_session
+    ):
+        """When generation returns nothing, stale-format digest survives and is served."""
+        from app.schemas.digest import DigestResponse
+
+        user_id = uuid4()
+        today = date.today()
+
+        stale_digest = Mock()
+        stale_digest.id = uuid4()
+        stale_digest.target_date = today
+        stale_digest.format_version = "flat_v1"  # wrong format
+        stale_digest.user_id = user_id
+        stale_digest.is_serene = False
+
+        response = DigestResponse(
+            digest_id=stale_digest.id,
+            user_id=user_id,
+            target_date=today,
+            generated_at=datetime.utcnow(),
+            items=[],
+            format_version="flat_v1",
+        )
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            if d == today:
+                return stale_digest
+            return None
+
+        # Selector returns nothing → generation failure
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        async def fake_emergency(*args, **kwargs):
+            return []
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service, "_get_user_digest_format",
+                new_callable=AsyncMock, return_value="editorial",
+            ),
+            patch.object(
+                service, "_get_emergency_candidates",
+                new_callable=AsyncMock, return_value=[],
+            ),
+            patch.object(
+                service, "_build_digest_response",
+                new_callable=AsyncMock, return_value=response,
+            ),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, force_regenerate=True
+            )
+
+        # Stale digest should have been returned as last-resort fallback
+        assert result is not None
+        # session.delete should never have been called on the stale digest
+        # (we only delete it AFTER we have items to store)
+        for call in mock_session.delete.call_args_list:
+            assert call.args[0] is not stale_digest

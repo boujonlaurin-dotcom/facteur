@@ -13,7 +13,11 @@ import structlog
 
 logger = structlog.get_logger()
 
-_SAFETY_TIMEOUT = 1800  # 30 minutes — auto-reset if generation hangs
+_SAFETY_TIMEOUT = 600  # 10 minutes — auto-reset if generation hangs
+# Tightened from 30 min: the batch job should never legitimately run
+# anywhere near that long, and a shorter window means a crashed-but-not-
+# reset flag only blocks on-demand generation for 10 minutes instead of
+# half an hour, reducing the surface area of the "stuck digest" bug.
 
 _is_running: bool = False
 _started_at: float | None = None

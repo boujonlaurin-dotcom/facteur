@@ -241,6 +241,13 @@ class DigestResponse(BaseModel):
     )
     is_completed: bool = False
     completed_at: datetime | None = None
+    is_stale_fallback: bool = Field(
+        default=False,
+        description=(
+            "True when this digest is yesterday's content served while today's "
+            "is being generated in background. Mobile should auto-refetch after a delay."
+        ),
+    )
 
     # Editorial fields (populated when format_version="editorial_v1")
     header_text: str | None = None

@@ -203,6 +203,7 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
       completedAt: json['completed_at'] == null
           ? null
           : DateTime.parse(json['completed_at'] as String),
+      isStaleFallback: json['is_stale_fallback'] as bool? ?? false,
       headerText: json['header_text'] as String?,
       closureText: json['closure_text'] as String?,
       ctaText: json['cta_text'] as String?,
@@ -229,6 +230,7 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'completion_threshold': instance.completionThreshold,
       'is_completed': instance.isCompleted,
       'completed_at': instance.completedAt?.toIso8601String(),
+      'is_stale_fallback': instance.isStaleFallback,
       'header_text': instance.headerText,
       'closure_text': instance.closureText,
       'cta_text': instance.ctaText,

@@ -32,6 +32,11 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   DigestResponse? _sereinDigest;
   String? _cachedDate; // ISO date string (YYYY-MM-DD) for cache invalidation
 
+  /// Timer scheduled when a stale fallback digest is shown, to auto-refetch
+  /// fresh content generated in the background.
+  Timer? _staleFallbackRefetchTimer;
+  static const Duration _staleFallbackRefetchDelay = Duration(seconds: 20);
+
   /// Get today's date as a string for cache comparison.
   String get _todayDateString {
     final now = DateTime.now();
@@ -92,6 +97,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         // Push to home screen widget
         _syncWidget();
+        // If either variant was served as yesterday's stale fallback while
+        // fresh content is being generated in background, schedule a silent
+        // auto-refetch so the user sees today's digest without pulling.
+        _maybeScheduleStaleFallbackRefetch();
         return _activeDigest;
       } on DigestPreparingException {
         // 202: digest is being generated in background, retry with longer delays
@@ -119,6 +128,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           _normalDigest = digest;
           _cachedDate = _todayDateString;
           ref.read(sereinToggleProvider.notifier).initFromApi(false);
+          _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
           rethrow;
@@ -206,6 +216,38 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     _normalDigest = null;
     _sereinDigest = null;
     _cachedDate = null;
+    _staleFallbackRefetchTimer?.cancel();
+    _staleFallbackRefetchTimer = null;
+  }
+
+  /// If the current normal or serein digest is marked as `is_stale_fallback`
+  /// (yesterday's content being served while today's regenerates in the
+  /// background), schedule a silent refetch so the fresh version appears
+  /// without the user pulling to refresh.
+  void _maybeScheduleStaleFallbackRefetch() {
+    final isStale = (_normalDigest?.isStaleFallback ?? false) ||
+        (_sereinDigest?.isStaleFallback ?? false);
+    _staleFallbackRefetchTimer?.cancel();
+    if (!isStale) {
+      _staleFallbackRefetchTimer = null;
+      return;
+    }
+    _staleFallbackRefetchTimer = Timer(_staleFallbackRefetchDelay, () async {
+      // Only auto-refetch if still authenticated and same day, and the
+      // current state is not loading (avoid stomping an in-flight request).
+      if (state.isLoading) return;
+      final stillStaleNormal = _normalDigest?.isStaleFallback ?? false;
+      final stillStaleSerein = _sereinDigest?.isStaleFallback ?? false;
+      if (!stillStaleNormal && !stillStaleSerein) return;
+      try {
+        // Invalidate cache and reload both variants silently.
+        _cachedDate = null;
+        final fresh = await _loadBothDigests();
+        state = AsyncData(fresh);
+      } catch (_) {
+        // Silent failure: the next manual refresh or app open will retry.
+      }
+    });
   }
 
   /// Apply an action to a digest item (like, unlike, read, save, not_interested, report_not_serene, undo)

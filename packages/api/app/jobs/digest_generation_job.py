@@ -18,9 +18,6 @@ import asyncio
 import datetime
 from typing import Any
 from uuid import UUID
-from zoneinfo import ZoneInfo
-
-_PARIS_TZ = ZoneInfo("Europe/Paris")
 
 import structlog
 from sqlalchemy import select
@@ -29,12 +26,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_maker
 from app.models.daily_digest import DailyDigest
 from app.models.user import UserProfile
+from app.services.digest_generation_state_service import (
+    mark_failed as state_mark_failed,
+)
+from app.services.digest_generation_state_service import (
+    mark_in_progress as state_mark_in_progress,
+)
+from app.services.digest_generation_state_service import (
+    mark_pending as state_mark_pending,
+)
+from app.services.digest_generation_state_service import (
+    mark_success as state_mark_success,
+)
 from app.services.digest_selector import (
     DigestSelector,
     DiversityConstraints,
     GlobalTrendingContext,
 )
 from app.services.editorial.schemas import EditorialPipelineResult
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 
@@ -74,14 +84,18 @@ class DigestGenerationJob:
         """Exécute le job de génération pour tous les utilisateurs.
 
         Args:
-            session: Session SQLAlchemy async
-            target_date: Date du digest (défaut: aujourd'hui)
+            session: Session SQLAlchemy async — used only for queries that
+                are safe to share across the batch (reading user list, the
+                global editorial context, etc.). Per-user generation opens
+                its own fresh session in `_process_batch` so that one user
+                failing cannot poison the session for everyone else.
+            target_date: Date du digest (défaut: aujourd'hui, Paris TZ)
 
         Returns:
             Statistiques d'exécution
         """
         if target_date is None:
-            target_date = datetime.datetime.now(_PARIS_TZ).date()
+            target_date = today_paris()
 
         logger.info(
             "digest_generation_job_started",
@@ -103,6 +117,13 @@ class DigestGenerationJob:
                 target_date=str(target_date),
             )
 
+            # Seed generation-state rows for every user as "pending" so
+            # observability queries can distinguish "never attempted" from
+            # "not yet run".
+            for uid in user_ids:
+                await state_mark_pending(session, uid, target_date)
+            await session.commit()
+
             # 1.5 Build global trending context ONCE for the entire batch
             global_trending_context: GlobalTrendingContext | None = None
             try:
@@ -119,45 +140,58 @@ class DigestGenerationJob:
                 logger.error("digest_generation_global_context_failed", error=str(e))
                 # Graceful degradation: continue without trending
 
-            # 1.6 Pre-compute editorial global context ONCE for the batch
-            editorial_global_ctx = None
+            # 1.6 Pre-compute editorial global context ONCE for the batch,
+            # for BOTH variants (pour_vous + serein). Previously only
+            # pour_vous was pre-computed, forcing each serene user to do
+            # clustering again on-demand. Also, the pool used to build the
+            # context came from `user_ids[0]`'s personal candidates — if
+            # that user had an empty pool, every downstream user paid the
+            # cold-path cost. We now build the pool from a global,
+            # user-agnostic candidate query.
+            editorial_ctx_pour_vous = None
+            editorial_ctx_serein = None
             try:
                 from app.services.editorial.pipeline import EditorialPipelineService
 
                 pipeline = EditorialPipelineService(session)
                 if pipeline.llm.is_ready and user_ids:
                     temp_selector = DigestSelector(session)
-                    ctx = await temp_selector._build_digest_context(
-                        user_ids[0], mode="pour_vous"
+                    global_candidates = await self._get_global_candidates(
+                        temp_selector, session
                     )
-                    if ctx.user_profile:
-                        candidates = await temp_selector._get_candidates(
-                            user_id=user_ids[0],
-                            context=ctx,
-                            hours_lookback=self.hours_lookback,
-                            min_pool_size=5,
-                            mode="pour_vous",
-                        )
-                        if candidates:
-                            editorial_global_ctx = (
-                                await pipeline.compute_global_context(
-                                    candidates, mode="pour_vous"
+                    if global_candidates:
+                        for mode in ("pour_vous", "serein"):
+                            try:
+                                ctx = await pipeline.compute_global_context(
+                                    global_candidates, mode=mode
                                 )
-                            )
-                            if editorial_global_ctx:
-                                from app.services.digest_selector import (
-                                    _set_cached_editorial_ctx,
-                                )
+                                if ctx:
+                                    from app.services.digest_selector import (
+                                        _set_cached_editorial_ctx,
+                                    )
 
-                                _set_cached_editorial_ctx(
-                                    target_date,
-                                    "pour_vous",
-                                    editorial_global_ctx,
+                                    _set_cached_editorial_ctx(
+                                        target_date, mode, ctx
+                                    )
+                                    if mode == "pour_vous":
+                                        editorial_ctx_pour_vous = ctx
+                                    else:
+                                        editorial_ctx_serein = ctx
+                                    logger.info(
+                                        "digest_generation_editorial_ctx_precomputed",
+                                        mode=mode,
+                                        subjects=len(ctx.subjects),
+                                    )
+                            except Exception as mode_err:
+                                logger.error(
+                                    "digest_generation_editorial_ctx_mode_failed",
+                                    mode=mode,
+                                    error=str(mode_err),
                                 )
-                                logger.info(
-                                    "digest_generation_editorial_ctx_precomputed",
-                                    subjects=len(editorial_global_ctx.subjects),
-                                )
+                    else:
+                        logger.warning(
+                            "digest_generation_editorial_no_global_candidates",
+                        )
                     await pipeline.close()
                 else:
                     logger.warning("digest_generation_editorial_no_api_key")
@@ -170,15 +204,12 @@ class DigestGenerationJob:
             for i in range(0, len(user_ids), self.batch_size):
                 batch = user_ids[i : i + self.batch_size]
                 await self._process_batch(
-                    session,
                     batch,
                     target_date,
                     global_trending_context,
-                    editorial_global_ctx,
+                    editorial_ctx_pour_vous,
+                    editorial_ctx_serein,
                 )
-
-                # Commit après chaque batch
-                await session.commit()
 
                 logger.debug(
                     "digest_generation_batch_complete",
@@ -212,6 +243,41 @@ class DigestGenerationJob:
             )
             raise
 
+    async def _get_global_candidates(
+        self,
+        selector: "DigestSelector",
+        session: AsyncSession,
+    ) -> list[Any]:
+        """Fetch a user-agnostic global candidate pool for editorial context.
+
+        Used to build the LLM subject/cluster context once per batch,
+        regardless of whether the first user in the list has a warm pool.
+        Falls back to a broad recent-content query so the pipeline never
+        cold-paths because of one unlucky user.
+        """
+        from datetime import timedelta
+
+        from sqlalchemy.orm import selectinload
+
+        from app.models.content import Content
+
+        cutoff = datetime.datetime.utcnow() - timedelta(hours=self.hours_lookback)
+        stmt = (
+            select(Content)
+            .options(selectinload(Content.source))
+            .where(Content.published_at >= cutoff)
+            .order_by(Content.published_at.desc())
+            .limit(200)
+        )
+        try:
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            logger.error(
+                "digest_generation_global_candidates_failed", error=str(e)
+            )
+            return []
+
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).
 
@@ -225,87 +291,117 @@ class DigestGenerationJob:
 
     async def _process_batch(
         self,
-        session: AsyncSession,
         user_ids: list[UUID],
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_global_ctx=None,
+        editorial_ctx_pour_vous=None,
+        editorial_ctx_serein=None,
     ) -> None:
         """Traite un batch d'utilisateurs avec limitation de concurrence.
 
-        Utilise un semaphore pour limiter le nombre de digests générés
-        simultanément et éviter de surcharger la base de données.
-        Après le premier passage, vérifie quels users n'ont toujours pas
-        de digest et les retry (max 2 tentatives, backoff exponentiel).
+        Each user gets its own fresh SQLAlchemy session (opened inside
+        `process_with_limit`) so that a failure on one user cannot poison
+        the session shared by the rest of the batch. This fixes a class of
+        silent batch failures where a single broken user rolled back the
+        session mid-batch and every subsequent user hit
+        "PendingRollbackError".
+
+        Retry logic checks coverage for BOTH variants (pour_vous + serein)
+        by counting `(user_id, is_serene)` pairs, not just `user_id`s, so
+        a user with only the normal variant generated is still retried for
+        the missing serein variant.
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
 
         async def process_with_limit(user_id: UUID) -> None:
-            async with semaphore:
-                await self._generate_digest_for_user(
-                    session,
-                    user_id,
-                    target_date,
-                    global_trending_context,
-                    editorial_global_ctx,
-                )
+            # Open a fresh session per user so errors don't poison peers
+            async with semaphore, async_session_maker() as user_session:
+                try:
+                    await self._generate_digest_for_user(
+                        user_session,
+                        user_id,
+                        target_date,
+                        global_trending_context,
+                        editorial_ctx_pour_vous,
+                        editorial_ctx_serein,
+                    )
+                    await user_session.commit()
+                except Exception as e:
+                    # Per-user failure is contained here; log and move on
+                    await user_session.rollback()
+                    logger.exception(
+                        "digest_generation_user_session_failed",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                        error=str(e),
+                    )
+                    # Record the failure in the observability table via
+                    # a separate session so the rollback doesn't erase it.
+                    try:
+                        async with async_session_maker() as state_session:
+                            await state_mark_failed(
+                                state_session,
+                                user_id,
+                                target_date,
+                                str(e),
+                            )
+                            await state_session.commit()
+                    except Exception:
+                        logger.exception(
+                            "digest_generation_state_record_failed",
+                            user_id=str(user_id),
+                        )
 
         # Premier passage
         tasks = [process_with_limit(uid) for uid in user_ids]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Retry : vérifier quels users n'ont pas encore de digest (normal)
-        for attempt in range(1, 3):
-            covered_ids = set(
-                (
-                    await session.execute(
-                        select(DailyDigest.user_id).where(
-                            DailyDigest.target_date == target_date,
-                            DailyDigest.user_id.in_(user_ids),
-                            DailyDigest.is_serene.is_(False),
-                        )
+        async def _missing_pairs() -> list[tuple[UUID, bool]]:
+            """Return (user_id, is_serene) pairs missing from daily_digest."""
+            expected = {
+                (uid, is_ser) for uid in user_ids for is_ser in (False, True)
+            }
+            async with async_session_maker() as ro_session:
+                result = await ro_session.execute(
+                    select(DailyDigest.user_id, DailyDigest.is_serene).where(
+                        DailyDigest.target_date == target_date,
+                        DailyDigest.user_id.in_(user_ids),
                     )
                 )
-                .scalars()
-                .all()
-            )
-            missing_ids = [uid for uid in user_ids if uid not in covered_ids]
+                have = {(row.user_id, row.is_serene) for row in result}
+            return sorted(expected - have)
 
-            if not missing_ids:
+        # Retry missing users (cover BOTH variants)
+        for attempt in range(1, 3):
+            missing = await _missing_pairs()
+            if not missing:
                 break
 
+            # Dedupe user IDs — the per-user generator handles both variants
+            missing_user_ids = sorted({uid for uid, _ in missing})
             backoff_seconds = 2**attempt  # 2s, 4s
             logger.info(
                 "digest_generation_retry",
                 attempt=attempt,
-                missing_count=len(missing_ids),
+                missing_count=len(missing),
+                missing_users=len(missing_user_ids),
                 backoff_seconds=backoff_seconds,
             )
             await asyncio.sleep(backoff_seconds)
 
-            retry_tasks = [process_with_limit(uid) for uid in missing_ids]
+            retry_tasks = [process_with_limit(uid) for uid in missing_user_ids]
             await asyncio.gather(*retry_tasks, return_exceptions=True)
 
-        # Log final des users sans digest après tous les retries
-        final_covered = set(
-            (
-                await session.execute(
-                    select(DailyDigest.user_id).where(
-                        DailyDigest.target_date == target_date,
-                        DailyDigest.user_id.in_(user_ids),
-                        DailyDigest.is_serene.is_(False),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        final_missing = [uid for uid in user_ids if uid not in final_covered]
+        # Final audit log
+        final_missing = await _missing_pairs()
         if final_missing:
             logger.error(
                 "digest_generation_retry_exhausted",
                 permanently_failed=len(final_missing),
-                user_ids=[str(uid) for uid in final_missing],
+                pairs=[
+                    {"user_id": str(uid), "is_serene": is_ser}
+                    for uid, is_ser in final_missing
+                ],
             )
 
     async def _generate_digest_for_user(
@@ -314,18 +410,29 @@ class DigestGenerationJob:
         user_id: UUID,
         target_date: datetime.date,
         global_trending_context: GlobalTrendingContext | None = None,
-        editorial_global_ctx=None,
+        editorial_ctx_pour_vous=None,
+        editorial_ctx_serein=None,
     ) -> None:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
         Args:
-            session: Session SQLAlchemy
+            session: Session SQLAlchemy (scoped to this user)
             user_id: ID de l'utilisateur
             target_date: Date du digest
             global_trending_context: Contexte trending pré-calculé
-            editorial_global_ctx: Contexte éditorial global pré-calculé (partagé entre tous les users)
+            editorial_ctx_pour_vous: Contexte éditorial pré-calculé (mode pour_vous)
+            editorial_ctx_serein: Contexte éditorial pré-calculé (mode serein)
         """
         self.stats["processed"] += 1
+
+        await state_mark_in_progress(session, user_id, target_date)
+        # Flush the state row so the "in_progress" mark is visible even if
+        # the main work later raises (state is committed by the caller
+        # unless we rollback, but we also record failure via a fresh session).
+        await session.flush()
+
+        any_success = False
+        last_error: str | None = None
 
         try:
             # Load user profile to get per-user daily article count
@@ -339,133 +446,160 @@ class DigestGenerationJob:
             )
 
             for is_serene in [False, True]:
-                # Vérifier si un digest existe déjà pour cette variante
-                existing = await session.scalar(
-                    select(DailyDigest).where(
-                        DailyDigest.user_id == user_id,
-                        DailyDigest.target_date == target_date,
-                        DailyDigest.is_serene == is_serene,
+                try:
+                    # Vérifier si un digest existe déjà pour cette variante
+                    existing = await session.scalar(
+                        select(DailyDigest).where(
+                            DailyDigest.user_id == user_id,
+                            DailyDigest.target_date == target_date,
+                            DailyDigest.is_serene == is_serene,
+                        )
                     )
-                )
 
-                # All users get editorial format — no per-user branching
-                expected_version = "editorial_v1"
+                    # All users get editorial format — no per-user branching
+                    expected_version = "editorial_v1"
 
-                if existing and existing.format_version != expected_version:
-                    logger.info(
-                        "digest_generation_stale_format_deleted",
-                        user_id=str(user_id),
-                        target_date=str(target_date),
-                        is_serene=is_serene,
-                        cached=existing.format_version,
-                        expected=expected_version,
-                    )
-                    await session.delete(existing)
-                    await session.flush()
-                    existing = None
+                    if existing and existing.format_version != expected_version:
+                        logger.info(
+                            "digest_generation_stale_format_deleted",
+                            user_id=str(user_id),
+                            target_date=str(target_date),
+                            is_serene=is_serene,
+                            cached=existing.format_version,
+                            expected=expected_version,
+                        )
+                        await session.delete(existing)
+                        await session.flush()
+                        existing = None
 
-                if existing:
-                    logger.debug(
-                        "digest_generation_skipped_exists",
-                        user_id=str(user_id),
-                        target_date=str(target_date),
-                        is_serene=is_serene,
-                    )
-                    self.stats["skipped"] += 1
-                    continue
-
-                digest_mode = "serein" if is_serene else "pour_vous"
-
-                # Sélectionner les articles via DigestSelector
-                selector = DigestSelector(session)
-                digest_items = await selector.select_for_user(
-                    user_id=user_id,
-                    limit=user_target,
-                    hours_lookback=self.hours_lookback,
-                    mode=digest_mode,
-                    global_trending_context=global_trending_context
-                    if not is_serene
-                    else None,
-                    output_format="editorial",
-                    editorial_global_ctx=editorial_global_ctx
-                    if not is_serene
-                    else None,
-                )
-
-                # Handle editorial pipeline result (Pydantic object, not a list)
-                if isinstance(digest_items, EditorialPipelineResult):
-                    from app.services.digest_service import DigestService
-
-                    svc = DigestService(session)
-                    digest = await svc._create_digest_record_editorial(
-                        user_id,
-                        target_date,
-                        digest_items,
-                        mode=digest_mode,
-                        is_serene=is_serene,
-                    )
-                    if digest:
-                        self.stats["success"] += 1
+                    if existing:
                         logger.debug(
-                            "digest_generation_editorial_success",
+                            "digest_generation_skipped_exists",
                             user_id=str(user_id),
                             target_date=str(target_date),
                             is_serene=is_serene,
                         )
-                    else:
-                        self.stats["failed"] += 1
-                    continue
+                        self.stats["skipped"] += 1
+                        any_success = True
+                        continue
 
-                if not digest_items:
-                    logger.warning(
-                        "digest_generation_empty",
+                    digest_mode = "serein" if is_serene else "pour_vous"
+                    editorial_ctx = (
+                        editorial_ctx_serein if is_serene else editorial_ctx_pour_vous
+                    )
+
+                    # Sélectionner les articles via DigestSelector
+                    selector = DigestSelector(session)
+                    digest_items = await selector.select_for_user(
+                        user_id=user_id,
+                        limit=user_target,
+                        hours_lookback=self.hours_lookback,
+                        mode=digest_mode,
+                        global_trending_context=global_trending_context
+                        if not is_serene
+                        else None,
+                        output_format="editorial",
+                        editorial_global_ctx=editorial_ctx,
+                    )
+
+                    # Handle editorial pipeline result (Pydantic object, not a list)
+                    if isinstance(digest_items, EditorialPipelineResult):
+                        from app.services.digest_service import DigestService
+
+                        svc = DigestService(session)
+                        digest = await svc._create_digest_record_editorial(
+                            user_id,
+                            target_date,
+                            digest_items,
+                            mode=digest_mode,
+                            is_serene=is_serene,
+                        )
+                        if digest:
+                            self.stats["success"] += 1
+                            any_success = True
+                            logger.debug(
+                                "digest_generation_editorial_success",
+                                user_id=str(user_id),
+                                target_date=str(target_date),
+                                is_serene=is_serene,
+                            )
+                        else:
+                            self.stats["failed"] += 1
+                        continue
+
+                    if not digest_items:
+                        logger.warning(
+                            "digest_generation_empty",
+                            user_id=str(user_id),
+                            target_date=str(target_date),
+                            is_serene=is_serene,
+                        )
+                        self.stats["failed"] += 1
+                        continue
+
+                    # Construire les items JSONB
+                    items = []
+                    for item in digest_items:
+                        items.append(
+                            {
+                                "content_id": str(item.content.id),
+                                "rank": item.rank,
+                                "reason": item.reason,
+                                "score": item.score,
+                                "source_id": str(item.content.source_id)
+                                if item.content.source_id
+                                else None,
+                                "title": item.content.title,
+                                "published_at": item.content.published_at.isoformat()
+                                if item.content.published_at
+                                else None,
+                            }
+                        )
+
+                    # Insérer le digest
+                    digest = DailyDigest(
+                        user_id=user_id,
+                        target_date=target_date,
+                        items=items,
+                        mode=digest_mode,
+                        is_serene=is_serene,
+                        generated_at=datetime.datetime.utcnow(),
+                    )
+
+                    session.add(digest)
+
+                    logger.debug(
+                        "digest_generation_success",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                        is_serene=is_serene,
+                        article_count=len(items),
+                    )
+
+                    self.stats["success"] += 1
+                    any_success = True
+                except Exception as variant_err:
+                    # Record the variant error but keep going so the other
+                    # variant still has a chance to generate.
+                    last_error = f"{'serein' if is_serene else 'pour_vous'}: {variant_err}"
+                    logger.exception(
+                        "digest_generation_variant_failed",
                         user_id=str(user_id),
                         target_date=str(target_date),
                         is_serene=is_serene,
                     )
                     self.stats["failed"] += 1
-                    continue
 
-                # Construire les items JSONB
-                items = []
-                for item in digest_items:
-                    items.append(
-                        {
-                            "content_id": str(item.content.id),
-                            "rank": item.rank,
-                            "reason": item.reason,
-                            "score": item.score,
-                            "source_id": str(item.content.source_id)
-                            if item.content.source_id
-                            else None,
-                            "title": item.content.title,
-                            "published_at": item.content.published_at.isoformat()
-                            if item.content.published_at
-                            else None,
-                        }
-                    )
-
-                # Insérer le digest
-                digest = DailyDigest(
-                    user_id=user_id,
-                    target_date=target_date,
-                    items=items,
-                    mode=digest_mode,
-                    is_serene=is_serene,
-                    generated_at=datetime.datetime.utcnow(),
+            # Update state row based on overall outcome for this user
+            if any_success:
+                await state_mark_success(session, user_id, target_date)
+            else:
+                await state_mark_failed(
+                    session,
+                    user_id,
+                    target_date,
+                    last_error or "no variant succeeded",
                 )
-
-                session.add(digest)
-
-                logger.debug(
-                    "digest_generation_success",
-                    user_id=str(user_id),
-                    target_date=str(target_date),
-                    is_serene=is_serene,
-                    article_count=len(items),
-                )
-
-                self.stats["success"] += 1
 
         except Exception as e:
             logger.error(
@@ -475,6 +609,9 @@ class DigestGenerationJob:
                 error=str(e),
             )
             self.stats["failed"] += 1
+            # Re-raise so the caller in _process_batch can record the
+            # failure in a fresh session after rolling this one back.
+            raise
 
 
 # Fonction principale pour l'export
@@ -560,7 +697,7 @@ async def generate_digest_for_user(
         ... )
     """
     if target_date is None:
-        target_date = datetime.datetime.now(_PARIS_TZ).date()
+        target_date = today_paris()
 
     async with async_session_maker() as session:
         try:

@@ -140,6 +140,10 @@ class DigestResponse with _$DigestResponse {
     @JsonKey(name: 'completion_threshold') @Default(5) int completionThreshold,
     @JsonKey(name: 'is_completed') @Default(false) bool isCompleted,
     @JsonKey(name: 'completed_at') DateTime? completedAt,
+    // True when the API served yesterday's digest while regenerating today's
+    // in the background. Mobile should auto-refetch after a short delay so
+    // the user gets fresh content without manual pull-to-refresh.
+    @JsonKey(name: 'is_stale_fallback') @Default(false) bool isStaleFallback,
     // Editorial fields (populated when format_version="editorial_v1")
     @JsonKey(name: 'header_text') String? headerText,
     @JsonKey(name: 'closure_text') String? closureText,

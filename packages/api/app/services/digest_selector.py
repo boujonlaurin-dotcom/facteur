@@ -43,6 +43,7 @@ from app.services.recommendation.filter_presets import apply_serein_filter
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation_service import RecommendationService
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 
@@ -280,7 +281,8 @@ class DigestSelector:
                         output_format = "topics"
                     else:
                         # Use injected context (batch), then cache, then compute
-                        _cache_date = datetime.date.today()
+                        # Cache key in Paris time so reader and batch agree on "today"
+                        _cache_date = today_paris()
                         global_ctx = editorial_global_ctx
                         if global_ctx is None:
                             global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
