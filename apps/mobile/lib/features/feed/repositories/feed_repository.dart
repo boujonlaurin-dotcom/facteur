@@ -527,14 +527,41 @@ class FeedRepository {
   }
 
   /// Refresh feed: mark visible articles as "already shown" for scoring penalty.
-  Future<void> refreshFeed(List<String> contentIds) async {
+  ///
+  /// Retourne la liste des backups `PreviousImpression` (valeurs précédentes
+  /// de `last_impressed_at`) pour permettre un undo via [undoRefresh].
+  Future<List<PreviousImpression>> refreshFeed(List<String> contentIds) async {
     try {
-      await _apiClient.dio.post<void>(
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
         'feed/refresh',
         data: {'content_ids': contentIds},
       );
+      final data = response.data;
+      if (data == null) return const [];
+      final rawList = data['previous_impressions'] as List<dynamic>? ?? [];
+      return rawList
+          .whereType<Map<String, dynamic>>()
+          .map(PreviousImpression.fromJson)
+          .toList();
     } catch (e) {
       print('FeedRepository: [ERROR] refreshFeed: $e');
+      rethrow;
+    }
+  }
+
+  /// Undo un refresh précédent : restaure les `last_impressed_at` stockés
+  /// dans le backup retourné par [refreshFeed].
+  Future<void> undoRefresh(List<PreviousImpression> backups) async {
+    if (backups.isEmpty) return;
+    try {
+      await _apiClient.dio.post<void>(
+        'feed/refresh/undo',
+        data: {
+          'previous_impressions': backups.map((b) => b.toJson()).toList(),
+        },
+      );
+    } catch (e) {
+      print('FeedRepository: [ERROR] undoRefresh: $e');
       rethrow;
     }
   }
