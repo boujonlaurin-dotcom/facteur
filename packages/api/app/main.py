@@ -178,6 +178,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                 from app.models.daily_digest import DailyDigest
                 from app.models.user import UserProfile
 
+                await asyncio.sleep(60)
+
                 async with async_session_maker() as session:
                     today = datetime.now(ZoneInfo("Europe/Paris")).date()
 
