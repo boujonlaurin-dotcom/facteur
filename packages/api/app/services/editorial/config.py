@@ -145,9 +145,7 @@ def load_editorial_config() -> EditorialConfig:
             if raw and "pepite" in raw:
                 pepite_prompt = PromptConfig(**raw["pepite"])
             if raw and "pepite_rotation_temperature" in raw:
-                pepite_rotation_temperature = float(
-                    raw["pepite_rotation_temperature"]
-                )
+                pepite_rotation_temperature = float(raw["pepite_rotation_temperature"])
             if raw and "a_la_une" in raw:
                 a_la_une_prompt = PromptConfig(**raw["a_la_une"])
             if raw and "bonne_nouvelle" in raw:
