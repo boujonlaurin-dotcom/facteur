@@ -87,6 +87,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
 
+  /// Keys used to measure the editorial card and its header for the
+  /// sticky-header effect when the card is expanded.
+  final GlobalKey _editorialCardKey = GlobalKey();
+  final GlobalKey _editorialHeaderKey = GlobalKey();
+
+  /// Scroll position of the ancestor Scrollable. Used to drive the sticky
+  /// header translation when the editorial card is expanded.
+  ScrollPosition? _scrollPosition;
+
   @override
   void initState() {
     super.initState();
@@ -96,9 +105,44 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.editorialMode) {
+      _scrollPosition = Scrollable.maybeOf(context)?.position;
+    }
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// Compute how much the editorial header should be translated vertically
+  /// to stay pinned at the top of the viewport while the card is expanded.
+  ///
+  /// Returns 0 when the card is not yet scrolled past the pin line, and
+  /// clamps to `cardHeight - headerHeight` so the sticky header releases
+  /// when the card is about to scroll off-screen.
+  double _computeStickyHeaderTranslation(BuildContext context) {
+    if (!_isExpanded) return 0;
+    final cardContext = _editorialCardKey.currentContext;
+    final headerContext = _editorialHeaderKey.currentContext;
+    if (cardContext == null || headerContext == null) return 0;
+
+    final cardBox = cardContext.findRenderObject() as RenderBox?;
+    final headerBox = headerContext.findRenderObject() as RenderBox?;
+    if (cardBox == null || !cardBox.hasSize) return 0;
+    if (headerBox == null || !headerBox.hasSize) return 0;
+
+    final cardTop = cardBox.localToGlobal(Offset.zero).dy;
+    final cardHeight = cardBox.size.height;
+    final headerHeight = headerBox.size.height;
+    final pinLine = MediaQuery.of(context).padding.top;
+
+    final maxTranslate =
+        (cardHeight - headerHeight).clamp(0.0, double.infinity);
+    return (pinLine - cardTop).clamp(0.0, maxTranslate);
   }
 
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
@@ -197,6 +241,27 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           .toList();
       if (actuArticles.isEmpty) return const SizedBox.shrink();
       final isActuMulti = actuArticles.length > 1;
+
+      // Natural header (inside the Column), fades out when the sticky
+      // overlay takes over.
+      final naturalHeader = Padding(
+        key: _editorialHeaderKey,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: _isExpanded && _scrollPosition != null
+            ? AnimatedBuilder(
+                animation: _scrollPosition!,
+                builder: (context, child) {
+                  final translation = _computeStickyHeaderTranslation(context);
+                  return Opacity(
+                    opacity: translation > 0 ? 0 : 1,
+                    child: child,
+                  );
+                },
+                child: _buildHeader(context, colors, isDark, topic),
+              )
+            : _buildHeader(context, colors, isDark, topic),
+      );
+
       return AnimatedSize(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -204,36 +269,88 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.black.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: colors.border.withValues(alpha: isDark ? 0.20 : 0.15),
+              color: colors.border.withValues(alpha: isDark ? 0.28 : 0.22),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 2),
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header always inside the container
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                child: _buildHeader(context, colors, isDark, topic),
-              ),
-              const SizedBox(height: 8),
-              if (_isExpanded)
-                _buildExpandedEditorial(colors, isDark, topic, actuArticles, isActuMulti)
-              else
-                _buildCompactEditorialCard(colors, isDark, topic, actuArticles),
-            ],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                // Card content (background + natural header + body)
+                Container(
+                  key: _editorialCardKey,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.11)
+                      : Colors.black.withValues(alpha: 0.07),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      naturalHeader,
+                      const SizedBox(height: 8),
+                      if (_isExpanded)
+                        _buildExpandedEditorial(colors, isDark, topic,
+                            actuArticles, isActuMulti)
+                      else
+                        _buildCompactEditorialCard(
+                            colors, isDark, topic, actuArticles),
+                    ],
+                  ),
+                ),
+                // Sticky header overlay — floats at the top of the
+                // viewport while the card is scrolled past its natural
+                // position, giving a "fil contenu" reading flow.
+                if (_isExpanded && _scrollPosition != null)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AnimatedBuilder(
+                      animation: _scrollPosition!,
+                      builder: (context, child) {
+                        final translation =
+                            _computeStickyHeaderTranslation(context);
+                        if (translation <= 0) {
+                          return const SizedBox.shrink();
+                        }
+                        return Transform.translate(
+                          offset: Offset(0, translation),
+                          child: child,
+                        );
+                      },
+                      child: Material(
+                        color: isDark
+                            ? const Color(0xFF231B12)
+                            : const Color(0xFFE8DBC1),
+                        elevation: 0,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: colors.border.withValues(
+                                    alpha: isDark ? 0.32 : 0.22),
+                                width: 0.5,
+                              ),
+                            ),
+                          ),
+                          padding:
+                              const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                          child: _buildHeader(
+                              context, colors, isDark, topic),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       );
