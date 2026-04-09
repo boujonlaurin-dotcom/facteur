@@ -58,7 +58,7 @@ class TopicOverflowChip extends ConsumerWidget {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.03)!,
+          color: colors.backgroundSecondary,
           border: Border(
             top: BorderSide(
               color: colors.textSecondary.withValues(alpha: 0.1),
@@ -75,14 +75,14 @@ class TopicOverflowChip extends ConsumerWidget {
             Icon(
               PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
               size: 12,
-              color: colors.textSecondary,
+              color: colors.textTertiary,
             ),
             const SizedBox(width: FacteurSpacing.space2),
             Expanded(
               child: Text(
                 '${content.topicOverflowCount} autres articles ${content.topicOverflowLabel}',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: colors.textSecondary,
+                      color: colors.textTertiary,
                     ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

@@ -404,7 +404,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       await box.put('remember_me', rememberMe);
 
       await _supabase.auth.signInWithPassword(email: email, password: password);
-      state = state.copyWith(isLoading: false);
+      // Don't set isLoading: false here — the auth listener will set both
+      // user and isLoading: false atomically, avoiding a transient state
+      // where isLoading=false but user=null that causes a redirect loop.
     } on AuthException catch (e) {
       debugPrint(
           'AUTH_DEBUG signIn AuthException: ${e.message} | statusCode: ${e.statusCode}');

@@ -720,7 +720,7 @@ class RecommendationService:
         # PASS 3: Select articles to retain (most recent per source, up to quota)
         # Candidates from _get_candidates are already sorted by published_at DESC,
         # so each source's list preserves that order.
-        MIN_OVERFLOW_FOR_CTA = 7
+        MIN_OVERFLOW_FOR_CTA = 10
         retained: list[Content] = []
         source_overflow: dict[UUID, int] = {}
         for source_id, articles_src in by_source.items():
@@ -1517,7 +1517,7 @@ class RecommendationService:
 
         min_kw = ScoringWeights.MIN_FOR_KEYWORD_GROUPING
         if len(retained) < 15:
-            min_kw = 2
+            min_kw = max(3, min_kw - 1)
         kw_min_len = ScoringWeights.KEYWORD_MIN_LENGTH
         max_ctas = max_ctas if max_ctas is not None else ScoringWeights.MAX_TOTAL_CTAS
 

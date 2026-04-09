@@ -27,7 +27,7 @@ class PasDeReculBlock extends StatelessWidget {
 
     return FacteurCard(
       onTap: onTap,
-      backgroundColor: colors.info.withValues(alpha: isDark ? 0.08 : 0.05),
+      backgroundColor: colors.info.withValues(alpha: isDark ? 0.15 : 0.12),
       padding: EdgeInsets.zero,
       borderRadius: 12,
       boxShadow: const [],
