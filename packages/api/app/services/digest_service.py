@@ -12,6 +12,8 @@ Safe reuse patterns:
 - Uses existing StreakService for gamification updates
 """
 
+import hashlib
+import random
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -19,6 +21,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import structlog
+import yaml
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +44,7 @@ from app.schemas.digest import (
     DigestTopic,
     DigestTopicArticle,
     PepiteResponse,
+    QuoteResponse,
 )
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
@@ -55,6 +59,41 @@ def _count_digest_items(digest_items) -> int:
     if isinstance(digest_items, EditorialPipelineResult):
         return len(digest_items.subjects)
     return len(digest_items) if digest_items else 0
+
+
+# --- Serein quotes -----------------------------------------------------------
+
+from pathlib import Path as _Path
+
+_QUOTES_PATH = _Path(__file__).resolve().parents[2] / "config" / "serein_quotes.yaml"
+_QUOTES: list[dict] = []
+
+
+def _load_quotes() -> list[dict]:
+    global _QUOTES
+    if not _QUOTES:
+        try:
+            with open(_QUOTES_PATH) as f:
+                data = yaml.safe_load(f)
+            _QUOTES = [
+                q
+                for q in (data.get("quotes", []) if data else [])
+                if q.get("text") and q.get("author")
+            ]
+        except Exception:
+            logger.warning("serein_quotes.yaml inaccessible — quotes désactivées")
+            _QUOTES = []
+    return _QUOTES
+
+
+def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
+    """Deterministic daily quote: same user+date → same quote."""
+    quotes = _load_quotes()
+    if not quotes:
+        return None
+    seed = int(hashlib.sha256(f"{user_id}:{target_date}".encode()).hexdigest(), 16)
+    rng = random.Random(seed)
+    return rng.choice(quotes)
 
 
 @dataclass
@@ -227,6 +266,26 @@ class DigestService:
         # 2. Determine effective mode from is_serene toggle
         effective_mode = "serein" if is_serene else "pour_vous"
 
+        # 2a. Load user's sensitive_themes for personalized serein filter
+        import json as _json
+
+        from app.models.user import UserPreference as _UPref
+
+        _st_result = await self.session.execute(
+            select(_UPref.preference_value).where(
+                _UPref.user_id == user_id,
+                _UPref.preference_key == "sensitive_themes",
+            )
+        )
+        _st_raw = _st_result.scalar_one_or_none()
+        try:
+            sensitive_themes: list[str] | None = (
+                _json.loads(_st_raw) if _st_raw else None
+            )
+        except _json.JSONDecodeError:
+            logger.warning("sensitive_themes malformed for user %s, ignoring", user_id)
+            sensitive_themes = None
+
         # 2b. Reuse format already resolved above (step 1a)
         effective_format = expected_format
 
@@ -263,6 +322,7 @@ class DigestService:
                 hours_lookback=hours_lookback,
                 mode=effective_mode,
                 output_format=effective_format,
+                sensitive_themes=sensitive_themes,
             )
         except Exception:
             logger.exception(
@@ -318,7 +378,10 @@ class DigestService:
                 user_id=str(user_id),
             )
             digest_items = await self._get_emergency_candidates(
-                user_id=user_id, limit=target_size, is_serene=is_serene
+                user_id=user_id,
+                limit=target_size,
+                is_serene=is_serene,
+                sensitive_themes=sensitive_themes,
             )
             is_topics_format = False  # Emergency fallback always returns flat items
             fallback_time = time.time() - step_start
@@ -378,7 +441,11 @@ class DigestService:
         return await self._build_digest_response(digest, user_id)
 
     async def _get_emergency_candidates(
-        self, user_id: UUID, limit: int = 5, is_serene: bool = False
+        self,
+        user_id: UUID,
+        limit: int = 5,
+        is_serene: bool = False,
+        sensitive_themes: list[str] | None = None,
     ) -> list[Any]:
         """Last resort: get most recent content from user's followed sources first.
 
@@ -427,7 +494,7 @@ class DigestService:
                 .limit(fetch_limit)
             )
             if is_serene:
-                stmt = apply_serein_filter(stmt)
+                stmt = apply_serein_filter(stmt, sensitive_themes=sensitive_themes)
 
             result = await self.session.execute(stmt)
             all_contents = list(result.scalars().all())
@@ -451,7 +518,9 @@ class DigestService:
                     Content.id.notin_(list(existing_ids))
                 )
             if is_serene:
-                curated_query = apply_serein_filter(curated_query)
+                curated_query = apply_serein_filter(
+                    curated_query, sensitive_themes=sensitive_themes
+                )
             stmt = curated_query
 
             result = await self.session.execute(stmt)
@@ -478,7 +547,9 @@ class DigestService:
                     Content.id.notin_(list(existing_ids))
                 )
             if is_serene:
-                any_source_query = apply_serein_filter(any_source_query)
+                any_source_query = apply_serein_filter(
+                    any_source_query, sensitive_themes=sensitive_themes
+                )
 
             result = await self.session.execute(any_source_query)
             all_contents.extend(result.scalars().all())
@@ -1062,6 +1133,13 @@ class DigestService:
             }
             if result.coup_de_coeur
             else None,
+            "actu_decalee": {
+                "content_id": str(result.actu_decalee.content_id),
+                "mini_editorial": result.actu_decalee.mini_editorial,
+                "badge": "actu_decalee",
+            }
+            if result.actu_decalee
+            else None,
             "closure_text": result.closure_text,
             "cta_text": result.cta_text,
             "generated_at": datetime.utcnow().isoformat(),
@@ -1326,10 +1404,13 @@ class DigestService:
 
         pepite_data = items_data.get("pepite")
         coup_de_coeur_data = items_data.get("coup_de_coeur")
+        actu_decalee_data = items_data.get("actu_decalee")
         if pepite_data and pepite_data.get("content_id"):
             all_content_ids.append(UUID(pepite_data["content_id"]))
         if coup_de_coeur_data and coup_de_coeur_data.get("content_id"):
             all_content_ids.append(UUID(coup_de_coeur_data["content_id"]))
+        if actu_decalee_data and actu_decalee_data.get("content_id"):
+            all_content_ids.append(UUID(actu_decalee_data["content_id"]))
 
         # Batch queries
         completion = await self.session.scalar(
@@ -1616,6 +1697,77 @@ class DigestService:
                     )
                 )
 
+        # Build actu décalée response (serein mode only)
+        actu_decalee_response = None
+        if actu_decalee_data and actu_decalee_data.get("content_id"):
+            ad_cid = UUID(actu_decalee_data["content_id"])
+            ad_content = content_map.get(ad_cid)
+            if not ad_content:
+                logger.warning(
+                    "editorial_actu_decalee_not_found",
+                    content_id=str(ad_cid),
+                )
+            elif not ad_content.source:
+                logger.warning(
+                    "editorial_actu_decalee_missing_source",
+                    content_id=str(ad_cid),
+                )
+            if ad_content and ad_content.source:
+                ad_action = action_states_map.get(ad_cid, default_action)
+                actu_decalee_response = PepiteResponse(
+                    content_id=ad_cid,
+                    mini_editorial=actu_decalee_data.get("mini_editorial", ""),
+                    badge="actu_decalee",
+                    title=ad_content.title,
+                    url=ad_content.url,
+                    thumbnail_url=ad_content.thumbnail_url,
+                    published_at=ad_content.published_at,
+                    source=ad_content.source,
+                    is_read=ad_action["is_read"],
+                    is_saved=ad_action["is_saved"],
+                    is_liked=ad_action["is_liked"],
+                    is_dismissed=ad_action["is_dismissed"],
+                )
+                global_rank += 1
+                flat_items.append(
+                    DigestItem(
+                        content_id=ad_cid,
+                        title=ad_content.title,
+                        url=ad_content.url,
+                        thumbnail_url=ad_content.thumbnail_url,
+                        description=ad_content.description or None,
+                        html_content=ad_content.html_content,
+                        topics=ad_content.topics or [],
+                        content_type=ad_content.content_type,
+                        duration_seconds=ad_content.duration_seconds,
+                        published_at=ad_content.published_at,
+                        is_paid=ad_content.is_paid
+                        if hasattr(ad_content, "is_paid")
+                        else False,
+                        source=ad_content.source,
+                        rank=global_rank,
+                        reason=actu_decalee_data.get(
+                            "mini_editorial", "L'actu décalée"
+                        ),
+                        badge="actu_decalee",
+                        is_read=ad_action["is_read"],
+                        is_saved=ad_action["is_saved"],
+                        is_liked=ad_action["is_liked"],
+                        is_dismissed=ad_action["is_dismissed"],
+                    )
+                )
+
+        # Quote for serein digest only
+        quote_response = None
+        if digest.is_serene:
+            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+            if q:
+                quote_response = QuoteResponse(
+                    text=q["text"],
+                    author=q["author"],
+                    source=q.get("source"),
+                )
+
         return DigestResponse(
             digest_id=digest.id,
             user_id=digest.user_id,
@@ -1634,6 +1786,8 @@ class DigestService:
             cta_text=items_data.get("cta_text"),
             pepite=pepite_response,
             coup_de_coeur=coup_de_coeur_response,
+            actu_decalee=actu_decalee_response,
+            quote=quote_response,
         )
 
     async def _build_topics_response(
@@ -1792,6 +1946,17 @@ class DigestService:
                 )
             )
 
+        # Quote for serein digest only
+        quote_response = None
+        if digest.is_serene:
+            q = _select_daily_quote(str(digest.user_id), str(digest.target_date))
+            if q:
+                quote_response = QuoteResponse(
+                    text=q["text"],
+                    author=q["author"],
+                    source=q.get("source"),
+                )
+
         return DigestResponse(
             digest_id=digest.id,
             user_id=digest.user_id,
@@ -1805,6 +1970,7 @@ class DigestService:
             completion_threshold=len(response_topics),
             is_completed=completion is not None,
             completed_at=completion.completed_at if completion else None,
+            quote=quote_response,
         )
 
     async def _get_item_action_state(

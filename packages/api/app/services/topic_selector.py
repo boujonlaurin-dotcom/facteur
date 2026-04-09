@@ -79,6 +79,7 @@ class TopicSelector:
         target_topics: int,
         trending_context: GlobalTrendingContext | None,
         mode: str = "pour_vous",
+        sensitive_themes: list[str] | None = None,
     ) -> list[TopicGroup]:
         """Sélectionne N topics pour le digest d'un utilisateur.
 
@@ -110,6 +111,7 @@ class TopicSelector:
             context=context,
             trending_context=trending_context,
             mode=mode,
+            sensitive_themes=sensitive_themes,
         )
 
         # 3. Sélectionner N topics
@@ -150,6 +152,7 @@ class TopicSelector:
         context: DigestContext,
         trending_context: GlobalTrendingContext | None,
         mode: str,
+        sensitive_themes: list[str] | None = None,
     ) -> list[tuple[TopicCluster, float, str]]:
         """Score chaque cluster au niveau topic.
 
@@ -160,7 +163,9 @@ class TopicSelector:
 
         for cluster in clusters:
             # Mode serein : exclure les clusters anxiogènes
-            if mode == "serein" and not is_cluster_serein_compatible(cluster):
+            if mode == "serein" and not is_cluster_serein_compatible(
+                cluster, sensitive_themes=sensitive_themes
+            ):
                 continue
 
             score = 0.0

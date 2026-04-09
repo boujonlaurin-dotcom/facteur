@@ -644,6 +644,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             coupDeCoeur: digest.usesEditorial
                                 ? digest.coupDeCoeur
                                 : null,
+                            actuDecalee: digest.usesEditorial
+                                ? digest.actuDecalee
+                                : null,
                             headerText:
                                 digest.usesEditorial ? digest.headerText : null,
                             closureText: digest.usesEditorial

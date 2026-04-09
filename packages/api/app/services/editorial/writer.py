@@ -15,9 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
+from app.models.source import Source
 from app.services.editorial.config import EditorialConfig
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
+    ActuDecaleeArticle,
     CoupDeCoeurArticle,
     EditorialSubject,
     PepiteArticle,
@@ -333,3 +335,117 @@ class EditorialWriterService:
             source_name=source_name,
             save_count=row.save_count,
         )
+
+    # ------------------------------------------------------------------
+    # ÉTAPE 7: Actu décalée (serein mode only, LLM selection)
+    # ------------------------------------------------------------------
+
+    async def select_actu_decalee(
+        self,
+        excluded_content_ids: set[UUID],
+    ) -> ActuDecaleeArticle | None:
+        """Select a humorous/satirical article for the serein digest.
+
+        Queries articles from sources with tone IN ('humorous', 'satirical'),
+        published in the last 48h, not already in the digest.
+        Uses LLM to pick the best one with a mini-editorial.
+        Fallback: most recent eligible article.
+        """
+        prompt_cfg = self._config.actu_decalee_prompt
+        if not prompt_cfg.system:
+            logger.warning("editorial_writer.no_actu_decalee_prompt")
+            return None
+
+        # Fetch recent humorous/satirical articles from DB
+        forty_eight_h_ago = datetime.now(UTC) - timedelta(hours=48)
+        exclusion_filter = (
+            Content.id.notin_(excluded_content_ids) if excluded_content_ids else True
+        )
+
+        stmt = (
+            select(Content)
+            .join(Content.source)
+            .options(selectinload(Content.source))
+            .where(
+                Source.tone.in_(["humorous", "satirical"]),
+                Source.is_active == True,  # noqa: E712
+                Content.published_at >= forty_eight_h_ago,
+                exclusion_filter,
+            )
+            .order_by(Content.published_at.desc())
+            .limit(15)
+        )
+
+        result = await self._session.execute(stmt)
+        eligible = list(result.scalars().all())
+
+        if not eligible:
+            logger.info("editorial_writer.no_actu_decalee_candidates")
+            return None
+
+        # Build LLM input
+        candidates_data = [
+            {
+                "content_id": str(c.id),
+                "title": c.title,
+                "source_name": c.source.name
+                if hasattr(c, "source") and c.source
+                else "Source inconnue",
+                "tone": c.source.tone if c.source else None,
+                "description": (c.description or "")[:200],
+            }
+            for c in eligible
+        ]
+
+        user_message = (
+            "Articles candidats pour l'actu décalée :\n\n"
+            f"{json.dumps(candidates_data, ensure_ascii=False, indent=2)}"
+        )
+
+        raw = await self._llm.chat_json(
+            system=prompt_cfg.system,
+            user_message=user_message,
+            model=prompt_cfg.model,
+            temperature=prompt_cfg.temperature,
+            max_tokens=prompt_cfg.max_tokens,
+        )
+
+        if not raw or not isinstance(raw, dict):
+            # Fallback: pick most recent
+            logger.warning("editorial_writer.actu_decalee_llm_failed_fallback")
+            return ActuDecaleeArticle(
+                content_id=eligible[0].id,
+                mini_editorial="Pour finir sur une note légère\u2026",
+            )
+
+        content_id_str = raw.get("selected_content_id")
+        mini_editorial = raw.get(
+            "mini_editorial", "Pour finir sur une note légère\u2026"
+        )
+
+        if not content_id_str:
+            logger.info("editorial_writer.actu_decalee_no_selection_fallback")
+            return ActuDecaleeArticle(
+                content_id=eligible[0].id,
+                mini_editorial=mini_editorial,
+            )
+
+        # Validate content_id
+        try:
+            content_id = UUID(content_id_str)
+        except (ValueError, TypeError):
+            logger.warning(
+                "editorial_writer.actu_decalee_invalid_id",
+                content_id=content_id_str,
+            )
+            return ActuDecaleeArticle(
+                content_id=eligible[0].id,
+                mini_editorial=mini_editorial,
+            )
+
+        if not any(c.id == content_id for c in eligible):
+            prefix = content_id_str[:8]
+            match = next((c for c in eligible if str(c.id).startswith(prefix)), None)
+            content_id = match.id if match else eligible[0].id
+
+        return ActuDecaleeArticle(content_id=content_id, mini_editorial=mini_editorial)
