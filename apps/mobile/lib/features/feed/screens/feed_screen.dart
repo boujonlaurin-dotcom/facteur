@@ -1111,7 +1111,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                 ),
               ),
             // Story 4.5b: discreet undo banner after viewport-aware refresh.
-            if (_showUndoBanner)
+            // Suppressed while WelcomeBanner is showing to avoid top-stack overlap.
+            if (_showUndoBanner && !_showWelcome)
               Positioned(
                 top: 0,
                 left: 0,
@@ -1127,6 +1128,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             .undoLastRefresh();
                       },
                       onAutoResolve: () {
+                        // Confirm the refresh: drop the undo snapshot so a
+                        // later empty-path refresh can't resurrect it.
+                        ref
+                            .read(feedUndoSnapshotProvider.notifier)
+                            .state = null;
                         if (mounted) {
                           setState(() => _showUndoBanner = false);
                         }

@@ -277,6 +277,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// [feedUndoSnapshotProvider] pour permettre l'undo via [undoLastRefresh].
   /// Story 4.5b.
   Future<void> refreshArticlesWithSnapshot(Set<String> visibleContentIds) async {
+    // Single owner of the snapshot lifecycle: always drop any prior value at
+    // the start. We'll either replace it below (happy path) or leave it null
+    // (empty visible set, backend failure) — never leak a stale snapshot that
+    // the banner could resurrect on a later refresh.
+    ref.read(feedUndoSnapshotProvider.notifier).state = null;
+
     final currentState = state.value;
     if (currentState == null) return;
 
@@ -315,15 +321,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       impressionsBackup: const [],
     );
 
-    // 2. Call backend (returns previous_impressions for undo)
-    final repository = ref.read(feedRepositoryProvider);
-    final backups = await repository.refreshFeed(allIds);
+    // 2. Call backend (returns previous_impressions for undo). If this fails,
+    // we still refetch so the pull-to-refresh gesture feels responsive, but
+    // we don't expose an undo banner because the server state is unchanged.
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      final backups = await repository.refreshFeed(allIds);
 
-    // 3. Store enriched snapshot for undo
-    ref.read(feedUndoSnapshotProvider.notifier).state =
-        snapshot.copyWith(impressionsBackup: backups);
+      // 3. Store enriched snapshot for undo (only on success)
+      ref.read(feedUndoSnapshotProvider.notifier).state =
+          snapshot.copyWith(impressionsBackup: backups);
+    } catch (e) {
+      print('FeedNotifier: refreshArticlesWithSnapshot backend call failed: $e');
+    }
 
-    // 4. Refetch page 1
+    // 4. Refetch page 1 (always — keeps the gesture responsive even on error)
     await refresh();
   }
 

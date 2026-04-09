@@ -30,6 +30,11 @@ class _FeedRefreshUndoBannerState extends State<FeedRefreshUndoBanner>
     with SingleTickerProviderStateMixin {
   Timer? _autoResolveTimer;
   bool _isCollapsed = false;
+  // Single-source-of-truth flag: whichever of auto-resolve / manual undo
+  // fires first wins, and the other becomes a no-op. Prevents double
+  // onAutoResolve callbacks when the user taps Annuler during the
+  // auto-dismiss fade-out animation.
+  bool _resolved = false;
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnim;
 
@@ -56,7 +61,8 @@ class _FeedRefreshUndoBannerState extends State<FeedRefreshUndoBanner>
   }
 
   void _autoResolve() {
-    if (!mounted || _isCollapsed) return;
+    if (!mounted || _resolved) return;
+    _resolved = true;
     setState(() => _isCollapsed = true);
     _fadeController.reverse().then((_) {
       if (mounted) widget.onAutoResolve();
@@ -64,6 +70,8 @@ class _FeedRefreshUndoBannerState extends State<FeedRefreshUndoBanner>
   }
 
   void _handleUndo() {
+    if (_resolved) return;
+    _resolved = true;
     _autoResolveTimer?.cancel();
     widget.onUndo();
     if (mounted) setState(() => _isCollapsed = true);
