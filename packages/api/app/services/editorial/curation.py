@@ -127,6 +127,78 @@ class CurationService:
             is_a_la_une=True,
         )
 
+    async def select_bonne_nouvelle(
+        self,
+        top_clusters: list[TopicCluster],
+    ) -> SelectedTopic | None:
+        """Select the Bonne Nouvelle du Jour from top trending serein clusters.
+
+        Same mechanism as select_a_la_une but with a prompt oriented toward
+        genuinely uplifting news rather than most important/grave.
+
+        Args:
+            top_clusters: Top 2-3 trending clusters sorted by source count.
+
+        Returns:
+            SelectedTopic for the Bonne Nouvelle, or None if LLM fails.
+        """
+        if not top_clusters:
+            return None
+
+        if not self._llm.is_ready:
+            logger.info("curation.bonne_nouvelle_no_llm_fallback")
+            return _cluster_to_une_topic(top_clusters[0])
+
+        summaries = [self._cluster_to_summary(c) for c in top_clusters]
+        user_message = json.dumps(
+            [s.model_dump() for s in summaries], ensure_ascii=False, indent=2
+        )
+
+        prompt_cfg = self._config.bonne_nouvelle_prompt
+        raw = await self._llm.chat_json(
+            system=prompt_cfg.system,
+            user_message=user_message,
+            model=prompt_cfg.model,
+            temperature=prompt_cfg.temperature,
+            max_tokens=prompt_cfg.max_tokens,
+        )
+
+        if not raw or not isinstance(raw, dict):
+            logger.warning("curation.bonne_nouvelle_llm_empty")
+            return _cluster_to_une_topic(top_clusters[0])
+
+        selected_id = raw.get("topic_id")
+        reason = raw.get("reason", "")
+
+        cluster_map = {c.cluster_id: c for c in top_clusters}
+        if selected_id not in cluster_map:
+            logger.warning(
+                "curation.bonne_nouvelle_invalid_topic_id",
+                selected_id=selected_id,
+                valid_ids=[c.cluster_id for c in top_clusters],
+            )
+            return _cluster_to_une_topic(top_clusters[0])
+
+        cluster = cluster_map[selected_id]
+        deep_angle = THEME_DEEP_ANGLES.get(cluster.theme or "", DEFAULT_DEEP_ANGLE)
+
+        logger.info(
+            "curation.bonne_nouvelle_selected",
+            topic_id=selected_id,
+            source_count=len(cluster.source_ids),
+            reason=reason,
+        )
+
+        return SelectedTopic(
+            topic_id=cluster.cluster_id,
+            label=cluster.label[:80],
+            selection_reason=reason or f"Traité par {len(cluster.source_ids)} sources",
+            deep_angle=deep_angle,
+            source_count=len(cluster.source_ids),
+            theme=cluster.theme,
+            is_a_la_une=True,
+        )
+
     async def select_topics(
         self,
         clusters: list[TopicCluster],

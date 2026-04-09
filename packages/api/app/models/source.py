@@ -119,6 +119,15 @@ class Source(Base):
         String(20), default="mainstream", server_default="mainstream"
     )
 
+    # Tone classification for humorous/satirical content (actu décalée)
+    # Values: "informative", "analytical", "humorous", "satirical", None
+    tone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+
+    # Auto-include in serein mode even if user doesn't follow this source
+    serein_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
     # Relations
     contents: Mapped[list["Content"]] = relationship(
         "Content", back_populates="source", cascade="all, delete-orphan"

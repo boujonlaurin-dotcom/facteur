@@ -64,6 +64,16 @@ class EditorialConfig:
             system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
         )
     )
+    bonne_nouvelle_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
+        )
+    )
+    actu_decalee_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", model="mistral-small-latest", temperature=0.4, max_tokens=300
+        )
+    )
 
 
 @lru_cache(maxsize=1)
@@ -83,6 +93,12 @@ def load_editorial_config() -> EditorialConfig:
     pepite_prompt = PromptConfig(system="", temperature=0.3, max_tokens=500)
     a_la_une_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
+    )
+    bonne_nouvelle_prompt = PromptConfig(
+        system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
+    )
+    actu_decalee_prompt = PromptConfig(
+        system="", model="mistral-small-latest", temperature=0.4, max_tokens=300
     )
 
     # Load pipeline config
@@ -124,6 +140,10 @@ def load_editorial_config() -> EditorialConfig:
                 pepite_prompt = PromptConfig(**raw["pepite"])
             if raw and "a_la_une" in raw:
                 a_la_une_prompt = PromptConfig(**raw["a_la_une"])
+            if raw and "bonne_nouvelle" in raw:
+                bonne_nouvelle_prompt = PromptConfig(**raw["bonne_nouvelle"])
+            if raw and "actu_decalee" in raw:
+                actu_decalee_prompt = PromptConfig(**raw["actu_decalee"])
         except Exception:
             logger.exception("editorial_prompts_load_failed", path=str(prompts_path))
 
@@ -136,6 +156,8 @@ def load_editorial_config() -> EditorialConfig:
         writing_serene_prompt=writing_serene_prompt,
         pepite_prompt=pepite_prompt,
         a_la_une_prompt=a_la_une_prompt,
+        bonne_nouvelle_prompt=bonne_nouvelle_prompt,
+        actu_decalee_prompt=actu_decalee_prompt,
     )
 
     logger.info(

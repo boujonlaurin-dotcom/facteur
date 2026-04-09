@@ -245,6 +245,17 @@ class OnboardingStrings {
     return '$count article${count > 1 ? 's' : ''} / jour';
   }
 
+  // Sensitive Themes (conditional step after digestMode == 'serein')
+  static const String sensitiveThemesTitle =
+      'Quels sujets sont sensibles pour vous ?';
+  static const String sensitiveThemesSubtitle =
+      'Certains sujets peuvent être stressants. Y a-t-il des thèmes que vous '
+      'préférez voir moins souvent en mode serein ?';
+  static const String sensitiveThemesSkip = 'Continuer sans filtrer';
+  static String sensitiveThemesContinue(int count) {
+    return 'Filtrer $count thème${count > 1 ? 's' : ''}';
+  }
+
   // Manifesto content
   static const String manifestoTitle = 'Notre Manifeste';
   static const String manifestoSection1Title = 'Le Projet';

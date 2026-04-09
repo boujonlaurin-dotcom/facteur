@@ -18,6 +18,7 @@ import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
 import 'questions/sources_page2_question.dart';
 import 'questions/finalize_question.dart';
+import 'questions/sensitive_themes_question.dart';
 import 'questions/intro_screen.dart';
 
 /// Écran d'onboarding principal
@@ -201,6 +202,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section2Question.digestMode:
         return const DigestModeQuestion(key: ValueKey('digest_mode'));
+
+      case Section2Question.sensitiveThemes:
+        return const SensitiveThemesQuestion(
+            key: ValueKey('sensitive_themes'));
     }
   }
 

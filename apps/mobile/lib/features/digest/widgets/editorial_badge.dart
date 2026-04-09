@@ -37,6 +37,12 @@ class EditorialBadge {
         return '\u{1F4CC} Vid\u00e9o sauvegard\u00e9e';
       case 'saved_audio':
         return '\u{1F4CC} Audio sauvegard\u00e9';
+      case 'actu_decalee':
+        return '\u{1F604} L\'actu d\u00e9cal\u00e9e';
+      case 'satire':
+        return '\u{1F60F} Satire';
+      case 'decale':
+        return '\u{1F604} D\u00e9cal\u00e9';
       default:
         return null;
     }
@@ -102,6 +108,10 @@ class EditorialBadge {
       case 'saved_video':
       case 'saved_audio':
         return colors.warning;
+      case 'actu_decalee':
+      case 'satire':
+      case 'decale':
+        return Colors.orange;
       default:
         return colors.textSecondary;
     }
@@ -169,6 +179,21 @@ class EditorialBadge {
         return _ChipConfig(
           label: '\u{1F4CC} Audio sauvegard\u00e9',
           color: colors.warning,
+        );
+      case 'actu_decalee':
+        return _ChipConfig(
+          label: '\u{1F604} L\'actu d\u00e9cal\u00e9e',
+          color: Colors.orange,
+        );
+      case 'satire':
+        return _ChipConfig(
+          label: '\u{1F60F} Satire',
+          color: Colors.orange,
+        );
+      case 'decale':
+        return _ChipConfig(
+          label: '\u{1F604} D\u00e9cal\u00e9',
+          color: Colors.orange,
         );
       default:
         return null;

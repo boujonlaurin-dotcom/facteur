@@ -89,6 +89,7 @@ class UserApiService {
       'gamification_enabled': answers.gamificationEnabled,
       'daily_article_count': answers.dailyArticleCount,
       'digest_mode': answers.digestMode,
+      'sensitive_themes': answers.sensitiveThemes,
       'themes': answers.themes,
       'subtopics': answers.subtopics,
       'preferred_sources': answers.preferredSources,

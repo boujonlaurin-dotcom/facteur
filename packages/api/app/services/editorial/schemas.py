@@ -108,6 +108,13 @@ class PepiteArticle(BaseModel):
     mini_editorial: str
 
 
+class ActuDecaleeArticle(BaseModel):
+    """LLM actu décalée selection for serein mode."""
+
+    content_id: UUID
+    mini_editorial: str
+
+
 class CoupDeCoeurArticle(BaseModel):
     """Most-saved article by community (ÉTAPE 6). No LLM."""
 
@@ -135,6 +142,7 @@ class EditorialGlobalContext(BaseModel):
     cta_text: str | None = None
     pepite: PepiteArticle | None = None
     coup_de_coeur: CoupDeCoeurArticle | None = None
+    actu_decalee: ActuDecaleeArticle | None = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -151,6 +159,7 @@ class EditorialPipelineResult(BaseModel):
     cta_text: str | None = None
     pepite: PepiteArticle | None = None
     coup_de_coeur: CoupDeCoeurArticle | None = None
+    actu_decalee: ActuDecaleeArticle | None = None
 
 
 # --- Perspective helpers ---

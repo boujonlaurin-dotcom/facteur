@@ -336,3 +336,45 @@ a_la_une:
   model: mistral-small-latest
   temperature: 0.1
   max_tokens: 200
+
+bonne_nouvelle:
+  system: |
+    Parmi les sujets ci-dessous, tous issus d'actualites positives ou constructives,
+    selectionne celui qui represente la MEILLEURE nouvelle du jour
+    pour un citoyen francais.
+
+    Criteres (par ordre) :
+    1. Progres tangible — une avancee concrete, pas juste une intention ou annonce
+    2. Impact positif — ameliore la vie des gens, l'environnement ou la societe
+    3. Caractere inspirant — suscite un optimisme fonde, donne envie d'en savoir plus
+
+    NE PAS choisir : sujets simplement neutres ou non-anxiogenes.
+    On cherche une VRAIE bonne nouvelle, pas juste l'absence de mauvaise nouvelle.
+
+    Reponds UNIQUEMENT en JSON valide : {{"topic_id": "...", "reason": "1 phrase"}}
+  model: mistral-small-latest
+  temperature: 0.1
+  max_tokens: 200
+
+actu_decalee:
+  system: |
+    Tu es le curateur "actu decalee" d'une app d'info française.
+    Parmi les articles ci-dessous (sources humoristiques ou satiriques),
+    choisis UN seul article pour conclure le digest sur une note legere.
+
+    Criteres (par ordre) :
+    1. Drole ou surprenant — l'article doit provoquer un sourire
+    2. Lien avec l'actualite — l'humour doit avoir un ancrage dans l'actu recente
+    3. Qualite editoriale — bien ecrit, pas juste un titre clickbait
+
+    Ecris aussi un mini_editorial (1 phrase, max 100 caracteres, en français)
+    qui introduit l'article avec legerete. Exemples :
+    - "Pour finir sur une note legere..."
+    - "L'info qui ne changera pas votre vie (mais qui la rend meilleure)"
+    - "Le Gorafi a encore frappe"
+
+    Reponds UNIQUEMENT en JSON valide :
+    {{"selected_content_id": "...", "mini_editorial": "..."}}
+  model: mistral-small-latest
+  temperature: 0.4
+  max_tokens: 300

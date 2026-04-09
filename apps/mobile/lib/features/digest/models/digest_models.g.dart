@@ -213,6 +213,13 @@ _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>
           ? null
           : CoupDeCoeurResponse.fromJson(
               json['coup_de_coeur'] as Map<String, dynamic>),
+      actuDecalee: json['actu_decalee'] == null
+          ? null
+          : PepiteResponse.fromJson(
+              json['actu_decalee'] as Map<String, dynamic>),
+      quote: json['quote'] == null
+          ? null
+          : QuoteResponse.fromJson(json['quote'] as Map<String, dynamic>),
     );
 
 Map<String, dynamic> _$$DigestResponseImplToJson(
@@ -234,6 +241,8 @@ Map<String, dynamic> _$$DigestResponseImplToJson(
       'cta_text': instance.ctaText,
       'pepite': instance.pepite,
       'coup_de_coeur': instance.coupDeCoeur,
+      'actu_decalee': instance.actuDecalee,
+      'quote': instance.quote,
     };
 
 _$PepiteResponseImpl _$$PepiteResponseImplFromJson(Map<String, dynamic> json) =>
@@ -341,4 +350,18 @@ Map<String, dynamic> _$$DigestCompletionResponseImplToJson(
       'closure_time_seconds': instance.closureTimeSeconds,
       'closure_streak': instance.closureStreak,
       'streak_message': instance.streakMessage,
+    };
+
+_$QuoteResponseImpl _$$QuoteResponseImplFromJson(Map<String, dynamic> json) =>
+    _$QuoteResponseImpl(
+      text: json['text'] as String,
+      author: json['author'] as String,
+      source: json['source'] as String?,
+    );
+
+Map<String, dynamic> _$$QuoteResponseImplToJson(_$QuoteResponseImpl instance) =>
+    <String, dynamic>{
+      'text': instance.text,
+      'author': instance.author,
+      'source': instance.source,
     };

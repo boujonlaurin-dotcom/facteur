@@ -537,6 +537,10 @@ class RecommendationService:
                 pillar_results[content.id] = pillar_result
             else:
                 score = self.scoring_engine.compute_score(content, context)
+            # Serein mode: boost humorous/satirical sources x1.3
+            if serein and hasattr(content, "source") and content.source:
+                if content.source.tone in ("humorous", "satirical"):
+                    score *= 1.3
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()
@@ -1073,6 +1077,50 @@ class RecommendationService:
                     )
                     for item in items:
                         promoted_ids.add(item.id)
+
+        # --- decale: humorous/satirical articles (serein mode only) ---
+        if serein and len(carousels) < max_carousels:
+            MIN_DECALE_ITEMS = 2
+            MAX_DECALE_ITEMS = 4
+            forty_eight_h_ago = datetime.datetime.now(
+                datetime.UTC
+            ) - datetime.timedelta(hours=48)
+            decale_query = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    Source.tone.in_(["humorous", "satirical"]),
+                    Source.is_active == True,  # noqa: E712
+                    Content.published_at >= forty_eight_h_ago,
+                    Content.id.notin_(promoted_ids | consumed_ids),
+                )
+                .order_by(Content.published_at.desc())
+                .limit(MAX_DECALE_ITEMS)
+            )
+            decale_result = await self.session.scalars(decale_query)
+            decale_articles = list(decale_result.all())
+            if len(decale_articles) >= MIN_DECALE_ITEMS:
+                badges = [
+                    {
+                        "code": "satire" if a.source.tone == "satirical" else "decale",
+                        "label": "Satire" if a.source.tone == "satirical" else "Décalé",
+                        "emoji": "\U0001f60f" if a.source.tone == "satirical" else "\U0001f604",
+                    }
+                    for a in decale_articles
+                ]
+                carousels.append(
+                    {
+                        "carousel_type": "decale",
+                        "title": "L'actu décalée",
+                        "emoji": "\U0001f604",
+                        "position": 12,
+                        "items": decale_articles,
+                        "badges": badges,
+                    }
+                )
+                for item in decale_articles:
+                    promoted_ids.add(item.id)
 
         # ================================================================
         # Phase B: DB-driven carousels (require user_id + async queries)
@@ -2089,7 +2137,14 @@ class RecommendationService:
 
         # Apply serein content filter (orthogonal to mode — filters anxiety content)
         if serein and not source_id:
-            query = apply_serein_filter(query)
+            import json as _json
+
+            _raw_sensitive = user_prefs.get("sensitive_themes")
+            try:
+                _user_sensitive = _json.loads(_raw_sensitive) if _raw_sensitive else None
+            except _json.JSONDecodeError:
+                _user_sensitive = None
+            query = apply_serein_filter(query, sensitive_themes=_user_sensitive)
 
         # Apply Mode Logic (skip when filtering by specific source)
         if mode and not source_id:
@@ -2144,7 +2199,16 @@ class RecommendationService:
         if _use_two_phase:
             # Followed sources only — no curated enrichment in default feed.
             # Curated enrichment is reserved for digest (digest_selector.py).
-            user_query = query.where(Source.id.in_(list(followed_source_ids)))
+            # In serein mode, also include serein_default sources (humorous/satirical).
+            if serein:
+                user_query = query.where(
+                    or_(
+                        Source.id.in_(list(followed_source_ids)),
+                        Source.serein_default == True,  # noqa: E712
+                    )
+                )
+            else:
+                user_query = query.where(Source.id.in_(list(followed_source_ids)))
             user_query = user_query.order_by(Content.published_at.desc()).limit(
                 limit_candidates
             )
@@ -2155,6 +2219,7 @@ class RecommendationService:
                 "feed_candidates_followed_only",
                 user_id=str(user_id),
                 followed_source_count=len(followed_source_ids),
+                serein_default_included=serein,
                 candidates=len(candidates_list),
             )
         else:

@@ -74,7 +74,7 @@ SEREIN_KEYWORDS = [
 ]
 
 
-def apply_serein_filter(query):
+def apply_serein_filter(query, sensitive_themes: list[str] | None = None):
     """Exclut les articles anxiogènes via is_serene (LLM) + fallback mots-clés.
 
     Stratégie :
@@ -82,27 +82,36 @@ def apply_serein_filter(query):
     2. is_serene=False → article exclu
     3. is_serene=NULL  → fallback sur filtre mots-clés/thèmes legacy
 
+    Args:
+        query: SQLAlchemy query to filter
+        sensitive_themes: thèmes sensibles de l'utilisateur (union avec les défauts)
+
     Utilisé par le mode INSPIRATION (feed) et le toggle serein (digest).
     """
+    effective_themes = list(set(SEREIN_EXCLUDED_THEMES) | set(sensitive_themes or []))
     serene_condition = or_(
         Content.is_serene == True,  # noqa: E712 — SQLAlchemy needs == True
         and_(
             Content.is_serene.is_(None),
-            _legacy_serein_keyword_filter(),
+            _legacy_serein_keyword_filter(excluded_themes=effective_themes),
         ),
     )
     return query.where(serene_condition)
 
 
-def _legacy_serein_keyword_filter():
+def _legacy_serein_keyword_filter(excluded_themes: list[str] | None = None):
     """Filtre legacy par mots-clés et thèmes (pour articles non taggés par LLM).
 
     Retourne une condition SQLAlchemy combinant :
     - Exclusion de thèmes anxiogènes (via Source.theme)
     - Exclusion de mots-clés anxiogènes dans titre et description
+
+    Args:
+        excluded_themes: liste de thèmes à exclure (défaut: SEREIN_EXCLUDED_THEMES)
     """
+    themes = excluded_themes or SEREIN_EXCLUDED_THEMES
     keywords_pattern = "|".join(SEREIN_KEYWORDS)
-    theme_ok = Source.theme.notin_(SEREIN_EXCLUDED_THEMES)
+    theme_ok = Source.theme.notin_(themes)
     # Handle NULL title/description: NULL ~* 'pattern' → NULL → NOT NULL → NULL
     # which silently excludes rows. Use OR IS NULL to keep them.
     title_ok = or_(Content.title.is_(None), ~Content.title.op("~*")(keywords_pattern))
@@ -195,21 +204,25 @@ def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:
         ]
 
 
-def is_cluster_serein_compatible(cluster: TopicCluster) -> bool:
+def is_cluster_serein_compatible(
+    cluster: TopicCluster, sensitive_themes: list[str] | None = None
+) -> bool:
     """Vérifie si un topic cluster est compatible avec le mode Serein.
 
     Un cluster est EXCLU si :
-    - Son thème dominant ∈ SEREIN_EXCLUDED_THEMES, OU
+    - Son thème dominant ∈ thèmes exclus (défauts + sensibles utilisateur), OU
     - >50% de ses articles matchent au moins un SEREIN_KEYWORD dans titre/description
 
     Args:
         cluster: TopicCluster à évaluer (from importance_detector)
+        sensitive_themes: thèmes sensibles de l'utilisateur (union avec les défauts)
 
     Returns:
         True si le cluster est serein-compatible (peut être inclus)
     """
+    effective_themes = list(set(SEREIN_EXCLUDED_THEMES) | set(sensitive_themes or []))
     # Check 1: thème dominant
-    if cluster.theme and cluster.theme.lower() in SEREIN_EXCLUDED_THEMES:
+    if cluster.theme and cluster.theme.lower() in effective_themes:
         return False
 
     # Check 2: mots-clés anxiogènes dans titre/description

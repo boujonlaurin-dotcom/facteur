@@ -1,0 +1,124 @@
+# Serein Quotes — Citations littéraires et philosophiques
+# Affichées dans le digest serein, sous le premier sujet (Bonne Nouvelle).
+# Ton : philosophie accessible, humour fin, sagesse inattendue.
+# PAS de développement personnel, PAS de "positive vibes", PAS de LinkedIn.
+
+quotes:
+  - text: "Il faut imaginer Sisyphe heureux."
+    author: "Albert Camus"
+    source: "Le Mythe de Sisyphe"
+
+  - text: "Ce n'est pas parce que les choses sont difficiles que nous n'osons pas, c'est parce que nous n'osons pas qu'elles sont difficiles."
+    author: "Sénèque"
+    source: "Lettres à Lucilius"
+
+  - text: "Le vent se lève, il faut tenter de vivre."
+    author: "Paul Valéry"
+    source: "Le Cimetière marin"
+
+  - text: "Vivre est la chose la plus rare au monde. La plupart des gens se contentent d'exister."
+    author: "Oscar Wilde"
+
+  - text: "Le seul vrai voyage, ce ne serait pas d'aller vers de nouveaux paysages, mais d'avoir d'autres yeux."
+    author: "Marcel Proust"
+    source: "La Prisonnière"
+
+  - text: "On ne voit bien qu'avec le cœur. L'essentiel est invisible pour les yeux."
+    author: "Antoine de Saint-Exupéry"
+    source: "Le Petit Prince"
+
+  - text: "Le bonheur est un art à pratiquer, comme le violon."
+    author: "John Lubbock"
+
+  - text: "La vraie générosité envers l'avenir consiste à tout donner au présent."
+    author: "Albert Camus"
+    source: "L'Homme révolté"
+
+  - text: "Hâte-toi de bien vivre et songe que chaque jour est à lui seul une vie."
+    author: "Sénèque"
+    source: "Lettres à Lucilius"
+
+  - text: "Il n'y a qu'un monde, et il est faux, cruel, contradictoire, séduisant et dépourvu de sens. Un monde ainsi constitué est le monde réel."
+    author: "Friedrich Nietzsche"
+
+  - text: "Que de choses il faut ignorer pour agir."
+    author: "Paul Valéry"
+
+  - text: "Le temps que vous avez aimé perdre n'est pas du temps perdu."
+    author: "Marthe Troly-Curtin"
+
+  - text: "Il faut être léger comme l'oiseau, et non comme la plume."
+    author: "Paul Valéry"
+
+  - text: "Je ne suis pas assez jeune pour tout savoir."
+    author: "Oscar Wilde"
+
+  - text: "On ne se débarrasse pas d'une habitude en la flanquant par la fenêtre ; il faut lui faire descendre l'escalier marche par marche."
+    author: "Mark Twain"
+
+  - text: "C'est le temps que tu as perdu pour ta rose qui fait ta rose si importante."
+    author: "Antoine de Saint-Exupéry"
+    source: "Le Petit Prince"
+
+  - text: "L'homme est la seule créature qui refuse d'être ce qu'elle est."
+    author: "Albert Camus"
+    source: "L'Homme révolté"
+
+  - text: "Nous avons l'art pour ne point mourir de la vérité."
+    author: "Friedrich Nietzsche"
+
+  - text: "Le plus grand voyageur n'est pas celui qui a fait dix fois le tour du monde, mais celui qui a fait une seule fois le tour de lui-même."
+    author: "Gandhi"
+
+  - text: "On ne peut pas penser et frapper quelqu'un en même temps."
+    author: "Susan Sontag"
+
+  - text: "Je pense, donc je suis perplexe."
+    author: "Terry Pratchett"
+    source: "Les Annales du Disque-monde"
+
+  - text: "Le monde ne mourra jamais par manque de merveilles, mais uniquement par manque d'émerveillement."
+    author: "G.K. Chesterton"
+
+  - text: "Les hommes construisent trop de murs et pas assez de ponts."
+    author: "Isaac Newton"
+
+  - text: "En matière de prémonitions, mieux vaut se tromper que ne rien pressentir du tout."
+    author: "Nassim Nicholas Taleb"
+    source: "Le Cygne noir"
+
+  - text: "Le bonheur n'est pas quelque chose que l'on reporte à un avenir incertain ; c'est quelque chose que l'on conçoit pour le présent."
+    author: "Jim Rohn"
+
+  - text: "Tout le malheur des hommes vient d'une seule chose, qui est de ne savoir pas demeurer en repos dans une chambre."
+    author: "Blaise Pascal"
+    source: "Pensées"
+
+  - text: "J'ai décidé d'être heureux parce que c'est bon pour la santé."
+    author: "Voltaire"
+
+  - text: "Plus je vieillis et plus je trouve qu'on ne peut vivre qu'avec les êtres qui vous libèrent."
+    author: "Albert Camus"
+    source: "Carnets"
+
+  - text: "La curiosité est une gourmandise. Voir, c'est dévorer."
+    author: "Victor Hugo"
+
+  - text: "Le meilleur moment pour planter un arbre, c'était il y a vingt ans. Le deuxième meilleur moment, c'est maintenant."
+    author: "Proverbe chinois"
+
+  - text: "Si vous voulez que la vie vous sourie, apportez-lui d'abord votre bonne humeur."
+    author: "Spinoza"
+
+  - text: "La vie, c'est comme une bicyclette, il faut avancer pour ne pas perdre l'équilibre."
+    author: "Albert Einstein"
+
+  - text: "L'ennui est entré dans le monde par la paresse."
+    author: "La Bruyère"
+    source: "Les Caractères"
+
+  - text: "La culture, c'est ce qui reste quand on a tout oublié."
+    author: "Édouard Herriot"
+
+  - text: "Les gens ne font pas des voyages, ce sont les voyages qui font les gens."
+    author: "John Steinbeck"

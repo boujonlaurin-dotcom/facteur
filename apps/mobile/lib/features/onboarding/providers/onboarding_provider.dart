@@ -17,6 +17,7 @@ class OnboardingAnswers {
   final bool? gamificationEnabled;
   final int? dailyArticleCount; // 3, 5, 7
   final String? digestMode; // pour_vous, serein, perspective
+  final List<String>? sensitiveThemes; // thèmes sensibles (mode serein)
 
   // Section 3
   final List<String>? themes;
@@ -36,6 +37,7 @@ class OnboardingAnswers {
     this.gamificationEnabled,
     this.dailyArticleCount,
     this.digestMode,
+    this.sensitiveThemes,
     this.themes,
     this.subtopics,
     this.preferredSources,
@@ -54,6 +56,7 @@ class OnboardingAnswers {
     bool? gamificationEnabled,
     int? dailyArticleCount,
     String? digestMode,
+    List<String>? sensitiveThemes,
     List<String>? themes,
     List<String>? subtopics,
     List<String>? preferredSources,
@@ -71,6 +74,7 @@ class OnboardingAnswers {
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
       dailyArticleCount: dailyArticleCount ?? this.dailyArticleCount,
       digestMode: digestMode ?? this.digestMode,
+      sensitiveThemes: sensitiveThemes ?? this.sensitiveThemes,
       themes: themes ?? this.themes,
       subtopics: subtopics ?? this.subtopics,
       preferredSources: preferredSources ?? this.preferredSources,
@@ -90,6 +94,7 @@ class OnboardingAnswers {
         'gamification_enabled': gamificationEnabled,
         'weekly_goal': dailyArticleCount,
         'digest_mode': digestMode,
+        'sensitive_themes': sensitiveThemes,
         'themes': themes,
         'subtopics': subtopics,
         'preferred_sources': preferredSources,
@@ -116,6 +121,7 @@ class OnboardingAnswers {
       gamificationEnabled: json['gamification_enabled'] as bool?,
       dailyArticleCount: json['weekly_goal'] as int?,
       digestMode: json['digest_mode'] as String?,
+      sensitiveThemes: (json['sensitive_themes'] as List<dynamic>?)?.cast<String>(),
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
       subtopics: (json['subtopics'] as List<dynamic>?)?.cast<String>(),
       preferredSources:
@@ -147,13 +153,14 @@ enum Section1Question {
   objectiveReaction, // R1: Réaction personnalisée
 }
 
-/// Questions de la Section 2 (App Preferences) — 5 étapes
+/// Questions de la Section 2 (App Preferences) — 5 étapes (+1 conditionnelle)
 enum Section2Question {
   approach, // Q3: Tu préfères...
   responseStyle, // Q6: Tranchées vs nuancées
   gamification, // Q8: Activer la gamification ?
   articleCount, // 3/5/7 articles par jour
   digestMode, // Pour vous / Serein / Ouvrir son point de vue
+  sensitiveThemes, // Sujets sensibles (conditionnel: mode serein uniquement)
 }
 
 /// Questions de la Section 3 (Source Preferences)
@@ -187,8 +194,8 @@ class OnboardingState {
   /// Nombre total de questions dans la Section 1
   static const int section1QuestionCount = 5;
 
-  /// Nombre total de questions dans la Section 2
-  static const int section2QuestionCount = 5;
+  /// Nombre total de questions dans la Section 2 (6 si serein, 5 sinon)
+  int get section2QuestionCount => answers.digestMode == 'serein' ? 6 : 5;
 
   /// Index de la question actuelle dans toutes les sections
   int get globalQuestionIndex {
@@ -204,8 +211,8 @@ class OnboardingState {
     }
   }
 
-  /// Nombre total d'étapes estimées pour l'onboarding
-  static const int totalSteps = 15; // 6 + 4 + 5
+  /// Nombre total d'étapes estimées pour l'onboarding (dynamique selon le mode)
+  int get totalSteps => section1QuestionCount + section2QuestionCount + 5;
 
   /// Progression globale (0.0 à 1.0)
   double get progress => (globalQuestionIndex + 1) / totalSteps;
@@ -441,9 +448,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     } else {
       // Revenir à la section précédente
       if (state.currentSection == OnboardingSection.sourcePreferences) {
+        // Si mode serein, revenir aux sujets sensibles ; sinon au digestMode
+        final targetIndex = state.answers.digestMode == 'serein'
+            ? Section2Question.sensitiveThemes.index
+            : Section2Question.digestMode.index;
         state = state.copyWith(
           currentSection: OnboardingSection.appPreferences,
-          currentQuestionIndex: Section2Question.digestMode.index,
+          currentQuestionIndex: targetIndex,
         );
       } else if (state.currentSection == OnboardingSection.appPreferences) {
         state = state.copyWith(
@@ -520,6 +531,27 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   void selectDigestMode(String mode) {
     state = state.copyWith(
       answers: state.answers.copyWith(digestMode: mode),
+      isTransitioning: true,
+    );
+    _saveAnswers();
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mode == 'serein') {
+        // Mode serein : afficher la question des sujets sensibles
+        state = state.copyWith(
+          currentQuestionIndex: Section2Question.sensitiveThemes.index,
+          isTransitioning: false,
+        );
+      } else {
+        _transitionToSection3();
+      }
+    });
+  }
+
+  /// Sélectionne les sujets sensibles (mode serein) puis passe à Section 3
+  void selectSensitiveThemes(List<String> themes) {
+    state = state.copyWith(
+      answers: state.answers.copyWith(sensitiveThemes: themes),
       isTransitioning: true,
     );
     _saveAnswers();
