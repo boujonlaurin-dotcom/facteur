@@ -243,7 +243,10 @@ class ActuMatcher:
                 continue
             candidates.append(content)
 
-        candidates.sort(key=lambda c: c.published_at, reverse=True)
+        candidates.sort(
+            key=lambda c: (bool(c.thumbnail_url), c.published_at),
+            reverse=True,
+        )
 
         extras: list[MatchedActuArticle] = []
         for content in candidates:
@@ -295,7 +298,10 @@ class ActuMatcher:
                 continue
             candidates.append(content)
 
-        candidates.sort(key=lambda c: c.published_at, reverse=True)
+        candidates.sort(
+            key=lambda c: (bool(c.thumbnail_url), c.published_at),
+            reverse=True,
+        )
         if not candidates:
             return None
 
@@ -348,9 +354,15 @@ class ActuMatcher:
             else:
                 candidates_other.append((content, False))
 
-        # Sort by recency (most recent first)
-        candidates_user.sort(key=lambda x: x[0].published_at, reverse=True)
-        candidates_other.sort(key=lambda x: x[0].published_at, reverse=True)
+        # Sort by image availability then recency (most recent first)
+        candidates_user.sort(
+            key=lambda x: (bool(x[0].thumbnail_url), x[0].published_at),
+            reverse=True,
+        )
+        candidates_other.sort(
+            key=lambda x: (bool(x[0].thumbnail_url), x[0].published_at),
+            reverse=True,
+        )
 
         # Pick best: user source preferred, then any
         best = (

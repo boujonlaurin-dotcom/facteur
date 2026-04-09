@@ -14,8 +14,12 @@ class TopicThemeChip extends StatelessWidget {
 
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = getThemeColor(themeSlug, colors);
-    final label = topicSlugToLabel[themeSlug] ?? themeSlug!;
+    final color = colors.textSecondary;
+    final rawLabel = topicSlugToLabel[themeSlug] ??
+        themeSlug!.replaceAll('-', ' ').replaceAll('_', ' ');
+    final label = rawLabel.isNotEmpty
+        ? rawLabel[0].toUpperCase() + rawLabel.substring(1)
+        : rawLabel;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

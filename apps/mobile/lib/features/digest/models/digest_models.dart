@@ -150,6 +150,8 @@ class DigestResponse with _$DigestResponse {
     @JsonKey(name: 'cta_text') String? ctaText,
     PepiteResponse? pepite,
     @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur,
+    @JsonKey(name: 'actu_decalee') PepiteResponse? actuDecalee,
+    QuoteResponse? quote,
   }) = _DigestResponse;
 
   /// Whether this digest uses the topics layout
@@ -230,6 +232,19 @@ class DigestCompletionResponse with _$DigestCompletionResponse {
 
   factory DigestCompletionResponse.fromJson(Map<String, dynamic> json) =>
       _$DigestCompletionResponseFromJson(json);
+}
+
+/// Literary/philosophical quote for serein digest
+@freezed
+class QuoteResponse with _$QuoteResponse {
+  const factory QuoteResponse({
+    required String text,
+    required String author,
+    String? source,
+  }) = _QuoteResponse;
+
+  factory QuoteResponse.fromJson(Map<String, dynamic> json) =>
+      _$QuoteResponseFromJson(json);
 }
 
 // Helper functions for ContentType serialization

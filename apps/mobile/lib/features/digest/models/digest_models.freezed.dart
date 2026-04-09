@@ -2019,6 +2019,9 @@ mixin _$DigestResponse {
   PepiteResponse? get pepite => throw _privateConstructorUsedError;
   @JsonKey(name: 'coup_de_coeur')
   CoupDeCoeurResponse? get coupDeCoeur => throw _privateConstructorUsedError;
+  @JsonKey(name: 'actu_decalee')
+  PepiteResponse? get actuDecalee => throw _privateConstructorUsedError;
+  QuoteResponse? get quote => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -2049,10 +2052,14 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
       PepiteResponse? pepite,
-      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur});
+      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur,
+      @JsonKey(name: 'actu_decalee') PepiteResponse? actuDecalee,
+      QuoteResponse? quote});
 
   $PepiteResponseCopyWith<$Res>? get pepite;
   $CoupDeCoeurResponseCopyWith<$Res>? get coupDeCoeur;
+  $PepiteResponseCopyWith<$Res>? get actuDecalee;
+  $QuoteResponseCopyWith<$Res>? get quote;
 }
 
 /// @nodoc
@@ -2085,6 +2092,8 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
     Object? ctaText = freezed,
     Object? pepite = freezed,
     Object? coupDeCoeur = freezed,
+    Object? actuDecalee = freezed,
+    Object? quote = freezed,
   }) {
     return _then(_value.copyWith(
       digestId: null == digestId
@@ -2155,6 +2164,14 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
           ? _value.coupDeCoeur
           : coupDeCoeur // ignore: cast_nullable_to_non_nullable
               as CoupDeCoeurResponse?,
+      actuDecalee: freezed == actuDecalee
+          ? _value.actuDecalee
+          : actuDecalee // ignore: cast_nullable_to_non_nullable
+              as PepiteResponse?,
+      quote: freezed == quote
+          ? _value.quote
+          : quote // ignore: cast_nullable_to_non_nullable
+              as QuoteResponse?,
     ) as $Val);
   }
 
@@ -2179,6 +2196,30 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
 
     return $CoupDeCoeurResponseCopyWith<$Res>(_value.coupDeCoeur!, (value) {
       return _then(_value.copyWith(coupDeCoeur: value) as $Val);
+    });
+  }
+
+  @override
+  @pragma('vm:prefer-inline')
+  $PepiteResponseCopyWith<$Res>? get actuDecalee {
+    if (_value.actuDecalee == null) {
+      return null;
+    }
+
+    return $PepiteResponseCopyWith<$Res>(_value.actuDecalee!, (value) {
+      return _then(_value.copyWith(actuDecalee: value) as $Val);
+    });
+  }
+
+  @override
+  @pragma('vm:prefer-inline')
+  $QuoteResponseCopyWith<$Res>? get quote {
+    if (_value.quote == null) {
+      return null;
+    }
+
+    return $QuoteResponseCopyWith<$Res>(_value.quote!, (value) {
+      return _then(_value.copyWith(quote: value) as $Val);
     });
   }
 }
@@ -2208,12 +2249,18 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
       PepiteResponse? pepite,
-      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur});
+      @JsonKey(name: 'coup_de_coeur') CoupDeCoeurResponse? coupDeCoeur,
+      @JsonKey(name: 'actu_decalee') PepiteResponse? actuDecalee,
+      QuoteResponse? quote});
 
   @override
   $PepiteResponseCopyWith<$Res>? get pepite;
   @override
   $CoupDeCoeurResponseCopyWith<$Res>? get coupDeCoeur;
+  @override
+  $PepiteResponseCopyWith<$Res>? get actuDecalee;
+  @override
+  $QuoteResponseCopyWith<$Res>? get quote;
 }
 
 /// @nodoc
@@ -2244,6 +2291,8 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
     Object? ctaText = freezed,
     Object? pepite = freezed,
     Object? coupDeCoeur = freezed,
+    Object? actuDecalee = freezed,
+    Object? quote = freezed,
   }) {
     return _then(_$DigestResponseImpl(
       digestId: null == digestId
@@ -2314,6 +2363,14 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
           ? _value.coupDeCoeur
           : coupDeCoeur // ignore: cast_nullable_to_non_nullable
               as CoupDeCoeurResponse?,
+      actuDecalee: freezed == actuDecalee
+          ? _value.actuDecalee
+          : actuDecalee // ignore: cast_nullable_to_non_nullable
+              as PepiteResponse?,
+      quote: freezed == quote
+          ? _value.quote
+          : quote // ignore: cast_nullable_to_non_nullable
+              as QuoteResponse?,
     ));
   }
 }
@@ -2338,7 +2395,9 @@ class _$DigestResponseImpl extends _DigestResponse {
       @JsonKey(name: 'closure_text') this.closureText,
       @JsonKey(name: 'cta_text') this.ctaText,
       this.pepite,
-      @JsonKey(name: 'coup_de_coeur') this.coupDeCoeur})
+      @JsonKey(name: 'coup_de_coeur') this.coupDeCoeur,
+      @JsonKey(name: 'actu_decalee') this.actuDecalee,
+      this.quote})
       : _items = items,
         _topics = topics,
         super._();
@@ -2412,10 +2471,15 @@ class _$DigestResponseImpl extends _DigestResponse {
   @override
   @JsonKey(name: 'coup_de_coeur')
   final CoupDeCoeurResponse? coupDeCoeur;
+  @override
+  @JsonKey(name: 'actu_decalee')
+  final PepiteResponse? actuDecalee;
+  @override
+  final QuoteResponse? quote;
 
   @override
   String toString() {
-    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, formatVersion: $formatVersion, items: $items, topics: $topics, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt, isStaleFallback: $isStaleFallback, headerText: $headerText, closureText: $closureText, ctaText: $ctaText, pepite: $pepite, coupDeCoeur: $coupDeCoeur)';
+    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, formatVersion: $formatVersion, items: $items, topics: $topics, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt, isStaleFallback: $isStaleFallback, headerText: $headerText, closureText: $closureText, ctaText: $ctaText, pepite: $pepite, coupDeCoeur: $coupDeCoeur, actuDecalee: $actuDecalee, quote: $quote)';
   }
 
   @override
@@ -2450,7 +2514,10 @@ class _$DigestResponseImpl extends _DigestResponse {
             (identical(other.ctaText, ctaText) || other.ctaText == ctaText) &&
             (identical(other.pepite, pepite) || other.pepite == pepite) &&
             (identical(other.coupDeCoeur, coupDeCoeur) ||
-                other.coupDeCoeur == coupDeCoeur));
+                other.coupDeCoeur == coupDeCoeur) &&
+            (identical(other.actuDecalee, actuDecalee) ||
+                other.actuDecalee == actuDecalee) &&
+            (identical(other.quote, quote) || other.quote == quote));
   }
 
   @JsonKey(ignore: true)
@@ -2473,7 +2540,9 @@ class _$DigestResponseImpl extends _DigestResponse {
       closureText,
       ctaText,
       pepite,
-      coupDeCoeur);
+      coupDeCoeur,
+      actuDecalee,
+      quote);
 
   @JsonKey(ignore: true)
   @override
@@ -2508,8 +2577,9 @@ abstract class _DigestResponse extends DigestResponse {
       @JsonKey(name: 'closure_text') final String? closureText,
       @JsonKey(name: 'cta_text') final String? ctaText,
       final PepiteResponse? pepite,
-      @JsonKey(name: 'coup_de_coeur')
-      final CoupDeCoeurResponse? coupDeCoeur}) = _$DigestResponseImpl;
+      @JsonKey(name: 'coup_de_coeur') final CoupDeCoeurResponse? coupDeCoeur,
+      @JsonKey(name: 'actu_decalee') final PepiteResponse? actuDecalee,
+      final QuoteResponse? quote}) = _$DigestResponseImpl;
   const _DigestResponse._() : super._();
 
   factory _DigestResponse.fromJson(Map<String, dynamic> json) =
@@ -2565,6 +2635,11 @@ abstract class _DigestResponse extends DigestResponse {
   @override
   @JsonKey(name: 'coup_de_coeur')
   CoupDeCoeurResponse? get coupDeCoeur;
+  @override
+  @JsonKey(name: 'actu_decalee')
+  PepiteResponse? get actuDecalee;
+  @override
+  QuoteResponse? get quote;
   @override
   @JsonKey(ignore: true)
   _$$DigestResponseImplCopyWith<_$DigestResponseImpl> get copyWith =>
@@ -3791,4 +3866,176 @@ abstract class _DigestCompletionResponse implements DigestCompletionResponse {
   @JsonKey(ignore: true)
   _$$DigestCompletionResponseImplCopyWith<_$DigestCompletionResponseImpl>
       get copyWith => throw _privateConstructorUsedError;
+}
+
+QuoteResponse _$QuoteResponseFromJson(Map<String, dynamic> json) {
+  return _QuoteResponse.fromJson(json);
+}
+
+/// @nodoc
+mixin _$QuoteResponse {
+  String get text => throw _privateConstructorUsedError;
+  String get author => throw _privateConstructorUsedError;
+  String? get source => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $QuoteResponseCopyWith<QuoteResponse> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $QuoteResponseCopyWith<$Res> {
+  factory $QuoteResponseCopyWith(
+          QuoteResponse value, $Res Function(QuoteResponse) then) =
+      _$QuoteResponseCopyWithImpl<$Res, QuoteResponse>;
+  @useResult
+  $Res call({String text, String author, String? source});
+}
+
+/// @nodoc
+class _$QuoteResponseCopyWithImpl<$Res, $Val extends QuoteResponse>
+    implements $QuoteResponseCopyWith<$Res> {
+  _$QuoteResponseCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? text = null,
+    Object? author = null,
+    Object? source = freezed,
+  }) {
+    return _then(_value.copyWith(
+      text: null == text
+          ? _value.text
+          : text // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$QuoteResponseImplCopyWith<$Res>
+    implements $QuoteResponseCopyWith<$Res> {
+  factory _$$QuoteResponseImplCopyWith(
+          _$QuoteResponseImpl value, $Res Function(_$QuoteResponseImpl) then) =
+      __$$QuoteResponseImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String text, String author, String? source});
+}
+
+/// @nodoc
+class __$$QuoteResponseImplCopyWithImpl<$Res>
+    extends _$QuoteResponseCopyWithImpl<$Res, _$QuoteResponseImpl>
+    implements _$$QuoteResponseImplCopyWith<$Res> {
+  __$$QuoteResponseImplCopyWithImpl(
+      _$QuoteResponseImpl _value, $Res Function(_$QuoteResponseImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? text = null,
+    Object? author = null,
+    Object? source = freezed,
+  }) {
+    return _then(_$QuoteResponseImpl(
+      text: null == text
+          ? _value.text
+          : text // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      source: freezed == source
+          ? _value.source
+          : source // ignore: cast_nullable_to_non_nullable
+              as String?,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$QuoteResponseImpl implements _QuoteResponse {
+  const _$QuoteResponseImpl(
+      {required this.text, required this.author, this.source});
+
+  factory _$QuoteResponseImpl.fromJson(Map<String, dynamic> json) =>
+      _$$QuoteResponseImplFromJson(json);
+
+  @override
+  final String text;
+  @override
+  final String author;
+  @override
+  final String? source;
+
+  @override
+  String toString() {
+    return 'QuoteResponse(text: $text, author: $author, source: $source)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$QuoteResponseImpl &&
+            (identical(other.text, text) || other.text == text) &&
+            (identical(other.author, author) || other.author == author) &&
+            (identical(other.source, source) || other.source == source));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode => Object.hash(runtimeType, text, author, source);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$QuoteResponseImplCopyWith<_$QuoteResponseImpl> get copyWith =>
+      __$$QuoteResponseImplCopyWithImpl<_$QuoteResponseImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$QuoteResponseImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _QuoteResponse implements QuoteResponse {
+  const factory _QuoteResponse(
+      {required final String text,
+      required final String author,
+      final String? source}) = _$QuoteResponseImpl;
+
+  factory _QuoteResponse.fromJson(Map<String, dynamic> json) =
+      _$QuoteResponseImpl.fromJson;
+
+  @override
+  String get text;
+  @override
+  String get author;
+  @override
+  String? get source;
+  @override
+  @JsonKey(ignore: true)
+  _$$QuoteResponseImplCopyWith<_$QuoteResponseImpl> get copyWith =>
+      throw _privateConstructorUsedError;
 }

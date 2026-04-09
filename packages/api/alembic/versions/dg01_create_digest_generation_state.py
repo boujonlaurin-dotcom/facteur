@@ -1,7 +1,7 @@
-"""create digest_generation_state + editorial_highlights_history; merge heads
+"""create digest_generation_state + editorial_highlights_history
 
 Revision ID: dg01
-Revises: ht01, pa01
+Revises: td01
 Create Date: 2026-04-09
 
 Adds two tables used by the digest reliability fix:
@@ -14,8 +14,8 @@ Adds two tables used by the digest reliability fix:
    picks so the writer can avoid re-selecting the same article on
    consecutive days, keeping featured content fresh each morning.
 
-This migration also merges the two outstanding alembic heads (`ht01` and
-`pa01`) into a single linear history, restoring the single-head invariant.
+Chained after `td01` (added on main via PR #373) so the alembic history
+stays single-headed after merging main into this branch.
 """
 
 from collections.abc import Sequence
@@ -27,7 +27,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "dg01"
-down_revision: str | Sequence[str] | None = ("ht01", "pa01")
+down_revision: str | Sequence[str] | None = "td01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

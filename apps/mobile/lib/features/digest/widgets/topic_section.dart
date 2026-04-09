@@ -463,9 +463,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                       color: colors.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text(
-                      'À la Une',
-                      style: TextStyle(
+                    child: Text(
+                      widget.isSerene ? 'Bonne nouvelle' : 'À la Une',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -700,12 +700,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.10),
+                    color: colors.textSecondary.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(12),
                     border: Border(
                       left: BorderSide(
                         width: 3,
-                        color: colors.textSecondary.withValues(alpha: 0.3),
+                        color: colors.textSecondary.withValues(alpha: 0.50),
                       ),
                     ),
                   ),

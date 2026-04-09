@@ -176,6 +176,7 @@ class DigestSelector:
         global_trending_context: GlobalTrendingContext | None = None,
         output_format: str = "topics",
         editorial_global_ctx: object | None = None,
+        sensitive_themes: list[str] | None = None,
     ) -> list:
         """Sélectionne les articles pour le digest d'un utilisateur.
 
@@ -250,6 +251,7 @@ class DigestSelector:
                 hours_lookback=hours_lookback,
                 min_pool_size=limit,
                 mode=mode,
+                sensitive_themes=sensitive_themes,
             )
             candidates_time = time.time() - step_start
 
@@ -357,6 +359,7 @@ class DigestSelector:
                     target_topics=limit,
                     trending_context=trending_context,
                     mode=mode,
+                    sensitive_themes=sensitive_themes,
                 )
                 topic_time = time.time() - step_start
                 total_time = time.time() - start_time
@@ -640,6 +643,7 @@ class DigestSelector:
         hours_lookback: int,
         min_pool_size: int,
         mode: str = "pour_vous",
+        sensitive_themes: list[str] | None = None,
     ) -> list[Content]:
         """Récupère les candidats pour le digest.
 
@@ -724,7 +728,9 @@ class DigestSelector:
 
             # Appliquer le filtre serein si demandé
             if mode == "serein":
-                user_sources_query = apply_serein_filter(user_sources_query)
+                user_sources_query = apply_serein_filter(
+                    user_sources_query, sensitive_themes=sensitive_themes
+                )
 
             result = await self.session.execute(user_sources_query)
             user_candidates = list(result.scalars().all())
@@ -794,7 +800,9 @@ class DigestSelector:
 
         # Appliquer le filtre serein si demandé
         if mode == "serein":
-            curated_query = apply_serein_filter(curated_query)
+            curated_query = apply_serein_filter(
+                curated_query, sensitive_themes=sensitive_themes
+            )
 
         result = await self.session.execute(curated_query)
         curated_candidates = list(result.scalars().all())
@@ -802,12 +810,37 @@ class DigestSelector:
 
         curated_count = len(curated_candidates)
 
+        # Étape 3: In serein mode, include serein_default sources (humorous/satirical)
+        # even if user doesn't follow them and they aren't curated.
+        serein_default_count = 0
+        if mode == "serein":
+            existing_ids = {c.id for c in candidates}
+            serein_default_query = (
+                select(Content)
+                .join(Content.source)
+                .options(selectinload(Content.source))
+                .where(
+                    ~excluded_stmt,
+                    Content.published_at >= since,
+                    Source.serein_default == True,  # noqa: E712
+                    Source.is_active == True,  # noqa: E712
+                    Content.id.notin_(list(existing_ids)) if existing_ids else True,
+                )
+                .order_by(Content.published_at.desc())
+                .limit(50)
+            )
+            result = await self.session.execute(serein_default_query)
+            serein_default_candidates = list(result.scalars().all())
+            candidates.extend(serein_default_candidates)
+            serein_default_count = len(serein_default_candidates)
+
         logger.info(
             "digest_candidates_pool_complete",
             user_id=str(user_id),
             total_candidates=len(candidates),
             user_sources=user_source_count,
             curated_sources=curated_count,
+            serein_default_sources=serein_default_count,
             user_to_curated_ratio=f"{user_source_count}:{curated_count}",
         )
 
@@ -1065,6 +1098,22 @@ class DigestSelector:
                                 is_positive=False,
                             )
                         )
+
+                # Serein mode: boost humorous/satirical sources x1.3
+                if (
+                    mode == "serein"
+                    and content.source
+                    and content.source.tone in ("humorous", "satirical")
+                ):
+                    tone_boost = final_score * 0.3
+                    final_score += tone_boost
+                    breakdown.append(
+                        DigestScoreBreakdown(
+                            label="Actu décalée (mode serein)",
+                            points=round(tone_boost, 1),
+                            is_positive=True,
+                        )
+                    )
 
                 logger.debug(
                     "digest_scoring_breakdown",

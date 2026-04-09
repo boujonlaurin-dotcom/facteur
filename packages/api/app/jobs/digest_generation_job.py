@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
 from app.models.daily_digest import DailyDigest
-from app.models.user import UserProfile
+from app.models.user import UserPreference, UserProfile
 from app.services.digest_generation_state_service import (
     mark_failed as state_mark_failed,
 )
@@ -538,6 +538,23 @@ class DigestGenerationJob:
                         editorial_ctx_serein if is_serene else editorial_ctx_pour_vous
                     )
 
+                    # Load user's sensitive_themes for personalized serein filter
+                    import json as _json
+
+                    _st_result = await session.execute(
+                        select(UserPreference.preference_value).where(
+                            UserPreference.user_id == user_id,
+                            UserPreference.preference_key == "sensitive_themes",
+                        )
+                    )
+                    _st_raw = _st_result.scalar_one_or_none()
+                    try:
+                        sensitive_themes: list[str] | None = (
+                            _json.loads(_st_raw) if _st_raw else None
+                        )
+                    except (ValueError, TypeError):
+                        sensitive_themes = None
+
                     # Sélectionner les articles via DigestSelector
                     selector = DigestSelector(session)
                     digest_items = await selector.select_for_user(
@@ -550,6 +567,7 @@ class DigestGenerationJob:
                         else None,
                         output_format="editorial",
                         editorial_global_ctx=editorial_ctx,
+                        sensitive_themes=sensitive_themes,
                     )
 
                     # Handle editorial pipeline result (Pydantic object, not a list)
@@ -792,12 +810,30 @@ async def generate_digest_for_user(
                     )
                     return existing
 
+            # Load user's sensitive_themes for personalized serein filter
+            import json as _json
+
+            _st_result = await session.execute(
+                select(UserPreference.preference_value).where(
+                    UserPreference.user_id == user_id,
+                    UserPreference.preference_key == "sensitive_themes",
+                )
+            )
+            _st_raw = _st_result.scalar_one_or_none()
+            try:
+                sensitive_themes: list[str] | None = (
+                    _json.loads(_st_raw) if _st_raw else None
+                )
+            except (ValueError, TypeError):
+                sensitive_themes = None
+
             # Générer
             selector = DigestSelector(session)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,
                 hours_lookback=48,
+                sensitive_themes=sensitive_themes,
             )
 
             if not digest_items:

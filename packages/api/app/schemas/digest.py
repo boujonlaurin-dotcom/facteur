@@ -204,6 +204,14 @@ class CoupDeCoeurResponse(BaseModel):
     is_dismissed: bool = False
 
 
+class QuoteResponse(BaseModel):
+    """Literary/philosophical quote for serein digest."""
+
+    text: str
+    author: str
+    source: str | None = None
+
+
 class DigestResponse(BaseModel):
     """Response for GET /api/digest.
 
@@ -255,6 +263,8 @@ class DigestResponse(BaseModel):
     cta_text: str | None = None
     pepite: PepiteResponse | None = None
     coup_de_coeur: CoupDeCoeurResponse | None = None
+    actu_decalee: PepiteResponse | None = None
+    quote: QuoteResponse | None = None
 
     class Config:
         from_attributes = True

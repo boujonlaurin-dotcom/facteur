@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../digest/providers/sensitive_themes_provider.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
+import '../../onboarding/widgets/theme_with_subtopics.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
@@ -285,6 +290,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 // Content types section
                 _ContentTypesSection(),
 
+                // Sensitive themes section (mode serein only)
+                _SensitiveThemesSection(),
+
                 // Empty state
                 if (topics.isEmpty)
                   Padding(
@@ -359,7 +367,7 @@ class _GroupedTheme {
 
 /// Section at the bottom of MyInterests for toggling content types on/off.
 class _ContentTypesSection extends ConsumerWidget {
-  static const _contentTypes = {
+  static const _contentTypes = <String, String>{
     'article': 'Articles',
     'podcast': 'Podcasts',
     'youtube': 'Vidéos YouTube',
@@ -429,6 +437,102 @@ class _ContentTypesSection extends ConsumerWidget {
                 ],
               );
             }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Section for managing sensitive themes (only visible when serein mode is enabled).
+class _SensitiveThemesSection extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_SensitiveThemesSection> createState() =>
+      _SensitiveThemesSectionState();
+}
+
+class _SensitiveThemesSectionState
+    extends ConsumerState<_SensitiveThemesSection> {
+  @override
+  void initState() {
+    super.initState();
+    // Load sensitive themes from API on first build
+    ref.read(sensitiveThemesProvider.notifier).loadIfNeeded();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sereinState = ref.watch(sereinToggleProvider);
+
+    // Only show if serein mode is enabled
+    if (!sereinState.enabled) return const SizedBox.shrink();
+
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final sensitiveThemes = ref.watch(sensitiveThemesProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space2,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: SereinColors.sereinColor.withValues(alpha: 0.3)),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space3,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  SereinColors.sereinIcon,
+                  size: 16,
+                  color: SereinColors.sereinColor,
+                ),
+                const SizedBox(width: FacteurSpacing.space2),
+                Text(
+                  'SUJETS SENSIBLES',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: SereinColors.sereinColor,
+                    letterSpacing: 1.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: FacteurSpacing.space1),
+            Text(
+              'Thèmes filtrés en mode serein',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textTertiary,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space3),
+            Wrap(
+              spacing: FacteurSpacing.space2,
+              runSpacing: FacteurSpacing.space2,
+              children: AvailableThemes.all.map((theme) {
+                final isSelected = sensitiveThemes.contains(theme.slug);
+                return GestureDetector(
+                  onTap: () {
+                    ref
+                        .read(sensitiveThemesProvider.notifier)
+                        .toggle(theme.slug);
+                  },
+                  child: ThemeChip(
+                    theme: theme,
+                    isSelected: isSelected,
+                  ),
+                );
+              }).toList(),
+            ),
           ],
         ),
       ),

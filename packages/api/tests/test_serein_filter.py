@@ -1,5 +1,6 @@
 """Tests for apply_serein_filter() with is_serene primary + keyword fallback."""
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
@@ -9,7 +10,10 @@ from sqlalchemy import select
 from app.models.content import Content
 from app.models.enums import ContentType, SourceType
 from app.models.source import Source
-from app.services.recommendation.filter_presets import apply_serein_filter
+from app.services.recommendation.filter_presets import (
+    apply_serein_filter,
+    is_cluster_serein_compatible,
+)
 
 
 @pytest.fixture
@@ -191,3 +195,230 @@ class TestSereinFilterMixed:
         assert not_serene.id not in result_ids
         assert null_neutral.id in result_ids
         assert null_anxious.id not in result_ids
+
+
+# --- Fixtures for sensitive_themes tests ---
+
+
+@pytest.fixture
+async def tech_source(db_session):
+    """Source with theme 'tech' (normally NOT excluded by default serein filter)."""
+    source = Source(
+        id=uuid4(),
+        name="Tech News",
+        url="https://tech.example.com",
+        feed_url=f"https://tech.example.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=False,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    return source
+
+
+async def _query_with_serein_filter_custom(db_session, source, sensitive_themes=None):
+    """Run a SELECT with serein filter + custom sensitive_themes."""
+    query = select(Content).join(Source, Content.source_id == Source.id)
+    query = query.where(Content.source_id == source.id)
+    query = apply_serein_filter(query, sensitive_themes=sensitive_themes)
+    result = await db_session.execute(query)
+    return result.scalars().all()
+
+
+class TestSereinFilterSensitiveThemes:
+    """Tests for user-personalized sensitive_themes."""
+
+    async def test_sensitive_theme_excludes_untagged_articles(
+        self, db_session, tech_source
+    ):
+        """Articles from a user-sensitive theme are excluded when is_serene=None."""
+        content = await _create_content(
+            db_session, tech_source, "Nouveau processeur AMD", is_serene=None
+        )
+        results = await _query_with_serein_filter_custom(
+            db_session, tech_source, sensitive_themes=["tech"]
+        )
+        assert content.id not in [r.id for r in results]
+
+    async def test_sensitive_theme_does_not_affect_llm_tagged(
+        self, db_session, tech_source
+    ):
+        """is_serene=True still passes even if theme is in user's sensitive list."""
+        content = await _create_content(
+            db_session, tech_source, "Innovation IA", is_serene=True
+        )
+        results = await _query_with_serein_filter_custom(
+            db_session, tech_source, sensitive_themes=["tech"]
+        )
+        assert content.id in [r.id for r in results]
+
+    async def test_default_themes_still_excluded_with_custom(
+        self, db_session, politics_source
+    ):
+        """Default excluded themes (politics) remain excluded when custom themes added."""
+        content = await _create_content(
+            db_session, politics_source, "Débat parlementaire", is_serene=None
+        )
+        results = await _query_with_serein_filter_custom(
+            db_session, politics_source, sensitive_themes=["tech"]
+        )
+        assert content.id not in [r.id for r in results]
+
+    async def test_none_sensitive_themes_same_as_default(
+        self, db_session, tech_source
+    ):
+        """sensitive_themes=None produces the same behavior as no param (backward compat)."""
+        content = await _create_content(
+            db_session, tech_source, "Article tech neutre", is_serene=None
+        )
+        results_none = await _query_with_serein_filter_custom(
+            db_session, tech_source, sensitive_themes=None
+        )
+        results_empty = await _query_with_serein_filter_custom(
+            db_session, tech_source, sensitive_themes=[]
+        )
+        # Tech is NOT in default excluded themes, so article should pass
+        assert content.id in [r.id for r in results_none]
+        assert content.id in [r.id for r in results_empty]
+
+
+class TestIsClusterSereinCompatibleSensitiveThemes:
+    """Tests for is_cluster_serein_compatible with user sensitive_themes."""
+
+    @staticmethod
+    def _make_cluster(theme, titles=None):
+        """Build a minimal TopicCluster-like object for testing."""
+
+        @dataclass
+        class FakeContent:
+            title: str | None = None
+            description: str | None = None
+
+        @dataclass
+        class FakeCluster:
+            cluster_id: str = "test"
+            label: str = "test"
+            tokens: set = field(default_factory=set)
+            contents: list = field(default_factory=list)
+            source_ids: set = field(default_factory=set)
+            theme: str | None = None
+
+        contents = [FakeContent(title=t) for t in (titles or ["Neutral article"])]
+        return FakeCluster(theme=theme, contents=contents)
+
+    def test_default_excluded_theme_incompatible(self):
+        """Cluster with default excluded theme is incompatible."""
+        cluster = self._make_cluster("politics")
+        assert not is_cluster_serein_compatible(cluster)
+
+    def test_neutral_theme_compatible_by_default(self):
+        """Cluster with non-excluded theme is compatible by default."""
+        cluster = self._make_cluster("tech")
+        assert is_cluster_serein_compatible(cluster)
+
+    def test_user_sensitive_theme_makes_incompatible(self):
+        """Cluster with user-sensitive theme becomes incompatible."""
+        cluster = self._make_cluster("tech")
+        assert not is_cluster_serein_compatible(cluster, sensitive_themes=["tech"])
+
+    def test_default_themes_still_incompatible_with_custom(self):
+        """Default excluded themes remain incompatible when custom themes added."""
+        cluster = self._make_cluster("society")
+        assert not is_cluster_serein_compatible(cluster, sensitive_themes=["tech"])
+
+    def test_none_sensitive_themes_backward_compatible(self):
+        """sensitive_themes=None produces same result as before."""
+        tech_cluster = self._make_cluster("tech")
+        politics_cluster = self._make_cluster("politics")
+        assert is_cluster_serein_compatible(tech_cluster, sensitive_themes=None)
+        assert not is_cluster_serein_compatible(politics_cluster, sensitive_themes=None)
+
+
+# ---------------------------------------------------------------------------
+# Quote selection tests
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch
+
+from app.services.digest_service import _select_daily_quote
+
+
+class TestSelectDailyQuote:
+    """Unit tests for deterministic quote selection logic."""
+
+    SAMPLE_QUOTES = [
+        {"text": "Il faut imaginer Sisyphe heureux.", "author": "Albert Camus"},
+        {"text": "La vie est trop courte pour être petite.", "author": "Benjamin Disraeli"},
+        {"text": "On ne naît pas femme, on le devient.", "author": "Simone de Beauvoir"},
+    ]
+
+    def test_deterministic_same_user_same_date(self):
+        """Same user + same date always returns the same quote."""
+        with patch("app.services.digest_service._QUOTES", self.SAMPLE_QUOTES):
+            q1 = _select_daily_quote("user-123", "2026-04-09")
+            q2 = _select_daily_quote("user-123", "2026-04-09")
+        assert q1 is not None
+        assert q1["author"] == q2["author"]
+
+    def test_different_date_may_differ(self):
+        """Different dates can yield different quotes (not guaranteed but usually differs)."""
+        with patch("app.services.digest_service._QUOTES", self.SAMPLE_QUOTES):
+            results = {
+                _select_daily_quote("user-123", f"2026-04-{d:02d}")["author"]
+                for d in range(1, 10)
+            }
+        # With 3 quotes and 9 dates, at least 2 distinct quotes should appear
+        assert len(results) > 1
+
+    def test_empty_pool_returns_none(self):
+        """Returns None when the quote pool is empty."""
+        with patch("app.services.digest_service._load_quotes", return_value=[]):
+            result = _select_daily_quote("user-123", "2026-04-09")
+        assert result is None
+
+    def test_missing_yaml_returns_none(self, tmp_path):
+        """Returns None gracefully when serein_quotes.yaml is missing."""
+        import app.services.digest_service as svc
+
+        bad_path = tmp_path / "nonexistent.yaml"
+        original_quotes = svc._QUOTES[:]
+        original_path = svc._QUOTES_PATH
+        try:
+            svc._QUOTES = []
+            svc._QUOTES_PATH = bad_path
+            result = _select_daily_quote("user-123", "2026-04-09")
+        finally:
+            svc._QUOTES = original_quotes
+            svc._QUOTES_PATH = original_path
+        assert result is None
+
+    def test_invalid_yaml_entries_filtered(self, tmp_path):
+        """Entries without text or author are excluded from the pool."""
+        import app.services.digest_service as svc
+
+        yaml_content = """
+quotes:
+  - text: "Valid quote."
+    author: "Valid Author"
+  - author: "Missing text"
+  - text: "Missing author"
+  - text: ""
+    author: "Empty text"
+"""
+        yaml_file = tmp_path / "quotes.yaml"
+        yaml_file.write_text(yaml_content)
+
+        original_quotes = svc._QUOTES[:]
+        original_path = svc._QUOTES_PATH
+        try:
+            svc._QUOTES = []
+            svc._QUOTES_PATH = yaml_file
+            quotes = svc._load_quotes()
+        finally:
+            svc._QUOTES = original_quotes
+            svc._QUOTES_PATH = original_path
+
+        assert len(quotes) == 1
+        assert quotes[0]["author"] == "Valid Author"

@@ -27,6 +27,7 @@ from app.services.editorial.curation import CurationService, _cluster_to_une_top
 from app.services.editorial.deep_matcher import DeepMatcher
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
+    ActuDecaleeArticle,
     CoupDeCoeurArticle,
     EditorialGlobalContext,
     EditorialPipelineResult,
@@ -103,6 +104,10 @@ class EditorialPipelineService:
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
+            elif mode == "serein":
+                a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
+                if not a_la_une_topic:
+                    a_la_une_topic = _cluster_to_une_topic(top3[0])
             else:
                 a_la_une_topic = await self.curation.select_a_la_une(top3)
                 if not a_la_une_topic:
@@ -399,12 +404,21 @@ class EditorialPipelineService:
             if s.deep_article:
                 selected_content_ids.add(s.deep_article.content_id)
 
-        writing_raw, pepite_raw, coup_de_coeur_raw = await asyncio.gather(
+        # Build parallel tasks: writing + pepite + coup de coeur + (actu_decalee if serein)
+        parallel_tasks = [
             writer.write_editorial(subjects, mode=mode),
             writer.select_pepite(contents, selected_topic_ids, cluster_data),
             writer.get_coup_de_coeur(selected_content_ids),
-            return_exceptions=True,
-        )
+        ]
+        if mode == "serein":
+            parallel_tasks.append(writer.select_actu_decalee(selected_content_ids))
+
+        gather_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+
+        writing_raw = gather_results[0]
+        pepite_raw = gather_results[1]
+        coup_de_coeur_raw = gather_results[2]
+        actu_decalee_raw = gather_results[3] if mode == "serein" else None
 
         # Handle writing result — inject texts into subjects
         writing_result: WritingOutput | None = None
@@ -446,12 +460,23 @@ class EditorialPipelineService:
                 error=str(coup_de_coeur_raw),
             )
 
+        # Handle actu décalée (serein mode only)
+        actu_decalee: ActuDecaleeArticle | None = None
+        if isinstance(actu_decalee_raw, ActuDecaleeArticle):
+            actu_decalee = actu_decalee_raw
+        elif isinstance(actu_decalee_raw, Exception):
+            logger.error(
+                "editorial_pipeline.actu_decalee_exception",
+                error=str(actu_decalee_raw),
+            )
+
         writing_time = time.time() - step_start
         logger.info(
             "editorial_pipeline.writing_done",
             has_writing=writing_result is not None,
             has_pepite=pepite is not None,
             has_coup_de_coeur=coup_de_coeur is not None,
+            has_actu_decalee=actu_decalee is not None,
             duration_ms=round(writing_time * 1000, 2),
         )
 
@@ -473,6 +498,7 @@ class EditorialPipelineService:
             cta_text=writing_result.cta_text if writing_result else None,
             pepite=pepite,
             coup_de_coeur=coup_de_coeur,
+            actu_decalee=actu_decalee,
         )
 
     def run_for_user(
@@ -521,6 +547,7 @@ class EditorialPipelineService:
             cta_text=global_ctx.cta_text,
             pepite=global_ctx.pepite,
             coup_de_coeur=global_ctx.coup_de_coeur,
+            actu_decalee=global_ctx.actu_decalee,
         )
 
     async def close(self) -> None:

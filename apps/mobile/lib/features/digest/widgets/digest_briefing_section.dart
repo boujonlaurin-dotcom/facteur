@@ -10,9 +10,11 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import 'actu_decalee_block.dart';
 import 'closure_block.dart';
 import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
+import 'quote_block.dart';
 import 'section_divider.dart';
 import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
@@ -40,6 +42,7 @@ class DigestBriefingSection extends StatefulWidget {
   final bool usesEditorial;
   final PepiteResponse? pepite;
   final CoupDeCoeurResponse? coupDeCoeur;
+  final PepiteResponse? actuDecalee;
   final String? headerText;
   final String? closureText;
   final String? ctaText;
@@ -64,6 +67,7 @@ class DigestBriefingSection extends StatefulWidget {
     this.usesEditorial = false,
     this.pepite,
     this.coupDeCoeur,
+    this.actuDecalee,
     this.headerText,
     this.closureText,
     this.ctaText,
@@ -382,6 +386,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         ),
       );
 
+      // Quote after first topic (Bonne Nouvelle) in serein mode
+      if (i == 0 && isSerene && widget.digest?.quote != null) {
+        sections.add(QuoteBlock(quote: widget.digest!.quote!));
+      }
+
       // Transition text between topics (not after last one)
       if (topic.transitionText != null && i < widget.topics!.length - 1) {
         sections.add(TransitionText(text: topic.transitionText!));
@@ -389,7 +398,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     }
 
     // Section divider before special picks
-    if (widget.pepite != null || widget.coupDeCoeur != null) {
+    if (widget.pepite != null || widget.coupDeCoeur != null || widget.actuDecalee != null) {
       sections.add(const SectionDivider());
     }
 
@@ -414,6 +423,20 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         CoupDeCoeurBlock(
           coupDeCoeur: widget.coupDeCoeur!,
           isSerene: isSerene,
+          onTap: widget.onItemTap,
+          onSave: widget.onSave,
+          onNotInterested: widget.onNotInterested,
+          onReportNotSerene: widget.onReportNotSerene,
+          onSourceTap: widget.onSourceTap,
+        ),
+      );
+    }
+
+    // Actu décalée block (serein mode only)
+    if (widget.actuDecalee != null) {
+      sections.add(
+        ActuDecaleeBlock(
+          actuDecalee: widget.actuDecalee!,
           onTap: widget.onItemTap,
           onSave: widget.onSave,
           onNotInterested: widget.onNotInterested,

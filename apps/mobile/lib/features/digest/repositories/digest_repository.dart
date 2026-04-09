@@ -294,4 +294,16 @@ class DigestRepository {
       data: {'key': key, 'value': value},
     );
   }
+
+  /// Fetch all user preferences (key-value list)
+  Future<List<Map<String, String>>> getPreferences() async {
+    final response = await _apiClient.dio.get<dynamic>('users/preferences');
+    final data = response.data as List<dynamic>;
+    return data
+        .map((item) => {
+              'preference_key': (item as Map<String, dynamic>)['preference_key'] as String,
+              'preference_value': item['preference_value'] as String,
+            })
+        .toList();
+  }
 }
