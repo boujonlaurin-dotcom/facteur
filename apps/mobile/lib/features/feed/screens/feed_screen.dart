@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -43,6 +44,7 @@ import '../widgets/topic_overflow_chip.dart';
 import '../widgets/keyword_overflow_chip.dart';
 import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
+import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
 import '../widgets/interest_filter_sheet.dart';
@@ -82,6 +84,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   // Feed loading state: true while any filter change or serein toggle refreshes
   bool _isFeedRefreshing = false;
 
+  // Story 4.5b: Show the undo banner after a viewport-aware pull-to-refresh.
+  bool _showUndoBanner = false;
+
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
     try {
@@ -120,16 +125,11 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
-  // Story 4.7: Track skips per source
-  final Set<String> _viewedIds = {};
-
-  void _recordSkipIfNecessary(int index, List<Content> contents) {
-    if (index < 0 || index >= contents.length) return;
-    final item = contents[index];
-    if (!_viewedIds.contains(item.id)) {
-      _viewedIds.add(item.id);
-    }
-  }
+  // Story 4.5b: Track IDs of articles that have been "fully visible" (≥ 0.9
+  // viewport fraction) since the last refresh. Includes both main feed cards
+  // AND items from carousels. Used by pull-to-refresh to mark these articles
+  // as "already impressed" so the backend scoring layer demotes them.
+  final Set<String> _fullyVisibleIds = {};
 
   Future<void> _showArticleModal(Content content) async {
     // 1. Mark as consumed immediately
@@ -214,17 +214,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       }
     }
 
-    // Story 4.7: Detect skips
-    // Estimate: Card ~350px (no briefing section in feed)
-    final firstVisibleIndex = (currentScroll / 350).floor();
-    if (firstVisibleIndex > 0) {
-      final state = ref.read(feedProvider).value;
-      if (state != null) {
-        for (int i = 0; i < firstVisibleIndex && i < state.items.length; i++) {
-          _recordSkipIfNecessary(i, state.items);
-        }
-      }
-    }
+    // Story 4.5b: Viewport tracking is now handled by VisibilityDetector
+    // wrapping each feed card + carousel item. _fullyVisibleIds is populated
+    // via onVisibilityChanged callbacks (threshold ≥ 0.9).
 
     // Load more — skip when user is actively scrolling UP.
     // Triggering a state update + SliverList rebuild during an upward scroll
@@ -262,48 +254,62 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     return recent >= 3;
   }
 
+  /// Story 4.5b: Pull-to-refresh viewport-aware.
+  ///
+  /// - Marque tous les articles pleinement visibles (main feed + carrousels)
+  ///   comme "déjà vus" via POST /feed/refresh.
+  /// - Capture un snapshot pour l'undo et affiche un bandeau discret.
+  /// - Anti-addiction : 3+ refreshes en 10 min → modal "Rester serein".
+  /// - Parité web/native.
   Future<void> _refresh() async {
-    // On web, mark all displayed (non-consumed) articles as impressed and re-fetch.
-    // The CSS overscroll-behavior-y:contain prevents browser native pull-to-refresh,
-    // so Flutter's RefreshIndicator handles the gesture.
-    if (kIsWeb) {
-      // Use all currently displayed article IDs (web doesn't track _viewedIds reliably)
-      final feedState = ref.read(feedProvider).value;
-      if (feedState != null) {
-        final allIds = feedState.items
-            .where((c) => c.status != ContentStatus.consumed)
-            .map((c) => c.id)
-            .toSet();
-        if (allIds.isNotEmpty) {
-          await ref.read(feedProvider.notifier).refreshArticles(allIds);
-          return;
-        }
+    // Anti-addiction check: only show modal when user is compulsive
+    if (_isRefreshCompulsive && !kIsWeb) {
+      final colors = context.facteurColors;
+      final result = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) => _RefreshConfirmSheet(
+          isCompulsive: true,
+          colors: colors,
+        ),
+      );
+
+      if (result == 'serein') {
+        ref.read(feedProvider.notifier).setFilter('inspiration');
+        return;
       }
-      await ref.read(feedProvider.notifier).refresh();
-      return;
+      if (result != 'refresh') {
+        return; // User dismissed
+      }
+      // Fall through to refresh action
     }
 
-    final colors = context.facteurColors;
-    final isCompulsive = _isRefreshCompulsive;
+    _refreshTimestamps.add(DateTime.now());
 
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => _RefreshConfirmSheet(
-        isCompulsive: isCompulsive,
-        colors: colors,
-      ),
-    );
+    // Snapshot the currently fully-visible IDs and clear the tracker so the
+    // next refresh starts from scratch.
+    final visibleIds = Set<String>.from(_fullyVisibleIds);
+    _fullyVisibleIds.clear();
 
-    if (result == 'refresh') {
-      _refreshTimestamps.add(DateTime.now());
-      // Pass only the IDs of articles the user actually scrolled past
-      await ref.read(feedProvider.notifier).refreshArticles(_viewedIds);
-      _viewedIds.clear();
-    } else if (result == 'serein') {
-      // Anti-addiction: redirect to "Rester serein" mode
-      ref.read(feedProvider.notifier).setFilter('inspiration');
+    await ref
+        .read(feedProvider.notifier)
+        .refreshArticlesWithSnapshot(visibleIds);
+
+    // Scroll-to-top (convention pull-to-refresh).
+    if (mounted && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    // Show undo banner if a snapshot was captured (otherwise no meaningful undo).
+    final snapshot = ref.read(feedUndoSnapshotProvider);
+    if (snapshot != null && mounted) {
+      HapticFeedback.selectionClick();
+      setState(() => _showUndoBanner = true);
     }
   }
 
@@ -669,6 +675,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                       child: FeedCarousel(
                                         data: carousel,
                                         onArticleTap: (c) => _showArticleModal(c),
+                                        // Story 4.5b: viewport-aware refresh.
+                                        onItemVisible: (id) =>
+                                            _fullyVisibleIds.add(id),
                                         // T1: Full card feature parity
                                         onLongPressStart: (c, _) =>
                                             ArticlePreviewOverlay.show(context, c),
@@ -976,7 +985,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                   );
                                 }
 
-                                return Padding(
+                                return VisibilityDetector(
+                                  key: ValueKey('vis_${content.id}'),
+                                  onVisibilityChanged: (info) {
+                                    // Story 4.5b: track cards fully visible in
+                                    // the viewport (>= 90%) so pull-to-refresh
+                                    // can mark them as "already seen".
+                                    if (info.visibleFraction >= 0.9) {
+                                      _fullyVisibleIds.add(content.id);
+                                    }
+                                  },
+                                  child: Padding(
                                   key: ValueKey(content.id),
                                   padding: const EdgeInsets.only(bottom: 16),
                                   child: Column(
@@ -1008,6 +1027,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                         ),
                                       ],
                                     ],
+                                  ),
                                   ),
                                 );
                               },
@@ -1086,6 +1106,31 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                     child: WelcomeBanner(
                       onDismiss: _dismissWelcome,
                       secondaryMessage: null,
+                    ),
+                  ),
+                ),
+              ),
+            // Story 4.5b: discreet undo banner after viewport-aware refresh.
+            if (_showUndoBanner)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: FeedRefreshUndoBanner(
+                      onUndo: () async {
+                        await ref
+                            .read(feedProvider.notifier)
+                            .undoLastRefresh();
+                      },
+                      onAutoResolve: () {
+                        if (mounted) {
+                          setState(() => _showUndoBanner = false);
+                        }
+                      },
                     ),
                   ),
                 ),

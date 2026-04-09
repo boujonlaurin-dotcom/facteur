@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
@@ -32,6 +33,10 @@ class FeedCarousel extends StatefulWidget {
   final bool isSerene;
   final void Function(Content)? onReportNotSerene;
 
+  /// Story 4.5b: appelé quand un item du carrousel apparaît pleinement à
+  /// l'écran (≥ 90 % de viewport). Utilisé par le feed refresh viewport-aware.
+  final void Function(String contentId)? onItemVisible;
+
   const FeedCarousel({
     super.key,
     required this.data,
@@ -50,6 +55,7 @@ class FeedCarousel extends StatefulWidget {
     this.hasActiveFilter = false,
     this.isSerene = false,
     this.onReportNotSerene,
+    this.onItemVisible,
   });
 
   @override
@@ -281,7 +287,14 @@ class _FeedCarouselState extends State<FeedCarousel> {
         final wrappedCard =
             isReference ? Opacity(opacity: 0.65, child: card) : card;
 
-        return Padding(
+        return VisibilityDetector(
+          key: ValueKey('carousel_vis_${article.id}'),
+          onVisibilityChanged: (info) {
+            if (info.visibleFraction >= 0.9) {
+              widget.onItemVisible?.call(article.id);
+            }
+          },
+          child: Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Align(
             alignment: Alignment.topCenter,
@@ -297,6 +310,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
                 wrappedCard,
               ],
             ),
+          ),
           ),
         );
       },
@@ -369,19 +383,27 @@ class _FeedCarouselState extends State<FeedCarousel> {
     final wrappedCard =
         isReference ? Opacity(opacity: 0.65, child: card) : card;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (badgeChip != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: badgeChip,
-            ),
-          wrappedCard,
-        ],
+    return VisibilityDetector(
+      key: ValueKey('carousel_vis_${article.id}'),
+      onVisibilityChanged: (info) {
+        if (info.visibleFraction >= 0.9) {
+          widget.onItemVisible?.call(article.id);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (badgeChip != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: badgeChip,
+              ),
+            wrappedCard,
+          ],
+        ),
       ),
     );
   }

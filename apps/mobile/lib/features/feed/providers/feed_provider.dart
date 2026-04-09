@@ -27,6 +27,39 @@ class FeedState {
   });
 }
 
+/// Snapshot capturé juste avant un refresh, pour permettre l'undo.
+/// Contient l'état UI + le backup des `last_impressed_at` côté backend.
+class FeedSnapshot {
+  final List<Content> items;
+  final List<FeedCarouselData> carousels;
+  final int page;
+  final bool hasNext;
+  final List<PreviousImpression> impressionsBackup;
+
+  const FeedSnapshot({
+    required this.items,
+    required this.carousels,
+    required this.page,
+    required this.hasNext,
+    required this.impressionsBackup,
+  });
+
+  FeedSnapshot copyWith({
+    List<PreviousImpression>? impressionsBackup,
+  }) =>
+      FeedSnapshot(
+        items: items,
+        carousels: carousels,
+        page: page,
+        hasNext: hasNext,
+        impressionsBackup: impressionsBackup ?? this.impressionsBackup,
+      );
+}
+
+/// Snapshot du dernier refresh, utilisé par le bandeau undo.
+/// `null` quand aucun undo n'est possible (pas de refresh récent ou undo déjà joué).
+final feedUndoSnapshotProvider = StateProvider<FeedSnapshot?>((ref) => null);
+
 // Provider des données du feed (Infinite Scroll + Briefing)
 final feedProvider = AsyncNotifierProvider<FeedNotifier, FeedState>(() {
   return FeedNotifier();
@@ -237,29 +270,90 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
-  /// Refresh feed: mark visible (scrolled-past) articles as "already shown",
-  /// then re-fetch. Only articles whose IDs are in [visibleContentIds] are
-  /// marked — articles loaded by infinite scroll but not yet seen are skipped.
-  Future<void> refreshArticles(Set<String> visibleContentIds) async {
+  /// Refresh feed: mark visible articles (cards + carousel items qui sont
+  /// pleinement apparus à l'écran) comme "déjà vus", puis re-fetch.
+  ///
+  /// Capture un snapshot de l'état UI + backup backend dans
+  /// [feedUndoSnapshotProvider] pour permettre l'undo via [undoLastRefresh].
+  /// Story 4.5b.
+  Future<void> refreshArticlesWithSnapshot(Set<String> visibleContentIds) async {
     final currentState = state.value;
     if (currentState == null) return;
 
-    // Only mark non-consumed, visible articles
-    final contentIds = currentState.items
+    // Collect IDs from main feed items (non-consumed + visible)
+    final mainIds = currentState.items
         .where((c) =>
             c.status != ContentStatus.consumed &&
             visibleContentIds.contains(c.id))
         .map((c) => c.id)
-        .toList();
+        .toSet();
 
-    if (contentIds.isEmpty) {
+    // Also include visible carousel items (carousels aren't in items[])
+    final carouselIds = <String>{};
+    for (final carousel in currentState.carousels) {
+      for (final item in carousel.items) {
+        if (visibleContentIds.contains(item.id)) {
+          carouselIds.add(item.id);
+        }
+      }
+    }
+
+    final allIds = {...mainIds, ...carouselIds}.toList();
+
+    if (allIds.isEmpty) {
+      // Nothing viewed → plain refetch, no undo snapshot.
       await refresh();
       return;
     }
 
+    // 1. Capture UI snapshot BEFORE calling backend
+    final snapshot = FeedSnapshot(
+      items: List<Content>.from(currentState.items),
+      carousels: List<FeedCarouselData>.from(currentState.carousels),
+      page: _page,
+      hasNext: _hasNext,
+      impressionsBackup: const [],
+    );
+
+    // 2. Call backend (returns previous_impressions for undo)
     final repository = ref.read(feedRepositoryProvider);
-    await repository.refreshFeed(contentIds);
+    final backups = await repository.refreshFeed(allIds);
+
+    // 3. Store enriched snapshot for undo
+    ref.read(feedUndoSnapshotProvider.notifier).state =
+        snapshot.copyWith(impressionsBackup: backups);
+
+    // 4. Refetch page 1
     await refresh();
+  }
+
+  /// Annule le dernier refresh : restaure l'état UI précédent et rollback
+  /// les `last_impressed_at` côté backend.
+  ///
+  /// Si aucun snapshot n'est disponible (expiré, déjà undo'd), no-op.
+  /// Story 4.5b.
+  Future<void> undoLastRefresh() async {
+    final snapshot = ref.read(feedUndoSnapshotProvider);
+    if (snapshot == null) return;
+
+    // 1. Restore UI state optimistically
+    _page = snapshot.page;
+    _hasNext = snapshot.hasNext;
+    state = AsyncData(FeedState(
+      items: snapshot.items,
+      carousels: snapshot.carousels,
+    ));
+
+    // 2. Clear snapshot immediately so double-tap does nothing
+    ref.read(feedUndoSnapshotProvider.notifier).state = null;
+
+    // 3. Rollback backend (fire-and-forget — UI is already restored)
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.undoRefresh(snapshot.impressionsBackup);
+    } catch (e) {
+      print('FeedNotifier: undoLastRefresh backend rollback failed: $e');
+    }
   }
 
   /// Mark a single article as "already seen" — permanent strong penalty.

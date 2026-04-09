@@ -818,6 +818,33 @@ class FeedCarouselData {
   }
 }
 
+/// Backup d'un `last_impressed_at` retourné par POST /feed/refresh
+/// pour permettre l'undo via POST /feed/refresh/undo.
+class PreviousImpression {
+  final String contentId;
+  final DateTime? previousLastImpressedAt;
+
+  PreviousImpression({
+    required this.contentId,
+    this.previousLastImpressedAt,
+  });
+
+  factory PreviousImpression.fromJson(Map<String, dynamic> json) {
+    final rawTs = json['previous_last_impressed_at'];
+    return PreviousImpression(
+      contentId: json['content_id'] as String,
+      previousLastImpressedAt:
+          rawTs == null ? null : DateTime.tryParse(rawTs as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'content_id': contentId,
+        'previous_last_impressed_at':
+            previousLastImpressedAt?.toUtc().toIso8601String(),
+      };
+}
+
 class FeedResponse {
   final List<Content> items;
   final Pagination pagination;
