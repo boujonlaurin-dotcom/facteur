@@ -180,7 +180,6 @@ class OnboardingState {
   final OnboardingAnswers answers;
   final bool isTransitioning;
   final bool showReaction;
-  final bool isRestart;
 
   const OnboardingState({
     this.currentSection = OnboardingSection.overview,
@@ -188,7 +187,6 @@ class OnboardingState {
     this.answers = const OnboardingAnswers(),
     this.isTransitioning = false,
     this.showReaction = false,
-    this.isRestart = false,
   });
 
   /// Nombre total de questions dans la Section 1
@@ -249,7 +247,6 @@ class OnboardingState {
     OnboardingAnswers? answers,
     bool? isTransitioning,
     bool? showReaction,
-    bool? isRestart,
   }) {
     return OnboardingState(
       currentSection: currentSection ?? this.currentSection,
@@ -257,7 +254,6 @@ class OnboardingState {
       answers: answers ?? this.answers,
       isTransitioning: isTransitioning ?? this.isTransitioning,
       showReaction: showReaction ?? this.showReaction,
-      isRestart: isRestart ?? this.isRestart,
     );
   }
 }
@@ -302,15 +298,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       // Always restore navigation position (needed for restart pre-config
       // written by auth_state._checkOnboardingStatus which sets section/question
       // without setting answers)
-      final savedIsRestart = box.get(_isRestartKey) as bool? ?? false;
-      if (savedSection != null || savedQuestion != null || savedIsRestart) {
+      if (savedSection != null || savedQuestion != null) {
         state = state.copyWith(
           currentSection: savedSection != null && savedSection is int
               ? OnboardingSection.values[savedSection]
               : state.currentSection,
           currentQuestionIndex:
               savedQuestion is int ? savedQuestion : state.currentQuestionIndex,
-          isRestart: savedIsRestart,
         );
       }
     } catch (e) {
@@ -319,15 +313,12 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   }
 
   /// Reset l'onboarding pour le recommencer (garde les réponses actuelles comme base)
-  static const String _isRestartKey = 'is_restart';
-
   void restartOnboarding() {
     state = state.copyWith(
       currentSection: OnboardingSection.overview,
       currentQuestionIndex: 0,
       showReaction: false,
       isTransitioning: false,
-      isRestart: true,
     );
     _saveAnswers();
   }
@@ -339,7 +330,6 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       await box.put(_answersKey, state.answers.toJson());
       await box.put(_sectionKey, state.currentSection.index);
       await box.put(_questionKey, state.currentQuestionIndex);
-      await box.put(_isRestartKey, state.isRestart);
       await box.put(_versionKey, _currentVersion);
     } catch (e) {
       // Ignorer les erreurs de sauvegarde

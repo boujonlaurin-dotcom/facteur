@@ -18,7 +18,6 @@ import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
 import 'questions/sources_page2_question.dart';
 import 'questions/finalize_question.dart';
-import 'questions/sensitive_themes_question.dart';
 import 'questions/intro_screen.dart';
 
 /// Écran d'onboarding principal
@@ -31,8 +30,6 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  bool _hasShownRestartWelcome = false;
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(onboardingProvider);
@@ -47,7 +44,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 left: FacteurSpacing.space2,
                 right: FacteurSpacing.space6,
                 top: FacteurSpacing.space6,
-                bottom: 0,
+                bottom: FacteurSpacing.space4,
               ),
               child: Row(
                 children: [
@@ -64,7 +61,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     const SizedBox(width: 48),
                   Expanded(
                     child: OnboardingProgressBar(
-                      sectionProgress: state.sectionProgress,
+                      progress: state.progress,
                       section: state.currentSection,
                     ),
                   ),
@@ -76,14 +73,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ],
               ),
             ),
-
-            Text(
-              state.currentSection.label,
-              style: Theme.of(context).textTheme.labelMedium,
-              textAlign: TextAlign.center,
-            ),
-
-            const SizedBox(height: FacteurSpacing.space2),
 
             Expanded(
               child: AnimatedSwitcher(
@@ -180,6 +169,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           },
         );
 
+      case Section1Question.approach:
+        return const ApproachQuestion(key: ValueKey('approach'));
     }
   }
 
@@ -188,9 +179,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final question = state.currentSection2Question;
 
     switch (question) {
-      case Section2Question.approach:
-        return const ApproachQuestion(key: ValueKey('approach'));
-
       case Section2Question.responseStyle:
         return const ResponseStyleQuestion(key: ValueKey('response_style'));
 
@@ -202,10 +190,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section2Question.digestMode:
         return const DigestModeQuestion(key: ValueKey('digest_mode'));
-
-      case Section2Question.sensitiveThemes:
-        return const SensitiveThemesQuestion(
-            key: ValueKey('sensitive_themes'));
     }
   }
 
@@ -215,13 +199,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     switch (question) {
       case Section3Question.themes:
-        // Show restart welcome screen before themes for returning users
-        if (state.isRestart && !_hasShownRestartWelcome) {
-          return _RestartWelcomeScreen(
-            key: const ValueKey('restart_welcome'),
-            onContinue: () => setState(() => _hasShownRestartWelcome = true),
-          );
-        }
         return const ThemesQuestion(key: ValueKey('themes'));
 
       case Section3Question.subtopics:
@@ -239,55 +216,3 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 }
 
-/// Écran d'accueil pour les users existants qui re-font l'onboarding (v3)
-class _RestartWelcomeScreen extends StatelessWidget {
-  final VoidCallback onContinue;
-
-  const _RestartWelcomeScreen({
-    super.key,
-    required this.onContinue,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Spacer(flex: 2),
-
-          Text(
-            OnboardingStrings.restartWelcomeTitle,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-
-          const SizedBox(height: FacteurSpacing.space3),
-
-          Text(
-            OnboardingStrings.restartWelcomeSubtitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                ),
-            textAlign: TextAlign.center,
-          ),
-
-          const Spacer(flex: 3),
-
-          ElevatedButton(
-            onPressed: onContinue,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-            ),
-            child: const Text(OnboardingStrings.restartStartButton),
-          ),
-
-          const SizedBox(height: FacteurSpacing.space4),
-        ],
-      ),
-    );
-  }
-}

@@ -19,10 +19,19 @@ security = HTTPBearer()
 # Cache pour les clés JWKS
 _jwks_cache = None
 
-# Cache pour le statut email confirmé (user_id -> (confirmed, timestamp))
-# Simple TTL cache pour réduire les requêtes DB pendant les pics de trafic
-_email_confirmed_cache = {}
-_EMAIL_CACHE_TTL_SECONDS = 300  # 5 minutes
+# Cache pour le statut email confirmé (user_id -> timestamp).
+#
+# POSITIVE-ONLY: on ne cache JAMAIS les False pour éviter de geler un user
+# fraîchement confirmé pendant la durée du TTL (bug: users bloqués sur l'écran
+# de confirmation alors qu'ils venaient de cliquer le lien). Voir
+# docs/bugs/bug-auth-session-persistence.md.
+#
+# TTL = 1h : un email confirmé dans auth.users ne redevient jamais
+# non-confirmé côté Supabase (opération one-way), donc aucun risque à garder
+# la valeur longtemps. 1h est aligné sur la durée de vie d'un JWT pour
+# minimiser les hits DB sur les users actifs avec JWT stale.
+_email_confirmed_cache: dict[str, float] = {}
+_EMAIL_CACHE_TTL_SECONDS = 3600  # 1h (positifs uniquement)
 
 import time
 
@@ -55,13 +64,14 @@ async def _check_email_confirmed_with_retry(
 
     global _email_confirmed_cache
 
-    # Check cache first
+    # Positive-only cache: si on a déjà vu cet user confirmé récemment, shortcut.
+    # Les False ne sont JAMAIS cachés pour ne pas geler un user qui vient de
+    # confirmer son email.
     current_time = time.time()
-    if user_id in _email_confirmed_cache:
-        cached_result, timestamp = _email_confirmed_cache[user_id]
-        if current_time - timestamp < _EMAIL_CACHE_TTL_SECONDS:
-            return cached_result
-        # Cache expired, remove it
+    cached_ts = _email_confirmed_cache.get(user_id)
+    if cached_ts is not None:
+        if current_time - cached_ts < _EMAIL_CACHE_TTL_SECONDS:
+            return True
         del _email_confirmed_cache[user_id]
 
     # Query database with retries
@@ -82,12 +92,9 @@ async def _check_email_confirmed_with_retry(
                 row = result.fetchone()
                 is_confirmed = row is not None and row[0] is not None
 
-                # Only cache positive (confirmed) results.
-                # Never cache false — if user just confirmed, we must
-                # pick it up on the next request instead of blocking
-                # them for up to 5 minutes.
+                # Cache positif uniquement (cf. note en tête de module).
                 if is_confirmed:
-                    _email_confirmed_cache[user_id] = (True, current_time)
+                    _email_confirmed_cache[user_id] = current_time
 
                 return is_confirmed
 
