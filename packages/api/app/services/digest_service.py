@@ -12,6 +12,7 @@ Safe reuse patterns:
 - Uses existing StreakService for gamification updates
 """
 
+import asyncio
 import hashlib
 import random
 import time
@@ -50,8 +51,161 @@ from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import TopicGroup
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
+
+
+# In-memory rate limit for the stale-fallback background regen.
+# Key: (user_id, target_date, is_serene). Value: monotonic timestamp of last spawn.
+# Prevents spawning N parallel regenerations when the same user opens the app
+# repeatedly while yesterday's fallback is being served.
+_BG_REGEN_RATE_LIMIT: dict[tuple[UUID, date, bool], float] = {}
+_BG_REGEN_COOLDOWN_S = 60.0  # 1 spawn per minute per (user, date, variant)
+
+# Strong references to in-flight background regen tasks. asyncio only holds
+# a WEAK reference to tasks spawned by create_task(), so without this set
+# the GC can cancel the regeneration mid-execution — which would defeat the
+# whole "stop serving stale content silently" fix. Tasks auto-remove
+# themselves via add_done_callback.
+_BG_REGEN_TASKS: set["asyncio.Task[None]"] = set()
+
+
+def _schedule_background_regen(
+    user_id: UUID,
+    target_date: date,
+    is_serene: bool,
+) -> None:
+    """Schedule a background regeneration of the digest for one user.
+
+    Used by the yesterday-fallback path so that serving stale content also
+    triggers the real generation. Each task opens its own AsyncSession so it
+    survives the request session being closed.
+
+    Rate-limited per (user, date, is_serene) to a single spawn per minute.
+    The spawned task is pinned in `_BG_REGEN_TASKS` so the event loop's weak
+    reference doesn't let it be garbage-collected mid-run.
+    """
+    import time as _time
+
+    key = (user_id, target_date, is_serene)
+    now_mono = _time.monotonic()
+    last = _BG_REGEN_RATE_LIMIT.get(key)
+    if last is not None and (now_mono - last) < _BG_REGEN_COOLDOWN_S:
+        logger.info(
+            "digest_background_regen_rate_limited",
+            user_id=str(user_id),
+            target_date=str(target_date),
+            is_serene=is_serene,
+            elapsed_s=round(now_mono - last, 1),
+        )
+        return
+    _BG_REGEN_RATE_LIMIT[key] = now_mono
+
+    # Periodic GC: remove entries older than 2x cooldown to prevent unbounded growth
+    if len(_BG_REGEN_RATE_LIMIT) > 1000:
+        cutoff = now_mono - (2 * _BG_REGEN_COOLDOWN_S)
+        for k in [k for k, v in _BG_REGEN_RATE_LIMIT.items() if v < cutoff]:
+            _BG_REGEN_RATE_LIMIT.pop(k, None)
+
+    async def _regen() -> None:
+        # Local import to avoid circulars
+        from app.database import async_session_maker
+        from app.services.digest_generation_state_service import (
+            mark_failed as _state_mark_failed,
+        )
+        from app.services.digest_generation_state_service import (
+            mark_in_progress as _state_mark_in_progress,
+        )
+        from app.services.digest_generation_state_service import (
+            mark_success as _state_mark_success,
+        )
+        from app.services.generation_state import is_generation_running
+
+        # If the batch is currently running, don't pile on — it will catch this user.
+        if is_generation_running():
+            logger.info(
+                "digest_background_regen_skipped_batch_running",
+                user_id=str(user_id),
+                target_date=str(target_date),
+            )
+            return
+
+        try:
+            async with async_session_maker() as bg_session:
+                bg_svc = DigestService(bg_session)
+                try:
+                    await _state_mark_in_progress(
+                        bg_session, user_id, target_date, is_serene
+                    )
+                    # force_regenerate=True bypasses the yesterday fallback
+                    # and goes straight to real generation. There is no
+                    # existing today-digest to delete (we just checked).
+                    await bg_svc.get_or_create_digest(
+                        user_id=user_id,
+                        target_date=target_date,
+                        is_serene=is_serene,
+                        force_regenerate=True,
+                    )
+                    await _state_mark_success(
+                        bg_session, user_id, target_date, is_serene
+                    )
+                    await bg_session.commit()
+                    logger.info(
+                        "digest_background_regen_completed",
+                        user_id=str(user_id),
+                        target_date=str(target_date),
+                        is_serene=is_serene,
+                    )
+                except Exception as e:
+                    await bg_session.rollback()
+                    # Record the failure in a fresh session so rollback
+                    # doesn't wipe the observability row.
+                    try:
+                        async with async_session_maker() as err_session:
+                            await _state_mark_failed(
+                                err_session,
+                                user_id,
+                                target_date,
+                                is_serene,
+                                str(e),
+                            )
+                            await err_session.commit()
+                    except Exception:
+                        logger.exception(
+                            "digest_background_regen_state_record_failed",
+                            user_id=str(user_id),
+                        )
+                    raise
+        except Exception:
+            logger.exception(
+                "digest_background_regen_failed",
+                user_id=str(user_id),
+                target_date=str(target_date),
+                is_serene=is_serene,
+            )
+
+    try:
+        task = asyncio.create_task(
+            _regen(),
+            name=f"digest_regen:{user_id}:{target_date}:{is_serene}",
+        )
+        # Pin the task so the event loop's weak reference can't let the GC
+        # cancel it mid-run. The done-callback cleans up after completion.
+        _BG_REGEN_TASKS.add(task)
+        task.add_done_callback(_BG_REGEN_TASKS.discard)
+        logger.info(
+            "digest_background_regen_scheduled",
+            user_id=str(user_id),
+            target_date=str(target_date),
+            is_serene=is_serene,
+        )
+    except RuntimeError:
+        # No running event loop (shouldn't happen in FastAPI request handling)
+        logger.warning(
+            "digest_background_regen_no_event_loop",
+            user_id=str(user_id),
+        )
 
 
 def _count_digest_items(digest_items) -> int:
@@ -153,7 +307,7 @@ class DigestService:
         start_time = time.time()
 
         if target_date is None:
-            target_date = date.today()
+            target_date = today_paris()
 
         logger.info(
             "digest_get_or_create", user_id=str(user_id), target_date=str(target_date)
@@ -188,16 +342,22 @@ class DigestService:
             "flat": "flat_v1",
         }.get(expected_format, "editorial_v1")
 
+        # Defer deletion of stale-format digest until AFTER the new digest is
+        # successfully generated. This avoids a hole where we delete a valid
+        # (but wrong-format) record and then fail to generate a replacement,
+        # leaving the user with no digest for today at all. If the generation
+        # fails below, we return the stale record as a fallback instead of
+        # nothing — consistency of "something to show" wins over strict format.
+        stale_format_digest: DailyDigest | None = None
         if existing_digest and existing_digest.format_version != expected_version:
             logger.info(
-                "digest_format_mismatch_regenerating",
+                "digest_format_mismatch_deferring_delete",
                 user_id=str(user_id),
                 digest_id=str(existing_digest.id),
                 cached=existing_digest.format_version,
                 expected=expected_version,
             )
-            await self.session.delete(existing_digest)
-            await self.session.flush()
+            stale_format_digest = existing_digest
             existing_digest = None
 
         if existing_digest:
@@ -233,23 +393,36 @@ class DigestService:
                     await self.session.delete(existing_digest)
                     await self.session.flush()
         # 1b. No digest for today — try serving yesterday's digest instantly
-        # Serve regardless of format_version: better to show yesterday's content
-        # in a slightly different format than to block the user for 20-30s
+        # while triggering a real background regeneration so the next read
+        # gets fresh content. Without the background trigger this fallback
+        # is a dead-end: the user sees yesterday's digest all day even when
+        # the batch never reran for them.
         if not force_regenerate:
             yesterday = target_date - timedelta(days=1)
             yesterday_digest = await self._get_existing_digest(
                 user_id, yesterday, is_serene=is_serene
             )
             if yesterday_digest:
-                logger.info(
-                    "digest_serving_yesterday_while_generating",
+                # Schedule background regen (rate-limited to 1/min per user-day-variant)
+                _schedule_background_regen(
+                    user_id=user_id,
+                    target_date=target_date,
+                    is_serene=is_serene,
+                )
+
+                logger.warning(
+                    "digest_serving_yesterday_while_regenerating",
                     user_id=str(user_id),
                     yesterday_date=str(yesterday),
                     format_version=yesterday_digest.format_version,
                     expected_version=expected_version,
                 )
                 try:
-                    return await self._build_digest_response(yesterday_digest, user_id)
+                    response = await self._build_digest_response(
+                        yesterday_digest, user_id
+                    )
+                    response.is_stale_fallback = True
+                    return response
                 except Exception:
                     logger.warning(
                         "digest_yesterday_fallback_render_failed",
@@ -282,7 +455,7 @@ class DigestService:
             sensitive_themes: list[str] | None = (
                 _json.loads(_st_raw) if _st_raw else None
             )
-        except _json.JSONDecodeError:
+        except (ValueError, TypeError):
             logger.warning("sensitive_themes malformed for user %s, ignoring", user_id)
             sensitive_themes = None
 
@@ -393,11 +566,46 @@ class DigestService:
             )
 
         if not digest_items:
-            # If even emergency fallback fails, then we truly have a problem (empty DB?)
+            # If even emergency fallback fails, try to salvage by returning
+            # the stale-format digest we deferred deleting above. Better a
+            # wrong-format-but-renderable digest than nothing.
             logger.error("digest_generation_failed_total", user_id=str(user_id))
+            if stale_format_digest is not None:
+                logger.warning(
+                    "digest_returning_stale_format_as_fallback",
+                    user_id=str(user_id),
+                    stale_format=stale_format_digest.format_version,
+                )
+                try:
+                    response = await self._build_digest_response(
+                        stale_format_digest, user_id
+                    )
+                    # Mark as stale so the mobile client auto-refetches, and
+                    # fire a background regen so the next poll has fresh
+                    # content. Without this the user is silently stuck on
+                    # wrong-format content for the rest of the day.
+                    response.is_stale_fallback = True
+                    _schedule_background_regen(
+                        user_id=user_id,
+                        target_date=target_date,
+                        is_serene=is_serene,
+                    )
+                    return response
+                except Exception:
+                    logger.exception(
+                        "digest_stale_format_fallback_render_failed",
+                        user_id=str(user_id),
+                    )
             return None
 
-        # 4. Store in database
+        # 4. Now that we know we have items to store, drop the stale-format
+        #    digest so the unique-constraint (user_id, target_date, is_serene)
+        #    doesn't conflict with the new insert.
+        if stale_format_digest is not None:
+            await self.session.delete(stale_format_digest)
+            await self.session.flush()
+            stale_format_digest = None
+
         step_start = time.time()
         if is_editorial_format:
             digest = await self._create_digest_record_editorial(

@@ -34,6 +34,7 @@ from app.schemas.digest import (
 )
 from app.services.digest_service import DigestService
 from app.services.generation_state import is_generation_running
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 
@@ -87,7 +88,7 @@ async def get_digest(
     # If batch generation is running and no digest exists yet, return 202
     # so the mobile app retries with backoff instead of blocking for 30s+
     if is_generation_running():
-        effective_date = target_date or date.today()
+        effective_date = target_date or today_paris()
         existing = await db.scalar(
             select(DailyDigest.id).where(
                 DailyDigest.user_id == user_uuid,
@@ -165,7 +166,7 @@ async def get_both_digests(
 
     # If batch generation is running and no digest exists yet, return 202
     if is_generation_running():
-        effective_date = target_date or date.today()
+        effective_date = target_date or today_paris()
         existing = await db.scalar(
             select(DailyDigest.id).where(
                 DailyDigest.user_id == user_uuid,

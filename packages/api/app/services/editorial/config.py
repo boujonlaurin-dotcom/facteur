@@ -59,6 +59,11 @@ class EditorialConfig:
     pepite_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.3, max_tokens=500)
     )
+    # Dedicated temperature for pépite rotation. Higher than the default
+    # prompt temperature so the LLM actually varies its picks across days
+    # on an identical candidate pool. Kept separate so operators can tune
+    # rotation behavior without fighting the base pepite_prompt settings.
+    pepite_rotation_temperature: float = 0.6
     a_la_une_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(
             system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
@@ -91,6 +96,7 @@ def load_editorial_config() -> EditorialConfig:
     writing_prompt = PromptConfig(system="", max_tokens=2000)
     writing_serene_prompt = PromptConfig(system="", max_tokens=2000)
     pepite_prompt = PromptConfig(system="", temperature=0.3, max_tokens=500)
+    pepite_rotation_temperature = 0.6
     a_la_une_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
     )
@@ -138,6 +144,10 @@ def load_editorial_config() -> EditorialConfig:
                 writing_serene_prompt = PromptConfig(**raw["writing_serene"])
             if raw and "pepite" in raw:
                 pepite_prompt = PromptConfig(**raw["pepite"])
+            if raw and "pepite_rotation_temperature" in raw:
+                pepite_rotation_temperature = float(
+                    raw["pepite_rotation_temperature"]
+                )
             if raw and "a_la_une" in raw:
                 a_la_une_prompt = PromptConfig(**raw["a_la_une"])
             if raw and "bonne_nouvelle" in raw:
@@ -155,6 +165,7 @@ def load_editorial_config() -> EditorialConfig:
         writing_prompt=writing_prompt,
         writing_serene_prompt=writing_serene_prompt,
         pepite_prompt=pepite_prompt,
+        pepite_rotation_temperature=pepite_rotation_temperature,
         a_la_une_prompt=a_la_une_prompt,
         bonne_nouvelle_prompt=bonne_nouvelle_prompt,
         actu_decalee_prompt=actu_decalee_prompt,

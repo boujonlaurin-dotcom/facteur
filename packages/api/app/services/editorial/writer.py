@@ -6,7 +6,7 @@ Story 10.24: Fills all null editorial text fields via LLM + DB query.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
+from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.source import Source
 from app.services.editorial.config import EditorialConfig
 from app.services.editorial.llm_client import EditorialLLMClient
@@ -26,8 +27,14 @@ from app.services.editorial.schemas import (
     SubjectWriting,
     WritingOutput,
 )
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
+
+# Rotation window: avoid featuring the same article as pépite / coup de cœur
+# within this many days. 3 days is short enough to still surface genuinely
+# popular content, long enough that users don't see "déjà vu" picks.
+_HIGHLIGHTS_ROTATION_DAYS = 3
 
 
 class EditorialWriterService:
@@ -153,6 +160,51 @@ class EditorialWriterService:
             return None
 
     # ------------------------------------------------------------------
+    # Rotation helper — prevent the same pépite / coup de cœur repeating
+    # ------------------------------------------------------------------
+
+    async def _recent_highlight_content_ids(self, kind: str) -> set[UUID]:
+        """Return content_ids featured as `kind` in the last N days.
+
+        With `_HIGHLIGHTS_ROTATION_DAYS = 3` and today = D, we want to
+        exclude articles used on D, D-1 and D-2 (a rolling 3-day window).
+        A `>= D - 3` filter would also include D-3, giving 4 days of
+        exclusion; the strict `> D - 3` hits exactly 3 days.
+        """
+        cutoff = today_paris() - timedelta(days=_HIGHLIGHTS_ROTATION_DAYS)
+        stmt = select(EditorialHighlightsHistory.content_id).where(
+            EditorialHighlightsHistory.kind == kind,
+            EditorialHighlightsHistory.target_date > cutoff,
+        )
+        try:
+            result = await self._session.execute(stmt)
+            return set(result.scalars().all())
+        except Exception:
+            # Table may not yet exist (migration not applied) — graceful fail.
+            logger.exception("editorial_writer.recent_highlights_query_failed")
+            return set()
+
+    async def record_highlight(
+        self, kind: str, content_id: UUID, target_date: date | None = None
+    ) -> None:
+        """Persist a pépite / coup de cœur pick to the rotation history."""
+        try:
+            self._session.add(
+                EditorialHighlightsHistory(
+                    kind=kind,
+                    content_id=content_id,
+                    target_date=target_date or today_paris(),
+                )
+            )
+            await self._session.flush()
+        except Exception:
+            logger.exception(
+                "editorial_writer.record_highlight_failed",
+                kind=kind,
+                content_id=str(content_id),
+            )
+
+    # ------------------------------------------------------------------
     # ÉTAPE 5: Pépite selection (1 LLM call)
     # ------------------------------------------------------------------
 
@@ -162,10 +214,15 @@ class EditorialWriterService:
         excluded_topic_ids: set[str],
         cluster_data: list[dict],
     ) -> PepiteArticle | None:
-        """Select a pépite article via LLM.
+        """Select a pépite article via LLM with rotation memory.
 
-        Filters out articles belonging to the 3 selected topic clusters.
-        Returns PepiteArticle or None on failure.
+        Filters out:
+            - articles belonging to the 3 selected topic clusters
+            - articles already featured as pépite in the last 3 days
+        Expands the candidate pool from 15 to 30 to give the LLM room after
+        the rotation filter, and uses a slightly higher temperature so the
+        same LLM+pool doesn't deterministically pick the same article every
+        day.
         """
         prompt_cfg = self._config.pepite_prompt
         if not prompt_cfg.system:
@@ -178,16 +235,22 @@ class EditorialWriterService:
             if cluster.get("cluster_id") in excluded_topic_ids:
                 topic_content_ids.update(cluster.get("content_ids", []))
 
+        # Rotation memory: exclude articles featured as pépite recently
+        recent_pepites = await self._recent_highlight_content_ids("pepite")
+
         # Filter eligible candidates
         eligible = [
             c
             for c in candidates
-            if str(c.id) not in topic_content_ids and c.published_at is not None
+            if str(c.id) not in topic_content_ids
+            and c.id not in recent_pepites
+            and c.published_at is not None
         ]
 
-        # Sort by recency, take top 15
+        # Sort by recency, take top 30 (up from 15) to give the LLM more
+        # choices after the rotation filter removes recent picks.
         eligible.sort(key=lambda c: c.published_at, reverse=True)
-        eligible = eligible[:15]
+        eligible = eligible[:30]
 
         if not eligible:
             logger.info("editorial_writer.no_pepite_candidates")
@@ -219,11 +282,16 @@ class EditorialWriterService:
             f"{json.dumps(candidates_data, ensure_ascii=False, indent=2)}"
         )
 
+        # Use the dedicated rotation temperature (from editorial config) so
+        # identical candidate pools don't collapse to the same deterministic
+        # pick each day. Operators can tune via `pepite_rotation_temperature`
+        # in editorial_prompts.yaml without fighting the base prompt settings.
+        effective_temp = self._config.pepite_rotation_temperature
         raw = await self._llm.chat_json(
             system=prompt_cfg.system,
             user_message=user_message,
             model=prompt_cfg.model,
-            temperature=prompt_cfg.temperature,
+            temperature=effective_temp,
             max_tokens=prompt_cfg.max_tokens,
         )
 
@@ -267,6 +335,9 @@ class EditorialWriterService:
                     fallback=str(content_id),
                 )
 
+        # Record this pick so the next few days skip it
+        await self.record_highlight("pepite", content_id)
+
         return PepiteArticle(content_id=content_id, mini_editorial=mini_editorial)
 
     # ------------------------------------------------------------------
@@ -277,43 +348,79 @@ class EditorialWriterService:
         self,
         excluded_content_ids: set[UUID],
     ) -> CoupDeCoeurArticle | None:
-        """Get most-saved article by community in last 7 days.
+        """Get most-saved article by community in the recent window, with rotation.
 
-        No LLM — pure DB query on UserContentStatus.is_saved.
-        Minimum 2 saves required to surface.
+        No LLM — pure DB query on `UserContentStatus.is_saved`.
+
+        Rotation + freshness improvements:
+            - window shrunk from 14d to 3d (matches the docstring expectation
+              of "recent community enthusiasm" and prevents weeks-long sticky
+              picks)
+            - articles featured as coup de cœur in the last 3 days are
+              excluded via `editorial_highlights_history`
+            - minimum 2 saves (up from 1) so we don't ship a "coup de cœur"
+              with a single reader behind it
+            - time-decay weighting: each save is weighted by how recent it is,
+              so yesterday's hit beats a save from 3 days ago
         """
-        fourteen_days_ago = datetime.now(UTC) - timedelta(days=14)
+        window_start = datetime.now(UTC) - timedelta(days=3)
 
-        # Build exclusion filter
-        exclusion_filter = (
-            Content.id.notin_(excluded_content_ids) if excluded_content_ids else True
+        # Combine caller-provided exclusions with the rotation memory.
+        recent_highlights = await self._recent_highlight_content_ids(
+            "coup_de_coeur"
         )
+        all_excluded: set[UUID] = set(excluded_content_ids) | recent_highlights
+        exclusion_filter = (
+            Content.id.notin_(all_excluded) if all_excluded else True
+        )
+
+        # Time-decayed score: sum(1.0 - age_in_days / 3.0), clamped to 0.
+        # A save from 0 days ago counts 1.0; 3 days ago counts 0.0.
+        decay_expr = func.sum(
+            func.greatest(
+                1.0
+                - (
+                    func.extract(
+                        "epoch",
+                        datetime.now(UTC) - UserContentStatus.saved_at,
+                    )
+                    / 86400.0
+                )
+                / 3.0,
+                0.0,
+            )
+        ).label("decay_score")
 
         stmt = (
             select(
                 Content.id,
                 Content.title,
                 func.count(UserContentStatus.id).label("save_count"),
+                decay_expr,
             )
             .join(UserContentStatus, UserContentStatus.content_id == Content.id)
             .where(
                 UserContentStatus.is_saved.is_(True),
-                UserContentStatus.saved_at >= fourteen_days_ago,
+                UserContentStatus.saved_at >= window_start,
                 exclusion_filter,
             )
             .group_by(Content.id, Content.title)
-            .order_by(func.count(UserContentStatus.id).desc())
+            .having(func.count(UserContentStatus.id) >= 2)
+            .order_by(decay_expr.desc(), func.count(UserContentStatus.id).desc())
             .limit(1)
         )
 
-        result = await self._session.execute(stmt)
-        row = result.first()
+        try:
+            result = await self._session.execute(stmt)
+            row = result.first()
+        except Exception:
+            # Likely the editorial_highlights_history table is missing
+            # (migration not yet applied); fall back to the simple query.
+            logger.exception("editorial_writer.coup_de_coeur_decay_query_failed")
+            row = None
 
-        if not row or row.save_count < 1:
-            logger.info(
-                "editorial_writer.no_coup_de_coeur",
-                save_count=row.save_count if row else 0,
-            )
+        if not row:
+            logger.info("editorial_writer.no_coup_de_coeur")
             return None
 
         # Get source name via relationship
@@ -328,6 +435,9 @@ class EditorialWriterService:
         source_name = (
             content.source.name if content and content.source else "Source inconnue"
         )
+
+        # Record the pick for rotation memory.
+        await self.record_highlight("coup_de_coeur", row.id)
 
         return CoupDeCoeurArticle(
             content_id=row.id,

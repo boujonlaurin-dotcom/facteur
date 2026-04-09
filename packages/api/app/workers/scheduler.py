@@ -23,21 +23,25 @@ scheduler: AsyncIOScheduler | None = None
 async def _digest_watchdog() -> None:
     """Watchdog 7h30 : vérifie la couverture digest et relance si nécessaire.
 
-    Compte le ratio (digests générés / users actifs) pour aujourd'hui.
-    Si < 90 %, relance run_digest_generation() qui skip les users déjà traités.
-    """
-    import datetime
-    from zoneinfo import ZoneInfo
+    Counts `(user_id, is_serene)` pairs so a user is only considered
+    "covered" when BOTH the normal and serein variants exist. Previously
+    the watchdog counted distinct `user_id`s, which meant a user missing
+    only the serein variant was never retried and flipped to silent
+    fallback forever.
 
+    If coverage < 90 %, relance `run_digest_generation()` qui skip les
+    users already fully covered.
+    """
     from sqlalchemy import func, select
 
     from app.database import async_session_maker
     from app.models.daily_digest import DailyDigest
     from app.models.user import UserProfile
+    from app.utils.time import today_paris
 
     try:
         async with async_session_maker() as session:
-            today = datetime.datetime.now(ZoneInfo("Europe/Paris")).date()
+            today = today_paris()
 
             total_users = await session.scalar(
                 select(func.count()).select_from(UserProfile)
@@ -46,18 +50,28 @@ async def _digest_watchdog() -> None:
                 logger.info("digest_watchdog_no_users")
                 return
 
-            digest_count = await session.scalar(
-                select(func.count(func.distinct(DailyDigest.user_id))).where(
-                    DailyDigest.target_date == today
-                )
+            # Expected coverage = 2 digests per user (normal + serein).
+            # Count distinct (user_id, is_serene) pairs via a GROUP BY
+            # subquery rather than string-concat casts — clearer intent,
+            # no implicit bool→text coercion, portable across backends.
+            expected_pairs = total_users * 2
+            pair_subq = (
+                select(DailyDigest.user_id, DailyDigest.is_serene)
+                .where(DailyDigest.target_date == today)
+                .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+                .subquery()
             )
+            pair_count = await session.scalar(
+                select(func.count()).select_from(pair_subq)
+            ) or 0
 
-            coverage = digest_count / total_users if total_users else 0
+            coverage = pair_count / expected_pairs if expected_pairs else 0
             logger.info(
                 "digest_watchdog_check",
                 target_date=str(today),
                 total_users=total_users,
-                digest_count=digest_count,
+                expected_pairs=expected_pairs,
+                pair_count=pair_count,
                 coverage_pct=round(coverage * 100, 1),
             )
 
@@ -65,7 +79,7 @@ async def _digest_watchdog() -> None:
                 logger.warning(
                     "digest_watchdog_low_coverage_triggering_generation",
                     coverage_pct=round(coverage * 100, 1),
-                    missing=total_users - digest_count,
+                    missing=expected_pairs - pair_count,
                 )
                 await run_digest_generation(target_date=today)
                 logger.info("digest_watchdog_generation_completed")

@@ -8,6 +8,8 @@ from app.models.curation import CurationAnnotation
 from app.models.daily_digest import DailyDigest
 from app.models.daily_top3 import DailyTop3
 from app.models.digest_completion import DigestCompletion
+from app.models.digest_generation_state import DigestGenerationState
+from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.perspective_analysis import PerspectiveAnalysis
@@ -51,6 +53,8 @@ __all__ = [
     # Digest Central (Epic 10)
     "DailyDigest",
     "DigestCompletion",
+    "DigestGenerationState",
+    "EditorialHighlightsHistory",
     # Personalization (Story 4.7)
     "UserPersonalization",
     # Collections (Saved Groups)

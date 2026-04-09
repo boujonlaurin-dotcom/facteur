@@ -2004,6 +2004,11 @@ mixin _$DigestResponse {
   bool get isCompleted => throw _privateConstructorUsedError;
   @JsonKey(name: 'completed_at')
   DateTime? get completedAt =>
+      throw _privateConstructorUsedError; // True when the API served yesterday's digest while regenerating today's
+// in the background. Mobile should auto-refetch after a short delay so
+// the user gets fresh content without manual pull-to-refresh.
+  @JsonKey(name: 'is_stale_fallback')
+  bool get isStaleFallback =>
       throw _privateConstructorUsedError; // Editorial fields (populated when format_version="editorial_v1")
   @JsonKey(name: 'header_text')
   String? get headerText => throw _privateConstructorUsedError;
@@ -2042,6 +2047,7 @@ abstract class $DigestResponseCopyWith<$Res> {
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt,
+      @JsonKey(name: 'is_stale_fallback') bool isStaleFallback,
       @JsonKey(name: 'header_text') String? headerText,
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
@@ -2080,6 +2086,7 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
     Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
+    Object? isStaleFallback = null,
     Object? headerText = freezed,
     Object? closureText = freezed,
     Object? ctaText = freezed,
@@ -2133,6 +2140,10 @@ class _$DigestResponseCopyWithImpl<$Res, $Val extends DigestResponse>
           ? _value.completedAt
           : completedAt // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      isStaleFallback: null == isStaleFallback
+          ? _value.isStaleFallback
+          : isStaleFallback // ignore: cast_nullable_to_non_nullable
+              as bool,
       headerText: freezed == headerText
           ? _value.headerText
           : headerText // ignore: cast_nullable_to_non_nullable
@@ -2233,6 +2244,7 @@ abstract class _$$DigestResponseImplCopyWith<$Res>
       @JsonKey(name: 'completion_threshold') int completionThreshold,
       @JsonKey(name: 'is_completed') bool isCompleted,
       @JsonKey(name: 'completed_at') DateTime? completedAt,
+      @JsonKey(name: 'is_stale_fallback') bool isStaleFallback,
       @JsonKey(name: 'header_text') String? headerText,
       @JsonKey(name: 'closure_text') String? closureText,
       @JsonKey(name: 'cta_text') String? ctaText,
@@ -2273,6 +2285,7 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
     Object? completionThreshold = null,
     Object? isCompleted = null,
     Object? completedAt = freezed,
+    Object? isStaleFallback = null,
     Object? headerText = freezed,
     Object? closureText = freezed,
     Object? ctaText = freezed,
@@ -2326,6 +2339,10 @@ class __$$DigestResponseImplCopyWithImpl<$Res>
           ? _value.completedAt
           : completedAt // ignore: cast_nullable_to_non_nullable
               as DateTime?,
+      isStaleFallback: null == isStaleFallback
+          ? _value.isStaleFallback
+          : isStaleFallback // ignore: cast_nullable_to_non_nullable
+              as bool,
       headerText: freezed == headerText
           ? _value.headerText
           : headerText // ignore: cast_nullable_to_non_nullable
@@ -2373,6 +2390,7 @@ class _$DigestResponseImpl extends _DigestResponse {
       @JsonKey(name: 'completion_threshold') this.completionThreshold = 5,
       @JsonKey(name: 'is_completed') this.isCompleted = false,
       @JsonKey(name: 'completed_at') this.completedAt,
+      @JsonKey(name: 'is_stale_fallback') this.isStaleFallback = false,
       @JsonKey(name: 'header_text') this.headerText,
       @JsonKey(name: 'closure_text') this.closureText,
       @JsonKey(name: 'cta_text') this.ctaText,
@@ -2432,6 +2450,12 @@ class _$DigestResponseImpl extends _DigestResponse {
   @override
   @JsonKey(name: 'completed_at')
   final DateTime? completedAt;
+// True when the API served yesterday's digest while regenerating today's
+// in the background. Mobile should auto-refetch after a short delay so
+// the user gets fresh content without manual pull-to-refresh.
+  @override
+  @JsonKey(name: 'is_stale_fallback')
+  final bool isStaleFallback;
 // Editorial fields (populated when format_version="editorial_v1")
   @override
   @JsonKey(name: 'header_text')
@@ -2455,7 +2479,7 @@ class _$DigestResponseImpl extends _DigestResponse {
 
   @override
   String toString() {
-    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, formatVersion: $formatVersion, items: $items, topics: $topics, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt, headerText: $headerText, closureText: $closureText, ctaText: $ctaText, pepite: $pepite, coupDeCoeur: $coupDeCoeur, actuDecalee: $actuDecalee, quote: $quote)';
+    return 'DigestResponse(digestId: $digestId, userId: $userId, targetDate: $targetDate, generatedAt: $generatedAt, mode: $mode, formatVersion: $formatVersion, items: $items, topics: $topics, completionThreshold: $completionThreshold, isCompleted: $isCompleted, completedAt: $completedAt, isStaleFallback: $isStaleFallback, headerText: $headerText, closureText: $closureText, ctaText: $ctaText, pepite: $pepite, coupDeCoeur: $coupDeCoeur, actuDecalee: $actuDecalee, quote: $quote)';
   }
 
   @override
@@ -2481,6 +2505,8 @@ class _$DigestResponseImpl extends _DigestResponse {
                 other.isCompleted == isCompleted) &&
             (identical(other.completedAt, completedAt) ||
                 other.completedAt == completedAt) &&
+            (identical(other.isStaleFallback, isStaleFallback) ||
+                other.isStaleFallback == isStaleFallback) &&
             (identical(other.headerText, headerText) ||
                 other.headerText == headerText) &&
             (identical(other.closureText, closureText) ||
@@ -2509,6 +2535,7 @@ class _$DigestResponseImpl extends _DigestResponse {
       completionThreshold,
       isCompleted,
       completedAt,
+      isStaleFallback,
       headerText,
       closureText,
       ctaText,
@@ -2545,6 +2572,7 @@ abstract class _DigestResponse extends DigestResponse {
       @JsonKey(name: 'completion_threshold') final int completionThreshold,
       @JsonKey(name: 'is_completed') final bool isCompleted,
       @JsonKey(name: 'completed_at') final DateTime? completedAt,
+      @JsonKey(name: 'is_stale_fallback') final bool isStaleFallback,
       @JsonKey(name: 'header_text') final String? headerText,
       @JsonKey(name: 'closure_text') final String? closureText,
       @JsonKey(name: 'cta_text') final String? ctaText,
@@ -2588,6 +2616,11 @@ abstract class _DigestResponse extends DigestResponse {
   @override
   @JsonKey(name: 'completed_at')
   DateTime? get completedAt;
+  @override // True when the API served yesterday's digest while regenerating today's
+// in the background. Mobile should auto-refetch after a short delay so
+// the user gets fresh content without manual pull-to-refresh.
+  @JsonKey(name: 'is_stale_fallback')
+  bool get isStaleFallback;
   @override // Editorial fields (populated when format_version="editorial_v1")
   @JsonKey(name: 'header_text')
   String? get headerText;

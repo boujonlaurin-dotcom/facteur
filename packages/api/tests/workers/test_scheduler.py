@@ -10,12 +10,12 @@ Tests:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 
-from app.workers.scheduler import start_scheduler, stop_scheduler
+from app.workers.scheduler import _digest_watchdog, start_scheduler, stop_scheduler
 
 
 class TestScheduler:
@@ -234,3 +234,93 @@ class TestDigestJobConfiguration:
                 f"Expected hour=7, got {trigger.fields[5]}"
             assert str(trigger.fields[6]) == '30', \
                 f"Expected minute=30, got {trigger.fields[6]}"
+
+
+class TestDigestWatchdogCoverage:
+    """Watchdog must count (user_id, is_serene) pairs, not distinct users.
+
+    Before the fix, a user with only the normal variant generated would show
+    as "fully covered" by the watchdog, so the missing serein variant was
+    never retried.
+    """
+
+    @pytest.mark.asyncio
+    async def test_watchdog_expects_two_pairs_per_user(self):
+        """total_users * 2 is the expected pair count (normal + serein)."""
+        from contextlib import asynccontextmanager
+
+        # Fake session: 10 users, 15 pairs generated (= 75% coverage)
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(side_effect=[10, 15])  # total, pairs
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.database.async_session_maker",
+                side_effect=lambda: fake_sm(),
+            ),
+            patch(
+                "app.workers.scheduler.run_digest_generation",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            await _digest_watchdog()
+
+        # 15 / 20 = 75% < 90% → should trigger run_digest_generation
+        mock_run.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_watchdog_skips_generation_when_coverage_ok(self):
+        """>= 90% pair coverage should NOT trigger a rerun."""
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+        # 10 users, 19 pairs = 95% coverage
+        mock_session.scalar = AsyncMock(side_effect=[10, 19])
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.database.async_session_maker",
+                side_effect=lambda: fake_sm(),
+            ),
+            patch(
+                "app.workers.scheduler.run_digest_generation",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            await _digest_watchdog()
+
+        mock_run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_watchdog_handles_zero_users(self):
+        """No users = nothing to do, no crash on division-by-zero."""
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=0)
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.database.async_session_maker",
+                side_effect=lambda: fake_sm(),
+            ),
+            patch(
+                "app.workers.scheduler.run_digest_generation",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            await _digest_watchdog()
+
+        mock_run.assert_not_awaited()
