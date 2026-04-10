@@ -109,6 +109,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _scrollStopTimer;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
+  double _prevNativeScrollOffset = 0.0;
   late AnimationController _headerAutoController;
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
@@ -282,6 +283,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Reading progress: track scroll depth
     _scrollController.addListener(_onScrollReadingProgress);
+
+    // Header hide/show: track scroll delta for native in-app content
+    _scrollController.addListener(_onNativeScrollHeader);
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -514,6 +518,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _headerAutoController.forward(from: 0);
   }
 
+  /// Scroll listener for native (in-app) content — computes delta from previous
+  /// offset and forwards it to [_onScrollDelta].
+  void _onNativeScrollHeader() {
+    if (!_scrollController.hasClients || _isWebViewActive) return;
+    final current = _scrollController.offset;
+    final delta = current - _prevNativeScrollOffset;
+    _prevNativeScrollOffset = current;
+    if (delta != 0) _onScrollDelta(delta);
+  }
+
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
@@ -543,7 +557,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _inactivityTimer?.cancel();
     if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
+        final nativeScrollY =
+            _scrollController.hasClients ? _scrollController.offset : 0.0;
+        final scrolledPastTop = _webScrollY > 0 || nativeScrollY > 0;
+        if (mounted && scrolledPastTop && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });

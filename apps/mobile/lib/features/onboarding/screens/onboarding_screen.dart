@@ -19,6 +19,7 @@ import 'questions/sources_question.dart';
 import 'questions/sources_page2_question.dart';
 import 'questions/finalize_question.dart';
 import 'questions/intro_screen.dart';
+import 'questions/sensitive_themes_question.dart';
 
 /// Écran d'onboarding principal
 /// Gère la navigation entre les sections et questions
@@ -61,7 +62,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     const SizedBox(width: 48),
                   Expanded(
                     child: OnboardingProgressBar(
-                      progress: state.progress,
+                      sectionProgress: state.sectionProgress,
                       section: state.currentSection,
                     ),
                   ),
@@ -168,9 +169,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ref.read(onboardingProvider.notifier).continueAfterReaction();
           },
         );
-
-      case Section1Question.approach:
-        return const ApproachQuestion(key: ValueKey('approach'));
     }
   }
 
@@ -179,6 +177,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final question = state.currentSection2Question;
 
     switch (question) {
+      case Section2Question.approach:
+        return const ApproachQuestion(key: ValueKey('approach'));
+
       case Section2Question.responseStyle:
         return const ResponseStyleQuestion(key: ValueKey('response_style'));
 
@@ -190,6 +191,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section2Question.digestMode:
         return const DigestModeQuestion(key: ValueKey('digest_mode'));
+
+      case Section2Question.sensitiveThemes:
+        return const SensitiveThemesQuestion(key: ValueKey('sensitive_themes'));
     }
   }
 
