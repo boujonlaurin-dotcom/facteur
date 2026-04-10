@@ -373,6 +373,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
+    // Quote block first in serein mode — sets the tone for the reading
+    if (isSerene && widget.digest?.quote != null) {
+      sections.add(QuoteBlock(quote: widget.digest!.quote!));
+    }
+
     // Topics with intro text, editorial DigestCards, and transition text
     for (int i = 0; i < widget.topics!.length; i++) {
       final topic = widget.topics![i];
@@ -399,11 +404,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onDismissMuteTopic: _handleLocalMuteTopic,
         ),
       );
-
-      // Quote after first topic (Bonne Nouvelle) in serein mode
-      if (i == 0 && isSerene && widget.digest?.quote != null) {
-        sections.add(QuoteBlock(quote: widget.digest!.quote!));
-      }
 
       // Transition text between topics (not after last one)
       if (topic.transitionText != null && i < widget.topics!.length - 1) {
