@@ -70,6 +70,9 @@ dependencies:
   shared_preferences: ^2.5.4
   confetti: ^0.7.0
 
+  # Viewport tracking (Story 4.5b: feed refresh viewport-aware)
+  visibility_detector: ^0.4.0+2
+
   # Auto Update (Android APK)
   package_info_plus: ^8.0.0
   path_provider: ^2.1.2

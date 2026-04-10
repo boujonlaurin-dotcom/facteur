@@ -94,10 +94,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   final _supabase = Supabase.instance.client;
   Timer? _refreshTimer;
 
-  /// Timestamp of the last forceUnconfirmed set. Used to debounce
-  /// repeated 403s and avoid redirect loops.
-  DateTime? _lastForceUnconfirmedAt;
-
   /// Version minimale de l'onboarding requise.
   /// Incrémentée lors de changements majeurs pour forcer les users existants
   /// à repasser par l'onboarding (skip vers Section 3 uniquement).
@@ -223,14 +219,18 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         'AuthStateNotifier: Auth event: ${data.event}, User: ${user?.email ?? "None"}',
       );
 
-      // Éviter les mises à jour inutiles si l'user n'a pas changé
+      // Éviter les mises à jour inutiles si l'user n'a pas changé.
+      // IMPORTANT: si `forceUnconfirmed` est true, on NE court-circuite PAS —
+      // tout event Supabase (notamment TOKEN_REFRESHED avec un JWT à jour)
+      // doit pouvoir reset le flag (sinon l'user reste bloqué sur l'écran
+      // de confirmation email même après que le backend a validé son email).
       final bool sameUser = state.user?.id == user?.id &&
           !state.isLoading &&
           state.user != null;
-      if (sameUser) {
+      if (sameUser && !state.forceUnconfirmed) {
         final bool emailStatusChanged =
             state.user?.emailConfirmedAt != user?.emailConfirmedAt;
-        if (!emailStatusChanged && !state.forceUnconfirmed) {
+        if (!emailStatusChanged) {
           return;
         }
       }
@@ -242,9 +242,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
                   ?.any((p) => p != 'email') ==
               true;
 
-      // Capturer AVANT la mise à jour du state pour détecter les transitions
-      final bool isNewSignIn = state.user == null && user != null;
-
       state = state.copyWith(
         user: user,
         isLoading: false,
@@ -252,8 +249,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       );
 
       if (user != null) {
-        // Check onboarding on first sign-in (new user appearing)
-        if (isNewSignIn) {
+        // Only check onboarding on actual sign-in (new user), not token refreshes
+        if (state.user?.id != user.id) {
           _checkOnboardingStatus();
         }
         _startProactiveRefreshTimer();
@@ -407,9 +404,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       await box.put('remember_me', rememberMe);
 
       await _supabase.auth.signInWithPassword(email: email, password: password);
-      // Don't set isLoading: false here — the auth listener will set both
-      // user and isLoading: false atomically, avoiding a transient state
-      // where isLoading=false but user=null that causes a redirect loop.
+      state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
       debugPrint(
           'AUTH_DEBUG signIn AuthException: ${e.message} | statusCode: ${e.statusCode}');
@@ -607,6 +602,17 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(clearPendingEmail: true);
   }
 
+  /// Force le reset du flag `forceUnconfirmed` (utilisé par l'ApiClient quand
+  /// une requête réussit — prouvant que le backend considère l'user comme
+  /// confirmé, indépendamment du contenu du JWT côté mobile).
+  void clearForceUnconfirmed() {
+    if (state.forceUnconfirmed) {
+      debugPrint(
+          'AuthStateNotifier: ✅ Clearing forceUnconfirmed (backend accepted request).');
+      state = state.copyWith(forceUnconfirmed: false);
+    }
+  }
+
   /// Rafraîchit les informations de l'utilisateur depuis Supabase
   /// Utile pour vérifier si l'email a été confirmé
   Future<void> refreshUser() async {
@@ -633,18 +639,12 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     } on AuthException catch (e) {
       debugPrint(
           'AuthStateNotifier: Refresh failed (AuthException): ${e.message}');
-      // Détecter si le refresh token est expiré/invalide.
-      // IMPORTANT: Ne matcher que des messages spécifiques à l'expiration
-      // de session. "invalid" seul est trop large et cause des déconnexions
-      // intempestives sur des erreurs transitoires.
+      // Détecter si le refresh token est expiré/invalide
       final msg = e.message.toLowerCase();
       if (msg.contains('refresh_token') ||
           msg.contains('token has expired') ||
-          msg.contains('invalid refresh token') ||
-          msg.contains('invalid claim') ||
-          msg.contains('session_not_found') ||
-          msg.contains('session not found') ||
-          msg.contains('user not found')) {
+          msg.contains('invalid') ||
+          msg.contains('session not found')) {
         debugPrint(
             'AuthStateNotifier: Refresh token expired. Ending session.');
         await handleSessionExpired();
@@ -667,27 +667,21 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   }
 
   /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend).
-  /// Debounce de 30s : si on vient de reset forceUnconfirmed (user a confirmé
-  /// son email et refreshUser() a détecté la confirmation), on ignore les 403
-  /// pendant 30s pour laisser le temps au backend de propager la confirmation.
+  ///
+  /// N'est appelé que par `ApiClient.onAuthError(403)` APRÈS que l'ApiClient
+  /// ait lui-même tenté un `refreshSession()` + retry de la requête. Donc à
+  /// ce stade, on sait que le user est réellement non-confirmé côté DB et on
+  /// n'essaie pas un 2e refresh (éviterait rate-limit Supabase + double
+  /// logout si refresh token expiré).
+  ///
+  /// Le recovery éventuel (user qui confirme ensuite) passe par le callback
+  /// `onAuthRecovered` déclenché dès qu'une requête aboutit → `clearForceUnconfirmed`.
   void setForceUnconfirmed() {
-    if (state.forceUnconfirmed) return;
-
-    // Cooldown: ignore 403 si on a récemment été marqué comme non-confirmé
-    // puis re-confirmé (évite les boucles confirmation→403→confirmation)
-    if (_lastForceUnconfirmedAt != null) {
-      final elapsed = DateTime.now().difference(_lastForceUnconfirmedAt!);
-      if (elapsed.inSeconds < 30) {
-        debugPrint(
-            'AuthStateNotifier: Ignoring 403 — cooldown active (${elapsed.inSeconds}s < 30s).');
-        return;
-      }
+    if (!state.forceUnconfirmed) {
+      debugPrint(
+          'AuthStateNotifier: ⛔️ Backend returned 403 email_not_confirmed.');
+      state = state.copyWith(forceUnconfirmed: true);
     }
-
-    debugPrint(
-        'AuthStateNotifier: ⛔️ Backend returned 403. Forcing UNCONFIRMED state.');
-    _lastForceUnconfirmedAt = DateTime.now();
-    state = state.copyWith(forceUnconfirmed: true);
   }
 }
 

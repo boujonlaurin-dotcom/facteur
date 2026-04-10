@@ -9,7 +9,12 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
-from app.schemas.content import FeedRefreshRequest
+from app.schemas.content import (
+    FeedRefreshRequest,
+    FeedRefreshResponse,
+    FeedRefreshUndoRequest,
+    PreviousImpression,
+)
 from app.schemas.feed import (
     CarouselInfo,
     CarouselItemBadge,
@@ -168,7 +173,7 @@ async def get_personalized_feed(
     )
 
 
-@router.post("/refresh", status_code=200)
+@router.post("/refresh", response_model=FeedRefreshResponse, status_code=200)
 async def refresh_feed(
     body: FeedRefreshRequest,
     db: AsyncSession = Depends(get_db),
@@ -180,15 +185,41 @@ async def refresh_feed(
     Upsert user_content_status avec last_impressed_at = now().
     Le status reste UNSEEN (pas d'exclusion du feed), seul le scoring
     applique un malus temporel via ImpressionLayer.
+
+    Retourne `previous_impressions` — backup des `last_impressed_at` précédents
+    pour chaque content_id (peut être None si pas de row préexistante),
+    afin de permettre l'undo via POST /feed/refresh/undo.
     """
+    from sqlalchemy import select
     from sqlalchemy.dialects.postgresql import insert
 
     from app.models.enums import ContentStatus
 
     user_uuid = UUID(current_user_id)
     now = datetime.now(UTC)
-    refreshed = 0
 
+    # 1. Snapshot des valeurs précédentes (pour undo)
+    existing_result = await db.execute(
+        select(
+            UserContentStatus.content_id,
+            UserContentStatus.last_impressed_at,
+        )
+        .where(UserContentStatus.user_id == user_uuid)
+        .where(UserContentStatus.content_id.in_(body.content_ids))
+    )
+    existing_map: dict[UUID, datetime | None] = {
+        row.content_id: row.last_impressed_at for row in existing_result
+    }
+    previous_impressions = [
+        PreviousImpression(
+            content_id=cid,
+            previous_last_impressed_at=existing_map.get(cid),
+        )
+        for cid in body.content_ids
+    ]
+
+    # 2. UPSERT last_impressed_at = now()
+    refreshed = 0
     for content_id in body.content_ids:
         stmt = (
             insert(UserContentStatus)
@@ -210,7 +241,62 @@ async def refresh_feed(
 
     await db.commit()
     logger.info("feed_refresh", user_id=current_user_id, refreshed=refreshed)
-    return {"refreshed": refreshed}
+    return FeedRefreshResponse(
+        refreshed=refreshed,
+        previous_impressions=previous_impressions,
+    )
+
+
+@router.post("/refresh/undo", status_code=200)
+async def undo_refresh(
+    body: FeedRefreshUndoRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    Annule un refresh précédent : restaure les `last_impressed_at` précédents.
+
+    Pour chaque entrée :
+    - Si `previous_last_impressed_at` est NULL, l'article revient à son état
+      initial (jamais impressionné).
+    - Sinon, le timestamp précédent est restauré → l'ImpressionLayer recalcule
+      la pénalité sur la base de l'ancienne valeur.
+
+    Idempotent : rejouer l'undo ne change rien (les valeurs sont déjà restaurées).
+    """
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.models.enums import ContentStatus
+
+    user_uuid = UUID(current_user_id)
+    now = datetime.now(UTC)
+    restored = 0
+
+    for entry in body.previous_impressions:
+        stmt = (
+            insert(UserContentStatus)
+            .values(
+                user_id=user_uuid,
+                content_id=entry.content_id,
+                status=ContentStatus.UNSEEN.value,
+                last_impressed_at=entry.previous_last_impressed_at,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "content_id"],
+                set_={
+                    "last_impressed_at": entry.previous_last_impressed_at,
+                    "updated_at": now,
+                },
+            )
+        )
+        await db.execute(stmt)
+        restored += 1
+
+    await db.commit()
+    logger.info("feed_refresh_undo", user_id=current_user_id, restored=restored)
+    return {"restored": restored}
 
 
 @router.post("/briefing/{content_id}/read", status_code=200)

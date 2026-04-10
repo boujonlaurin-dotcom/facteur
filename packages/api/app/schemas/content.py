@@ -204,6 +204,26 @@ class FeedRefreshRequest(BaseModel):
     content_ids: list[UUID] = Field(..., max_length=200)
 
 
+class PreviousImpression(BaseModel):
+    """Backup du `last_impressed_at` d'un content avant un refresh, pour permettre l'undo."""
+
+    content_id: UUID
+    previous_last_impressed_at: datetime | None = None
+
+
+class FeedRefreshResponse(BaseModel):
+    """Réponse du refresh avec backup des valeurs précédentes pour l'undo."""
+
+    refreshed: int
+    previous_impressions: list[PreviousImpression]
+
+
+class FeedRefreshUndoRequest(BaseModel):
+    """Requête pour annuler un refresh précédent et restaurer les `last_impressed_at`."""
+
+    previous_impressions: list[PreviousImpression] = Field(..., max_length=200)
+
+
 class FeedResponse(BaseModel):
     """Réponse globale du feed."""
 

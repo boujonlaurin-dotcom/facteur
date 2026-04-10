@@ -18,8 +18,8 @@ import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
 import 'questions/sources_page2_question.dart';
 import 'questions/finalize_question.dart';
-import 'questions/sensitive_themes_question.dart';
 import 'questions/intro_screen.dart';
+import 'questions/sensitive_themes_question.dart';
 
 /// Écran d'onboarding principal
 /// Gère la navigation entre les sections et questions
@@ -45,7 +45,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 left: FacteurSpacing.space2,
                 right: FacteurSpacing.space6,
                 top: FacteurSpacing.space6,
-                bottom: 0,
+                bottom: FacteurSpacing.space4,
               ),
               child: Row(
                 children: [
@@ -74,14 +74,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ],
               ),
             ),
-
-            Text(
-              state.currentSection.label,
-              style: Theme.of(context).textTheme.labelMedium,
-              textAlign: TextAlign.center,
-            ),
-
-            const SizedBox(height: FacteurSpacing.space2),
 
             Expanded(
               child: AnimatedSwitcher(
@@ -177,7 +169,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ref.read(onboardingProvider.notifier).continueAfterReaction();
           },
         );
-
     }
   }
 
@@ -202,8 +193,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         return const DigestModeQuestion(key: ValueKey('digest_mode'));
 
       case Section2Question.sensitiveThemes:
-        return const SensitiveThemesQuestion(
-            key: ValueKey('sensitive_themes'));
+        return const SensitiveThemesQuestion(key: ValueKey('sensitive_themes'));
     }
   }
 

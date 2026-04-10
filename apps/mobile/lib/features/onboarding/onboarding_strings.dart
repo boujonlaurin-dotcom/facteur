@@ -5,9 +5,9 @@ class OnboardingStrings {
   static const String backButtonTooltip = 'Retour';
 
   // Section Labels
-  static const String section1Label = 'Vue d\'ensemble';
-  static const String section2Label = 'Préférences';
-  static const String section3Label = 'Intérêts et sources';
+  static const String section1Label = 'Overview';
+  static const String section2Label = 'App Preferences';
+  static const String section3Label = 'Source Preferences';
 
   static String sectionCount(int current, int total) =>
       'Section $current/$total';
@@ -15,16 +15,16 @@ class OnboardingStrings {
   // Welcome Screen (ex-Intro 1)
   static const String welcomeTitle = 'Bienvenue sur Facteur !';
   static const String welcomeSubtitle =
-      "L'information devrait vous aider à comprendre le monde.\nPas nous submerger.";
+      "L'information devrait vous aider à comprendre le monde.\n\nPas nous submerger.";
   static const String welcomeManifestoButton = 'Lire notre Manifeste';
   static const String welcomeStartButton = 'Commencer';
 
   // Intro Screen 2
-  static const String intro2Title = 'Votre hub d\'infos fiables';
-  static const String intro2SubtitlePart1 =
-      'Facteur est une app Open-Source pour ';
-  static const String intro2SubtitleBold1 =
-      'retrouver le plaisir de s\'informer';
+  static const String intro2Title = 'Ton hub d\'infos fiables.';
+  static const String intro2Subtitle =
+      'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
+  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
+  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
   static const String intro2SubtitlePart2 = '. Un espace de ';
   static const String intro2SubtitleBold2 = 'confiance';
   static const String intro2SubtitlePart3 = ', qui mêle ';
@@ -39,6 +39,8 @@ class OnboardingStrings {
   // Media Concentration
   static const String mediaConcentrationTitle =
       'Savez-vous qui possède vos médias ?';
+  static const String mediaConcentrationText =
+      'Cette carte reflète la concentration des médias en France. \n\nFacteur vous aide à comprendre comment se positionnent les médias pour mieux diversifier vos sources.';
   static const String mediaConcentrationTextPart1 =
       'Cette carte reflète la concentration des médias en France.\nFacteur vous aide à comprendre comment se positionnent les médias pour mieux ';
   static const String mediaConcentrationTextBold1 = 'diversifier vos sources';
@@ -46,9 +48,9 @@ class OnboardingStrings {
   static const String mediaConcentrationButton = 'Continuer';
 
   // Q1: Objective (multi-select)
-  static const String q1Title = 'Commençons par vous';
-  static const String q1Subtitle =
-      "Qu'est-ce qui vous épuise le plus avec l'info ?";
+  static const String q1Title =
+      "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
+  static const String q1Subtitle = '';
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
       "Trop d'info. Impossible de bien trier";
@@ -60,7 +62,7 @@ class OnboardingStrings {
 
   // Q2: Age
   static const String q2Title = 'Apprenons à se connaitre';
-  static const String q2Subtitle = 'Où est-ce que vous vous situez ?';
+  static const String q2Subtitle = 'Où est-ce que tu te situes ?';
   static const String q2Option18_24 = '18 - 24 ans';
   static const String q2Option25_34 = '25 - 34 ans';
   static const String q2Option35_44 = '35 - 44 ans';
@@ -91,16 +93,24 @@ class OnboardingStrings {
   static const String q6NuancedSubtitle = 'Voir tous les angles';
 
   // Q8: Gamification
-  static const String q8Title = 'Bien s\'informer, ça se travaille !';
+  static const String q8Title =
+      'Passer du temps à bien s\'informer est difficile. Travaillons-le !';
+  static const String q8Subtitle =
+      'Facteur t\'aide à progresser et à rester motivé';
   static const String q8SubtitlePart1 = 'Facteur vous accompagne avec une ';
   static const String q8SubtitleBold1 = '🔥 streak quotidienne';
   static const String q8SubtitlePart2 = ' pour garder le rythme, et une ';
   static const String q8SubtitleBold2 = '📊 progression hebdomadaire';
   static const String q8SubtitlePart3 =
       ' pour valider que vous retenez vraiment l\'info.';
+  static const String q8StreakTitle = 'Streak quotidien';
+  static const String q8StreakDesc = '';
+  static const String q8WeeklyTitle = 'Progression hebdomadaire';
+  static const String q8WeeklyDesc =
+      'Valide que tu retiens vraiment l\'information';
   static const String q8YesLabel = 'Essayons !';
   static const String q8NoLabel = 'Je préfère sans';
-  static const String q8NoSubtitle = 'Vous pourrez activer ça plus tard';
+  static const String q8NoSubtitle = 'Tu pourras activer ça plus tard';
 
   // Article Count (replaces Weekly Goal)
   static const String articleCountTitle = 'Combien d\'articles par jour ?';
@@ -126,16 +136,22 @@ class OnboardingStrings {
       'Certains sujets peuvent être difficiles à lire. Activez le ';
   static const String digestModeSereinBold1 = 'mode serein';
   static const String digestModeSereinPart2 = ' pour ';
-  static const String digestModeSereinBold2 =
-      'filtrer les contenus anxiogènes';
+  static const String digestModeSereinBold2 = 'filtrer les contenus anxiogènes';
   static const String digestModeSereinPart3 = '.\nVous pourrez ';
-  static const String digestModeSereinBold3 =
-      'changer d\'avis à tout moment';
+  static const String digestModeSereinBold3 = 'changer d\'avis à tout moment';
   static const String digestModeSereinPart4 =
       ' grâce au bouton dédié en haut de votre essentiel et du flux.';
 
+  // Sensitive Themes (conditional step after digestMode == 'serein')
+  static const String sensitiveThemesTitle = 'Quels sujets vous pèsent ?';
+  static const String sensitiveThemesSubtitle =
+      'Facteur filtrera ces sujets de votre sélection quotidienne.';
+  static const String sensitiveThemesSkip = 'Passer cette étape';
+  static String sensitiveThemesContinue(int count) =>
+      'Continuer ($count sélectionné${count > 1 ? 's' : ''})';
+
   // Q9: Sources
-  static const String q9Title = 'Vos sources, sur mesure';
+  static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
   static const String q9HelperText =
@@ -151,7 +167,7 @@ class OnboardingStrings {
       'Modifiez cette liste à tout moment.';
 
   // Sources Page 2
-  static const String sourcesPage2Title = 'Allez plus loin';
+  static const String sourcesPage2Title = 'Allez plus loin.';
   static const String sourcesPage2Subtitle =
       'Explorez le catalogue complet et ajoutez vos propres sources.';
   static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
@@ -183,34 +199,34 @@ class OnboardingStrings {
   static const String themeSport = 'Sport';
 
   // Subtopics Screen (Screen B)
-  static const String subtopicsTitle = 'Affinez vos centres d\'intérêt';
+  static const String subtopicsTitle = 'Affine tes centres d\'intérêt';
   static const String subtopicsSubtitle =
-      'Indiquez quels sujets vous voulez le plus voir apparaitre dans votre flux.';
+      'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
 
   // Sources Reaction (after source selection)
-  static const String sourcesReactionTitle = 'Vos sources, votre contrôle';
+  static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
   static const String sourcesReactionMessage =
       'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
   static const String addSourceButton = 'Ajouter une source';
 
   // Finalize
-  static const String finalizeTitle = 'Votre essentiel est prêt';
+  static const String finalizeTitle = 'Votre essentiel est prêt.';
   static const String finalizeSubtitle = 'Voici un résumé de vos choix.';
   static const String finalizeButton = 'Créer mon essentiel';
 
   // Reactions: Objective (Q1)
-  static const String r1NoiseTitle = 'Trop de bruit tue le signal';
+  static const String r1NoiseTitle = 'Trop de bruit tue le signal.';
   static const String r1NoiseMessage =
       'Facteur vous aidera à vous concentrer sur l\'essentiel, tout en vous laissant le contrôle.';
-  static const String r1BiasTitle = 'Voir plus clair';
+  static const String r1BiasTitle = 'Voir plus clair.';
   static const String r1BiasMessage =
       'Facteur affichera systématiquement le positionnement des sources.\n\nVous saurez toujours d\'où vient l\'information.';
-  static const String r1AnxietyTitle = 'Respirer face au chaos';
+  static const String r1AnxietyTitle = 'Respirer face au chaos.';
   static const String r1AnxietyMessage =
       'Facteur mettra en avant les solutions, l\'analyse et le recul.\n\nPour retrouver une information qui éclaire sans angoisser.';
-  static const String r1MultiTitle = 'Difficile de choisir';
+  static const String r1MultiTitle = 'Difficile de choisir.';
   static const String r1MultiMessage =
       'Facteur adresse chacun de ces points. Votre récap quotidien vise à répondre à ces préoccupations.';
 
@@ -237,17 +253,6 @@ class OnboardingStrings {
 
   static String finalizeArticleCountSummary(int count) {
     return '$count article${count > 1 ? 's' : ''} / jour';
-  }
-
-  // Sensitive Themes (conditional step after digestMode == 'serein')
-  static const String sensitiveThemesTitle =
-      'Quels sujets sont sensibles pour vous ?';
-  static const String sensitiveThemesSubtitle =
-      'Certains sujets peuvent être stressants. Y a-t-il des thèmes que vous '
-      'préférez voir moins souvent en mode serein ?';
-  static const String sensitiveThemesSkip = 'Continuer sans filtrer';
-  static String sensitiveThemesContinue(int count) {
-    return 'Filtrer $count thème${count > 1 ? 's' : ''}';
   }
 
   // Manifesto content
