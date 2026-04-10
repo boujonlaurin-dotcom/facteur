@@ -655,17 +655,6 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  /// Appelé par ApiClient.onAuthRecovered quand une requête aboutit après un
-  /// refresh+retry, prouvant que le backend considère l'user comme confirmé.
-  /// Permet de clear forceUnconfirmed même si le JWT local est encore stale.
-  void clearForceUnconfirmed() {
-    if (state.forceUnconfirmed) {
-      debugPrint(
-          'AuthStateNotifier: ✅ Clearing forceUnconfirmed (backend accepted request).');
-      state = state.copyWith(forceUnconfirmed: false);
-    }
-  }
-
   /// Marque l'utilisateur comme non confirmé (suite à un 403 Backend).
   ///
   /// N'est appelé que par `ApiClient.onAuthError(403)` APRÈS que l'ApiClient
