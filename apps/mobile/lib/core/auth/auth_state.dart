@@ -186,10 +186,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       }
 
       // 6. Mettre à jour l'état initial (avec session fraîche).
-      // IMPORTANT: on reset systématiquement `forceUnconfirmed` au démarrage
-      // — ce flag est volatile et ne doit jamais survivre à un restart. Si le
-      // user est réellement non confirmé, le prochain appel API renverra 403
-      // et le flag sera re-set proprement.
+      // forceUnconfirmed est reset systématiquement : flag volatile qui ne doit
+      // pas survivre à un restart (si l'email est réellement non-confirmé, le
+      // prochain appel API renverra 403 et le flag sera re-set proprement).
       state = state.copyWith(
         user: session?.user,
         isLoading: false,
@@ -588,6 +587,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Mettre à jour le cache local
     final box = await Hive.openBox<dynamic>('user_profile');
     await box.put('onboarding_completed', !value);
+
+    if (!value) {
+      await box.put('onboarding_app_version', _requiredOnboardingVersion);
+    }
   }
 
   void clearError() {
@@ -649,6 +652,17 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     } catch (e) {
       // Erreur réseau ou autre — ne rien faire, le timer réessaiera
       debugPrint('AuthStateNotifier ERROR: Failed to refresh user: $e');
+    }
+  }
+
+  /// Appelé par ApiClient.onAuthRecovered quand une requête aboutit après un
+  /// refresh+retry, prouvant que le backend considère l'user comme confirmé.
+  /// Permet de clear forceUnconfirmed même si le JWT local est encore stale.
+  void clearForceUnconfirmed() {
+    if (state.forceUnconfirmed) {
+      debugPrint(
+          'AuthStateNotifier: ✅ Clearing forceUnconfirmed (backend accepted request).');
+      state = state.copyWith(forceUnconfirmed: false);
     }
   }
 
