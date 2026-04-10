@@ -23,6 +23,17 @@ class OnboardingStrings {
   static const String intro2Title = 'Ton hub d\'infos fiables.';
   static const String intro2Subtitle =
       'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
+  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
+  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePart2 = '. Un espace de ';
+  static const String intro2SubtitleBold2 = 'confiance';
+  static const String intro2SubtitlePart3 = ', qui mêle ';
+  static const String intro2SubtitleBold3 = 'transparence';
+  static const String intro2SubtitlePart4 = ', ';
+  static const String intro2SubtitleBold4 = 'contrôle';
+  static const String intro2SubtitlePart5 = ' et ';
+  static const String intro2SubtitleBold5 = 'sources de qualité';
+  static const String intro2SubtitlePart6 = '.';
   static const String intro2Button = 'Découvrir Facteur';
 
   // Media Concentration
@@ -30,11 +41,16 @@ class OnboardingStrings {
       'Savez-vous qui possède vos médias ?';
   static const String mediaConcentrationText =
       'Cette carte reflète la concentration des médias en France. \n\nFacteur vous aide à comprendre comment se positionnent les médias pour mieux diversifier vos sources.';
+  static const String mediaConcentrationTextPart1 =
+      'Cette carte reflète la concentration des médias en France.\nFacteur vous aide à comprendre comment se positionnent les médias pour mieux ';
+  static const String mediaConcentrationTextBold1 = 'diversifier vos sources';
+  static const String mediaConcentrationTextPart2 = '.';
   static const String mediaConcentrationButton = 'Continuer';
 
   // Q1: Objective (multi-select)
   static const String q1Title =
       "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
+  static const String q1Subtitle = '';
   static const String q1NoiseLabel = 'Le Bruit';
   static const String q1NoiseSubtitle =
       "Trop d'info. Impossible de bien trier";
@@ -81,6 +97,12 @@ class OnboardingStrings {
       'Passer du temps à bien s\'informer est difficile. Travaillons-le !';
   static const String q8Subtitle =
       'Facteur t\'aide à progresser et à rester motivé';
+  static const String q8SubtitlePart1 = 'Facteur vous accompagne avec une ';
+  static const String q8SubtitleBold1 = '🔥 streak quotidienne';
+  static const String q8SubtitlePart2 = ' pour garder le rythme, et une ';
+  static const String q8SubtitleBold2 = '📊 progression hebdomadaire';
+  static const String q8SubtitlePart3 =
+      ' pour valider que vous retenez vraiment l\'info.';
   static const String q8StreakTitle = 'Streak quotidien';
   static const String q8StreakDesc = '';
   static const String q8WeeklyTitle = 'Progression hebdomadaire';
@@ -108,6 +130,25 @@ class OnboardingStrings {
       'Quel mode de récap quotidien préférez-vous ?';
   static const String digestModeSubtitle =
       'Vous pourrez changer à tout moment.';
+
+  // Digest Mode — Rester serein (rich subtitle parts)
+  static const String digestModeSereinPart1 =
+      'Certains sujets peuvent être difficiles à lire. Activez le ';
+  static const String digestModeSereinBold1 = 'mode serein';
+  static const String digestModeSereinPart2 = ' pour ';
+  static const String digestModeSereinBold2 = 'filtrer les contenus anxiogènes';
+  static const String digestModeSereinPart3 = '.\nVous pourrez ';
+  static const String digestModeSereinBold3 = 'changer d\'avis à tout moment';
+  static const String digestModeSereinPart4 =
+      ' grâce au bouton dédié en haut de votre essentiel et du flux.';
+
+  // Sensitive Themes (conditional step after digestMode == 'serein')
+  static const String sensitiveThemesTitle = 'Quels sujets vous pèsent ?';
+  static const String sensitiveThemesSubtitle =
+      'Facteur filtrera ces sujets de votre sélection quotidienne.';
+  static const String sensitiveThemesSkip = 'Passer cette étape';
+  static String sensitiveThemesContinue(int count) =>
+      'Continuer ($count sélectionné${count > 1 ? 's' : ''})';
 
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';
