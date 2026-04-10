@@ -375,6 +375,50 @@ class RecommendationService:
                 mode="chronological",
             )
 
+            # Phase 0.5: Impression filter — the chronological path has no
+            # scoring engine, so we apply a hard exclusion for articles that
+            # were recently impressed (pull-to-refresh or manual "already
+            # seen").  This mirrors the < 24 h tier of ImpressionLayer used by
+            # the POUR_VOUS scoring path (-70 pts → effectively invisible).
+            candidate_ids = [c.id for c in candidates]
+            if candidate_ids:
+                from datetime import timedelta
+
+                from sqlalchemy import and_ as sa_and
+                from sqlalchemy import or_
+
+                impression_cutoff = datetime.datetime.now(datetime.UTC) - timedelta(
+                    hours=24
+                )
+                async with async_session_maker() as imp_session:
+                    impressed_stmt = select(UserContentStatus.content_id).where(
+                        UserContentStatus.user_id == user_id,
+                        UserContentStatus.content_id.in_(candidate_ids),
+                        or_(
+                            # Time-based: impressed in the last 24 h
+                            sa_and(
+                                UserContentStatus.last_impressed_at.isnot(None),
+                                UserContentStatus.last_impressed_at > impression_cutoff,
+                            ),
+                            # Permanent: manually marked "already seen"
+                            UserContentStatus.manually_impressed.is_(True),
+                        ),
+                    )
+                    recently_impressed_ids = set(
+                        (await imp_session.scalars(impressed_stmt)).all()
+                    )
+
+                if recently_impressed_ids:
+                    pre_filter_count = len(candidates)
+                    candidates = [
+                        c for c in candidates if c.id not in recently_impressed_ids
+                    ]
+                    logger.info(
+                        "chronological_impression_filter",
+                        excluded=pre_filter_count - len(candidates),
+                        remaining=len(candidates),
+                    )
+
             # Phase 1: Chronological diversification with expanded pool for Phase 2
             # Request more articles than limit so Phase 2 has room to compress neutrals
             phase1_limit = limit * 3
