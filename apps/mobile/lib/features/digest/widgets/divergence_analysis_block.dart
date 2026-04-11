@@ -49,12 +49,12 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         gradient: LinearGradient(
           colors: isDark
               ? [
-                  colors.primary.withValues(alpha: 0.35),
-                  FacteurColors.sWarning.withValues(alpha: 0.38),
+                  colors.primary.withValues(alpha: 0.30),
+                  FacteurColors.sWarning.withValues(alpha: 0.33),
                 ]
               : [
-                  colors.primary.withValues(alpha: 0.25),
-                  FacteurColors.sWarning.withValues(alpha: 0.30),
+                  colors.primary.withValues(alpha: 0.20),
+                  FacteurColors.sWarning.withValues(alpha: 0.25),
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

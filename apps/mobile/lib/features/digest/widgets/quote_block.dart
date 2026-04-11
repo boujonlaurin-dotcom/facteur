@@ -3,7 +3,7 @@ import '../../../config/theme.dart';
 import '../models/digest_models.dart';
 
 /// Editorial quote block — displayed in serein digest only.
-/// Elegant card with large decorative guillemets and centered text.
+/// Compact inline quote with thin decorative separators above and below.
 class QuoteBlock extends StatelessWidget {
   final QuoteResponse quote;
 
@@ -15,11 +15,25 @@ class QuoteBlock extends StatelessWidget {
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final separatorColor = colors.primary.withValues(alpha: isDark ? 0.18 : 0.14);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Top separator
+          Center(
+            child: Container(
+              width: 40,
+              height: 1,
+              decoration: BoxDecoration(
+                color: separatorColor,
+                borderRadius: BorderRadius.circular(0.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           // Inline quote: « text » — author
           Text.rich(
             TextSpan(
@@ -62,6 +76,18 @@ class QuoteBlock extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: colors.textSecondary.withValues(alpha: 0.55),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Bottom separator
+          Center(
+            child: Container(
+              width: 40,
+              height: 1,
+              decoration: BoxDecoration(
+                color: separatorColor,
+                borderRadius: BorderRadius.circular(0.5),
+              ),
             ),
           ),
         ],

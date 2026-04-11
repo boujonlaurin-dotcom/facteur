@@ -86,7 +86,7 @@ void main() {
       expect(textWidget.textAlign, TextAlign.center);
     });
 
-    testWidgets('uses compact layout (Column with 3 children)', (tester) async {
+    testWidgets('has top and bottom separators around quote', (tester) async {
       const quote = QuoteResponse(text: 'Texte.', author: 'Auteur');
       await tester.pumpWidget(buildWidget(quote: quote));
       final column = tester.widget<Column>(
@@ -95,8 +95,8 @@ void main() {
           matching: find.byType(Column),
         ).first,
       );
-      // Text.rich + SizedBox(4) + Author Text = 3
-      expect(column.children.length, equals(3));
+      // TopSeparator + SizedBox + Text.rich + SizedBox + Author + SizedBox + BottomSeparator = 7
+      expect(column.children.length, equals(7));
     });
   });
 }
