@@ -38,7 +38,7 @@ class _CommunityCarouselSectionState extends State<CommunityCarouselSection> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<AppColors>()!;
+    final colors = context.facteurColors;
 
     if (widget.items.isEmpty) return const SizedBox.shrink();
 
@@ -118,7 +118,7 @@ class _CommunityCarouselSectionState extends State<CommunityCarouselSection> {
 
 class _CommunityCard extends StatelessWidget {
   final CommunityCarouselItem item;
-  final AppColors colors;
+  final FacteurColors colors;
   final VoidCallback onTap;
 
   const _CommunityCard({
@@ -226,7 +226,7 @@ class _CommunityCard extends StatelessWidget {
                                 const SizedBox(width: 2),
                                 Text(
                                   '${item.sunflowerCount}',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: SunflowerIcon.sunflowerBrown,
