@@ -1,7 +1,9 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Manages the 🌻 "Recommander ?" nudge display logic.
+///
+/// Simple session-scoped singleton — no Riverpod provider needed since
+/// the state is only read/written from ContentDetailScreen.
 ///
 /// Rules:
 /// - Show after >30s of reading an article
@@ -9,54 +11,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - Max 1 nudge per session
 /// - Max 1 nudge every 3 days (persisted via SharedPreferences)
 /// - Don't show if article is already sunflowered
-class NudgeState {
-  final int articlesOpenedInSession;
-  final bool nudgeShownThisSession;
-
-  const NudgeState({
-    this.articlesOpenedInSession = 0,
-    this.nudgeShownThisSession = false,
-  });
-
-  NudgeState copyWith({
-    int? articlesOpenedInSession,
-    bool? nudgeShownThisSession,
-  }) {
-    return NudgeState(
-      articlesOpenedInSession:
-          articlesOpenedInSession ?? this.articlesOpenedInSession,
-      nudgeShownThisSession:
-          nudgeShownThisSession ?? this.nudgeShownThisSession,
-    );
-  }
-}
-
-class NudgeNotifier extends StateNotifier<NudgeState> {
+class NudgeTracker {
   static const _lastNudgeDateKey = 'sunflower_last_nudge_date';
   static const _nudgeCooldownDays = 3;
 
-  NudgeNotifier() : super(const NudgeState());
+  // Session-scoped counters (reset on app restart)
+  static int _articlesOpenedInSession = 0;
+  static bool _nudgeShownThisSession = false;
 
   /// Call when a user opens an article
-  void recordArticleOpen() {
-    state = state.copyWith(
-      articlesOpenedInSession: state.articlesOpenedInSession + 1,
-    );
+  static void recordArticleOpen() {
+    _articlesOpenedInSession++;
   }
 
   /// Check if the nudge should be shown for the current article.
-  /// Returns true if all conditions are met.
-  Future<bool> shouldShowNudge({required bool isAlreadySunflowered}) async {
-    // Already sunflowered — no nudge
+  static Future<bool> shouldShowNudge({
+    required bool isAlreadySunflowered,
+  }) async {
     if (isAlreadySunflowered) return false;
+    if (_nudgeShownThisSession) return false;
+    if (_articlesOpenedInSession <= 2) return false;
 
-    // Already shown this session
-    if (state.nudgeShownThisSession) return false;
-
-    // Skip first 2 articles of the session
-    if (state.articlesOpenedInSession <= 2) return false;
-
-    // Check 3-day cooldown
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastNudgeDateStr = prefs.getString(_lastNudgeDateKey);
@@ -68,7 +43,6 @@ class NudgeNotifier extends StateNotifier<NudgeState> {
         }
       }
     } catch (_) {
-      // SharedPreferences failure — skip nudge to be safe
       return false;
     }
 
@@ -76,9 +50,8 @@ class NudgeNotifier extends StateNotifier<NudgeState> {
   }
 
   /// Mark nudge as shown (persists date for cooldown)
-  Future<void> markNudgeShown() async {
-    state = state.copyWith(nudgeShownThisSession: true);
-
+  static Future<void> markNudgeShown() async {
+    _nudgeShownThisSession = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -90,6 +63,3 @@ class NudgeNotifier extends StateNotifier<NudgeState> {
     }
   }
 }
-
-final nudgeProvider =
-    StateNotifierProvider<NudgeNotifier, NudgeState>((ref) => NudgeNotifier());

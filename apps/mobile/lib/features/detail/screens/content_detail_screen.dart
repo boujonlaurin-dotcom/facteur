@@ -26,7 +26,7 @@ import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
 import '../../../widgets/sunflower_icon.dart';
-import '../providers/nudge_provider.dart';
+import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -271,23 +271,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
 
     // 🌻 Nudge: record article open and start 30s timer
-    // Deferred to post-frame to avoid modifying provider state during build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(nudgeProvider.notifier).recordArticleOpen();
-    });
+    NudgeTracker.recordArticleOpen();
     _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
       if (!mounted) return;
       final isLiked = _content?.isLiked ?? false;
-      final shouldShow = await ref
-          .read(nudgeProvider.notifier)
-          .shouldShowNudge(isAlreadySunflowered: isLiked);
+      final shouldShow = await NudgeTracker.shouldShowNudge(
+        isAlreadySunflowered: isLiked,
+      );
       if (shouldShow && mounted) {
         setState(() => _showSunflowerNudge = true);
-        // Defer provider mutation to avoid conflict with setState rebuild
-        Future.microtask(() {
-          ref.read(nudgeProvider.notifier).markNudgeShown();
-        });
+        NudgeTracker.markNudgeShown();
         // Auto-dismiss after 5 seconds
         Future.delayed(const Duration(seconds: 5), () {
           if (mounted) setState(() => _showSunflowerNudge = false);
