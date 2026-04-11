@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/digest_models.dart';
@@ -122,6 +125,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
         // Push to home screen widget
         _syncWidget();
+        // Update notification with dynamic topic keywords
+        _updateNotificationWithTopics();
         // If either variant was served as yesterday's stale fallback while
         // fresh content is being generated in background, schedule a silent
         // auto-refetch so the user sees today's digest without pulling.
@@ -153,6 +158,7 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           _normalDigest = digest;
           _cachedDate = _todayDateString;
           ref.read(sereinToggleProvider.notifier).initFromApi(false);
+          _updateNotificationWithTopics();
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
@@ -234,6 +240,34 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   void _syncWidget() {
     final digest = state.value;
     WidgetService.updateWidget(digest: digest);
+  }
+
+  /// Update the daily notification with topic keywords from the loaded digest.
+  /// Uses the normal digest topics to build an engaging notification body.
+  /// Only updates if push notifications are enabled in user settings.
+  void _updateNotificationWithTopics() {
+    try {
+      final box = Hive.box<dynamic>('settings');
+      final pushEnabled =
+          box.get('push_notifications_enabled', defaultValue: true) as bool;
+      if (!pushEnabled) return;
+
+      final digest = _normalDigest;
+      if (digest == null) return;
+
+      final topicLabels = digest.topics
+          .map((t) => t.label)
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      final body = PushNotificationService.buildNotificationBody(topicLabels);
+      PushNotificationService().scheduleDailyDigestNotification(body: body);
+      debugPrint(
+        'DigestNotifier: Updated notification with ${topicLabels.length} topics',
+      );
+    } catch (e) {
+      debugPrint('DigestNotifier: Failed to update notification: $e');
+    }
   }
 
   /// Clear the in-memory cache (forces next load to call API).
