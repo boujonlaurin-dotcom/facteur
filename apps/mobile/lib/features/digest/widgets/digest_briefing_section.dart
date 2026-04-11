@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/serein_colors.dart';
@@ -178,40 +180,49 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
 
         // En light mode : gradient semi-transparent pour laisser le fond
         // crème transparaître. Plus léger en haut, plus teinté en bas.
+        // Alpha réduit pour laisser l'effet de flou "liquid glass" transparaître.
         final topColor = isDark
-            ? baseColor
-            : baseColor.withValues(alpha: 0.15);
+            ? baseColor.withValues(alpha: 0.72)
+            : baseColor.withValues(alpha: 0.12);
         final bottomColor = isDark
-            ? blendedEnd
-            : blendedEnd.withValues(alpha: 0.30);
+            ? blendedEnd.withValues(alpha: 0.78)
+            : blendedEnd.withValues(alpha: 0.22);
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [topColor, bottomColor],
-            ),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : baseColor.withValues(alpha: 0.25),
-              width: 1,
-            ),
             boxShadow: [
               BoxShadow(
                 color: isDark
-                    ? Colors.black.withValues(alpha: 0.25)
-                    : baseColor.withValues(alpha: 0.15),
-                blurRadius: isDark ? 20 : 12,
-                offset: const Offset(0, 8),
+                    ? Colors.black.withValues(alpha: 0.30)
+                    : baseColor.withValues(alpha: 0.18),
+                blurRadius: isDark ? 24 : 16,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [topColor, bottomColor],
+                  ),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.14)
+                        : Colors.white.withValues(alpha: 0.38),
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header: title+progress (left) | selector+subtitle (right)
@@ -270,6 +281,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                 ),
               ),
             ],
+                ),
+              ),
+            ),
           ),
         );
       },
@@ -359,6 +373,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     final isSerene = widget.isSerein;
     final sections = <Widget>[];
 
+    // Quote block first in serein mode — sets the tone for the reading
+    if (isSerene && widget.digest?.quote != null) {
+      sections.add(QuoteBlock(quote: widget.digest!.quote!));
+    }
+
     // Topics with intro text, editorial DigestCards, and transition text
     for (int i = 0; i < widget.topics!.length; i++) {
       final topic = widget.topics![i];
@@ -385,11 +404,6 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           onDismissMuteTopic: _handleLocalMuteTopic,
         ),
       );
-
-      // Quote after first topic (Bonne Nouvelle) in serein mode
-      if (i == 0 && isSerene && widget.digest?.quote != null) {
-        sections.add(QuoteBlock(quote: widget.digest!.quote!));
-      }
 
       // Transition text between topics (not after last one)
       if (topic.transitionText != null && i < widget.topics!.length - 1) {

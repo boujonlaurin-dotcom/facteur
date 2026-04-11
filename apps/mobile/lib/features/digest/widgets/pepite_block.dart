@@ -40,65 +40,87 @@ class PepiteBlock extends StatelessWidget {
 
     final badgeChip = EditorialBadge.chip(pepite.badge, context: context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Editorial badge chip above
-        if (badgeChip != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
-            child: badgeChip,
-          ),
-
-        // Mini-editorial text
-        if (pepite.miniEditorial.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(
-              left: 4,
-              right: 4,
-              bottom: 10,
-            ),
-            child: MarkdownText(
-              text: pepite.miniEditorial,
-              style: TextStyle(
-                fontStyle: FontStyle.italic,
-                fontSize: 15,
-                height: 1.5,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.8)
-                    : colors.textSecondary,
-              ),
-            ),
-          ),
-
-        // Pépite card
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: FeedCard(
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
-            content: _convertToContent(item),
-            descriptionFontSize: 15,
-            onTap: () => onTap(item),
-            onSourceTap: onSourceTap != null && pepite.source?.id != null
-                ? () => onSourceTap!(pepite.source!.id!)
-                : null,
-            onSourceLongPress: () => TopicChip.showArticleSheet(
-                context, _convertToContent(item),
-                initialSection: ArticleSheetSection.source),
-            onLike: onLike != null ? () => onLike!(item) : null,
-            isLiked: item.isLiked,
-            onSave: onSave != null ? () => onSave!(item) : null,
-            isSaved: item.isSaved,
-            onNotInterested:
-                onNotInterested != null ? () => onNotInterested!(item) : null,
-            isSerene: isSerene,
-            onReportNotSerene:
-                onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
-            isFollowedSource: item.isFollowedSource,
-            editorialBadgeLabel: null,
-          ),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colors.border.withValues(alpha: isDark ? 0.22 : 0.16),
         ),
-      ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Badge + mini-editorial header area
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (badgeChip != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: badgeChip,
+                  ),
+                if (pepite.miniEditorial.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: MarkdownText(
+                      text: pepite.miniEditorial,
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        fontSize: 15,
+                        height: 1.5,
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.8)
+                            : colors.textSecondary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Pépite card
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+            child: FeedCard(
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+              content: _convertToContent(item),
+              descriptionFontSize: 15,
+              onTap: () => onTap(item),
+              onSourceTap: onSourceTap != null && pepite.source?.id != null
+                  ? () => onSourceTap!(pepite.source!.id!)
+                  : null,
+              onSourceLongPress: () => TopicChip.showArticleSheet(
+                  context, _convertToContent(item),
+                  initialSection: ArticleSheetSection.source),
+              onLike: onLike != null ? () => onLike!(item) : null,
+              isLiked: item.isLiked,
+              onSave: onSave != null ? () => onSave!(item) : null,
+              isSaved: item.isSaved,
+              onNotInterested:
+                  onNotInterested != null ? () => onNotInterested!(item) : null,
+              isSerene: isSerene,
+              onReportNotSerene:
+                  onReportNotSerene != null ? () => onReportNotSerene!(item) : null,
+              isFollowedSource: item.isFollowedSource,
+              editorialBadgeLabel: null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
