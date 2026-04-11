@@ -50,7 +50,7 @@ from app.schemas.digest import (
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
-from app.services.topic_selector import TopicGroup
+from app.services.topic_selector import ScoredArticle, TopicGroup
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
@@ -135,12 +135,28 @@ def _schedule_background_regen(
             async with async_session_maker() as bg_session:
                 bg_svc = DigestService(bg_session)
                 try:
+                    # Check if a modern-format digest already exists.
+                    # If so, skip regen — never destroy a good digest.
+                    existing = await bg_svc._get_existing_digest(
+                        user_id, target_date, is_serene=is_serene
+                    )
+                    if existing and existing.format_version in (
+                        "editorial_v1",
+                        "topics_v1",
+                    ):
+                        logger.info(
+                            "digest_background_regen_skipped_good_format",
+                            user_id=str(user_id),
+                            target_date=str(target_date),
+                            format_version=existing.format_version,
+                        )
+                        return
+
                     await _state_mark_in_progress(
                         bg_session, user_id, target_date, is_serene
                     )
                     # force_regenerate=True bypasses the yesterday fallback
-                    # and goes straight to real generation. There is no
-                    # existing today-digest to delete (we just checked).
+                    # and goes straight to real generation.
                     await bg_svc.get_or_create_digest(
                         user_id=user_id,
                         target_date=target_date,
@@ -382,14 +398,21 @@ class DigestService:
                 try:
                     return await self._build_digest_response(existing_digest, user_id)
                 except Exception:
-                    # Existing digest is corrupt (format mismatch, missing content, etc.)
-                    # Delete and regenerate instead of returning 503
+                    # Render failed — but only delete if it's already flat_v1.
+                    # Never destroy a modern-format digest: better to let the
+                    # request fail than silently replace it with flat_v1.
                     logger.exception(
-                        "digest_existing_corrupt_regenerating",
+                        "digest_existing_render_failed",
                         user_id=str(user_id),
                         digest_id=str(existing_digest.id),
                         format_version=existing_digest.format_version,
                     )
+                    if existing_digest.format_version in (
+                        "editorial_v1",
+                        "topics_v1",
+                    ):
+                        raise
+                    # flat_v1 is expendable — delete and regenerate
                     await self.session.delete(existing_digest)
                     await self.session.flush()
         # 1b. No digest for today — try serving yesterday's digest instantly
@@ -410,25 +433,34 @@ class DigestService:
                     is_serene=is_serene,
                 )
 
-                logger.warning(
-                    "digest_serving_yesterday_while_regenerating",
-                    user_id=str(user_id),
-                    yesterday_date=str(yesterday),
-                    format_version=yesterday_digest.format_version,
-                    expected_version=expected_version,
-                )
-                try:
-                    response = await self._build_digest_response(
-                        yesterday_digest, user_id
-                    )
-                    response.is_stale_fallback = True
-                    return response
-                except Exception:
+                # Never serve a flat_v1 (legacy) digest as yesterday fallback —
+                # skip to real generation instead.
+                if yesterday_digest.format_version == "flat_v1":
                     logger.warning(
-                        "digest_yesterday_fallback_render_failed",
+                        "digest_yesterday_flat_v1_skipped",
                         user_id=str(user_id),
-                        format_version=yesterday_digest.format_version,
+                        yesterday_date=str(yesterday),
                     )
+                else:
+                    logger.warning(
+                        "digest_serving_yesterday_while_regenerating",
+                        user_id=str(user_id),
+                        yesterday_date=str(yesterday),
+                        format_version=yesterday_digest.format_version,
+                        expected_version=expected_version,
+                    )
+                    try:
+                        response = await self._build_digest_response(
+                            yesterday_digest, user_id
+                        )
+                        response.is_stale_fallback = True
+                        return response
+                    except Exception:
+                        logger.warning(
+                            "digest_yesterday_fallback_render_failed",
+                            user_id=str(user_id),
+                            format_version=yesterday_digest.format_version,
+                        )
 
         logger.info(
             "digest_no_existing",
@@ -550,18 +582,53 @@ class DigestService:
                 "digest_generation_standard_failed_attempting_fallback",
                 user_id=str(user_id),
             )
-            digest_items = await self._get_emergency_candidates(
+            emergency_items = await self._get_emergency_candidates(
                 user_id=user_id,
                 limit=target_size,
                 is_serene=is_serene,
                 sensitive_themes=sensitive_themes,
             )
-            is_topics_format = False  # Emergency fallback always returns flat items
             fallback_time = time.time() - step_start
+
+            # Wrap emergency items in TopicGroups so the digest is stored
+            # as topics_v1 — never produce flat_v1 legacy format.
+            if emergency_items:
+                followed_src_ids = {
+                    ei.content.source_id
+                    for ei in emergency_items
+                    if getattr(ei, "reason", "") == "Source suivie"
+                }
+                topic_groups: list[TopicGroup] = []
+                for item in emergency_items:
+                    scored = ScoredArticle(
+                        content=item.content,
+                        score=item.score,
+                        reason=item.reason,
+                        breakdown=item.breakdown,
+                        is_followed_source=item.content.source_id in followed_src_ids,
+                    )
+                    theme = item.content.source.theme if item.content.source else None
+                    topic_groups.append(
+                        TopicGroup(
+                            topic_id=f"emergency_{item.rank}",
+                            label=item.content.title or "Article",
+                            articles=[scored],
+                            topic_score=item.score,
+                            reason=item.reason,
+                            theme=theme,
+                        )
+                    )
+                digest_items = topic_groups
+                is_topics_format = True
+                is_editorial_format = False
+            else:
+                digest_items = []
+
             logger.info(
                 "digest_step_fallback",
                 user_id=str(user_id),
                 item_count=len(digest_items),
+                wrapped_as_topics=bool(digest_items),
                 duration_ms=round(fallback_time * 1000, 2),
             )
 
