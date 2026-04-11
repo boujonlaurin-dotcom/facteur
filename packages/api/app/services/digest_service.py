@@ -605,14 +605,9 @@ class DigestService:
                         score=item.score,
                         reason=item.reason,
                         breakdown=item.breakdown,
-                        is_followed_source=item.content.source_id
-                        in followed_src_ids,
+                        is_followed_source=item.content.source_id in followed_src_ids,
                     )
-                    theme = (
-                        item.content.source.theme
-                        if item.content.source
-                        else None
-                    )
+                    theme = item.content.source.theme if item.content.source else None
                     topic_groups.append(
                         TopicGroup(
                             topic_id=f"emergency_{item.rank}",
