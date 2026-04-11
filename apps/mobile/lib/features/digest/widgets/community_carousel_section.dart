@@ -13,13 +13,11 @@ import '../models/community_carousel_model.dart';
 class CommunityCarouselSection extends StatefulWidget {
   final List<CommunityCarouselItem> items;
   final void Function(CommunityCarouselItem item) onArticleTap;
-  final void Function(CommunityCarouselItem item)? onSunflowerTap;
 
   const CommunityCarouselSection({
     super.key,
     required this.items,
     required this.onArticleTap,
-    this.onSunflowerTap,
   });
 
   @override
@@ -85,9 +83,6 @@ class _CommunityCarouselSectionState extends State<CommunityCarouselSection> {
                     HapticFeedback.selectionClick();
                     widget.onArticleTap(item);
                   },
-                  onSunflowerTap: widget.onSunflowerTap != null
-                      ? () => widget.onSunflowerTap!(item)
-                      : null,
                 ),
               );
             },
@@ -110,7 +105,7 @@ class _CommunityCarouselSectionState extends State<CommunityCarouselSection> {
                     borderRadius: BorderRadius.circular(3),
                     color: index == _currentPage
                         ? SunflowerIcon.sunflowerYellow
-                        : colors.textSecondary.withOpacity(0.3),
+                        : colors.textSecondary.withValues(alpha: 0.3),
                   ),
                 ),
               ),
@@ -125,13 +120,11 @@ class _CommunityCard extends StatelessWidget {
   final CommunityCarouselItem item;
   final AppColors colors;
   final VoidCallback onTap;
-  final VoidCallback? onSunflowerTap;
 
   const _CommunityCard({
     required this.item,
     required this.colors,
     required this.onTap,
-    this.onSunflowerTap,
   });
 
   @override
@@ -143,11 +136,11 @@ class _CommunityCard extends StatelessWidget {
           color: colors.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: colors.textSecondary.withOpacity(0.1),
+            color: colors.textSecondary.withValues(alpha: 0.1),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -168,11 +161,11 @@ class _CommunityCard extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     height: 90,
-                    color: colors.textSecondary.withOpacity(0.1),
+                    color: colors.textSecondary.withValues(alpha: 0.1),
                     child: Center(
                       child: Icon(
                         Icons.article_outlined,
-                        color: colors.textSecondary.withOpacity(0.3),
+                        color: colors.textSecondary.withValues(alpha: 0.3),
                         size: 32,
                       ),
                     ),
@@ -222,7 +215,7 @@ class _CommunityCard extends StatelessWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: SunflowerIcon.sunflowerYellow
-                                  .withOpacity(0.15),
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
