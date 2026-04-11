@@ -817,12 +817,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.18),
+                    color: colors.textSecondary.withValues(alpha: 0.28),
                     borderRadius: BorderRadius.circular(12),
                     border: Border(
                       left: BorderSide(
                         width: 3,
-                        color: colors.textSecondary.withValues(alpha: 0.50),
+                        color: colors.textSecondary.withValues(alpha: 0.60),
                       ),
                     ),
                   ),

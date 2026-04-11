@@ -16,71 +16,55 @@ class QuoteBlock extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : colors.primary.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : colors.primary.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Inline quote: « text » — author
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '\u00AB ',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w300,
+                    color: colors.primary.withValues(alpha: isDark ? 0.50 : 0.35),
+                  ),
+                ),
+                TextSpan(
+                  text: quote.text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                    color: colors.textPrimary.withValues(alpha: 0.75),
+                    height: 1.5,
+                  ),
+                ),
+                TextSpan(
+                  text: ' \u00BB',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w300,
+                    color: colors.primary.withValues(alpha: isDark ? 0.50 : 0.35),
+                  ),
+                ),
+              ],
+            ),
+            textAlign: TextAlign.center,
           ),
-        ),
-        child: Column(
-          children: [
-            // Decorative opening guillemet
-            Text(
-              '\u00AB',
-              style: TextStyle(
-                fontSize: 36,
-                fontWeight: FontWeight.w300,
-                height: 1,
-                color: colors.primary.withValues(alpha: isDark ? 0.40 : 0.28),
-              ),
+          const SizedBox(height: 4),
+          Text(
+            '\u2014 ${quote.author}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: colors.textSecondary.withValues(alpha: 0.55),
             ),
-            const SizedBox(height: 8),
-            // Quote text
-            Text(
-              quote.text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontStyle: FontStyle.italic,
-                fontWeight: FontWeight.w500,
-                color: colors.textPrimary.withValues(alpha: 0.80),
-                height: 1.55,
-                letterSpacing: -0.1,
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Thin accent line
-            Container(
-              width: 32,
-              height: 1.5,
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: isDark ? 0.30 : 0.22),
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-            const SizedBox(height: 10),
-            // Author attribution
-            Text(
-              quote.author,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.3,
-                color: colors.textSecondary.withValues(alpha: 0.70),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
