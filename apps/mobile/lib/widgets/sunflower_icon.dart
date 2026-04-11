@@ -51,14 +51,14 @@ class SunflowerIcon extends StatelessWidget {
               ).createShader(bounds),
               blendMode: BlendMode.srcIn,
               child: Icon(
-                PhosphorIcons.flowerTulip(PhosphorIconsStyle.fill),
+                PhosphorIcons.flower(PhosphorIconsStyle.fill),
                 size: size,
                 color: Colors.white, // Will be replaced by shader
               ),
             )
           : Icon(
               key: const ValueKey('inactive'),
-              PhosphorIcons.flowerTulip(PhosphorIconsStyle.regular),
+              PhosphorIcons.flower(PhosphorIconsStyle.regular),
               size: size,
               color: inactiveColor,
             ),
