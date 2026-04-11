@@ -271,7 +271,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
 
     // 🌻 Nudge: record article open and start 30s timer
-    ref.read(nudgeProvider.notifier).recordArticleOpen();
+    // Deferred to avoid modifying provider state during build phase
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(nudgeProvider.notifier).recordArticleOpen();
+    });
     _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
       if (!mounted) return;
       final isLiked = _content?.isLiked ?? false;
