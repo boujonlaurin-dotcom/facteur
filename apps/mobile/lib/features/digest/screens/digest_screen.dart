@@ -677,7 +677,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 publishedAt: item.publishedAt ?? DateTime.now(),
                               );
                               context.pushNamed(
-                                RouteNames.articleDetail,
+                                RouteNames.contentDetail,
                                 pathParameters: {'id': item.contentId},
                                 extra: content,
                               );
