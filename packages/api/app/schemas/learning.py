@@ -80,3 +80,20 @@ class EntityPreferenceResponse(BaseModel):
 
     entity_canonical: str
     preference: str
+
+
+def proposal_to_response(p) -> ProposalResponse:
+    """Convert a UserLearningProposal ORM object to a ProposalResponse."""
+    return ProposalResponse(
+        id=p.id,
+        proposal_type=p.proposal_type,
+        entity_type=p.entity_type,
+        entity_id=p.entity_id,
+        entity_label=p.entity_label,
+        current_value=p.current_value,
+        proposed_value=p.proposed_value,
+        signal_strength=p.signal_strength,
+        signal_context=SignalContext(**p.signal_context),
+        shown_count=p.shown_count,
+        status=p.status,
+    )

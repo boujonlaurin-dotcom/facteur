@@ -3,6 +3,7 @@
 Calcul des signaux d'engagement, generation et application des propositions.
 """
 
+import json as _json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -171,8 +172,12 @@ class LearningService:
                 or row.is_saved
                 or (row.reading_progress and row.reading_progress > 80)
             )
-            for entity_name in row.entities:
-                name = entity_name.strip()
+            for raw in row.entities:
+                try:
+                    obj = _json.loads(raw)
+                    name = obj.get("name", "").strip()
+                except (ValueError, TypeError):
+                    name = str(raw).strip() if raw else ""
                 if not name or len(name) < 2:
                     continue
                 if name not in entity_stats:
@@ -265,7 +270,7 @@ class LearningService:
             multiplier = sig["current_multiplier"]
 
             # Signal: user ignores source (low engagement, high multiplier)
-            if ratio < 0.1 and multiplier >= 1.0:
+            if ratio < SIGNAL_THRESHOLD_SOURCE and multiplier >= 1.0:
                 proposed = max(0.5, multiplier * 0.5)
                 delta = abs(multiplier - proposed) / max(multiplier, 1.0)
                 candidates.append(
@@ -422,6 +427,10 @@ class LearningService:
                 )
             )
             await self.db.flush()
+
+            # Refresh ORM objects so shown_count reflects the UPDATE
+            for p in proposals:
+                await self.db.refresh(p)
 
         return proposals
 

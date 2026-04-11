@@ -31,8 +31,7 @@ from app.schemas.feed import (
 )
 from app.schemas.learning import (
     LearningCheckpointResponse,
-    ProposalResponse,
-    SignalContext,
+    proposal_to_response,
 )
 from app.services.learning_service import LearningService
 from app.services.recommendation_service import RecommendationService
@@ -170,22 +169,7 @@ async def get_personalized_feed(
             proposals = await learning_service.get_pending_proposals(user_uuid)
             if len(proposals) >= 2:
                 checkpoint_data = LearningCheckpointResponse(
-                    proposals=[
-                        ProposalResponse(
-                            id=p.id,
-                            proposal_type=p.proposal_type,
-                            entity_type=p.entity_type,
-                            entity_id=p.entity_id,
-                            entity_label=p.entity_label,
-                            current_value=p.current_value,
-                            proposed_value=p.proposed_value,
-                            signal_strength=p.signal_strength,
-                            signal_context=SignalContext(**p.signal_context),
-                            shown_count=p.shown_count,
-                            status=p.status,
-                        )
-                        for p in proposals
-                    ],
+                    proposals=[proposal_to_response(p) for p in proposals],
                     total_pending=len(proposals),
                 )
                 await db.commit()
