@@ -687,8 +687,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         if (defaultCol != null) {
           final colRepo = ref.read(collectionsRepositoryProvider);
           await colRepo.addToCollection(defaultCol.id, content.id);
+          if (!mounted) return;
           ref.invalidate(collectionsProvider);
         }
+        if (!mounted) return;
         CollectionPickerSheet.show(
           context,
           content.id,
@@ -879,10 +881,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
 
-    _scrollController.dispose();
-    super.dispose();
-
-    // Persist reading progress + analytics on close
+    // Persist reading progress + analytics on close — BEFORE super.dispose()
+    // so that ref and Supabase.instance are still available.
     try {
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
@@ -908,6 +908,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
     }
+
+    _scrollController.dispose();
+    super.dispose();
   }
 
   /// Handle video progress updates from YouTubePlayerWidget.
