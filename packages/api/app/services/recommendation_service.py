@@ -148,11 +148,21 @@ class RecommendationService:
             async with async_session_maker() as s:
                 pz = await s.scalar(personalization_stmt)
                 digest = await s.scalar(digest_stmt)
-                return pz, digest
+                # Epic 13: Load muted entities
+                from app.models.learning import UserEntityPreference
+
+                muted_entities_result = await s.execute(
+                    select(UserEntityPreference.entity_canonical).where(
+                        UserEntityPreference.user_id == user_id,
+                        UserEntityPreference.preference == "mute",
+                    )
+                )
+                muted_entities = {row[0] for row in muted_entities_result.all()}
+                return pz, digest, muted_entities
 
         (
             (user_profile, followed_sources_rows, subtopics_rows),
-            (personalization, digest_row),
+            (personalization, digest_row, muted_entities),
         ) = await asyncio.gather(
             _batch_user_context(),
             _batch_personalization(),
@@ -344,6 +354,35 @@ class RecommendationService:
                 return False
 
             candidates = [c for c in candidates if _matches_entity(c)]
+
+        # Epic 13: Filter out articles containing muted entities (post-SQL)
+        if muted_entities:
+            import json as _json_mute
+
+            muted_lower = {e.lower() for e in muted_entities}
+
+            def _has_muted_entity(c: Content) -> bool:
+                if not c.entities:
+                    return False
+                for raw in c.entities:
+                    try:
+                        e = _json_mute.loads(raw)
+                        if isinstance(e, dict) and e.get("name", "").lower() in muted_lower:
+                            return True
+                    except (ValueError, TypeError):
+                        if isinstance(raw, str) and raw.lower() in muted_lower:
+                            return True
+                return False
+
+            before_count = len(candidates)
+            candidates = [c for c in candidates if not _has_muted_entity(c)]
+            if before_count != len(candidates):
+                logger.info(
+                    "feed_muted_entities_filtered",
+                    user_id=str(user_id),
+                    filtered=before_count - len(candidates),
+                    muted_count=len(muted_entities),
+                )
 
         # Explicit filter OR RECENT mode: skip scoring, return pure chronological order
         # Candidates are already sorted by published_at DESC from _get_candidates
