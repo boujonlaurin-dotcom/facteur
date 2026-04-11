@@ -24,9 +24,8 @@ final communityCarouselProvider =
     return const CommunityCarousels();
   }
 
-  final apiClient = ref.read(apiClientProvider);
-
   try {
+    final apiClient = ref.read(apiClientProvider);
     final response = await apiClient.dio.get<dynamic>(
       'community/recommendations',
     );
@@ -35,14 +34,14 @@ final communityCarouselProvider =
       final data = response.data as Map<String, dynamic>;
 
       final feedItems = (data['feed_carousel'] as List<dynamic>?)
-              ?.map(
-                  (e) => CommunityCarouselItem.fromJson(e as Map<String, dynamic>))
+              ?.map((e) =>
+                  CommunityCarouselItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [];
 
       final digestItems = (data['digest_carousel'] as List<dynamic>?)
-              ?.map(
-                  (e) => CommunityCarouselItem.fromJson(e as Map<String, dynamic>))
+              ?.map((e) =>
+                  CommunityCarouselItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [];
 
@@ -51,10 +50,8 @@ final communityCarouselProvider =
         digestCarousel: digestItems,
       );
     }
-  } catch (e) {
+  } catch (_) {
     // Fail silently — carousel is optional enhancement
-    // ignore: avoid_print
-    print('CommunityCarouselProvider: fetch failed: $e');
   }
 
   return const CommunityCarousels();
