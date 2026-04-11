@@ -595,6 +595,11 @@ class DigestService:
             if emergency_items:
                 from app.services.topic_selector import ScoredArticle, TopicGroup
 
+                followed_src_ids = {
+                    ei.content.source_id
+                    for ei in emergency_items
+                    if getattr(ei, "reason", "") == "Source suivie"
+                }
                 topic_groups: list[TopicGroup] = []
                 for item in emergency_items:
                     scored = ScoredArticle(
@@ -603,11 +608,7 @@ class DigestService:
                         reason=item.reason,
                         breakdown=item.breakdown,
                         is_followed_source=item.content.source_id
-                        in {
-                            ei.content.source_id
-                            for ei in emergency_items
-                            if getattr(ei, "reason", "") == "Source suivie"
-                        },
+                        in followed_src_ids,
                     )
                     theme = (
                         item.content.source.theme
