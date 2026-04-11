@@ -31,14 +31,11 @@ class NudgeState {
   }
 }
 
-class NudgeNotifier extends Notifier<NudgeState> {
+class NudgeNotifier extends StateNotifier<NudgeState> {
   static const _lastNudgeDateKey = 'sunflower_last_nudge_date';
   static const _nudgeCooldownDays = 3;
 
-  @override
-  NudgeState build() {
-    return const NudgeState();
-  }
+  NudgeNotifier() : super(const NudgeState());
 
   /// Call when a user opens an article
   void recordArticleOpen() {
@@ -60,14 +57,19 @@ class NudgeNotifier extends Notifier<NudgeState> {
     if (state.articlesOpenedInSession <= 2) return false;
 
     // Check 3-day cooldown
-    final prefs = await SharedPreferences.getInstance();
-    final lastNudgeDateStr = prefs.getString(_lastNudgeDateKey);
-    if (lastNudgeDateStr != null) {
-      final lastDate = DateTime.tryParse(lastNudgeDateStr);
-      if (lastDate != null) {
-        final daysSince = DateTime.now().difference(lastDate).inDays;
-        if (daysSince < _nudgeCooldownDays) return false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastNudgeDateStr = prefs.getString(_lastNudgeDateKey);
+      if (lastNudgeDateStr != null) {
+        final lastDate = DateTime.tryParse(lastNudgeDateStr);
+        if (lastDate != null) {
+          final daysSince = DateTime.now().difference(lastDate).inDays;
+          if (daysSince < _nudgeCooldownDays) return false;
+        }
       }
+    } catch (_) {
+      // SharedPreferences failure — skip nudge to be safe
+      return false;
     }
 
     return true;
@@ -77,13 +79,17 @@ class NudgeNotifier extends Notifier<NudgeState> {
   Future<void> markNudgeShown() async {
     state = state.copyWith(nudgeShownThisSession: true);
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _lastNudgeDateKey,
-      DateTime.now().toIso8601String(),
-    );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _lastNudgeDateKey,
+        DateTime.now().toIso8601String(),
+      );
+    } catch (_) {
+      // Best-effort persistence
+    }
   }
 }
 
 final nudgeProvider =
-    NotifierProvider<NudgeNotifier, NudgeState>(NudgeNotifier.new);
+    StateNotifierProvider<NudgeNotifier, NudgeState>((ref) => NudgeNotifier());
