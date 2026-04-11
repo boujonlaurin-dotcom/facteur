@@ -50,7 +50,7 @@ from app.schemas.digest import (
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
-from app.services.topic_selector import TopicGroup
+from app.services.topic_selector import ScoredArticle, TopicGroup
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
@@ -593,8 +593,6 @@ class DigestService:
             # Wrap emergency items in TopicGroups so the digest is stored
             # as topics_v1 — never produce flat_v1 legacy format.
             if emergency_items:
-                from app.services.topic_selector import ScoredArticle, TopicGroup
-
                 followed_src_ids = {
                     ei.content.source_id
                     for ei in emergency_items
