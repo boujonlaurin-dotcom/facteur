@@ -133,7 +133,7 @@ class _CommunityCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: colors.cardBackground,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: colors.textSecondary.withValues(alpha: 0.1),
