@@ -271,8 +271,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
 
     // 🌻 Nudge: record article open and start 30s timer
-    // Deferred to avoid modifying provider state during build phase
-    Future.microtask(() {
+    // Deferred to post-frame to avoid modifying provider state during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(nudgeProvider.notifier).recordArticleOpen();
     });
@@ -284,7 +284,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           .shouldShowNudge(isAlreadySunflowered: isLiked);
       if (shouldShow && mounted) {
         setState(() => _showSunflowerNudge = true);
-        ref.read(nudgeProvider.notifier).markNudgeShown();
+        // Defer provider mutation to avoid conflict with setState rebuild
+        Future.microtask(() {
+          ref.read(nudgeProvider.notifier).markNudgeShown();
+        });
         // Auto-dismiss after 5 seconds
         Future.delayed(const Duration(seconds: 5), () {
           if (mounted) setState(() => _showSunflowerNudge = false);
