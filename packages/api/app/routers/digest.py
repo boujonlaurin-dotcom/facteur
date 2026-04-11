@@ -32,6 +32,9 @@ from app.schemas.digest import (
     DigestResponse,
     DualDigestResponse,
 )
+from app.services.community_recommendation_service import (
+    CommunityRecommendationService,
+)
 from app.services.digest_service import DigestService
 from app.services.generation_state import is_generation_running
 from app.utils.time import today_paris
@@ -46,6 +49,85 @@ class ActionRequest(BaseModel):
 
     content_id: str
     action: str
+
+
+async def _enrich_community_carousel(
+    db: AsyncSession,
+    user_uuid: UUID,
+    digest: DigestResponse,
+) -> DigestResponse:
+    """Add community 🌻 carousel to digest response."""
+    from app.schemas.community import CommunityCarouselItem
+
+    try:
+        community_service = CommunityRecommendationService(db)
+        recent_items = await community_service.get_recent_recommendations(limit=8)
+
+        if not recent_items:
+            return digest
+
+        # Build carousel items with user status
+        all_ids = [item["content"].id for item in recent_items]
+        user_statuses: dict = {}
+        if all_ids:
+            from app.models.content import UserContentStatus
+
+            rows = (
+                await db.execute(
+                    select(UserContentStatus).where(
+                        UserContentStatus.user_id == user_uuid,
+                        UserContentStatus.content_id.in_(all_ids),
+                    )
+                )
+            ).scalars().all()
+            for row in rows:
+                user_statuses[row.content_id] = {
+                    "is_liked": row.is_liked,
+                    "is_saved": row.is_saved,
+                }
+
+        carousel_items = []
+        for item in recent_items:
+            content = item["content"]
+            status = user_statuses.get(content.id, {})
+            carousel_items.append(
+                CommunityCarouselItem(
+                    content_id=content.id,
+                    title=content.title,
+                    url=content.url,
+                    thumbnail_url=content.thumbnail_url,
+                    description=content.description,
+                    content_type=(
+                        content.content_type.value
+                        if hasattr(content.content_type, "value")
+                        else str(content.content_type)
+                    ),
+                    duration_seconds=content.duration_seconds,
+                    published_at=content.published_at,
+                    source={
+                        "id": content.source.id,
+                        "name": content.source.name,
+                        "logo_url": content.source.logo_url,
+                        "type": (
+                            content.source.source_type.value
+                            if hasattr(content.source.source_type, "value")
+                            else str(content.source.source_type)
+                        ),
+                        "theme": content.source.theme,
+                    },
+                    sunflower_count=item.get("sunflower_count", 0),
+                    is_liked=status.get("is_liked", False),
+                    is_saved=status.get("is_saved", False),
+                    topics=content.topics or [],
+                )
+            )
+
+        digest.community_carousel = carousel_items
+
+    except Exception:
+        logger.exception("community_carousel_enrichment_failed")
+
+    return digest
 
 
 @router.get("", response_model=DigestResponse)
@@ -138,12 +220,16 @@ async def get_digest(
             status_code=503, detail="Digest generation failed. Please try again later."
         )
 
+    # Enrich with community carousel
+    digest = await _enrich_community_carousel(db, user_uuid, digest)
+
     logger.info(
         "digest_retrieved",
         user_id=current_user_id,
         elapsed_ms=round(elapsed * 1000, 1),
         items_count=len(digest.items),
         is_completed=digest.is_completed,
+        community_carousel_count=len(digest.community_carousel),
     )
     return digest
 
@@ -206,6 +292,12 @@ async def get_both_digests(
     service = DigestService(db)
     serein_enabled = await service._get_user_serein_enabled(user_uuid)
 
+    # Enrich both variants with community carousel
+    if normal:
+        normal = await _enrich_community_carousel(db, user_uuid, normal)
+    if serein:
+        serein = await _enrich_community_carousel(db, user_uuid, serein)
+
     return DualDigestResponse(
         normal=normal,
         serein=serein,
@@ -265,8 +357,8 @@ async def apply_digest_action(
         messages = {
             DigestAction.READ: "Article marqué comme lu",
             DigestAction.SAVE: "Article sauvegardé",
-            DigestAction.LIKE: "Article aimé",
-            DigestAction.UNLIKE: "Like retiré",
+            DigestAction.LIKE: "Article recommandé 🌻",
+            DigestAction.UNLIKE: "Recommandation retirée",
             DigestAction.NOT_INTERESTED: "Article masqué et source ignorée",
             DigestAction.UNDO: "Action annulée",
         }

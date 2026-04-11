@@ -25,6 +25,8 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
+import '../../../widgets/sunflower_icon.dart';
+import '../providers/nudge_provider.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -107,6 +109,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
+  // 🌻 Nudge "Recommander ?" state
+  Timer? _sunflowerNudgeTimer;
+  bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
   double _prevNativeScrollOffset = 0.0;
@@ -262,6 +267,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     NoteWelcomeTooltip.shouldShow().then((show) {
       if (mounted && show) {
         setState(() => _showNoteWelcome = true);
+      }
+    });
+
+    // 🌻 Nudge: record article open and start 30s timer
+    ref.read(nudgeProvider.notifier).recordArticleOpen();
+    _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
+      if (!mounted) return;
+      final isLiked = _content?.isLiked ?? false;
+      final shouldShow = await ref
+          .read(nudgeProvider.notifier)
+          .shouldShowNudge(isAlreadySunflowered: isLiked);
+      if (shouldShow && mounted) {
+        setState(() => _showSunflowerNudge = true);
+        ref.read(nudgeProvider.notifier).markNudgeShown();
+        // Auto-dismiss after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted) setState(() => _showSunflowerNudge = false);
+        });
       }
     });
 
@@ -531,6 +554,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
+    // Dismiss sunflower nudge on any scroll
+    if (_showSunflowerNudge) {
+      setState(() => _showSunflowerNudge = false);
+    }
     final isVideo = _content?.isVideo ?? false;
     _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
@@ -710,6 +737,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final content = _content;
     if (content == null) return;
 
+    // Dismiss nudge if visible
+    if (_showSunflowerNudge) {
+      _showSunflowerNudge = false;
+    }
+
     HapticFeedback.lightImpact();
     final wasLiked = content.isLiked;
     final newLiked = !wasLiked;
@@ -728,8 +760,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (mounted) {
         NotificationService.showInfo(
           newLiked
-              ? 'Ajouté à vos contenus favoris'
-              : 'Retiré de vos contenus favoris',
+              ? 'Ajouté à Mes articles intéressants 🌻'
+              : 'Retiré de Mes articles intéressants 🌻',
         );
         // Refresh collections to update liked collection counts
         ref.invalidate(collectionsProvider);
@@ -859,6 +891,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
+    _sunflowerNudgeTimer?.cancel();
     _inactivityTimer?.cancel();
     _videoPlayHideTimer?.cancel();
     _linkCopiedFabTimer?.cancel();
@@ -1434,33 +1467,82 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                           const SizedBox(height: 12),
                         ],
-                        // Like FAB
-                        ScaleTransition(
-                          scale: _likeScaleAnimation,
-                          child: SizedBox(
-                            width: 50,
-                            height: 50,
-                            child: FloatingActionButton(
-                              onPressed: _toggleLike,
-                              backgroundColor: content.isLiked
-                                  ? colors.primary
-                                  : Colors.white,
-                              foregroundColor: content.isLiked
-                                  ? Colors.white
-                                  : colors.textPrimary,
-                              elevation: content.isLiked ? 4 : 2,
-                              heroTag: 'like_fab',
-                              tooltip: 'J\'aime',
-                              child: Icon(
-                                content.isLiked
-                                    ? PhosphorIcons.heart(
-                                        PhosphorIconsStyle.fill)
-                                    : PhosphorIcons.heart(
-                                        PhosphorIconsStyle.regular),
-                                size: 25,
+                        // 🌻 Sunflower recommendation FAB + nudge label
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Animated "Recommander ?" nudge label
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0.3, 0),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                              child: _showSunflowerNudge
+                                  ? Container(
+                                      key: const ValueKey('nudge_visible'),
+                                      margin: const EdgeInsets.only(right: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF8E1),
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.1),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Text(
+                                        'Recommander ? 🌻',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF795548),
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(
+                                      key: ValueKey('nudge_hidden'),
+                                    ),
+                            ),
+                            ScaleTransition(
+                              scale: _likeScaleAnimation,
+                              child: SizedBox(
+                                width: 50,
+                                height: 50,
+                                child: FloatingActionButton(
+                                  onPressed: _toggleLike,
+                                  backgroundColor: content.isLiked
+                                      ? const Color(0xFFFFF8E1)
+                                      : Colors.white,
+                                  foregroundColor: content.isLiked
+                                      ? const Color(0xFFFFC107)
+                                      : colors.textPrimary,
+                                  elevation: content.isLiked ? 4 : 2,
+                                  heroTag: 'sunflower_fab',
+                                  tooltip: 'Recommander',
+                                  child: SunflowerIcon(
+                                    isActive: content.isLiked,
+                                    size: 25,
+                                    inactiveColor: colors.textPrimary,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 12),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
