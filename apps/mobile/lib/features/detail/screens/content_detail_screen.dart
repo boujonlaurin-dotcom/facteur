@@ -1530,13 +1530,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 height: 50,
                                 child: FloatingActionButton(
                                   onPressed: _toggleLike,
-                                  backgroundColor: content.isLiked
-                                      ? const Color(0xFFFFF8E1)
-                                      : Colors.white,
-                                  foregroundColor: content.isLiked
-                                      ? const Color(0xFFFFC107)
-                                      : colors.textPrimary,
-                                  elevation: content.isLiked ? 4 : 2,
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: colors.textPrimary,
+                                  elevation: 2,
                                   heroTag: 'sunflower_fab',
                                   tooltip: 'Recommander',
                                   child: SunflowerIcon(
