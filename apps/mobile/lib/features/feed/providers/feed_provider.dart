@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
@@ -113,11 +114,6 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (prev != next) refresh();
     });
 
-    // Watch serein toggle to refetch feed when it changes
-    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
-      if (prev != next) refresh();
-    });
-
     // Fetch initial page
     final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);
@@ -207,10 +203,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         keyword: _selectedKeyword,
         serein: isSerein);
 
-    // Update pagination state: keep loading as long as the backend returns
-    // ANY items. Post-processing (regroupement, clustering) can shrink the
-    // response below `limit`, so count >= limit is unreliable.
-    _hasNext = response.items.isNotEmpty;
+    // Use backend has_next flag which accounts for total_candidates.
+    // Fallback: if backend says hasNext=false but items came back, trust backend.
+    _hasNext = response.pagination.hasNext;
 
     return response;
   }
@@ -231,19 +226,19 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         return;
       }
 
-      if (newItems.isNotEmpty) {
-        _page = nextPage;
-        // Append new items to the existing list
-        final currentItems = state.value?.items ?? [];
-        final currentCarousels = state.value?.carousels ?? [];
+      _page = nextPage;
+      // Append new items to the existing list
+      final currentItems = state.value?.items ?? [];
+      final currentCarousels = state.value?.carousels ?? [];
 
-        state = AsyncData(FeedState(
-          items: [...currentItems, ...newItems],
-          carousels: currentCarousels, // Keep page 1 carousels
-        ));
-      }
-    } catch (e, stack) {
-      state = AsyncError(e, stack);
+      state = AsyncData(FeedState(
+        items: [...currentItems, ...newItems],
+        carousels: [...currentCarousels, ...response.carousels],
+      ));
+    } catch (e, _) {
+      // Don't nuke the existing state on pagination errors — just stop loading
+      _hasNext = false;
+      debugPrint('FeedProvider.loadMore error: $e');
     } finally {
       _isLoadingMore = false;
     }
