@@ -9,6 +9,9 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 ///
 /// Planifie une notification quotidienne à 8h Europe/Paris pour rappeler
 /// à l'utilisateur que son digest est prêt. Pas de FCM — local uniquement.
+///
+/// Le contenu de la notification peut être mis à jour dynamiquement
+/// avec les topics du digest via [scheduleDailyDigestNotification].
 class PushNotificationService {
   PushNotificationService._();
 
@@ -133,10 +136,29 @@ class PushNotificationService {
     return granted;
   }
 
+  static const String defaultTitle = 'Ton Essentiel Facteur est prêt !';
+  static const String defaultBody = 'Tes sujets du jour t\'attendent';
+
+  /// Construit le body de la notification à partir des labels de topics du digest.
+  ///
+  /// Exemple : "Au programme : Trump, Retraites, Chômage... Ou rester serein ;-)"
+  /// Retourne [defaultBody] si la liste est vide.
+  static String buildNotificationBody(List<String> topicLabels) {
+    if (topicLabels.isEmpty) return defaultBody;
+
+    // Prendre les 3 premiers topics max pour rester concis
+    final displayLabels = topicLabels.take(3).toList();
+    final topicsText = displayLabels.join(', ');
+    return 'Au programme : $topicsText... Ou rester serein ;-)';
+  }
+
   /// Planifie la notification quotidienne de digest à 8h Europe/Paris.
   /// Utilise alarmClock (le plus fiable) avec fallback sur inexactAllowWhileIdle.
   /// Retourne true si la notification est effectivement planifiée.
-  Future<bool> scheduleDailyDigestNotification() async {
+  ///
+  /// [body] optionnel — permet de personnaliser le message avec les topics du digest.
+  /// Si null, utilise [defaultBody].
+  Future<bool> scheduleDailyDigestNotification({String? body}) async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     bool canUseExact = true;
@@ -162,6 +184,7 @@ class PushNotificationService {
     );
 
     final scheduledDate = _nextInstanceOf8AM();
+    final notificationBody = body ?? defaultBody;
 
     // alarmClock est le plus fiable (pas affecté par Doze ni battery optimization OEM)
     // Fallback sur inexactAllowWhileIdle si la permission exacte est refusée
@@ -172,8 +195,8 @@ class PushNotificationService {
     // v20: ALL parameters are named
     await _plugin.zonedSchedule(
       id: 0,
-      title: 'Votre digest est prêt !',
-      body: '5 articles sélectionnés pour vous ce matin',
+      title: defaultTitle,
+      body: notificationBody,
       scheduledDate: scheduledDate,
       notificationDetails: details,
       androidScheduleMode: scheduleMode,
@@ -181,7 +204,7 @@ class PushNotificationService {
     );
 
     debugPrint(
-      'PushNotificationService: Scheduled for $scheduledDate (mode: $scheduleMode, exact: $canUseExact)',
+      'PushNotificationService: Scheduled for $scheduledDate (mode: $scheduleMode, exact: $canUseExact, body: "$notificationBody")',
     );
 
     // Vérifier que la notification est bien dans la liste pending
