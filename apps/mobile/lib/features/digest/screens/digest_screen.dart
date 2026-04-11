@@ -670,9 +670,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 source: Source(
                                   id: item.sourceId ?? '',
                                   name: item.sourceName,
+                                  type: SourceType.article,
                                   logoUrl: item.sourceLogoUrl,
                                 ),
                                 contentType: ContentType.article,
+                                publishedAt: item.publishedAt ?? DateTime.now(),
                               );
                               context.pushNamed(
                                 RouteNames.articleDetail,

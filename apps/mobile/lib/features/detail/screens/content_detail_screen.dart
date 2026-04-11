@@ -746,16 +746,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final content = _content;
     if (content == null) return;
 
-    // Dismiss nudge if visible
-    if (_showSunflowerNudge) {
-      _showSunflowerNudge = false;
-    }
-
     HapticFeedback.lightImpact();
     final wasLiked = content.isLiked;
     final newLiked = !wasLiked;
     setState(() {
       _content = content.copyWith(isLiked: newLiked);
+      _showSunflowerNudge = false;
     });
 
     // Bounce animation
@@ -1508,7 +1504,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         boxShadow: [
                                           BoxShadow(
                                             color:
-                                                Colors.black.withOpacity(0.1),
+                                                Colors.black.withValues(alpha: 0.1),
                                             blurRadius: 8,
                                             offset: const Offset(0, 2),
                                           ),
