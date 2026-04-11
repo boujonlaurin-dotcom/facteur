@@ -47,6 +47,7 @@ from app.routers import (
     app_update,
     auth,
     collections,
+    community,
     contents,
     custom_topics,
     digest,
@@ -291,6 +292,7 @@ app.include_router(
     tags=["Personalization"],
 )
 app.include_router(collections.router, prefix="/api/collections", tags=["Collections"])
+app.include_router(community.router, prefix="/api/community", tags=["Community"])
 app.include_router(
     custom_topics.router,
     prefix="/api/personalization/topics",

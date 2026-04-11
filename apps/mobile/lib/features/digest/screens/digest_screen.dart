@@ -27,6 +27,7 @@ import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_format_provider.dart';
+import '../providers/community_carousel_provider.dart';
 import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
@@ -214,8 +215,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         );
     NotificationService.showInfo(
       item.isLiked
-          ? 'Retiré de vos contenus favoris'
-          : 'Ajouté à vos contenus favoris',
+          ? 'Retiré de Mes articles intéressants 🌻'
+          : 'Ajouté à Mes articles intéressants 🌻',
     );
     ref.invalidate(collectionsProvider);
   }
@@ -654,6 +655,31 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 : null,
                             ctaText:
                                 digest.usesEditorial ? digest.ctaText : null,
+                            communityCarousel: ref
+                                    .watch(communityCarouselProvider)
+                                    .valueOrNull
+                                    ?.digestCarousel ??
+                                [],
+                            onCommunityArticleTap: (item) {
+                              // Convert community carousel item to Content for navigation
+                              final content = Content(
+                                id: item.contentId,
+                                title: item.title,
+                                url: item.url,
+                                thumbnailUrl: item.thumbnailUrl,
+                                source: Source(
+                                  id: item.sourceId ?? '',
+                                  name: item.sourceName,
+                                  logoUrl: item.sourceLogoUrl,
+                                ),
+                                contentType: ContentType.article,
+                              );
+                              context.pushNamed(
+                                RouteNames.articleDetail,
+                                pathParameters: {'id': item.contentId},
+                                extra: content,
+                              );
+                            },
                           );
                         },
                         loading: () => _buildLoadingState(colors),
