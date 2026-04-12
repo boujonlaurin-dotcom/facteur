@@ -43,7 +43,11 @@ def _content_to_carousel_item(
             "id": content.source.id,
             "name": content.source.name,
             "logo_url": content.source.logo_url,
-            "type": content.source.source_type.value if hasattr(content.source.source_type, "value") else str(content.source.source_type),
+            # Source model exposes `.type` (Mapped[SourceType]), not `.source_type`.
+            # Accessing `.source_type` raised AttributeError → 500 on every
+            # /community/recommendations call, which was then swallowed by the
+            # mobile provider's try/catch (carousels appeared empty).
+            "type": content.source.type.value if hasattr(content.source.type, "value") else str(content.source.type),
             "theme": content.source.theme,
         },
         sunflower_count=item.get("sunflower_count", 0),

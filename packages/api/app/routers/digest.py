@@ -56,13 +56,33 @@ async def _enrich_community_carousel(
     user_uuid: UUID,
     digest: DigestResponse,
 ) -> DigestResponse:
-    """Add community 🌻 carousel to digest response."""
+    """Add community 🌻 carousel to digest response.
+
+    Fail-open: any error (DB, schema mismatch, timeout) is swallowed and the
+    original digest is returned unchanged. The carousel is a pure enhancement
+    — it must never break the digest endpoint.
+
+    Hard timeout at 3s so a slow carousel query can't stall digest delivery.
+    """
     from app.schemas.community import CommunityCarouselItem
 
     try:
         community_service = CommunityRecommendationService(db)
-        recent_items = await community_service.get_recent_recommendations(limit=8)
+        recent_items = await asyncio.wait_for(
+            community_service.get_recent_recommendations(limit=8),
+            timeout=3.0,
+        )
 
+        if not recent_items:
+            return digest
+
+        # Exclude articles already in the main digest items to avoid duplicates
+        digest_item_ids = {it.content_id for it in digest.items}
+        recent_items = [
+            it
+            for it in recent_items
+            if it["content"].id not in digest_item_ids
+        ]
         if not recent_items:
             return digest
 
@@ -108,10 +128,13 @@ async def _enrich_community_carousel(
                         "id": content.source.id,
                         "name": content.source.name,
                         "logo_url": content.source.logo_url,
+                        # Source model field is `.type` (SourceType enum),
+                        # not `.source_type`. Previous code raised
+                        # AttributeError → carousel silently empty.
                         "type": (
-                            content.source.source_type.value
-                            if hasattr(content.source.source_type, "value")
-                            else str(content.source.source_type)
+                            content.source.type.value
+                            if hasattr(content.source.type, "value")
+                            else str(content.source.type)
                         ),
                         "theme": content.source.theme,
                     },
@@ -124,6 +147,8 @@ async def _enrich_community_carousel(
 
         digest.community_carousel = carousel_items
 
+    except asyncio.TimeoutError:
+        logger.warning("community_carousel_enrichment_timeout")
     except Exception:
         logger.exception("community_carousel_enrichment_failed")
 

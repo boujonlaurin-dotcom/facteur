@@ -278,7 +278,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       final shouldShow = await NudgeTracker.shouldShowNudge(
         isAlreadySunflowered: isLiked,
       );
-      if (shouldShow && mounted) {
+      // Re-check after the await — user may have sunflowered manually
+      // in the meantime, in which case the nudge is no longer relevant.
+      if (shouldShow && mounted && !(_content?.isLiked ?? false)) {
         setState(() => _showSunflowerNudge = true);
         NudgeTracker.markNudgeShown();
         // Auto-dismiss after 5 seconds

@@ -345,6 +345,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
+                // Invalidate community carousel so pull-to-refresh
+                // brings fresh 🌻 recommendations alongside the digest.
+                ref.invalidate(communityCarouselProvider);
                 await ref.read(digestProvider.notifier).refreshDigest();
               },
               color: colors.primary,
