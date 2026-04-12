@@ -63,11 +63,28 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Returns the active digest based on the serein toggle.
+  ///
+  /// Intentionally does NOT cross-fall between variants: if the user has
+  /// toggled serein ON but the serein digest is missing (backend failed to
+  /// generate for today AND no recent serein fallback was available), we
+  /// return null rather than silently showing the pour_vous digest. The
+  /// screen then renders a dedicated "serein unavailable" empty state —
+  /// masking the failure with pour_vous content is worse than an honest
+  /// empty state because the user thinks serein is working when it isn't
+  /// (this was the 2026-04-12 regression: users saw pour_vous labelled as
+  /// serein for an entire day before the bug was spotted).
   DigestResponse? get _activeDigest {
     final isSerein = ref.read(sereinToggleProvider).enabled;
-    if (isSerein) return _sereinDigest ?? _normalDigest;
+    if (isSerein) return _sereinDigest;
     return _normalDigest;
   }
+
+  /// Public accessors so the screen can distinguish "both variants missing"
+  /// (pipeline-wide failure → show error state) from "serein missing but
+  /// normal present" (serein-specific failure → show dedicated empty state
+  /// with a one-tap switch back to normal).
+  DigestResponse? get normalDigest => _normalDigest;
+  DigestResponse? get sereinDigest => _sereinDigest;
 
   @override
   FutureOr<DigestResponse?> build() async {

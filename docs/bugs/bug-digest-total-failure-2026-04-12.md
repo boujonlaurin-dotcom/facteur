@@ -312,6 +312,70 @@ Chaque section est wrappée dans un try/except : une table manquante ne casse
 pas les autres probes. L'endpoint est scopé au user authentifié (pas de
 query param `user_id` — cohérence avec le reste de `/api/digest/*`).
 
+## Session #5 — résilience variant Serein (cette PR)
+
+### Symptôme rapporté
+> "J'ai merge le fix ce qui a marché pour afficher le digest Normal, mais
+> pas pour afficher le digest Serein (qui aujourd'hui, est le même que le
+> digest Normal)."
+
+### Cause racine
+
+Deux bugs combinés produisent "le Serein affiche le même contenu que le
+Normal" :
+
+1. **Backend** — `DigestService.get_or_create_digest` ne faisait qu'un
+   fallback "J-1" (une seule journée en arrière). Pour la variante serein,
+   un seul batch manqué suffisait à épuiser la chaîne de fallback et à
+   renvoyer `None` (→ 503).
+
+2. **Mobile** — `apps/mobile/lib/features/digest/providers/digest_provider.dart`,
+   `_activeDigest` faisait `_sereinDigest ?? _normalDigest`. Quand le
+   backend renvoyait `null` pour serein mais une réponse valide pour
+   pour_vous (via `/digest/both`), le client **affichait silencieusement
+   le pour_vous étiqueté comme serein** — exactement la régression
+   rapportée par l'utilisateur.
+
+### Fix — backend
+
+`packages/api/app/services/digest_service.py` :
+
+- Remplacement du fallback 1-jour par `_try_recent_variant_fallback()` qui
+  walk-back jour par jour jusqu'à **7 jours** pour la **même variante**
+  (jamais cross-variant).
+- Saute les `flat_v1` (legacy) et les digests qui ne rendent pas.
+- Le premier hit déclenche un `_schedule_background_regen` pour aujourd'hui
+  et marque la réponse `is_stale_fallback=True` (le mobile auto-refetche).
+- Nouveau log `digest_serving_recent_variant_fallback` avec `days_back` +
+  `variant`.
+- `digest_recent_variant_fallback_exhausted` quand les 7 jours sont vides.
+
+Tests : `TestRecentVariantFallback` dans `tests/test_digest_service.py`
+(3 tests) :
+- `test_serein_fallback_walks_back_multiple_days` — vérifie que le walk
+  remonte jusqu'à J-3 et que chaque lookup passe `is_serene=True`.
+- `test_serein_fallback_never_returns_pour_vous_digest` — garde-fou : un
+  digest pour_vous présent à J-1 ne doit **jamais** satisfaire une
+  requête serein.
+- `test_fallback_skips_flat_v1_and_tries_older` — les records `flat_v1`
+  sont sautés plutôt que servis.
+
+### Fix — mobile
+
+`apps/mobile/lib/features/digest/providers/digest_provider.dart` :
+
+- `_activeDigest` retourne désormais `_sereinDigest` tel quel (null si
+  indisponible), **sans fallback cross-variant**.
+- Expose `normalDigest` et `sereinDigest` comme getters publics pour que
+  l'écran distingue "pipeline totalement cassée" de "serein seul cassé".
+
+`apps/mobile/lib/features/digest/screens/digest_screen.dart` :
+
+- Nouveau `_buildSereinUnavailableState()` affiché quand le toggle serein
+  est ON, l'`AsyncData` est null (ou items vides), mais `normalDigest`
+  existe. Deux CTA : "Réessayer" (refresh) et "Mode Normal" (bascule le
+  toggle). **Ne substitue jamais le contenu pour_vous**.
+
 ### Ce qui reste à faire côté ops (hors scope code)
 
 1. **Vérifier/appliquer `td01` + `dg01` sur Supabase production** — le SQL

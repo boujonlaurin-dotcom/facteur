@@ -427,52 +427,36 @@ class DigestService:
                         # flat_v1 is expendable — delete and regenerate
                         await self.session.delete(existing_digest)
                         await self.session.flush()
-        # 1b. No digest for today — try serving yesterday's digest instantly
-        # while triggering a real background regeneration so the next read
-        # gets fresh content. Without the background trigger this fallback
-        # is a dead-end: the user sees yesterday's digest all day even when
-        # the batch never reran for them.
+        # 1b. No digest for today — walk back up to RECENT_FALLBACK_DAYS to
+        # find the most recent renderable digest for this SAME variant, and
+        # serve it as a stale fallback while triggering a real background
+        # regeneration so the next read gets fresh content.
+        #
+        # Why multi-day (not just yesterday): for the serein variant in
+        # particular, a single-day lookback frequently comes up empty (serein
+        # generation can skip a day if the classification pool is thin or if
+        # a single batch-job failure on that variant isn't retried). Without
+        # a deeper lookback, a broken serein for today falls through to
+        # `return None` → the mobile client silently substitutes the
+        # pour_vous digest (see apps/mobile/.../digest_provider.dart
+        # `_activeDigest`). That is the exact "serein shows the same content
+        # as pour_vous" bug we want to prevent — so we instead serve the
+        # user's MOST RECENT real serein digest, clearly marked as stale.
+        #
+        # IMPORTANT: this lookup is scoped to the requested `is_serene`
+        # value. We NEVER cross-fall between variants — pour_vous always
+        # looks for pour_vous, serein always looks for serein.
+        RECENT_FALLBACK_DAYS = 7
         if not force_regenerate:
-            yesterday = target_date - timedelta(days=1)
-            yesterday_digest = await self._get_existing_digest(
-                user_id, yesterday, is_serene=is_serene
+            stale_response = await self._try_recent_variant_fallback(
+                user_id=user_id,
+                target_date=target_date,
+                is_serene=is_serene,
+                expected_version=expected_version,
+                max_days_back=RECENT_FALLBACK_DAYS,
             )
-            if yesterday_digest:
-                # Schedule background regen (rate-limited to 1/min per user-day-variant)
-                _schedule_background_regen(
-                    user_id=user_id,
-                    target_date=target_date,
-                    is_serene=is_serene,
-                )
-
-                # Never serve a flat_v1 (legacy) digest as yesterday fallback —
-                # skip to real generation instead.
-                if yesterday_digest.format_version == "flat_v1":
-                    logger.warning(
-                        "digest_yesterday_flat_v1_skipped",
-                        user_id=str(user_id),
-                        yesterday_date=str(yesterday),
-                    )
-                else:
-                    logger.warning(
-                        "digest_serving_yesterday_while_regenerating",
-                        user_id=str(user_id),
-                        yesterday_date=str(yesterday),
-                        format_version=yesterday_digest.format_version,
-                        expected_version=expected_version,
-                    )
-                    try:
-                        response = await self._build_digest_response(
-                            yesterday_digest, user_id
-                        )
-                        response.is_stale_fallback = True
-                        return response
-                    except Exception:
-                        logger.warning(
-                            "digest_yesterday_fallback_render_failed",
-                            user_id=str(user_id),
-                            format_version=yesterday_digest.format_version,
-                        )
+            if stale_response is not None:
+                return stale_response
 
         logger.info(
             "digest_no_existing",
@@ -1166,6 +1150,106 @@ class DigestService:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def _try_recent_variant_fallback(
+        self,
+        user_id: UUID,
+        target_date: date,
+        is_serene: bool,
+        expected_version: str,
+        max_days_back: int = 7,
+    ) -> DigestResponse | None:
+        """Serve the most recent renderable same-variant digest as a stale fallback.
+
+        Walks backward day by day from `target_date - 1` to
+        `target_date - max_days_back`, looking for a DailyDigest row with the
+        SAME `is_serene` value that:
+          - isn't the legacy `flat_v1` format, and
+          - renders successfully via `_build_digest_response`.
+
+        Why same-variant only: the mobile client has a silent cross-variant
+        fallback (`_sereinDigest ?? _normalDigest`). If we fail to serve a
+        serein digest here, the user ends up looking at the pour_vous digest
+        labelled as serein — which is exactly the bug we want to prevent.
+        Serving an older but genuinely-serein digest (clearly marked as
+        stale via `is_stale_fallback`) is strictly better than showing the
+        wrong content.
+
+        Side effects:
+          - schedules a background regen for today on first hit, so the
+            next poll picks up fresh content;
+          - emits `digest_serving_recent_variant_fallback` with the age in
+            days of the digest we served.
+
+        Returns None if no renderable same-variant digest exists in the
+        lookback window — caller then falls through to real generation.
+        """
+        variant_label = "serein" if is_serene else "pour_vous"
+        regen_scheduled = False
+
+        for days_back in range(1, max_days_back + 1):
+            candidate_date = target_date - timedelta(days=days_back)
+            candidate = await self._get_existing_digest(
+                user_id, candidate_date, is_serene=is_serene
+            )
+            if candidate is None:
+                continue
+
+            if candidate.format_version == "flat_v1":
+                # Legacy format — skip to the next older day rather than
+                # serve a downgraded rendering.
+                logger.info(
+                    "digest_recent_variant_fallback_skipping_flat_v1",
+                    user_id=str(user_id),
+                    variant=variant_label,
+                    candidate_date=str(candidate_date),
+                    days_back=days_back,
+                )
+                continue
+
+            # Schedule the regen on the first hit only — we don't need to
+            # re-queue it for each older day we try.
+            if not regen_scheduled:
+                _schedule_background_regen(
+                    user_id=user_id,
+                    target_date=target_date,
+                    is_serene=is_serene,
+                )
+                regen_scheduled = True
+
+            try:
+                response = await self._build_digest_response(candidate, user_id)
+            except Exception:
+                logger.warning(
+                    "digest_recent_variant_fallback_render_failed",
+                    user_id=str(user_id),
+                    variant=variant_label,
+                    candidate_date=str(candidate_date),
+                    days_back=days_back,
+                    format_version=candidate.format_version,
+                )
+                # Try an older day rather than giving up on the variant.
+                continue
+
+            logger.warning(
+                "digest_serving_recent_variant_fallback",
+                user_id=str(user_id),
+                variant=variant_label,
+                candidate_date=str(candidate_date),
+                days_back=days_back,
+                format_version=candidate.format_version,
+                expected_version=expected_version,
+            )
+            response.is_stale_fallback = True
+            return response
+
+        logger.info(
+            "digest_recent_variant_fallback_exhausted",
+            user_id=str(user_id),
+            variant=variant_label,
+            max_days_back=max_days_back,
+        )
+        return None
 
     async def _create_digest_record(
         self,

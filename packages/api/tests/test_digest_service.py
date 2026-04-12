@@ -349,8 +349,10 @@ class TestFallbackYesterday:
             ),
             patch.object(service, "_build_digest_response", mock_build),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
             ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
@@ -466,12 +468,16 @@ class TestFallbackYesterday:
                 service, "_get_existing_digest", side_effect=fake_get_existing
             ),
             patch.object(
-                service, "_build_digest_response",
-                new_callable=AsyncMock, return_value=response,
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=response,
             ),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
             ),
             patch(
                 "app.services.digest_service._schedule_background_regen"
@@ -595,16 +601,22 @@ class TestDeferredStaleFormatDeletion:
                 service, "_get_existing_digest", side_effect=fake_get_existing
             ),
             patch.object(
-                service, "_get_user_digest_format",
-                new_callable=AsyncMock, return_value="editorial",
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
             ),
             patch.object(
-                service, "_get_emergency_candidates",
-                new_callable=AsyncMock, return_value=[],
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
             ),
             patch.object(
-                service, "_build_digest_response",
-                new_callable=AsyncMock, return_value=response,
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=response,
             ),
         ):
             mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
@@ -723,8 +735,10 @@ class TestRenderFailureFallback:
         # (An exact "was/wasn't deleted" assertion depends on whether
         # generation also failed here; the key regression is the absence
         # of a re-raise, checked by reaching this line.)
-        assert result is None or result is fresh_response or hasattr(
-            result, "is_stale_fallback"
+        assert (
+            result is None
+            or result is fresh_response
+            or hasattr(result, "is_stale_fallback")
         )
 
     @pytest.mark.asyncio
@@ -785,3 +799,238 @@ class TestRenderFailureFallback:
         # pre-emptively wiping the only digest the user has.
         for call in mock_session.delete.call_args_list:
             assert call.args[0] is not corrupted
+
+
+# ─── Tests: multi-day same-variant fallback (serein regression) ────────────────
+
+
+class TestRecentVariantFallback:
+    """Walk back up to 7 days for a SAME-variant digest before falling through.
+
+    Regression for the 2026-04-12 serein outage: with the old 1-day fallback,
+    a single missed serein batch meant the endpoint returned None. The mobile
+    client then silently rendered the pour_vous digest labelled as serein
+    (see ``_activeDigest`` in digest_provider.dart). These tests lock in:
+
+      1. We never cross-fall: a serein request never serves a pour_vous
+         digest, no matter how old.
+      2. We walk back multiple days to find the most recent serein digest.
+      3. The served response is marked ``is_stale_fallback=True`` and
+         schedules a background regen for today.
+      4. Format_version ``flat_v1`` is skipped over (we'd rather walk back
+         further than downgrade the user to the legacy layout).
+    """
+
+    @pytest.mark.asyncio
+    async def test_serein_fallback_walks_back_multiple_days(
+        self, service, mock_session
+    ):
+        """When yesterday has no serein digest, walk back until one is found."""
+        from app.schemas.digest import DigestResponse
+
+        user_id = uuid4()
+        today = date.today()
+        three_days_ago = today - timedelta(days=3)
+
+        serein_three_days_ago = Mock()
+        serein_three_days_ago.id = uuid4()
+        serein_three_days_ago.target_date = three_days_ago
+        serein_three_days_ago.format_version = "editorial_v1"
+        serein_three_days_ago.user_id = user_id
+        serein_three_days_ago.is_serene = True
+
+        response = DigestResponse(
+            digest_id=serein_three_days_ago.id,
+            user_id=user_id,
+            target_date=three_days_ago,
+            generated_at=datetime.utcnow(),
+            items=[],
+            format_version="editorial_v1",
+            is_serene=True,
+        )
+
+        lookup_log: list[tuple[date, bool]] = []
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            lookup_log.append((d, is_serene))
+            # Only the 3-days-ago serein digest exists.
+            if d == three_days_ago and is_serene is True:
+                return serein_three_days_ago
+            return None
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_build_digest_response",
+                new_callable=AsyncMock,
+                return_value=response,
+            ),
+            patch(
+                "app.services.digest_service._schedule_background_regen"
+            ) as mock_schedule,
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, is_serene=True
+            )
+
+        assert result is response
+        assert result.is_stale_fallback is True
+        # Regen scheduled for TODAY with is_serene=True (not pour_vous).
+        mock_schedule.assert_called_once()
+        kwargs = mock_schedule.call_args.kwargs
+        assert kwargs["target_date"] == today
+        assert kwargs["is_serene"] is True
+        # Every lookup passed is_serene=True — we never queried the pour_vous
+        # variant during the fallback walk.
+        fallback_lookups = [(d, s) for d, s in lookup_log if d != today]
+        assert fallback_lookups, "expected at least one fallback lookup"
+        assert all(s is True for _, s in fallback_lookups), (
+            "fallback walked into pour_vous variant — should never happen"
+        )
+
+    @pytest.mark.asyncio
+    async def test_serein_fallback_never_returns_pour_vous_digest(
+        self, service, mock_session
+    ):
+        """A pour_vous digest existing for yesterday must NOT satisfy a serein request."""
+        user_id = uuid4()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+
+        # Only the pour_vous variant exists for yesterday; no serein digest
+        # anywhere in the lookback window.
+        pour_vous_yesterday = Mock()
+        pour_vous_yesterday.id = uuid4()
+        pour_vous_yesterday.target_date = yesterday
+        pour_vous_yesterday.format_version = "editorial_v1"
+        pour_vous_yesterday.user_id = user_id
+        pour_vous_yesterday.is_serene = False
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            # Return pour_vous ONLY when caller explicitly asks is_serene=False.
+            if d == yesterday and is_serene is False:
+                return pour_vous_yesterday
+            return None
+
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        _prefs_result = Mock()
+        _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        mock_session.execute.return_value = _prefs_result
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(
+                service, "_build_digest_response", new_callable=AsyncMock
+            ) as mock_build,
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            await service.get_or_create_digest(
+                user_id=user_id, target_date=today, is_serene=True
+            )
+
+        # `_build_digest_response` must never have been called with the
+        # pour_vous record — even though it was the most recent digest in DB.
+        for call in mock_build.call_args_list:
+            served = call.args[0]
+            assert served is not pour_vous_yesterday, (
+                "serein request served a pour_vous digest as fallback"
+            )
+
+    @pytest.mark.asyncio
+    async def test_fallback_skips_flat_v1_and_tries_older(self, service, mock_session):
+        """flat_v1 candidates are skipped; walk keeps going to find a modern one."""
+        from app.schemas.digest import DigestResponse
+
+        user_id = uuid4()
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        two_days_ago = today - timedelta(days=2)
+
+        flat_yesterday = Mock()
+        flat_yesterday.id = uuid4()
+        flat_yesterday.target_date = yesterday
+        flat_yesterday.format_version = "flat_v1"  # legacy — must skip
+        flat_yesterday.user_id = user_id
+        flat_yesterday.is_serene = True
+
+        modern_two_days_ago = Mock()
+        modern_two_days_ago.id = uuid4()
+        modern_two_days_ago.target_date = two_days_ago
+        modern_two_days_ago.format_version = "editorial_v1"
+        modern_two_days_ago.user_id = user_id
+        modern_two_days_ago.is_serene = True
+
+        response = DigestResponse(
+            digest_id=modern_two_days_ago.id,
+            user_id=user_id,
+            target_date=two_days_ago,
+            generated_at=datetime.utcnow(),
+            items=[],
+            format_version="editorial_v1",
+            is_serene=True,
+        )
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            if d == yesterday and is_serene is True:
+                return flat_yesterday
+            if d == two_days_ago and is_serene is True:
+                return modern_two_days_ago
+            return None
+
+        built: list = []
+
+        async def fake_build(digest, uid):
+            built.append(digest)
+            return response
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(service, "_build_digest_response", side_effect=fake_build),
+            patch("app.services.digest_service._schedule_background_regen"),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today, is_serene=True
+            )
+
+        assert result is response
+        # flat_v1 was never passed to _build_digest_response.
+        assert flat_yesterday not in built
+        assert modern_two_days_ago in built

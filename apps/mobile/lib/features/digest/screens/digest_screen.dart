@@ -606,6 +606,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                         data: (digest) {
                           if (digest == null ||
                               (digest.items.isEmpty && digest.topics.isEmpty)) {
+                            // Distinguish "serein-only missing" from "both
+                            // missing": if the user has toggled serein ON
+                            // but only the normal digest exists, show a
+                            // dedicated empty state with a one-tap switch
+                            // back to normal. This prevents the silent
+                            // cross-variant fallback where users saw the
+                            // pour_vous digest labelled as serein.
+                            if (sereinState.enabled) {
+                              final notifier =
+                                  ref.read(digestProvider.notifier);
+                              if (notifier.normalDigest != null) {
+                                return _buildSereinUnavailableState(
+                                    context, ref, colors);
+                              }
+                            }
                             return _buildEmptyState(colors);
                           }
 
@@ -727,6 +742,73 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Shown when the serein toggle is ON but no serein digest is available
+  /// (today's serein failed to generate AND no recent serein digest exists
+  /// in the backend's lookback window). Explicitly does NOT substitute the
+  /// pour_vous digest — the user picks between waiting, retrying, or
+  /// switching back to normal mode.
+  Widget _buildSereinUnavailableState(
+    BuildContext context,
+    WidgetRef ref,
+    FacteurColors colors,
+  ) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              PhosphorIcons.flowerLotus(),
+              size: 64,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Mode Serein indisponible aujourd\'hui',
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Nous n\'avons pas trouvé assez d\'articles sereins récents. '
+              'Revenez plus tard, ou consultez votre Essentiel normal.',
+              style: TextStyle(
+                color: colors.textTertiary,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => ref
+                      .read(digestProvider.notifier)
+                      .refreshDigest(),
+                  icon: Icon(PhosphorIcons.arrowClockwise()),
+                  label: const Text('Réessayer'),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: () =>
+                      ref.read(sereinToggleProvider.notifier).toggle(),
+                  icon: Icon(PhosphorIcons.newspaper()),
+                  label: const Text('Mode Normal'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
