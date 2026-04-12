@@ -125,10 +125,16 @@ class DigestGenerationJob:
             # Seed generation-state rows for every (user, variant) as
             # "pending" so observability queries can distinguish "never
             # attempted" from "not yet run".
-            for uid in user_ids:
-                for is_ser in (False, True):
-                    await state_mark_pending(session, uid, target_date, is_ser)
-            await session.commit()
+            # Wrapped in try/except so a missing table never crashes
+            # the entire batch — observability must not block generation.
+            try:
+                for uid in user_ids:
+                    for is_ser in (False, True):
+                        await state_mark_pending(session, uid, target_date, is_ser)
+                await session.commit()
+            except Exception:
+                logger.exception("digest_generation_state_seeding_failed")
+                await session.rollback()
 
             # 1.5 Build global trending context ONCE for the entire batch
             global_trending_context: GlobalTrendingContext | None = None

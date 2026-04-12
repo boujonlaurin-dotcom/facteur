@@ -56,6 +56,7 @@ async def mark_pending(
     try:
         await session.execute(stmt)
     except Exception:
+        await session.rollback()
         logger.exception(
             "digest_generation_state_mark_pending_failed",
             user_id=str(user_id),
@@ -97,6 +98,7 @@ async def mark_in_progress(
     try:
         await session.execute(stmt)
     except Exception:
+        await session.rollback()
         logger.exception(
             "digest_generation_state_mark_in_progress_failed",
             user_id=str(user_id),
@@ -138,6 +140,7 @@ async def mark_success(
     try:
         await session.execute(stmt)
     except Exception:
+        await session.rollback()
         logger.exception(
             "digest_generation_state_mark_success_failed",
             user_id=str(user_id),
@@ -184,6 +187,7 @@ async def mark_failed(
     try:
         await session.execute(stmt)
     except Exception:
+        await session.rollback()
         logger.exception(
             "digest_generation_state_mark_failed_failed",
             user_id=str(user_id),
