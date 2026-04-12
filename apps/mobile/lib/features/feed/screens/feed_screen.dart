@@ -899,7 +899,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           (notifier.selectedTheme != null ||
                                                   notifier.selectedTopic != null ||
                                                   notifier.selectedEntity != null ||
-                                                  notifier.selectedSourceId != null)
+                                                  notifier.selectedSourceId != null ||
+                                                  notifier.selectedKeyword != null)
                                               ? const SizedBox.shrink()
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
