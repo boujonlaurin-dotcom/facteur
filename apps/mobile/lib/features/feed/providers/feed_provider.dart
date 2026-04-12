@@ -203,10 +203,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         keyword: _selectedKeyword,
         serein: isSerein);
 
-    // Use backend has_next flag, but override to false if no items returned.
-    // The backend computes has_next from total_candidates (pre-regroupement),
-    // which can be larger than the actual paginated results.
-    _hasNext = response.items.isNotEmpty && response.pagination.hasNext;
+    // Use backend has_next flag which accounts for total_candidates.
+    // Fallback: if backend says hasNext=false but items came back, trust backend.
+    _hasNext = response.pagination.hasNext;
 
     return response;
   }
