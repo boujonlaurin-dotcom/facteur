@@ -56,7 +56,14 @@ async def _enrich_community_carousel(
     user_uuid: UUID,
     digest: DigestResponse,
 ) -> DigestResponse:
-    """Add community 🌻 carousel to digest response."""
+    """Add community 🌻 carousel to digest response.
+
+    Fails open: any exception returns `digest` unchanged so the community
+    carousel is a purely additive surface and can never break digest loading.
+    """
+    import datetime
+
+    from app.models.content import UserContentStatus
     from app.schemas.community import CommunityCarouselItem
 
     try:
@@ -70,8 +77,6 @@ async def _enrich_community_carousel(
         all_ids = [item["content"].id for item in recent_items]
         user_statuses: dict = {}
         if all_ids:
-            from app.models.content import UserContentStatus
-
             rows = (
                 await db.execute(
                     select(UserContentStatus).where(
@@ -89,38 +94,52 @@ async def _enrich_community_carousel(
         carousel_items = []
         for item in recent_items:
             content = item["content"]
+            if content.source is None:
+                continue
             status = user_statuses.get(content.id, {})
-            carousel_items.append(
-                CommunityCarouselItem(
-                    content_id=content.id,
-                    title=content.title,
-                    url=content.url,
-                    thumbnail_url=content.thumbnail_url,
-                    description=content.description,
-                    content_type=(
-                        content.content_type.value
-                        if hasattr(content.content_type, "value")
-                        else str(content.content_type)
-                    ),
-                    duration_seconds=content.duration_seconds,
-                    published_at=content.published_at,
-                    source={
-                        "id": content.source.id,
-                        "name": content.source.name,
-                        "logo_url": content.source.logo_url,
-                        "type": (
-                            content.source.source_type.value
-                            if hasattr(content.source.source_type, "value")
-                            else str(content.source.source_type)
+            content_type = content.content_type
+            source_type = content.source.source_type
+            try:
+                carousel_items.append(
+                    CommunityCarouselItem(
+                        content_id=content.id,
+                        title=content.title or "",
+                        url=content.url or "",
+                        thumbnail_url=content.thumbnail_url,
+                        description=content.description,
+                        content_type=(
+                            content_type.value
+                            if hasattr(content_type, "value")
+                            else str(content_type)
                         ),
-                        "theme": content.source.theme,
-                    },
-                    sunflower_count=item.get("sunflower_count", 0),
-                    is_liked=status.get("is_liked", False),
-                    is_saved=status.get("is_saved", False),
-                    topics=content.topics or [],
+                        duration_seconds=content.duration_seconds,
+                        # Fallback to now() if null — schema requires a value
+                        published_at=(
+                            content.published_at
+                            or datetime.datetime.now(datetime.UTC)
+                        ),
+                        source={
+                            "id": content.source.id,
+                            "name": content.source.name,
+                            "logo_url": content.source.logo_url,
+                            "type": (
+                                source_type.value
+                                if hasattr(source_type, "value")
+                                else str(source_type)
+                            ),
+                            "theme": content.source.theme,
+                        },
+                        sunflower_count=item.get("sunflower_count", 0),
+                        is_liked=status.get("is_liked", False),
+                        is_saved=status.get("is_saved", False),
+                        topics=content.topics or [],
+                    )
                 )
-            )
+            except Exception:
+                logger.exception(
+                    "community_carousel_item_skipped",
+                    content_id=str(content.id),
+                )
 
         digest.community_carousel = carousel_items
 

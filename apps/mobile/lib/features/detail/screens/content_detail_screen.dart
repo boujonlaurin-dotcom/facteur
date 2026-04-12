@@ -749,6 +749,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     HapticFeedback.lightImpact();
     final wasLiked = content.isLiked;
     final newLiked = !wasLiked;
+    // Cancel the pending nudge timer if the user sunflowers manually during
+    // the 30s wait — avoids firing a redundant "Recommander ?" pill.
+    _sunflowerNudgeTimer?.cancel();
     setState(() {
       _content = content.copyWith(isLiked: newLiked);
       _showSunflowerNudge = false;

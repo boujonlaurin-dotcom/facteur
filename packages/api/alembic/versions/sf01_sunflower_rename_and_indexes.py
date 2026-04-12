@@ -1,9 +1,13 @@
 """Sunflower 🌻 feature: rename liked collection + add scoring indexes.
 
 Revision ID: sf01
-Revises: td01
+Revises: dg01
 Create Date: 2026-04-11
 
+Chained after `dg01` (merged via PR #374 on main) so the alembic history
+stays single-headed. When this branch was opened, `td01` was the head; the
+digest reliability fix (`dg01`) landed on main in parallel, so rebasing the
+sunflower down_revision resolves the duplicate head without a merge revision.
 """
 from collections.abc import Sequence
 
@@ -11,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "sf01"
-down_revision: str = "td01"
+down_revision: str = "dg01"
 branch_labels: Sequence[str] | None = None
 depends_on: str | None = None
 

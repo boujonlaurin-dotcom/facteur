@@ -25,6 +25,7 @@ import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../models/community_carousel_model.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_format_provider.dart';
 import '../providers/community_carousel_provider.dart';
@@ -207,6 +208,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
+  /// Filter the digest community carousel to exclude any article that already
+  /// appears in the main digest flow (flat items + per-topic articles). The
+  /// backend deduplicates Feed↔Digest carousels, but a digest article picked
+  /// for the carousel would still look duplicated to the user.
+  List<CommunityCarouselItem> _filterCommunityCarousel(DigestResponse digest) {
+    final all = ref.watch(communityCarouselProvider).valueOrNull?.digestCarousel;
+    if (all == null || all.isEmpty) return const [];
+    final shownIds = <String>{
+      for (final it in digest.items) it.contentId,
+      for (final t in digest.topics)
+        for (final it in t.articles) it.contentId,
+    };
+    return all.where((ci) => !shownIds.contains(ci.contentId)).toList();
+  }
+
   void _handleLike(DigestItem item) {
     HapticFeedback.mediumImpact();
     ref.read(digestProvider.notifier).applyAction(
@@ -345,6 +361,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
+                // Refresh both the digest itself and the community 🌻 carousel
+                // so newly-sunflowered articles appear after a pull-to-refresh.
+                ref.invalidate(communityCarouselProvider);
                 await ref.read(digestProvider.notifier).refreshDigest();
               },
               color: colors.primary,
@@ -655,11 +674,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 : null,
                             ctaText:
                                 digest.usesEditorial ? digest.ctaText : null,
-                            communityCarousel: ref
-                                    .watch(communityCarouselProvider)
-                                    .valueOrNull
-                                    ?.digestCarousel ??
-                                [],
+                            communityCarousel:
+                                _filterCommunityCarousel(digest),
                             onCommunityArticleTap: (item) {
                               // Convert community carousel item to Content for navigation
                               final content = Content(
