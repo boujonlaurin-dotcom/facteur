@@ -405,21 +405,17 @@ class FeedRepository {
           itemsList = [];
         }
 
-        // Use backend pagination metadata when available (Map format).
-        // For legacy List format, fallback to items.isNotEmpty.
-        final paginationRaw = data is Map<String, dynamic>
-            ? data['pagination'] as Map<String, dynamic>?
-            : null;
-        final hasNext = paginationRaw != null
-            ? (paginationRaw['has_next'] as bool? ?? itemsList.isNotEmpty)
-            : itemsList.isNotEmpty;
+        // Pagination inference: non-empty means more pages may exist.
+        // The provider controls actual _hasNext state via items.isNotEmpty;
+        // this value is informational for the FeedResponse model.
+        final hasNext = itemsList.isNotEmpty;
 
         return FeedResponse(
           items: itemsList,
           pagination: Pagination(
             page: page,
             perPage: limit,
-            total: paginationRaw?['total'] as int? ?? 0,
+            total: 0, // Inconnu
             hasNext: hasNext,
           ),
           carousels: carousels,

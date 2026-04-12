@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../config/routes.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../providers/feed_provider.dart';
 import '../widgets/welcome_banner.dart';
@@ -135,11 +136,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     if (mounted) {
       ref.read(feedProvider.notifier).markContentAsConsumed(content);
 
-      // Capture notifier ref before the delay to avoid ref-after-disposal
-      final streakNotifier = ref.read(streakProvider.notifier);
       Future<void>.delayed(const Duration(milliseconds: 1100), () {
         if (mounted) {
-          streakNotifier.refreshSilent();
+          ref.read(streakProvider.notifier).refreshSilent();
         }
       });
     }
@@ -167,7 +166,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
       '/feed/content/${content.id}',
       extra: content,
     );
-    if (updated != null && mounted) {
+    if (updated != null) {
       ref.read(feedProvider.notifier).updateContent(updated);
     }
   }
@@ -185,6 +184,18 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   @override
   void dispose() {
+    // Track analytics before disposing controller
+    // Note: ref may not be available during dispose in Riverpod, so we catch any errors
+    try {
+      // Only track if we have valid data and ref is still available
+      if (_itemsViewed > 0) {
+        final analytics = ref.read(analyticsServiceProvider);
+        analytics.trackFeedScroll(_maxScrollPercent, _itemsViewed);
+      }
+    } catch (e) {
+      // Silently ignore ref errors during dispose - widget is being cleaned up
+      debugPrint('FeedScreen: Analytics tracking skipped during dispose');
+    }
     _scrollController.dispose();
     super.dispose();
   }
@@ -696,7 +707,6 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                   .read(collectionsRepositoryProvider);
                                               await colRepo.addToCollection(
                                                   defaultCol.id, c.id);
-                                              if (!context.mounted) return;
                                               ref.invalidate(collectionsProvider);
                                             }
                                             if (context.mounted) {
@@ -748,15 +758,13 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             ref.watch(sereinToggleProvider).enabled,
                                         onReportNotSerene: (c) async {
                                           HapticFeedback.lightImpact();
-                                          final feedRepo =
-                                              ref.read(feedRepositoryProvider);
                                           try {
+                                            final feedRepo =
+                                                ref.read(feedRepositoryProvider);
                                             await feedRepo.reportNotSerene(c.id);
-                                            if (!context.mounted) return;
                                             NotificationService.showSuccess(
                                                 'Merci, nous en prenons note');
                                           } catch (e) {
-                                            if (!context.mounted) return;
                                             NotificationService.showError(
                                                 'Erreur lors du signalement');
                                           }
