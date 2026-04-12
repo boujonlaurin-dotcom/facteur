@@ -241,14 +241,84 @@ Rule Sentry sur `digest_endpoint_unhandled_error` ou `digest_existing_render_fai
 
 ## Checklist pour l'agent suivant
 
-- [ ] Lire ce document en entier
-- [ ] Lire `docs/bugs/bug-digest-legacy-format.md` (contexte PR #381)
-- [ ] Vérifier status des migrations Supabase (Étape 1-2 ci-dessus)
-- [ ] Récupérer logs Sentry/Railway pour l'erreur exacte
-- [ ] Si migrations pas appliquées : faire appliquer + merger PR #384
-- [ ] Si migrations OK : investiguer le `raise` H1 (tester en local)
-- [ ] Appliquer Fix 2 (graceful fallback au lieu de raise)
-- [ ] Appliquer Fix 4 (protection storage_cleanup)
-- [ ] Ajouter Fix 5 (diag endpoint) pour future visibilité
-- [ ] Écrire test de régression pour chaque fix
-- [ ] Tester end-to-end via Playwright MCP
+- [x] Lire ce document en entier
+- [x] Lire `docs/bugs/bug-digest-legacy-format.md` (contexte PR #381)
+- [ ] Vérifier status des migrations Supabase (Étape 1-2 ci-dessus) — **à faire manuellement en prod** (pas d'accès MCP Supabase dans cet environnement). L'endpoint `/api/digest/diag` ajouté en Session #4 répond désormais à cette question en 1 requête HTTP.
+- [ ] Récupérer logs Sentry/Railway pour l'erreur exacte — **à faire manuellement en prod** (pas d'accès MCP Sentry/Railway dans cet environnement).
+- [x] Si migrations pas appliquées : faire appliquer + merger PR #384 — **PR #384 mergée** (commit squash sur `main`).
+- [x] Si migrations OK : investiguer le `raise` H1 (tester en local) — H1 confirmée par lecture du code ; Fix 2 appliqué.
+- [x] Appliquer Fix 2 (graceful fallback au lieu de raise) — voir Session #4 ci-dessous.
+- [x] Appliquer Fix 4 (protection storage_cleanup) — voir Session #4 ci-dessous.
+- [x] Ajouter Fix 5 (diag endpoint) pour future visibilité — voir Session #4 ci-dessous.
+- [x] Écrire test de régression pour chaque fix — `test_digest_content_refs.py` (10 tests), `test_storage_cleanup.py` (2 tests ajoutés), `test_digest_service.py` (`TestRenderFailureFallback`, 2 tests).
+- [ ] Tester end-to-end via Playwright MCP — changements backend-only, pas d'UI impactée (cf. CLAUDE.md section Validation Feature via Chrome : "Quand ne PAS utiliser — Changements backend-only (API, workers, migrations)").
+
+## Session #4 — résilience systémique (cette PR)
+
+Objectif : casser le potentiel de boucle 503 **définitivement** en rendant chaque
+couche tolérante à la corruption des autres, sans attendre la confirmation
+Supabase/Sentry.
+
+### Fix 2 — Graceful fallback sur render failure (H1)
+
+`packages/api/app/services/digest_service.py` — le `raise` brutal de PR #381
+est remplacé par le mécanisme existant `stale_format_digest` (deferred
+deletion). Quand `_build_digest_response` échoue sur un digest moderne :
+
+1. On mémorise le record corrompu dans `stale_format_digest`.
+2. On met `existing_digest = None` pour retomber dans le chemin de génération.
+3. Le record corrompu est supprimé **après** qu'un remplaçant ait été produit
+   avec succès (chemin déjà existant, lignes ~671-674).
+
+Si la régénération plante aussi, le record corrompu reste en DB mais le
+prochain appel tentera à nouveau le fallback au lieu de retourner 503 en boucle.
+
+Tests : `TestRenderFailureFallback` dans `tests/test_digest_service.py`.
+
+### Fix 4 — Protection du Content référencé par un digest récent
+
+Nouveau module `packages/api/app/services/digest_content_refs.py` avec
+`extract_content_ids(items, format_version)` qui marche sur les 3 layouts
+JSONB (`flat_v1`, `topics_v1`, `editorial_v1`) de façon tolérante (UUID
+malformés → skip, clés manquantes → skip, `None` → `set()`).
+
+`packages/api/app/workers/storage_cleanup.py` :
+
+- Nouvelle constante `DIGEST_REFERENCE_PROTECTION_DAYS = 90`.
+- Nouvelle fonction `_collect_referenced_content_ids(session)` qui lit toutes
+  les lignes `daily_digest` des 90 derniers jours et collecte les content_ids.
+- Le DELETE/count partage désormais une liste `common_conditions` qui inclut
+  `~Content.id.in_(referenced_list)` quand la liste est non-vide.
+- Nouvelle stat retournée : `preserved_digest_refs`.
+
+Tests : `tests/test_digest_content_refs.py` (10 tests couvrant les 3 layouts +
+edge cases), `tests/test_storage_cleanup.py` (2 tests ajoutés — NOT IN clause
+vérifiée en inspectant le SQL compilé).
+
+### Fix 5 — Endpoint diag scopé au user authentifié
+
+`packages/api/app/routers/digest.py` — `GET /api/digest/diag` retourne en 1
+requête HTTP :
+
+- `today_digest` / `yesterday_digest` (existence, format, is_serene)
+- `state` (entrées `DigestGenerationState` pour la date cible)
+- `render_test` — live invocation de `_build_digest_response` avec capture
+  de `error_type` + message (au lieu de 503)
+- `migrations` — lit `alembic_version` + probe `information_schema` pour
+  `sources.tone`, `sources.serein_default`, `digest_generation_state`,
+  `editorial_highlights_history`
+
+Chaque section est wrappée dans un try/except : une table manquante ne casse
+pas les autres probes. L'endpoint est scopé au user authentifié (pas de
+query param `user_id` — cohérence avec le reste de `/api/digest/*`).
+
+### Ce qui reste à faire côté ops (hors scope code)
+
+1. **Vérifier/appliquer `td01` + `dg01` sur Supabase production** — le SQL
+   idempotent est dans la description de PR #384 (déjà mergée). Une fois
+   appliqué, `GET /api/digest/diag` le confirmera.
+2. **Vérifier Sentry** pour `digest_existing_render_failed` /
+   `digest_endpoint_unhandled_error` sur 2026-04-12 pour identifier la
+   cause racine de la régression totale. Avec Fix 2, même sans ce
+   diagnostic, le symptôme "503 en boucle" ne peut plus se produire.
+3. **Fix 6 (alerte Sentry dédiée)** — reste à configurer côté Sentry UI.

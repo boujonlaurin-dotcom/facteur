@@ -618,3 +618,170 @@ class TestDeferredStaleFormatDeletion:
         # (we only delete it AFTER we have items to store)
         for call in mock_session.delete.call_args_list:
             assert call.args[0] is not stale_digest
+
+
+# ─── Tests: render-failure graceful fallback (Fix 2) ──────────────────────────
+
+
+class TestRenderFailureFallback:
+    """A corrupted existing digest must not cause an infinite 503 loop.
+
+    Prior behaviour (PR #381): if ``_build_digest_response`` raised for an
+    ``editorial_v1`` / ``topics_v1`` record, the service re-raised. With the
+    digest still in DB, every subsequent request hit the same broken JSONB
+    and failed — a user was locked out for the whole day.
+
+    New behaviour: treat it like a stale-format record. Defer deletion, fall
+    through to regeneration, and let the deferred-delete logic replace the
+    corrupted record once a fresh one is ready.
+    """
+
+    @pytest.mark.asyncio
+    async def test_modern_format_render_failure_falls_through_to_regen(
+        self, service, mock_session
+    ):
+        """If editorial_v1 render fails, selector must still be invoked."""
+        from app.schemas.digest import DigestResponse
+
+        user_id = uuid4()
+        today = date.today()
+
+        corrupted = Mock()
+        corrupted.id = uuid4()
+        corrupted.target_date = today
+        corrupted.format_version = "editorial_v1"
+        corrupted.user_id = user_id
+        corrupted.is_serene = False
+
+        fresh_response = DigestResponse(
+            digest_id=uuid4(),
+            user_id=user_id,
+            target_date=today,
+            generated_at=datetime.utcnow(),
+            items=[],
+            format_version="editorial_v1",
+        )
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            # Today's corrupted digest is returned once; no yesterday digest.
+            if d == today:
+                return corrupted
+            return None
+
+        # Selector returns an empty list — enough to reach the emergency/
+        # stale-fallback branches without crashing. The key assertion is
+        # that selector is INVOKED: that proves we fell through instead of
+        # raising.
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        _prefs_result = Mock()
+        _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        mock_session.execute.return_value = _prefs_result
+
+        call_log: list[str] = []
+
+        async def fake_build(digest, user_id):
+            if digest is corrupted:
+                call_log.append("corrupted")
+                raise KeyError("actu_article")
+            call_log.append("fresh")
+            return fresh_response
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="editorial",
+            ),
+            patch.object(
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(service, "_build_digest_response", side_effect=fake_build),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            result = await service.get_or_create_digest(
+                user_id=user_id, target_date=today
+            )
+
+        # Selector ran → we did not re-raise the KeyError.
+        service.selector.select_for_user.assert_awaited()
+        # The first build call is for the corrupted digest. If the fix
+        # regressed to `raise`, we never would have gotten here.
+        assert call_log[0] == "corrupted"
+        # The corrupted record is deferred-deleted (not destroyed immediately
+        # on render failure). It survives when generation fails, which is
+        # exactly what enables the stale-fallback to serve *something*.
+        # (An exact "was/wasn't deleted" assertion depends on whether
+        # generation also failed here; the key regression is the absence
+        # of a re-raise, checked by reaching this line.)
+        assert result is None or result is fresh_response or hasattr(
+            result, "is_stale_fallback"
+        )
+
+    @pytest.mark.asyncio
+    async def test_modern_format_render_failure_does_not_delete_immediately(
+        self, service, mock_session
+    ):
+        """The corrupted record must only be deleted after a replacement exists."""
+        user_id = uuid4()
+        today = date.today()
+
+        corrupted = Mock()
+        corrupted.id = uuid4()
+        corrupted.target_date = today
+        corrupted.format_version = "topics_v1"
+        corrupted.user_id = user_id
+        corrupted.is_serene = False
+
+        async def fake_get_existing(uid, d, is_serene=False):
+            if d == today:
+                return corrupted
+            return None
+
+        service.selector = Mock()
+        service.selector.select_for_user = AsyncMock(return_value=[])
+
+        _prefs_result = Mock()
+        _prefs_result.scalar_one_or_none = Mock(return_value=None)
+        mock_session.execute.return_value = _prefs_result
+
+        async def fake_build(digest, user_id):
+            raise RuntimeError("boom")
+
+        with (
+            patch("app.services.user_service.UserService") as mock_user_svc_cls,
+            patch.object(
+                service, "_get_existing_digest", side_effect=fake_get_existing
+            ),
+            patch.object(
+                service,
+                "_get_user_digest_format",
+                new_callable=AsyncMock,
+                return_value="topics",
+            ),
+            patch.object(
+                service,
+                "_get_emergency_candidates",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch.object(service, "_build_digest_response", side_effect=fake_build),
+        ):
+            mock_user_svc_cls.return_value.get_or_create_profile = AsyncMock()
+            await service.get_or_create_digest(user_id=user_id, target_date=today)
+
+        # The corrupted record must survive the render failure path. The
+        # previous raise-on-modern-format behaviour never reached any
+        # delete logic either, but the new path must also refrain from
+        # pre-emptively wiping the only digest the user has.
+        for call in mock_session.delete.call_args_list:
+            assert call.args[0] is not corrupted
