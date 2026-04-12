@@ -39,8 +39,6 @@ import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
-import '../widgets/source_overflow_chip.dart';
-import '../widgets/topic_overflow_chip.dart';
 import '../widgets/keyword_overflow_chip.dart';
 import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
@@ -905,7 +903,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               ? const SizedBox.shrink()
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
-                                                  : content.entityOverflowCount > 0
+                                                  : content.entityOverflowCount >= 4
                                                       ? EntityOverflowChip(
                                                           content: content,
                                                           onOverflowTap: (key, label) {
@@ -918,29 +916,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                             _scrollToTop();
                                                           },
                                                         )
-                                                      : content.keywordOverflowCount > 0
+                                                      : content.keywordOverflowCount >= 4
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
-                                                          : content.topicOverflowCount > 0
-                                                              ? TopicOverflowChip(
-                                                                  content: content,
-                                                                  onOverflowTap: (slug, label, {isTheme = false}) {
-                                                                    setState(() {
-                                                                      _selectedInterestName = label;
-                                                                      _selectedIsTheme = isTheme;
-                                                                    });
-                                                                    _withFeedLoading(() async {
-                                                                      if (isTheme) {
-                                                                        await notifier.setTheme(slug);
-                                                                      } else {
-                                                                        await notifier.setTopic(slug);
-                                                                      }
-                                                                    });
-                                                                    _scrollToTop();
-                                                                  },
-                                                                )
-                                                              : content.sourceOverflowCount > 0
-                                                                  ? SourceOverflowChip(content: content, onOverflowTap: _scrollToTop)
-                                                                  : const SizedBox.shrink(),
+                                                          : const SizedBox.shrink(),
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),
