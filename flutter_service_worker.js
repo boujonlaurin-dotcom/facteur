@@ -42,7 +42,7 @@ const RESOURCES = {"assets/assets/images/media_concentration_map.png": "4d9cf002
 "canvaskit/skwasm_heavy.wasm": "b0be7910760d205ea4e011458df6ee01",
 "canvaskit/skwasm.js": "8060d46e9a4901ca9991edd3a26be4f0",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
-"flutter_bootstrap.js": "e6548218f9e7bb2ca756b37d44b9367f",
+"flutter_bootstrap.js": "10bf01fce04c884fc903b9e9afd75efa",
 "main.dart.js": "fa441f602b7a0f3fa518782d728d5609",
 "version.json": "23790d96eb676a5e9516ef2c8bac14dd",
 "icons/Icon-maskable-512.png": "cae642f390c6970d03aaa5134ddbee18",
