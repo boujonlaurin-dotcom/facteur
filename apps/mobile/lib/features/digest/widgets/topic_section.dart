@@ -98,6 +98,24 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// header translation when the editorial card is expanded.
   ScrollPosition? _scrollPosition;
 
+  /// Manual notifier merged into the sticky header AnimatedBuilder so we can
+  /// force a recompute when the scrollable does not fire any event (e.g. after
+  /// returning from a pushed route).
+  final ValueNotifier<int> _stickyRefresh = ValueNotifier<int>(0);
+  Listenable? _stickyListenable;
+
+  void _updateStickyListenable() {
+    final pos = _scrollPosition;
+    _stickyListenable =
+        pos == null ? null : Listenable.merge([pos, _stickyRefresh]);
+  }
+
+  void _scheduleStickyRefresh() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _stickyRefresh.value++;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -106,17 +124,57 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     );
   }
 
+  /// Route the section currently sits in. Tracked so we can detach our
+  /// animation status listener when the route changes or the widget is
+  /// disposed.
+  ModalRoute<dynamic>? _trackedRoute;
+
+  void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      if (mounted) _stickyRefresh.value++;
+    }
+  }
+
+  void _attachRouteListeners(ModalRoute<dynamic>? route) {
+    if (identical(route, _trackedRoute)) return;
+    _trackedRoute?.animation?.removeStatusListener(_onRouteAnimationStatus);
+    _trackedRoute?.secondaryAnimation
+        ?.removeStatusListener(_onRouteAnimationStatus);
+    _trackedRoute = route;
+    route?.animation?.addStatusListener(_onRouteAnimationStatus);
+    route?.secondaryAnimation?.addStatusListener(_onRouteAnimationStatus);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (widget.editorialMode) {
-      _scrollPosition = Scrollable.maybeOf(context)?.position;
+      final newPos = Scrollable.maybeOf(context)?.position;
+      if (!identical(newPos, _scrollPosition)) {
+        _scrollPosition = newPos;
+        _updateStickyListenable();
+      } else if (_stickyListenable == null) {
+        _updateStickyListenable();
+      }
+      // Subscribe to route transition completion so we can recompute the
+      // sticky header geometry once Cupertino's slide/fade is fully settled
+      // (the scrollable does not emit any event in that window).
+      _attachRouteListeners(ModalRoute.of(context));
+      // Force a recompute on the next frame: dependency changes commonly fire
+      // when entering/leaving routes (ModalRoute, MediaQuery), and the
+      // scrollable will not emit any event to retrigger the AnimatedBuilder.
+      _scheduleStickyRefresh();
     }
   }
 
   @override
   void dispose() {
+    _trackedRoute?.animation?.removeStatusListener(_onRouteAnimationStatus);
+    _trackedRoute?.secondaryAnimation
+        ?.removeStatusListener(_onRouteAnimationStatus);
     _pageController.dispose();
+    _stickyRefresh.dispose();
     super.dispose();
   }
 
@@ -126,21 +184,52 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Returns 0 when the card is not yet scrolled past the pin line, and
   /// clamps to `cardHeight - headerHeight` so the sticky header releases
   /// when the card is about to scroll off-screen.
+  ///
+  /// Defensive against stale render-tree state (e.g. mid-route-transition):
+  /// bails out when render boxes are detached, when the route is animating,
+  /// or when the card is not visibly intersecting the viewport.
   double _computeStickyHeaderTranslation(BuildContext context) {
     if (!_isExpanded) return 0;
+
+    // During route transitions, ancestor transforms (Cupertino slide, fade,
+    // etc.) make `localToGlobal` return geometry that does not reflect the
+    // post-transition layout. We bail out and re-compute once the route is
+    // settled (see _scheduleStickyRefresh in didChangeDependencies + the
+    // route animation listener).
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      final anim = route.animation;
+      final secondary = route.secondaryAnimation;
+      final isAnimating = (anim != null &&
+              anim.status != AnimationStatus.completed &&
+              anim.status != AnimationStatus.dismissed) ||
+          (secondary != null &&
+              secondary.status != AnimationStatus.completed &&
+              secondary.status != AnimationStatus.dismissed);
+      if (isAnimating) return 0;
+    }
+
     final cardContext = _editorialCardKey.currentContext;
     final headerContext = _editorialHeaderKey.currentContext;
     if (cardContext == null || headerContext == null) return 0;
 
     final cardBox = cardContext.findRenderObject() as RenderBox?;
     final headerBox = headerContext.findRenderObject() as RenderBox?;
-    if (cardBox == null || !cardBox.hasSize) return 0;
-    if (headerBox == null || !headerBox.hasSize) return 0;
+    if (cardBox == null || !cardBox.attached || !cardBox.hasSize) return 0;
+    if (headerBox == null || !headerBox.attached || !headerBox.hasSize) {
+      return 0;
+    }
 
     final cardTop = cardBox.localToGlobal(Offset.zero).dy;
     final cardHeight = cardBox.size.height;
     final headerHeight = headerBox.size.height;
     final pinLine = MediaQuery.of(context).padding.top;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    // Sanity: if the card is fully off-screen (above or below the visible
+    // window), don't attempt to pin the overlay — it would otherwise clamp
+    // to maxTranslate and visually stick at the bottom of the card.
+    if (cardTop + cardHeight <= 0 || cardTop >= screenHeight) return 0;
 
     final maxTranslate =
         (cardHeight - headerHeight).clamp(0.0, double.infinity);
@@ -248,12 +337,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
       // Natural header (inside the Column), fades out when the sticky
       // overlay takes over.
+      final stickyListenable = _stickyListenable;
       final naturalHeader = Padding(
         key: _editorialHeaderKey,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-        child: _isExpanded && _scrollPosition != null
+        child: _isExpanded && stickyListenable != null
             ? AnimatedBuilder(
-                animation: _scrollPosition!,
+                animation: stickyListenable,
                 builder: (context, child) {
                   final translation = _computeStickyHeaderTranslation(context);
                   return Opacity(
@@ -312,13 +402,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 // Sticky header overlay — floats at the top of the
                 // viewport while the card is scrolled past its natural
                 // position, giving a "fil contenu" reading flow.
-                if (_isExpanded && _scrollPosition != null)
+                if (_isExpanded && stickyListenable != null)
                   Positioned(
                     top: 0,
                     left: 0,
                     right: 0,
                     child: AnimatedBuilder(
-                      animation: _scrollPosition!,
+                      animation: stickyListenable,
                       builder: (context, child) {
                         final translation =
                             _computeStickyHeaderTranslation(context);
