@@ -319,6 +319,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final topic = widget.topic;
     final isMulti = topic.articles.length > 1;
 
+    // After every rebuild (Riverpod state change, layout shift, etc.) the
+    // sticky-header geometry may be stale because the scrollable did not
+    // emit any event. Force a post-frame recompute so the AnimatedBuilder
+    // picks up the new layout.
+    if (widget.editorialMode && _isExpanded) _scheduleStickyRefresh();
+
     // If no articles or all dismissed, hide the entire section
     if (topic.articles.isEmpty) {
       debugPrint('TopicSection: 0 articles for topic ${topic.label}');
