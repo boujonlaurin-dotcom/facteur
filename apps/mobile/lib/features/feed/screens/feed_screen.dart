@@ -332,8 +332,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     // on attend que la transition de page (Cupertino slide-back) soit bien
     // entamée avant de scroller, sinon le scroll est masqué par l'écran
     // article qui glisse encore par-dessus le feed.
+    // Utilise Timer (et non Future.delayed) pour éviter un unawaited future.
     ref.listen(feedScrollTriggerProvider, (_, __) {
-      Future.delayed(const Duration(milliseconds: 220), () {
+      Timer(const Duration(milliseconds: 220), () {
         if (mounted) _scrollToTop();
       });
     });
