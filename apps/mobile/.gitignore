@@ -1,3 +1,6 @@
+# Local dependency overrides (used to run tests with a different SDK version)
+pubspec_overrides.yaml
+
 # Miscellaneous
 *.class
 *.log

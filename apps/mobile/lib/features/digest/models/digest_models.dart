@@ -109,9 +109,6 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
     @JsonKey(name: 'perspective_sources') @Default([]) List<SourceMini> perspectiveSources,
     @JsonKey(name: 'divergence_level') String? divergenceLevel,
-    // Pivot content id used by the backend to compute perspectives. When
-    // present, _handleCompare re-fetches /perspectives on this id so the
-    // bottom sheet count matches the header. Null on legacy cached digests.
     @JsonKey(name: 'representative_content_id') String? representativeContentId,
   }) = _DigestTopic;
 

@@ -1852,33 +1852,35 @@ class _$DigestTopicImpl extends _DigestTopic {
                 .equals(other._perspectiveSources, _perspectiveSources) &&
             (identical(other.divergenceLevel, divergenceLevel) ||
                 other.divergenceLevel == divergenceLevel) &&
-            (identical(other.representativeContentId, representativeContentId) ||
+            (identical(
+                    other.representativeContentId, representativeContentId) ||
                 other.representativeContentId == representativeContentId));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      topicId,
-      label,
-      rank,
-      reason,
-      isTrending,
-      isUne,
-      theme,
-      topicScore,
-      const DeepCollectionEquality().hash(_subjects),
-      const DeepCollectionEquality().hash(_articles),
-      introText,
-      transitionText,
-      perspectiveCount,
-      const DeepCollectionEquality().hash(_biasDistribution),
-      biasHighlights,
-      divergenceAnalysis,
-      const DeepCollectionEquality().hash(_perspectiveSources),
-      divergenceLevel,
-      representativeContentId);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        topicId,
+        label,
+        rank,
+        reason,
+        isTrending,
+        isUne,
+        theme,
+        topicScore,
+        const DeepCollectionEquality().hash(_subjects),
+        const DeepCollectionEquality().hash(_articles),
+        introText,
+        transitionText,
+        perspectiveCount,
+        const DeepCollectionEquality().hash(_biasDistribution),
+        biasHighlights,
+        divergenceAnalysis,
+        const DeepCollectionEquality().hash(_perspectiveSources),
+        divergenceLevel,
+        representativeContentId
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -1915,8 +1917,7 @@ abstract class _DigestTopic extends DigestTopic {
       @JsonKey(name: 'divergence_analysis') final String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources')
       final List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level')
-      final String? divergenceLevel,
+      @JsonKey(name: 'divergence_level') final String? divergenceLevel,
       @JsonKey(name: 'representative_content_id')
       final String? representativeContentId}) = _$DigestTopicImpl;
   const _DigestTopic._() : super._();
@@ -2525,27 +2526,28 @@ class _$DigestResponseImpl extends _DigestResponse {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      digestId,
-      userId,
-      targetDate,
-      generatedAt,
-      mode,
-      formatVersion,
-      const DeepCollectionEquality().hash(_items),
-      const DeepCollectionEquality().hash(_topics),
-      completionThreshold,
-      isCompleted,
-      completedAt,
-      isStaleFallback,
-      headerText,
-      closureText,
-      ctaText,
-      pepite,
-      coupDeCoeur,
-      actuDecalee,
-      quote);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        digestId,
+        userId,
+        targetDate,
+        generatedAt,
+        mode,
+        formatVersion,
+        const DeepCollectionEquality().hash(_items),
+        const DeepCollectionEquality().hash(_topics),
+        completionThreshold,
+        isCompleted,
+        completedAt,
+        isStaleFallback,
+        headerText,
+        closureText,
+        ctaText,
+        pepite,
+        coupDeCoeur,
+        actuDecalee,
+        quote
+      ]);
 
   @JsonKey(ignore: true)
   @override
