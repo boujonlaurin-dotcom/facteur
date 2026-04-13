@@ -9,11 +9,13 @@ import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/initial_circle.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -204,8 +206,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
 
     final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
-    // Badge chip above card + 8px safety margin for text estimation variance
-    return imageHeight + bodyHeight + _footerHeight + _badgeHeight + 8.0;
+    // Badge chip above card (only outside editorial mode)
+    // + 8px safety margin for text estimation variance
+    final badgeHeight = widget.editorialMode ? 0.0 : _badgeHeight;
+    return imageHeight + bodyHeight + _footerHeight + badgeHeight + 8.0;
   }
 
   /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
@@ -882,39 +886,50 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   // "Comparer les sources" handler
   // ---------------------------------------------------------------------------
 
-  Future<void> _handleCompare() async {
+  void _handleCompare() {
     final articles = widget.editorialMode
         ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
         : widget.topic.articles;
     if (articles.isEmpty) return;
     final article = articles[_currentPage.clamp(0, articles.length - 1)];
     if (article.contentId.isEmpty) return;
-    final repository = ref.read(feedRepositoryProvider);
-    final response = await repository.getPerspectives(article.contentId);
 
-    if (!context.mounted) return;
+    // Kick off the request immediately and show the sheet without awaiting,
+    // so the bottom sheet animates in instantly with a skeleton state instead
+    // of a 2-3s freeze on the trigger button.
+    final repository = ref.read(feedRepositoryProvider);
+    final perspectivesFuture = repository.getPerspectives(article.contentId);
 
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => PerspectivesBottomSheet(
-        perspectives: response.perspectives
-            .map((p) => Perspective(
-                  title: p.title,
-                  url: p.url,
-                  sourceName: p.sourceName,
-                  sourceDomain: p.sourceDomain,
-                  biasStance: p.biasStance,
-                  publishedAt: p.publishedAt,
-                ))
-            .toList(),
-        biasDistribution: response.biasDistribution,
-        keywords: response.keywords,
-        sourceBiasStance: response.sourceBiasStance,
-        sourceName: article.source?.name ?? '',
-        contentId: article.contentId,
-        comparisonQuality: response.comparisonQuality,
+      builder: (ctx) => FutureBuilder<PerspectivesResponse>(
+        future: perspectivesFuture,
+        builder: (ctx, snapshot) {
+          if (!snapshot.hasData) {
+            return const PerspectivesLoadingSheet();
+          }
+          final response = snapshot.data!;
+          return PerspectivesBottomSheet(
+            perspectives: response.perspectives
+                .map((p) => Perspective(
+                      title: p.title,
+                      url: p.url,
+                      sourceName: p.sourceName,
+                      sourceDomain: p.sourceDomain,
+                      biasStance: p.biasStance,
+                      publishedAt: p.publishedAt,
+                    ))
+                .toList(),
+            biasDistribution: response.biasDistribution,
+            keywords: response.keywords,
+            sourceBiasStance: response.sourceBiasStance,
+            sourceName: article.source?.name ?? '',
+            contentId: article.contentId,
+            comparisonQuality: response.comparisonQuality,
+          );
+        },
       ),
     );
   }
@@ -1171,7 +1186,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       itemBuilder: (context, index) {
         final article = articles[index];
         final imageVisible = _imageWillRender(article);
-        final badgeChip = EditorialBadge.chip(article.badge, context: context);
+        final badgeChip = widget.editorialMode
+            ? null
+            : EditorialBadge.chip(article.badge, context: context);
         final card = FeedCard(
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
           content: _convertToContent(article),

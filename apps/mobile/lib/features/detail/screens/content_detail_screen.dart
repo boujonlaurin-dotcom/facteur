@@ -619,19 +619,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _fetchPerspectives();
           }
         } else {
-          // Show error and pop if content not found
+          // Content not found via API. Keep whatever was passed via extra
+          // (e.g. a digest "Pas de recul" article whose row was just culled
+          // server-side) so the screen still renders instead of bouncing
+          // the user back to the previous screen with a blank flash.
           setState(() => _contentResolved = true);
-          NotificationService.showError('Contenu introuvable',
-              context: context);
-          context.pop();
+          if (_content == null) {
+            NotificationService.showError('Contenu introuvable',
+                context: context);
+            context.pop();
+          }
         }
       }
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
         setState(() => _contentResolved = true);
-        NotificationService.showError('Erreur de chargement', context: context);
-        context.pop();
+        // Same fallback: only pop when we truly have nothing to show.
+        if (_content == null) {
+          NotificationService.showError('Erreur de chargement',
+              context: context);
+          context.pop();
+        }
       }
     }
   }
