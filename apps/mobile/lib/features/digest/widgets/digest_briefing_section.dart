@@ -12,8 +12,10 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import '../models/community_carousel_model.dart';
 import 'actu_decalee_block.dart';
 import 'closure_block.dart';
+import 'community_carousel_section.dart';
 import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
 import 'quote_block.dart';
@@ -50,6 +52,8 @@ class DigestBriefingSection extends StatefulWidget {
   final String? ctaText;
   final int processedCount;
   final int dailyGoal;
+  final List<CommunityCarouselItem> communityCarousel;
+  final void Function(CommunityCarouselItem)? onCommunityArticleTap;
 
   const DigestBriefingSection({
     super.key,
@@ -75,6 +79,8 @@ class DigestBriefingSection extends StatefulWidget {
     this.ctaText,
     this.processedCount = 0,
     this.dailyGoal = 5,
+    this.communityCarousel = const [],
+    this.onCommunityArticleTap,
   });
 
   @override
@@ -312,7 +318,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.topics!.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
         totalTopics: widget.topics!.length,
@@ -460,6 +466,19 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       );
     }
 
+    // Community 🌻 carousel (if items available)
+    if (widget.communityCarousel.isNotEmpty) {
+      sections.add(const SectionDivider());
+      sections.add(
+        CommunityCarouselSection(
+          items: widget.communityCarousel,
+          onArticleTap: (item) {
+            widget.onCommunityArticleTap?.call(item);
+          },
+        ),
+      );
+    }
+
     // Closure block (always shown with fallback)
     sections.add(
       ClosureBlock(
@@ -472,7 +491,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: sections.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (_, i) => sections[i],
     );
   }

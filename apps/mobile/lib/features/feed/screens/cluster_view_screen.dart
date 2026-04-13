@@ -208,8 +208,8 @@ class _ClusterViewScreenState extends ConsumerState<ClusterViewScreen> {
                                 .toggleLike(article);
                             NotificationService.showInfo(
                               wasLiked
-                                  ? 'Retiré de vos contenus favoris'
-                                  : 'Ajouté à vos contenus favoris',
+                                  ? 'Retiré de Mes articles intéressants 🌻'
+                                  : 'Ajouté à Mes articles intéressants 🌻',
                             );
                             ref.invalidate(collectionsProvider);
                           },

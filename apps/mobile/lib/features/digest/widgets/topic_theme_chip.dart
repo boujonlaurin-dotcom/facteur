@@ -13,27 +13,18 @@ class TopicThemeChip extends StatelessWidget {
     if (themeSlug == null) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = colors.textSecondary;
     final rawLabel = topicSlugToLabel[themeSlug] ??
         themeSlug!.replaceAll('-', ' ').replaceAll('_', ' ');
     final label = rawLabel.isNotEmpty
         ? rawLabel[0].toUpperCase() + rawLabel.substring(1)
         : rawLabel;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: isDark ? 0.15 : 0.10),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
+    return Text(
+      label,
+      style: TextStyle(
+        color: colors.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
       ),
     );
   }

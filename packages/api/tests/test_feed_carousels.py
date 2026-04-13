@@ -354,7 +354,7 @@ class TestBuildCarouselsNoFilter:
 
 # Named tuples to mimic DB row results
 _SourceRow = namedtuple("_SourceRow", ["source_id", "name", "added_at"])
-_GemRow = namedtuple("_GemRow", ["id", "save_count", "like_count"])
+_CommunityRow = namedtuple("_CommunityRow", ["id", "score", "sunflower_count"])
 
 
 def _setup_service_with_no_overflow():
@@ -417,7 +417,7 @@ class TestBuildCarouselsNewSource:
                 return _mock_execute_result([])
             if execute_calls == 3:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # gems (empty)
+            return _mock_execute_result([])  # community (empty)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -461,7 +461,7 @@ class TestBuildCarouselsNewSource:
                 return _mock_execute_result([])  # consumed_ids + perspectives
             if execute_calls == 3:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # gems
+            return _mock_execute_result([])  # community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -495,17 +495,17 @@ class TestBuildCarouselsNewSource:
         assert not any(c["carousel_type"] == "new_source" for c in carousels)
 
 
-class TestBuildCarouselsGems:
+class TestBuildCarouselsCommunity:
     @pytest.mark.asyncio
-    async def test_gems_carousel_basic(self):
+    async def test_community_carousel_basic(self):
         service = _setup_service_with_no_overflow()
         user_id = uuid4()
 
-        # Mock gems: 4 articles with saves and likes
-        gem_articles = [MockContent(title=f"Gem {i}") for i in range(4)]
-        gem_rows = [
-            _GemRow(id=a.id, save_count=5 - i, like_count=i + 1)
-            for i, a in enumerate(gem_articles)
+        # Mock community: 4 🌻 articles with decay scores and sunflower counts
+        community_articles = [MockContent(title=f"Community {i}") for i in range(4)]
+        community_rows = [
+            _CommunityRow(id=a.id, score=5.0 - i, sunflower_count=5 - i)
+            for i, a in enumerate(community_articles)
         ]
 
         call_count = 0
@@ -516,35 +516,36 @@ class TestBuildCarouselsGems:
             # 1: consumed_ids, 2: perspectives, 3: new_source → empty
             if call_count <= 3:
                 return _mock_execute_result([])
-            # 4: gems query
-            return _mock_execute_result(gem_rows)
+            # 4: community query
+            return _mock_execute_result(community_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(gem_articles),
+            return_value=_mock_scalars_result(community_articles),
         )
 
         _, carousels = await service._build_carousels(
             [], {}, user_id=user_id,
         )
 
-        gems = [c for c in carousels if c["carousel_type"] == "gems"]
-        assert len(gems) == 1
-        c = gems[0]
-        assert c["title"] == "Pépites de la communauté"
+        community = [c for c in carousels if c["carousel_type"] == "community"]
+        assert len(community) == 1
+        c = community[0]
+        assert c["title"] == "Recos de la communauté"
         assert c["position"] >= 4  # MIN_CAROUSEL_POSITION enforced; slot shuffled
-        assert c["badges"][0]["code"] == "pepite"
+        assert c["badges"][0]["code"] == "community"
         assert len(c["items"]) == 4
 
     @pytest.mark.asyncio
-    async def test_gems_skipped_when_too_few_results(self):
+    async def test_community_skipped_when_too_few_results(self):
         service = _setup_service_with_no_overflow()
         user_id = uuid4()
 
-        # Only 2 gems (below MIN_CAROUSEL_ITEMS=3)
-        gem_articles = [MockContent(title=f"Gem {i}") for i in range(2)]
-        gem_rows = [
-            _GemRow(id=a.id, save_count=1, like_count=0) for a in gem_articles
+        # Only 2 community items (below MIN_CAROUSEL_ITEMS=3)
+        community_articles = [MockContent(title=f"Community {i}") for i in range(2)]
+        community_rows = [
+            _CommunityRow(id=a.id, score=1.0, sunflower_count=1)
+            for a in community_articles
         ]
 
         call_count = 0
@@ -555,19 +556,19 @@ class TestBuildCarouselsGems:
             # 1: consumed_ids, 2: perspectives, 3: new_source → empty
             if call_count <= 3:
                 return _mock_execute_result([])
-            # 4: gems
-            return _mock_execute_result(gem_rows)
+            # 4: community
+            return _mock_execute_result(community_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(gem_articles),
+            return_value=_mock_scalars_result(community_articles),
         )
 
         _, carousels = await service._build_carousels(
             [], {}, user_id=user_id,
         )
 
-        assert not any(c["carousel_type"] == "gems" for c in carousels)
+        assert not any(c["carousel_type"] == "community" for c in carousels)
 
 
 class TestBuildCarouselsSaved:
@@ -582,7 +583,7 @@ class TestBuildCarouselsSaved:
             MockContent(title="Saved podcast", content_type="podcast"),
         ]
 
-        # All execute calls return empty (consumed_ids, perspectives, new_source, gems)
+        # All execute calls return empty (consumed_ids, perspectives, new_source, community)
         async def mock_execute(stmt):
             return _mock_execute_result([])
 
@@ -662,7 +663,7 @@ class TestBuildCarouselsPhaseB_Integration:
                 return _mock_execute_result([])
             if execute_calls == 3:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # gems
+            return _mock_execute_result([])  # community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(

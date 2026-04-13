@@ -245,6 +245,9 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// Update the daily notification with topic keywords from the loaded digest.
   /// Uses the normal digest topics to build an engaging notification body.
   /// Only updates if push notifications are enabled in user settings.
+  ///
+  /// If the user has Serein mode enabled, a calmer notification copy is used
+  /// to avoid triggering anxiety before reading.
   void _updateNotificationWithTopics() {
     try {
       final box = Hive.box<dynamic>('settings');
@@ -260,10 +263,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           .where((l) => l.isNotEmpty)
           .toList();
 
-      final body = PushNotificationService.buildNotificationBody(topicLabels);
+      final isSerein = ref.read(sereinToggleProvider).enabled;
+      final body = PushNotificationService.buildNotificationBody(
+        topicLabels,
+        serein: isSerein,
+      );
       PushNotificationService().scheduleDailyDigestNotification(body: body);
       debugPrint(
-        'DigestNotifier: Updated notification with ${topicLabels.length} topics',
+        'DigestNotifier: Updated notification with ${topicLabels.length} topics'
+        ' (serein: $isSerein)',
       );
     } catch (e) {
       debugPrint('DigestNotifier: Failed to update notification: $e');

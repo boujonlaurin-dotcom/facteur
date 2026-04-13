@@ -136,20 +136,31 @@ class PushNotificationService {
     return granted;
   }
 
-  static const String defaultTitle = 'Ton Essentiel Facteur est prêt !';
-  static const String defaultBody = 'Tes sujets du jour t\'attendent';
+  static const String defaultTitle = 'Ton essentiel est là';
+  static const String defaultBody =
+      'Tes actus et décryptages du jour t\'attendent';
 
   /// Construit le body de la notification à partir des labels de topics du digest.
   ///
-  /// Exemple : "Au programme : Trump, Retraites, Chômage... Ou rester serein ;-)"
-  /// Retourne [defaultBody] si la liste est vide.
-  static String buildNotificationBody(List<String> topicLabels) {
+  /// Mode normal — avec topics : "Au programme : Trump, Retraites... Ou rester serein ! ;)"
+  /// Mode normal — sans topics : "Tes actus et décryptages du jour t'attendent"
+  /// Mode serein                : "Au programme : Bonne Nouvelle, Pépite du jour. C'est quand tu veux !"
+  static String buildNotificationBody(
+    List<String> topicLabels, {
+    bool serein = false,
+  }) {
+    if (serein) {
+      // En serein, le digest se concentre sur la Bonne Nouvelle et la Pépite —
+      // copy fixe, pas d'énumération anxiogène de topics d'actu.
+      return 'Au programme : Bonne Nouvelle, Pépite du jour. C\'est quand tu veux !';
+    }
+
     if (topicLabels.isEmpty) return defaultBody;
 
     // Prendre les 3 premiers topics max pour rester concis
     final displayLabels = topicLabels.take(3).toList();
     final topicsText = displayLabels.join(', ');
-    return 'Au programme : $topicsText... Ou rester serein ;-)';
+    return 'Au programme : $topicsText... Ou rester serein ! ;)';
   }
 
   /// Planifie la notification quotidienne de digest à 8h Europe/Paris.
@@ -167,24 +178,32 @@ class PushNotificationService {
           await androidPlugin.canScheduleExactNotifications() ?? false;
     }
 
-    const androidDetails = AndroidNotificationDetails(
+    final scheduledDate = _nextInstanceOf8AM();
+    final notificationBody = body ?? defaultBody;
+
+    // BigTextStyle permet l'affichage multi-ligne du body sur Android
+    // (au lieu d'être tronqué à une seule ligne après ~40 caractères).
+    final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
       channelDescription:
           'Notification quotidienne quand votre digest est prêt',
       importance: Importance.high,
       priority: Priority.high,
+      styleInformation: BigTextStyleInformation(
+        notificationBody,
+        contentTitle: defaultTitle,
+      ),
     );
 
+    // iOS affiche déjà le body sur plusieurs lignes par défaut quand la
+    // notification est étendue.
     const iosDetails = DarwinNotificationDetails();
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
-
-    final scheduledDate = _nextInstanceOf8AM();
-    final notificationBody = body ?? defaultBody;
 
     // alarmClock est le plus fiable (pas affecté par Doze ni battery optimization OEM)
     // Fallback sur inexactAllowWhileIdle si la permission exacte est refusée

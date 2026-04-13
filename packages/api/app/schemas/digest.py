@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from app.models.enums import ContentType
+from app.schemas.community import CommunityCarouselItem
 from app.schemas.content import SourceMini, parse_entity_strings
 
 
@@ -263,6 +264,12 @@ class DigestResponse(BaseModel):
     coup_de_coeur: CoupDeCoeurResponse | None = None
     actu_decalee: PepiteResponse | None = None
     quote: QuoteResponse | None = None
+
+    # Community 🌻 carousel (most recently sunflowered articles)
+    community_carousel: list[CommunityCarouselItem] = Field(
+        default_factory=list,
+        description="Community recommendations carousel (most recently 🌻 articles)",
+    )
 
     class Config:
         from_attributes = True
