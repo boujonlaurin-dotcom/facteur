@@ -1824,21 +1824,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    const maxVisible = 3;
+    // Dense layout: 4 tags max across macro-theme + topic + entities.
+    // Remaining entities are grouped into a "+X" overflow chip.
+    const maxTotalVisible = 4;
+    const chipPadding = EdgeInsets.symmetric(horizontal: 7, vertical: 3);
+
+    final hasMacroTheme = content.topics.isNotEmpty &&
+        getTopicMacroTheme(content.topics.first) != null;
+    final hasTopic = content.topics.isNotEmpty;
+    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
     final entities = content.entities;
-    final visible = entities.take(maxVisible).toList();
-    final overflow = entities.length - maxVisible;
+    final maxEntitiesVisible =
+        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
+    final visible = entities.take(maxEntitiesVisible).toList();
+    final overflow = entities.length - maxEntitiesVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (content.topics.isNotEmpty && getTopicMacroTheme(content.topics.first) != null)
+      if (hasMacroTheme)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
           return GestureDetector(
             onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: chipPadding,
               decoration: BoxDecoration(
                 color: colors.textTertiary.withValues(alpha: 0.20),
                 borderRadius: BorderRadius.circular(8),
@@ -1856,11 +1866,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (content.topics.isNotEmpty)
+      if (hasTopic)
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
               color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
@@ -1883,7 +1893,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         return GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
               color: isFollowed
                   ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
@@ -1894,7 +1904,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
+                  constraints: const BoxConstraints(maxWidth: 90),
                   child: Text(
                     entity.text,
                     style: textTheme.labelSmall?.copyWith(
@@ -1924,7 +1934,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
               color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
@@ -2923,20 +2933,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return Column(
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: _buildArticleTagWidgets(context, content),
-            ),
-          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );

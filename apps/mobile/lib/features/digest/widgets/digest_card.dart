@@ -169,8 +169,8 @@ class DigestCard extends StatelessWidget {
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space3,
-                    vertical: FacteurSpacing.space2,
+                    horizontal: 10,
+                    vertical: 6,
                   ),
                   child: Row(
                     children: [
@@ -181,17 +181,17 @@ class DigestCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           child: FacteurImage(
                             imageUrl: item.source!.logoUrl!,
-                            width: 16,
-                            height: 16,
+                            width: 14,
+                            height: 14,
                             fit: BoxFit.cover,
                             errorWidget: (context) =>
                                 _buildSourcePlaceholder(colors),
                           ),
                         ),
-                        const SizedBox(width: FacteurSpacing.space2),
+                        const SizedBox(width: 6),
                       ] else ...[
                         _buildSourcePlaceholder(colors),
-                        const SizedBox(width: FacteurSpacing.space2),
+                        const SizedBox(width: 6),
                       ],
 
                       // Source Name
@@ -200,9 +200,10 @@ class DigestCard extends StatelessWidget {
                         fit: FlexFit.loose,
                         child: Text(
                           item.source?.name ?? 'Source inconnue',
-                          style: textTheme.labelMedium?.copyWith(
+                          style: textTheme.labelSmall?.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w600,
+                            fontSize: 11,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -219,7 +220,7 @@ class DigestCard extends StatelessWidget {
                             : '--',
                         style: textTheme.labelSmall?.copyWith(
                           color: colors.textSecondary,
-                          fontSize: 11,
+                          fontSize: 10,
                         ),
                       ),
 
@@ -228,7 +229,7 @@ class DigestCard extends StatelessWidget {
                         const SizedBox(width: FacteurSpacing.space2),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                              horizontal: 5, vertical: 2),
                           decoration: BoxDecoration(
                             color: colors.warning.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
@@ -238,7 +239,7 @@ class DigestCard extends StatelessWidget {
                             children: [
                               Icon(
                                 PhosphorIcons.lock(PhosphorIconsStyle.fill),
-                                size: 10,
+                                size: 9,
                                 color: colors.warning,
                               ),
                               const SizedBox(width: 3),
@@ -247,7 +248,7 @@ class DigestCard extends StatelessWidget {
                                 style: TextStyle(
                                   color: colors.warning,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 10,
+                                  fontSize: 9,
                                 ),
                               ),
                             ],
@@ -479,8 +480,8 @@ class DigestCard extends StatelessWidget {
 
   Widget _buildSourcePlaceholder(FacteurColors colors) {
     return Container(
-      width: 16,
-      height: 16,
+      width: 14,
+      height: 14,
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
         borderRadius: BorderRadius.circular(4),
@@ -491,7 +492,7 @@ class DigestCard extends StatelessWidget {
               ? item.source!.name.substring(0, 1).toUpperCase()
               : '?',
           style: TextStyle(
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: FontWeight.bold,
             color: colors.textSecondary,
           ),

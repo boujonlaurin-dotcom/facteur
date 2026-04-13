@@ -149,34 +149,16 @@ class _FeedCarouselState extends State<FeedCarousel> {
         // Header
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              if (data.carouselType == 'saved')
-                Icon(
-                  PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
-                  size: 22,
-                  color: colors.warning,
-                )
-              else
-                Text(
-                  data.emoji,
-                  style: const TextStyle(fontSize: 20),
-                ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  data.title,
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          child: Text(
+            data.title,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         const SizedBox(height: 12),
