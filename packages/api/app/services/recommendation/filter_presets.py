@@ -204,6 +204,126 @@ def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:
         ]
 
 
+# --- Constantes "low-priority" (faits divers + sport) ---
+#
+# Utilisé pour déprioritiser ces catégories dans le digest (les deux modes —
+# pour_vous ET serein). Contrairement à SEREIN_KEYWORDS, ces patterns ne
+# servent PAS à exclure les articles : ils servent à limiter le nombre de
+# sujets de chaque catégorie dans le digest (cap à 1 sport + 1 faits divers).
+
+LOW_PRIORITY_FAITS_DIVERS_KEYWORDS = [
+    "fait divers",
+    "faits divers",
+    "fait-divers",
+    "faits-divers",
+    "accident",
+    "incendie",
+    "noyade",
+    "collision",
+    "braquage",
+    "cambriolage",
+]
+
+LOW_PRIORITY_SPORT_KEYWORDS = [
+    "football",
+    "rugby",
+    "tennis",
+    "basket",
+    "handball",
+    "ligue 1",
+    "ligue 2",
+    "champions league",
+    "ligue des champions",
+    "europa league",
+    "coupe du monde",
+    "coupe de france",
+    "roland-garros",
+    "roland garros",
+    "wimbledon",
+    "tour de france",
+    "formule 1",
+    " f1 ",
+    "moto gp",
+    "motogp",
+    "jeux olympiques",
+    "psg",
+    " om ",
+    " ol ",
+    " asse ",
+    " asm ",
+    "mbappé",
+    "mbappe",
+]
+
+LOW_PRIORITY_SPORT_THEMES = {"sport", "sports"}
+
+
+def _match_ratio(cluster: TopicCluster, keywords: list[str]) -> float:
+    """Retourne la part d'articles du cluster matchant au moins un keyword."""
+    if not cluster.contents:
+        return 0.0
+    import re as _re
+
+    pattern = _re.compile("|".join(_re.escape(k) for k in keywords), _re.IGNORECASE)
+
+    def _s(v: object) -> str:
+        # Defensive: Content fields are Optional[str], but MagicMocks in tests
+        # (and SQLAlchemy sentinel values) can slip in. Only use real strings.
+        return v if isinstance(v, str) else ""
+
+    match_count = 0
+    for content in cluster.contents:
+        text = _s(getattr(content, "title", None)) + " " + _s(
+            getattr(content, "description", None)
+        )
+        if pattern.search(text):
+            match_count += 1
+    return match_count / len(cluster.contents)
+
+
+def is_sport_cluster(cluster: TopicCluster) -> bool:
+    """Cluster dominé par le sport (thème OU >50% titres matchent)."""
+    if cluster.theme and cluster.theme.lower() in LOW_PRIORITY_SPORT_THEMES:
+        return True
+    return _match_ratio(cluster, LOW_PRIORITY_SPORT_KEYWORDS) > 0.5
+
+
+def is_faits_divers_cluster(cluster: TopicCluster) -> bool:
+    """Cluster dominé par les faits divers (>50% titres matchent)."""
+    return _match_ratio(cluster, LOW_PRIORITY_FAITS_DIVERS_KEYWORDS) > 0.5
+
+
+def cap_low_priority_clusters(
+    clusters: list[TopicCluster],
+    max_sport: int = 1,
+    max_faits_divers: int = 1,
+) -> list[TopicCluster]:
+    """Limite le nombre de clusters sport + faits divers.
+
+    Conserve l'ordre d'entrée (supposé trié par pertinence/taille) et ne
+    garde que les `max_sport` premiers sport + `max_faits_divers` premiers
+    faits divers. Les autres sont filtrés. Les clusters non low-priority
+    passent tous.
+
+    Utilisé AVANT la sélection LLM pour éviter que 3 matchs de foot + 2
+    faits divers saturent le digest.
+    """
+    kept: list[TopicCluster] = []
+    sport_count = 0
+    fd_count = 0
+    for c in clusters:
+        if is_sport_cluster(c):
+            if sport_count >= max_sport:
+                continue
+            sport_count += 1
+        elif is_faits_divers_cluster(c):
+            if fd_count >= max_faits_divers:
+                continue
+            fd_count += 1
+        kept.append(c)
+    return kept
+
+
 def is_cluster_serein_compatible(
     cluster: TopicCluster, sensitive_themes: list[str] | None = None
 ) -> bool:

@@ -144,6 +144,21 @@ les deux modes** :
   appliqué si TOUT est sport.
 - Aucun changement au modèle DB, aucune migration Alembic.
 
+## Status — 2026-04-13 (après implémentation)
+
+- [x] Fix 1 — `_get_global_candidates(mode)` filtre serein au SQL.
+- [x] Fix 2 — `compute_global_context` filtre les clusters non-serein-compatibles.
+- [x] Fix 3 — cap sport + faits divers dans les deux modes, avec escape-hatch
+  si le pool non-low-priority est trop pauvre (< 5 clusters).
+- [x] Tests de régression (44/44 tests pertinents passent sur Python 3.12) :
+  - `tests/test_low_priority_cap.py` — unit tests sur les helpers (12 tests).
+  - `tests/editorial/test_pipeline_mode_filters.py` — intégration pipeline
+    (4 tests : serein exclut les clusters anxieux, pour_vous les garde, cap
+    sport limite à 1, cap skippé si pool trop petit).
+  - `tests/test_digest_generation_job.py::TestGlobalCandidatePool` — 2
+    nouveaux tests vérifient que la SQL du pool serein JOIN `sources` et
+    filtre via `Source.theme`, et que le pool pour_vous reste inchangé.
+
 ## Hors scope
 
 - Tagging `is_serene` pour les articles existants non taggés (job séparé).

@@ -217,3 +217,52 @@ class TestGlobalCandidatePool:
 
         result = await job._get_global_candidates(mock_session)
         assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_get_global_candidates_serein_applies_filter(self, job):
+        """Serein mode must join on Source and apply the serein filter.
+
+        Regression for bug-digest-serein-collision-2026-04-13: before this
+        fix the editorial batch reused the unfiltered pour_vous pool for
+        serein, which is why serein digests ended up showing the same
+        articles as the normal mode.
+        """
+        mock_session = AsyncMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=[])
+        result_mock = MagicMock()
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
+        mock_session.execute = AsyncMock(return_value=result_mock)
+
+        await job._get_global_candidates(mock_session, mode="serein")
+
+        # Inspect the SQL actually executed — it must reference Source (join)
+        # and the serene/keyword filter artefacts.
+        stmt = mock_session.execute.call_args.args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).lower()
+        # Serein mode joins on sources and filters via the serene condition
+        # (either is_serene=True path or the keyword/theme fallback).
+        assert "join sources" in compiled, (
+            f"serein pool must JOIN sources; got:\n{compiled}"
+        )
+        assert "sources.theme" in compiled, (
+            f"serein pool must reference Source.theme filter; got:\n{compiled}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_global_candidates_pour_vous_no_source_join(self, job):
+        """Pour-vous mode keeps the historical (no-filter) SQL shape."""
+        mock_session = AsyncMock()
+        scalars_mock = MagicMock()
+        scalars_mock.all = MagicMock(return_value=[])
+        result_mock = MagicMock()
+        result_mock.scalars = MagicMock(return_value=scalars_mock)
+        mock_session.execute = AsyncMock(return_value=result_mock)
+
+        await job._get_global_candidates(mock_session, mode="pour_vous")
+
+        stmt = mock_session.execute.call_args.args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).lower()
+        # No join on sources, no theme filter — historical behaviour preserved
+        assert "join sources" not in compiled
+        assert "sources.theme" not in compiled
