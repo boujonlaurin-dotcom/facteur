@@ -888,9 +888,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         : widget.topic.articles;
     if (articles.isEmpty) return;
     final article = articles[_currentPage.clamp(0, articles.length - 1)];
-    if (article.contentId.isEmpty) return;
+    // Prefer the backend-provided pivot id (the same content used to compute
+    // perspective_count / bias_distribution). Falls back to the currently
+    // displayed article for legacy cached digests where the field is absent.
+    final pivotId = (widget.topic.representativeContentId?.isNotEmpty ?? false)
+        ? widget.topic.representativeContentId!
+        : article.contentId;
+    if (pivotId.isEmpty) return;
     final repository = ref.read(feedRepositoryProvider);
-    final response = await repository.getPerspectives(article.contentId);
+    final response = await repository.getPerspectives(pivotId);
 
     if (!context.mounted) return;
 
@@ -913,7 +919,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         keywords: response.keywords,
         sourceBiasStance: response.sourceBiasStance,
         sourceName: article.source?.name ?? '',
-        contentId: article.contentId,
+        // Pass the same pivot used to fetch perspectives so any follow-up
+        // action (e.g. analyzePerspectives) operates on the same content.
+        contentId: pivotId,
         comparisonQuality: response.comparisonQuality,
       ),
     );

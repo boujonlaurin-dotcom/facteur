@@ -283,3 +283,96 @@ class TestRunForUser:
 
         assert result.metadata["deep_hits"] == 1
         assert result.metadata["total_subjects"] == 2
+
+
+class _StubPerspective:
+    """Stand-in matching the attributes the pipeline reads on a Perspective."""
+
+    def __init__(self, bias_stance: str, source_name: str = "Stub", source_domain: str = "stub.example"):
+        self.bias_stance = bias_stance
+        self.source_name = source_name
+        self.source_domain = source_domain
+        self.title = "stub title"
+        self.url = "https://stub.example/x"
+        self.published_at = None
+        self.description = None
+
+
+class TestPerspectiveCountAlignment:
+    """Regression coverage for the 3-counter alignment fix.
+
+    The pipeline must:
+      1. Filter out ``unknown`` bias before computing ``perspective_count`` so
+         that ``sum(bias_distribution.values()) == perspective_count`` (header
+         vs spectrum bar invariant).
+      2. Persist the cluster's most-recent content id as
+         ``representative_content_id`` so the mobile bottom sheet re-fetches
+         on the same pivot.
+    """
+
+    @pytest.mark.asyncio
+    async def test_filters_unknown_and_sets_representative_id(self, mock_dependencies):
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        # Two contents in the cluster — most recent should win as pivot.
+        older = _make_content_mock(title="older")
+        older.published_at = datetime(2026, 4, 1, tzinfo=UTC)
+        newer = _make_content_mock(title="newer")
+        newer.published_at = datetime(2026, 4, 12, tzinfo=UTC)
+
+        cluster = _make_cluster_mock(
+            cluster_id="c1",
+            label="Retraites",
+            contents=[older, newer],
+        )
+        # Mock get_perspectives_hybrid: 3 known + 2 unknown = 5 raw, 3 known.
+        mock_dependencies["perspective"].get_perspectives_hybrid = AsyncMock(
+            return_value=(
+                [
+                    _StubPerspective("left", "L", "left.fr"),
+                    _StubPerspective("center", "C", "center.fr"),
+                    _StubPerspective("right", "R", "right.fr"),
+                    _StubPerspective("unknown", "U1", "u1.fr"),
+                    _StubPerspective("unknown", "U2", "u2.fr"),
+                ],
+                [],
+            )
+        )
+
+        session = AsyncMock()
+        # Avoid hitting the DB for logo resolution — return empty rowset.
+        session.execute = AsyncMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        svc = EditorialPipelineService(session)
+
+        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id="c1",
+                label="Retraites",
+                selection_reason="Traité par 1 sources",
+                deep_angle="D",
+                source_count=1,
+            )
+            mock_dependencies["curation"].select_topics.return_value = []
+            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
+            mock_dependencies["actu"].match_global.side_effect = (
+                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
+            )
+
+            result = await svc.compute_global_context([older, newer])
+
+        assert result is not None
+        subject = result.subjects[0]
+
+        # Header / spectrum-bar invariant.
+        assert subject.perspective_count == 3
+        assert subject.bias_distribution is not None
+        assert sum(subject.bias_distribution.values()) == subject.perspective_count
+
+        # Pivot must be the most recent content of the cluster.
+        assert subject.representative_content_id == newer.id

@@ -158,6 +158,7 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
               .toList() ??
           const [],
       divergenceLevel: json['divergence_level'] as String?,
+      representativeContentId: json['representative_content_id'] as String?,
     );
 
 Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
@@ -180,6 +181,7 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'divergence_analysis': instance.divergenceAnalysis,
       'perspective_sources': instance.perspectiveSources,
       'divergence_level': instance.divergenceLevel,
+      'representative_content_id': instance.representativeContentId,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>

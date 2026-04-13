@@ -17,6 +17,13 @@ from app.services.editorial.schemas import (
 )
 
 
+class _FakePerspective:
+    """Minimal stand-in for app.services.perspective_service.Perspective."""
+
+    def __init__(self, bias_stance: str):
+        self.bias_stance = bias_stance
+
+
 def _make_actu() -> MatchedActuArticle:
     return MatchedActuArticle(
         content_id=uuid4(),
@@ -254,6 +261,50 @@ class TestEditorialSubjectPerspectiveFields:
         assert subject.bias_distribution is None
         assert subject.bias_highlights is None
         assert subject.divergence_analysis is None
+        # New field also defaults to None on legacy payloads
+        assert subject.representative_content_id is None
+
+    def test_representative_content_id_roundtrip(self):
+        cid = uuid4()
+        subject = _make_subject(representative_content_id=cid)
+        data = subject.model_dump(mode="json")
+        restored = EditorialSubject.model_validate(data)
+        assert str(restored.representative_content_id) == str(cid)
+
+
+class TestComputeBiasDistributionAlignment:
+    """Invariant test backing the 3-counter alignment fix.
+
+    The pipeline filters out perspectives with bias_stance == 'unknown' BEFORE
+    setting perspective_count and bias_distribution, so the digest header,
+    spectrum bar and bottom-sheet all converge on the same value.
+    """
+
+    def test_excludes_unknown_perspectives(self):
+        perspectives = [
+            _FakePerspective("left"),
+            _FakePerspective("center"),
+            _FakePerspective("right"),
+            _FakePerspective("unknown"),
+            _FakePerspective("unknown"),
+        ]
+        dist = compute_bias_distribution(perspectives)
+        assert sum(dist.values()) == 3
+        # No "unknown" key leaks into the distribution
+        assert "unknown" not in dist
+
+    def test_count_matches_distribution_sum(self):
+        """Mirror of pipeline.py: filter then count — they must agree."""
+        perspectives = [
+            _FakePerspective("left"),
+            _FakePerspective("center-left"),
+            _FakePerspective("right"),
+            _FakePerspective("unknown"),
+        ]
+        known = [p for p in perspectives if p.bias_stance != "unknown"]
+        dist = compute_bias_distribution(known)
+        # Invariant: header count == sum of bar segments
+        assert len(known) == sum(dist.values())
 
 
 class TestDigestTopicBackwardCompat:
@@ -291,3 +342,28 @@ class TestDigestTopicBackwardCompat:
         assert topic.perspective_count == 8
         assert topic.bias_distribution["left"] == 2
         assert topic.divergence_analysis == "Les médias divergent."
+
+    def test_digest_topic_representative_content_id_optional(self):
+        """Legacy cached digests have no representative_content_id."""
+        legacy_topic = {
+            "topic_id": "c1",
+            "label": "Legacy",
+            "rank": 1,
+            "reason": "Selected",
+            "articles": [],
+        }
+        topic = DigestTopic.model_validate(legacy_topic)
+        assert topic.representative_content_id is None
+
+    def test_digest_topic_representative_content_id_propagates(self):
+        cid = str(uuid4())
+        new_topic = {
+            "topic_id": "c1",
+            "label": "Fresh",
+            "rank": 1,
+            "reason": "Selected",
+            "articles": [],
+            "representative_content_id": cid,
+        }
+        topic = DigestTopic.model_validate(new_topic)
+        assert topic.representative_content_id == cid

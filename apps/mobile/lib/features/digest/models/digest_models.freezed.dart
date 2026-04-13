@@ -1427,6 +1427,8 @@ mixin _$DigestTopic {
   List<SourceMini> get perspectiveSources => throw _privateConstructorUsedError;
   @JsonKey(name: 'divergence_level')
   String? get divergenceLevel => throw _privateConstructorUsedError;
+  @JsonKey(name: 'representative_content_id')
+  String? get representativeContentId => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -1458,7 +1460,9 @@ abstract class $DigestTopicCopyWith<$Res> {
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources') List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level') String? divergenceLevel});
+      @JsonKey(name: 'divergence_level') String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      String? representativeContentId});
 }
 
 /// @nodoc
@@ -1492,6 +1496,7 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
     Object? divergenceAnalysis = freezed,
     Object? perspectiveSources = null,
     Object? divergenceLevel = freezed,
+    Object? representativeContentId = freezed,
   }) {
     return _then(_value.copyWith(
       topicId: null == topicId
@@ -1566,6 +1571,10 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
           ? _value.divergenceLevel
           : divergenceLevel // ignore: cast_nullable_to_non_nullable
               as String?,
+      representativeContentId: freezed == representativeContentId
+          ? _value.representativeContentId
+          : representativeContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -1596,7 +1605,9 @@ abstract class _$$DigestTopicImplCopyWith<$Res>
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources') List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level') String? divergenceLevel});
+      @JsonKey(name: 'divergence_level') String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      String? representativeContentId});
 }
 
 /// @nodoc
@@ -1628,6 +1639,7 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
     Object? divergenceAnalysis = freezed,
     Object? perspectiveSources = null,
     Object? divergenceLevel = freezed,
+    Object? representativeContentId = freezed,
   }) {
     return _then(_$DigestTopicImpl(
       topicId: null == topicId
@@ -1702,6 +1714,10 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
           ? _value.divergenceLevel
           : divergenceLevel // ignore: cast_nullable_to_non_nullable
               as String?,
+      representativeContentId: freezed == representativeContentId
+          ? _value.representativeContentId
+          : representativeContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -1729,7 +1745,8 @@ class _$DigestTopicImpl extends _DigestTopic {
       @JsonKey(name: 'divergence_analysis') this.divergenceAnalysis,
       @JsonKey(name: 'perspective_sources')
       final List<SourceMini> perspectiveSources = const [],
-      @JsonKey(name: 'divergence_level') this.divergenceLevel})
+      @JsonKey(name: 'divergence_level') this.divergenceLevel,
+      @JsonKey(name: 'representative_content_id') this.representativeContentId})
       : _subjects = subjects,
         _articles = articles,
         _biasDistribution = biasDistribution,
@@ -1818,10 +1835,13 @@ class _$DigestTopicImpl extends _DigestTopic {
   @override
   @JsonKey(name: 'divergence_level')
   final String? divergenceLevel;
+  @override
+  @JsonKey(name: 'representative_content_id')
+  final String? representativeContentId;
 
   @override
   String toString() {
-    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel)';
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
   }
 
   @override
@@ -1856,7 +1876,9 @@ class _$DigestTopicImpl extends _DigestTopic {
             const DeepCollectionEquality()
                 .equals(other._perspectiveSources, _perspectiveSources) &&
             (identical(other.divergenceLevel, divergenceLevel) ||
-                other.divergenceLevel == divergenceLevel));
+                other.divergenceLevel == divergenceLevel) &&
+            (identical(other.representativeContentId, representativeContentId) ||
+                other.representativeContentId == representativeContentId));
   }
 
   @JsonKey(ignore: true)
@@ -1880,7 +1902,8 @@ class _$DigestTopicImpl extends _DigestTopic {
       biasHighlights,
       divergenceAnalysis,
       const DeepCollectionEquality().hash(_perspectiveSources),
-      divergenceLevel);
+      divergenceLevel,
+      representativeContentId);
 
   @JsonKey(ignore: true)
   @override
@@ -1918,7 +1941,9 @@ abstract class _DigestTopic extends DigestTopic {
       @JsonKey(name: 'perspective_sources')
       final List<SourceMini> perspectiveSources,
       @JsonKey(name: 'divergence_level')
-      final String? divergenceLevel}) = _$DigestTopicImpl;
+      final String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      final String? representativeContentId}) = _$DigestTopicImpl;
   const _DigestTopic._() : super._();
 
   factory _DigestTopic.fromJson(Map<String, dynamic> json) =
@@ -1972,6 +1997,9 @@ abstract class _DigestTopic extends DigestTopic {
   @override
   @JsonKey(name: 'divergence_level')
   String? get divergenceLevel;
+  @override
+  @JsonKey(name: 'representative_content_id')
+  String? get representativeContentId;
   @override
   @JsonKey(ignore: true)
   _$$DigestTopicImplCopyWith<_$DigestTopicImpl> get copyWith =>
