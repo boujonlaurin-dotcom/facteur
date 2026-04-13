@@ -47,9 +47,7 @@ class CommunityRecommendationService:
 
         # Decay formula: 1 / (1 + hours_since / 48)
         # In SQL: hours_since = EXTRACT(EPOCH FROM (now - liked_at)) / 3600
-        hours_since = func.extract(
-            "epoch", now - UserContentStatus.liked_at
-        ) / 3600.0
+        hours_since = func.extract("epoch", now - UserContentStatus.liked_at) / 3600.0
         decay_weight = 1.0 / (1.0 + hours_since / DECAY_HALF_LIFE_HOURS)
 
         exclusion = Content.id.notin_(exclude_ids) if exclude_ids else True

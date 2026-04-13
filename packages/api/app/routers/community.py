@@ -104,13 +104,17 @@ async def get_community_recommendations(
         user_statuses: dict = {}
         if all_content_ids:
             rows = (
-                await db.execute(
-                    select(UserContentStatus).where(
-                        UserContentStatus.user_id == user_uuid,
-                        UserContentStatus.content_id.in_(all_content_ids),
+                (
+                    await db.execute(
+                        select(UserContentStatus).where(
+                            UserContentStatus.user_id == user_uuid,
+                            UserContentStatus.content_id.in_(all_content_ids),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for row in rows:
                 user_statuses[row.content_id] = {
                     "is_liked": row.is_liked,
@@ -127,8 +131,7 @@ async def get_community_recommendations(
         digest_carousel = [
             ci
             for ci in (
-                _content_to_carousel_item(item, user_statuses)
-                for item in digest_items
+                _content_to_carousel_item(item, user_statuses) for item in digest_items
             )
             if ci is not None
         ]

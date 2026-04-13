@@ -78,13 +78,17 @@ async def _enrich_community_carousel(
         user_statuses: dict = {}
         if all_ids:
             rows = (
-                await db.execute(
-                    select(UserContentStatus).where(
-                        UserContentStatus.user_id == user_uuid,
-                        UserContentStatus.content_id.in_(all_ids),
+                (
+                    await db.execute(
+                        select(UserContentStatus).where(
+                            UserContentStatus.user_id == user_uuid,
+                            UserContentStatus.content_id.in_(all_ids),
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for row in rows:
                 user_statuses[row.content_id] = {
                     "is_liked": row.is_liked,
@@ -115,8 +119,7 @@ async def _enrich_community_carousel(
                         duration_seconds=content.duration_seconds,
                         # Fallback to now() if null — schema requires a value
                         published_at=(
-                            content.published_at
-                            or datetime.datetime.now(datetime.UTC)
+                            content.published_at or datetime.datetime.now(datetime.UTC)
                         ),
                         source={
                             "id": content.source.id,

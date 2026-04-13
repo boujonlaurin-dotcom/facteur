@@ -1260,11 +1260,14 @@ class RecommendationService:
                 )
 
                 # Decay formula: score = SUM(1 / (1 + hours_since / 48))
-                hours_since = func.extract(
-                    "epoch",
-                    datetime.datetime.now(datetime.UTC)
-                    - UserContentStatus.liked_at,
-                ) / 3600.0
+                hours_since = (
+                    func.extract(
+                        "epoch",
+                        datetime.datetime.now(datetime.UTC)
+                        - UserContentStatus.liked_at,
+                    )
+                    / 3600.0
+                )
                 decay_weight = 1.0 / (1.0 + hours_since / 48.0)
 
                 community_rows = (
@@ -1272,9 +1275,7 @@ class RecommendationService:
                         select(
                             Content.id,
                             func.sum(decay_weight).label("score"),
-                            func.count(UserContentStatus.id).label(
-                                "sunflower_count"
-                            ),
+                            func.count(UserContentStatus.id).label("sunflower_count"),
                         )
                         .join(
                             UserContentStatus,
@@ -1297,16 +1298,11 @@ class RecommendationService:
                     "carousel_community_query",
                     community_found=len(community_rows),
                     min_required=MIN_CAROUSEL_ITEMS,
-                    scores=[
-                        round(float(r.score), 2)
-                        for r in community_rows[:5]
-                    ],
+                    scores=[round(float(r.score), 2) for r in community_rows[:5]],
                 )
                 if len(community_rows) >= MIN_CAROUSEL_ITEMS:
                     community_ids = [r.id for r in community_rows]
-                    count_map = {
-                        r.id: int(r.sunflower_count) for r in community_rows
-                    }
+                    count_map = {r.id: int(r.sunflower_count) for r in community_rows}
 
                     community_contents = list(
                         (
@@ -1317,9 +1313,7 @@ class RecommendationService:
                             )
                         ).all()
                     )
-                    id_order = {
-                        cid: i for i, cid in enumerate(community_ids)
-                    }
+                    id_order = {cid: i for i, cid in enumerate(community_ids)}
                     items = sorted(
                         community_contents,
                         key=lambda c: id_order.get(c.id, 99),
@@ -1329,10 +1323,11 @@ class RecommendationService:
                     badges = []
                     for item in items:
                         sf_count = count_map.get(item.id, 0)
-                        if sf_count >= 2:
-                            label = f"\U0001f33b {sf_count}"
-                        else:
-                            label = "Reco communauté"
+                        label = (
+                            f"\U0001f33b {sf_count}"
+                            if sf_count >= 2
+                            else "Reco communauté"
+                        )
                         badges.append(
                             {
                                 "code": "community",
