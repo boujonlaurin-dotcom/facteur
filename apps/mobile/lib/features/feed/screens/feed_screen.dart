@@ -136,9 +136,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     if (mounted) {
       ref.read(feedProvider.notifier).markContentAsConsumed(content);
 
+      // Capture the notifier *now* while `ref` is guaranteed valid; using
+      // `ref.read` inside a delayed callback can throw
+      // "Cannot use 'ref' after the widget was disposed" if the user leaves
+      // the feed before the delay elapses.
+      final streakNotifier = ref.read(streakProvider.notifier);
       Future<void>.delayed(const Duration(milliseconds: 1100), () {
         if (mounted) {
-          ref.read(streakProvider.notifier).refreshSilent();
+          streakNotifier.refreshSilent();
         }
       });
     }

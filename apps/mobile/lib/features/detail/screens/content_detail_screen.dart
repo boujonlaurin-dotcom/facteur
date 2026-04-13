@@ -856,33 +856,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Capture max progress reached before disposing ValueNotifier
     final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
 
-    _readingTimer?.cancel();
-    _noteNudgeTimer?.cancel();
-    _scrollStopTimer?.cancel();
-    _inactivityTimer?.cancel();
-    _videoPlayHideTimer?.cancel();
-    _linkCopiedFabTimer?.cancel();
-    _linkCopiedHeaderTimer?.cancel();
-    _fabController.dispose();
-    _bookmarkBounceController.dispose();
-    _likeBounceController.dispose();
-    _fabReappearController.dispose();
-    _shareFabController.dispose();
-    _exitAnimController.dispose();
-    _headerAutoController.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    _fabOpacity.dispose();
-    _headerOffset.dispose();
-    _readingProgress.removeListener(_onReadingProgressNudge);
-    _readingProgress.removeListener(_onShareFabProgress);
-    _readingProgress.dispose();
-    _scrollController.removeListener(_onScrollToSite);
-    _scrollController.removeListener(_onScrollReadingProgress);
-
-    _scrollController.dispose();
-    super.dispose();
-
-    // Persist reading progress + analytics on close
+    // Persist reading progress + analytics BEFORE super.dispose() so that
+    // `ref` and Supabase.instance are still usable. Otherwise Riverpod throws
+    // "Cannot use ref after the widget was disposed" (cascade can also
+    // surface as LateInitializationError on Supabase.instance).
     try {
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
@@ -908,6 +885,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
     }
+
+    _readingTimer?.cancel();
+    _noteNudgeTimer?.cancel();
+    _scrollStopTimer?.cancel();
+    _inactivityTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
+    _linkCopiedFabTimer?.cancel();
+    _linkCopiedHeaderTimer?.cancel();
+    _fabController.dispose();
+    _bookmarkBounceController.dispose();
+    _likeBounceController.dispose();
+    _fabReappearController.dispose();
+    _shareFabController.dispose();
+    _exitAnimController.dispose();
+    _headerAutoController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _fabOpacity.dispose();
+    _headerOffset.dispose();
+    _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.removeListener(_onShareFabProgress);
+    _readingProgress.dispose();
+    _scrollController.removeListener(_onScrollToSite);
+    _scrollController.removeListener(_onScrollReadingProgress);
+
+    _scrollController.dispose();
+    super.dispose();
   }
 
   /// Handle video progress updates from YouTubePlayerWidget.

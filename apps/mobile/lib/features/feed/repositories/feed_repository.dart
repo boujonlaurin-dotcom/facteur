@@ -405,18 +405,33 @@ class FeedRepository {
           itemsList = [];
         }
 
-        // Pagination inference: non-empty means more pages may exist.
-        // The provider controls actual _hasNext state via items.isNotEmpty;
-        // this value is informational for the FeedResponse model.
-        final hasNext = itemsList.isNotEmpty;
+        // Pagination: prefer backend metadata (based on total_candidates
+        // pre-diversification) when available. Fall back to inferring from
+        // items.isNotEmpty for the legacy List response shape.
+        // The provider combines both via a hybrid check — see feed_provider.
+        int paginationTotal = 0;
+        bool paginationHasNext = itemsList.isNotEmpty;
+        if (data is Map<String, dynamic>) {
+          final paginationRaw = data['pagination'];
+          if (paginationRaw is Map<String, dynamic>) {
+            final backendHasNext = paginationRaw['has_next'];
+            if (backendHasNext is bool) {
+              paginationHasNext = backendHasNext;
+            }
+            final backendTotal = paginationRaw['total'];
+            if (backendTotal is int) {
+              paginationTotal = backendTotal;
+            }
+          }
+        }
 
         return FeedResponse(
           items: itemsList,
           pagination: Pagination(
             page: page,
             perPage: limit,
-            total: 0, // Inconnu
-            hasNext: hasNext,
+            total: paginationTotal,
+            hasNext: paginationHasNext,
           ),
           carousels: carousels,
         );

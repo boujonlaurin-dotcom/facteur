@@ -1,6 +1,6 @@
 """create user_learning_proposals + user_entity_preferences
 
-Revision ID: lc01
+Revision ID: ln01
 Revises: dg01
 Create Date: 2026-04-11
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers
-revision = "lc01"
+revision = "ln01"
 down_revision = "dg01"
 branch_labels = None
 depends_on = None
