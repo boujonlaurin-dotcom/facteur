@@ -4,10 +4,22 @@ Revision ID: sf01
 Revises: dg01
 Create Date: 2026-04-11
 
-Chained after `dg01` (merged via PR #374 on main) so the alembic history
-stays single-headed. When this branch was opened, `td01` was the head; the
-digest reliability fix (`dg01`) landed on main in parallel, so rebasing the
-sunflower down_revision resolves the duplicate head without a merge revision.
+⚠️  NO-OP MIGRATION — applied manually via Supabase SQL Editor.
+
+Original upgrade() issued `CREATE INDEX CONCURRENTLY` inside Alembic's
+`begin_transaction()` (see env.py), which Postgres forbids
+(`CREATE INDEX CONCURRENTLY cannot run inside a transaction block`).
+This broke every Railway deploy after PR #388 because the startup check
+(`app/checks.py`) crashes the app when `alembic_version` lags behind code.
+
+Per CLAUDE.md ("Alembic : jamais d'exécution sur Railway"), the DDL/UPDATE
+for this revision is applied out-of-band in Supabase SQL Editor, and
+`alembic_version` is stamped to 'sf02' manually. See deploy runbook in
+the PR #391 description for the exact SQL.
+
+Keeping this file as a no-op (instead of deleting it) preserves the
+revision chain so Alembic history remains valid on environments that
+still had `dg01` as HEAD at the time of the incident.
 """
 from collections.abc import Sequence
 
@@ -21,31 +33,18 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
-    # Rename existing "Contenus likés" collections to new name
-    op.execute(
-        "UPDATE collections SET name = 'Mes articles intéressants 🌻' "
-        "WHERE is_liked_collection = true AND name = 'Contenus likés'"
-    )
-
-    # Partial index for community scoring queries (liked articles by recency)
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ucs_liked_at_partial "
-        "ON user_content_status(liked_at DESC) "
-        "WHERE is_liked = true"
-    )
-
-    # Index for future creator dashboard (aggregate by source)
-    op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_ucs_content_liked_partial "
-        "ON user_content_status(content_id) "
-        "WHERE is_liked = true"
-    )
+    # Intentionally empty — operations applied manually in Supabase.
+    # See file docstring and PR #391 runbook.
+    pass
 
 
 def downgrade() -> None:
+    # Mirror of the manual operations, for reference only. Not executed
+    # on Railway; run manually in Supabase if rollback is ever needed.
     op.execute("DROP INDEX IF EXISTS ix_ucs_content_liked_partial")
     op.execute("DROP INDEX IF EXISTS ix_ucs_liked_at_partial")
     op.execute(
         "UPDATE collections SET name = 'Contenus likés' "
-        "WHERE is_liked_collection = true AND name = 'Mes articles intéressants 🌻'"
+        "WHERE is_liked_collection = true "
+        "AND name = 'Mes articles intéressants 🌻'"
     )

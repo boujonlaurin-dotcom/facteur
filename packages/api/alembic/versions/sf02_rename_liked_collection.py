@@ -4,12 +4,15 @@ Revision ID: sf02
 Revises: sf01
 Create Date: 2026-04-13
 
-sf01 already renamed "Contenus likés" → "Mes articles intéressants 🌻" and
-has been applied in production. Alembic tracks revisions by ID, so editing
-sf01 in place would not re-run on envs where it is already applied. This
-follow-up migration performs the final rename to "Mes contenus recommandés
-🌻" and is safe to run on any env regardless of which prior name the row
-currently holds.
+⚠️  NO-OP MIGRATION — applied manually via Supabase SQL Editor.
+
+sf01 was neutralized to unblock Railway deploys (see its docstring). For
+consistency with CLAUDE.md ("Alembic : jamais d'exécution sur Railway"),
+the final rename is also applied out-of-band in Supabase SQL Editor and
+`alembic_version` is stamped to 'sf02'.
+
+Kept as a no-op so the revision chain stays valid and future migrations
+can chain from 'sf02' without ambiguity.
 """
 from collections.abc import Sequence
 
@@ -23,16 +26,13 @@ depends_on: str | None = None
 
 
 def upgrade() -> None:
-    # Idempotent rename — handles both predecessor names so the migration
-    # converges regardless of whether sf01 was already applied.
-    op.execute(
-        "UPDATE collections SET name = 'Mes contenus recommandés 🌻' "
-        "WHERE is_liked_collection = true "
-        "AND name IN ('Contenus likés', 'Mes articles intéressants 🌻')"
-    )
+    # Intentionally empty — operations applied manually in Supabase.
+    # See file docstring and PR #391 runbook.
+    pass
 
 
 def downgrade() -> None:
+    # Reference rollback SQL — run manually in Supabase if needed.
     op.execute(
         "UPDATE collections SET name = 'Mes articles intéressants 🌻' "
         "WHERE is_liked_collection = true "
