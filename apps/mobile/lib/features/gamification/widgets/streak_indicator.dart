@@ -21,20 +21,20 @@ class StreakIndicator extends ConsumerWidget {
         final isActive = streak.currentStreak > 0;
         final flameColor = isActive
             ? Colors.orange
-            : colors.textSecondary.withValues(alpha: 0.3);
+            : colors.textSecondary.withOpacity(0.3);
         final textColor = isActive
             ? colors.textPrimary
-            : colors.textSecondary.withValues(alpha: 0.5);
+            : colors.textSecondary.withOpacity(0.5);
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: colors.backgroundSecondary
-                .withValues(alpha: isActive ? 1 : 0.5),
+                .withOpacity(isActive ? 1 : 0.5),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isActive
-                  ? colors.primary.withValues(alpha: 0.1)
+                  ? colors.primary.withOpacity(0.1)
                   : Colors.transparent,
               width: 1,
             ),
@@ -62,7 +62,7 @@ class StreakIndicator extends ConsumerWidget {
       loading: () => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Icon(PhosphorIcons.fire(PhosphorIconsStyle.regular),
-            size: 16, color: colors.textSecondary.withValues(alpha: 0.3)),
+            size: 16, color: colors.textSecondary.withOpacity(0.3)),
       ),
       error: (e, s) {
         // Debugging: print error

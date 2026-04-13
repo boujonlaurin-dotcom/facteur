@@ -106,7 +106,7 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
                 height: 4,
                 margin: const EdgeInsets.only(top: 12),
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -324,7 +324,7 @@ class _FavoriteChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bgColor = isSelected ? colors.primary : colors.surface;
     final borderColor =
-        isSelected ? colors.primary : colors.primary.withValues(alpha: 0.3);
+        isSelected ? colors.primary : colors.primary.withOpacity(0.3);
     final textColor = isSelected ? Colors.white : colors.textPrimary;
 
     return GestureDetector(

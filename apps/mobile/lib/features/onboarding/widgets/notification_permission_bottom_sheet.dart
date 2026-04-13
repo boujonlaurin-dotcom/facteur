@@ -14,7 +14,7 @@ Future<void> showNotificationPermissionBottomSheet(
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.6),
+    barrierColor: Colors.black.withOpacity(0.6),
     isDismissible: false,
     enableDrag: false,
     builder: (ctx) => ClipRect(

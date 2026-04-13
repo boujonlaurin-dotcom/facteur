@@ -189,10 +189,10 @@ class _FeedCardState extends State<FeedCard>
                 // 3. Footer (Source + Actions) — outside tap area
                 Container(
                   decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                    color: colors.backgroundSecondary.withOpacity(0.5),
                     border: Border(
                       top: BorderSide(
-                        color: colors.textSecondary.withValues(alpha: 0.1),
+                        color: colors.textSecondary.withOpacity(0.1),
                         width: 1,
                       ),
                     ),
@@ -331,8 +331,8 @@ class _FeedCardState extends State<FeedCard>
                                     horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: widget.isSourceSubscribed
-                                      ? colors.success.withValues(alpha: 0.15)
-                                      : colors.warning.withValues(alpha: 0.15),
+                                      ? colors.success.withOpacity(0.15)
+                                      : colors.warning.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -376,10 +376,10 @@ class _FeedCardState extends State<FeedCard>
                                       horizontal: 5, vertical: 2),
                                   decoration: BoxDecoration(
                                     color:
-                                        colors.textSecondary.withValues(alpha: 0.14),
+                                        colors.textSecondary.withOpacity(0.14),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: colors.textTertiary.withValues(alpha: 0.20),
+                                      color: colors.textTertiary.withOpacity(0.20),
                                       width: 0.5,
                                     ),
                                   ),
@@ -471,11 +471,11 @@ class _FeedCardState extends State<FeedCard>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.9),
+                  color: colors.primary.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -550,7 +550,7 @@ class _FeedCardState extends State<FeedCard>
             Text(
               stripHtml(widget.content.description!),
               style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary.withValues(alpha: 0.85),
+                color: colors.textSecondary.withOpacity(0.85),
                 height: 1.3,
                 fontSize: widget.descriptionFontSize,
               ),

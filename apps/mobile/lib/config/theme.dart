@@ -182,7 +182,7 @@ class FacteurPalettes {
     textPrimary: const Color(0xFF2C2A29), // Charbon Doux
     textSecondary: const Color(0xFF5D5B5A),
     textTertiary: const Color(0xFF959392),
-    textStamp: const Color(0xFFD35400).withValues(alpha: 0.8),
+    textStamp: const Color(0xFFD35400).withOpacity(0.8),
     biasLeft: const Color(0xFFB71C1C), // Red 900
     biasCenterLeft: const Color(0xFFEF9A9A), // Red 200
     biasCenter: const Color(0xFF9E9E9E), // Grey 500
@@ -208,7 +208,7 @@ class FacteurPalettes {
     textPrimary: const Color(0xFFEAEAEA), // Blanc Craie
     textSecondary: const Color(0xFFA6A6A6),
     textTertiary: const Color(0xFF606060),
-    textStamp: const Color(0xFFC0392B).withValues(alpha: 0.8),
+    textStamp: const Color(0xFFC0392B).withOpacity(0.8),
     biasLeft: const Color(0xFFE53935), // Red 600
     biasCenterLeft: const Color(0xFFFFCDD2), // Red 100
     biasCenter: const Color(0xFF757575), // Grey 600

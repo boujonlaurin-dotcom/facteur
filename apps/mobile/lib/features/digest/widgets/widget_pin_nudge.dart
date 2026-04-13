@@ -68,7 +68,7 @@ class _WidgetPinSheet extends StatelessWidget {
             height: 4,
             margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.3),
+              color: colors.textTertiary.withOpacity(0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -77,7 +77,7 @@ class _WidgetPinSheet extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: colors.primary.withValues(alpha: 0.1),
+              color: colors.primary.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(

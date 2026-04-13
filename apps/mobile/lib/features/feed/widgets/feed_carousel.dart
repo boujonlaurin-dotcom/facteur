@@ -218,13 +218,13 @@ class _FeedCarouselState extends State<FeedCarousel> {
         final card = FeedCard(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
           ],
           backgroundColor:
-              isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+              isReference ? Colors.grey.withOpacity(0.1) : null,
           content: article,
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
@@ -316,12 +316,12 @@ class _FeedCarouselState extends State<FeedCarousel> {
     final card = FeedCard(
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
+          color: Colors.black.withOpacity(0.05),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
       ],
-      backgroundColor: isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+      backgroundColor: isReference ? Colors.grey.withOpacity(0.1) : null,
       content: article,
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
@@ -402,7 +402,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           decoration: BoxDecoration(
             color: isActive
                 ? colors.primary
-                : colors.textTertiary.withValues(alpha: 0.3),
+                : colors.textTertiary.withOpacity(0.3),
             borderRadius: BorderRadius.circular(5),
           ),
         );

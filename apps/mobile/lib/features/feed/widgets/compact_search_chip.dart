@@ -77,10 +77,10 @@ class _InactiveChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withValues(alpha: 0.5);
+    final muted = colorScheme.onSurface.withOpacity(0.5);
     final trackColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.05);
 
     return GestureDetector(
       onTap: onTap,
@@ -132,7 +132,7 @@ class _ActiveChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: primary.withValues(alpha: 0.12),
+          color: primary.withOpacity(0.12),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

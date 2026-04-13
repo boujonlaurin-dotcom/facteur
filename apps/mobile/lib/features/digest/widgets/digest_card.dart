@@ -108,7 +108,7 @@ class DigestCard extends StatelessWidget {
                         Text(
                           stripHtml(item.description!),
                           style: textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary.withValues(alpha: 0.8),
+                            color: colors.textSecondary.withOpacity(0.8),
                             height: 1.3,
                           ),
                           maxLines: 2,
@@ -131,7 +131,7 @@ class DigestCard extends StatelessWidget {
                                   right: FacteurSpacing.space2),
                               decoration: BoxDecoration(
                                 color: colors.textSecondary
-                                    .withValues(alpha: 0.12),
+                                    .withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
@@ -160,10 +160,10 @@ class DigestCard extends StatelessWidget {
                 // 3. Footer (Source row)
                 Container(
                   decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                    color: colors.backgroundSecondary.withOpacity(0.5),
                     border: Border(
                       top: BorderSide(
-                        color: colors.textSecondary.withValues(alpha: 0.1),
+                        color: colors.textSecondary.withOpacity(0.1),
                         width: 1,
                       ),
                     ),
@@ -231,7 +231,7 @@ class DigestCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 5, vertical: 2),
                           decoration: BoxDecoration(
-                            color: colors.warning.withValues(alpha: 0.15),
+                            color: colors.warning.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -283,7 +283,7 @@ class DigestCard extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
+                    color: Colors.black.withOpacity(0.2),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -319,7 +319,7 @@ class DigestCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
+                            color: Colors.black.withOpacity(0.1),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
@@ -355,7 +355,7 @@ class DigestCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
+                            color: Colors.black.withOpacity(0.1),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
@@ -425,7 +425,7 @@ class DigestCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.1),
+        color: colors.primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -449,28 +449,28 @@ class DigestCard extends StatelessWidget {
         return _BadgeConfig(
           emoji: '',
           label: "L'actu du jour",
-          backgroundColor: colors.primary.withValues(alpha: alpha * 0.7),
+          backgroundColor: colors.primary.withOpacity(alpha * 0.7),
           textColor: colors.primary,
         );
       case 'pas_de_recul':
         return _BadgeConfig(
           emoji: '🔭',
           label: 'Le pas de recul',
-          backgroundColor: colors.info.withValues(alpha: alpha),
+          backgroundColor: colors.info.withOpacity(alpha),
           textColor: colors.info,
         );
       case 'pepite':
         return _BadgeConfig(
           emoji: '🍀',
           label: 'Pépite du jour',
-          backgroundColor: colors.success.withValues(alpha: alpha),
+          backgroundColor: colors.success.withOpacity(alpha),
           textColor: colors.success,
         );
       case 'coup_de_coeur':
         return _BadgeConfig(
           emoji: '💚',
           label: 'Coup de cœur',
-          backgroundColor: colors.success.withValues(alpha: alpha),
+          backgroundColor: colors.success.withOpacity(alpha),
           textColor: colors.success,
         );
       default:

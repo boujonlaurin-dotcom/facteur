@@ -72,7 +72,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
                 child: Center(
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: colors.primary.withValues(alpha: 0.5),
+                    color: colors.primary.withOpacity(0.5),
                   ),
                 ),
               ),
@@ -86,7 +86,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
             ),
             // Dark scrim + centered overlay
             if (widget.overlay != null) ...[
-              Container(color: Colors.black.withValues(alpha: 0.3)),
+              Container(color: Colors.black.withOpacity(0.3)),
               Center(child: widget.overlay!),
             ],
             // Duration pill (bottom-right)
@@ -97,7 +97,7 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
+                    color: Colors.black.withOpacity(0.75),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(

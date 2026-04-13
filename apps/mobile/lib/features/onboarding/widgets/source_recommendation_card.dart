@@ -45,8 +45,8 @@ class SourceRecommendationCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(FacteurRadius.medium),
           border: Border.all(
             color: isSelected
-                ? colors.primary.withValues(alpha: 0.3)
-                : colors.border.withValues(alpha: 0.3),
+                ? colors.primary.withOpacity(0.3)
+                : colors.border.withOpacity(0.3),
             width: 1,
           ),
         ),
@@ -198,7 +198,7 @@ class SourceRecommendationCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: 0.06),
+        color: colors.textPrimary.withOpacity(0.06),
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,
@@ -228,7 +228,7 @@ class SourceRecommendationCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: 0.05),
+        color: colors.textPrimary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: Text(

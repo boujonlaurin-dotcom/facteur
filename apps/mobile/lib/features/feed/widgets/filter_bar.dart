@@ -188,7 +188,7 @@ class _FilterBarState extends State<FilterBar> {
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
-                      .withValues(alpha: 0.2),
+                      .withOpacity(0.2),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -228,7 +228,7 @@ class _FilterBarState extends State<FilterBar> {
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
-                                .withValues(alpha: 0.7),
+                                .withOpacity(0.7),
                           ),
                     ),
                     const SizedBox(height: 24),
@@ -243,13 +243,13 @@ class _FilterBarState extends State<FilterBar> {
                                   color: Theme.of(context)
                                       .colorScheme
                                       .primary
-                                      .withValues(alpha: 0.1),
+                                      .withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: Theme.of(context)
                                         .colorScheme
                                         .primary
-                                        .withValues(alpha: 0.2),
+                                        .withOpacity(0.2),
                                   ),
                                 ),
                                 child: Text(
@@ -357,7 +357,7 @@ class _FilterBarState extends State<FilterBar> {
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurface
-                                    .withValues(alpha: 0.5),
+                                    .withOpacity(0.5),
                                 fontStyle: FontStyle.italic,
                               ),
                             ),
@@ -367,7 +367,7 @@ class _FilterBarState extends State<FilterBar> {
                                 PhosphorIcons.info(PhosphorIconsStyle.regular),
                                 size: 14,
                                 color: colorScheme.onSurface
-                                    .withValues(alpha: 0.4),
+                                    .withOpacity(0.4),
                               ),
                             ],
                           ],
@@ -390,7 +390,7 @@ class _FilterBarState extends State<FilterBar> {
     final selectedBg = colorScheme.primary;
     const unselectedBg = Colors.transparent;
     final selectedText = colorScheme.onPrimary;
-    final unselectedText = colorScheme.onSurface.withValues(alpha: 0.5);
+    final unselectedText = colorScheme.onSurface.withOpacity(0.5);
 
     return Padding(
       key: _keyFor(value),

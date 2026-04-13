@@ -196,7 +196,7 @@ class _PremiumSourcesSheetState extends State<PremiumSourcesSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: 0.06),
+        color: colors.textPrimary.withOpacity(0.06),
         borderRadius: BorderRadius.circular(8),
       ),
       alignment: Alignment.center,

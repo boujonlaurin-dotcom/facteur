@@ -24,7 +24,7 @@ class EntityAddSheet extends ConsumerStatefulWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: Padding(
@@ -157,7 +157,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -205,7 +205,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
           decoration: InputDecoration(
             hintText: 'Ex: Emmanuel Macron, OpenAI, Tour de France...',
             hintStyle: textTheme.bodyMedium?.copyWith(
-              color: colors.textTertiary.withValues(alpha: 0.5),
+              color: colors.textTertiary.withOpacity(0.5),
             ),
             filled: true,
             fillColor: colors.surface,
@@ -251,7 +251,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
             style: FilledButton.styleFrom(
               backgroundColor: _terracotta,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: _terracotta.withValues(alpha: 0.5),
+              disabledBackgroundColor: _terracotta.withOpacity(0.5),
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(FacteurRadius.medium),
@@ -318,7 +318,7 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
                           ),
                           decoration: BoxDecoration(
                             color:
-                                colors.textTertiary.withValues(alpha: 0.1),
+                                colors.textTertiary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(

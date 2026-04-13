@@ -101,7 +101,7 @@ class SavedNudge extends ConsumerWidget {
                   context.go(RoutePaths.saved);
                 },
                 style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary.withValues(alpha: 0.1),
+                  backgroundColor: colors.primary.withOpacity(0.1),
                   foregroundColor: colors.primary,
                   elevation: 0,
                   padding:

@@ -74,7 +74,7 @@ class SourceDetailModal extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: source.getBiasColor().withValues(alpha: 0.1),
+                        color: source.getBiasColor().withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -99,7 +99,7 @@ class SourceDetailModal extends StatelessWidget {
               color: colors.backgroundSecondary,
               borderRadius: BorderRadius.circular(16),
               border:
-                  Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+                  Border.all(color: colors.textTertiary.withOpacity(0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,7 +147,7 @@ class SourceDetailModal extends StatelessWidget {
                 color: colors.backgroundSecondary,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color: colors.textTertiary.withValues(alpha: 0.2)),
+                    color: colors.textTertiary.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
@@ -184,7 +184,7 @@ class SourceDetailModal extends StatelessWidget {
               color: colors.surface,
               borderRadius: BorderRadius.circular(16),
               border:
-                  Border.all(color: colors.textTertiary.withValues(alpha: 0.2)),
+                  Border.all(color: colors.textTertiary.withOpacity(0.2)),
             ),
             child: Text(
               source.description ??

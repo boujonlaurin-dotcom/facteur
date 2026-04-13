@@ -241,7 +241,7 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.3),
+                color: colors.textTertiary.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -306,7 +306,7 @@ class _WeeklyNotesSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 8),
         Divider(
-          color: colors.border.withValues(alpha: 0.3),
+          color: colors.border.withOpacity(0.3),
           height: 1,
           indent: 16,
           endIndent: 16,
@@ -389,7 +389,7 @@ class _RecentSavedSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 8),
         Divider(
-          color: colors.border.withValues(alpha: 0.3),
+          color: colors.border.withOpacity(0.3),
           height: 1,
           indent: 16,
           endIndent: 16,

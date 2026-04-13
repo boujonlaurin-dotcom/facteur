@@ -105,7 +105,7 @@ class DigestModeQuestion extends ConsumerWidget {
                 fontWeight: FontWeight.w600,
               ),
               side: BorderSide(
-                color: colors.textTertiary.withValues(alpha: 0.3),
+                color: colors.textTertiary.withOpacity(0.3),
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(FacteurRadius.large),

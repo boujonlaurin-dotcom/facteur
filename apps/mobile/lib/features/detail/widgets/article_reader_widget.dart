@@ -92,7 +92,7 @@ class ArticleReaderWidget extends StatelessWidget {
               'blockquote': Style(
                 border: Border(
                   left: BorderSide(
-                    color: colors.primary.withValues(alpha: 0.5),
+                    color: colors.primary.withOpacity(0.5),
                     width: 3,
                   ),
                 ),

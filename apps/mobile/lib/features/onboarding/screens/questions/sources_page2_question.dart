@@ -255,7 +255,7 @@ class _SourcesPage2QuestionState extends ConsumerState<SourcesPage2Question> {
                 vertical: 16,
               ),
               side: BorderSide(
-                color: colors.primary.withValues(alpha: 0.5),
+                color: colors.primary.withOpacity(0.5),
                 width: 1.5,
               ),
               shape: RoundedRectangleBorder(

@@ -75,7 +75,7 @@ class _UpdateModalDialog extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.12),
+                color: colors.primary.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(

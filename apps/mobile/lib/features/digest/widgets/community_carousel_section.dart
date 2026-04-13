@@ -105,7 +105,7 @@ class _CommunityCarouselSectionState extends State<CommunityCarouselSection> {
                     borderRadius: BorderRadius.circular(3),
                     color: index == _currentPage
                         ? SunflowerIcon.sunflowerYellow
-                        : colors.textSecondary.withValues(alpha: 0.3),
+                        : colors.textSecondary.withOpacity(0.3),
                   ),
                 ),
               ),
@@ -136,11 +136,11 @@ class _CommunityCard extends StatelessWidget {
           color: colors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: colors.textSecondary.withValues(alpha: 0.1),
+            color: colors.textSecondary.withOpacity(0.1),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -161,11 +161,11 @@ class _CommunityCard extends StatelessWidget {
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     height: 90,
-                    color: colors.textSecondary.withValues(alpha: 0.1),
+                    color: colors.textSecondary.withOpacity(0.1),
                     child: Center(
                       child: Icon(
                         Icons.article_outlined,
-                        color: colors.textSecondary.withValues(alpha: 0.3),
+                        color: colors.textSecondary.withOpacity(0.3),
                         size: 32,
                       ),
                     ),
@@ -215,7 +215,7 @@ class _CommunityCard extends StatelessWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: SunflowerIcon.sunflowerYellow
-                                  .withValues(alpha: 0.15),
+                                  .withOpacity(0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(

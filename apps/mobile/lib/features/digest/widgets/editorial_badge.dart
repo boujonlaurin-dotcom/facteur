@@ -75,7 +75,7 @@ class EditorialBadge {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: config.color.withValues(alpha: isDark ? 0.15 : 0.10),
+        color: config.color.withOpacity(isDark ? 0.15 : 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

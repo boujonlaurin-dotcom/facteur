@@ -22,7 +22,7 @@ class SourceCoverageBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: colors.textSecondary.withValues(alpha: isDark ? 0.15 : 0.10),
+        color: colors.textSecondary.withOpacity(isDark ? 0.15 : 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

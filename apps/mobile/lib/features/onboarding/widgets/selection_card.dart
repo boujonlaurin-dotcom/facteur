@@ -207,7 +207,7 @@ class BinarySelectionCard extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected
-              ? colors.primary.withValues(alpha: 0.1)
+              ? colors.primary.withOpacity(0.1)
               : colors.surface,
           borderRadius: BorderRadius.circular(FacteurRadius.medium),
           border: Border.all(

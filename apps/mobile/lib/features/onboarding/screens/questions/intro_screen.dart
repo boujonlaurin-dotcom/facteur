@@ -84,10 +84,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
                 padding: const EdgeInsets.all(FacteurSpacing.space4),
                 decoration: BoxDecoration(
-                  color: colors.surfaceElevated.withValues(alpha: 0.5),
+                  color: colors.surfaceElevated.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(12),
                   border:
-                      Border.all(color: colors.primary.withValues(alpha: 0.1)),
+                      Border.all(color: colors.primary.withOpacity(0.1)),
                 ),
                 child: SingleChildScrollView(
                   controller: _scrollController,

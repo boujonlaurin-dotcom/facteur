@@ -70,7 +70,7 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                     label: const Text('Tous'),
                     selected: !notifier.hasNoteFilter,
                     onSelected: (_) => notifier.setHasNoteFilter(false),
-                    selectedColor: colors.primary.withValues(alpha: 0.15),
+                    selectedColor: colors.primary.withOpacity(0.15),
                     checkmarkColor: colors.primary,
                     labelStyle: TextStyle(
                       color: !notifier.hasNoteFilter
@@ -89,7 +89,7 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                     label: const Text('Avec note'),
                     selected: notifier.hasNoteFilter,
                     onSelected: (_) => notifier.setHasNoteFilter(true),
-                    selectedColor: colors.primary.withValues(alpha: 0.15),
+                    selectedColor: colors.primary.withOpacity(0.15),
                     checkmarkColor: colors.primary,
                     labelStyle: TextStyle(
                       color: notifier.hasNoteFilter

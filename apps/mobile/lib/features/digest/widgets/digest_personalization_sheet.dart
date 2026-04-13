@@ -77,7 +77,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
         width: 40,
         height: 4,
         decoration: BoxDecoration(
-          color: colors.textTertiary.withValues(alpha: 0.3),
+          color: colors.textTertiary.withOpacity(0.3),
           borderRadius: BorderRadius.circular(2),
         ),
       ),
@@ -111,7 +111,7 @@ class DigestPersonalizationSheet extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.primary.withValues(alpha: 0.1),
+              color: colors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(

@@ -219,11 +219,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: colors.border.withValues(alpha: isDark ? 0.28 : 0.22),
+              color: colors.border.withOpacity(isDark ? 0.28 : 0.22),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
+                color: Colors.black.withOpacity(0.06),
                 blurRadius: 14,
                 offset: const Offset(0, 3),
               ),
@@ -233,8 +233,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             borderRadius: BorderRadius.circular(16),
             child: Container(
               color: isDark
-                  ? Colors.white.withValues(alpha: 0.11)
-                  : Colors.black.withValues(alpha: 0.07),
+                  ? Colors.white.withOpacity(0.11)
+                  : Colors.black.withOpacity(0.07),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -322,7 +322,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.white,
+          color: isDark ? Colors.white.withOpacity(0.06) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: isHero
               ? Border(
@@ -458,7 +458,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
+                      Colors.black.withOpacity(0.7),
                     ],
                     stops: const [0.4, 1.0],
                   ),
@@ -589,7 +589,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             '+$extraCount',
             style: TextStyle(
               fontSize: 11,
-              color: colors.textSecondary.withValues(alpha: 0.7),
+              color: colors.textSecondary.withOpacity(0.7),
             ),
           ),
         ],
@@ -598,7 +598,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ' \u00b7 ',
             style: TextStyle(
               fontSize: 12,
-              color: colors.textSecondary.withValues(alpha: 0.5),
+              color: colors.textSecondary.withOpacity(0.5),
             ),
           ),
         if (timeAgo != null)
@@ -729,8 +729,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                     fontSize: 14,
                     height: 1.5,
                     color: isDark
-                        ? Colors.white.withValues(alpha: 0.75)
-                        : colors.textSecondary.withValues(alpha: 0.85),
+                        ? Colors.white.withOpacity(0.75)
+                        : colors.textSecondary.withOpacity(0.85),
                   ),
                 ),
               ),
@@ -855,7 +855,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 child: Container(
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
-                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.08),
+                    color: (isDark ? Colors.white : Colors.black).withOpacity(0.08),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -881,7 +881,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               Text(
                 'N\u00B0${topic.rank}',
                 style: TextStyle(
-                  color: colors.primary.withValues(alpha: 0.6),
+                  color: colors.primary.withOpacity(0.6),
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                   letterSpacing: 0.5,
@@ -956,7 +956,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: isDark ? 0.15 : 0.10),
+        color: colors.primary.withOpacity(isDark ? 0.15 : 0.10),
         borderRadius: BorderRadius.circular(FacteurRadius.small),
       ),
       child: Row(
@@ -1011,7 +1011,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: FeedCard(
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
             content: _convertToContent(article),
             alwaysShowDescription: !imageVisible,
             descriptionFontSize: 15,
@@ -1055,7 +1055,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ? null
             : EditorialBadge.chip(article.badge, context: context);
         final card = FeedCard(
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
           content: _convertToContent(article),
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
@@ -1119,7 +1119,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           decoration: BoxDecoration(
             color: isActive
                 ? colors.primary
-                : colors.textTertiary.withValues(alpha: 0.3),
+                : colors.textTertiary.withOpacity(0.3),
             borderRadius: BorderRadius.circular(5),
           ),
         );

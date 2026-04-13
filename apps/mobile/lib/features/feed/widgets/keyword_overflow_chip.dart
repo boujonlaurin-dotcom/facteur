@@ -51,7 +51,7 @@ class KeywordOverflowChip extends ConsumerWidget {
           color: colors.backgroundSecondary,
           border: Border(
             top: BorderSide(
-              color: colors.textSecondary.withValues(alpha: 0.1),
+              color: colors.textSecondary.withOpacity(0.1),
               width: 0.5,
             ),
           ),

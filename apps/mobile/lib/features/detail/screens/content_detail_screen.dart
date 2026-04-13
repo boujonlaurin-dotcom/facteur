@@ -1377,7 +1377,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   child: IgnorePointer(
                     child: ColoredBox(
                       color: Colors.white
-                          .withValues(alpha: 0.6 * _exitAnimController.value),
+                          .withOpacity(0.6 * _exitAnimController.value),
                     ),
                   ),
                 );
@@ -1507,7 +1507,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         boxShadow: [
                                           BoxShadow(
                                             color:
-                                                Colors.black.withValues(alpha: 0.1),
+                                                Colors.black.withOpacity(0.1),
                                             blurRadius: 8,
                                             offset: const Offset(0, 2),
                                           ),
@@ -1858,7 +1858,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: Container(
               padding: chipPadding,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
+                color: colors.textTertiary.withOpacity(0.20),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1880,7 +1880,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           child: Container(
             padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1904,8 +1904,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             padding: chipPadding,
             decoration: BoxDecoration(
               color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
+                  ? const Color(0xFFE07A5F).withOpacity(0.15)
+                  : colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -1944,7 +1944,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           child: Container(
             padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1973,7 +1973,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           colors.primary,
           clamped,
         )!
-            .withValues(alpha: alpha);
+            .withOpacity(alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2023,7 +2023,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Container(
                 height: 14,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.15),
+                  color: colors.textTertiary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2140,7 +2140,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: colors.warning
-                                              .withValues(alpha: 0.12),
+                                              .withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(
                                               FacteurRadius.pill),
                                         ),
@@ -2243,7 +2243,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 borderRadius:
                                     BorderRadius.circular(FacteurRadius.large),
                                 border: Border.all(
-                                  color: colors.border.withValues(alpha: 0.5),
+                                  color: colors.border.withOpacity(0.5),
                                 ),
                               ),
                               child: Row(
@@ -2742,7 +2742,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.warning.withValues(alpha: 0.12),
+                          color: colors.warning.withOpacity(0.12),
                           borderRadius:
                               BorderRadius.circular(FacteurRadius.pill),
                         ),
@@ -2803,7 +2803,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 color: colors.surfaceElevated,
                 borderRadius: BorderRadius.circular(FacteurRadius.large),
                 border: Border.all(
-                  color: colors.border.withValues(alpha: 0.5),
+                  color: colors.border.withOpacity(0.5),
                 ),
               ),
               child: Row(

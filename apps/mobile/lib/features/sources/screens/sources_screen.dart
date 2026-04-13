@@ -359,7 +359,7 @@ class _SourcesScreenState extends ConsumerState<SourcesScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: titleColor.withValues(alpha: 0.1),
+                    color: titleColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -475,7 +475,7 @@ class _FilterSheetContent extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.3),
+                color: colors.textTertiary.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),

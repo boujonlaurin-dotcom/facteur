@@ -39,7 +39,7 @@ class InterestFilterChip extends StatelessWidget {
           Text(
             'Mes intérêts',
             style: TextStyle(
-              color: colorScheme.onSurface.withValues(alpha: 0.5),
+              color: colorScheme.onSurface.withOpacity(0.5),
               fontWeight: FontWeight.w500,
               fontSize: 14,
             ),
@@ -48,7 +48,7 @@ class InterestFilterChip extends StatelessWidget {
           Icon(
             PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
             size: 12,
-            color: colorScheme.onSurface.withValues(alpha: 0.5),
+            color: colorScheme.onSurface.withOpacity(0.5),
           ),
         ],
       ),
