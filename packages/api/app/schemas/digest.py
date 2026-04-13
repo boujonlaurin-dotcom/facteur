@@ -111,6 +111,10 @@ class DigestTopic(BaseModel):
     divergence_analysis: str | None = None
     divergence_level: str | None = None  # "low" | "medium" | "high"
     perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
+    # Pivot content used to compute perspectives (cluster's most-recent article).
+    # Mobile re-uses this id when calling /perspectives so the bottom sheet
+    # count matches the header / bias spectrum bar. None on legacy digests.
+    representative_content_id: str | None = None
 
     class Config:
         from_attributes = True

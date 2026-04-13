@@ -314,14 +314,26 @@ class EditorialPipelineService:
                 subject.perspective_count = len(cluster.source_ids)
                 return
 
-            subject.perspective_count = len(perspectives)
-            subject.bias_distribution = compute_bias_distribution(perspectives)
+            # Pivot stable: propagate representative id so the mobile bottom sheet
+            # re-fetches /perspectives on the SAME content as the one used here.
+            subject.representative_content_id = representative.id
+
+            # Single source of truth for the 3 UI counters (header, spectrum bar,
+            # bottom sheet): exclude perspectives without a known bias_stance.
+            # The bottom sheet endpoint (routers/contents.py) applies the same
+            # filter, so the 3 counts stay aligned.
+            # Invariant: sum(bias_distribution.values()) == perspective_count.
+            known_perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
+            subject.perspective_count = len(known_perspectives)
+            subject.bias_distribution = compute_bias_distribution(known_perspectives)
             subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
 
-            # Build perspective_sources — max 6, deduplicated by domain
+            # Build perspective_sources — max 6, deduplicated by domain.
+            # Use known_perspectives so the CTA logos match the bottom sheet
+            # (which also filters out unknown bias).
             seen_domains: set[str] = set()
             unique_perspectives = []
-            for p in perspectives:
+            for p in known_perspectives:
                 if p.source_domain not in seen_domains:
                     seen_domains.add(p.source_domain)
                     unique_perspectives.append(p)

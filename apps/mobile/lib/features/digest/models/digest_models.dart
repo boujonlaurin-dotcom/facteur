@@ -109,6 +109,7 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
     @JsonKey(name: 'perspective_sources') @Default([]) List<SourceMini> perspectiveSources,
     @JsonKey(name: 'divergence_level') String? divergenceLevel,
+    @JsonKey(name: 'representative_content_id') String? representativeContentId,
   }) = _DigestTopic;
 
   /// A topic is "covered" when at least one article has been interacted with

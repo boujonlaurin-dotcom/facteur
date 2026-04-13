@@ -757,7 +757,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         : widget.topic.articles;
     if (articles.isEmpty) return;
     final article = articles[_currentPage.clamp(0, articles.length - 1)];
-    if (article.contentId.isEmpty) return;
+    // Prefer the backend-provided pivot id (the same content used to compute
+    // perspective_count / bias_distribution). Falls back to the currently
+    // displayed article for legacy cached digests where the field is absent.
+    final pivotId = (widget.topic.representativeContentId?.isNotEmpty ?? false)
+        ? widget.topic.representativeContentId!
+        : article.contentId;
+    if (pivotId.isEmpty) return;
+    final repository = ref.read(feedRepositoryProvider);
+    final response = await repository.getPerspectives(pivotId);
 
     // Kick off the request immediately and show the sheet without awaiting,
     // so the bottom sheet animates in instantly with a skeleton state instead
@@ -769,32 +777,25 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => FutureBuilder<PerspectivesResponse>(
-        future: perspectivesFuture,
-        builder: (ctx, snapshot) {
-          if (!snapshot.hasData) {
-            return const PerspectivesLoadingSheet();
-          }
-          final response = snapshot.data!;
-          return PerspectivesBottomSheet(
-            perspectives: response.perspectives
-                .map((p) => Perspective(
-                      title: p.title,
-                      url: p.url,
-                      sourceName: p.sourceName,
-                      sourceDomain: p.sourceDomain,
-                      biasStance: p.biasStance,
-                      publishedAt: p.publishedAt,
-                    ))
-                .toList(),
-            biasDistribution: response.biasDistribution,
-            keywords: response.keywords,
-            sourceBiasStance: response.sourceBiasStance,
-            sourceName: article.source?.name ?? '',
-            contentId: article.contentId,
-            comparisonQuality: response.comparisonQuality,
-          );
-        },
+      builder: (ctx) => PerspectivesBottomSheet(
+        perspectives: response.perspectives
+            .map((p) => Perspective(
+                  title: p.title,
+                  url: p.url,
+                  sourceName: p.sourceName,
+                  sourceDomain: p.sourceDomain,
+                  biasStance: p.biasStance,
+                  publishedAt: p.publishedAt,
+                ))
+            .toList(),
+        biasDistribution: response.biasDistribution,
+        keywords: response.keywords,
+        sourceBiasStance: response.sourceBiasStance,
+        sourceName: article.source?.name ?? '',
+        // Pass the same pivot used to fetch perspectives so any follow-up
+        // action (e.g. analyzePerspectives) operates on the same content.
+        contentId: pivotId,
+        comparisonQuality: response.comparisonQuality,
       ),
     );
   }

@@ -1366,6 +1366,11 @@ class DigestService:
                     "divergence_analysis": s.divergence_analysis,
                     "divergence_level": s.divergence_level,
                     "perspective_sources": s.perspective_sources,
+                    "representative_content_id": (
+                        str(s.representative_content_id)
+                        if s.representative_content_id
+                        else None
+                    ),
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1848,6 +1853,9 @@ class DigestService:
                         divergence_analysis=subject.get("divergence_analysis"),
                         divergence_level=subject.get("divergence_level"),
                         perspective_sources=subject.get("perspective_sources"),
+                        representative_content_id=subject.get(
+                            "representative_content_id"
+                        ),
                     )
                 )
             else:
