@@ -49,9 +49,15 @@ class CompactSourceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      switchInCurve: Curves.easeInOut,
-      switchOutCurve: Curves.easeInOut,
+      duration: const Duration(milliseconds: 350),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return ScaleTransition(
+          scale: animation,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
       child: _isActive
           ? _ActiveChip(
               key: ValueKey('source_active_$selectedSourceId'),
@@ -222,13 +228,16 @@ class _ActiveChip extends StatelessWidget {
                 color: primary,
               ),
             ),
-            const SizedBox(width: 4),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: onClear,
-              child: Icon(
-                PhosphorIcons.x(PhosphorIconsStyle.bold),
-                size: 12,
-                color: primary,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+                child: Icon(
+                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                  size: 13,
+                  color: primary,
+                ),
               ),
             ),
           ],
