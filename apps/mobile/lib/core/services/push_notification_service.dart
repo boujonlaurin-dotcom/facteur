@@ -141,9 +141,24 @@ class PushNotificationService {
 
   /// Construit le body de la notification à partir des labels de topics du digest.
   ///
-  /// Exemple : "Au programme : Trump, Retraites, Chômage... Ou rester serein ;-)"
+  /// Mode normal  → "Au programme : Trump, Retraites, Chômage... Ou rester serein ;-)"
+  /// Mode serein  → "Prends un moment pour toi — tes sujets du jour t'attendent."
+  ///                (ou avec les topics : "Au programme : Trump, Retraites... À lire quand tu veux.")
+  ///
   /// Retourne [defaultBody] si la liste est vide.
-  static String buildNotificationBody(List<String> topicLabels) {
+  static String buildNotificationBody(
+    List<String> topicLabels, {
+    bool serein = false,
+  }) {
+    if (serein) {
+      if (topicLabels.isEmpty) {
+        return 'Prends un moment pour toi — ton digest t\'attend quand tu veux.';
+      }
+      final displayLabels = topicLabels.take(3).toList();
+      final topicsText = displayLabels.join(', ');
+      return 'Au programme : $topicsText — à lire quand tu veux, sans pression.';
+    }
+
     if (topicLabels.isEmpty) return defaultBody;
 
     // Prendre les 3 premiers topics max pour rester concis
