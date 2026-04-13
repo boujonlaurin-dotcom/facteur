@@ -89,33 +89,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
 
-  /// Keys used to measure the editorial card and its header for the
-  /// sticky-header effect when the card is expanded.
-  final GlobalKey _editorialCardKey = GlobalKey();
-  final GlobalKey _editorialHeaderKey = GlobalKey();
-
-  /// Scroll position of the ancestor Scrollable. Used to drive the sticky
-  /// header translation when the editorial card is expanded.
-  ScrollPosition? _scrollPosition;
-
-  /// Manual notifier merged into the sticky header AnimatedBuilder so we can
-  /// force a recompute when the scrollable does not fire any event (e.g. after
-  /// returning from a pushed route).
-  final ValueNotifier<int> _stickyRefresh = ValueNotifier<int>(0);
-  Listenable? _stickyListenable;
-
-  void _updateStickyListenable() {
-    final pos = _scrollPosition;
-    _stickyListenable =
-        pos == null ? null : Listenable.merge([pos, _stickyRefresh]);
-  }
-
-  void _scheduleStickyRefresh() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _stickyRefresh.value++;
-    });
-  }
-
   @override
   void initState() {
     super.initState();
@@ -124,116 +97,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     );
   }
 
-  /// Route the section currently sits in. Tracked so we can detach our
-  /// animation status listener when the route changes or the widget is
-  /// disposed.
-  ModalRoute<dynamic>? _trackedRoute;
-
-  void _onRouteAnimationStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed ||
-        status == AnimationStatus.dismissed) {
-      if (mounted) _stickyRefresh.value++;
-    }
-  }
-
-  void _attachRouteListeners(ModalRoute<dynamic>? route) {
-    if (identical(route, _trackedRoute)) return;
-    _trackedRoute?.animation?.removeStatusListener(_onRouteAnimationStatus);
-    _trackedRoute?.secondaryAnimation
-        ?.removeStatusListener(_onRouteAnimationStatus);
-    _trackedRoute = route;
-    route?.animation?.addStatusListener(_onRouteAnimationStatus);
-    route?.secondaryAnimation?.addStatusListener(_onRouteAnimationStatus);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (widget.editorialMode) {
-      final newPos = Scrollable.maybeOf(context)?.position;
-      if (!identical(newPos, _scrollPosition)) {
-        _scrollPosition = newPos;
-        _updateStickyListenable();
-      } else if (_stickyListenable == null) {
-        _updateStickyListenable();
-      }
-      // Subscribe to route transition completion so we can recompute the
-      // sticky header geometry once Cupertino's slide/fade is fully settled
-      // (the scrollable does not emit any event in that window).
-      _attachRouteListeners(ModalRoute.of(context));
-      // Force a recompute on the next frame: dependency changes commonly fire
-      // when entering/leaving routes (ModalRoute, MediaQuery), and the
-      // scrollable will not emit any event to retrigger the AnimatedBuilder.
-      _scheduleStickyRefresh();
-    }
-  }
-
   @override
   void dispose() {
-    _trackedRoute?.animation?.removeStatusListener(_onRouteAnimationStatus);
-    _trackedRoute?.secondaryAnimation
-        ?.removeStatusListener(_onRouteAnimationStatus);
     _pageController.dispose();
-    _stickyRefresh.dispose();
     super.dispose();
-  }
-
-  /// Compute how much the editorial header should be translated vertically
-  /// to stay pinned at the top of the viewport while the card is expanded.
-  ///
-  /// Returns 0 when the card is not yet scrolled past the pin line, and
-  /// clamps to `cardHeight - headerHeight` so the sticky header releases
-  /// when the card is about to scroll off-screen.
-  ///
-  /// Defensive against stale render-tree state (e.g. mid-route-transition):
-  /// bails out when render boxes are detached, when the route is animating,
-  /// or when the card is not visibly intersecting the viewport.
-  double _computeStickyHeaderTranslation(BuildContext context) {
-    if (!_isExpanded) return 0;
-
-    // During route transitions, ancestor transforms (Cupertino slide, fade,
-    // etc.) make `localToGlobal` return geometry that does not reflect the
-    // post-transition layout. We bail out and re-compute once the route is
-    // settled (see _scheduleStickyRefresh in didChangeDependencies + the
-    // route animation listener).
-    final route = ModalRoute.of(context);
-    if (route != null) {
-      final anim = route.animation;
-      final secondary = route.secondaryAnimation;
-      final isAnimating = (anim != null &&
-              anim.status != AnimationStatus.completed &&
-              anim.status != AnimationStatus.dismissed) ||
-          (secondary != null &&
-              secondary.status != AnimationStatus.completed &&
-              secondary.status != AnimationStatus.dismissed);
-      if (isAnimating) return 0;
-    }
-
-    final cardContext = _editorialCardKey.currentContext;
-    final headerContext = _editorialHeaderKey.currentContext;
-    if (cardContext == null || headerContext == null) return 0;
-
-    final cardBox = cardContext.findRenderObject() as RenderBox?;
-    final headerBox = headerContext.findRenderObject() as RenderBox?;
-    if (cardBox == null || !cardBox.attached || !cardBox.hasSize) return 0;
-    if (headerBox == null || !headerBox.attached || !headerBox.hasSize) {
-      return 0;
-    }
-
-    final cardTop = cardBox.localToGlobal(Offset.zero).dy;
-    final cardHeight = cardBox.size.height;
-    final headerHeight = headerBox.size.height;
-    final pinLine = MediaQuery.of(context).padding.top;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    // Sanity: if the card is fully off-screen (above or below the visible
-    // window), don't attempt to pin the overlay — it would otherwise clamp
-    // to maxTranslate and visually stick at the bottom of the card.
-    if (cardTop + cardHeight <= 0 || cardTop >= screenHeight) return 0;
-
-    final maxTranslate =
-        (cardHeight - headerHeight).clamp(0.0, double.infinity);
-    return (pinLine - cardTop).clamp(0.0, maxTranslate);
   }
 
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
@@ -319,12 +186,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final topic = widget.topic;
     final isMulti = topic.articles.length > 1;
 
-    // After every rebuild (Riverpod state change, layout shift, etc.) the
-    // sticky-header geometry may be stale because the scrollable did not
-    // emit any event. Force a post-frame recompute so the AnimatedBuilder
-    // picks up the new layout.
-    if (widget.editorialMode && _isExpanded) _scheduleStickyRefresh();
-
     // If no articles or all dismissed, hide the entire section
     if (topic.articles.isEmpty) {
       debugPrint('TopicSection: 0 articles for topic ${topic.label}');
@@ -341,25 +202,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       if (actuArticles.isEmpty) return const SizedBox.shrink();
       final isActuMulti = actuArticles.length > 1;
 
-      // Natural header (inside the Column), fades out when the sticky
-      // overlay takes over.
-      final stickyListenable = _stickyListenable;
+      // Plain header pinned at the top of the card (no sticky overlay).
+      // The previous sticky-overlay implementation was fragile across route
+      // transitions and Riverpod-driven rebuilds — see git history.
       final naturalHeader = Padding(
-        key: _editorialHeaderKey,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-        child: _isExpanded && stickyListenable != null
-            ? AnimatedBuilder(
-                animation: stickyListenable,
-                builder: (context, child) {
-                  final translation = _computeStickyHeaderTranslation(context);
-                  return Opacity(
-                    opacity: translation > 0 ? 0 : 1,
-                    child: child,
-                  );
-                },
-                child: _buildHeader(context, colors, isDark, topic),
-              )
-            : _buildHeader(context, colors, isDark, topic),
+        child: _buildHeader(context, colors, isDark, topic),
       );
 
       return AnimatedSize(
@@ -383,73 +231,23 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              children: [
-                // Card content (background + natural header + body)
-                Container(
-                  key: _editorialCardKey,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.11)
-                      : Colors.black.withValues(alpha: 0.07),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      naturalHeader,
-                      const SizedBox(height: 8),
-                      if (_isExpanded)
-                        _buildExpandedEditorial(colors, isDark, topic,
-                            actuArticles, isActuMulti)
-                      else
-                        _buildCompactEditorialCard(
-                            colors, isDark, topic, actuArticles),
-                    ],
-                  ),
-                ),
-                // Sticky header overlay — floats at the top of the
-                // viewport while the card is scrolled past its natural
-                // position, giving a "fil contenu" reading flow.
-                if (_isExpanded && stickyListenable != null)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: AnimatedBuilder(
-                      animation: stickyListenable,
-                      builder: (context, child) {
-                        final translation =
-                            _computeStickyHeaderTranslation(context);
-                        if (translation <= 0) {
-                          return const SizedBox.shrink();
-                        }
-                        return Transform.translate(
-                          offset: Offset(0, translation),
-                          child: child,
-                        );
-                      },
-                      child: Material(
-                        color: isDark
-                            ? const Color(0xFF231B12)
-                            : const Color(0xFFE8DBC1),
-                        elevation: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: colors.border.withValues(
-                                    alpha: isDark ? 0.32 : 0.22),
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                          padding:
-                              const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                          child: _buildHeader(
-                              context, colors, isDark, topic),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            child: Container(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.11)
+                  : Colors.black.withValues(alpha: 0.07),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  naturalHeader,
+                  const SizedBox(height: 8),
+                  if (_isExpanded)
+                    _buildExpandedEditorial(colors, isDark, topic,
+                        actuArticles, isActuMulti)
+                  else
+                    _buildCompactEditorialCard(
+                        colors, isDark, topic, actuArticles),
+                ],
+              ),
             ),
           ),
         ),
