@@ -273,8 +273,10 @@ def _match_ratio(cluster: TopicCluster, keywords: list[str]) -> float:
 
     match_count = 0
     for content in cluster.contents:
-        text = _s(getattr(content, "title", None)) + " " + _s(
-            getattr(content, "description", None)
+        text = (
+            _s(getattr(content, "title", None))
+            + " "
+            + _s(getattr(content, "description", None))
         )
         if pattern.search(text):
             match_count += 1
