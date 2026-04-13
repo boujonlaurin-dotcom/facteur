@@ -1,107 +1,100 @@
-# PR — Personnalisation des sujets sensibles (mode Serein)
+# PR — Fusion "De quoi on parle" dans "Pas de recul" + wiring env tests
+
+Branche : `claude/remove-digest-section-jCCzy` → `main`
+Commits :
+- `ca0b858` refactor(digest): merge "De quoi on parle" into "Pas de recul" card
+- `72f6871` chore(env): wire Flutter + pytest paths in test hooks
+
+---
 
 ## Quoi
-Permet à chaque utilisateur de définir ses propres "sujets sensibles" dans le mode Serein, en plus des 4 thèmes exclus par défaut (society, international, economy, politics). L'UI est exposée à deux endroits : une étape conditionnelle dans l'onboarding (si et seulement si l'utilisateur choisit "Rester serein") et une section dans l'écran Mes Intérêts des settings.
+
+Deux changements distincts sur la même branche :
+
+1. **Refactor UI digest (ca0b858)** — Suppression de la sous-carte grise *"De quoi on parle ?"* qui précédait la carte *"Pas de recul"*. L'`intro_text` du topic est désormais affiché **en tête** de la carte "Pas de recul" (même carte, sans cadre additionnel). Le champ `recul_intro` (phrase italique d'accroche vers l'article de recul) est supprimé de toute la stack (prompts LLM, schémas Pydantic, pipeline, serializer DB, modèles Flutter, widgets, tests) car redondant avec la phrase 2 de `intro_text`.
+2. **Chore env (72f6871)** — Les hooks `post-edit-auto-test.sh` et `stop-verify-tests.sh` utilisent maintenant des chemins absolus vers `./.venv/bin/pytest` et `/opt/flutter/bin/flutter`, avec `PYTHONPATH` et `CI=true` pré-configurés, pour que les tests se lancent correctement depuis les hooks Claude Code.
 
 ## Pourquoi
-Le filtre Serein était identique pour tous les utilisateurs. Certains veulent éviter la tech, le sport ou l'économie — sujets non anxiogènes par défaut mais qui peuvent l'être selon le contexte personnel. Cette feature donne à l'utilisateur le contrôle sur ce qu'il considère "stressant".
+
+**Refactor** : L'ancienne UI affichait deux cartes contiguës pour un même topic (gris "De quoi on parle" + bleu "Prendre du recul"), ce qui créait une lourdeur visuelle (deux bordures, deux couleurs, deux paragraphes) pour une info logiquement continue — le texte du topic **fait le pont** vers l'article de recul. Par ailleurs, `recul_intro` dupliquait la fonction de la phrase 2 de `intro_text` (les deux servaient d'accroche vers l'article de recul). Fusionner réduit la dette éditoriale côté LLM (un seul champ à générer) et allège l'écran.
+
+**Env** : Sans chemins absolus, les hooks ne trouvaient ni `pytest` ni `flutter` dans le PATH de l'agent, donc `stop-verify-tests.sh` ne vérifiait rien. Maintenant les hooks s'exécutent réellement.
 
 ## Fichiers modifiés
 
-### Backend
-- `packages/api/app/schemas/user.py` — Ajout champ `sensitive_themes: list[str] | None` dans `OnboardingAnswers`
-- `packages/api/app/services/user_service.py` — Persistance de `sensitive_themes` (JSON serialize) dans la boucle upsert de préférences onboarding
-- `packages/api/app/services/recommendation/filter_presets.py` — `apply_serein_filter()`, `_legacy_serein_keyword_filter()`, `is_cluster_serein_compatible()` acceptent `sensitive_themes` (union avec `SEREIN_EXCLUDED_THEMES`)
-- `packages/api/app/services/recommendation_service.py` — Charge `sensitive_themes` depuis `user_prefs` et passe au filtre (feed)
-- `packages/api/app/services/digest_selector.py` — Param propagé dans `select_for_user()` → `_get_candidates()` → 2 appels `apply_serein_filter`
-- `packages/api/app/services/digest_service.py` — Charge `sensitive_themes` (requête DB) dans `get_or_create_digest()`, passe à `select_for_user()` et `_get_emergency_candidates()` (3 appels)
-- `packages/api/app/services/topic_selector.py` — Param propagé jusqu'à `is_cluster_serein_compatible()`
-- `packages/api/tests/test_serein_filter.py` — 9 nouveaux tests (4 DB-backed + 5 unitaires)
+### Backend (ca0b858)
+- `packages/api/config/editorial_prompts.yaml` — retrait de `recul_intro` des structures + schemas JSON des prompts `writing` et `writing_serene`. Ajout d'une ligne dans la section PONTS clarifiant que la phrase 2 d'`intro_text` joue le rôle.
+- `packages/api/app/services/editorial/schemas.py` — suppression de `recul_intro` sur `MatchedDeepArticle` et `SubjectWriting`.
+- `packages/api/app/services/editorial/writer.py` — retrait du mapping `recul_intro` depuis la réponse LLM.
+- `packages/api/app/services/editorial/pipeline.py` — retrait du bloc qui propageait `sw.recul_intro` vers `s.deep_article.recul_intro`.
+- `packages/api/app/services/digest_service.py` — retrait de la sérialisation/désérialisation de `recul_intro` pour `DigestTopicArticle` (lignes ~1400 et ~1792).
+- `packages/api/app/schemas/digest.py` — retrait du champ `recul_intro` sur `DigestTopicArticle` et `DigestItem`.
 
-### Mobile
-- `apps/mobile/lib/features/onboarding/providers/onboarding_provider.dart` — Champ `sensitiveThemes` dans `OnboardingAnswers`, enum `Section2Question.sensitiveThemes`, navigation conditionnelle dans `selectDigestMode()`, méthode `selectSensitiveThemes()`, back navigation ajustée
-- `apps/mobile/lib/features/onboarding/screens/questions/sensitive_themes_question.dart` (**NOUVEAU**) — Écran chips thèmes, bouton "Continuer sans filtrer" / "Filtrer N thèmes"
-- `apps/mobile/lib/features/onboarding/screens/onboarding_screen.dart` — Case `sensitiveThemes` dans `_buildSection2Content()`
-- `apps/mobile/lib/features/onboarding/onboarding_strings.dart` — 4 nouvelles constantes
-- `apps/mobile/lib/core/api/user_api_service.dart` — `sensitive_themes` dans `_formatAnswersForApi()`
-- `apps/mobile/lib/features/digest/providers/sensitive_themes_provider.dart` (**NOUVEAU**) — StateNotifier fire-and-forget avec `toggle()`, `loadIfNeeded()`, `initFromApi()`
-- `apps/mobile/lib/features/digest/repositories/digest_repository.dart` — Ajout `getPreferences()` (GET /users/preferences)
-- `apps/mobile/lib/features/custom_topics/screens/my_interests_screen.dart` — Section `_SensitiveThemesSection` (visible uniquement si serein activé)
+### Mobile (ca0b858)
+- `apps/mobile/lib/features/digest/models/digest_models.dart` — suppression du champ `@JsonKey(name: 'recul_intro') String? reculIntro` sur `DigestItem`.
+- `apps/mobile/lib/features/digest/models/digest_models.freezed.dart` — **édité à la main** (13 occurrences : mixin getter, 2 copyWith abstract+impl, constructor, final getter, toString, equals, hashCode) car `build_runner` indisponible dans l'env.
+- `apps/mobile/lib/features/digest/models/digest_models.g.dart` — retrait des 2 lignes `recul_intro` (from/to Json) — édité à la main aussi.
+- `apps/mobile/lib/features/digest/widgets/pas_de_recul_block.dart` — param renommé `reculIntro` → `introText` ; affiché **en haut de la carte** (non italique, lineHeight 1.5) au-dessus de `title + source`. Dartdoc mise à jour.
+- `apps/mobile/lib/features/digest/widgets/topic_section.dart` — suppression complète du bloc "De quoi on parle ?" (≈60 lignes). Remplacé par : soit `PasDeReculBlock(introText: topic.introText, ...)` si un deep article existe, soit un paragraphe discret (padding horizontal 12, fontSize 14, pas de carte) sinon.
+- `apps/mobile/test/features/digest/widgets/pas_de_recul_block_test.dart` — tests mis à jour pour `introText`.
+
+### Config / Docs (ca0b858 + 72f6871)
+- `docs/maintenance/maintenance-merge-intro-pas-de-recul.md` — doc de maintenance (contexte, objectif, liste des changements, mockup ASCII, cas traités, tests, hors périmètre).
+- `.claude-hooks/post-edit-auto-test.sh` — `PYTEST`/`FLUTTER`/`CI=true` + `PYTHONPATH` dans les commandes.
+- `.claude-hooks/stop-verify-tests.sh` — idem.
+- `apps/mobile/pubspec.lock` — régénéré par `flutter pub get`.
 
 ## Zones à risque
 
-- **`apply_serein_filter()`** — Appelé dans 6 endroits distincts (feed + digest + emergency candidates). La signature a changé mais tous les callers ont été mis à jour avec `sensitive_themes=None` par défaut (rétro-compatible).
-- **`digest_service.py` `get_or_create_digest()`** — Ajoute une requête DB supplémentaire par digest pour charger `sensitive_themes`. Faible impact (requête sur index primaire `user_id + preference_key`), mais à noter si la latence du digest devient sensible.
-- **Navigation onboarding conditionnelle** — `section2QuestionCount` passe de 5 à 6, ce qui affecte la barre de progression (légère). La question `sensitiveThemes` ne s'affiche qu'en mode serein ; en mode "pour_vous", l'utilisateur passe de `digestMode` directement à Section 3 (comme avant). Le back-navigation depuis Section 3 est ajusté en conséquence.
+1. **`digest_models.freezed.dart` édité à la main** — 13 points de modification mécaniques mais pas régénérés par `build_runner`. Si le reviewer a `build_runner` dispo, il est recommandé de lancer `flutter pub run build_runner build --delete-conflicting-outputs` pour valider qu'il produit le même fichier (ou pour l'écraser proprement).
+2. **Pipeline éditorial LLM** — `editorial_prompts.yaml` + `writer.py` + `pipeline.py` : si un digest généré avant cette PR est rechargé depuis DB, `recul_intro` sera silencieusement ignoré (le `.get()` supprimé ne lisait plus) — aucun crash, juste perte du champ orphelin.
+3. **Sérialisation DB des digests** — `digest_service.py` n'écrit plus `recul_intro` ; un ancien JSON stocké contient encore la clé mais elle n'est plus lue. Pas de migration nécessaire (JSONB).
+4. **Widgets digest** — `topic_section.dart` a perdu une grosse section ; vérifier en runtime sur un topic avec deep article ET sur un topic sans, pour s'assurer que le fallback paragraphe discret s'affiche bien.
 
 ## Points d'attention pour le reviewer
 
-1. **Stockage JSON dans une colonne `string`** — `sensitive_themes` est sérialisé en `'["tech","sport"]'` dans `user_preferences` (key-value existant). Pas de migration Alembic. Cohérent avec le pattern existant, mais le parsing JSON doit être robuste si la valeur est corrompue — actuellement un `json.loads()` non protégé côté backend dans `digest_service.py`. Edge case si la préférence est malformée.
-
-2. **`loadIfNeeded()` dans le provider mobile** — La première ouverture de "Mes Intérêts" en mode serein déclenche un GET `/users/preferences` en background. Pas de loading state affiché (chips restent vides jusqu'au retour API). Choix délibéré pour ne pas bloquer l'UI (same pattern que serein toggle).
-
-3. **Section2Question count = 6 mais totalSteps = 16** — Les non-serein utilisateurs sautent `sensitiveThemes`, donc ils ont un total effectif de 15 étapes, mais `totalSteps` est 16. La barre de progression fait un micro-saut entre `digestMode` et Section 3. Acceptable UX, mais à valider visuellement.
-
-4. **`is_cluster_serein_compatible()`** — La fonction est appelée synchroniquement dans `_score_clusters()` avec `sensitive_themes` passé en paramètre. Le param est propagé depuis `select_for_user()` mais n'est pas chargé à l'intérieur du `TopicSelector` lui-même — il dépend du caller (`DigestSelector`) pour le passer correctement.
+- **Cohérence prompts ↔ schémas** — les 2 prompts (`writing` et `writing_serene`) doivent produire du JSON qui colle à `SubjectWriting` sans `recul_intro`. J'ai relu les YAML mais vérifier qu'aucun exemple few-shot n'y fait référence.
+- **La phrase 2 d'`intro_text` joue bien le rôle de pont** — c'est déjà le cas dans le prompt existant (section PONTS), mais j'ai ajouté une ligne d'insistance. Si le reviewer juge l'instruction insuffisante, on peut durcir le prompt avec un exemple.
+- **UX : paragraphe discret sans carte pour topics sans deep article** — choix délibéré pour préserver `intro_text` sans réintroduire de lourdeur visuelle. Si le PO préfère tout simplement masquer `intro_text` dans ce cas, c'est 3 lignes à retirer dans `topic_section.dart`.
+- **Freezed hand-edit** — stratégie à valider. Alternative : régénérer proprement dans un commit de suivi.
 
 ## Ce qui N'A PAS changé (mais pourrait sembler affecté)
 
-- **`SEREIN_EXCLUDED_THEMES`** — Liste hardcodée inchangée. Les `sensitive_themes` s'y ajoutent par union, ne la remplacent pas.
-- **`SEREIN_KEYWORDS`** — Inchangé. Les mots-clés anxiogènes sont toujours appliqués indépendamment des thèmes.
-- **`Content.is_serene`** — La priorité LLM (is_serene=True passe toujours, is_serene=False est toujours exclu) est inchangée. `sensitive_themes` n'affecte que le fallback legacy (is_serene=NULL).
-- **`DualDigestResponse`** — Pas modifié. `sensitive_themes` n'est pas retourné dans la réponse du digest (chargé séparément côté mobile via `loadIfNeeded()`).
-- **Alembic** — Aucune migration. La table `user_preferences` existante est réutilisée (key-value).
+- **Aucune migration Alembic** — `recul_intro` vivait uniquement dans le JSON `topics` de la table digest ; pas de colonne SQL à retirer.
+- **Backend API contract** — les endpoints `/digest/*` continuent à renvoyer tous les autres champs à l'identique ; seul `recul_intro` disparaît du payload.
+- **Autres blocs éditoriaux** (Pépite, Coup de cœur, Actu décalée, Quote) — non touchés.
+- **36 tests Flutter pré-existants en échec sur `main`** — vérifié en stashant et re-testant sur `main` avant cette PR ; ce ne sont PAS des régressions introduites ici (hors périmètre).
+- **Tests backend DB-dépendants** (~29) — fail localement faute de Postgres ; CI Postgres les exécutera.
 
 ## Comment tester
 
 ### Backend
 ```bash
-cd packages/api
-
-# Tests unitaires (sans DB)
-.venv/bin/python -m pytest tests/test_serein_filter.py::TestIsClusterSereinCompatibleSensitiveThemes -v
-# → 5 tests doivent passer
-
-# Tests d'intégration (nécessite Supabase local)
-.venv/bin/python -m pytest tests/test_serein_filter.py -v
-```
-
-**Test manuel API :**
-```bash
-# 1. Mettre à jour les sujets sensibles
-curl -X PUT /api/users/preferences \
-  -H "Authorization: Bearer <token>" \
-  -d '{"key": "sensitive_themes", "value": "[\"tech\",\"sport\"]"}'
-
-# 2. Vérifier GET /api/users/preferences contient sensitive_themes
-curl /api/users/preferences -H "Authorization: Bearer <token>"
-
-# 3. Vérifier que le digest serein exclut les articles tech/sport
-#    (appeler GET /api/digest?serein=true et inspecter les sources des articles retournés)
+cd /home/user/facteur/packages/api
+PYTHONPATH=/home/user/facteur/packages/api ../../.venv/bin/pytest tests/editorial -v
+# -> 85/85 pass attendu
+PYTHONPATH=/home/user/facteur/packages/api ../../.venv/bin/pytest -x -q --tb=short
+# -> les DB-dep fail, le reste passe
 ```
 
 ### Mobile
+```bash
+cd /home/user/facteur/apps/mobile
+CI=true /opt/flutter/bin/flutter test --no-pub test/features/digest/widgets/pas_de_recul_block_test.dart
+# -> tests du widget refactore (introText)
+CI=true /opt/flutter/bin/flutter analyze --no-pub
+```
 
-**Onboarding serein :**
-1. Lancer l'app → Refaire l'onboarding (Settings → Refaire le questionnaire)
-2. Section 2 → choisir "Oui, rester serein"
-3. L'écran "Sujets sensibles" doit apparaître avec 9 chips
-4. Sélectionner quelques thèmes → bouton "Filtrer N thèmes"
-5. Vérifier que `PUT /api/users/preferences` avec `key=sensitive_themes` est appelé (Charles/Proxyman)
+### Runtime / visuel (a faire cote reviewer)
+1. Lancer un digest qui contient au moins 1 topic avec deep article et 1 topic sans.
+2. **Topic avec deep article** : la carte "Pas de recul" doit afficher `intro_text` en haut (paragraphe non italique) puis le titre de l'article + la source + la fleche. Aucune carte grise avant.
+3. **Topic sans deep article** : un paragraphe discret (padding lateral, pas de cadre, fontSize 14) affichant `intro_text`. Aucune carte "Pas de recul" en dessous.
+4. Generer un nouveau digest via la pipeline LLM (ou forcer un run) et verifier que le JSON produit ne contient plus `recul_intro` et que la phrase 2 d'`intro_text` joue bien le role d'accroche vers l'article de recul.
 
-**Onboarding non-serein :**
-1. Même flow → choisir "Non, tout voir"
-2. L'écran "Sujets sensibles" NE DOIT PAS apparaître
-3. Navigation directe vers Section 3 (thèmes)
-
-**Back navigation :**
-1. Onboarding serein → arriver sur l'écran thèmes (Section 3, index 0)
-2. Appuyer retour → doit revenir sur "Sujets sensibles", PAS "digestMode"
-
-**Settings Mes Intérêts :**
-1. Activer le mode serein (toggle dans le digest)
-2. Aller dans Settings → Mes Intérêts
-3. Section "SUJETS SENSIBLES" doit apparaître en bas (avec icône serein verte)
-4. Chips pré-remplies avec les préférences existantes (GET `/users/preferences` appelé)
-5. Toggler un thème → `PUT /api/users/preferences` avec `sensitive_themes` mis à jour (fire-and-forget)
-6. Désactiver le mode serein → Section disparaît
+### Regenerer freezed proprement (optionnel mais conseille avant merge)
+```bash
+cd /home/user/facteur/apps/mobile
+/opt/flutter/bin/flutter pub run build_runner build --delete-conflicting-outputs
+git diff lib/features/digest/models/digest_models.freezed.dart
+# -> diff attendu : vide (ou cosmetique)
+```
