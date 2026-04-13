@@ -1737,6 +1737,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             ),
                                           ),
                                         ),
+                                        // Editorial badge (digest articles) — to the right of source name
+                                        if (content.editorialBadge != null) ...[
+                                          const SizedBox(width: 6),
+                                          EditorialBadge.chip(
+                                            content.editorialBadge,
+                                            context: context,
+                                          ) ?? const SizedBox.shrink(),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 1),
@@ -2151,14 +2159,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
-                              ],
-                              // Editorial badge above title (from digest)
-                              if (content.editorialBadge != null) ...[
-                                EditorialBadge.chip(
-                                  content.editorialBadge,
-                                  context: context,
-                                ) ?? const SizedBox.shrink(),
-                                const SizedBox(height: FacteurSpacing.space2),
                               ],
                               Text(
                                 content.title,
@@ -2759,14 +2759,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
                 const SizedBox(height: FacteurSpacing.space4),
-              ],
-              // Editorial badge above title (from digest)
-              if (content.editorialBadge != null) ...[
-                EditorialBadge.chip(
-                  content.editorialBadge,
-                  context: context,
-                ) ?? const SizedBox.shrink(),
-                const SizedBox(height: FacteurSpacing.space2),
               ],
               // Title
               Text(
