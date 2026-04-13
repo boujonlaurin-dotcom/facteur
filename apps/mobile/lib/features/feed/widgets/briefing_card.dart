@@ -34,10 +34,10 @@ class BriefingCard extends StatelessWidget {
               Container(
                 width: 48,
                 decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.1),
+                  color: colors.primary.withOpacity(0.1),
                   border: Border(
                     right: BorderSide(
-                      color: colors.textSecondary.withValues(alpha: 0.2),
+                      color: colors.textSecondary.withOpacity(0.2),
                       width: 1,
                     ),
                   ),
@@ -78,7 +78,7 @@ class BriefingCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
                               color:
-                                  colors.textSecondary.withValues(alpha: 0.2)),
+                                  colors.textSecondary.withOpacity(0.2)),
                         ),
                         child: Text(
                           item.reason.toUpperCase(),

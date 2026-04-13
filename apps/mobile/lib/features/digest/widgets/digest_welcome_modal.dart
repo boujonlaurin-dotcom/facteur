@@ -108,7 +108,7 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
           child: Container(
-            color: Colors.black.withValues(alpha: 0.55),
+            color: Colors.black.withOpacity(0.55),
             child: Center(
               child: GestureDetector(
                 onTap: () {}, // Prevent tap through
@@ -130,7 +130,7 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                             BorderRadius.circular(FacteurRadius.large),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
+                            color: Colors.black.withOpacity(0.2),
                             blurRadius: 32,
                             offset: const Offset(0, 12),
                           ),
@@ -196,7 +196,7 @@ class _DigestWelcomeModalState extends ConsumerState<DigestWelcomeModal>
                             padding:
                                 const EdgeInsets.all(FacteurSpacing.space3),
                             decoration: BoxDecoration(
-                              color: colors.warning.withValues(alpha: 0.1),
+                              color: colors.warning.withOpacity(0.1),
                               borderRadius:
                                   BorderRadius.circular(FacteurRadius.medium),
                             ),
@@ -295,7 +295,7 @@ class _FeatureItem extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(FacteurSpacing.space2),
           decoration: BoxDecoration(
-            color: colors.primary.withValues(alpha: 0.1),
+            color: colors.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(FacteurRadius.medium),
           ),
           child: Icon(

@@ -12,7 +12,7 @@ Future<void> showThemeChoiceBottomSheet(BuildContext context, WidgetRef ref) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.6),
+    barrierColor: Colors.black.withOpacity(0.6),
     builder: (ctx) => ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -133,12 +133,12 @@ class _ThemeOption extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: isSelected
-              ? colors.primary.withValues(alpha: 0.1)
+              ? colors.primary.withOpacity(0.1)
               : colors.surface,
           borderRadius: BorderRadius.circular(FacteurRadius.large),
           border: Border.all(
             color: isSelected
-                ? colors.primary.withValues(alpha: 0.5)
+                ? colors.primary.withOpacity(0.5)
                 : colors.surfaceElevated,
             width: isSelected ? 1.5 : 1.0,
           ),

@@ -103,8 +103,8 @@ class _DigestProgressBarState extends State<DigestProgressBar>
                           height: 6,
                           decoration: BoxDecoration(
                             color: isDark
-                                ? Colors.white.withValues(alpha: 0.1)
-                                : Colors.black.withValues(alpha: 0.08),
+                                ? Colors.white.withOpacity(0.1)
+                                : Colors.black.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         ),

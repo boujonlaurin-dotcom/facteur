@@ -119,7 +119,7 @@ class _InterestFilterSheetState extends ConsumerState<InterestFilterSheet> {
                 height: 4,
                 margin: const EdgeInsets.only(top: 12),
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),

@@ -410,10 +410,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: 0.10),
+                            color: colors.primary.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: colors.primary.withValues(alpha: 0.25),
+                              color: colors.primary.withOpacity(0.25),
                             ),
                           ),
                           child: Material(
@@ -505,11 +505,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   vertical: 16,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colors.success.withValues(alpha: 0.15),
+                                  color: colors.success.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
                                     color:
-                                        colors.success.withValues(alpha: 0.3),
+                                        colors.success.withOpacity(0.3),
                                   ),
                                 ),
                                 child: Row(
@@ -596,7 +596,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                         padding: const EdgeInsets.all(6),
                                         decoration: BoxDecoration(
                                           color: colors.textSecondary
-                                              .withValues(alpha: 0.15),
+                                              .withOpacity(0.15),
                                           borderRadius:
                                               BorderRadius.circular(16),
                                         ),

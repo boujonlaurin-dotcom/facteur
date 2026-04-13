@@ -33,7 +33,7 @@ class PerspectivesLoadingSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: colors.textSecondary.withValues(alpha: 0.2),
+              color: colors.textSecondary.withOpacity(0.2),
               borderRadius: BorderRadius.circular(2),
             ),
           ),

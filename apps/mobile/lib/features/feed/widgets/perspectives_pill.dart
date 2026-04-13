@@ -244,13 +244,13 @@ class _BiasRingPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     if (_isEmpty) {
-      paint.color = colors.textTertiary.withValues(alpha: 0.2);
+      paint.color = colors.textTertiary.withOpacity(0.2);
       canvas.drawCircle(center, radius, paint);
       return;
     }
 
     if (_isLoading) {
-      paint.color = colors.textTertiary.withValues(alpha: 0.3);
+      paint.color = colors.textTertiary.withOpacity(0.3);
       final startAngle =
           _loadingProgress * 2 * math.pi - math.pi / 2;
       canvas.drawArc(rect, startAngle, 2 * math.pi / 3, false, paint);

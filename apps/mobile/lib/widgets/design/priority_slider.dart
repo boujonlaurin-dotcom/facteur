@@ -217,7 +217,7 @@ class _PrioritySliderState extends State<PrioritySlider>
                 height: _blockHeight,
                 color: filled
                     ? _terracotta
-                    : colors.textTertiary.withValues(alpha: 0.3),
+                    : colors.textTertiary.withOpacity(0.3),
               ),
               // Overlay: internal fill proportional to usage weight
               if (fillRatio > 0)
@@ -227,7 +227,7 @@ class _PrioritySliderState extends State<PrioritySlider>
                   bottom: 0,
                   width: _blockWidth * fillRatio,
                   child: Container(
-                    color: colors.textSecondary.withValues(alpha: filled ? 0.5 : 0.3),
+                    color: colors.textSecondary.withOpacity(filled ? 0.5 : 0.3),
                   ),
                 ),
             ],

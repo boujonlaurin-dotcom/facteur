@@ -97,7 +97,7 @@ class TopicChip extends StatelessWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: ArticleSheet(
@@ -201,7 +201,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colors.textTertiary.withValues(alpha: 0.3),
+                    color: colors.textTertiary.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -254,7 +254,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               // ── Section 2: Source ──
               if (widget.content.source.name.isNotEmpty) ...[
                 const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
+                Divider(color: colors.textTertiary.withOpacity(0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
                 _buildSectionHeader(
                   context,
@@ -331,7 +331,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               // ── Section 3: Entities ──
               if (widget.content.entities.isNotEmpty) ...[
                 const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
+                Divider(color: colors.textTertiary.withOpacity(0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
                 _buildSectionHeader(
                   context,
@@ -352,7 +352,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               // ── Section 4: "Pourquoi cet article ?" ──
               if (reason != null && reason.breakdown.isNotEmpty) ...[
                 const SizedBox(height: FacteurSpacing.space2),
-                Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
+                Divider(color: colors.textTertiary.withOpacity(0.2)),
                 const SizedBox(height: FacteurSpacing.space3),
                 _buildSectionHeader(
                   context,
@@ -364,7 +364,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: 0.1),
+                            color: colors.primary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -389,7 +389,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
 
               // ── Section 5: "Personnaliser mon flux" ──
               const SizedBox(height: FacteurSpacing.space2),
-              Divider(color: colors.textTertiary.withValues(alpha: 0.2)),
+              Divider(color: colors.textTertiary.withOpacity(0.2)),
               const SizedBox(height: FacteurSpacing.space3),
               _buildSectionHeader(
                 context,
@@ -448,9 +448,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: _terracotta.withValues(alpha: 0.08),
+              color: _terracotta.withOpacity(0.08),
               borderRadius: BorderRadius.circular(FacteurRadius.medium),
-              border: Border.all(color: _terracotta.withValues(alpha: 0.2)),
+              border: Border.all(color: _terracotta.withOpacity(0.2)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -809,10 +809,10 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             padding:
                 const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: _terracotta.withValues(alpha: 0.08),
+              color: _terracotta.withOpacity(0.08),
               borderRadius: BorderRadius.circular(FacteurRadius.medium),
               border:
-                  Border.all(color: _terracotta.withValues(alpha: 0.2)),
+                  Border.all(color: _terracotta.withOpacity(0.2)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -899,7 +899,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   ],
                 ),
                 Divider(
-                  color: _terracotta.withValues(alpha: 0.15),
+                  color: _terracotta.withOpacity(0.15),
                   height: 1,
                 ),
                 const SizedBox(height: 8),
@@ -1018,7 +1018,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: colors.textTertiary.withValues(alpha: 0.1),
+                            color: colors.textTertiary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -1050,7 +1050,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: colors.textTertiary.withValues(alpha: 0.1),
+                      color: colors.textTertiary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1102,7 +1102,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: _terracotta.withValues(alpha: 0.1),
+                      color: _terracotta.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(

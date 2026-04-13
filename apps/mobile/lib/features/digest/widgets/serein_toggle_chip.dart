@@ -108,8 +108,8 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final trackColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.05);
 
     return SizedBox(
       width: SereinToggleChip._width,
@@ -154,18 +154,18 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
                     child: Container(
                       decoration: BoxDecoration(
                         color: isDark
-                            ? Colors.white.withValues(alpha: 0.18)
-                            : Colors.white.withValues(alpha: 0.92),
+                            ? Colors.white.withOpacity(0.18)
+                            : Colors.white.withOpacity(0.92),
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
                             color:
-                                accent.withValues(alpha: isDark ? 0.20 : 0.25),
+                                accent.withOpacity(isDark ? 0.20 : 0.25),
                             blurRadius: 8,
                             offset: const Offset(0, 1),
                           ),
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
+                            color: Colors.black.withOpacity(0.06),
                             blurRadius: 2,
                             offset: const Offset(0, 1),
                           ),
@@ -217,8 +217,8 @@ class _SereinToggleChipState extends ConsumerState<SereinToggleChip>
     required VoidCallback? onTap,
   }) {
     final unselectedColor = isDark
-        ? Colors.white.withValues(alpha: 0.45)
-        : Colors.black.withValues(alpha: 0.40);
+        ? Colors.white.withOpacity(0.45)
+        : Colors.black.withOpacity(0.40);
     final color = Color.lerp(unselectedColor, selectedColor, t)!;
     final fontWeight = t > 0.5 ? FontWeight.w600 : FontWeight.w400;
     final iconSize = 11.0 + t;

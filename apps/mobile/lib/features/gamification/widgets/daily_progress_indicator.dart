@@ -98,7 +98,7 @@ class _DailyProgressIndicatorState extends ConsumerState<DailyProgressIndicator>
                   color: colors.backgroundSecondary,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.1),
+                    color: colors.primary.withOpacity(0.1),
                     width: 1,
                   ),
                 ),

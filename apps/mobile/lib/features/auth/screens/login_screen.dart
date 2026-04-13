@@ -228,10 +228,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: colors.primary.withValues(alpha: 0.1),
+                        color: colors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: colors.primary.withValues(alpha: 0.3)),
+                            color: colors.primary.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
@@ -374,7 +374,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: colors.error.withValues(alpha: 0.1),
+                        color: colors.error.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -438,7 +438,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     children: [
                       Expanded(
                         child: Divider(
-                          color: colors.textTertiary.withValues(alpha: 0.3),
+                          color: colors.textTertiary.withOpacity(0.3),
                         ),
                       ),
                       Padding(
@@ -453,7 +453,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                       Expanded(
                         child: Divider(
-                          color: colors.textTertiary.withValues(alpha: 0.3),
+                          color: colors.textTertiary.withOpacity(0.3),
                         ),
                       ),
                     ],
@@ -505,10 +505,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: colors.primary.withValues(alpha: 0.3),
+                          color: colors.primary.withOpacity(0.3),
                         ),
                         borderRadius: BorderRadius.circular(12),
-                        color: colors.primary.withValues(alpha: 0.05),
+                        color: colors.primary.withOpacity(0.05),
                       ),
                       child: Column(
                         children: [

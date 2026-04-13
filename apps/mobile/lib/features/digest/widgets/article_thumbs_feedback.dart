@@ -182,13 +182,13 @@ class _ArticleThumbsFeedbackState extends ConsumerState<ArticleThumbsFeedback> {
                               ),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? colors.primary.withValues(alpha: 0.12)
+                                    ? colors.primary.withOpacity(0.12)
                                     : Colors.transparent,
                                 border: Border.all(
                                   color: isSelected
-                                      ? colors.primary.withValues(alpha: 0.4)
+                                      ? colors.primary.withOpacity(0.4)
                                       : colors.textTertiary
-                                          .withValues(alpha: 0.3),
+                                          .withOpacity(0.3),
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -235,14 +235,14 @@ class _ArticleThumbsFeedbackState extends ConsumerState<ArticleThumbsFeedback> {
                                 borderRadius: BorderRadius.circular(8),
                                 borderSide: BorderSide(
                                   color:
-                                      colors.textTertiary.withValues(alpha: 0.3),
+                                      colors.textTertiary.withOpacity(0.3),
                                 ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                                 borderSide: BorderSide(
                                   color:
-                                      colors.textTertiary.withValues(alpha: 0.3),
+                                      colors.textTertiary.withOpacity(0.3),
                                 ),
                               ),
                             ),
@@ -289,7 +289,7 @@ class _ThumbButton extends StatelessWidget {
             icon,
             key: ValueKey('$icon-$isActive'),
             size: 16,
-            color: isActive ? activeColor : inactiveColor.withValues(alpha: 0.4),
+            color: isActive ? activeColor : inactiveColor.withOpacity(0.4),
           ),
         ),
       ),

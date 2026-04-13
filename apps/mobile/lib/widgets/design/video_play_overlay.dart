@@ -13,7 +13,7 @@ class VideoPlayOverlay extends StatelessWidget {
       width: 52,
       height: 52,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.85),
+        color: Colors.white.withOpacity(0.85),
         shape: BoxShape.circle,
       ),
       child: Center(

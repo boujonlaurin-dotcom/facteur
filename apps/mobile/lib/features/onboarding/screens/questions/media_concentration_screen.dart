@@ -74,7 +74,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: colors.textPrimary.withValues(alpha: 0.6),
+                        color: colors.textPrimary.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(FacteurRadius.pill),
                       ),
                       child: Row(
@@ -145,7 +145,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
-        barrierColor: Colors.black.withValues(alpha: 0.85),
+        barrierColor: Colors.black.withOpacity(0.85),
         barrierDismissible: true,
         pageBuilder: (context, animation, secondaryAnimation) {
           return FadeTransition(
@@ -195,7 +195,7 @@ class _FullscreenImageViewer extends StatelessWidget {
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: IconButton.styleFrom(
-                    backgroundColor: colors.textPrimary.withValues(alpha: 0.5),
+                    backgroundColor: colors.textPrimary.withOpacity(0.5),
                   ),
                   icon: Icon(Icons.close,
                       color: colors.backgroundPrimary, size: 22),

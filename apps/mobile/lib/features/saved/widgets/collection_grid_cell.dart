@@ -107,7 +107,7 @@ class AllArticlesGridCell extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: colors.primary.withValues(alpha: 0.3),
+                  color: colors.primary.withOpacity(0.3),
                   width: 1,
                 ),
               ),
@@ -176,7 +176,7 @@ class NewCollectionCell extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                   width: 1,
                   // Dashed effect approximated with dotted border pattern
                 ),

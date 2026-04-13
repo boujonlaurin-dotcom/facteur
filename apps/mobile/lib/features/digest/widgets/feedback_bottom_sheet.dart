@@ -60,7 +60,7 @@ class _FeedbackBottomSheetState extends ConsumerState<FeedbackBottomSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.3),
+                color: colors.textTertiary.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -93,13 +93,13 @@ class _FeedbackBottomSheetState extends ConsumerState<FeedbackBottomSheet> {
                           horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? colors.primary.withValues(alpha: 0.12)
+                            ? colors.primary.withOpacity(0.12)
                             : Colors.transparent,
                         border: Border.all(
                           color: isSelected
                               ? colors.primary
                               : colors.textTertiary
-                                  .withValues(alpha: 0.3),
+                                  .withOpacity(0.3),
                           width: isSelected ? 1.5 : 1,
                         ),
                         borderRadius: BorderRadius.circular(12),
@@ -140,13 +140,13 @@ class _FeedbackBottomSheetState extends ConsumerState<FeedbackBottomSheet> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: colors.textTertiary.withValues(alpha: 0.3),
+                    color: colors.textTertiary.withOpacity(0.3),
                   ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(
-                    color: colors.textTertiary.withValues(alpha: 0.3),
+                    color: colors.textTertiary.withOpacity(0.3),
                   ),
                 ),
                 focusedBorder: OutlineInputBorder(

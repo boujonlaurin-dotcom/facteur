@@ -106,7 +106,7 @@ class _CollectionPickerSheetState
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -180,7 +180,7 @@ class _CollectionPickerSheetState
             const SizedBox(height: 8),
 
             // Divider
-            Divider(color: colors.border.withValues(alpha: 0.3)),
+            Divider(color: colors.border.withOpacity(0.3)),
 
             // Collections list
             collectionsAsync.when(

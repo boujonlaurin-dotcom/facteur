@@ -1377,7 +1377,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   child: IgnorePointer(
                     child: ColoredBox(
                       color: Colors.white
-                          .withValues(alpha: 0.6 * _exitAnimController.value),
+                          .withOpacity(0.6 * _exitAnimController.value),
                     ),
                   ),
                 );
@@ -1507,7 +1507,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         boxShadow: [
                                           BoxShadow(
                                             color:
-                                                Colors.black.withValues(alpha: 0.1),
+                                                Colors.black.withOpacity(0.1),
                                             blurRadius: 8,
                                             offset: const Offset(0, 2),
                                           ),
@@ -1737,6 +1737,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             ),
                                           ),
                                         ),
+                                        // Editorial badge (digest articles) — to the right of source name
+                                        if (content.editorialBadge != null) ...[
+                                          const SizedBox(width: 6),
+                                          EditorialBadge.chip(
+                                            content.editorialBadge,
+                                            context: context,
+                                          ) ?? const SizedBox.shrink(),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 1),
@@ -1824,23 +1832,33 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    const maxVisible = 3;
+    // Dense layout: 4 tags max across macro-theme + topic + entities.
+    // Remaining entities are grouped into a "+X" overflow chip.
+    const maxTotalVisible = 4;
+    const chipPadding = EdgeInsets.symmetric(horizontal: 7, vertical: 3);
+
+    final hasMacroTheme = content.topics.isNotEmpty &&
+        getTopicMacroTheme(content.topics.first) != null;
+    final hasTopic = content.topics.isNotEmpty;
+    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
     final entities = content.entities;
-    final visible = entities.take(maxVisible).toList();
-    final overflow = entities.length - maxVisible;
+    final maxEntitiesVisible =
+        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
+    final visible = entities.take(maxEntitiesVisible).toList();
+    final overflow = entities.length - maxEntitiesVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (content.topics.isNotEmpty && getTopicMacroTheme(content.topics.first) != null)
+      if (hasMacroTheme)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
           return GestureDetector(
             onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: chipPadding,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
+                color: colors.textTertiary.withOpacity(0.20),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1856,13 +1874,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (content.topics.isNotEmpty)
+      if (hasTopic)
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1883,18 +1901,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         return GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
               color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
+                  ? const Color(0xFFE07A5F).withOpacity(0.15)
+                  : colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
+                  constraints: const BoxConstraints(maxWidth: 90),
                   child: Text(
                     entity.text,
                     style: textTheme.labelSmall?.copyWith(
@@ -1924,9 +1942,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1955,7 +1973,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           colors.primary,
           clamped,
         )!
-            .withValues(alpha: alpha);
+            .withOpacity(alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2005,7 +2023,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Container(
                 height: 14,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.15),
+                  color: colors.textTertiary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2122,7 +2140,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: colors.warning
-                                              .withValues(alpha: 0.12),
+                                              .withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(
                                               FacteurRadius.pill),
                                         ),
@@ -2141,14 +2159,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
-                              ],
-                              // Editorial badge above title (from digest)
-                              if (content.editorialBadge != null) ...[
-                                EditorialBadge.chip(
-                                  content.editorialBadge,
-                                  context: context,
-                                ) ?? const SizedBox.shrink(),
-                                const SizedBox(height: FacteurSpacing.space2),
                               ],
                               Text(
                                 content.title,
@@ -2233,7 +2243,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 borderRadius:
                                     BorderRadius.circular(FacteurRadius.large),
                                 border: Border.all(
-                                  color: colors.border.withValues(alpha: 0.5),
+                                  color: colors.border.withOpacity(0.5),
                                 ),
                               ),
                               child: Row(
@@ -2732,7 +2742,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.warning.withValues(alpha: 0.12),
+                          color: colors.warning.withOpacity(0.12),
                           borderRadius:
                               BorderRadius.circular(FacteurRadius.pill),
                         ),
@@ -2749,14 +2759,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
                 const SizedBox(height: FacteurSpacing.space4),
-              ],
-              // Editorial badge above title (from digest)
-              if (content.editorialBadge != null) ...[
-                EditorialBadge.chip(
-                  content.editorialBadge,
-                  context: context,
-                ) ?? const SizedBox.shrink(),
-                const SizedBox(height: FacteurSpacing.space2),
               ],
               // Title
               Text(
@@ -2801,7 +2803,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 color: colors.surfaceElevated,
                 borderRadius: BorderRadius.circular(FacteurRadius.large),
                 border: Border.all(
-                  color: colors.border.withValues(alpha: 0.5),
+                  color: colors.border.withOpacity(0.5),
                 ),
               ),
               child: Row(
@@ -2923,20 +2925,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return Column(
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: _buildArticleTagWidgets(context, content),
-            ),
-          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );

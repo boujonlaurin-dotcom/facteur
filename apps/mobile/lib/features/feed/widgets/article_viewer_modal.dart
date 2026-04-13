@@ -209,7 +209,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.2),
+                    color: colors.textSecondary.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -255,9 +255,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                                       vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: colors.textSecondary.withValues(
-                                        alpha: 0.08,
-                                      ),
+                                      color: colors.textSecondary.withOpacity(0.08),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
@@ -329,11 +327,11 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             backgroundColor:
-                                colors.primary.withValues(alpha: 0.18),
+                                colors.primary.withOpacity(0.18),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
-                                color: colors.primary.withValues(alpha: 0.4),
+                                color: colors.primary.withOpacity(0.4),
                                 width: 1.2,
                               ),
                             ),
@@ -394,7 +392,7 @@ class _ArticleViewerModalState extends ConsumerState<ArticleViewerModal> {
                           Icon(
                             PhosphorIcons.monitor(PhosphorIconsStyle.duotone),
                             size: 64,
-                            color: colors.textSecondary.withValues(alpha: 0.5),
+                            color: colors.textSecondary.withOpacity(0.5),
                           ),
                           const SizedBox(height: 24),
                           Text(

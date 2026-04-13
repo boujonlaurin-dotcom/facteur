@@ -188,11 +188,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         // crème transparaître. Plus léger en haut, plus teinté en bas.
         // Alpha réduit pour laisser l'effet de flou "liquid glass" transparaître.
         final topColor = isDark
-            ? baseColor.withValues(alpha: 0.72)
-            : baseColor.withValues(alpha: 0.12);
+            ? baseColor.withOpacity(0.72)
+            : baseColor.withOpacity(0.12);
         final bottomColor = isDark
-            ? blendedEnd.withValues(alpha: 0.78)
-            : blendedEnd.withValues(alpha: 0.22);
+            ? blendedEnd.withOpacity(0.78)
+            : blendedEnd.withOpacity(0.22);
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
@@ -201,8 +201,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             boxShadow: [
               BoxShadow(
                 color: isDark
-                    ? Colors.black.withValues(alpha: 0.30)
-                    : baseColor.withValues(alpha: 0.18),
+                    ? Colors.black.withOpacity(0.30)
+                    : baseColor.withOpacity(0.18),
                 blurRadius: isDark ? 24 : 16,
                 offset: const Offset(0, 10),
               ),
@@ -221,8 +221,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   ),
                   border: Border.all(
                     color: isDark
-                        ? Colors.white.withValues(alpha: 0.14)
-                        : Colors.white.withValues(alpha: 0.38),
+                        ? Colors.white.withOpacity(0.14)
+                        : Colors.white.withOpacity(0.38),
                     width: 1,
                   ),
                   borderRadius: BorderRadius.circular(24),
@@ -366,7 +366,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             decoration: BoxDecoration(
               color: isDone
                   ? (isComplete ? colors.success : color)
-                  : colors.textTertiary.withValues(alpha: 0.25),
+                  : colors.textTertiary.withOpacity(0.25),
               borderRadius: BorderRadius.circular(1.25),
             ),
           );
@@ -519,7 +519,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               Text(
                 'N\u00B0$rank',
                 style: TextStyle(
-                  color: colors.primary.withValues(alpha: 0.9),
+                  color: colors.primary.withOpacity(0.9),
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                   letterSpacing: 1.0,
@@ -576,7 +576,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           child: Opacity(
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),

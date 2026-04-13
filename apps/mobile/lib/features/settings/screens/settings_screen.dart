@@ -69,7 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       horizontal: FacteurSpacing.space4,
                     ),
                     child: Material(
-                      color: colors.primary.withValues(alpha: 0.1),
+                      color: colors.primary.withOpacity(0.1),
                       borderRadius:
                           BorderRadius.circular(FacteurRadius.large),
                       child: InkWell(
@@ -120,7 +120,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                           .bodySmall
                                           ?.copyWith(
                                             color: colors.primary
-                                                .withValues(alpha: 0.7),
+                                                .withOpacity(0.7),
                                           ),
                                     ),
                                   ],
@@ -129,7 +129,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               Icon(
                                 PhosphorIcons.arrowSquareOut(
                                     PhosphorIconsStyle.regular),
-                                color: colors.primary.withValues(alpha: 0.6),
+                                color: colors.primary.withOpacity(0.6),
                                 size: 18,
                               ),
                             ],

@@ -233,7 +233,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.only(left: 24),
                 decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.06 * rightProgress),
+                  color: colors.primary.withOpacity(0.06 * rightProgress),
                   borderRadius: BorderRadius.circular(FacteurRadius.small),
                 ),
                 child: Opacity(
@@ -243,14 +243,14 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                     children: [
                       Icon(
                         PhosphorIcons.arrowRight(PhosphorIconsStyle.bold),
-                        color: colors.primary.withValues(alpha: 0.5),
+                        color: colors.primary.withOpacity(0.5),
                         size: 22,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Lire',
                         style: TextStyle(
-                          color: colors.primary.withValues(alpha: 0.5),
+                          color: colors.primary.withOpacity(0.5),
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -268,7 +268,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                 padding: const EdgeInsets.only(right: 24),
                 decoration: BoxDecoration(
                   color: colors.textSecondary
-                      .withValues(alpha: 0.08 * leftProgress),
+                      .withOpacity(0.08 * leftProgress),
                   borderRadius: BorderRadius.circular(FacteurRadius.small),
                 ),
                 child: Opacity(
@@ -279,7 +279,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                       Text(
                         'Régler',
                         style: TextStyle(
-                          color: colors.textSecondary.withValues(alpha: 0.5),
+                          color: colors.textSecondary.withOpacity(0.5),
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
@@ -288,7 +288,7 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                       Icon(
                         PhosphorIcons.slidersHorizontal(
                             PhosphorIconsStyle.bold),
-                        color: colors.textSecondary.withValues(alpha: 0.5),
+                        color: colors.textSecondary.withOpacity(0.5),
                         size: 22,
                       ),
                     ],

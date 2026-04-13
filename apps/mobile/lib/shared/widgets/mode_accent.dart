@@ -29,7 +29,7 @@ class ModeAccent extends StatelessWidget {
         curve: _curve,
         builder: (context, value, _) => Container(
           height: 1.5,
-          color: value?.withValues(alpha: 0.7),
+          color: value?.withOpacity(0.7),
         ),
       ),
     );

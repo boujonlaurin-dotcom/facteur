@@ -228,12 +228,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
+  /// Animation déclenchée après un clic sur une balise de thème/source/entité
+  /// (depuis le feed lui-même OU depuis le reader d'article via
+  /// `feedScrollTriggerProvider`). Volontairement longue + courbe en S pour
+  /// que l'utilisateur perçoive clairement la transition vers le feed filtré.
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -323,8 +327,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
     if (hintSeen) _swipeHintSeen = true;
 
-    // Listen to scroll to top trigger
-    ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
+    // Listen to scroll to top trigger.
+    // Quand l'utilisateur clique sur une balise depuis le reader d'un article,
+    // on attend que la transition de page (Cupertino slide-back) soit bien
+    // entamée avant de scroller, sinon le scroll est masqué par l'écran
+    // article qui glisse encore par-dessus le feed.
+    // Utilise Timer (et non Future.delayed) pour éviter un unawaited future.
+    ref.listen(feedScrollTriggerProvider, (_, __) {
+      Timer(const Duration(milliseconds: 220), () {
+        if (mounted) _scrollToTop();
+      });
+    });
 
     // Serein toggle: loading indicator tied to actual feed refresh
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {

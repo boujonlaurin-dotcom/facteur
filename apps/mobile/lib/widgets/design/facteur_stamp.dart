@@ -33,7 +33,7 @@ class FacteurStamp extends StatelessWidget {
 
     // "Ink" opacity effect if not new
     final Color effectiveColor =
-        isNew ? stampColor : stampColor.withValues(alpha: 0.7);
+        isNew ? stampColor : stampColor.withOpacity(0.7);
 
     return Transform.rotate(
       angle: rotationRadians,
@@ -50,7 +50,7 @@ class FacteurStamp extends StatelessWidget {
           borderRadius: BorderRadius.circular(
               4), // Slightly rounded corners, but mostly sharp
           color: isNew
-              ? effectiveColor.withValues(alpha: 0.1)
+              ? effectiveColor.withOpacity(0.1)
               : Colors.transparent,
         ),
         child: Text(

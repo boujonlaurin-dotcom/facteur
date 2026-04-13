@@ -127,7 +127,7 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
             width: 36,
             height: 4,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.3),
+              color: colors.textTertiary.withOpacity(0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -223,7 +223,7 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: colors.textSecondary,
                 side: BorderSide(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
+                  color: colors.textTertiary.withOpacity(0.3),
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -256,7 +256,7 @@ class _SourceAdjustSheetState extends ConsumerState<SourceAdjustSheet> {
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: colors.textTertiary.withValues(alpha: 0.1),
+        color: colors.textTertiary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(
