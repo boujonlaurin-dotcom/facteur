@@ -50,7 +50,6 @@ class MatchedDeepArticle(BaseModel):
     published_at: datetime
     match_reason: str
     description: str | None = None
-    recul_intro: str | None = None
 
 
 class EditorialSubject(BaseModel):
@@ -89,7 +88,6 @@ class SubjectWriting(BaseModel):
     topic_id: str
     intro_text: str
     transition_text: str | None = None  # null for last subject
-    recul_intro: str | None = None
 
 
 class WritingOutput(BaseModel):

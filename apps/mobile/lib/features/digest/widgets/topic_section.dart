@@ -769,7 +769,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            // ── Articles (avant "De quoi on parle") ──
+            // ── Articles actu ──
             const SizedBox(height: 8),
             if (isActuMulti) ...[
               LayoutBuilder(
@@ -809,60 +809,31 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               const SizedBox(height: 8),
             ],
 
-            // ── Carte "De quoi on parle ?" ──
-            if (topic.introText != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.23),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border(
-                      left: BorderSide(
-                        width: 3,
-                        color: colors.textSecondary.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'De quoi on parle ?',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: colors.textSecondary.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        topic.introText!,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.85)
-                              : colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            // ── Pas de recul ──
+            // ── Pas de recul (intègre le contexte du sujet) ──
             if (deepArticle != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: PasDeReculBlock(
                   deepArticle: deepArticle,
-                  reculIntro: deepArticle.reculIntro,
+                  introText: topic.introText,
                   onTap: () => widget.onArticleTap(deepArticle),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else if (topic.introText != null) ...[
+              // Fallback : sujet sans deep article → intro text en
+              // paragraphe discret (pas de carte).
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  topic.introText!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.75)
+                        : colors.textSecondary.withValues(alpha: 0.85),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
