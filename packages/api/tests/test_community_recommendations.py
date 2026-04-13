@@ -119,7 +119,7 @@ def test_sunflower_count_badge_logic():
 def test_collection_name_constant():
     """Verify collection name was updated to sunflower naming."""
     from app.services.collection_service import LIKED_COLLECTION_NAME
-    assert LIKED_COLLECTION_NAME == "Mes articles intéressants 🌻"
+    assert LIKED_COLLECTION_NAME == "Mes contenus recommandés 🌻"
 
 
 def test_community_carousel_schema():

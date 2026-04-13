@@ -768,8 +768,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (mounted) {
         NotificationService.showInfo(
           newLiked
-              ? 'Ajouté à Mes articles intéressants 🌻'
-              : 'Retiré de Mes articles intéressants 🌻',
+              ? 'Ajouté à Mes contenus recommandés 🌻'
+              : 'Retiré de Mes contenus recommandés 🌻',
         );
         // Refresh collections to update liked collection counts
         ref.invalidate(collectionsProvider);
@@ -1533,9 +1533,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 height: 50,
                                 child: FloatingActionButton(
                                   onPressed: _toggleLike,
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: colors.textPrimary,
-                                  elevation: 2,
+                                  backgroundColor: content.isLiked
+                                      ? colors.primary
+                                      : Colors.white,
+                                  foregroundColor: content.isLiked
+                                      ? Colors.white
+                                      : colors.textPrimary,
+                                  elevation: content.isLiked ? 4 : 2,
                                   heroTag: 'sunflower_fab',
                                   tooltip: 'Recommander',
                                   child: SunflowerIcon(

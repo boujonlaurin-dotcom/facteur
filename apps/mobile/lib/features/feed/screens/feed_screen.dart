@@ -702,8 +702,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           ref.read(feedProvider.notifier).toggleLike(c);
                                           NotificationService.showInfo(
                                             wasLiked
-                                                ? 'Retiré de Mes articles intéressants 🌻'
-                                                : 'Ajouté à Mes articles intéressants 🌻',
+                                                ? 'Retiré de Mes contenus recommandés 🌻'
+                                                : 'Ajouté à Mes contenus recommandés 🌻',
                                           );
                                           ref.invalidate(collectionsProvider);
                                         },
@@ -850,8 +850,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             .toggleLike(content);
                                         NotificationService.showInfo(
                                           wasLiked
-                                              ? 'Retiré de Mes articles intéressants 🌻'
-                                              : 'Ajouté à Mes articles intéressants 🌻',
+                                              ? 'Retiré de Mes contenus recommandés 🌻'
+                                              : 'Ajouté à Mes contenus recommandés 🌻',
                                         );
                                         ref.invalidate(collectionsProvider);
                                       },

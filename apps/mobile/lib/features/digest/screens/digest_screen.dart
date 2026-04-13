@@ -231,8 +231,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         );
     NotificationService.showInfo(
       item.isLiked
-          ? 'Retiré de Mes articles intéressants 🌻'
-          : 'Ajouté à Mes articles intéressants 🌻',
+          ? 'Retiré de Mes contenus recommandés 🌻'
+          : 'Ajouté à Mes contenus recommandés 🌻',
     );
     ref.invalidate(collectionsProvider);
   }

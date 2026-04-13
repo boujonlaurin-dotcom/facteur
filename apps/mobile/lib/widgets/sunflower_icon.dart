@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 /// Sunflower icon widget for the 🌻 recommendation feature.
 ///
-/// Two states:
-/// - **Inactive**: monochrome outline icon, same style as other icons
-/// - **Active**: colorful sunflower (yellow/green/brown) with animation
+/// Renders the native 🌻 emoji (color on all platforms) with a small
+/// scale/fade animation on state change. The active state is primarily
+/// conveyed by the host's background color (see the FAB in
+/// `content_detail_screen.dart`), so this widget stays visually stable.
 ///
-/// The transition uses an AnimatedSwitcher with a scale+fade effect (~300ms).
+/// `inactiveColor` is accepted for API compatibility with the previous
+/// icon-based implementation but is intentionally unused — emoji glyphs
+/// keep their native colors.
 class SunflowerIcon extends StatelessWidget {
   final bool isActive;
   final double size;
@@ -20,7 +22,8 @@ class SunflowerIcon extends StatelessWidget {
     this.inactiveColor,
   });
 
-  // Sunflower colors
+  // Palette exposed for callers that want to theme non-icon surfaces
+  // (carousel badges, page indicators, etc.).
   static const Color sunflowerYellow = Color(0xFFFFC107);
   static const Color sunflowerGreen = Color(0xFF4CAF50);
   static const Color sunflowerBrown = Color(0xFF795548);
@@ -40,28 +43,17 @@ class SunflowerIcon extends StatelessWidget {
           ),
         );
       },
-      child: isActive
-          ? ShaderMask(
-              key: const ValueKey('active'),
-              shaderCallback: (bounds) => const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [sunflowerYellow, sunflowerBrown],
-                stops: [0.3, 1.0],
-              ).createShader(bounds),
-              blendMode: BlendMode.srcIn,
-              child: Icon(
-                PhosphorIcons.flower(PhosphorIconsStyle.fill),
-                size: size,
-                color: Colors.white, // Will be replaced by shader
-              ),
-            )
-          : Icon(
-              key: const ValueKey('inactive'),
-              PhosphorIcons.flower(PhosphorIconsStyle.regular),
-              size: size,
-              color: inactiveColor,
-            ),
+      child: Text(
+        '🌻',
+        key: ValueKey('sunflower_${isActive ? 'active' : 'inactive'}'),
+        style: TextStyle(
+          fontSize: size,
+          // Fixed line-height so the emoji sits cleanly centered inside
+          // the FAB (orange when active, white when inactive) without
+          // needing a color filter.
+          height: 1.0,
+        ),
+      ),
     );
   }
 }

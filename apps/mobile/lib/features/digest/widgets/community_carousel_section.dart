@@ -215,7 +215,12 @@ class _CommunityCard extends StatelessWidget {
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: SunflowerIcon.sunflowerYellow
-                                  .withOpacity(0.15),
+                                  .withOpacity(0.18),
+                              border: Border.all(
+                                color: SunflowerIcon.sunflowerYellow
+                                    .withOpacity(0.55),
+                                width: 1,
+                              ),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
