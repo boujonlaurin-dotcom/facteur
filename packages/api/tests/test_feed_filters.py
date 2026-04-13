@@ -1,6 +1,6 @@
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.models.enums import FeedFilterMode
 
@@ -8,7 +8,8 @@ from app.models.enums import FeedFilterMode
 async def test_feed_filter_inspiration():
     # Mocking would be better, but for integration test MVP:
     # We expect query params to work without internal server error
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Assuming typical auth headers are handled by middleware or mocked dependencies
         # But this requires a running DB or mocked Session.
         # Let's create a simpler unit test style or integration if possible.
