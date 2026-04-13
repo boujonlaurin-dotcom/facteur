@@ -483,8 +483,6 @@ class EditorialPipelineService:
                 if sw:
                     s.intro_text = sw.intro_text
                     s.transition_text = sw.transition_text
-                    if sw.recul_intro and s.deep_article:
-                        s.deep_article.recul_intro = sw.recul_intro
         elif isinstance(writing_raw, Exception):
             logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
 

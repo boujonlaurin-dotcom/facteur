@@ -78,7 +78,6 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
     @JsonKey(name: 'note_text') String? noteText,
-    @JsonKey(name: 'recul_intro') String? reculIntro,
     String? badge, // "actu", "pas_de_recul", "pepite", "coup_de_coeur"
   }) = _DigestItem;
 

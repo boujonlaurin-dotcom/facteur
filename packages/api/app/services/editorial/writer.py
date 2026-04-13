@@ -139,7 +139,6 @@ class EditorialWriterService:
                     topic_id=s.get("topic_id", ""),
                     intro_text=s.get("intro_text", ""),
                     transition_text=s.get("transition_text"),
-                    recul_intro=s.get("recul_intro"),
                 )
                 for s in raw_subjects
                 if s.get("topic_id") and s.get("intro_text")

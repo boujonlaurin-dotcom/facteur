@@ -7,15 +7,20 @@ import 'editorial_badge.dart';
 
 /// Companion block for the deep analysis article ("Pas de recul").
 /// Displayed in the expanded toggle state of a topic.
+///
+/// When [introText] is provided, it is rendered at the top of the block as the
+/// subject's editorial context (formerly the separate "De quoi on parle ?"
+/// card, merged here to reduce visual clutter — see
+/// `docs/maintenance/maintenance-merge-intro-pas-de-recul.md`).
 class PasDeReculBlock extends StatelessWidget {
   final DigestItem deepArticle;
-  final String? reculIntro;
+  final String? introText;
   final VoidCallback? onTap;
 
   const PasDeReculBlock({
     super.key,
     required this.deepArticle,
-    this.reculIntro,
+    this.introText,
     this.onTap,
   });
 
@@ -48,19 +53,19 @@ class PasDeReculBlock extends StatelessWidget {
                 child: badgeChip,
               ),
 
-            // Recul intro
-            if (reculIntro != null) ...[
+            // Intro text (subject context + bridge toward the deep article)
+            if (introText != null) ...[
               Text(
-                reculIntro!,
+                introText!,
                 style: TextStyle(
                   fontSize: 14,
-                  fontStyle: FontStyle.italic,
+                  height: 1.5,
                   color: isDark
                       ? Colors.white.withValues(alpha: 0.85)
                       : colors.textSecondary,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
             ],
 
             // Title + thumbnail row

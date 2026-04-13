@@ -1397,7 +1397,6 @@ class DigestService:
                         "badge": "pas_de_recul",
                         "match_reason": s.deep_article.match_reason,
                         "published_at": s.deep_article.published_at.isoformat(),
-                        "recul_intro": s.deep_article.recul_intro,
                     }
                     if s.deep_article
                     else None,
@@ -1789,7 +1788,6 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
-                    recul_intro=art_data.get("recul_intro"),
                     is_followed_source=art_data.get("is_user_source", False),
                     recommendation_reason=None,
                     is_read=action_state["is_read"],

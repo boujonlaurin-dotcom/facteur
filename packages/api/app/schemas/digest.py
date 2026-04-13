@@ -68,7 +68,6 @@ class DigestTopicArticle(BaseModel):
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
     badge: str | None = None  # "actu" | "pas_de_recul"
-    recul_intro: str | None = None
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
@@ -153,7 +152,6 @@ class DigestItem(BaseModel):
         None, description="Detailed scoring breakdown with contributions"
     )
     badge: str | None = None  # "actu" | "pas_de_recul" | "pepite" | "coup_de_coeur"
-    recul_intro: str | None = None
 
     # User action tracking (default: no action yet)
     is_read: bool = False
