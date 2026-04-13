@@ -92,6 +92,51 @@ class EditorialPipelineService:
             duration_ms=round(cluster_time * 1000, 2),
         )
 
+        # ÉTAPE 1A-bis: Mode-aware cluster filtering.
+        # 1) Serein — drop clusters flagged anxious (defence-in-depth on top
+        #    of the SQL-level apply_serein_filter already applied upstream).
+        # 2) Both modes — cap faits divers + sport to at most 1 cluster each
+        #    so the digest isn't dominated by these lower-priority topics.
+        from app.services.recommendation.filter_presets import (
+            cap_low_priority_clusters,
+            is_cluster_serein_compatible,
+        )
+
+        pre_filter_count = len(clusters)
+        if mode == "serein":
+            clusters = [c for c in clusters if is_cluster_serein_compatible(c)]
+            logger.info(
+                "editorial_pipeline.serein_cluster_filter",
+                before=pre_filter_count,
+                after=len(clusters),
+            )
+            if not clusters:
+                logger.warning("editorial_pipeline.serein_no_compatible_clusters")
+                return None
+
+        # Cap low-priority clusters (sport + faits divers) — applies to both
+        # modes. Clusters are sorted by size desc so the largest — typically
+        # the most trending — is kept. Skip the cap if the remaining non-
+        # low-priority pool would be too small to pick 5 subjects.
+        sorted_by_size = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)
+        capped = cap_low_priority_clusters(sorted_by_size)
+        if len(capped) >= 5:
+            dropped = len(sorted_by_size) - len(capped)
+            clusters = capped
+            logger.info(
+                "editorial_pipeline.low_priority_cap_applied",
+                mode=mode,
+                dropped=dropped,
+                remaining=len(clusters),
+            )
+        else:
+            logger.info(
+                "editorial_pipeline.low_priority_cap_skipped",
+                mode=mode,
+                reason="insufficient_non_low_priority_pool",
+                capped_size=len(capped),
+            )
+
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert
         step_start = time.time()
         trending_clusters = [c for c in clusters if c.is_trending]
@@ -450,8 +495,6 @@ class EditorialPipelineService:
                 if sw:
                     s.intro_text = sw.intro_text
                     s.transition_text = sw.transition_text
-                    if sw.recul_intro and s.deep_article:
-                        s.deep_article.recul_intro = sw.recul_intro
         elif isinstance(writing_raw, Exception):
             logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
 

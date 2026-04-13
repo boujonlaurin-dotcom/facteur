@@ -700,8 +700,6 @@ mixin _$DigestItem {
       throw _privateConstructorUsedError;
   @JsonKey(name: 'note_text')
   String? get noteText => throw _privateConstructorUsedError;
-  @JsonKey(name: 'recul_intro')
-  String? get reculIntro => throw _privateConstructorUsedError;
   String? get badge => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -743,7 +741,6 @@ abstract class $DigestItemCopyWith<$Res> {
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
-      @JsonKey(name: 'recul_intro') String? reculIntro,
       String? badge});
 
   $SourceMiniCopyWith<$Res>? get source;
@@ -784,7 +781,6 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
-    Object? reculIntro = freezed,
     Object? badge = freezed,
   }) {
     return _then(_value.copyWith(
@@ -872,10 +868,6 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.noteText
           : noteText // ignore: cast_nullable_to_non_nullable
               as String?,
-      reculIntro: freezed == reculIntro
-          ? _value.reculIntro
-          : reculIntro // ignore: cast_nullable_to_non_nullable
-              as String?,
       badge: freezed == badge
           ? _value.badge
           : badge // ignore: cast_nullable_to_non_nullable
@@ -944,7 +936,6 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
-      @JsonKey(name: 'recul_intro') String? reculIntro,
       String? badge});
 
   @override
@@ -985,7 +976,6 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
-    Object? reculIntro = freezed,
     Object? badge = freezed,
   }) {
     return _then(_$DigestItemImpl(
@@ -1073,10 +1063,6 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.noteText
           : noteText // ignore: cast_nullable_to_non_nullable
               as String?,
-      reculIntro: freezed == reculIntro
-          ? _value.reculIntro
-          : reculIntro // ignore: cast_nullable_to_non_nullable
-              as String?,
       badge: freezed == badge
           ? _value.badge
           : badge // ignore: cast_nullable_to_non_nullable
@@ -1114,7 +1100,6 @@ class _$DigestItemImpl implements _DigestItem {
       @JsonKey(name: 'is_dismissed') this.isDismissed = false,
       @JsonKey(name: 'recommendation_reason') this.recommendationReason,
       @JsonKey(name: 'note_text') this.noteText,
-      @JsonKey(name: 'recul_intro') this.reculIntro,
       this.badge})
       : _topics = topics;
 
@@ -1192,14 +1177,11 @@ class _$DigestItemImpl implements _DigestItem {
   @JsonKey(name: 'note_text')
   final String? noteText;
   @override
-  @JsonKey(name: 'recul_intro')
-  final String? reculIntro;
-  @override
   final String? badge;
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText, reculIntro: $reculIntro, badge: $badge)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText, badge: $badge)';
   }
 
   @override
@@ -1239,8 +1221,6 @@ class _$DigestItemImpl implements _DigestItem {
                 other.recommendationReason == recommendationReason) &&
             (identical(other.noteText, noteText) ||
                 other.noteText == noteText) &&
-            (identical(other.reculIntro, reculIntro) ||
-                other.reculIntro == reculIntro) &&
             (identical(other.badge, badge) || other.badge == badge));
   }
 
@@ -1269,7 +1249,6 @@ class _$DigestItemImpl implements _DigestItem {
         isDismissed,
         recommendationReason,
         noteText,
-        reculIntro,
         badge
       ]);
 
@@ -1315,7 +1294,6 @@ abstract class _DigestItem implements DigestItem {
       @JsonKey(name: 'recommendation_reason')
       final DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') final String? noteText,
-      @JsonKey(name: 'recul_intro') final String? reculIntro,
       final String? badge}) = _$DigestItemImpl;
 
   factory _DigestItem.fromJson(Map<String, dynamic> json) =
@@ -1380,9 +1358,6 @@ abstract class _DigestItem implements DigestItem {
   @override
   @JsonKey(name: 'note_text')
   String? get noteText;
-  @override
-  @JsonKey(name: 'recul_intro')
-  String? get reculIntro;
   @override
   String? get badge;
   @override

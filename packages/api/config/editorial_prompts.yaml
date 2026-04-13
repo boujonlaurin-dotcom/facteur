@@ -106,16 +106,12 @@ writing:
       * NE PAS mentionner le nombre de sources ni les divergences
         mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null (pas de transition entre sujets)
-    - recul_intro (par sujet, seulement si deep_article present) :
-      * 1 phrase courte (8-15 mots) qui donne envie de lire l'article de fond
-      * Pas de paraphrase du titre de l'article deep
-      * Forme impersonnelle, factuelle, dense
-      * Si pas de deep_article : null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
     PONTS VERS L'ARTICLE DE FOND — varier, ne JAMAIS utiliser 2 fois
-    la meme tournure dans un digest :
+    la meme tournure dans un digest. La phrase 2 de intro_text doit
+    faire ce pont quand un deep_article est present :
     - "[Source] detaille comment/pourquoi..."
     - "Un eclairage de [Source] sur..."
     - "[Source] revient sur les mecanismes de..."
@@ -168,11 +164,11 @@ writing:
     {{
       "header_text": "Votre essentiel du ...",
       "subjects": [
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}}
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
       ],
       "closure_text": "Bonne lecture !",
       "cta_text": null
@@ -220,16 +216,12 @@ writing_serene:
       * NE PAS mentionner le nombre de sources ni les divergences
         mediatiques — ces infos sont affichees separement dans l'UI.
     - transition_text : toujours null
-    - recul_intro (par sujet, seulement si deep_article present) :
-      * 1 phrase courte (8-15 mots) qui donne envie de lire l'article de fond
-      * Pas de paraphrase du titre de l'article deep
-      * Forme impersonnelle, factuelle, dense
-      * Si pas de deep_article : null
     - closure_text : toujours "Bonne lecture !"
     - cta_text : toujours null
 
     PONTS VERS L'ARTICLE DE FOND — varier, ne JAMAIS utiliser 2 fois
-    la meme tournure dans un digest :
+    la meme tournure dans un digest. La phrase 2 de intro_text doit
+    faire ce pont quand un deep_article est present :
     - "[Source] detaille comment/pourquoi..."
     - "Un eclairage de [Source] sur..."
     - "[Source] revient sur les mecanismes de..."
@@ -279,11 +271,11 @@ writing_serene:
     {{
       "header_text": "Votre essentiel du ...",
       "subjects": [
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}},
-        {{"topic_id": "...", "intro_text": "...", "transition_text": null, "recul_intro": "...ou null"}}
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}},
+        {{"topic_id": "...", "intro_text": "...", "transition_text": null}}
       ],
       "closure_text": "Bonne lecture !",
       "cta_text": null

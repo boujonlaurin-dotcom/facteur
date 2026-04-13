@@ -171,8 +171,25 @@ class DigestGenerationJob:
                     if global_candidates:
                         for mode in ("pour_vous", "serein"):
                             try:
+                                # Serein: re-fetch a mode-specific pool
+                                # filtered by apply_serein_filter at the SQL
+                                # level so the editorial pipeline clusters on
+                                # serein-compatible articles only.
+                                mode_candidates = (
+                                    global_candidates
+                                    if mode == "pour_vous"
+                                    else await self._get_global_candidates(
+                                        session, mode="serein"
+                                    )
+                                )
+                                if not mode_candidates:
+                                    logger.warning(
+                                        "digest_generation_editorial_empty_pool",
+                                        mode=mode,
+                                    )
+                                    continue
                                 ctx = await pipeline.compute_global_context(
-                                    global_candidates, mode=mode
+                                    mode_candidates, mode=mode
                                 )
                                 if ctx:
                                     from app.services.digest_selector import (
@@ -253,6 +270,7 @@ class DigestGenerationJob:
     async def _get_global_candidates(
         self,
         session: AsyncSession,
+        mode: str = "pour_vous",
     ) -> list[Any]:
         """Fetch a user-agnostic global candidate pool for editorial context.
 
@@ -260,20 +278,34 @@ class DigestGenerationJob:
         regardless of whether the first user in the list has a warm pool.
         Falls back to a broad recent-content query so the pipeline never
         cold-paths because of one unlucky user.
+
+        Args:
+            session: Async SQLAlchemy session.
+            mode: "pour_vous" (default, no filter) or "serein" (apply
+                ``apply_serein_filter`` so anxious articles are excluded
+                from the clustering pool).
         """
         from datetime import UTC, timedelta
 
         from sqlalchemy.orm import selectinload
 
         from app.models.content import Content
+        from app.models.source import Source
 
         # Content.published_at is stored as tz-aware, so the comparison
         # value must also be tz-aware (and utcnow() is deprecated in 3.12).
         cutoff = datetime.datetime.now(UTC) - timedelta(hours=self.hours_lookback)
+        # Serein filter references Source.theme so we need an explicit join.
+        # The join is harmless for pour_vous (every Content has a Source) but
+        # we keep it behind the mode branch to match existing behaviour.
+        stmt = select(Content).options(selectinload(Content.source))
+        if mode == "serein":
+            from app.services.recommendation.filter_presets import apply_serein_filter
+
+            stmt = stmt.join(Source, Content.source_id == Source.id)
+            stmt = apply_serein_filter(stmt)
         stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.published_at >= cutoff)
+            stmt.where(Content.published_at >= cutoff)
             .order_by(Content.published_at.desc())
             .limit(200)
         )
@@ -281,7 +313,11 @@ class DigestGenerationJob:
             result = await session.execute(stmt)
             return list(result.scalars().all())
         except Exception as e:
-            logger.error("digest_generation_global_candidates_failed", error=str(e))
+            logger.error(
+                "digest_generation_global_candidates_failed",
+                mode=mode,
+                error=str(e),
+            )
             return []
 
     async def _prune_old_highlights(

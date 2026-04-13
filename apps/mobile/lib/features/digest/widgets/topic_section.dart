@@ -9,11 +9,13 @@ import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/dismiss_banner.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/initial_circle.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -87,15 +89,6 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
 
-  /// Keys used to measure the editorial card and its header for the
-  /// sticky-header effect when the card is expanded.
-  final GlobalKey _editorialCardKey = GlobalKey();
-  final GlobalKey _editorialHeaderKey = GlobalKey();
-
-  /// Scroll position of the ancestor Scrollable. Used to drive the sticky
-  /// header translation when the editorial card is expanded.
-  ScrollPosition? _scrollPosition;
-
   @override
   void initState() {
     super.initState();
@@ -105,44 +98,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (widget.editorialMode) {
-      _scrollPosition = Scrollable.maybeOf(context)?.position;
-    }
-  }
-
-  @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
-  }
-
-  /// Compute how much the editorial header should be translated vertically
-  /// to stay pinned at the top of the viewport while the card is expanded.
-  ///
-  /// Returns 0 when the card is not yet scrolled past the pin line, and
-  /// clamps to `cardHeight - headerHeight` so the sticky header releases
-  /// when the card is about to scroll off-screen.
-  double _computeStickyHeaderTranslation(BuildContext context) {
-    if (!_isExpanded) return 0;
-    final cardContext = _editorialCardKey.currentContext;
-    final headerContext = _editorialHeaderKey.currentContext;
-    if (cardContext == null || headerContext == null) return 0;
-
-    final cardBox = cardContext.findRenderObject() as RenderBox?;
-    final headerBox = headerContext.findRenderObject() as RenderBox?;
-    if (cardBox == null || !cardBox.hasSize) return 0;
-    if (headerBox == null || !headerBox.hasSize) return 0;
-
-    final cardTop = cardBox.localToGlobal(Offset.zero).dy;
-    final cardHeight = cardBox.size.height;
-    final headerHeight = headerBox.size.height;
-    final pinLine = MediaQuery.of(context).padding.top;
-
-    final maxTranslate =
-        (cardHeight - headerHeight).clamp(0.0, double.infinity);
-    return (pinLine - cardTop).clamp(0.0, maxTranslate);
   }
 
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
@@ -204,8 +162,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
 
     final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
-    // Badge chip above card + 8px safety margin for text estimation variance
-    return imageHeight + bodyHeight + _footerHeight + _badgeHeight + 8.0;
+    // Badge chip above card (only outside editorial mode)
+    // + 8px safety margin for text estimation variance
+    final badgeHeight = widget.editorialMode ? 0.0 : _badgeHeight;
+    return imageHeight + bodyHeight + _footerHeight + badgeHeight + 8.0;
   }
 
   /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
@@ -242,24 +202,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       if (actuArticles.isEmpty) return const SizedBox.shrink();
       final isActuMulti = actuArticles.length > 1;
 
-      // Natural header (inside the Column), fades out when the sticky
-      // overlay takes over.
+      // Plain header pinned at the top of the card (no sticky overlay).
+      // The previous sticky-overlay implementation was fragile across route
+      // transitions and Riverpod-driven rebuilds — see git history.
       final naturalHeader = Padding(
-        key: _editorialHeaderKey,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-        child: _isExpanded && _scrollPosition != null
-            ? AnimatedBuilder(
-                animation: _scrollPosition!,
-                builder: (context, child) {
-                  final translation = _computeStickyHeaderTranslation(context);
-                  return Opacity(
-                    opacity: translation > 0 ? 0 : 1,
-                    child: child,
-                  );
-                },
-                child: _buildHeader(context, colors, isDark, topic),
-              )
-            : _buildHeader(context, colors, isDark, topic),
+        child: _buildHeader(context, colors, isDark, topic),
       );
 
       return AnimatedSize(
@@ -283,73 +231,23 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: Stack(
-              children: [
-                // Card content (background + natural header + body)
-                Container(
-                  key: _editorialCardKey,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.11)
-                      : Colors.black.withValues(alpha: 0.07),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      naturalHeader,
-                      const SizedBox(height: 8),
-                      if (_isExpanded)
-                        _buildExpandedEditorial(colors, isDark, topic,
-                            actuArticles, isActuMulti)
-                      else
-                        _buildCompactEditorialCard(
-                            colors, isDark, topic, actuArticles),
-                    ],
-                  ),
-                ),
-                // Sticky header overlay — floats at the top of the
-                // viewport while the card is scrolled past its natural
-                // position, giving a "fil contenu" reading flow.
-                if (_isExpanded && _scrollPosition != null)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: AnimatedBuilder(
-                      animation: _scrollPosition!,
-                      builder: (context, child) {
-                        final translation =
-                            _computeStickyHeaderTranslation(context);
-                        if (translation <= 0) {
-                          return const SizedBox.shrink();
-                        }
-                        return Transform.translate(
-                          offset: Offset(0, translation),
-                          child: child,
-                        );
-                      },
-                      child: Material(
-                        color: isDark
-                            ? const Color(0xFF231B12)
-                            : const Color(0xFFE8DBC1),
-                        elevation: 0,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: colors.border.withValues(
-                                    alpha: isDark ? 0.32 : 0.22),
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                          padding:
-                              const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                          child: _buildHeader(
-                              context, colors, isDark, topic),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            child: Container(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.11)
+                  : Colors.black.withValues(alpha: 0.07),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  naturalHeader,
+                  const SizedBox(height: 8),
+                  if (_isExpanded)
+                    _buildExpandedEditorial(colors, isDark, topic,
+                        actuArticles, isActuMulti)
+                  else
+                    _buildCompactEditorialCard(
+                        colors, isDark, topic, actuArticles),
+                ],
+              ),
             ),
           ),
         ),
@@ -769,7 +667,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            // ── Articles (avant "De quoi on parle") ──
+            // ── Articles actu ──
             const SizedBox(height: 8),
             if (isActuMulti) ...[
               LayoutBuilder(
@@ -809,60 +707,31 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               const SizedBox(height: 8),
             ],
 
-            // ── Carte "De quoi on parle ?" ──
-            if (topic.introText != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.23),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border(
-                      left: BorderSide(
-                        width: 3,
-                        color: colors.textSecondary.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'De quoi on parle ?',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: colors.textSecondary.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        topic.introText!,
-                        style: TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.85)
-                              : colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            // ── Pas de recul ──
+            // ── Pas de recul (intègre le contexte du sujet) ──
             if (deepArticle != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: PasDeReculBlock(
                   deepArticle: deepArticle,
-                  reculIntro: deepArticle.reculIntro,
+                  introText: topic.introText,
                   onTap: () => widget.onArticleTap(deepArticle),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ] else if (topic.introText != null) ...[
+              // Fallback : sujet sans deep article → intro text en
+              // paragraphe discret (pas de carte).
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  topic.introText!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.75)
+                        : colors.textSecondary.withValues(alpha: 0.85),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -882,7 +751,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   // "Comparer les sources" handler
   // ---------------------------------------------------------------------------
 
-  Future<void> _handleCompare() async {
+  void _handleCompare() {
     final articles = widget.editorialMode
         ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
         : widget.topic.articles;
@@ -898,7 +767,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getPerspectives(pivotId);
 
-    if (!context.mounted) return;
+    // Kick off the request immediately and show the sheet without awaiting,
+    // so the bottom sheet animates in instantly with a skeleton state instead
+    // of a 2-3s freeze on the trigger button.
+    final repository = ref.read(feedRepositoryProvider);
+    final perspectivesFuture = repository.getPerspectives(article.contentId);
 
     showModalBottomSheet<void>(
       context: context,
@@ -1179,7 +1052,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       itemBuilder: (context, index) {
         final article = articles[index];
         final imageVisible = _imageWillRender(article);
-        final badgeChip = EditorialBadge.chip(article.badge, context: context);
+        final badgeChip = widget.editorialMode
+            ? null
+            : EditorialBadge.chip(article.badge, context: context);
         final card = FeedCard(
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
           content: _convertToContent(article),

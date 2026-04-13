@@ -178,8 +178,9 @@ class TestDigestJobConfiguration:
             digest_trigger = captured_triggers.get('daily_digest')
             assert digest_trigger is not None, "daily_digest trigger not found"
             
-            # Verify timezone
-            assert digest_trigger.timezone == pytz.timezone('Europe/Paris'), \
+            # Verify timezone (compare by IANA name — apscheduler may return
+            # either a pytz tz or a zoneinfo.ZoneInfo depending on version).
+            assert str(digest_trigger.timezone) == 'Europe/Paris', \
                 f"Expected Europe/Paris timezone, got {digest_trigger.timezone}"
     
     def test_digest_job_cron_expression(self):

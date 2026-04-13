@@ -95,7 +95,6 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : DigestRecommendationReason.fromJson(
               json['recommendation_reason'] as Map<String, dynamic>),
       noteText: json['note_text'] as String?,
-      reculIntro: json['recul_intro'] as String?,
       badge: json['badge'] as String?,
     );
 
@@ -122,7 +121,6 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
       'note_text': instance.noteText,
-      'recul_intro': instance.reculIntro,
       'badge': instance.badge,
     };
 

@@ -5,6 +5,11 @@
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-.}"
 
+# Paths des outils installés
+PYTEST="${PROJECT_DIR}/.venv/bin/pytest"
+FLUTTER="/opt/flutter/bin/flutter"
+export CI=true
+
 # Détecte les fichiers modifiés (staged + unstaged) par rapport à la branche base
 changed_files=$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null || git -C "$PROJECT_DIR" diff --name-only 2>/dev/null)
 
@@ -22,7 +27,7 @@ errors=()
 if $has_python; then
   echo "STOP-VERIFY: Lancement pytest..."
   if [ -d "$PROJECT_DIR/packages/api" ]; then
-    output=$(cd "$PROJECT_DIR/packages/api" && python -m pytest -x -q --tb=short 2>&1)
+    output=$(cd "$PROJECT_DIR/packages/api" && PYTHONPATH="$PROJECT_DIR/packages/api" "$PYTEST" -x -q --tb=short 2>&1)
     rc=$?
     echo "$output" | tail -15
     if [ $rc -ne 0 ]; then
@@ -37,7 +42,7 @@ fi
 if $has_dart; then
   echo "STOP-VERIFY: Lancement flutter test..."
   if [ -d "$PROJECT_DIR/apps/mobile" ]; then
-    output=$(cd "$PROJECT_DIR/apps/mobile" && flutter test --no-pub 2>&1)
+    output=$(cd "$PROJECT_DIR/apps/mobile" && "$FLUTTER" test --no-pub 2>&1)
     rc=$?
     echo "$output" | tail -15
     if [ $rc -ne 0 ]; then
