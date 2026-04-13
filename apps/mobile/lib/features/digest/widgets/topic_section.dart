@@ -751,7 +751,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   // "Comparer les sources" handler
   // ---------------------------------------------------------------------------
 
-  void _handleCompare() {
+  Future<void> _handleCompare() async {
     final articles = widget.editorialMode
         ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
         : widget.topic.articles;
@@ -766,12 +766,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     if (pivotId.isEmpty) return;
     final repository = ref.read(feedRepositoryProvider);
     final response = await repository.getPerspectives(pivotId);
-
-    // Kick off the request immediately and show the sheet without awaiting,
-    // so the bottom sheet animates in instantly with a skeleton state instead
-    // of a 2-3s freeze on the trigger button.
-    final repository = ref.read(feedRepositoryProvider);
-    final perspectivesFuture = repository.getPerspectives(article.contentId);
+    if (!mounted) return;
 
     showModalBottomSheet<void>(
       context: context,
