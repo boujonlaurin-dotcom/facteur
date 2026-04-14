@@ -189,17 +189,17 @@ class _FeedCardState extends State<FeedCard>
                 // 3. Footer (Source + Actions) — outside tap area
                 Container(
                   decoration: BoxDecoration(
-                    color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                    color: colors.backgroundSecondary.withOpacity(0.5),
                     border: Border(
                       top: BorderSide(
-                        color: colors.textSecondary.withValues(alpha: 0.1),
+                        color: colors.textSecondary.withOpacity(0.1),
                         width: 1,
                       ),
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space3,
-                    vertical: FacteurSpacing.space1,
+                    horizontal: 10,
+                    vertical: 3,
                   ),
                   child: Row(
                     children: [
@@ -215,7 +215,7 @@ class _FeedCardState extends State<FeedCard>
                               behavior: HitTestBehavior.opaque,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 3),
+                                    horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
                                   borderRadius: BorderRadius.circular(8),
@@ -229,24 +229,25 @@ class _FeedCardState extends State<FeedCard>
                                         borderRadius: BorderRadius.circular(4),
                                         child: FacteurImage(
                                           imageUrl: widget.content.source.logoUrl!,
-                                          width: 16,
-                                          height: 16,
+                                          width: 14,
+                                          height: 14,
                                           fit: BoxFit.cover,
                                           errorWidget: (context) =>
                                               _buildSourcePlaceholder(colors),
                                         ),
                                       ),
-                                      const SizedBox(width: FacteurSpacing.space2),
+                                      const SizedBox(width: 6),
                                     ] else ...[
                                       _buildSourcePlaceholder(colors),
-                                      const SizedBox(width: FacteurSpacing.space2),
+                                      const SizedBox(width: 6),
                                     ],
                                     Flexible(
                                       child: Text(
                                         widget.content.source.name,
-                                        style: textTheme.labelMedium?.copyWith(
+                                        style: textTheme.labelSmall?.copyWith(
                                           color: colors.textPrimary,
                                           fontWeight: FontWeight.w600,
+                                          fontSize: 11,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -264,7 +265,7 @@ class _FeedCardState extends State<FeedCard>
                               const SizedBox(width: 4),
                               Icon(
                                 PhosphorIcons.star(),
-                                size: 11,
+                                size: 10,
                                 color: colors.textTertiary,
                               ),
                             ] else if (widget.hasActiveFilter && widget.onFollowSource != null) ...[
@@ -274,7 +275,7 @@ class _FeedCardState extends State<FeedCard>
                                 behavior: HitTestBehavior.opaque,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
+                                      horizontal: 7, vertical: 3),
                                   decoration: BoxDecoration(
                                     color: Color.lerp(colors.backgroundSecondary,
                                         Colors.black, 0.008),
@@ -288,12 +289,13 @@ class _FeedCardState extends State<FeedCard>
                                         style: textTheme.labelSmall?.copyWith(
                                           color: colors.textTertiary,
                                           fontWeight: FontWeight.w500,
+                                          fontSize: 10,
                                         ),
                                       ),
                                       const SizedBox(width: 2),
                                       Icon(
                                         PhosphorIcons.plus(),
-                                        size: 12,
+                                        size: 11,
                                         color: colors.textTertiary,
                                       ),
                                     ],
@@ -306,7 +308,7 @@ class _FeedCardState extends State<FeedCard>
                             const SizedBox(width: FacteurSpacing.space2),
                             Icon(
                               PhosphorIcons.clock(),
-                              size: 12,
+                              size: 11,
                               color: colors.textSecondary,
                             ),
                             const SizedBox(width: 3),
@@ -317,7 +319,7 @@ class _FeedCardState extends State<FeedCard>
                                   .replaceAll('il y a ', ''),
                               style: textTheme.labelSmall?.copyWith(
                                 color: colors.textSecondary,
-                                fontSize: 11,
+                                fontSize: 10,
                               ),
                             ),
 
@@ -326,11 +328,11 @@ class _FeedCardState extends State<FeedCard>
                               const SizedBox(width: FacteurSpacing.space2),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
+                                    horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: widget.isSourceSubscribed
-                                      ? colors.success.withValues(alpha: 0.15)
-                                      : colors.warning.withValues(alpha: 0.15),
+                                      ? colors.success.withOpacity(0.15)
+                                      : colors.warning.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -342,7 +344,7 @@ class _FeedCardState extends State<FeedCard>
                                               PhosphorIconsStyle.fill)
                                           : PhosphorIcons.lock(
                                               PhosphorIconsStyle.fill),
-                                      size: 10,
+                                      size: 9,
                                       color: widget.isSourceSubscribed
                                           ? colors.success
                                           : colors.warning,
@@ -357,7 +359,7 @@ class _FeedCardState extends State<FeedCard>
                                             ? colors.success
                                             : colors.warning,
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 10,
+                                        fontSize: 9,
                                       ),
                                     ),
                                   ],
@@ -371,13 +373,13 @@ class _FeedCardState extends State<FeedCard>
                               Flexible(
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
+                                      horizontal: 5, vertical: 2),
                                   decoration: BoxDecoration(
                                     color:
-                                        colors.textSecondary.withValues(alpha: 0.14),
+                                        colors.textSecondary.withOpacity(0.14),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: colors.textTertiary.withValues(alpha: 0.20),
+                                      color: colors.textTertiary.withOpacity(0.20),
                                       width: 0.5,
                                     ),
                                   ),
@@ -386,7 +388,7 @@ class _FeedCardState extends State<FeedCard>
                                     style: TextStyle(
                                       color: colors.textSecondary,
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 11,
+                                      fontSize: 10,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -408,13 +410,13 @@ class _FeedCardState extends State<FeedCard>
                               onTap: widget.onSave,
                               onLongPress: widget.onSaveLongPress,
                               child: Container(
-                                padding: const EdgeInsets.all(6),
+                                padding: const EdgeInsets.all(5),
                                 child: Icon(
                                   widget.isSaved
                                       ? PhosphorIcons.bookmarkSimple(
                                           PhosphorIconsStyle.fill)
                                       : PhosphorIcons.bookmarkSimple(),
-                                  size: 20,
+                                  size: 18,
                                   color: widget.isSaved
                                       ? colors.primary
                                       : colors.textSecondary,
@@ -441,10 +443,10 @@ class _FeedCardState extends State<FeedCard>
                               onTap: widget.onNotInterested,
                               borderRadius: BorderRadius.circular(12),
                               child: Container(
-                                padding: const EdgeInsets.all(6),
+                                padding: const EdgeInsets.all(5),
                                 child: Icon(
                                   PhosphorIcons.eyeSlash(),
-                                  size: 20,
+                                  size: 18,
                                   color: colors.textSecondary,
                                 ),
                               ),
@@ -469,11 +471,11 @@ class _FeedCardState extends State<FeedCard>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.9),
+                  color: colors.primary.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -548,7 +550,7 @@ class _FeedCardState extends State<FeedCard>
             Text(
               stripHtml(widget.content.description!),
               style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary.withValues(alpha: 0.85),
+                color: colors.textSecondary.withOpacity(0.85),
                 height: 1.3,
                 fontSize: widget.descriptionFontSize,
               ),
@@ -583,8 +585,8 @@ class _FeedCardState extends State<FeedCard>
 
   Widget _buildSourcePlaceholder(FacteurColors colors) {
     return Container(
-      width: 16,
-      height: 16,
+      width: 14,
+      height: 14,
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
         borderRadius: BorderRadius.circular(4),
@@ -595,7 +597,7 @@ class _FeedCardState extends State<FeedCard>
               ? widget.content.source.name.substring(0, 1).toUpperCase()
               : '?',
           style: TextStyle(
-            fontSize: 9,
+            fontSize: 8,
             fontWeight: FontWeight.bold,
             color: colors.textSecondary,
           ),

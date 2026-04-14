@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from app.models.enums import ContentType
+from app.schemas.community import CommunityCarouselItem
 from app.schemas.content import SourceMini, parse_entity_strings
 
 
@@ -68,7 +69,6 @@ class DigestTopicArticle(BaseModel):
     is_followed_source: bool = False
     recommendation_reason: DigestRecommendationReason | None = None
     badge: str | None = None  # "actu" | "pas_de_recul"
-    recul_intro: str | None = None
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
@@ -111,6 +111,10 @@ class DigestTopic(BaseModel):
     divergence_analysis: str | None = None
     divergence_level: str | None = None  # "low" | "medium" | "high"
     perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
+    # Pivot content used to compute perspectives (cluster's most-recent article).
+    # Mobile re-uses this id when calling /perspectives so the bottom sheet
+    # count matches the header / bias spectrum bar. None on legacy digests.
+    representative_content_id: str | None = None
 
     class Config:
         from_attributes = True
@@ -153,7 +157,6 @@ class DigestItem(BaseModel):
         None, description="Detailed scoring breakdown with contributions"
     )
     badge: str | None = None  # "actu" | "pas_de_recul" | "pepite" | "coup_de_coeur"
-    recul_intro: str | None = None
 
     # User action tracking (default: no action yet)
     is_read: bool = False
@@ -265,6 +268,12 @@ class DigestResponse(BaseModel):
     coup_de_coeur: CoupDeCoeurResponse | None = None
     actu_decalee: PepiteResponse | None = None
     quote: QuoteResponse | None = None
+
+    # Community 🌻 carousel (most recently sunflowered articles)
+    community_carousel: list[CommunityCarouselItem] = Field(
+        default_factory=list,
+        description="Community recommendations carousel (most recently 🌻 articles)",
+    )
 
     class Config:
         from_attributes = True

@@ -31,7 +31,7 @@ class SectionDivider extends StatelessWidget {
             child: Container(
               width: 60,
               height: 2,
-              color: colors.primary.withValues(alpha: 0.3),
+              color: colors.primary.withOpacity(0.3),
             ),
           ),
         ],

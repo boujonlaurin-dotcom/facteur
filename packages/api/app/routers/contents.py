@@ -610,7 +610,11 @@ async def get_perspectives(
     )
     perspectives = perspectives_raw
 
-    # Filter out unknown perspectives — they don't add value to political comparison
+    # Filter out unknown perspectives — they don't add value to political comparison.
+    # Mirrors the filter applied in editorial/pipeline.py when computing
+    # subject.perspective_count and subject.bias_distribution. Keeping both in
+    # sync is what makes the digest header / spectrum bar / bottom-sheet counts
+    # agree on the same number.
     perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
 
     # Calculate bias distribution (without "unknown")

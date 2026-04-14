@@ -44,15 +44,15 @@ class PepiteBlock extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : Colors.black.withValues(alpha: 0.04),
+            ? Colors.white.withOpacity(0.08)
+            : Colors.black.withOpacity(0.04),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: colors.border.withValues(alpha: isDark ? 0.22 : 0.16),
+          color: colors.border.withOpacity(isDark ? 0.22 : 0.16),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
@@ -83,7 +83,7 @@ class PepiteBlock extends StatelessWidget {
                         fontSize: 15,
                         height: 1.5,
                         color: isDark
-                            ? Colors.white.withValues(alpha: 0.8)
+                            ? Colors.white.withOpacity(0.8)
                             : colors.textSecondary,
                       ),
                     ),
@@ -96,7 +96,7 @@ class PepiteBlock extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
             child: FeedCard(
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
               onTap: () => onTap(item),

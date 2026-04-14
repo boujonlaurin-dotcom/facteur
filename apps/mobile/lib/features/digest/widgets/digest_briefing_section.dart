@@ -12,8 +12,10 @@ import '../../feed/widgets/dismiss_banner.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
+import '../models/community_carousel_model.dart';
 import 'actu_decalee_block.dart';
 import 'closure_block.dart';
+import 'community_carousel_section.dart';
 import 'coup_de_coeur_block.dart';
 import 'pepite_block.dart';
 import 'quote_block.dart';
@@ -50,6 +52,8 @@ class DigestBriefingSection extends StatefulWidget {
   final String? ctaText;
   final int processedCount;
   final int dailyGoal;
+  final List<CommunityCarouselItem> communityCarousel;
+  final void Function(CommunityCarouselItem)? onCommunityArticleTap;
 
   const DigestBriefingSection({
     super.key,
@@ -75,6 +79,8 @@ class DigestBriefingSection extends StatefulWidget {
     this.ctaText,
     this.processedCount = 0,
     this.dailyGoal = 5,
+    this.communityCarousel = const [],
+    this.onCommunityArticleTap,
   });
 
   @override
@@ -182,11 +188,11 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
         // crème transparaître. Plus léger en haut, plus teinté en bas.
         // Alpha réduit pour laisser l'effet de flou "liquid glass" transparaître.
         final topColor = isDark
-            ? baseColor.withValues(alpha: 0.72)
-            : baseColor.withValues(alpha: 0.12);
+            ? baseColor.withOpacity(0.72)
+            : baseColor.withOpacity(0.12);
         final bottomColor = isDark
-            ? blendedEnd.withValues(alpha: 0.78)
-            : blendedEnd.withValues(alpha: 0.22);
+            ? blendedEnd.withOpacity(0.78)
+            : blendedEnd.withOpacity(0.22);
 
         return Container(
           margin: const EdgeInsets.only(top: 12, bottom: 8),
@@ -195,8 +201,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             boxShadow: [
               BoxShadow(
                 color: isDark
-                    ? Colors.black.withValues(alpha: 0.30)
-                    : baseColor.withValues(alpha: 0.18),
+                    ? Colors.black.withOpacity(0.30)
+                    : baseColor.withOpacity(0.18),
                 blurRadius: isDark ? 24 : 16,
                 offset: const Offset(0, 10),
               ),
@@ -215,8 +221,8 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
                   ),
                   border: Border.all(
                     color: isDark
-                        ? Colors.white.withValues(alpha: 0.14)
-                        : Colors.white.withValues(alpha: 0.38),
+                        ? Colors.white.withOpacity(0.14)
+                        : Colors.white.withOpacity(0.38),
                     width: 1,
                   ),
                   borderRadius: BorderRadius.circular(24),
@@ -312,7 +318,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.topics!.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (_, i) => TopicSection(
         topic: widget.topics![i],
         totalTopics: widget.topics!.length,
@@ -360,7 +366,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
             decoration: BoxDecoration(
               color: isDone
                   ? (isComplete ? colors.success : color)
-                  : colors.textTertiary.withValues(alpha: 0.25),
+                  : colors.textTertiary.withOpacity(0.25),
               borderRadius: BorderRadius.circular(1.25),
             ),
           );
@@ -460,6 +466,19 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       );
     }
 
+    // Community 🌻 carousel (if items available)
+    if (widget.communityCarousel.isNotEmpty) {
+      sections.add(const SectionDivider());
+      sections.add(
+        CommunityCarouselSection(
+          items: widget.communityCarousel,
+          onArticleTap: (item) {
+            widget.onCommunityArticleTap?.call(item);
+          },
+        ),
+      );
+    }
+
     // Closure block (always shown with fallback)
     sections.add(
       ClosureBlock(
@@ -472,7 +491,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: sections.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (_, i) => sections[i],
     );
   }
@@ -500,7 +519,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               Text(
                 'N\u00B0$rank',
                 style: TextStyle(
-                  color: colors.primary.withValues(alpha: 0.9),
+                  color: colors.primary.withOpacity(0.9),
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                   letterSpacing: 1.0,
@@ -557,7 +576,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
           child: Opacity(
             opacity: item.isRead || item.isDismissed ? 0.6 : 1.0,
             child: FeedCard(
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
               onTap: () => widget.onItemTap(item),

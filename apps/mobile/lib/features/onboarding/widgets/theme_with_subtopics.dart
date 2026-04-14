@@ -119,7 +119,7 @@ class ThemeChip extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: isSelected
-            ? theme.color.withValues(alpha: 0.15)
+            ? theme.color.withOpacity(0.15)
             : context.facteurColors.surface,
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
         border: Border.all(
@@ -133,7 +133,7 @@ class ThemeChip extends StatelessWidget {
             ? []
             : [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.black.withOpacity(0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 )
@@ -189,12 +189,12 @@ class SubtopicChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected
-              ? themeColor.withValues(alpha: 0.1)
+              ? themeColor.withOpacity(0.1)
               : context.facteurColors.surfacePaper,
           borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
             color: isSelected
-                ? themeColor.withValues(alpha: 0.5)
+                ? themeColor.withOpacity(0.5)
                 : context.facteurColors.surfaceElevated,
             width: 1,
           ),
@@ -250,12 +250,12 @@ class _EntityChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
-              ? themeColor.withValues(alpha: 0.1)
+              ? themeColor.withOpacity(0.1)
               : context.facteurColors.surfacePaper,
           borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
             color: isSelected
-                ? themeColor.withValues(alpha: 0.5)
+                ? themeColor.withOpacity(0.5)
                 : context.facteurColors.surfaceElevated,
             width: 1,
           ),

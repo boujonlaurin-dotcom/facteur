@@ -700,8 +700,6 @@ mixin _$DigestItem {
       throw _privateConstructorUsedError;
   @JsonKey(name: 'note_text')
   String? get noteText => throw _privateConstructorUsedError;
-  @JsonKey(name: 'recul_intro')
-  String? get reculIntro => throw _privateConstructorUsedError;
   String? get badge => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -743,7 +741,6 @@ abstract class $DigestItemCopyWith<$Res> {
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
-      @JsonKey(name: 'recul_intro') String? reculIntro,
       String? badge});
 
   $SourceMiniCopyWith<$Res>? get source;
@@ -784,7 +781,6 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
-    Object? reculIntro = freezed,
     Object? badge = freezed,
   }) {
     return _then(_value.copyWith(
@@ -872,10 +868,6 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.noteText
           : noteText // ignore: cast_nullable_to_non_nullable
               as String?,
-      reculIntro: freezed == reculIntro
-          ? _value.reculIntro
-          : reculIntro // ignore: cast_nullable_to_non_nullable
-              as String?,
       badge: freezed == badge
           ? _value.badge
           : badge // ignore: cast_nullable_to_non_nullable
@@ -944,7 +936,6 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
-      @JsonKey(name: 'recul_intro') String? reculIntro,
       String? badge});
 
   @override
@@ -985,7 +976,6 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? isDismissed = null,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
-    Object? reculIntro = freezed,
     Object? badge = freezed,
   }) {
     return _then(_$DigestItemImpl(
@@ -1073,10 +1063,6 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.noteText
           : noteText // ignore: cast_nullable_to_non_nullable
               as String?,
-      reculIntro: freezed == reculIntro
-          ? _value.reculIntro
-          : reculIntro // ignore: cast_nullable_to_non_nullable
-              as String?,
       badge: freezed == badge
           ? _value.badge
           : badge // ignore: cast_nullable_to_non_nullable
@@ -1114,7 +1100,6 @@ class _$DigestItemImpl implements _DigestItem {
       @JsonKey(name: 'is_dismissed') this.isDismissed = false,
       @JsonKey(name: 'recommendation_reason') this.recommendationReason,
       @JsonKey(name: 'note_text') this.noteText,
-      @JsonKey(name: 'recul_intro') this.reculIntro,
       this.badge})
       : _topics = topics;
 
@@ -1192,14 +1177,11 @@ class _$DigestItemImpl implements _DigestItem {
   @JsonKey(name: 'note_text')
   final String? noteText;
   @override
-  @JsonKey(name: 'recul_intro')
-  final String? reculIntro;
-  @override
   final String? badge;
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText, reculIntro: $reculIntro, badge: $badge)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText, badge: $badge)';
   }
 
   @override
@@ -1239,8 +1221,6 @@ class _$DigestItemImpl implements _DigestItem {
                 other.recommendationReason == recommendationReason) &&
             (identical(other.noteText, noteText) ||
                 other.noteText == noteText) &&
-            (identical(other.reculIntro, reculIntro) ||
-                other.reculIntro == reculIntro) &&
             (identical(other.badge, badge) || other.badge == badge));
   }
 
@@ -1269,7 +1249,6 @@ class _$DigestItemImpl implements _DigestItem {
         isDismissed,
         recommendationReason,
         noteText,
-        reculIntro,
         badge
       ]);
 
@@ -1315,7 +1294,6 @@ abstract class _DigestItem implements DigestItem {
       @JsonKey(name: 'recommendation_reason')
       final DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') final String? noteText,
-      @JsonKey(name: 'recul_intro') final String? reculIntro,
       final String? badge}) = _$DigestItemImpl;
 
   factory _DigestItem.fromJson(Map<String, dynamic> json) =
@@ -1381,9 +1359,6 @@ abstract class _DigestItem implements DigestItem {
   @JsonKey(name: 'note_text')
   String? get noteText;
   @override
-  @JsonKey(name: 'recul_intro')
-  String? get reculIntro;
-  @override
   String? get badge;
   @override
   @JsonKey(ignore: true)
@@ -1427,6 +1402,8 @@ mixin _$DigestTopic {
   List<SourceMini> get perspectiveSources => throw _privateConstructorUsedError;
   @JsonKey(name: 'divergence_level')
   String? get divergenceLevel => throw _privateConstructorUsedError;
+  @JsonKey(name: 'representative_content_id')
+  String? get representativeContentId => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -1458,7 +1435,9 @@ abstract class $DigestTopicCopyWith<$Res> {
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources') List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level') String? divergenceLevel});
+      @JsonKey(name: 'divergence_level') String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      String? representativeContentId});
 }
 
 /// @nodoc
@@ -1492,6 +1471,7 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
     Object? divergenceAnalysis = freezed,
     Object? perspectiveSources = null,
     Object? divergenceLevel = freezed,
+    Object? representativeContentId = freezed,
   }) {
     return _then(_value.copyWith(
       topicId: null == topicId
@@ -1566,6 +1546,10 @@ class _$DigestTopicCopyWithImpl<$Res, $Val extends DigestTopic>
           ? _value.divergenceLevel
           : divergenceLevel // ignore: cast_nullable_to_non_nullable
               as String?,
+      representativeContentId: freezed == representativeContentId
+          ? _value.representativeContentId
+          : representativeContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -1596,7 +1580,9 @@ abstract class _$$DigestTopicImplCopyWith<$Res>
       @JsonKey(name: 'bias_highlights') String? biasHighlights,
       @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources') List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level') String? divergenceLevel});
+      @JsonKey(name: 'divergence_level') String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      String? representativeContentId});
 }
 
 /// @nodoc
@@ -1628,6 +1614,7 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
     Object? divergenceAnalysis = freezed,
     Object? perspectiveSources = null,
     Object? divergenceLevel = freezed,
+    Object? representativeContentId = freezed,
   }) {
     return _then(_$DigestTopicImpl(
       topicId: null == topicId
@@ -1702,6 +1689,10 @@ class __$$DigestTopicImplCopyWithImpl<$Res>
           ? _value.divergenceLevel
           : divergenceLevel // ignore: cast_nullable_to_non_nullable
               as String?,
+      representativeContentId: freezed == representativeContentId
+          ? _value.representativeContentId
+          : representativeContentId // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -1729,7 +1720,8 @@ class _$DigestTopicImpl extends _DigestTopic {
       @JsonKey(name: 'divergence_analysis') this.divergenceAnalysis,
       @JsonKey(name: 'perspective_sources')
       final List<SourceMini> perspectiveSources = const [],
-      @JsonKey(name: 'divergence_level') this.divergenceLevel})
+      @JsonKey(name: 'divergence_level') this.divergenceLevel,
+      @JsonKey(name: 'representative_content_id') this.representativeContentId})
       : _subjects = subjects,
         _articles = articles,
         _biasDistribution = biasDistribution,
@@ -1818,10 +1810,13 @@ class _$DigestTopicImpl extends _DigestTopic {
   @override
   @JsonKey(name: 'divergence_level')
   final String? divergenceLevel;
+  @override
+  @JsonKey(name: 'representative_content_id')
+  final String? representativeContentId;
 
   @override
   String toString() {
-    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel)';
+    return 'DigestTopic(topicId: $topicId, label: $label, rank: $rank, reason: $reason, isTrending: $isTrending, isUne: $isUne, theme: $theme, topicScore: $topicScore, subjects: $subjects, articles: $articles, introText: $introText, transitionText: $transitionText, perspectiveCount: $perspectiveCount, biasDistribution: $biasDistribution, biasHighlights: $biasHighlights, divergenceAnalysis: $divergenceAnalysis, perspectiveSources: $perspectiveSources, divergenceLevel: $divergenceLevel, representativeContentId: $representativeContentId)';
   }
 
   @override
@@ -1856,31 +1851,36 @@ class _$DigestTopicImpl extends _DigestTopic {
             const DeepCollectionEquality()
                 .equals(other._perspectiveSources, _perspectiveSources) &&
             (identical(other.divergenceLevel, divergenceLevel) ||
-                other.divergenceLevel == divergenceLevel));
+                other.divergenceLevel == divergenceLevel) &&
+            (identical(
+                    other.representativeContentId, representativeContentId) ||
+                other.representativeContentId == representativeContentId));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      topicId,
-      label,
-      rank,
-      reason,
-      isTrending,
-      isUne,
-      theme,
-      topicScore,
-      const DeepCollectionEquality().hash(_subjects),
-      const DeepCollectionEquality().hash(_articles),
-      introText,
-      transitionText,
-      perspectiveCount,
-      const DeepCollectionEquality().hash(_biasDistribution),
-      biasHighlights,
-      divergenceAnalysis,
-      const DeepCollectionEquality().hash(_perspectiveSources),
-      divergenceLevel);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        topicId,
+        label,
+        rank,
+        reason,
+        isTrending,
+        isUne,
+        theme,
+        topicScore,
+        const DeepCollectionEquality().hash(_subjects),
+        const DeepCollectionEquality().hash(_articles),
+        introText,
+        transitionText,
+        perspectiveCount,
+        const DeepCollectionEquality().hash(_biasDistribution),
+        biasHighlights,
+        divergenceAnalysis,
+        const DeepCollectionEquality().hash(_perspectiveSources),
+        divergenceLevel,
+        representativeContentId
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -1917,8 +1917,9 @@ abstract class _DigestTopic extends DigestTopic {
       @JsonKey(name: 'divergence_analysis') final String? divergenceAnalysis,
       @JsonKey(name: 'perspective_sources')
       final List<SourceMini> perspectiveSources,
-      @JsonKey(name: 'divergence_level')
-      final String? divergenceLevel}) = _$DigestTopicImpl;
+      @JsonKey(name: 'divergence_level') final String? divergenceLevel,
+      @JsonKey(name: 'representative_content_id')
+      final String? representativeContentId}) = _$DigestTopicImpl;
   const _DigestTopic._() : super._();
 
   factory _DigestTopic.fromJson(Map<String, dynamic> json) =
@@ -1972,6 +1973,9 @@ abstract class _DigestTopic extends DigestTopic {
   @override
   @JsonKey(name: 'divergence_level')
   String? get divergenceLevel;
+  @override
+  @JsonKey(name: 'representative_content_id')
+  String? get representativeContentId;
   @override
   @JsonKey(ignore: true)
   _$$DigestTopicImplCopyWith<_$DigestTopicImpl> get copyWith =>
@@ -2522,27 +2526,28 @@ class _$DigestResponseImpl extends _DigestResponse {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      digestId,
-      userId,
-      targetDate,
-      generatedAt,
-      mode,
-      formatVersion,
-      const DeepCollectionEquality().hash(_items),
-      const DeepCollectionEquality().hash(_topics),
-      completionThreshold,
-      isCompleted,
-      completedAt,
-      isStaleFallback,
-      headerText,
-      closureText,
-      ctaText,
-      pepite,
-      coupDeCoeur,
-      actuDecalee,
-      quote);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        digestId,
+        userId,
+        targetDate,
+        generatedAt,
+        mode,
+        formatVersion,
+        const DeepCollectionEquality().hash(_items),
+        const DeepCollectionEquality().hash(_topics),
+        completionThreshold,
+        isCompleted,
+        completedAt,
+        isStaleFallback,
+        headerText,
+        closureText,
+        ctaText,
+        pepite,
+        coupDeCoeur,
+        actuDecalee,
+        quote
+      ]);
 
   @JsonKey(ignore: true)
   @override

@@ -79,7 +79,7 @@ class SourceListItem extends StatelessWidget {
                 ? Border.all(color: Colors.transparent, width: 1.5)
                 : isTrusted
                     ? Border.all(
-                        color: colors.primary.withValues(alpha: 0.3),
+                        color: colors.primary.withOpacity(0.3),
                         width: 1.5)
                     : Border.all(color: Colors.transparent, width: 1.5),
           ),
@@ -104,7 +104,7 @@ class SourceListItem extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: colors.secondary.withValues(alpha: 0.3),
+                              color: colors.secondary.withOpacity(0.3),
                             ),
                           ),
                         ),

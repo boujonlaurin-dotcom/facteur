@@ -95,7 +95,6 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
           : DigestRecommendationReason.fromJson(
               json['recommendation_reason'] as Map<String, dynamic>),
       noteText: json['note_text'] as String?,
-      reculIntro: json['recul_intro'] as String?,
       badge: json['badge'] as String?,
     );
 
@@ -122,7 +121,6 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_dismissed': instance.isDismissed,
       'recommendation_reason': instance.recommendationReason,
       'note_text': instance.noteText,
-      'recul_intro': instance.reculIntro,
       'badge': instance.badge,
     };
 
@@ -158,6 +156,7 @@ _$DigestTopicImpl _$$DigestTopicImplFromJson(Map<String, dynamic> json) =>
               .toList() ??
           const [],
       divergenceLevel: json['divergence_level'] as String?,
+      representativeContentId: json['representative_content_id'] as String?,
     );
 
 Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
@@ -180,6 +179,7 @@ Map<String, dynamic> _$$DigestTopicImplToJson(_$DigestTopicImpl instance) =>
       'divergence_analysis': instance.divergenceAnalysis,
       'perspective_sources': instance.perspectiveSources,
       'divergence_level': instance.divergenceLevel,
+      'representative_content_id': instance.representativeContentId,
     };
 
 _$DigestResponseImpl _$$DigestResponseImplFromJson(Map<String, dynamic> json) =>

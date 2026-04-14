@@ -23,7 +23,7 @@ class ArticleActionBar extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.backgroundSecondary.withValues(alpha: 0.5),
+        color: colors.backgroundSecondary.withOpacity(0.5),
         border: Border(
           top: BorderSide(color: colors.border),
         ),

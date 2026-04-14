@@ -232,7 +232,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: colors.textSecondary.withValues(alpha: 0.2),
+              color: colors.textSecondary.withOpacity(0.2),
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -276,7 +276,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: colors.textTertiary.withValues(alpha: 0.08),
+                              color: colors.textTertiary.withOpacity(0.08),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -367,7 +367,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           ),
         ),
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: colors.primary.withValues(alpha: 0.4)),
+          side: BorderSide(color: colors.primary.withOpacity(0.4)),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
@@ -381,7 +381,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.05),
+        color: colors.primary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -404,9 +404,9 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.05),
+        color: colors.primary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
+        border: Border.all(color: colors.primary.withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -438,7 +438,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: colors.textTertiary.withValues(alpha: 0.1),
+                      color: colors.textTertiary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Row(
@@ -491,7 +491,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                 style: textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
-                  color: colors.textSecondary.withValues(alpha: 0.5),
+                  color: colors.textSecondary.withOpacity(0.5),
                 ),
               ),
             ),
@@ -506,7 +506,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colors.textSecondary.withValues(alpha: 0.05),
+        color: colors.textSecondary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -662,7 +662,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: seg.$3
-                          .withValues(alpha: count > 0 ? 0.15 : 0.05),
+                          .withOpacity(count > 0 ? 0.15 : 0.05),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: FittedBox(
@@ -698,15 +698,14 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                   margin: const EdgeInsets.symmetric(horizontal: 1.5),
                   decoration: BoxDecoration(
                     color: count > 0
-                        ? seg.$3.withValues(
-                            alpha: count == 1
+                        ? seg.$3.withOpacity(count == 1
                                 ? 0.55
                                 : (count == 2 ? 0.8 : 1.0))
-                        : seg.$3.withValues(alpha: 0.25),
+                        : seg.$3.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(6),
                     border: count > 0
                         ? Border.all(
-                            color: Colors.black.withValues(alpha: 0.2),
+                            color: Colors.black.withOpacity(0.2),
                             width: 0.8,
                           )
                         : null,
@@ -792,7 +791,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           Icon(
             PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
             size: 48,
-            color: colors.textSecondary.withValues(alpha: 0.5),
+            color: colors.textSecondary.withOpacity(0.5),
           ),
           const SizedBox(height: 16),
           Text(
@@ -857,7 +856,7 @@ class _ShimmerLineState extends State<_ShimmerLine>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               color: widget.colors.textSecondary
-                  .withValues(alpha: 0.08 + 0.08 * _controller.value),
+                  .withOpacity(0.08 + 0.08 * _controller.value),
             ),
           ),
         );
@@ -999,10 +998,10 @@ class _PerspectiveCard extends ConsumerWidget {
                   : null,
               child: Container(
                 decoration: BoxDecoration(
-                  color: colors.backgroundSecondary.withValues(alpha: 0.5),
+                  color: colors.backgroundSecondary.withOpacity(0.5),
                   border: Border(
                     top: BorderSide(
-                      color: colors.textSecondary.withValues(alpha: 0.1),
+                      color: colors.textSecondary.withOpacity(0.1),
                       width: 1,
                     ),
                   ),
@@ -1020,7 +1019,7 @@ class _PerspectiveCard extends ConsumerWidget {
                       decoration: BoxDecoration(
                         color: perspective
                             .getBiasColor(colors)
-                            .withValues(alpha: 0.15),
+                            .withOpacity(0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(

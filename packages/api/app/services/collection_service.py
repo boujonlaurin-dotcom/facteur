@@ -15,7 +15,7 @@ logger = structlog.get_logger()
 
 MAX_COLLECTIONS_PER_USER = 50
 DEFAULT_COLLECTION_NAME = "À consulter plus tard"
-LIKED_COLLECTION_NAME = "Contenus likés"
+LIKED_COLLECTION_NAME = "Mes contenus recommandés 🌻"
 
 
 class CollectionService:

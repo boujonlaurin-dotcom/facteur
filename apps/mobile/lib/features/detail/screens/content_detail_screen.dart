@@ -25,6 +25,8 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
+import '../../../widgets/sunflower_icon.dart';
+import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -107,6 +109,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
+  // 🌻 Nudge "Recommander ?" state
+  Timer? _sunflowerNudgeTimer;
+  bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
   double _prevNativeScrollOffset = 0.0;
@@ -262,6 +267,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     NoteWelcomeTooltip.shouldShow().then((show) {
       if (mounted && show) {
         setState(() => _showNoteWelcome = true);
+      }
+    });
+
+    // 🌻 Nudge: record article open and start 30s timer
+    NudgeTracker.recordArticleOpen();
+    _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
+      if (!mounted) return;
+      final isLiked = _content?.isLiked ?? false;
+      final shouldShow = await NudgeTracker.shouldShowNudge(
+        isAlreadySunflowered: isLiked,
+      );
+      if (shouldShow && mounted) {
+        setState(() => _showSunflowerNudge = true);
+        NudgeTracker.markNudgeShown();
+        // Auto-dismiss after 5 seconds
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted) setState(() => _showSunflowerNudge = false);
+        });
       }
     });
 
@@ -531,6 +554,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
+    // Dismiss sunflower nudge on any scroll
+    if (_showSunflowerNudge) {
+      setState(() => _showSunflowerNudge = false);
+    }
     final isVideo = _content?.isVideo ?? false;
     _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
@@ -619,19 +646,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _fetchPerspectives();
           }
         } else {
-          // Show error and pop if content not found
+          // Content not found via API. Keep whatever was passed via extra
+          // (e.g. a digest "Pas de recul" article whose row was just culled
+          // server-side) so the screen still renders instead of bouncing
+          // the user back to the previous screen with a blank flash.
           setState(() => _contentResolved = true);
-          NotificationService.showError('Contenu introuvable',
-              context: context);
-          context.pop();
+          if (_content == null) {
+            NotificationService.showError('Contenu introuvable',
+                context: context);
+            context.pop();
+          }
         }
       }
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
         setState(() => _contentResolved = true);
-        NotificationService.showError('Erreur de chargement', context: context);
-        context.pop();
+        // Same fallback: only pop when we truly have nothing to show.
+        if (_content == null) {
+          NotificationService.showError('Erreur de chargement',
+              context: context);
+          context.pop();
+        }
       }
     }
   }
@@ -713,8 +749,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     HapticFeedback.lightImpact();
     final wasLiked = content.isLiked;
     final newLiked = !wasLiked;
+    // Cancel the pending nudge timer if the user sunflowers manually during
+    // the 30s wait — avoids firing a redundant "Recommander ?" pill.
+    _sunflowerNudgeTimer?.cancel();
     setState(() {
       _content = content.copyWith(isLiked: newLiked);
+      _showSunflowerNudge = false;
     });
 
     // Bounce animation
@@ -728,8 +768,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (mounted) {
         NotificationService.showInfo(
           newLiked
-              ? 'Ajouté à vos contenus favoris'
-              : 'Retiré de vos contenus favoris',
+              ? 'Ajouté à Mes contenus recommandés 🌻'
+              : 'Retiré de Mes contenus recommandés 🌻',
         );
         // Refresh collections to update liked collection counts
         ref.invalidate(collectionsProvider);
@@ -1339,7 +1379,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   child: IgnorePointer(
                     child: ColoredBox(
                       color: Colors.white
-                          .withValues(alpha: 0.6 * _exitAnimController.value),
+                          .withOpacity(0.6 * _exitAnimController.value),
                     ),
                   ),
                 );
@@ -1437,33 +1477,82 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                           const SizedBox(height: 12),
                         ],
-                        // Like FAB
-                        ScaleTransition(
-                          scale: _likeScaleAnimation,
-                          child: SizedBox(
-                            width: 50,
-                            height: 50,
-                            child: FloatingActionButton(
-                              onPressed: _toggleLike,
-                              backgroundColor: content.isLiked
-                                  ? colors.primary
-                                  : Colors.white,
-                              foregroundColor: content.isLiked
-                                  ? Colors.white
-                                  : colors.textPrimary,
-                              elevation: content.isLiked ? 4 : 2,
-                              heroTag: 'like_fab',
-                              tooltip: 'J\'aime',
-                              child: Icon(
-                                content.isLiked
-                                    ? PhosphorIcons.heart(
-                                        PhosphorIconsStyle.fill)
-                                    : PhosphorIcons.heart(
-                                        PhosphorIconsStyle.regular),
-                                size: 25,
+                        // 🌻 Sunflower recommendation FAB + nudge label
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Animated "Recommander ?" nudge label
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0.3, 0),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                              child: _showSunflowerNudge
+                                  ? Container(
+                                      key: const ValueKey('nudge_visible'),
+                                      margin: const EdgeInsets.only(right: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF8E1),
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                Colors.black.withOpacity(0.1),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Text(
+                                        'Recommander ? 🌻',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF795548),
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(
+                                      key: ValueKey('nudge_hidden'),
+                                    ),
+                            ),
+                            ScaleTransition(
+                              scale: _likeScaleAnimation,
+                              child: SizedBox(
+                                width: 50,
+                                height: 50,
+                                child: FloatingActionButton(
+                                  onPressed: _toggleLike,
+                                  backgroundColor: content.isLiked
+                                      ? colors.primary
+                                      : Colors.white,
+                                  foregroundColor: content.isLiked
+                                      ? Colors.white
+                                      : colors.textPrimary,
+                                  elevation: content.isLiked ? 4 : 2,
+                                  heroTag: 'sunflower_fab',
+                                  tooltip: 'Recommander',
+                                  child: SunflowerIcon(
+                                    isActive: content.isLiked,
+                                    size: 25,
+                                    inactiveColor: colors.textPrimary,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 12),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
@@ -1654,6 +1743,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             ),
                                           ),
                                         ),
+                                        // Editorial badge (digest articles) — to the right of source name
+                                        if (content.editorialBadge != null) ...[
+                                          const SizedBox(width: 6),
+                                          EditorialBadge.chip(
+                                            content.editorialBadge,
+                                            context: context,
+                                          ) ?? const SizedBox.shrink(),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 1),
@@ -1741,23 +1838,33 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    const maxVisible = 3;
+    // Dense layout: 4 tags max across macro-theme + topic + entities.
+    // Remaining entities are grouped into a "+X" overflow chip.
+    const maxTotalVisible = 4;
+    const chipPadding = EdgeInsets.symmetric(horizontal: 7, vertical: 3);
+
+    final hasMacroTheme = content.topics.isNotEmpty &&
+        getTopicMacroTheme(content.topics.first) != null;
+    final hasTopic = content.topics.isNotEmpty;
+    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
     final entities = content.entities;
-    final visible = entities.take(maxVisible).toList();
-    final overflow = entities.length - maxVisible;
+    final maxEntitiesVisible =
+        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
+    final visible = entities.take(maxEntitiesVisible).toList();
+    final overflow = entities.length - maxEntitiesVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (content.topics.isNotEmpty && getTopicMacroTheme(content.topics.first) != null)
+      if (hasMacroTheme)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
           return GestureDetector(
             onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: chipPadding,
               decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
+                color: colors.textTertiary.withOpacity(0.20),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1773,13 +1880,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (content.topics.isNotEmpty)
+      if (hasTopic)
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1800,18 +1907,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         return GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
               color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
+                  ? const Color(0xFFE07A5F).withOpacity(0.15)
+                  : colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
+                  constraints: const BoxConstraints(maxWidth: 90),
                   child: Text(
                     entity.text,
                     style: textTheme.labelSmall?.copyWith(
@@ -1841,9 +1948,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: chipPadding,
             decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
+              color: colors.textTertiary.withOpacity(0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1872,7 +1979,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           colors.primary,
           clamped,
         )!
-            .withValues(alpha: alpha);
+            .withOpacity(alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -1922,7 +2029,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Container(
                 height: 14,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.15),
+                  color: colors.textTertiary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2039,7 +2146,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         ),
                                         decoration: BoxDecoration(
                                           color: colors.warning
-                                              .withValues(alpha: 0.12),
+                                              .withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(
                                               FacteurRadius.pill),
                                         ),
@@ -2058,14 +2165,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
-                              ],
-                              // Editorial badge above title (from digest)
-                              if (content.editorialBadge != null) ...[
-                                EditorialBadge.chip(
-                                  content.editorialBadge,
-                                  context: context,
-                                ) ?? const SizedBox.shrink(),
-                                const SizedBox(height: FacteurSpacing.space2),
                               ],
                               Text(
                                 content.title,
@@ -2150,7 +2249,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 borderRadius:
                                     BorderRadius.circular(FacteurRadius.large),
                                 border: Border.all(
-                                  color: colors.border.withValues(alpha: 0.5),
+                                  color: colors.border.withOpacity(0.5),
                                 ),
                               ),
                               child: Row(
@@ -2649,7 +2748,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.warning.withValues(alpha: 0.12),
+                          color: colors.warning.withOpacity(0.12),
                           borderRadius:
                               BorderRadius.circular(FacteurRadius.pill),
                         ),
@@ -2666,14 +2765,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
                 const SizedBox(height: FacteurSpacing.space4),
-              ],
-              // Editorial badge above title (from digest)
-              if (content.editorialBadge != null) ...[
-                EditorialBadge.chip(
-                  content.editorialBadge,
-                  context: context,
-                ) ?? const SizedBox.shrink(),
-                const SizedBox(height: FacteurSpacing.space2),
               ],
               // Title
               Text(
@@ -2718,7 +2809,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 color: colors.surfaceElevated,
                 borderRadius: BorderRadius.circular(FacteurRadius.large),
                 border: Border.all(
-                  color: colors.border.withValues(alpha: 0.5),
+                  color: colors.border.withOpacity(0.5),
                 ),
               ),
               child: Row(
@@ -2840,20 +2931,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return Column(
       children: [
         SizedBox(height: headerHeight),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: 6,
-            ),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: _buildArticleTagWidgets(context, content),
-            ),
-          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );

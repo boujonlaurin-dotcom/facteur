@@ -131,7 +131,7 @@ class _EmailConfirmationScreenState
                             width: 100,
                             height: 100,
                             decoration: BoxDecoration(
-                              color: colors.primary.withValues(alpha: 0.1),
+                              color: colors.primary.withOpacity(0.1),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -182,7 +182,7 @@ class _EmailConfirmationScreenState
                             color: colors.surfaceElevated,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: colors.primary.withValues(alpha: 0.2),
+                              color: colors.primary.withOpacity(0.2),
                             ),
                           ),
                           child: Row(
@@ -218,7 +218,7 @@ class _EmailConfirmationScreenState
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color:
-                                colors.surfaceElevated.withValues(alpha: 0.5),
+                                colors.surfaceElevated.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -270,7 +270,7 @@ class _EmailConfirmationScreenState
                                   ),
                                   decoration: BoxDecoration(
                                     color:
-                                        colors.success.withValues(alpha: 0.1),
+                                        colors.success.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(

@@ -25,8 +25,10 @@ import '../../onboarding/widgets/notification_permission_bottom_sheet.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../models/community_carousel_model.dart';
 import '../models/digest_models.dart';
 import '../providers/digest_format_provider.dart';
+import '../providers/community_carousel_provider.dart';
 import '../providers/digest_provider.dart';
 import '../providers/serein_toggle_provider.dart';
 import '../widgets/digest_briefing_section.dart';
@@ -206,6 +208,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     }
   }
 
+  /// Filter the digest community carousel to exclude any article that already
+  /// appears in the main digest flow (flat items + per-topic articles). The
+  /// backend deduplicates Feed↔Digest carousels, but a digest article picked
+  /// for the carousel would still look duplicated to the user.
+  List<CommunityCarouselItem> _filterCommunityCarousel(DigestResponse digest) {
+    final all = ref.watch(communityCarouselProvider).valueOrNull?.digestCarousel;
+    if (all == null || all.isEmpty) return const [];
+    final shownIds = <String>{
+      for (final it in digest.items) it.contentId,
+      for (final t in digest.topics)
+        for (final it in t.articles) it.contentId,
+    };
+    return all.where((ci) => !shownIds.contains(ci.contentId)).toList();
+  }
+
   void _handleLike(DigestItem item) {
     HapticFeedback.mediumImpact();
     ref.read(digestProvider.notifier).applyAction(
@@ -214,8 +231,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
         );
     NotificationService.showInfo(
       item.isLiked
-          ? 'Retiré de vos contenus favoris'
-          : 'Ajouté à vos contenus favoris',
+          ? 'Retiré de Mes contenus recommandés 🌻'
+          : 'Ajouté à Mes contenus recommandés 🌻',
     );
     ref.invalidate(collectionsProvider);
   }
@@ -344,6 +361,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
           body: SafeArea(
             child: RefreshIndicator(
               onRefresh: () async {
+                // Refresh both the digest itself and the community 🌻 carousel
+                // so newly-sunflowered articles appear after a pull-to-refresh.
+                ref.invalidate(communityCarouselProvider);
                 await ref.read(digestProvider.notifier).refreshDigest();
               },
               color: colors.primary,
@@ -390,10 +410,10 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: 0.10),
+                            color: colors.primary.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: colors.primary.withValues(alpha: 0.25),
+                              color: colors.primary.withOpacity(0.25),
                             ),
                           ),
                           child: Material(
@@ -485,11 +505,11 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                   vertical: 16,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: colors.success.withValues(alpha: 0.15),
+                                  color: colors.success.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
                                     color:
-                                        colors.success.withValues(alpha: 0.3),
+                                        colors.success.withOpacity(0.3),
                                   ),
                                 ),
                                 child: Row(
@@ -576,7 +596,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                         padding: const EdgeInsets.all(6),
                                         decoration: BoxDecoration(
                                           color: colors.textSecondary
-                                              .withValues(alpha: 0.15),
+                                              .withOpacity(0.15),
                                           borderRadius:
                                               BorderRadius.circular(16),
                                         ),
@@ -654,6 +674,30 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                                 : null,
                             ctaText:
                                 digest.usesEditorial ? digest.ctaText : null,
+                            communityCarousel:
+                                _filterCommunityCarousel(digest),
+                            onCommunityArticleTap: (item) {
+                              // Convert community carousel item to Content for navigation
+                              final content = Content(
+                                id: item.contentId,
+                                title: item.title,
+                                url: item.url,
+                                thumbnailUrl: item.thumbnailUrl,
+                                source: Source(
+                                  id: item.sourceId ?? '',
+                                  name: item.sourceName,
+                                  type: SourceType.article,
+                                  logoUrl: item.sourceLogoUrl,
+                                ),
+                                contentType: ContentType.article,
+                                publishedAt: item.publishedAt ?? DateTime.now(),
+                              );
+                              context.pushNamed(
+                                RouteNames.contentDetail,
+                                pathParameters: {'id': item.contentId},
+                                extra: content,
+                              );
+                            },
                           );
                         },
                         loading: () => _buildLoadingState(colors),

@@ -381,7 +381,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(FacteurRadius.pill),
                   border: Border.all(
-                    color: colors.primary.withValues(alpha: 0.3),
+                    color: colors.primary.withOpacity(0.3),
                     style: BorderStyle.solid,
                   ),
                 ),
@@ -434,12 +434,12 @@ class _EntityChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
-              ? themeColor.withValues(alpha: 0.1)
+              ? themeColor.withOpacity(0.1)
               : context.facteurColors.surfacePaper,
           borderRadius: BorderRadius.circular(FacteurRadius.pill),
           border: Border.all(
             color: isSelected
-                ? themeColor.withValues(alpha: 0.5)
+                ? themeColor.withOpacity(0.5)
                 : context.facteurColors.surfaceElevated,
             width: 1,
           ),
@@ -480,10 +480,10 @@ class _RemovableCustomChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: themeColor.withValues(alpha: 0.1),
+        color: themeColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
         border: Border.all(
-          color: themeColor.withValues(alpha: 0.5),
+          color: themeColor.withOpacity(0.5),
           width: 1,
         ),
       ),

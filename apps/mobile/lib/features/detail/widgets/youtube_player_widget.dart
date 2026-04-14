@@ -273,7 +273,7 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
+                  color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
@@ -282,13 +282,13 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
                     Icon(
                       Icons.fast_forward,
                       size: 14,
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: Colors.white.withOpacity(0.9),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '2x',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: Colors.white.withOpacity(0.9),
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),

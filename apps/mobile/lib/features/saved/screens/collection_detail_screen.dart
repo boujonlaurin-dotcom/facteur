@@ -201,7 +201,7 @@ class _CollectionDetailScreenState
                           background: Container(
                             alignment: Alignment.centerRight,
                             padding: const EdgeInsets.only(right: 24),
-                            color: colors.error.withValues(alpha: 0.1),
+                            color: colors.error.withOpacity(0.1),
                             child: Icon(
                               PhosphorIcons.bookmarkSimple(
                                   PhosphorIconsStyle.regular),

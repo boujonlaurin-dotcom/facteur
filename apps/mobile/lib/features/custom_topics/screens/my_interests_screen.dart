@@ -480,7 +480,7 @@ class _SensitiveThemesSectionState
         decoration: BoxDecoration(
           color: colors.surface,
           borderRadius: BorderRadius.circular(FacteurRadius.large),
-          border: Border.all(color: SereinColors.sereinColor.withValues(alpha: 0.3)),
+          border: Border.all(color: SereinColors.sereinColor.withOpacity(0.3)),
         ),
         padding: const EdgeInsets.symmetric(
           horizontal: FacteurSpacing.space4,

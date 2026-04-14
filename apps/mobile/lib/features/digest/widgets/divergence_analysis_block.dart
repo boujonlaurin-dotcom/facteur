@@ -49,12 +49,12 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
         gradient: LinearGradient(
           colors: isDark
               ? [
-                  colors.primary.withValues(alpha: 0.30),
-                  FacteurColors.sWarning.withValues(alpha: 0.33),
+                  colors.primary.withOpacity(0.30),
+                  FacteurColors.sWarning.withOpacity(0.33),
                 ]
               : [
-                  colors.primary.withValues(alpha: 0.20),
-                  FacteurColors.sWarning.withValues(alpha: 0.25),
+                  colors.primary.withOpacity(0.20),
+                  FacteurColors.sWarning.withOpacity(0.25),
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -68,7 +68,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           border: Border(
             left: BorderSide(
               width: 3,
-              color: FacteurColors.sWarning.withValues(alpha: isDark ? 0.80 : 0.70),
+              color: FacteurColors.sWarning.withOpacity(isDark ? 0.80 : 0.70),
             ),
           ),
         ),
@@ -92,7 +92,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                 child: Icon(
                   Icons.info_outline,
                   size: 16,
-                  color: colors.textSecondary.withValues(alpha: 0.5),
+                  color: colors.textSecondary.withOpacity(0.5),
                 ),
               ),
             ],
@@ -125,7 +125,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                       fontSize: 14,
                       height: 1.5,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.85)
+                          ? Colors.white.withOpacity(0.85)
                           : colors.textSecondary,
                     ),
                   )
@@ -138,7 +138,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                       fontSize: 14,
                       height: 1.5,
                       color: isDark
-                          ? Colors.white.withValues(alpha: 0.85)
+                          ? Colors.white.withOpacity(0.85)
                           : colors.textSecondary,
                     ),
                   ),
@@ -168,7 +168,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: colors.textSecondary.withValues(alpha: 0.06),
+                    color: colors.textSecondary.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -218,7 +218,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-                color: Colors.white.withValues(alpha: 0.5), width: 1),
+                color: Colors.white.withOpacity(0.5), width: 1),
           ),
           child: _buildLogoCircle(
             name: visible[i].name,
@@ -235,7 +235,7 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.8),
+            color: Colors.white.withOpacity(0.8),
           ),
         ),
       ],

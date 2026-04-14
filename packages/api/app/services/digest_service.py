@@ -398,9 +398,18 @@ class DigestService:
                 try:
                     return await self._build_digest_response(existing_digest, user_id)
                 except Exception:
-                    # Render failed — but only delete if it's already flat_v1.
-                    # Never destroy a modern-format digest: better to let the
-                    # request fail than silently replace it with flat_v1.
+                    # Render failed. Previously we `raise`d for modern formats
+                    # to avoid silently downgrading to flat_v1, but that turned
+                    # any persistently-corrupted record into an all-day 503
+                    # loop for the user (each request hits the same broken
+                    # JSONB and fails). Instead: defer deletion via the same
+                    # `stale_format_digest` machinery used for version
+                    # mismatches and fall through to regeneration. The
+                    # deferred-delete logic below (step 4) replaces the
+                    # corrupted record only when a fresh one is ready. If
+                    # regeneration also fails, the stale-format fallback path
+                    # will serve the old record (or yesterday's) as a last
+                    # resort — still better than 503 forever.
                     logger.exception(
                         "digest_existing_render_failed",
                         user_id=str(user_id),
@@ -411,10 +420,13 @@ class DigestService:
                         "editorial_v1",
                         "topics_v1",
                     ):
-                        raise
-                    # flat_v1 is expendable — delete and regenerate
-                    await self.session.delete(existing_digest)
-                    await self.session.flush()
+                        # Defer deletion, fall through to regeneration.
+                        stale_format_digest = existing_digest
+                        existing_digest = None
+                    else:
+                        # flat_v1 is expendable — delete and regenerate
+                        await self.session.delete(existing_digest)
+                        await self.session.flush()
         # 1b. No digest for today — try serving yesterday's digest instantly
         # while triggering a real background regeneration so the next read
         # gets fresh content. Without the background trigger this fallback
@@ -1354,6 +1366,11 @@ class DigestService:
                     "divergence_analysis": s.divergence_analysis,
                     "divergence_level": s.divergence_level,
                     "perspective_sources": s.perspective_sources,
+                    "representative_content_id": (
+                        str(s.representative_content_id)
+                        if s.representative_content_id
+                        else None
+                    ),
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1385,7 +1402,6 @@ class DigestService:
                         "badge": "pas_de_recul",
                         "match_reason": s.deep_article.match_reason,
                         "published_at": s.deep_article.published_at.isoformat(),
-                        "recul_intro": s.deep_article.recul_intro,
                     }
                     if s.deep_article
                     else None,
@@ -1777,7 +1793,6 @@ class DigestService:
                     rank=art_idx + 1,
                     reason=reason,
                     badge=art_data.get("badge"),
-                    recul_intro=art_data.get("recul_intro"),
                     is_followed_source=art_data.get("is_user_source", False),
                     recommendation_reason=None,
                     is_read=action_state["is_read"],
@@ -1838,6 +1853,9 @@ class DigestService:
                         divergence_analysis=subject.get("divergence_analysis"),
                         divergence_level=subject.get("divergence_level"),
                         perspective_sources=subject.get("perspective_sources"),
+                        representative_content_id=subject.get(
+                            "representative_content_id"
+                        ),
                     )
                 )
             else:

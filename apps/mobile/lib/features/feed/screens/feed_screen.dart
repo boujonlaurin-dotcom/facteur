@@ -39,8 +39,6 @@ import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../custom_topics/widgets/cluster_chip.dart';
-import '../widgets/source_overflow_chip.dart';
-import '../widgets/topic_overflow_chip.dart';
 import '../widgets/keyword_overflow_chip.dart';
 import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
@@ -235,12 +233,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     }
   }
 
+  /// Animation déclenchée après un clic sur une balise de thème/source/entité
+  /// (depuis le feed lui-même OU depuis le reader d'article via
+  /// `feedScrollTriggerProvider`). Volontairement longue + courbe en S pour
+  /// que l'utilisateur perçoive clairement la transition vers le feed filtré.
   void _scrollToTop() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -330,8 +332,17 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
     final hintSeen = ref.watch(swipeLeftHintSeenProvider).valueOrNull ?? false;
     if (hintSeen) _swipeHintSeen = true;
 
-    // Listen to scroll to top trigger
-    ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
+    // Listen to scroll to top trigger.
+    // Quand l'utilisateur clique sur une balise depuis le reader d'un article,
+    // on attend que la transition de page (Cupertino slide-back) soit bien
+    // entamée avant de scroller, sinon le scroll est masqué par l'écran
+    // article qui glisse encore par-dessus le feed.
+    // Utilise Timer (et non Future.delayed) pour éviter un unawaited future.
+    ref.listen(feedScrollTriggerProvider, (_, __) {
+      Timer(const Duration(milliseconds: 220), () {
+        if (mounted) _scrollToTop();
+      });
+    });
 
     // Serein toggle: loading indicator tied to actual feed refresh
     ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
@@ -696,8 +707,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           ref.read(feedProvider.notifier).toggleLike(c);
                                           NotificationService.showInfo(
                                             wasLiked
-                                                ? 'Retiré de vos contenus favoris'
-                                                : 'Ajouté à vos contenus favoris',
+                                                ? 'Retiré de Mes contenus recommandés 🌻'
+                                                : 'Ajouté à Mes contenus recommandés 🌻',
                                           );
                                           ref.invalidate(collectionsProvider);
                                         },
@@ -844,8 +855,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                             .toggleLike(content);
                                         NotificationService.showInfo(
                                           wasLiked
-                                              ? 'Retiré de vos contenus favoris'
-                                              : 'Ajouté à vos contenus favoris',
+                                              ? 'Retiré de Mes contenus recommandés 🌻'
+                                              : 'Ajouté à Mes contenus recommandés 🌻',
                                         );
                                         ref.invalidate(collectionsProvider);
                                       },
@@ -906,11 +917,12 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                           (notifier.selectedTheme != null ||
                                                   notifier.selectedTopic != null ||
                                                   notifier.selectedEntity != null ||
-                                                  notifier.selectedSourceId != null)
+                                                  notifier.selectedSourceId != null ||
+                                                  notifier.selectedKeyword != null)
                                               ? const SizedBox.shrink()
                                               : content.clusterHiddenCount > 0
                                                   ? ClusterChip(content: content)
-                                                  : content.entityOverflowCount > 0
+                                                  : content.entityOverflowCount >= 4
                                                       ? EntityOverflowChip(
                                                           content: content,
                                                           onOverflowTap: (key, label) {
@@ -923,29 +935,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                             _scrollToTop();
                                                           },
                                                         )
-                                                      : content.keywordOverflowCount > 0
+                                                      : content.keywordOverflowCount >= 4
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
-                                                          : content.topicOverflowCount > 0
-                                                              ? TopicOverflowChip(
-                                                                  content: content,
-                                                                  onOverflowTap: (slug, label, {isTheme = false}) {
-                                                                    setState(() {
-                                                                      _selectedInterestName = label;
-                                                                      _selectedIsTheme = isTheme;
-                                                                    });
-                                                                    _withFeedLoading(() async {
-                                                                      if (isTheme) {
-                                                                        await notifier.setTheme(slug);
-                                                                      } else {
-                                                                        await notifier.setTopic(slug);
-                                                                      }
-                                                                    });
-                                                                    _scrollToTop();
-                                                                  },
-                                                                )
-                                                              : content.sourceOverflowCount > 0
-                                                                  ? SourceOverflowChip(content: content, onOverflowTap: _scrollToTop)
-                                                                  : const SizedBox.shrink(),
+                                                          : const SizedBox.shrink(),
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),

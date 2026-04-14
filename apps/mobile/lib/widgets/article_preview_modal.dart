@@ -143,7 +143,7 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
               child: IgnorePointer(
                 child: ColoredBox(
                   color:
-                      Colors.black.withValues(alpha: 0.3 * _curvedAnimation.value),
+                      Colors.black.withOpacity(0.3 * _curvedAnimation.value),
                 ),
               ),
             ),
@@ -168,7 +168,7 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
                               BorderRadius.circular(FacteurRadius.large),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.25),
+                              color: Colors.black.withOpacity(0.25),
                               blurRadius: 24,
                               offset: const Offset(0, 8),
                             ),
@@ -289,7 +289,7 @@ class _ArticlePreviewWidgetState extends State<_ArticlePreviewWidget>
                                             style: textTheme.bodyMedium
                                                 ?.copyWith(
                                               color: colors.textPrimary
-                                                  .withValues(alpha: 0.85),
+                                                  .withOpacity(0.85),
                                               height: 1.5,
                                               fontSize: 14.5,
                                             ),

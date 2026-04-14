@@ -90,7 +90,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 ],
                 color: colors.surface,
                 textColor: colors.textPrimary,
-                borderColor: colors.textTertiary.withValues(alpha: 0.2),
+                borderColor: colors.textTertiary.withOpacity(0.2),
               ),
 
               const SizedBox(height: FacteurSpacing.space4),
@@ -217,7 +217,7 @@ class _SubscriptionCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.1),
+                    color: colors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(FacteurRadius.full),
                   ),
                   child: Text(

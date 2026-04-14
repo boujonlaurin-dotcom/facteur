@@ -1288,135 +1288,98 @@ class RecommendationService:
                         promoted_ids.add(item.id)
                     break  # T3A: only 1 source carousel
 
-            # --- gems: community favorites with differentiated badges (T6) ---
+            # --- community: 🌻 sunflower recommendations with decay scoring ---
             if len(carousels) < max_carousels:
-                thirty_days_ago = datetime.datetime.now(
+                seven_days_ago = datetime.datetime.now(
                     datetime.UTC
-                ) - datetime.timedelta(days=30)
+                ) - datetime.timedelta(days=7)
                 exclusion = Content.id.notin_(promoted_ids) if promoted_ids else True
                 consumed_excl = (
                     Content.id.notin_(consumed_ids) if consumed_ids else True
                 )
-                gem_rows = (
+
+                # Decay formula: score = SUM(1 / (1 + hours_since / 48))
+                hours_since = (
+                    func.extract(
+                        "epoch",
+                        datetime.datetime.now(datetime.UTC)
+                        - UserContentStatus.liked_at,
+                    )
+                    / 3600.0
+                )
+                decay_weight = 1.0 / (1.0 + hours_since / 48.0)
+
+                community_rows = (
                     await self.session.execute(
                         select(
                             Content.id,
-                            func.sum(
-                                case(
-                                    (UserContentStatus.is_saved.is_(True), 1),
-                                    else_=0,
-                                )
-                            ).label("save_count"),
-                            func.sum(
-                                case(
-                                    (UserContentStatus.is_liked.is_(True), 1),
-                                    else_=0,
-                                )
-                            ).label("like_count"),
+                            func.sum(decay_weight).label("score"),
+                            func.count(UserContentStatus.id).label("sunflower_count"),
                         )
                         .join(
                             UserContentStatus,
                             UserContentStatus.content_id == Content.id,
                         )
                         .where(
-                            UserContentStatus.saved_at >= thirty_days_ago,
+                            UserContentStatus.is_liked.is_(True),
+                            UserContentStatus.liked_at >= seven_days_ago,
                             exclusion,
-                            consumed_excl,  # T2
+                            consumed_excl,
                         )
                         .group_by(Content.id)
-                        .having(
-                            func.sum(
-                                case(
-                                    (UserContentStatus.is_saved.is_(True), 1),
-                                    else_=0,
-                                )
-                            )
-                            >= 1
-                        )
-                        .order_by(
-                            (
-                                func.sum(
-                                    case(
-                                        (UserContentStatus.is_saved.is_(True), 1),
-                                        else_=0,
-                                    )
-                                )
-                                + func.sum(
-                                    case(
-                                        (UserContentStatus.is_liked.is_(True), 1),
-                                        else_=0,
-                                    )
-                                )
-                            ).desc()
-                        )
+                        .having(func.count(UserContentStatus.id) >= 1)
+                        .order_by(func.sum(decay_weight).desc())
                         .limit(MAX_CAROUSEL_ITEMS)
                     )
                 ).all()
 
                 logger.info(
-                    "carousel_gems_query",
-                    gems_found=len(gem_rows),
+                    "carousel_community_query",
+                    community_found=len(community_rows),
                     min_required=MIN_CAROUSEL_ITEMS,
-                    save_counts=[r.save_count for r in gem_rows[:5]],
-                    like_counts=[r.like_count for r in gem_rows[:5]],
+                    scores=[round(float(r.score), 2) for r in community_rows[:5]],
                 )
-                if len(gem_rows) >= MIN_CAROUSEL_ITEMS:
-                    gem_ids = [r.id for r in gem_rows]
-                    save_map = {r.id: (r.save_count or 0) for r in gem_rows}
-                    like_map = {r.id: (r.like_count or 0) for r in gem_rows}
+                if len(community_rows) >= MIN_CAROUSEL_ITEMS:
+                    community_ids = [r.id for r in community_rows]
+                    count_map = {r.id: int(r.sunflower_count) for r in community_rows}
 
-                    gem_contents = list(
+                    community_contents = list(
                         (
                             await self.session.scalars(
                                 select(Content)
                                 .options(selectinload(Content.source))
-                                .where(Content.id.in_(gem_ids))
+                                .where(Content.id.in_(community_ids))
                             )
                         ).all()
                     )
-                    # Maintain score order, then shuffle for daily variety
-                    id_order = {gid: i for i, gid in enumerate(gem_ids)}
+                    id_order = {cid: i for i, cid in enumerate(community_ids)}
                     items = sorted(
-                        gem_contents,
+                        community_contents,
                         key=lambda c: id_order.get(c.id, 99),
                     )
-                    if daily_seed is not None:
-                        _random.Random(daily_seed).shuffle(items)
 
-                    # T6: Differentiated badges per article
-                    avg_saves = (
-                        sum(save_map.values()) / len(save_map) if save_map else 0
-                    )
-                    avg_likes = (
-                        sum(like_map.values()) / len(like_map) if like_map else 0
-                    )
+                    # Badges: show 🌻 count if >= 2
                     badges = []
                     for item in items:
-                        s = save_map.get(item.id, 0)
-                        lk = like_map.get(item.id, 0)
-                        if s > 0 and avg_saves > 0 and s >= 2 * avg_saves:
-                            label = "Le plus enregistré"
-                        elif lk > 0 and avg_likes > 0 and lk >= 2 * avg_likes:
-                            label = "Le plus liké"
-                        elif s > lk:
-                            label = "Beaucoup enregistré"
-                        elif lk > s:
-                            label = "Beaucoup liké"
-                        else:
-                            label = "Beaucoup liké"
+                        sf_count = count_map.get(item.id, 0)
+                        label = (
+                            f"\U0001f33b {sf_count}"
+                            if sf_count >= 2
+                            else "Reco communauté"
+                        )
                         badges.append(
                             {
-                                "code": "pepite",
+                                "code": "community",
                                 "label": label,
-                                "emoji": "\U0001f48e",
+                                "emoji": "\U0001f33b",
                             }
                         )
 
                     carousels.append(
                         {
-                            "carousel_type": "gems",
-                            "title": "Pépites de la communauté",
-                            "emoji": "\U0001f48e",
+                            "carousel_type": "community",
+                            "title": "Recos de la communauté",
+                            "emoji": "\U0001f33b",
                             "position": 15,
                             "items": items,
                             "badges": badges,

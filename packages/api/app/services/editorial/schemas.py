@@ -50,7 +50,6 @@ class MatchedDeepArticle(BaseModel):
     published_at: datetime
     match_reason: str
     description: str | None = None
-    recul_intro: str | None = None
 
 
 class EditorialSubject(BaseModel):
@@ -78,6 +77,10 @@ class EditorialSubject(BaseModel):
     divergence_analysis: str | None = None
     divergence_level: str | None = None  # "low" | "medium" | "high"
     perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
+    # Pivot content used to compute perspectives (cluster's most-recent article).
+    # Mobile re-uses this id when calling /perspectives so the bottom sheet count
+    # matches the header / bias spectrum bar. None on legacy cached digests.
+    representative_content_id: UUID | None = None
 
 
 # --- Story 10.24: LLM writing output schemas ---
@@ -89,7 +92,6 @@ class SubjectWriting(BaseModel):
     topic_id: str
     intro_text: str
     transition_text: str | None = None  # null for last subject
-    recul_intro: str | None = None
 
 
 class WritingOutput(BaseModel):

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/theme.dart';
@@ -149,34 +148,16 @@ class _FeedCarouselState extends State<FeedCarousel> {
         // Header
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              if (data.carouselType == 'saved')
-                Icon(
-                  PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.duotone),
-                  size: 22,
-                  color: colors.warning,
-                )
-              else
-                Text(
-                  data.emoji,
-                  style: const TextStyle(fontSize: 20),
-                ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  data.title,
-                  style: TextStyle(
-                    color: colors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          child: Text(
+            data.title,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         const SizedBox(height: 12),
@@ -237,13 +218,13 @@ class _FeedCarouselState extends State<FeedCarousel> {
         final card = FeedCard(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
           ],
           backgroundColor:
-              isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+              isReference ? Colors.grey.withOpacity(0.1) : null,
           content: article,
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
@@ -335,12 +316,12 @@ class _FeedCarouselState extends State<FeedCarousel> {
     final card = FeedCard(
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
+          color: Colors.black.withOpacity(0.05),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
       ],
-      backgroundColor: isReference ? Colors.grey.withValues(alpha: 0.1) : null,
+      backgroundColor: isReference ? Colors.grey.withOpacity(0.1) : null,
       content: article,
       alwaysShowDescription: !imageVisible,
       descriptionFontSize: 15,
@@ -421,7 +402,7 @@ class _FeedCarouselState extends State<FeedCarousel> {
           decoration: BoxDecoration(
             color: isActive
                 ? colors.primary
-                : colors.textTertiary.withValues(alpha: 0.3),
+                : colors.textTertiary.withOpacity(0.3),
             borderRadius: BorderRadius.circular(5),
           ),
         );

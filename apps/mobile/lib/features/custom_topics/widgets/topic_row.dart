@@ -46,7 +46,7 @@ class TopicRow extends StatelessWidget {
                 height: 6,
                 decoration: BoxDecoration(
                   color: isMuted
-                      ? colors.textTertiary.withValues(alpha: 0.4)
+                      ? colors.textTertiary.withOpacity(0.4)
                       : const Color(0xFFE07A5F),
                   shape: BoxShape.circle,
                 ),

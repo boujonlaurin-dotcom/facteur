@@ -15,25 +15,25 @@ class QuoteBlock extends StatelessWidget {
     final colors = context.facteurColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final separatorColor = colors.primary.withValues(alpha: isDark ? 0.18 : 0.14);
+    final separatorColor = colors.primary.withOpacity(isDark ? 0.45 : 0.38);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Top separator
           Center(
             child: Container(
-              width: 40,
-              height: 1,
+              width: 56,
+              height: 1.5,
               decoration: BoxDecoration(
                 color: separatorColor,
-                borderRadius: BorderRadius.circular(0.5),
+                borderRadius: BorderRadius.circular(0.75),
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 18),
           // Inline quote: « text » — author
           Text.rich(
             TextSpan(
@@ -41,52 +41,52 @@ class QuoteBlock extends StatelessWidget {
                 TextSpan(
                   text: '\u00AB ',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 17,
                     fontWeight: FontWeight.w300,
-                    color: colors.primary.withValues(alpha: isDark ? 0.50 : 0.35),
+                    color: colors.primary.withOpacity(isDark ? 0.55 : 0.40),
                   ),
                 ),
                 TextSpan(
                   text: quote.text,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 17,
                     fontStyle: FontStyle.italic,
                     fontWeight: FontWeight.w500,
-                    color: colors.textPrimary.withValues(alpha: 0.75),
+                    color: colors.textPrimary.withOpacity(0.85),
                     height: 1.5,
                   ),
                 ),
                 TextSpan(
                   text: ' \u00BB',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 17,
                     fontWeight: FontWeight.w300,
-                    color: colors.primary.withValues(alpha: isDark ? 0.50 : 0.35),
+                    color: colors.primary.withOpacity(isDark ? 0.55 : 0.40),
                   ),
                 ),
               ],
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             '\u2014 ${quote.author}',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: colors.textSecondary.withValues(alpha: 0.55),
+              color: colors.textSecondary.withOpacity(0.65),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 18),
           // Bottom separator
           Center(
             child: Container(
-              width: 40,
-              height: 1,
+              width: 56,
+              height: 1.5,
               decoration: BoxDecoration(
                 color: separatorColor,
-                borderRadius: BorderRadius.circular(0.5),
+                borderRadius: BorderRadius.circular(0.75),
               ),
             ),
           ),

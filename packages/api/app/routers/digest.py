@@ -11,14 +11,14 @@ Safe reuse of existing services through DigestService.
 
 import asyncio
 import time
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker, get_db
@@ -31,6 +31,9 @@ from app.schemas.digest import (
     DigestCompletionResponse,
     DigestResponse,
     DualDigestResponse,
+)
+from app.services.community_recommendation_service import (
+    CommunityRecommendationService,
 )
 from app.services.digest_service import DigestService
 from app.services.generation_state import is_generation_running
@@ -46,6 +49,107 @@ class ActionRequest(BaseModel):
 
     content_id: str
     action: str
+
+
+async def _enrich_community_carousel(
+    db: AsyncSession,
+    user_uuid: UUID,
+    digest: DigestResponse,
+) -> DigestResponse:
+    """Add community 🌻 carousel to digest response.
+
+    Fails open: any exception returns `digest` unchanged so the community
+    carousel is a purely additive surface and can never break digest loading.
+    """
+    import datetime
+
+    from app.models.content import UserContentStatus
+    from app.schemas.community import CommunityCarouselItem
+
+    try:
+        community_service = CommunityRecommendationService(db)
+        recent_items = await community_service.get_recent_recommendations(limit=8)
+
+        if not recent_items:
+            return digest
+
+        # Build carousel items with user status
+        all_ids = [item["content"].id for item in recent_items]
+        user_statuses: dict = {}
+        if all_ids:
+            rows = (
+                (
+                    await db.execute(
+                        select(UserContentStatus).where(
+                            UserContentStatus.user_id == user_uuid,
+                            UserContentStatus.content_id.in_(all_ids),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                user_statuses[row.content_id] = {
+                    "is_liked": row.is_liked,
+                    "is_saved": row.is_saved,
+                }
+
+        carousel_items = []
+        for item in recent_items:
+            content = item["content"]
+            if content.source is None:
+                continue
+            status = user_statuses.get(content.id, {})
+            content_type = content.content_type
+            source_type = content.source.source_type
+            try:
+                carousel_items.append(
+                    CommunityCarouselItem(
+                        content_id=content.id,
+                        title=content.title or "",
+                        url=content.url or "",
+                        thumbnail_url=content.thumbnail_url,
+                        description=content.description,
+                        content_type=(
+                            content_type.value
+                            if hasattr(content_type, "value")
+                            else str(content_type)
+                        ),
+                        duration_seconds=content.duration_seconds,
+                        # Fallback to now() if null — schema requires a value
+                        published_at=(
+                            content.published_at or datetime.datetime.now(datetime.UTC)
+                        ),
+                        source={
+                            "id": content.source.id,
+                            "name": content.source.name,
+                            "logo_url": content.source.logo_url,
+                            "type": (
+                                source_type.value
+                                if hasattr(source_type, "value")
+                                else str(source_type)
+                            ),
+                            "theme": content.source.theme,
+                        },
+                        sunflower_count=item.get("sunflower_count", 0),
+                        is_liked=status.get("is_liked", False),
+                        is_saved=status.get("is_saved", False),
+                        topics=content.topics or [],
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "community_carousel_item_skipped",
+                    content_id=str(content.id),
+                )
+
+        digest.community_carousel = carousel_items
+
+    except Exception:
+        logger.exception("community_carousel_enrichment_failed")
+
+    return digest
 
 
 @router.get("", response_model=DigestResponse)
@@ -138,12 +242,16 @@ async def get_digest(
             status_code=503, detail="Digest generation failed. Please try again later."
         )
 
+    # Enrich with community carousel
+    digest = await _enrich_community_carousel(db, user_uuid, digest)
+
     logger.info(
         "digest_retrieved",
         user_id=current_user_id,
         elapsed_ms=round(elapsed * 1000, 1),
         items_count=len(digest.items),
         is_completed=digest.is_completed,
+        community_carousel_count=len(digest.community_carousel),
     )
     return digest
 
@@ -206,6 +314,12 @@ async def get_both_digests(
     service = DigestService(db)
     serein_enabled = await service._get_user_serein_enabled(user_uuid)
 
+    # Enrich both variants with community carousel
+    if normal:
+        normal = await _enrich_community_carousel(db, user_uuid, normal)
+    if serein:
+        serein = await _enrich_community_carousel(db, user_uuid, serein)
+
     return DualDigestResponse(
         normal=normal,
         serein=serein,
@@ -265,8 +379,8 @@ async def apply_digest_action(
         messages = {
             DigestAction.READ: "Article marqué comme lu",
             DigestAction.SAVE: "Article sauvegardé",
-            DigestAction.LIKE: "Article aimé",
-            DigestAction.UNLIKE: "Like retiré",
+            DigestAction.LIKE: "Article recommandé 🌻",
+            DigestAction.UNLIKE: "Recommandation retirée",
             DigestAction.NOT_INTERESTED: "Article masqué et source ignorée",
             DigestAction.UNDO: "Action annulée",
         }
@@ -393,3 +507,159 @@ async def generate_digest(
 
     # Return the complete digest response with items
     return digest
+
+
+@router.get("/diag")
+async def digest_diagnostics(
+    target_date: date | None = Query(
+        None, description="Date for digest (default: today)"
+    ),
+    serein: bool = Query(False, description="Check the serene variant"),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Diagnostic snapshot for the authenticated user's digest pipeline.
+
+    Returns in a single request everything needed to answer "why is my
+    digest broken?":
+
+    - ``today_digest`` / ``yesterday_digest``: existence + format_version
+    - ``state``: rows from ``digest_generation_state`` for today (both
+      variants). Returns ``"table_missing"`` if migration dg01 isn't applied.
+    - ``render_test``: actually invokes ``_build_digest_response`` on the
+      existing digest, reporting whether it renders and if not, the
+      exception type + message. This is the key signal for detecting a
+      corrupted JSONB payload that would otherwise cause a 503 loop.
+    - ``migrations``: current alembic revision + presence of the 3
+      migration-sensitive tables/columns (td01, dg01, mg03).
+
+    Scoped to the authenticated user only — never accepts a user_id query
+    parameter — so this is safe to leave on in production.
+    """
+    user_uuid = UUID(current_user_id)
+    effective_date = target_date or today_paris()
+    yesterday = effective_date - timedelta(days=1)
+
+    async def _digest_snapshot(d: date, is_serene: bool) -> dict:
+        row = await db.scalar(
+            select(DailyDigest).where(
+                DailyDigest.user_id == user_uuid,
+                DailyDigest.target_date == d,
+                DailyDigest.is_serene == is_serene,
+            )
+        )
+        if row is None:
+            return {"exists": False}
+        return {
+            "exists": True,
+            "digest_id": str(row.id),
+            "format_version": row.format_version,
+            "is_serene": row.is_serene,
+            "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+        }
+
+    today_digest = await _digest_snapshot(effective_date, serein)
+    yesterday_digest = await _digest_snapshot(yesterday, serein)
+
+    # State table: may not exist if migration dg01 isn't applied.
+    state_info: dict | list
+    try:
+        from app.models.digest_generation_state import DigestGenerationState
+
+        state_rows = (
+            (
+                await db.execute(
+                    select(DigestGenerationState).where(
+                        DigestGenerationState.user_id == user_uuid,
+                        DigestGenerationState.target_date == effective_date,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        state_info = [
+            {
+                "is_serene": s.is_serene,
+                "status": s.status,
+                "attempts": s.attempts,
+                "last_error": (s.last_error[:200] if s.last_error else None),
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+            }
+            for s in state_rows
+        ]
+    except Exception as e:
+        state_info = {"error": type(e).__name__, "detail": str(e)[:200]}
+
+    # Render test: actually try to build the response from the existing
+    # digest so callers can see the exact exception type instead of
+    # guessing from a generic 503.
+    render_test: dict = {"attempted": False}
+    if today_digest.get("exists"):
+        render_test = {"attempted": True, "ok": False}
+        try:
+            svc = DigestService(db)
+            digest_row = await db.scalar(
+                select(DailyDigest).where(
+                    DailyDigest.id == UUID(today_digest["digest_id"])
+                )
+            )
+            if digest_row is not None:
+                await svc._build_digest_response(digest_row, user_uuid)
+                render_test["ok"] = True
+        except Exception as e:
+            render_test["error_type"] = type(e).__name__
+            render_test["error"] = str(e)[:500]
+
+    # Migration probes: best-effort, degrade gracefully.
+    migrations: dict = {}
+    try:
+        version_row = await db.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        )
+        migrations["alembic_version"] = version_row.scalar_one_or_none()
+    except Exception as e:
+        migrations["alembic_version_error"] = f"{type(e).__name__}: {str(e)[:120]}"
+
+    for table_name, column_name, label in (
+        ("sources", "tone", "td01_sources_tone"),
+        ("sources", "serein_default", "td01_sources_serein_default"),
+        ("digest_generation_state", None, "dg01_digest_generation_state"),
+        ("editorial_highlights_history", None, "dg01_editorial_highlights_history"),
+    ):
+        try:
+            if column_name:
+                probe = await db.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = :t AND column_name = :c"
+                    ),
+                    {"t": table_name, "c": column_name},
+                )
+            else:
+                probe = await db.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.tables WHERE table_name = :t"
+                    ),
+                    {"t": table_name},
+                )
+            migrations[label] = probe.scalar_one_or_none() is not None
+        except Exception as e:
+            migrations[label] = f"error: {type(e).__name__}"
+            logger.warning(
+                "digest_diag_migration_probe_failed",
+                label=label,
+                error=str(e),
+            )
+
+    return {
+        "user_id": current_user_id,
+        "target_date": str(effective_date),
+        "serein": serein,
+        "today_digest": today_digest,
+        "yesterday_digest": yesterday_digest,
+        "state": state_info,
+        "render_test": render_test,
+        "migrations": migrations,
+    }

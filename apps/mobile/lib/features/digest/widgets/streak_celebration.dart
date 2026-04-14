@@ -173,9 +173,7 @@ class _StreakCelebrationState extends State<StreakCelebration>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.orange.withValues(
-                      alpha: 0.3 * _flameGlowAnimation.value,
-                    ),
+                    color: Colors.orange.withOpacity(0.3 * _flameGlowAnimation.value),
                     blurRadius: 30 * _flameGlowAnimation.value,
                     spreadRadius: 10 * _flameGlowAnimation.value,
                   ),
@@ -217,7 +215,7 @@ class _StreakCelebrationState extends State<StreakCelebration>
               widget.streakMessage ??
                   _getDefaultStreakMessage(widget.streakCount),
               style: textTheme.titleMedium?.copyWith(
-                color: colors.onSurface.withValues(alpha: 0.8),
+                color: colors.onSurface.withOpacity(0.8),
                 fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,

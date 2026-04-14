@@ -123,7 +123,7 @@ class _WelcomeBannerState extends State<WelcomeBanner>
                 boxShadow: [
                   BoxShadow(
                     color: context.facteurColors.textSecondary
-                        .withValues(alpha: 0.7),
+                        .withOpacity(0.7),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -160,7 +160,7 @@ class _WelcomeBannerState extends State<WelcomeBanner>
                               'Ton feed personnalisé est prêt 🎉',
                           style:
                               Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.9),
+                                    color: Colors.white.withOpacity(0.9),
                                   ),
                         ),
                       ],

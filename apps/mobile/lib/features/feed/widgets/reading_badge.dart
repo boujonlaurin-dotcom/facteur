@@ -40,7 +40,7 @@ class ReadingBadge extends StatelessWidget {
       icon = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
     } else {
       // Parcouru — neutral gray
-      bgColor = colors.textSecondary.withValues(alpha: 0.7);
+      bgColor = colors.textSecondary.withOpacity(0.7);
       fgColor = Colors.white;
       icon = PhosphorIcons.eye(PhosphorIconsStyle.regular);
     }
@@ -52,7 +52,7 @@ class ReadingBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),

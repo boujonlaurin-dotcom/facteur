@@ -24,9 +24,15 @@ class CompactSearchChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      switchInCurve: Curves.easeInOut,
-      switchOutCurve: Curves.easeInOut,
+      duration: const Duration(milliseconds: 350),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return ScaleTransition(
+          scale: animation,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
       child: _isActive
           ? _ActiveChip(
               key: ValueKey('search_active_$activeKeyword'),
@@ -71,10 +77,10 @@ class _InactiveChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final muted = colorScheme.onSurface.withValues(alpha: 0.5);
+    final muted = colorScheme.onSurface.withOpacity(0.5);
     final trackColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.05);
 
     return GestureDetector(
       onTap: onTap,
@@ -126,7 +132,7 @@ class _ActiveChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: primary.withValues(alpha: 0.12),
+          color: primary.withOpacity(0.12),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -150,13 +156,16 @@ class _ActiveChip extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 4),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: onClear,
-              child: Icon(
-                PhosphorIcons.x(PhosphorIconsStyle.bold),
-                size: 12,
-                color: primary,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+                child: Icon(
+                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                  size: 13,
+                  color: primary,
+                ),
               ),
             ),
           ],

@@ -20,7 +20,7 @@ class TransitionText extends StatelessWidget {
           // Top separator
           Container(
             height: 1,
-            color: colors.textTertiary.withValues(alpha: 0.2),
+            color: colors.textTertiary.withOpacity(0.2),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -30,14 +30,14 @@ class TransitionText extends StatelessWidget {
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
                 fontStyle: FontStyle.italic,
-                color: colors.textPrimary.withValues(alpha: 0.7),
+                color: colors.textPrimary.withOpacity(0.7),
               ),
             ),
           ),
           // Bottom separator
           Container(
             height: 1,
-            color: colors.textTertiary.withValues(alpha: 0.2),
+            color: colors.textTertiary.withOpacity(0.2),
           ),
         ],
       ),

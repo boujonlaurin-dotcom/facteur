@@ -64,7 +64,7 @@ class ThemeSection extends ConsumerWidget {
             title: Text(
               '${getMacroThemeEmoji(themeLabel)} ${themeLabel.toUpperCase()} (masqué)',
               style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary.withValues(alpha: 0.5),
+                color: colors.textTertiary.withOpacity(0.5),
                 letterSpacing: 1.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -327,7 +327,7 @@ class ThemeSection extends ConsumerWidget {
                     vertical: FacteurSpacing.space2,
                   ),
                   child: Divider(
-                    color: colors.textTertiary.withValues(alpha: 0.15),
+                    color: colors.textTertiary.withOpacity(0.15),
                   ),
                 ),
                 Padding(
@@ -338,7 +338,7 @@ class ThemeSection extends ConsumerWidget {
                   child: Text(
                     'Sujets masqués',
                     style: textTheme.labelSmall?.copyWith(
-                      color: colors.textTertiary.withValues(alpha: 0.5),
+                      color: colors.textTertiary.withOpacity(0.5),
                       letterSpacing: 1.0,
                       fontWeight: FontWeight.w600,
                     ),
@@ -494,7 +494,7 @@ class _SuggestionsBlockState extends ConsumerState<_SuggestionsBlock> {
                 children: [
                   Expanded(
                     child: Divider(
-                      color: colors.textTertiary.withValues(alpha: 0.2),
+                      color: colors.textTertiary.withOpacity(0.2),
                     ),
                   ),
                   Padding(
@@ -511,7 +511,7 @@ class _SuggestionsBlockState extends ConsumerState<_SuggestionsBlock> {
                   ),
                   Expanded(
                     child: Divider(
-                      color: colors.textTertiary.withValues(alpha: 0.2),
+                      color: colors.textTertiary.withOpacity(0.2),
                     ),
                   ),
                 ],

@@ -102,7 +102,7 @@ class DigestSummary extends StatelessWidget {
           Text(
             label,
             style: textTheme.bodySmall?.copyWith(
-              color: iconColor.withValues(alpha: 0.8),
+              color: iconColor.withOpacity(0.8),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -115,7 +115,7 @@ class DigestSummary extends StatelessWidget {
     return Container(
       width: 1,
       height: 50,
-      color: colors.surface.withValues(alpha: 0.5),
+      color: colors.surface.withOpacity(0.5),
     );
   }
 
@@ -130,7 +130,7 @@ class DigestSummary extends StatelessWidget {
         vertical: FacteurSpacing.space2,
       ),
       decoration: BoxDecoration(
-        color: colors.surface.withValues(alpha: 0.5),
+        color: colors.surface.withOpacity(0.5),
         borderRadius: BorderRadius.circular(FacteurRadius.small / 2),
       ),
       child: Row(

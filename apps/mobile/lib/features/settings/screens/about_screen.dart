@@ -143,7 +143,7 @@ class AboutScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(FacteurSpacing.space2),
             decoration: BoxDecoration(
-              color: colors.primary.withValues(alpha: 0.1),
+              color: colors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(FacteurRadius.small),
             ),
             child: Icon(icon, color: colors.primary, size: 20),

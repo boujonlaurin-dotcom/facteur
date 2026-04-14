@@ -28,14 +28,14 @@ void main() {
 
   Widget buildWidget({
     DigestItem? deepArticle,
-    String? reculIntro,
+    String? introText,
     VoidCallback? onTap,
   }) {
     return MaterialApp(
       home: Scaffold(
         body: PasDeReculBlock(
           deepArticle: deepArticle ?? article,
-          reculIntro: reculIntro,
+          introText: introText,
           onTap: onTap,
         ),
       ),
@@ -86,15 +86,15 @@ void main() {
       expect(find.text('Le Monde'), findsNothing);
     });
 
-    testWidgets('displays reculIntro when provided', (tester) async {
+    testWidgets('displays introText when provided', (tester) async {
       await tester.pumpWidget(buildWidget(
-        reculIntro: 'Pour prendre de la hauteur...',
+        introText: 'Pour prendre de la hauteur...',
       ));
       expect(find.text('Pour prendre de la hauteur...'), findsOneWidget);
     });
 
-    testWidgets('hides reculIntro when null', (tester) async {
-      await tester.pumpWidget(buildWidget(reculIntro: null));
+    testWidgets('hides introText when null', (tester) async {
+      await tester.pumpWidget(buildWidget(introText: null));
       expect(find.text('Pour prendre de la hauteur...'), findsNothing);
     });
 

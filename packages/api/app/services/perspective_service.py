@@ -159,6 +159,9 @@ class PerspectiveService:
         self,
         db: AsyncSession | None = None,
         timeout: float = 10.0,
+        # Hard cap on perspectives returned by hybrid search. If the digest
+        # header consistently shows exactly this number, results are likely
+        # truncated — bump this cap or audit upstream filters.
         max_results: int = 10,
     ):
         self.db = db

@@ -71,8 +71,7 @@ class _MinimalLoaderPainter extends CustomPainter {
 
     // 1. Fond du cercle (Track) - subtil et rassurant
     final trackPaint = Paint()
-      ..color = color.withValues(
-          alpha: 0.1) // Très léger rappel de la couleur primaire
+      ..color = color.withOpacity(0.1) // Très léger rappel de la couleur primaire
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
 

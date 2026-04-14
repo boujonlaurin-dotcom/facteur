@@ -104,7 +104,7 @@ class _BottomNavBar extends ConsumerWidget {
         color: colors.backgroundPrimary,
         border: Border(
           top: BorderSide(
-            color: colors.border.withValues(alpha: 0.5), // Increased visibility
+            color: colors.border.withOpacity(0.5), // Increased visibility
             width: 0.8, // Slightly thicker for definition
           ),
         ),
@@ -165,7 +165,7 @@ class _NavItem extends StatelessWidget {
         decoration: BoxDecoration(
           // Very subtle primary tint for active item
           color: isSelected
-              ? colors.primary.withValues(alpha: 0.04)
+              ? colors.primary.withOpacity(0.04)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),

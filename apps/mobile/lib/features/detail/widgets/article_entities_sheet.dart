@@ -25,7 +25,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: ArticleEntitiesSheet(content: content),
@@ -63,7 +63,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colors.textTertiary.withValues(alpha: 0.3),
+                    color: colors.textTertiary.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -118,7 +118,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                                   ),
                                   decoration: BoxDecoration(
                                     color: colors.textTertiary
-                                        .withValues(alpha: 0.1),
+                                        .withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -164,7 +164,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                             ),
                             decoration: BoxDecoration(
                               color: colors.textTertiary
-                                  .withValues(alpha: 0.1),
+                                  .withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -230,7 +230,7 @@ class ArticleEntitiesSheet extends ConsumerWidget {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: _terracotta.withValues(alpha: 0.1),
+                              color: _terracotta.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(

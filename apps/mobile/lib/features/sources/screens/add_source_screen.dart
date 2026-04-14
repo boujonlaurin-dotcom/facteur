@@ -656,9 +656,9 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.1),
+        color: colors.primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
+        border: Border.all(color: colors.primary.withOpacity(0.3)),
       ),
       child: Column(
         children: [

@@ -78,7 +78,6 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
     @JsonKey(name: 'note_text') String? noteText,
-    @JsonKey(name: 'recul_intro') String? reculIntro,
     String? badge, // "actu", "pas_de_recul", "pepite", "coup_de_coeur"
   }) = _DigestItem;
 
@@ -110,6 +109,7 @@ class DigestTopic with _$DigestTopic {
     @JsonKey(name: 'divergence_analysis') String? divergenceAnalysis,
     @JsonKey(name: 'perspective_sources') @Default([]) List<SourceMini> perspectiveSources,
     @JsonKey(name: 'divergence_level') String? divergenceLevel,
+    @JsonKey(name: 'representative_content_id') String? representativeContentId,
   }) = _DigestTopic;
 
   /// A topic is "covered" when at least one article has been interacted with
