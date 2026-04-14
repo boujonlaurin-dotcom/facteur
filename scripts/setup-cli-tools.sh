@@ -2,10 +2,11 @@
 # =============================================================================
 # setup-cli-tools.sh — Installation des CLI Railway et Supabase
 #
-# À exécuter une fois sur une nouvelle machine de développement,
-# ou dans un environnement CI/CD avec accès réseau.
+# À exécuter une fois sur une machine de développement avec accès à github.com.
+# Prérequis : curl, Node.js >= 18
 #
-# Prérequis : Node.js >= 18, npm >= 9
+# Usage :
+#   bash scripts/setup-cli-tools.sh
 # =============================================================================
 
 set -euo pipefail
@@ -13,61 +14,75 @@ set -euo pipefail
 echo "=== Facteur — Installation des CLI dev tools ==="
 echo ""
 
-# ─── Railway CLI ────────────────────────────────────────────────────────────
+# ─── Railway CLI ──────────────────────────────────────────────────────────────
 if command -v railway &>/dev/null; then
   echo "[OK] Railway CLI déjà installé: $(railway --version 2>/dev/null)"
 else
-  echo "[...] Installation Railway CLI (@railway/cli)..."
-  npm install -g @railway/cli
+  echo "[...] Installation Railway CLI via script officiel..."
+  bash <(curl -fsSL https://railway.app/install.sh)
   echo "[OK] Railway CLI installé: $(railway --version 2>/dev/null)"
 fi
 
-# ─── Supabase CLI ────────────────────────────────────────────────────────────
+# ─── Supabase CLI ─────────────────────────────────────────────────────────────
 if command -v supabase &>/dev/null; then
   echo "[OK] Supabase CLI déjà installé: $(supabase --version 2>/dev/null)"
 else
-  echo "[...] Installation Supabase CLI (supabase)..."
-  npm install -g supabase
+  echo "[...] Installation Supabase CLI (binaire officiel GitHub)..."
+
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64)  ARCH="amd64" ;;
+    aarch64) ARCH="arm64" ;;
+    *)       echo "ERREUR: Architecture non supportée: $ARCH"; exit 1 ;;
+  esac
+
+  TMP=$(mktemp -d)
+  URL="https://github.com/supabase/cli/releases/latest/download/supabase_linux_${ARCH}.tar.gz"
+
+  echo "    Téléchargement depuis: $URL"
+  curl -fsSL "$URL" -o "${TMP}/supabase.tar.gz"
+  tar -xzf "${TMP}/supabase.tar.gz" -C "$TMP"
+
+  # Installe dans /usr/local/bin si possible, sinon ~/.local/bin
+  if [ -w /usr/local/bin ]; then
+    install -m 755 "${TMP}/supabase" /usr/local/bin/supabase
+  else
+    mkdir -p ~/.local/bin
+    install -m 755 "${TMP}/supabase" ~/.local/bin/supabase
+    echo "    Ajouté dans ~/.local/bin — assure-toi que ce dossier est dans ton PATH"
+  fi
+  rm -rf "$TMP"
+
   echo "[OK] Supabase CLI installé: $(supabase --version 2>/dev/null)"
 fi
 
+# ─── Vérification finale ──────────────────────────────────────────────────────
 echo ""
-echo "=== Variables d'environnement requises ==="
-echo ""
-echo "Copie .env.example vers .env et renseigne les valeurs :"
-echo ""
-echo "  RAILWAY_TOKEN              — Railway > Account Settings > Tokens"
-echo "                               (scope: Full Access ou Read-only selon besoin)"
-echo ""
-echo "  SUPABASE_ACCESS_TOKEN      — supabase.com > Account > Access Tokens"
-echo ""
-echo "  RAILWAY_PROJECT_ID         — ID du projet Railway (optionnel pour CLI)"
-echo "  RAILWAY_SERVICE_ID         — ID du service Railway (optionnel pour CLI)"
-echo ""
-echo "Documentation : docs/config/env-vars.md (si existant)"
-echo ""
-
-# ─── Vérification finale ──────────────────────────────────────────────────
 echo "=== Vérification ==="
 echo ""
-ALL_OK=true
 
 check_cmd() {
   if command -v "$1" &>/dev/null; then
     echo "[OK] $1"
   else
-    echo "[MISSING] $1 — relance ce script avec accès réseau"
-    ALL_OK=false
+    echo "[MISSING] $1"
+    return 1
   fi
 }
 
-check_cmd railway
-check_cmd supabase
+all_ok=true
+check_cmd railway   || all_ok=false
+check_cmd supabase  || all_ok=false
 
 echo ""
-if [ "$ALL_OK" = true ]; then
-  echo "Tout est installé. Les MCP servers Railway et Supabase sont prêts."
+if [ "$all_ok" = true ]; then
+  echo "Tous les CLI sont installés."
+  echo ""
+  echo "Variables d'environnement requises (voir .env.example) :"
+  echo "  RAILWAY_TOKEN         → railway.app > Account Settings > Tokens"
+  echo "  SUPABASE_ACCESS_TOKEN → app.supabase.com > Account > Access Tokens (PAT)"
 else
-  echo "Certains outils manquent. Vérifie la connexion réseau et relance le script."
+  echo "ERREUR: Certains CLI n'ont pas pu être installés."
+  echo "Vérification de l'accès réseau à github.com et réessaie."
   exit 1
 fi
