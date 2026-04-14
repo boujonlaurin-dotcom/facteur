@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)
 
+    # Brave Search API (smart source search)
+    brave_api_key: str = ""
+    brave_monthly_cap: int = 1800
+    mistral_monthly_cap: int = 2000
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"
