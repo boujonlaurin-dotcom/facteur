@@ -62,21 +62,21 @@ class ClusterChip extends StatelessWidget {
           ),
         ),
         padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space3,
-          vertical: FacteurSpacing.space2,
+          horizontal: FacteurSpacing.space2,
+          vertical: FacteurSpacing.space1,
         ),
         child: Row(
           children: [
             Icon(
               PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-              size: 12,
+              size: 10,
               color: colors.textTertiary,
             ),
-            const SizedBox(width: FacteurSpacing.space2),
+            const SizedBox(width: FacteurSpacing.space1),
             Expanded(
               child: Text(
                 '${content.clusterHiddenCount} articles récents sur $topicName',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: colors.textTertiary,
                     ),
                 maxLines: 1,
@@ -84,13 +84,13 @@ class ClusterChip extends StatelessWidget {
               ),
             ),
             if (sortedSources.isNotEmpty) ...[
-              const SizedBox(width: FacteurSpacing.space2),
+              const SizedBox(width: FacteurSpacing.space1),
               SourceLogos(sources: sortedSources, colors: colors),
             ],
-            const SizedBox(width: FacteurSpacing.space2),
+            const SizedBox(width: FacteurSpacing.space1),
             Icon(
               PhosphorIcons.arrowRight(),
-              size: 14,
+              size: 12,
               color: colors.textTertiary,
             ),
           ],
