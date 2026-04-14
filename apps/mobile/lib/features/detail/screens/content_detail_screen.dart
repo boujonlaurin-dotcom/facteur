@@ -25,8 +25,6 @@ import '../../feed/repositories/feed_repository.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../feed/widgets/perspectives_pill.dart';
-import '../../../widgets/sunflower_icon.dart';
-import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -34,7 +32,6 @@ import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
-import '../../digest/widgets/article_thumbs_feedback.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -89,7 +86,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showFab = false;
   bool _showShareFab = false;
   bool _isShortArticle = false;
-  bool _footerPermanent = false; // true once user reaches end of displayed content
+  bool _footerPermanent =
+      false; // true once user reaches end of displayed content
   final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _showNoteWelcome = false;
   bool _linkCopiedFab = false;
@@ -118,17 +116,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _readingTimer;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
-  // 🌻 Nudge "Recommander ?" state
-  Timer? _sunflowerNudgeTimer;
-  bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
-  double _prevNativeScrollOffset = 0.0;
   late AnimationController _headerAutoController;
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
 
   final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
+
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
@@ -310,24 +305,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // 🌻 Nudge: record article open and start 30s timer
-    NudgeTracker.recordArticleOpen();
-    _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
-      if (!mounted) return;
-      final isLiked = _content?.isLiked ?? false;
-      final shouldShow = await NudgeTracker.shouldShowNudge(
-        isAlreadySunflowered: isLiked,
-      );
-      if (shouldShow && mounted) {
-        setState(() => _showSunflowerNudge = true);
-        NudgeTracker.markNudgeShown();
-        // Auto-dismiss after 5 seconds
-        Future.delayed(const Duration(seconds: 5), () {
-          if (mounted) setState(() => _showSunflowerNudge = false);
-        });
-      }
-    });
-
     // Start timer if content is suitable for in-app reading/viewing and not already consumed
     final isVideo = _content?.isVideo ?? false;
     if ((_content?.hasInAppContent == true || isVideo) && !_isConsumed) {
@@ -346,9 +323,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Reading progress: track scroll depth
     _scrollController.addListener(_onScrollReadingProgress);
-
-    // Header hide/show: track scroll delta for native in-app content
-    _scrollController.addListener(_onNativeScrollHeader);
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -656,16 +630,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _headerAutoController.forward(from: 0);
   }
 
-/// Scroll listener for native (in-app) content — computes delta from previous
-  /// offset and forwards it to [_onScrollDelta].
-  void _onNativeScrollHeader() {
-    if (!_scrollController.hasClients || _isWebViewActive) return;
-    final current = _scrollController.offset;
-    final delta = current - _prevNativeScrollOffset;
-    _prevNativeScrollOffset = current;
-    if (delta != 0) _onScrollDelta(delta);
-  }
-
   /// Smoothly animate the footer to [target] offset (0.0 = visible, 1.0 = hidden).
   void _animateFooterTo(double target) {
     _footerAutoController.stop();
@@ -677,10 +641,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
   /// Positive delta = scrolling down, negative = scrolling up.
   void _onScrollDelta(double delta) {
-    // Dismiss sunflower nudge on any scroll
-    if (_showSunflowerNudge) {
-      setState(() => _showSunflowerNudge = false);
-    }
     final isVideo = _content?.isVideo ?? false;
     _videoPlayHideTimer?.cancel();
     if (_fabOpacity.value != 0.07) {
@@ -701,12 +661,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         final bottomInset = MediaQuery.of(context).viewPadding.bottom;
         final footerHeight = _kFooterContentHeight + bottomInset;
         final footerShift = delta / footerHeight;
-        _footerOffset.value = (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+        _footerOffset.value =
+            (_footerOffset.value + footerShift).clamp(0.0, 1.0);
       }
     }
     // FABs + footer reappear after 2.5s of scroll inactivity
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 2500), () {
+    _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
@@ -717,10 +678,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _inactivityTimer?.cancel();
     if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        final nativeScrollY =
-            _scrollController.hasClients ? _scrollController.offset : 0.0;
-        final scrolledPastTop = _webScrollY > 0 || nativeScrollY > 0;
-        if (mounted && scrolledPastTop && _headerOffset.value < 1.0) {
+        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });
@@ -750,8 +708,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Fixes cases where RSS provides longer htmlContent than the API
           // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description: _pickLongest(content.description, _content?.description),
-            htmlContent: _pickLongest(content.htmlContent, _content?.htmlContent),
+            description:
+                _pickLongest(content.description, _content?.description),
+            htmlContent:
+                _pickLongest(content.htmlContent, _content?.htmlContent),
             editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
@@ -782,28 +742,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _fetchPerspectives();
           }
         } else {
-          // Content not found via API. Keep whatever was passed via extra
-          // (e.g. a digest "Pas de recul" article whose row was just culled
-          // server-side) so the screen still renders instead of bouncing
-          // the user back to the previous screen with a blank flash.
+          // Show error and pop if content not found
           setState(() => _contentResolved = true);
-          if (_content == null) {
-            NotificationService.showError('Contenu introuvable',
-                context: context);
-            context.pop();
-          }
+          NotificationService.showError('Contenu introuvable',
+              context: context);
+          context.pop();
         }
       }
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
         setState(() => _contentResolved = true);
-        // Same fallback: only pop when we truly have nothing to show.
-        if (_content == null) {
-          NotificationService.showError('Erreur de chargement',
-              context: context);
-          context.pop();
-        }
+        NotificationService.showError('Erreur de chargement', context: context);
+        context.pop();
       }
     }
   }
@@ -885,12 +836,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     HapticFeedback.lightImpact();
     final wasLiked = content.isLiked;
     final newLiked = !wasLiked;
-    // Cancel the pending nudge timer if the user sunflowers manually during
-    // the 30s wait — avoids firing a redundant "Recommander ?" pill.
-    _sunflowerNudgeTimer?.cancel();
     setState(() {
       _content = content.copyWith(isLiked: newLiked);
-      _showSunflowerNudge = false;
     });
 
     // Bounce animation
@@ -904,8 +851,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (mounted) {
         NotificationService.showInfo(
           newLiked
-              ? 'Ajouté à Mes contenus recommandés 🌻'
-              : 'Retiré de Mes contenus recommandés 🌻',
+              ? 'Ajouté à vos contenus favoris'
+              : 'Retiré de vos contenus favoris',
         );
         // Refresh collections to update liked collection counts
         ref.invalidate(collectionsProvider);
@@ -1035,7 +982,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
-    _sunflowerNudgeTimer?.cancel();
     _inactivityTimer?.cancel();
     _videoPlayHideTimer?.cancel();
     _linkCopiedFabTimer?.cancel();
@@ -1320,8 +1266,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sourceName: _content?.source.name ?? '',
         contentId: widget.contentId,
         comparisonQuality: response.comparisonQuality,
-        initialAnalysis: response.analysis,
-        analysisCached: response.analysisCached,
       ),
     );
   }
@@ -1449,235 +1393,234 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         },
         child: Stack(
-        children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollUpdateNotification) {
-                final delta = notification.scrollDelta ?? 0.0;
-                // Sync short-article flag from live scroll metrics (catches cases
-                // where the postFrameCallback hasn't fired yet).
-                if (!_isShortArticle &&
-                    notification.metrics.maxScrollExtent < 50) {
-                  _isShortArticle = true;
-                  _footerPermanent = true;
-                  _headerOffset.value = 0.0;
-                }
-                _onScrollDelta(delta);
-                _checkAtPerspectivesSection();
-                // Track reading progress from any scrollable (including in-app reader)
-                final metrics = notification.metrics;
-                if (metrics.maxScrollExtent > 0) {
-                  final rawProgress = metrics.pixels / metrics.maxScrollExtent;
-                  // Footer becomes permanent at end of ALL content (incl. perspectives)
-                  if (!_footerPermanent && rawProgress >= 0.98) {
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollUpdateNotification) {
+                  final delta = notification.scrollDelta ?? 0.0;
+                  // Sync short-article flag from live scroll metrics (catches cases
+                  // where the postFrameCallback hasn't fired yet).
+                  if (!_isShortArticle &&
+                      notification.metrics.maxScrollExtent < 50) {
+                    _isShortArticle = true;
                     _footerPermanent = true;
-                    _animateFooterTo(0.0);
+                    _headerOffset.value = 0.0;
                   }
-                  // Progress bar uses article-only extent so perspectives don't dilute it
-                  final articleExtent =
-                      _articleContentExtent ?? metrics.maxScrollExtent;
-                  final barProgress = metrics.pixels / articleExtent;
-                  final capped = _isPartialContent
-                      ? (barProgress * 0.25).clamp(0.0, 0.25)
-                      : barProgress.clamp(0.0, 1.0);
-                  _readingProgress.value = capped;
-                  if (capped > _maxReadingProgress) {
-                    _maxReadingProgress = capped;
+                  _onScrollDelta(delta);
+                  _checkAtPerspectivesSection();
+                  // Track reading progress from any scrollable (including in-app reader)
+                  final metrics = notification.metrics;
+                  if (metrics.maxScrollExtent > 0) {
+                    final rawProgress =
+                        metrics.pixels / metrics.maxScrollExtent;
+                    // Footer becomes permanent at end of ALL content (incl. perspectives)
+                    if (!_footerPermanent && rawProgress >= 0.98) {
+                      _footerPermanent = true;
+                      _animateFooterTo(0.0);
+                    }
+                    // Progress bar uses article-only extent so perspectives don't dilute it
+                    final articleExtent =
+                        _articleContentExtent ?? metrics.maxScrollExtent;
+                    final barProgress = metrics.pixels / articleExtent;
+                    final capped = _isPartialContent
+                        ? (barProgress * 0.25).clamp(0.0, 0.25)
+                        : barProgress.clamp(0.0, 1.0);
+                    _readingProgress.value = capped;
+                    if (capped > _maxReadingProgress) {
+                      _maxReadingProgress = capped;
+                    }
                   }
                 }
-              }
-              return false;
-            },
-            child: Positioned.fill(
-              child: isVideoContent
-                  ? _buildVideoContent(context, content)
-                  : useScrollToSite
-                      ? _buildScrollToSiteContent(context, content)
-                      : useInAppReading
-                          ? _buildInAppContent(context, content)
-                          : _buildWebViewFallback(content),
-            ),
-          ),
-          // Header — follows scroll: slides up on scroll-down, back on scroll-up
-          // For short articles the header stays pinned (offset is never updated).
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, child) {
-                final headerHeight =
-                    MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-                return Transform.translate(
-                  offset: Offset(0, -offset * headerHeight),
-                  child: child!,
-                );
+                return false;
               },
-              child: _buildHeader(context, content),
+              child: Positioned.fill(
+                child: isVideoContent
+                    ? _buildVideoContent(context, content)
+                    : useScrollToSite
+                        ? _buildScrollToSiteContent(context, content)
+                        : useInAppReading
+                            ? _buildInAppContent(context, content)
+                            : _buildWebViewFallback(content),
+              ),
             ),
-          ),
-          // Opaque status-bar backdrop — only when WebView is active and
-          // the header has slid off-screen, so WebView content doesn't
-          // bleed through the transparent status bar zone.
-          if (_isWebViewActive)
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, _) {
-                final statusBarHeight = MediaQuery.of(context).padding.top;
-                return Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: offset,
-                      child: SizedBox(
-                        height: statusBarHeight,
-                        child: ColoredBox(color: colors.backgroundPrimary),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          // Reading progress bar — follows header position continuously
-          if (content.hasInAppContent ||
-              _isWebViewActive ||
-              isVideoContent ||
-              (!useScrollToSite && !useInAppReading))
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, _) {
-                final statusBarHeight = MediaQuery.of(context).padding.top;
-                final topWhenHeaderVisible =
-                    statusBarHeight + _kHeaderContentHeight;
-                final topWhenHeaderHidden = statusBarHeight;
-                final top = topWhenHeaderVisible -
-                    offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                return Positioned(
-                  top: top,
-                  left: 0,
-                  right: 0,
-                  child: _buildReadingProgressBar(colors),
-                );
-              },
-            ),
-          // Sticky perspectives section header — appears below the app header
-          // when the inline section header has scrolled off-screen.
-          // Only shown for in-app article reading.
-          if (useInAppReading &&
-              content.contentType == ContentType.article &&
-              _perspectivesResponse != null)
-            ValueListenableBuilder<bool>(
-              valueListenable: _showStickyPerspectivesHeader,
-              builder: (context, showSticky, _) {
-                return ValueListenableBuilder<double>(
-                  valueListenable: _headerOffset,
-                  builder: (context, offset, _) {
-                    final statusBarHeight =
-                        MediaQuery.of(context).padding.top;
-                    // Sits immediately below the reading progress bar (+2px).
-                    final topWhenHeaderVisible =
-                        statusBarHeight + _kHeaderContentHeight + 2.0;
-                    final topWhenHeaderHidden = statusBarHeight + 2.0;
-                    final top = topWhenHeaderVisible -
-                        offset *
-                            (topWhenHeaderVisible - topWhenHeaderHidden);
-                    return Positioned(
-                      top: top,
-                      left: 0,
-                      right: 0,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: showSticky ? 1.0 : 0.0,
-                        child: IgnorePointer(
-                          ignoring: !showSticky,
-                          child: _buildPerspectivesStickyHeader(
-                              context, _perspectivesResponse!),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          // Exit animation overlay — fade-to-white + scale-down
-          if (_isExitAnimating)
-            AnimatedBuilder(
-              animation: _exitAnimController,
-              builder: (context, _) {
-                return Positioned.fill(
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.white
-                          .withOpacity(0.6 * _exitAnimController.value),
-                    ),
-                  ),
-                );
-              },
-            ),
-          // Floating "Lancer l'analyse Facteur" button — in-app articles only.
-          // Visible when the perspectives section is on screen and analysis
-          // hasn't been triggered yet.
-          if (useInAppReading && content.contentType == ContentType.article)
+            // Header — follows scroll: slides up on scroll-down, back on scroll-up
+            // For short articles the header stays pinned (offset is never updated).
             Positioned(
-              right: 16,
-              bottom: _kFooterContentHeight +
-                  MediaQuery.of(context).viewPadding.bottom +
-                  12,
-              child: ValueListenableBuilder<bool>(
-                valueListenable: _atPerspectivesSection,
-                builder: (context, atPersp, _) {
-                  final show = atPersp &&
-                      _perspectivesAnalysisState ==
-                          PerspectivesAnalysisState.idle &&
-                      _perspectivesResponse != null &&
-                      _perspectivesResponse!.perspectives.isNotEmpty;
-                  return AnimatedOpacity(
-                    opacity: show ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 200),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, child) {
+                  final headerHeight = MediaQuery.of(context).padding.top +
+                      _kHeaderContentHeight;
+                  return Transform.translate(
+                    offset: Offset(0, -offset * headerHeight),
+                    child: child!,
+                  );
+                },
+                child: _buildHeader(context, content),
+              ),
+            ),
+            // Opaque status-bar backdrop — only when WebView is active and
+            // the header has slid off-screen, so WebView content doesn't
+            // bleed through the transparent status bar zone.
+            if (_isWebViewActive)
+              ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, _) {
+                  final statusBarHeight = MediaQuery.of(context).padding.top;
+                  return Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
                     child: IgnorePointer(
-                      ignoring: !show,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _requestPerspectivesAnalysis();
-                        },
-                        style: FilledButton.styleFrom(
-                          backgroundColor: context.facteurColors.primary
-                              .withValues(alpha: 1.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: Icon(
-                          PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                          size: 16,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          'Lancer l\'analyse Facteur',
-                          style: TextStyle(color: Colors.white),
+                      child: Opacity(
+                        opacity: offset,
+                        child: SizedBox(
+                          height: statusBarHeight,
+                          child: ColoredBox(color: colors.backgroundPrimary),
                         ),
                       ),
                     ),
                   );
                 },
               ),
-            ),
-          // Footer — shown for in-app article reading, mirrors header slide behavior
-          if (useScrollToSite ||
-              (useInAppReading &&
-                  content.contentType == ContentType.article))
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildArticleFooter(context, content),
-            ),
-        ],
-      ),
+            // Reading progress bar — follows header position continuously
+            if (content.hasInAppContent ||
+                _isWebViewActive ||
+                isVideoContent ||
+                (!useScrollToSite && !useInAppReading))
+              ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, _) {
+                  final statusBarHeight = MediaQuery.of(context).padding.top;
+                  final topWhenHeaderVisible =
+                      statusBarHeight + _kHeaderContentHeight;
+                  final topWhenHeaderHidden = statusBarHeight;
+                  final top = topWhenHeaderVisible -
+                      offset * (topWhenHeaderVisible - topWhenHeaderHidden);
+                  return Positioned(
+                    top: top,
+                    left: 0,
+                    right: 0,
+                    child: _buildReadingProgressBar(colors),
+                  );
+                },
+              ),
+            // Sticky perspectives section header — appears below the app header
+            // when the inline section header has scrolled off-screen.
+            // Only shown for in-app article reading.
+            if (useInAppReading &&
+                content.contentType == ContentType.article &&
+                _perspectivesResponse != null)
+              ValueListenableBuilder<bool>(
+                valueListenable: _showStickyPerspectivesHeader,
+                builder: (context, showSticky, _) {
+                  return ValueListenableBuilder<double>(
+                    valueListenable: _headerOffset,
+                    builder: (context, offset, _) {
+                      final statusBarHeight =
+                          MediaQuery.of(context).padding.top;
+                      // Sits immediately below the reading progress bar (+2px).
+                      final topWhenHeaderVisible =
+                          statusBarHeight + _kHeaderContentHeight + 2.0;
+                      final topWhenHeaderHidden = statusBarHeight + 2.0;
+                      final top = topWhenHeaderVisible -
+                          offset * (topWhenHeaderVisible - topWhenHeaderHidden);
+                      return Positioned(
+                        top: top,
+                        left: 0,
+                        right: 0,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: showSticky ? 1.0 : 0.0,
+                          child: IgnorePointer(
+                            ignoring: !showSticky,
+                            child: _buildPerspectivesStickyHeader(
+                                context, _perspectivesResponse!),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            // Exit animation overlay — fade-to-white + scale-down
+            if (_isExitAnimating)
+              AnimatedBuilder(
+                animation: _exitAnimController,
+                builder: (context, _) {
+                  return Positioned.fill(
+                    child: IgnorePointer(
+                      child: ColoredBox(
+                        color: Colors.white
+                            .withValues(alpha: 0.6 * _exitAnimController.value),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            // Floating "Lancer l'analyse Facteur" button — in-app articles only.
+            // Visible when the perspectives section is on screen and analysis
+            // hasn't been triggered yet.
+            if (useInAppReading && content.contentType == ContentType.article)
+              Positioned(
+                right: 16,
+                bottom: _kFooterContentHeight +
+                    MediaQuery.of(context).viewPadding.bottom +
+                    12,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _atPerspectivesSection,
+                  builder: (context, atPersp, _) {
+                    final show = atPersp &&
+                        _perspectivesAnalysisState ==
+                            PerspectivesAnalysisState.idle &&
+                        _perspectivesResponse != null &&
+                        _perspectivesResponse!.perspectives.isNotEmpty;
+                    return AnimatedOpacity(
+                      opacity: show ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: IgnorePointer(
+                        ignoring: !show,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            _requestPerspectivesAnalysis();
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: context.facteurColors.primary
+                                .withValues(alpha: 1.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: Icon(
+                            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            'Lancer l\'analyse Facteur',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            // Footer — shown for in-app article reading, mirrors header slide behavior
+            if (useScrollToSite ||
+                (useInAppReading && content.contentType == ContentType.article))
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildArticleFooter(context, content),
+              ),
+          ],
+        ),
       ),
       // FABs — vertical column with immersive scroll opacity
       // Suppressed for articles (replaced by the persistent footer).
@@ -1771,82 +1714,33 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                           const SizedBox(height: 12),
                         ],
-                        // 🌻 Sunflower recommendation FAB + nudge label
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Animated "Recommander ?" nudge label
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              transitionBuilder: (child, animation) =>
-                                  FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0.3, 0),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              ),
-                              child: _showSunflowerNudge
-                                  ? Container(
-                                      key: const ValueKey('nudge_visible'),
-                                      margin: const EdgeInsets.only(right: 10),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFF8E1),
-                                        borderRadius:
-                                            BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.1),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Text(
-                                        'Recommander ? 🌻',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF795548),
-                                        ),
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(
-                                      key: ValueKey('nudge_hidden'),
-                                    ),
-                            ),
-                            ScaleTransition(
-                              scale: _likeScaleAnimation,
-                              child: SizedBox(
-                                width: 50,
-                                height: 50,
-                                child: FloatingActionButton(
-                                  onPressed: _toggleLike,
-                                  backgroundColor: content.isLiked
-                                      ? colors.primary
-                                      : Colors.white,
-                                  foregroundColor: content.isLiked
-                                      ? Colors.white
-                                      : colors.textPrimary,
-                                  elevation: content.isLiked ? 4 : 2,
-                                  heroTag: 'sunflower_fab',
-                                  tooltip: 'Recommander',
-                                  child: SunflowerIcon(
-                                    isActive: content.isLiked,
-                                    size: 25,
-                                    inactiveColor: colors.textPrimary,
-                                  ),
-                                ),
+                        // Like FAB
+                        ScaleTransition(
+                          scale: _likeScaleAnimation,
+                          child: SizedBox(
+                            width: 50,
+                            height: 50,
+                            child: FloatingActionButton(
+                              onPressed: _toggleLike,
+                              backgroundColor: content.isLiked
+                                  ? colors.primary
+                                  : Colors.white,
+                              foregroundColor: content.isLiked
+                                  ? Colors.white
+                                  : colors.textPrimary,
+                              elevation: content.isLiked ? 4 : 2,
+                              heroTag: 'like_fab',
+                              tooltip: 'J\'aime',
+                              child: Icon(
+                                content.isLiked
+                                    ? PhosphorIcons.heart(
+                                        PhosphorIconsStyle.fill)
+                                    : PhosphorIcons.heart(
+                                        PhosphorIconsStyle.regular),
+                                size: 25,
                               ),
                             ),
-                          ],
+                          ),
                         ),
                         const SizedBox(height: 12),
                         // Merged Bookmark + Note FAB (long-press for collection picker)
@@ -2102,8 +1996,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           : PhosphorIcons.bookmarkSimple(
                               PhosphorIconsStyle.regular),
                       size: 24,
-                      color:
-                          content.isSaved ? colors.primary : colors.textSecondary,
+                      color: content.isSaved
+                          ? colors.primary
+                          : colors.textSecondary,
                     ),
                     tooltip: 'Sauvegarder',
                   ),
@@ -2183,135 +2078,153 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       Expanded(
                         child: _SourceBadgeNudge(
                           child: GestureDetector(
-                          onTap: () {
-                            ref.read(feedProvider.notifier).setSource(content.source.id);
-                            ref.read(feedScrollTriggerProvider.notifier).state++;
-                            context.pop(_content);
-                          },
-                          onLongPress: () => TopicChip.showArticleSheet(
-                            context, content,
-                            initialSection: ArticleSheetSection.source,
-                          ),
-                          behavior: HitTestBehavior.opaque,
-                          child: Row(
-                            children: [
-                              // Source logo (reduced from 32 to 28)
-                              if (content.source.logoUrl != null)
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: content.source.logoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) =>
-                                        _buildSourcePlaceholder(colors),
-                                  ),
-                                )
-                              else
-                                _buildSourcePlaceholder(colors),
-                              const SizedBox(width: 8),
+                            onTap: () {
+                              ref
+                                  .read(feedProvider.notifier)
+                                  .setSource(content.source.id);
+                              ref
+                                  .read(feedScrollTriggerProvider.notifier)
+                                  .state++;
+                              context.pop(_content);
+                            },
+                            onLongPress: () => TopicChip.showArticleSheet(
+                              context,
+                              content,
+                              initialSection: ArticleSheetSection.source,
+                            ),
+                            behavior: HitTestBehavior.opaque,
+                            child: Row(
+                              children: [
+                                // Source logo (reduced from 32 to 28)
+                                if (content.source.logoUrl != null)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: CachedNetworkImage(
+                                      imageUrl: content.source.logoUrl!,
+                                      width: 28,
+                                      height: 28,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) =>
+                                          _buildSourcePlaceholder(colors),
+                                    ),
+                                  )
+                                else
+                                  _buildSourcePlaceholder(colors),
+                                const SizedBox(width: 8),
 
-                              // Source Name + Time + Badges
-                              Flexible(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Ligne 1 : Nom (mini-chip) + Badges
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Opacity(
-                                            opacity: 0.9,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: Text(
-                                                content.source.name,
-                                                style: textTheme.labelMedium?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: colors.textPrimary,
+                                // Source Name + Time + Badges
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Ligne 1 : Nom (mini-chip) + Badges
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Opacity(
+                                              opacity: 0.9,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Color.lerp(
+                                                      colors
+                                                          .backgroundSecondary,
+                                                      Colors.black,
+                                                      0.003)!,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                                child: Text(
+                                                  content.source.name,
+                                                  style: textTheme.labelMedium
+                                                      ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: colors.textPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        // Bias dot
-                                        if (content.source.biasStance != 'unknown') ...[
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            width: 7,
-                                            height: 7,
-                                            decoration: BoxDecoration(
-                                              color: content.source.getBiasColor(),
-                                              shape: BoxShape.circle,
+                                          // Bias dot
+                                          if (content.source.biasStance !=
+                                              'unknown') ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              decoration: BoxDecoration(
+                                                color: content.source
+                                                    .getBiasColor(),
+                                                shape: BoxShape.circle,
+                                              ),
                                             ),
-                                          ),
-                                        ],
-                                        // Gear icon — same scale as bias dot
-                                        const SizedBox(width: 4),
-                                        Material(
-                                          color: Colors.transparent,
-                                          shape: const CircleBorder(),
-                                          clipBehavior: Clip.antiAlias,
-                                          child: InkWell(
-                                            onTap: () => TopicChip.showArticleSheet(
-                                              context, content,
-                                              initialSection: ArticleSheetSection.source,
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(3),
-                                              child: Icon(
-                                                PhosphorIcons.gear(PhosphorIconsStyle.regular),
-                                                size: 11,
-                                                color: colors.textTertiary,
+                                          ],
+                                          // Gear icon — same scale as bias dot
+                                          const SizedBox(width: 4),
+                                          Material(
+                                            color: Colors.transparent,
+                                            shape: const CircleBorder(),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  TopicChip.showArticleSheet(
+                                                context,
+                                                content,
+                                                initialSection:
+                                                    ArticleSheetSection.source,
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(3),
+                                                child: Icon(
+                                                  PhosphorIcons.gear(
+                                                      PhosphorIconsStyle
+                                                          .regular),
+                                                  size: 11,
+                                                  color: colors.textTertiary,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        // Editorial badge (digest articles) — to the right of source name
-                                        if (content.editorialBadge != null) ...[
-                                          const SizedBox(width: 6),
-                                          EditorialBadge.chip(
-                                            content.editorialBadge,
-                                            context: context,
-                                          ) ?? const SizedBox.shrink(),
                                         ],
-                                      ],
-                                    ),
-                                    const SizedBox(height: 1),
-                                    // Ligne 2 : Temps relatif (icône + format court)
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                                          size: 11,
-                                          color: colors.textTertiary,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          timeago
-                                              .format(content.publishedAt, locale: 'fr_short')
-                                              .replaceAll('il y a ', ''),
-                                          style: textTheme.bodySmall?.copyWith(
+                                      ),
+                                      const SizedBox(height: 1),
+                                      // Ligne 2 : Temps relatif (icône + format court)
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            PhosphorIcons.clock(
+                                                PhosphorIconsStyle.regular),
+                                            size: 11,
                                             color: colors.textTertiary,
-                                            fontSize: 11,
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            timeago
+                                                .format(content.publishedAt,
+                                                    locale: 'fr_short')
+                                                .replaceAll('il y a ', ''),
+                                            style:
+                                                textTheme.bodySmall?.copyWith(
+                                              color: colors.textTertiary,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
                               ],
                             ),
-                        ),
+                          ),
                         ), // _SourceBadgeNudge
                       ),
                     ],
@@ -2370,33 +2283,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    // Dense layout: 4 tags max across macro-theme + topic + entities.
-    // Remaining entities are grouped into a "+X" overflow chip.
-    const maxTotalVisible = 4;
-    const chipPadding = EdgeInsets.symmetric(horizontal: 7, vertical: 3);
-
-    final hasMacroTheme = content.topics.isNotEmpty &&
-        getTopicMacroTheme(content.topics.first) != null;
-    final hasTopic = content.topics.isNotEmpty;
-    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
+    const maxVisible = 3;
     final entities = content.entities;
-    final maxEntitiesVisible =
-        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
-    final visible = entities.take(maxEntitiesVisible).toList();
-    final overflow = entities.length - maxEntitiesVisible;
+    final visible = entities.take(maxVisible).toList();
+    final overflow = entities.length - maxVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (hasMacroTheme)
+      if (content.topics.isNotEmpty &&
+          getTopicMacroTheme(content.topics.first) != null)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
           return GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+            onTap: () => TopicChip.showArticleSheet(context, content,
+                initialSection: ArticleSheetSection.topic),
             child: Container(
-              padding: chipPadding,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: colors.textTertiary.withOpacity(0.20),
+                color: colors.textTertiary.withValues(alpha: 0.20),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -2412,13 +2317,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (hasTopic)
+      if (content.topics.isNotEmpty)
         GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.topic),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.textTertiary.withOpacity(0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -2434,23 +2340,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
       // Entity chips
       ...visible.map((entity) {
-        final isFollowed =
-            followedNames.contains(entity.text.toLowerCase());
+        final isFollowed = followedNames.contains(entity.text.toLowerCase());
         return GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: isFollowed
-                  ? const Color(0xFFE07A5F).withOpacity(0.15)
-                  : colors.textTertiary.withOpacity(0.12),
+                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
+                  : colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 90),
+                  constraints: const BoxConstraints(maxWidth: 100),
                   child: Text(
                     entity.text,
                     style: textTheme.labelSmall?.copyWith(
@@ -2478,11 +2384,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }),
       if (overflow > 0)
         GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.textTertiary.withOpacity(0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -2511,7 +2418,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           colors.primary,
           clamped,
         )!
-            .withOpacity(alpha);
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2546,40 +2453,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       'centre': dist['center'] ?? 0,
       'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
     };
-    final total = merged.values.fold<int>(0, (s, v) => s + v);
-
-    final segments = [
-      ('gauche', 'Gauche', colors.biasLeft),
-      ('centre', 'Centre', colors.biasCenter),
-      ('droite', 'Droite', colors.biasRight),
-    ];
-
-    final flexValues = segments.map((seg) {
-      final count = merged[seg.$1] ?? 0;
-      if (count > 0 && total > 0) {
-        return ((count / total) * 100).round().clamp(15, 100);
-      }
-      return 15;
-    }).toList();
-
-    // Map detailed bias stance to simplified 3-segment group.
-    String stanceGroup(String stance) {
-      switch (stance) {
-        case 'left':
-        case 'center-left':
-          return 'gauche';
-        case 'center':
-          return 'centre';
-        case 'center-right':
-        case 'right':
-          return 'droite';
-        default:
-          return 'centre';
-      }
-    }
-
-    final sourceGroup = stanceGroup(response.sourceBiasStance);
-    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
 
     final selected = _perspectivesSelectedSegments;
 
@@ -2651,159 +2524,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ),
             ],
           ),
-          // Optional quality badge
           if (response.comparisonQuality == 'low')
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '⚠️ Comparaison limitée (sujet peu couvert)',
-                  style: textTheme.labelSmall?.copyWith(
-                    fontSize: 11,
-                    color: colors.textTertiary,
-                  ),
-                ),
-              ),
-            ),
+            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
           const SizedBox(height: 10),
-          // Interactive bias bar
-          Row(
-            children: List.generate(segments.length, (i) {
-              final seg = segments[i];
-              final count = merged[seg.$1] ?? 0;
-              final isActive =
-                  selected.isEmpty || selected.contains(seg.$1);
-              return Expanded(
-                flex: flexValues[i],
-                child: GestureDetector(
-                  onTap: () => _onPerspectivesSegmentTap(seg.$1),
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 200),
-                    opacity: isActive ? 1.0 : 0.3,
-                    child: Column(
-                      children: [
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: seg.$3.withValues(
-                                  alpha: count > 0 ? 0.15 : 0.05),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                seg.$2,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: count > 0
-                                      ? seg.$3
-                                      : colors.textTertiary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeOut,
-                          height: 10,
-                          margin:
-                              const EdgeInsets.symmetric(horizontal: 1.5),
-                          decoration: BoxDecoration(
-                            color: count > 0
-                                ? seg.$3.withValues(
-                                    alpha: count == 1
-                                        ? 0.55
-                                        : (count == 2 ? 0.8 : 1.0))
-                                : seg.$3.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(6),
-                            border: count > 0
-                                ? Border.all(
-                                    color:
-                                        Colors.black.withValues(alpha: 0.2),
-                                    width: 0.8,
-                                  )
-                                : null,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
+          PerspectivesBiasBar(
+            colors: colors,
+            mergedDistribution: merged,
+            sourceBiasStance: response.sourceBiasStance,
+            sourceName: _content?.source.name ?? '',
+            selectedSegments: selected,
+            onSegmentTap: _onPerspectivesSegmentTap,
           ),
-          // Source marker row — matches inline section exactly
-          if (sourceIndex >= 0 && response.sourceBiasStance != 'unknown') ...[
-            const SizedBox(height: 4),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final totalFlex =
-                    flexValues.fold<int>(0, (sum, f) => sum + f);
-                double offsetFraction = 0;
-                for (int i = 0; i < sourceIndex; i++) {
-                  offsetFraction += flexValues[i] / totalFlex;
-                }
-                offsetFraction +=
-                    (flexValues[sourceIndex] / totalFlex) / 2;
-
-                final markerX = constraints.maxWidth * offsetFraction;
-                final sourceColor = segments[sourceIndex].$3;
-                final sourceName = _content?.source.name ?? '';
-                final displayName = sourceName.isNotEmpty
-                    ? sourceName
-                    : segments[sourceIndex].$2;
-
-                return SizedBox(
-                  height: 28,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: markerX - 7,
-                        top: 0,
-                        child: CustomPaint(
-                          size: const Size(14, 8),
-                          painter: PerspectivesTrianglePainter(
-                              color: sourceColor),
-                        ),
-                      ),
-                      Positioned(
-                        left: (markerX - 50)
-                            .clamp(0.0, constraints.maxWidth - 100),
-                        top: 10,
-                        child: SizedBox(
-                          width: 100,
-                          child: Text(
-                            displayName,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: sourceColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
         ],
       ),
     );
@@ -2840,7 +2571,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Container(
                 height: 14,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withOpacity(0.15),
+                  color: colors.textTertiary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2952,7 +2683,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
                                           color: colors.warning
-                                              .withOpacity(0.12),
+                                              .withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(
                                               FacteurRadius.pill),
                                         ),
@@ -2971,20 +2702,49 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
                               ],
+                              if (content.editorialBadge != null) ...[
+                                EditorialBadge.chip(
+                                      content.editorialBadge,
+                                      context: context,
+                                    ) ??
+                                    const SizedBox.shrink(),
+                                const SizedBox(height: FacteurSpacing.space2),
+                              ],
+                              Text(
+                                content.title,
+                                style: textTheme.displayLarge
+                                    ?.copyWith(fontSize: 24),
+                              ),
+                              const SizedBox(height: FacteurSpacing.space2),
+                              if (readingTime != null) ...[
+                                Row(
+                                  children: [
+                                    Icon(
+                                      PhosphorIcons.timer(
+                                          PhosphorIconsStyle.regular),
+                                      size: 14,
+                                      color: colors.textTertiary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      readingTime,
+                                      style: textTheme.bodySmall?.copyWith(
+                                          color: colors.textTertiary),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: FacteurSpacing.space3),
+                              ],
+                              Divider(color: colors.border, height: 1),
+                              const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
-                          ),
+                          footer: SizedBox(
+                              height: _kFooterContentHeight + bottomInset),
                         ),
-// Article feedback thumbs
-                      Container(
-                        color: colors.backgroundPrimary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space4,
-                        ),
-                        child: ArticleThumbsFeedback(contentId: content.id),
                       ),
 
-// ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
+                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                       // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
                       if (_ctaTapped)
                         SizedBox(key: _bridgeKey, height: availableHeight),
@@ -3037,9 +2797,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText = rawDescription != null
-        ? stripHtml(rawDescription).trim()
-        : null;
+    final descriptionText =
+        rawDescription != null ? stripHtml(rawDescription).trim() : null;
 
     return LayoutBuilder(builder: (context, constraints) {
       final maxHeight = constraints.maxHeight;
@@ -3049,8 +2808,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Reserve ~160px below the player for metadata (scrollable, same
         // pattern as regular videos). FABs float over this Flutter text area
         // (not an iframe) so they remain clickable.
-        final shortsPlayerHeight = (maxHeight - headerHeight - 140)
-            .clamp(200.0, screenWidth * 16 / 9);
+        final shortsPlayerHeight =
+            (maxHeight - headerHeight - 140).clamp(200.0, screenWidth * 16 / 9);
 
         return Column(
           children: [
@@ -3181,8 +2940,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       const SizedBox(height: FacteurSpacing.space2),
                       GestureDetector(
                         onTap: () {
-                          setState(() => _isDescriptionExpanded =
-                              !_isDescriptionExpanded);
+                          setState(() =>
+                              _isDescriptionExpanded = !_isDescriptionExpanded);
                         },
                         child: Text(
                           _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
@@ -3232,126 +2991,125 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                // Video Title
-                Text(
-                  content.title,
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: FacteurSpacing.space2),
-
-                // Published date
-                Text(
-                  timeago.format(content.publishedAt, locale: 'fr_short'),
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
-
-                // Channel row: avatar + name + optional theme chip
-                Row(
-                  children: [
-                    if (content.source.logoUrl != null)
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundImage:
-                            CachedNetworkImageProvider(content.source.logoUrl!),
-                        backgroundColor: colors.surfaceElevated,
-                      )
-                    else
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: colors.surfaceElevated,
-                        child: Icon(
-                          PhosphorIcons.user(PhosphorIconsStyle.regular),
-                          size: 16,
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                    const SizedBox(width: FacteurSpacing.space3),
-                    Expanded(
-                      child: Text(
-                        content.source.name,
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (content.source.theme != null &&
-                        content.source.theme!.isNotEmpty) ...[
-                      const SizedBox(width: FacteurSpacing.space2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary,
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.pill),
-                        ),
-                        child: Text(
-                          content.source.getThemeLabel(),
-                          style: textTheme.labelSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-
-                // Expandable description
-                if (descriptionText != null &&
-                    descriptionText.isNotEmpty) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  Divider(color: colors.border, height: 1),
-                  const SizedBox(height: FacteurSpacing.space4),
+                  // Video Title
                   Text(
-                    descriptionText,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                      height: 1.5,
+                    content.title,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                    maxLines: _isDescriptionExpanded ? null : 3,
-                    overflow: _isDescriptionExpanded
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: FacteurSpacing.space2),
-                  GestureDetector(
-                    onTap: () {
-                      setState(
-                          () => _isDescriptionExpanded = !_isDescriptionExpanded);
-                    },
-                    child: Text(
-                      _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+
+                  // Published date
+                  Text(
+                    timeago.format(content.publishedAt, locale: 'fr_short'),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
                     ),
                   ),
-                ],
+                  const SizedBox(height: FacteurSpacing.space4),
 
-                // Bottom spacing for FABs
-                const SizedBox(height: 120),
-              ],
+                  // Channel row: avatar + name + optional theme chip
+                  Row(
+                    children: [
+                      if (content.source.logoUrl != null)
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundImage: CachedNetworkImageProvider(
+                              content.source.logoUrl!),
+                          backgroundColor: colors.surfaceElevated,
+                        )
+                      else
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: colors.surfaceElevated,
+                          child: Icon(
+                            PhosphorIcons.user(PhosphorIconsStyle.regular),
+                            size: 16,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      const SizedBox(width: FacteurSpacing.space3),
+                      Expanded(
+                        child: Text(
+                          content.source.name,
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (content.source.theme != null &&
+                          content.source.theme!.isNotEmpty) ...[
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.primary,
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.pill),
+                          ),
+                          child: Text(
+                            content.source.getThemeLabel(),
+                            style: textTheme.labelSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  // Expandable description
+                  if (descriptionText != null &&
+                      descriptionText.isNotEmpty) ...[
+                    const SizedBox(height: FacteurSpacing.space4),
+                    Divider(color: colors.border, height: 1),
+                    const SizedBox(height: FacteurSpacing.space4),
+                    Text(
+                      descriptionText,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.5,
+                      ),
+                      maxLines: _isDescriptionExpanded ? null : 3,
+                      overflow: _isDescriptionExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() =>
+                            _isDescriptionExpanded = !_isDescriptionExpanded);
+                      },
+                      child: Text(
+                        _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Bottom spacing for FABs
+                  const SizedBox(height: 120),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
     }); // LayoutBuilder
   }
-
 
   Widget _buildInAppContent(BuildContext context, Content content) {
     final topic = content.progressionTopic;
@@ -3385,9 +3143,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder: !_contentResolved
-              ? _buildArticleBodySkeleton(colors)
-              : null,
+          bodyPlaceholder:
+              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
         );
 
         return ScrollConfiguration(
@@ -3398,161 +3155,157 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             key: _scrollViewKey,
             controller: _inAppScrollController,
             child: Column(
-            spacing: 16,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+              spacing: 16,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Header clearance ──────────────────────────────────────
+                SizedBox(height: headerHeight),
 
-              // ── Header clearance ──────────────────────────────────────
-              SizedBox(height: headerHeight),
-
-              // ── Top section: thumbnail → chips → title → reading time ─
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space4),
-                child: Column(
-                  spacing: 12,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-if (content.thumbnailUrl != null)
-                      ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(FacteurRadius.large),
-                        child: FacteurThumbnail(
-                          imageUrl: content.thumbnailUrl,
-                          aspectRatio: 16 / 9,
+                // ── Top section: thumbnail → chips → title → reading time ─
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4),
+                  child: Column(
+                    spacing: 12,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (content.thumbnailUrl != null)
+                        ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(FacteurRadius.large),
+                          child: FacteurThumbnail(
+                            imageUrl: content.thumbnailUrl,
+                            aspectRatio: 16 / 9,
+                          ),
                         ),
-                      ),
-                    if (content.entities.isNotEmpty || isPartial)
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (isPartial)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: colors.warning.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(
-                                    FacteurRadius.pill),
-                              ),
-                              child: Text(
-                                'Aperçu — contenu partiel',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: colors.warning,
-                                  fontWeight: FontWeight.w600,
+                      if (content.entities.isNotEmpty || isPartial)
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (isPartial)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: colors.warning.withValues(alpha: 0.12),
+                                  borderRadius:
+                                      BorderRadius.circular(FacteurRadius.pill),
+                                ),
+                                child: Text(
+                                  'Aperçu — contenu partiel',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.warning,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
+                            if (content.entities.isNotEmpty)
+                              ..._buildArticleTagWidgets(context, content),
+                          ],
+                        ),
+                      if (content.editorialBadge != null)
+                        EditorialBadge.chip(
+                              content.editorialBadge,
+                              context: context,
+                            ) ??
+                            const SizedBox.shrink(),
+                      Text(
+                        content.title,
+                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
+                      ),
+                      if (readingTime != null)
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.timer(PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: colors.textTertiary,
                             ),
-                          if (content.entities.isNotEmpty)
-                            ..._buildArticleTagWidgets(context, content),
-                        ],
-                      ),
-                    if (content.editorialBadge != null)
-                      EditorialBadge.chip(
-                            content.editorialBadge,
-                            context: context,
-                          ) ??
-                          const SizedBox.shrink(),
-                    Text(
-                      content.title,
-                      style: textTheme.displayLarge?.copyWith(fontSize: 24),
-                    ),
-if (readingTime != null)
-                      Row(
-                        children: [
-                          Icon(
-                            PhosphorIcons.timer(PhosphorIconsStyle.regular),
-                            size: 14,
-                            color: colors.textTertiary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            readingTime,
-                            style: textTheme.bodySmall?.copyWith(
-                                color: colors.textTertiary),
-                          ),
-                        ],
-                      ),
-                  ],
+                            const SizedBox(width: 4),
+                            Text(
+                              readingTime,
+                              style: textTheme.bodySmall
+                                  ?.copyWith(color: colors.textTertiary),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
-              ),
 
-              // ── Divider: header / article ─────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space4),
-                child: Divider(color: colors.border, height: 1),
-              ),
-
-              // ── Article section ────────────────────────────────────────
-              // Zero-height marker at the end lets _measureArticleExtent()
-              // compute progress against article length only (excludes perspectives).
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  articleWidget,
-                  SizedBox(key: _articleEndKey, height: 0),
-                ],
-              ),
-
-              // ── Perspectives section ───────────────────────────────────
-              if (_perspectivesResponse != null || _perspectivesLoading) ...[
+                // ── Divider: header / article ─────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(
                       horizontal: FacteurSpacing.space4),
                   child: Divider(color: colors.border, height: 1),
                 ),
-                if (_perspectivesLoading && _perspectivesResponse == null)
-                  const Center(child: CircularProgressIndicator())
-                else if (_perspectivesResponse != null)
-                  PerspectivesInlineSection(
-                    key: _perspectivesKey,
-                    perspectives: _perspectivesResponse!.perspectives
-                        .map(
-                          (PerspectiveData p) => Perspective(
-                            title: p.title,
-                            url: p.url,
-                            sourceName: p.sourceName,
-                            sourceDomain: p.sourceDomain,
-                            biasStance: p.biasStance,
-                            publishedAt: p.publishedAt,
-                          ),
-                        )
-                        .toList(),
-                    biasDistribution:
-                        _perspectivesResponse!.biasDistribution,
-                    keywords: _perspectivesResponse!.keywords,
-                    sourceBiasStance:
-                        _perspectivesResponse!.sourceBiasStance,
-                    sourceName: _content?.source.name ?? '',
-                    contentId: widget.contentId,
-                    comparisonQuality:
-                        _perspectivesResponse!.comparisonQuality,
-                    externalSelectedSegments: _perspectivesSelectedSegments,
-                    onSegmentTap: _onPerspectivesSegmentTap,
-                    onClearSegments: () {
-                      setState(() => _perspectivesSelectedSegments = {});
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _checkAtPerspectivesSection();
-                      });
-                    },
-                    analysisState: _perspectivesAnalysisState,
-                    analysisText: _perspectivesAnalysisText,
-                    onRequestAnalysis: _requestPerspectivesAnalysis,
-                    analysisZoneKey: _analysisZoneKey,
+
+                // ── Article section ────────────────────────────────────────
+                // Zero-height marker at the end lets _measureArticleExtent()
+                // compute progress against article length only (excludes perspectives).
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    articleWidget,
+                    SizedBox(key: _articleEndKey, height: 0),
+                  ],
+                ),
+
+                // ── Perspectives section ───────────────────────────────────
+                if (_perspectivesResponse != null || _perspectivesLoading) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4),
+                    child: Divider(color: colors.border, height: 1),
                   ),
+                  if (_perspectivesLoading && _perspectivesResponse == null)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_perspectivesResponse != null)
+                    PerspectivesInlineSection(
+                      key: _perspectivesKey,
+                      perspectives: _perspectivesResponse!.perspectives
+                          .map(
+                            (PerspectiveData p) => Perspective(
+                              title: p.title,
+                              url: p.url,
+                              sourceName: p.sourceName,
+                              sourceDomain: p.sourceDomain,
+                              biasStance: p.biasStance,
+                              publishedAt: p.publishedAt,
+                            ),
+                          )
+                          .toList(),
+                      biasDistribution: _perspectivesResponse!.biasDistribution,
+                      keywords: _perspectivesResponse!.keywords,
+                      sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
+                      sourceName: _content?.source.name ?? '',
+                      contentId: widget.contentId,
+                      comparisonQuality:
+                          _perspectivesResponse!.comparisonQuality,
+                      externalSelectedSegments: _perspectivesSelectedSegments,
+                      onSegmentTap: _onPerspectivesSegmentTap,
+                      onClearSegments: () {
+                        setState(() => _perspectivesSelectedSegments = {});
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _checkAtPerspectivesSection();
+                        });
+                      },
+                      analysisState: _perspectivesAnalysisState,
+                      analysisText: _perspectivesAnalysisText,
+                      onRequestAnalysis: _requestPerspectivesAnalysis,
+                      analysisZoneKey: _analysisZoneKey,
+                    ),
+                ],
+
+                // ── Footer clearance ───────────────────────────────────────
+                SizedBox(
+                  height: _kFooterContentHeight +
+                      MediaQuery.of(context).viewPadding.bottom,
+                ),
               ],
-
-              // ── Footer clearance ───────────────────────────────────────
-              SizedBox(
-                height: _kFooterContentHeight +
-                    MediaQuery.of(context).viewPadding.bottom,
-              ),
-
-            ],
-          ),
+            ),
           ),
         );
 
@@ -3615,6 +3368,20 @@ if (readingTime != null)
     return Column(
       children: [
         SizedBox(height: headerHeight),
+        // Extra breathing room so tag chips aren't clipped by the header overlay
+        const SizedBox(height: FacteurSpacing.space2),
+        if (content.entities.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: 6,
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _buildArticleTagWidgets(context, content),
+            ),
+          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
     );

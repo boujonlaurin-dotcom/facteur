@@ -107,12 +107,8 @@ String _toBarGroup(String stance) {
   }
 }
 
-/// Stance group order and labels for grouped display
-const _stanceGroups = [
-  ('gauche', 'Gauche'),
-  ('centre', 'Centre'),
-  ('droite', 'Droite'),
-];
+/// Analysis workflow state
+enum PerspectivesAnalysisState { idle, loading, done, error }
 
 /// Bottom sheet to display alternative perspectives
 class PerspectivesBottomSheet extends ConsumerStatefulWidget {
@@ -123,8 +119,6 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
   final String sourceName;
   final String contentId;
   final String comparisonQuality;
-  final String? initialAnalysis;
-  final bool analysisCached;
 
   const PerspectivesBottomSheet({
     super.key,
@@ -135,8 +129,6 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
     this.sourceBiasStance = 'unknown',
     this.sourceName = '',
     this.comparisonQuality = 'low',
-    this.initialAnalysis,
-    this.analysisCached = false,
   });
 
   @override
@@ -144,41 +136,13 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
       _PerspectivesBottomSheetState();
 }
 
-enum PerspectivesAnalysisState { idle, loading, done, error }
-
 class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomSheet> {
-  /// Collapsed groups: each group can be independently collapsed
-  final Set<String> _collapsedGroups = {};
-
-  /// Analysis state
   PerspectivesAnalysisState _analysisState = PerspectivesAnalysisState.idle;
   String? _analysisText;
-  bool _isAnalysisExpanded = true;
-  bool _isCachedAnalysis = false;
+  Set<String> _selectedSegments = {};
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialAnalysis != null) {
-      _analysisState = PerspectivesAnalysisState.done;
-      _analysisText = widget.initialAnalysis;
-      _isCachedAnalysis = widget.analysisCached;
-    } else {
-      _analysisState = PerspectivesAnalysisState.idle;
-    }
-  }
+  static const _groupOrder = ['gauche', 'centre', 'droite'];
 
-  /// Active bias filter (null = show all)
-  String? _selectedGroup;
-
-  List<Perspective> get _filteredPerspectives {
-    if (_selectedGroup == null) return widget.perspectives;
-    return widget.perspectives
-        .where((p) => p.biasGroup == _selectedGroup)
-        .toList();
-  }
-
-  /// Compute merged 3-segment distribution from the 5-segment API data
   Map<String, int> get _mergedDistribution {
     final dist = widget.biasDistribution;
     return {
@@ -188,11 +152,35 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
     };
   }
 
-  /// Whether to show grouped layout (>= 3 perspectives and >= 2 distinct groups)
-  bool get _shouldGroup {
-    if (widget.perspectives.length < 3) return false;
-    final groups = widget.perspectives.map((p) => p.biasGroup).toSet();
-    return groups.length >= 2;
+  List<Perspective> get _sortedPerspectives {
+    final sorted = [...widget.perspectives];
+    sorted.sort((a, b) =>
+        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
+    return sorted;
+  }
+
+  List<Perspective> get _filteredPerspectives {
+    final sorted = _sortedPerspectives;
+    if (_selectedSegments.isEmpty) return sorted;
+    return sorted.where((p) => _selectedSegments.contains(p.biasGroup)).toList();
+  }
+
+  void _onSegmentTapInternal(String key) {
+    setState(() {
+      if (_selectedSegments.contains(key)) {
+        if (_selectedSegments.length == 1) {
+          _selectedSegments = {};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..remove(key);
+        }
+      } else {
+        if (_selectedSegments.isEmpty || _selectedSegments.length == 3) {
+          _selectedSegments = {key};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..add(key);
+        }
+      }
+    });
   }
 
   Future<void> _requestAnalysis() async {
@@ -222,1224 +210,176 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
     final filtered = _filteredPerspectives;
 
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.92,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
       decoration: BoxDecoration(
         color: colors.backgroundPrimary,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Handle
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: colors.textSecondary.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(2),
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.textSecondary.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
 
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      PhosphorIcons.eye(PhosphorIconsStyle.fill),
-                      color: colors.primary,
-                      size: 32,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(top: 16, bottom: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.perspectives.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Voir tous les points de vue',
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: colors.textPrimary,
-                              fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Icon(
+                                PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                                color: colors.primary,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Voir tous les points de vue',
+                                  style: textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: colors.textPrimary,
+                                    fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                                icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                                onPressed: () => Navigator.pop(context),
+                                color: colors.textSecondary,
+                              ),
+                            ],
+                          ),
+                          if (widget.comparisonQuality == 'low')
+                            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
+                          const SizedBox(height: 16),
+                          PerspectivesBiasBar(
+                            colors: colors,
+                            mergedDistribution: _mergedDistribution,
+                            sourceBiasStance: widget.sourceBiasStance,
+                            sourceName: widget.sourceName,
+                            selectedSegments: _selectedSegments,
+                            onSegmentTap: _onSegmentTapInternal,
+                          ),
+                          SizedBox(
+                            height: 20,
+                            child: _selectedSegments.isNotEmpty
+                                ? Align(
+                                    alignment: Alignment.centerRight,
+                                    child: GestureDetector(
+                                      onTap: () => setState(() => _selectedSegments = {}),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Tout afficher',
+                                            style: textTheme.labelSmall?.copyWith(
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Icon(
+                                            PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                            size: 12,
+                                            color: colors.primary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    if (filtered.isEmpty)
+                      PerspectivesEmptyState(colors: colors, textTheme: textTheme)
+                    else
+                      ...filtered.map(
+                        (p) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _PerspectiveCard(perspective: p),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: PerspectivesAnalysisZone(
+                        state: _analysisState,
+                        text: _analysisText,
+                        onRequestAnalysis: _requestAnalysis,
+                        colors: colors,
+                        textTheme: textTheme,
+                      ),
+                    ),
+                  ] else ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(
+                            PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                            color: colors.primary,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Voir tous les points de vue',
+                              style: textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: colors.textPrimary,
+                                fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                              ),
                             ),
                           ),
-                          Text(
-                            '(${widget.keywords.join(', ')})',
-                            style: textTheme.labelSmall?.copyWith(
-                              color: colors.textSecondary,
-                              fontSize: (textTheme.labelSmall?.fontSize ?? 11) + 1,
-                            ),
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                            onPressed: () => Navigator.pop(context),
+                            color: colors.textSecondary,
                           ),
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
-                      onPressed: () => Navigator.pop(context),
-                      color: colors.textSecondary,
-                    ),
+                    const SizedBox(height: 16),
+                    PerspectivesEmptyState(colors: colors, textTheme: textTheme),
                   ],
-                ),
-                if (widget.comparisonQuality == 'low')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.textTertiary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '⚠️ Comparaison limitée (sujet peu couvert)',
-                        style: textTheme.labelSmall?.copyWith(
-                          fontSize: 11,
-                          color: colors.textTertiary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // Bias Bar (hidden when empty)
-          if (widget.perspectives.isNotEmpty) _buildBiasBar(context, colors),
-
-          // Perspectives List (analysis zone scrolls with content)
-          Flexible(
-            child: filtered.isEmpty
-                ? _buildEmptyState(context, colors, textTheme)
-                : _shouldGroup
-                    ? _buildGroupedList(context, colors, textTheme,
-                        filtered)
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: filtered.length + 1,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return _buildAnalysisZone(
-                                context, colors, textTheme);
-                          }
-                          return _PerspectiveCard(
-                              perspective: filtered[index - 1]);
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisZone(
-      BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-        child: switch (_analysisState) {
-          PerspectivesAnalysisState.idle => _buildAnalysisCta(colors, textTheme),
-          PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(colors),
-          PerspectivesAnalysisState.done => _buildAnalysisResult(colors, textTheme),
-          PerspectivesAnalysisState.error => _buildAnalysisError(colors, textTheme),
-        },
-      ),
-    );
-  }
-
-  Widget _buildAnalysisCta(FacteurColors colors, TextTheme textTheme) {
-    return Center(
-      child: OutlinedButton.icon(
-        onPressed: _requestAnalysis,
-        icon: Icon(
-          PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-          size: 18,
-          color: colors.primary,
-        ),
-        label: Text(
-          'Lancer l\'analyse Facteur',
-          style: textTheme.labelLarge?.copyWith(
-            color: colors.primary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: colors.primary.withOpacity(0.4)),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnalysisSkeleton(FacteurColors colors) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.primary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < 3; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            _ShimmerLine(
-              width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
-              colors: colors,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisResult(FacteurColors colors, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.primary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.primary.withOpacity(0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () =>
-                setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Icon(
-                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 18,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Analyse Facteur',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (_isCachedAnalysis) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.textTertiary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          PhosphorIcons.clockCounterClockwise(PhosphorIconsStyle.regular),
-                          size: 10,
-                          color: colors.textTertiary,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          'en cache',
-                          style: textTheme.labelSmall?.copyWith(
-                            fontSize: 9,
-                            color: colors.textTertiary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
-                const Spacer(),
-                AnimatedRotation(
-                  turns: _isAnalysisExpanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                    size: 12,
-                    color: colors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_isAnalysisExpanded) ...[
-            const SizedBox(height: 10),
-            MarkdownText(
-              text: _analysisText ?? '',
-              style: textTheme.bodySmall!.copyWith(
-                color: colors.textPrimary,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Analyse Facteur',
-                style: textTheme.bodySmall?.copyWith(
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                  color: colors.textSecondary.withOpacity(0.5),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisError(FacteurColors colors, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colors.textSecondary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Analyse indisponible',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: _requestAnalysis,
-            style: TextButton.styleFrom(
-              minimumSize: Size.zero,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              'Réessayer',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildGroupedList(BuildContext context, FacteurColors colors,
-      TextTheme textTheme, List<Perspective> perspectives) {
-    // Group perspectives by stance
-    final groups = <String, List<Perspective>>{};
-    for (final p in perspectives) {
-      groups.putIfAbsent(p.biasGroup, () => []).add(p);
-    }
-
-    final colors = context.facteurColors;
-    final textThemeLocal = Theme.of(context).textTheme;
-
-    return ListView(
-      shrinkWrap: true,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: [
-        _buildAnalysisZone(context, colors, textThemeLocal),
-        for (final entry in _stanceGroups)
-          if (groups.containsKey(entry.$1)) ...[
-            // Section header (tappable toggle collapse/expand)
-            () {
-              final isCollapsed = _collapsedGroups.contains(entry.$1);
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isCollapsed) {
-                        _collapsedGroups.remove(entry.$1);
-                      } else {
-                        _collapsedGroups.add(entry.$1);
-                      }
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${entry.$2} (${groups[entry.$1]!.length})',
-                          style: textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: isCollapsed ? 0 : 0.25,
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(
-                            PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                            size: 12,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }(),
-            // Cards (only shown when not collapsed)
-            if (!_collapsedGroups.contains(entry.$1))
-              for (final p in groups[entry.$1]!) ...[
-                _PerspectiveCard(perspective: p),
-                const SizedBox(height: 8),
-              ],
-          ],
-      ],
-    );
-  }
-
-  Widget _buildBiasBar(BuildContext context, FacteurColors colors) {
-    // 3 simplified segments: Gauche (left+center-left), Centre, Droite (center-right+right)
-    final segments = [
-      ('gauche', 'Gauche', colors.biasLeft),
-      ('centre', 'Centre', colors.biasCenter),
-      ('droite', 'Droite', colors.biasRight),
-    ];
-
-    final merged = _mergedDistribution;
-    final total = merged.values.fold<int>(0, (sum, v) => sum + v);
-
-    // Compute proportional flex values
-    final flexValues = <int>[];
-    for (final seg in segments) {
-      final count = merged[seg.$1] ?? 0;
-      if (count > 0 && total > 0) {
-        final proportion = count / total;
-        flexValues.add((proportion * 100).round().clamp(15, 100));
-      } else {
-        flexValues.add(15); // Minimum width for empty segments
-      }
-    }
-
-    // Find the source's segment index for the marker
-    final sourceGroup = _toBarGroup(widget.sourceBiasStance);
-    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        children: [
-          // Labels (above the bar) — aligned with bar segments via same flex
-          Row(
-            children: List.generate(segments.length, (i) {
-              final seg = segments[i];
-              final count = merged[seg.$1] ?? 0;
-              return Expanded(
-                flex: flexValues[i],
-                child: Center(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: seg.$3
-                          .withOpacity(count > 0 ? 0.15 : 0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        seg.$2,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: count > 0 ? seg.$3 : colors.textTertiary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 4),
-
-          // Interactive 3-segment bias bar
-          Row(
-            children: List.generate(segments.length, (i) {
-              final seg = segments[i];
-              final count = merged[seg.$1] ?? 0;
-              final isSelected = _selectedGroup == seg.$1;
-              final hasArticles = count > 0;
-              return Expanded(
-                flex: flexValues[i],
-                child: GestureDetector(
-                  onTap: hasArticles
-                      ? () => setState(() {
-                            _selectedGroup =
-                                isSelected ? null : seg.$1;
-                          })
-                      : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeOut,
-                    height: 12,
-                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                    decoration: BoxDecoration(
-                      color: count > 0
-                          ? seg.$3.withValues(
-                              alpha: count == 1
-                                  ? 0.55
-                                  : (count == 2 ? 0.8 : 1.0))
-                          : seg.$3.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(6),
-                      border: isSelected
-                          ? Border.all(
-                              color: seg.$3,
-                              width: 2.0,
-                            )
-                          : count > 0
-                              ? Border.all(
-                                  color:
-                                      Colors.black.withValues(alpha: 0.2),
-                                  width: 0.8,
-                                )
-                              : null,
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-
-          // "Votre source" marker
-          if (sourceIndex >= 0 &&
-              widget.sourceBiasStance != 'unknown') ...[
-            const SizedBox(height: 4),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final totalFlex =
-                    flexValues.fold<int>(0, (sum, f) => sum + f);
-                double offsetFraction = 0;
-                for (int i = 0; i < sourceIndex; i++) {
-                  offsetFraction += flexValues[i] / totalFlex;
-                }
-                // Center on the segment
-                offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
-
-                final markerX = constraints.maxWidth * offsetFraction;
-                final sourceColor = segments[sourceIndex].$3;
-
-                final displayName = widget.sourceName.isNotEmpty
-                    ? widget.sourceName
-                    : segments[sourceIndex].$2;
-
-                return SizedBox(
-                  height: 28,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: markerX - 7,
-                        top: 0,
-                        child: CustomPaint(
-                          size: const Size(14, 8),
-                          painter: PerspectivesTrianglePainter(color: sourceColor),
-                        ),
-                      ),
-                      Positioned(
-                        left: (markerX - 50)
-                            .clamp(0.0, constraints.maxWidth - 100),
-                        top: 10,
-                        child: SizedBox(
-                          width: 100,
-                          child: Text(
-                            displayName,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: sourceColor,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(
-      BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
-              size: 48,
-              color: colors.textSecondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Sujet peu couvert',
-              style: textTheme.titleSmall?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
-              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
-/// Inline (non-modal) version of the perspectives section.
-/// Designed to be embedded directly in the article scroll view below the body.
-class PerspectivesInlineSection extends ConsumerStatefulWidget {
-  final List<Perspective> perspectives;
-  final Map<String, int> biasDistribution;
-  final List<String> keywords;
-  final String sourceBiasStance;
-  final String sourceName;
-  final String contentId;
-  final String comparisonQuality;
-
-  /// Controlled mode: when provided, the parent owns the filter state.
-  final Set<String>? externalSelectedSegments;
-  final void Function(String)? onSegmentTap;
-  final VoidCallback? onClearSegments;
-
-  /// Analysis state controlled by the parent screen.
-  final PerspectivesAnalysisState analysisState;
-  final String? analysisText;
-  final VoidCallback? onRequestAnalysis;
-
-  /// Key attached to the analysis result zone so the parent can scroll to it.
-  final Key? analysisZoneKey;
-
-  const PerspectivesInlineSection({
-    super.key,
-    required this.perspectives,
-    required this.biasDistribution,
-    required this.keywords,
-    required this.contentId,
-    this.sourceBiasStance = 'unknown',
-    this.sourceName = '',
-    this.comparisonQuality = 'low',
-    this.externalSelectedSegments,
-    this.onSegmentTap,
-    this.onClearSegments,
-    this.analysisState = PerspectivesAnalysisState.idle,
-    this.analysisText,
-    this.onRequestAnalysis,
-    this.analysisZoneKey,
-  });
-
-  @override
-  ConsumerState<PerspectivesInlineSection> createState() =>
-      _PerspectivesInlineSectionState();
-}
-
-class _PerspectivesInlineSectionState
-    extends ConsumerState<PerspectivesInlineSection> {
-  bool _isAnalysisExpanded = true;
-  Set<String> _selectedSegments = {};
-
-  /// In controlled mode (widget.onSegmentTap != null), use the parent-provided
-  /// set; otherwise fall back to internal state.
-  Set<String> get _effectiveSegments =>
-      widget.externalSelectedSegments ?? _selectedSegments;
-
-  static const _groupOrder = ['gauche', 'centre', 'droite'];
-
-  Map<String, int> get _mergedDistribution {
-    final dist = widget.biasDistribution;
-    return {
-      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
-      'centre': dist['center'] ?? 0,
-      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
-    };
-  }
-
-  List<Perspective> get _sortedPerspectives {
-    final sorted = [...widget.perspectives];
-    sorted.sort((a, b) =>
-        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
-    return sorted;
-  }
-
-  List<Perspective> get _filteredPerspectives {
-    final sorted = _sortedPerspectives;
-    if (_effectiveSegments.isEmpty) return sorted;
-    return sorted.where((p) => _effectiveSegments.contains(p.biasGroup)).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final filtered = _filteredPerspectives;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (widget.perspectives.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                      color: colors.primary,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Voir tous les points de vue',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.textPrimary,
-                          fontSize:
-                              (textTheme.titleMedium?.fontSize ?? 16) + 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (widget.comparisonQuality == 'low')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.textTertiary
-                            .withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '⚠️ Comparaison limitée (sujet peu couvert)',
-                        style: textTheme.labelSmall?.copyWith(
-                          fontSize: 11,
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(height: 16),
-                _buildBiasBar(context, colors),
-                SizedBox(
-                  height: 20,
-                  child: _effectiveSegments.isNotEmpty
-                      ? Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: () {
-                              if (widget.onClearSegments != null) {
-                                widget.onClearSegments!();
-                              } else {
-                                setState(() => _selectedSegments = {});
-                              }
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Tout afficher',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
-                                  size: 12,
-                                  color: colors.primary,
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-          // Cards without extra horizontal padding (they have their own)
-          if (filtered.isEmpty)
-            _buildEmptyState(context, colors, textTheme)
-          else
-            ...filtered.map(
-              (p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _PerspectiveCard(perspective: p),
-              ),
-            ),
-          // Analysis zone below last card (loading / done / error only)
-          if (widget.analysisState != PerspectivesAnalysisState.idle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: _buildAnalysisZone(context, colors, textTheme),
-            ),
-          // Spacer so the last card isn't hidden behind the floating button
-          if (widget.analysisState == PerspectivesAnalysisState.idle)
-            const SizedBox(height: 32),
-        ] else ...[
-          // No articles: header without analysis/bar, then full-width empty state
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                  color: colors.primary,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Voir tous les points de vue',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colors.textPrimary,
-                      fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildEmptyState(context, colors, textTheme),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildAnalysisZone(
-      BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    return AnimatedSize(
-      key: widget.analysisZoneKey,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      child: switch (widget.analysisState) {
-        PerspectivesAnalysisState.idle => const SizedBox.shrink(),
-        PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(colors),
-        PerspectivesAnalysisState.done => _buildAnalysisResult(colors, textTheme),
-        PerspectivesAnalysisState.error => _buildAnalysisError(colors, textTheme),
-      },
-    );
-  }
-
-  Widget _buildAnalysisSkeleton(FacteurColors colors) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = 0; i < 3; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            _ShimmerLine(
-              width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
-              colors: colors,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisResult(FacteurColors colors, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.primary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: () =>
-                setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Icon(
-                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 18,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Analyse Facteur',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: _isAnalysisExpanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                    size: 12,
-                    color: colors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_isAnalysisExpanded) ...[
-            const SizedBox(height: 10),
-            MarkdownText(
-              text: widget.analysisText ?? '',
-              style: textTheme.bodySmall!.copyWith(
-                color: colors.textPrimary,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Analyse Facteur',
-                style: textTheme.bodySmall?.copyWith(
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                  color: colors.textSecondary.withValues(alpha: 0.5),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnalysisError(FacteurColors colors, TextTheme textTheme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colors.textSecondary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'Analyse indisponible',
-              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-            ),
-          ),
-          TextButton(
-            onPressed: widget.onRequestAnalysis,
-            style: TextButton.styleFrom(
-              minimumSize: Size.zero,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              'Réessayer',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleSegmentTap(String key) {
-    if (widget.onSegmentTap != null) {
-      widget.onSegmentTap!(key);
-    } else {
-      _onSegmentTapInternal(key);
-    }
-  }
-
-  void _onSegmentTapInternal(String key) {
-    setState(() {
-      if (_selectedSegments.contains(key)) {
-        if (_selectedSegments.length == 1) {
-          _selectedSegments = {};
-        } else {
-          _selectedSegments = Set.from(_selectedSegments)..remove(key);
-        }
-      } else {
-        if (_selectedSegments.isEmpty || _selectedSegments.length == 3) {
-          _selectedSegments = {key};
-        } else {
-          _selectedSegments = Set.from(_selectedSegments)..add(key);
-        }
-      }
-    });
-  }
-
-  Widget _buildBiasBar(BuildContext context, FacteurColors colors) {
-    final segments = [
-      ('gauche', 'Gauche', colors.biasLeft),
-      ('centre', 'Centre', colors.biasCenter),
-      ('droite', 'Droite', colors.biasRight),
-    ];
-
-    final merged = _mergedDistribution;
-    final total = merged.values.fold<int>(0, (sum, v) => sum + v);
-
-    final flexValues = <int>[];
-    for (final seg in segments) {
-      final count = merged[seg.$1] ?? 0;
-      if (count > 0 && total > 0) {
-        final proportion = count / total;
-        flexValues.add((proportion * 100).round().clamp(15, 100));
-      } else {
-        flexValues.add(15);
-      }
-    }
-
-    final sourceGroup = _toBarGroup(widget.sourceBiasStance);
-    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
-
-    return Column(
-      children: [
-        Row(
-          children: List.generate(segments.length, (i) {
-            final seg = segments[i];
-            final count = merged[seg.$1] ?? 0;
-            final isActive = _effectiveSegments.isEmpty ||
-                _effectiveSegments.contains(seg.$1);
-            return Expanded(
-              flex: flexValues[i],
-              child: GestureDetector(
-                onTap: count > 0 ? () => _handleSegmentTap(seg.$1) : null,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: isActive ? 1.0 : 0.3,
-                  child: Column(
-                    children: [
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: seg.$3
-                                .withValues(alpha: count > 0 ? 0.15 : 0.05),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              seg.$2,
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color:
-                                    count > 0 ? seg.$3 : colors.textTertiary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOut,
-                        height: 12,
-                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                        decoration: BoxDecoration(
-                          color: count > 0
-                              ? seg.$3.withValues(
-                                  alpha: count == 1
-                                      ? 0.55
-                                      : (count == 2 ? 0.8 : 1.0))
-                              : seg.$3.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(6),
-                          border: count > 0
-                              ? Border.all(
-                                  color: Colors.black.withValues(alpha: 0.2),
-                                  width: 0.8,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-        if (sourceIndex >= 0 && widget.sourceBiasStance != 'unknown') ...[
-          const SizedBox(height: 4),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final totalFlex =
-                  flexValues.fold<int>(0, (sum, f) => sum + f);
-              double offsetFraction = 0;
-              for (int i = 0; i < sourceIndex; i++) {
-                offsetFraction += flexValues[i] / totalFlex;
-              }
-              offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
-
-              final markerX = constraints.maxWidth * offsetFraction;
-              final sourceColor = segments[sourceIndex].$3;
-              final displayName = widget.sourceName.isNotEmpty
-                  ? widget.sourceName
-                  : segments[sourceIndex].$2;
-
-              return SizedBox(
-                height: 28,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      left: markerX - 7,
-                      top: 0,
-                      child: CustomPaint(
-                        size: const Size(14, 8),
-                        painter: PerspectivesTrianglePainter(color: sourceColor),
-                      ),
-                    ),
-                    Positioned(
-                      left: (markerX - 50)
-                          .clamp(0.0, constraints.maxWidth - 100),
-                      top: 10,
-                      child: SizedBox(
-                        width: 100,
-                        child: Text(
-                          displayName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: sourceColor,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildEmptyState(
-      BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    return SizedBox(
-      width: double.infinity,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
-              size: 48,
-              color: colors.textSecondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Sujet peu couvert',
-              style: textTheme.titleSmall?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
-              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Shimmer line for skeleton loading
 class _ShimmerLine extends StatefulWidget {
   final double width;
   final FacteurColors colors;
@@ -1482,7 +422,7 @@ class _ShimmerLineState extends State<_ShimmerLine>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               color: widget.colors.textSecondary
-                  .withOpacity(0.08 + 0.08 * _controller.value),
+                  .withValues(alpha: 0.08 + 0.08 * _controller.value),
             ),
           ),
         );
@@ -1624,10 +564,10 @@ class _PerspectiveCard extends ConsumerWidget {
                   : null,
               child: Container(
                 decoration: BoxDecoration(
-                  color: colors.backgroundSecondary.withOpacity(0.5),
+                  color: colors.backgroundSecondary.withValues(alpha: 0.5),
                   border: Border(
                     top: BorderSide(
-                      color: colors.textSecondary.withOpacity(0.1),
+                      color: colors.textSecondary.withValues(alpha: 0.1),
                       width: 1,
                     ),
                   ),
@@ -1645,7 +585,7 @@ class _PerspectiveCard extends ConsumerWidget {
                       decoration: BoxDecoration(
                         color: perspective
                             .getBiasColor(colors)
-                            .withOpacity(0.15),
+                            .withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -1725,6 +665,693 @@ class _PerspectiveCard extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+class PerspectivesWarningBadge extends StatelessWidget {
+  final FacteurColors colors;
+  final TextTheme textTheme;
+
+  const PerspectivesWarningBadge({
+    super.key,
+    required this.colors,
+    required this.textTheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: colors.textTertiary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          '⚠️ Comparaison limitée (sujet peu couvert)',
+          style: textTheme.labelSmall?.copyWith(
+            fontSize: 11,
+            color: colors.textTertiary,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+}
+
+class PerspectivesEmptyState extends StatelessWidget {
+  final FacteurColors colors;
+  final TextTheme textTheme;
+
+  const PerspectivesEmptyState({
+    super.key,
+    required this.colors,
+    required this.textTheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
+              size: 48,
+              color: colors.textSecondary.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sujet peu couvert',
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PerspectivesBiasBar extends StatelessWidget {
+  final FacteurColors colors;
+  final Map<String, int> mergedDistribution;
+  final String sourceBiasStance;
+  final String sourceName;
+  final Set<String> selectedSegments;
+  final void Function(String) onSegmentTap;
+
+  const PerspectivesBiasBar({
+    super.key,
+    required this.colors,
+    required this.mergedDistribution,
+    required this.sourceBiasStance,
+    required this.sourceName,
+    required this.selectedSegments,
+    required this.onSegmentTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final segments = [
+      ('gauche', 'Gauche', colors.biasLeft),
+      ('centre', 'Centre', colors.biasCenter),
+      ('droite', 'Droite', colors.biasRight),
+    ];
+
+    final total = mergedDistribution.values.fold<int>(0, (sum, v) => sum + v);
+
+    final flexValues = <int>[];
+    for (final seg in segments) {
+      final count = mergedDistribution[seg.$1] ?? 0;
+      if (count > 0 && total > 0) {
+        final proportion = count / total;
+        flexValues.add((proportion * 100).round().clamp(15, 100));
+      } else {
+        flexValues.add(15);
+      }
+    }
+
+    final sourceGroup = _toBarGroup(sourceBiasStance);
+    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
+
+    return Column(
+      children: [
+        Row(
+          children: List.generate(segments.length, (i) {
+            final seg = segments[i];
+            final count = mergedDistribution[seg.$1] ?? 0;
+            final isActive = selectedSegments.isEmpty || selectedSegments.contains(seg.$1);
+            return Expanded(
+              flex: flexValues[i],
+              child: GestureDetector(
+                onTap: count > 0 ? () => onSegmentTap(seg.$1) : null,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: isActive ? 1.0 : 0.3,
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: seg.$3.withValues(alpha: count > 0 ? 0.15 : 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              seg.$2,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: count > 0 ? seg.$3 : colors.textTertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        height: 12,
+                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                        decoration: BoxDecoration(
+                          color: count > 0
+                              ? seg.$3.withValues(
+                                  alpha: count == 1 ? 0.55 : (count == 2 ? 0.8 : 1.0))
+                              : seg.$3.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(6),
+                          border: count > 0
+                              ? Border.all(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  width: 0.8,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        if (sourceIndex >= 0 && sourceBiasStance != 'unknown') ...[
+          const SizedBox(height: 4),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final totalFlex = flexValues.fold<int>(0, (sum, f) => sum + f);
+              double offsetFraction = 0;
+              for (int i = 0; i < sourceIndex; i++) {
+                offsetFraction += flexValues[i] / totalFlex;
+              }
+              offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
+
+              final markerX = constraints.maxWidth * offsetFraction;
+              final sourceColor = segments[sourceIndex].$3;
+              final displayName = sourceName.isNotEmpty ? sourceName : segments[sourceIndex].$2;
+
+              return SizedBox(
+                height: 28,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: markerX - 7,
+                      top: 0,
+                      child: CustomPaint(
+                        size: const Size(14, 8),
+                        painter: PerspectivesTrianglePainter(color: sourceColor),
+                      ),
+                    ),
+                    Positioned(
+                      left: (markerX - 50).clamp(0.0, constraints.maxWidth - 100),
+                      top: 10,
+                      child: SizedBox(
+                        width: 100,
+                        child: Text(
+                          displayName,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: sourceColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class PerspectivesAnalysisZone extends StatefulWidget {
+  final PerspectivesAnalysisState state;
+  final String? text;
+  final VoidCallback? onRequestAnalysis;
+  final FacteurColors colors;
+  final TextTheme textTheme;
+  final Key? zoneKey;
+
+  const PerspectivesAnalysisZone({
+    super.key,
+    required this.state,
+    this.text,
+    required this.onRequestAnalysis,
+    required this.colors,
+    required this.textTheme,
+    this.zoneKey,
+  });
+
+  @override
+  State<PerspectivesAnalysisZone> createState() => PerspectivesAnalysisZoneState();
+}
+
+class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
+  bool _isAnalysisExpanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.state == PerspectivesAnalysisState.idle) {
+      return _buildAnalysisCta();
+    }
+    
+    return AnimatedSize(
+      key: widget.zoneKey,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      child: switch (widget.state) {
+        PerspectivesAnalysisState.idle => const SizedBox.shrink(),
+        PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(),
+        PerspectivesAnalysisState.done => _buildAnalysisResult(),
+        PerspectivesAnalysisState.error => _buildAnalysisError(),
+      },
+    );
+  }
+
+  Widget _buildAnalysisCta() {
+    return Center(
+      child: OutlinedButton.icon(
+        onPressed: widget.onRequestAnalysis,
+        icon: Icon(
+          PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+          size: 18,
+          color: widget.colors.primary,
+        ),
+        label: Text(
+          "Lancer l'analyse Facteur",
+          style: widget.textTheme.labelLarge?.copyWith(
+            color: widget.colors.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: widget.colors.primary.withValues(alpha: 0.4)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalysisSkeleton() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: widget.colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _ShimmerLine(
+              width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
+              colors: widget.colors,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisResult() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: widget.colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.colors.primary.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                  size: 18,
+                  color: widget.colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Analyse Facteur',
+                  style: widget.textTheme.titleSmall?.copyWith(
+                    color: widget.colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _isAnalysisExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                    size: 12,
+                    color: widget.colors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isAnalysisExpanded) ...[
+            const SizedBox(height: 10),
+            MarkdownText(
+              text: widget.text ?? '',
+              style: widget.textTheme.bodySmall!.copyWith(
+                color: widget.colors.textPrimary,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Analyse Facteur',
+                style: widget.textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: widget.colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisError() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: widget.colors.textSecondary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Analyse indisponible',
+              style: widget.textTheme.bodySmall?.copyWith(
+                color: widget.colors.textSecondary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: widget.onRequestAnalysis,
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Réessayer',
+              style: widget.textTheme.labelSmall?.copyWith(
+                color: widget.colors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PerspectivesInlineSection extends ConsumerStatefulWidget {
+  final List<Perspective> perspectives;
+  final Map<String, int> biasDistribution;
+  final List<String> keywords;
+  final String sourceBiasStance;
+  final String sourceName;
+  final String contentId;
+  final String comparisonQuality;
+
+  /// Controlled mode: when provided, the parent owns the filter state.
+  final Set<String>? externalSelectedSegments;
+  final void Function(String)? onSegmentTap;
+  final VoidCallback? onClearSegments;
+
+  /// Analysis state controlled by the parent screen.
+  final PerspectivesAnalysisState analysisState;
+  final String? analysisText;
+  final VoidCallback? onRequestAnalysis;
+
+  /// Key attached to the analysis result zone so the parent can scroll to it.
+  final Key? analysisZoneKey;
+
+  const PerspectivesInlineSection({
+    super.key,
+    required this.perspectives,
+    required this.biasDistribution,
+    required this.keywords,
+    required this.contentId,
+    this.sourceBiasStance = 'unknown',
+    this.sourceName = '',
+    this.comparisonQuality = 'low',
+    this.externalSelectedSegments,
+    this.onSegmentTap,
+    this.onClearSegments,
+    this.analysisState = PerspectivesAnalysisState.idle,
+    this.analysisText,
+    this.onRequestAnalysis,
+    this.analysisZoneKey,
+  });
+
+  @override
+  ConsumerState<PerspectivesInlineSection> createState() =>
+      _PerspectivesInlineSectionState();
+}
+
+class _PerspectivesInlineSectionState extends ConsumerState<PerspectivesInlineSection> {
+  Set<String> _selectedSegments = {};
+
+  Set<String> get _effectiveSegments =>
+      widget.externalSelectedSegments ?? _selectedSegments;
+
+  static const _groupOrder = ['gauche', 'centre', 'droite'];
+
+  Map<String, int> get _mergedDistribution {
+    final dist = widget.biasDistribution;
+    return {
+      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
+      'centre': dist['center'] ?? 0,
+      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
+    };
+  }
+
+  List<Perspective> get _sortedPerspectives {
+    final sorted = [...widget.perspectives];
+    sorted.sort((a, b) =>
+        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
+    return sorted;
+  }
+
+  List<Perspective> get _filteredPerspectives {
+    final sorted = _sortedPerspectives;
+    if (_effectiveSegments.isEmpty) return sorted;
+    return sorted.where((p) => _effectiveSegments.contains(p.biasGroup)).toList();
+  }
+
+  void _onSegmentTapInternal(String key) {
+    setState(() {
+      if (_selectedSegments.contains(key)) {
+        if (_selectedSegments.length == 1) {
+          _selectedSegments = {};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..remove(key);
+        }
+      } else {
+        if (_selectedSegments.isEmpty || _selectedSegments.length == 3) {
+          _selectedSegments = {key};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..add(key);
+        }
+      }
+    });
+  }
+
+  void _handleSegmentTap(String key) {
+    if (widget.onSegmentTap != null) {
+      widget.onSegmentTap!(key);
+    } else {
+      _onSegmentTapInternal(key);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final filtered = _filteredPerspectives;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.perspectives.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                      color: colors.primary,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Voir tous les points de vue',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colors.textPrimary,
+                          fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.comparisonQuality == 'low')
+                  PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
+                const SizedBox(height: 16),
+                PerspectivesBiasBar(
+                  colors: colors,
+                  mergedDistribution: _mergedDistribution,
+                  sourceBiasStance: widget.sourceBiasStance,
+                  sourceName: widget.sourceName,
+                  selectedSegments: _effectiveSegments,
+                  onSegmentTap: _handleSegmentTap,
+                ),
+                SizedBox(
+                  height: 20,
+                  child: _effectiveSegments.isNotEmpty
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {
+                              if (widget.onClearSegments != null) {
+                                widget.onClearSegments!();
+                              } else {
+                                setState(() => _selectedSegments = {});
+                              }
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Tout afficher',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                  size: 12,
+                                  color: colors.primary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+          if (filtered.isEmpty)
+            PerspectivesEmptyState(colors: colors, textTheme: textTheme)
+          else
+            ...filtered.map(
+              (p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _PerspectiveCard(perspective: p),
+              ),
+            ),
+          if (widget.analysisState != PerspectivesAnalysisState.idle)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: PerspectivesAnalysisZone(
+                state: widget.analysisState,
+                text: widget.analysisText,
+                onRequestAnalysis: widget.onRequestAnalysis,
+                colors: colors,
+                textTheme: textTheme,
+                zoneKey: widget.analysisZoneKey,
+              ),
+            ),
+          if (widget.analysisState == PerspectivesAnalysisState.idle)
+            const SizedBox(height: 32),
+        ] else ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                  color: colors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Voir tous les points de vue',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colors.textPrimary,
+                      fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          PerspectivesEmptyState(colors: colors, textTheme: textTheme),
+        ],
+      ],
     );
   }
 }
