@@ -1,4 +1,13 @@
 """
+[DEPRECATED] MCP Server Railway custom — remplacé par @railway/mcp officiel.
+
+Ce serveur custom read-only est conservé à titre de référence.
+Il n'est plus chargé dans .claude/settings.json.
+
+Le MCP actif est désormais : npx -y @railway/mcp@latest
+Variable d'environnement requise : RAILWAY_TOKEN (remplace RAILWAY_API_TOKEN)
+
+──────────────────────────────────────────────────────────────────────────────
 MCP Server Railway — Accès read-only aux logs de déploiement Railway.
 
 Outils exposés :
