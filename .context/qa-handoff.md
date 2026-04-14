@@ -1,186 +1,144 @@
-# QA Handoff — Digest UI/UX Adjustments (Glass effect + Special blocks redesign)
+# QA Handoff — Carte « Construire ton flux · Cette semaine »
 
-> Ce fichier est rempli par l'agent dev à la fin du développement.
-> Il sert d'input à la commande /validate-feature de l'agent QA.
+> Epic 13 · Stories 13.5-13.6 · branche `claude/mobile-feed-flow-riverpod-NFgHp`
 
 ## Feature développée
 
-Ajustements UI/UX du digest editorial : (1) effet liquidglass sur la carte "L'Essentiel du jour", (2) teinte renforcée sur les cartes topics, (3) header sticky sur carte ouverte, (4) citation Serein repositionnée en premier + redesign card, (5) Pépite/CoupDeCoeur/ActuDécalée dans des containers styled cohérents.
+Injection d'une carte hebdomadaire dans le feed mobile proposant à l'utilisateur
+d'ajuster ses préférences (priorité source, mute/follow d'entité) sur la base
+des signaux d'usage observés. Gating client (N≥3, max_signal≥0.6, cooldown 24h,
+1/session), 3 types de propositions, POST `/apply-proposals`, rafraîchissement
+feed + sources + custom_topics après validation/snooze.
 
 ## PR associée
 
-Branche : `claude/digest-card-glass-effect-vzYe2`
+À créer après confirmation PO (cible `main`, jamais `staging`).
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Digest (mode standard) | `/digest` | Modifié |
-| Digest (mode Serein) | `/digest` (toggle Serein) | Modifié |
-| Digest editorial ouvert | `/digest` (card expanded) | Modifié |
+| Feed  | `/feed` | Modifié (injection carte en position 3 quand LcVisible) |
 
 ## Scénarios de test
 
-### Scénario 1 : Liquid glass sur la carte principale (mode clair)
+### Scénario 1 : Happy path — Validation carte complète
 
 **Parcours** :
-1. Ouvrir l'écran `/digest`
-2. Thème clair activé
-3. Faire défiler lentement le scroll vers le bas
+1. Lancer l'app, se connecter avec un compte ayant ≥3 propositions `pending` en base et `max_signal_strength ≥ 0.6`, sans action récente (cooldown inactif).
+2. Aller sur le feed (`/feed`).
+3. Scroller jusqu'à la carte « Construire ton flux · Cette semaine » (insérée en position 3).
+4. Tapper **Valider** sans modifier les propositions.
 
 **Résultat attendu** :
-- La carte "L'Essentiel du jour" a un effet de flou derrière elle (backdrop blur)
-- Le fond crème de l'app est légèrement visible à travers le dégradé de la carte
-- Un fin bord blanc semi-transparent encadre la carte (effet glass edge)
-- Une ombre plus prononcée que l'ancienne version
+- Spinner affiché sur le bouton pendant l'appel POST `/apply-proposals`.
+- Toast succès « Tes préférences sont mises à jour ».
+- La carte disparaît du feed (état LcApplied).
+- Le feed est rafraîchi ; les sources et custom_topics également.
+- Cooldown 24h actif : la carte ne réapparaît pas après reload.
 
 ---
 
-### Scénario 2 : Liquid glass sur la carte principale (mode sombre)
+### Scénario 2 : Edge 1 — Dismiss individuel d'une proposition (✕)
 
 **Parcours** :
-1. Ouvrir l'écran `/digest`
-2. Activer le thème sombre
-3. Observer la carte
+1. Sur une carte à 3 propositions, tapper le ✕ de la 2ᵉ proposition.
+2. Observer la carte.
+3. Tapper **Valider**.
 
 **Résultat attendu** :
-- Même effet de flou, mais avec un fond sombre translucide (gradient 72-78% alpha)
-- Bord subtil blanc (14% alpha)
-- Shadow plus prononcée sur fond sombre
+- La ligne dismiss disparaît visuellement, les 2 autres restent.
+- POST `/apply-proposals` contient `action=dismiss` pour la ligne retirée et `action=accept` pour les deux autres.
+- Toast succès, carte masquée, cooldown activé.
 
 ---
 
-### Scénario 3 : Teinte plus marquée sur les cartes topic
+### Scénario 3 : Edge 2 — Expand / stats
 
 **Parcours** :
-1. Ouvrir l'écran `/digest` en mode editorial
-2. Observer les cartes de topics (avant l'ouverture)
+1. Sur la carte, tapper l'icône ℹ︎ d'une proposition `source_priority`.
+2. Vérifier le panneau ouvert.
+3. Tapper ℹ︎ d'une autre proposition.
 
 **Résultat attendu** :
-- En mode sombre : fond légèrement plus prononcé (white 11% vs 6% avant)
-- En mode clair : teinte légèrement plus foncée (black 7% vs 3% avant)
-- La distinction visuelle entre la carte mère et les cartes topic est plus nette
+- Le panneau `ProposalStatsPanel` s'ouvre avec la ligne `N articles affichés · M lus · K sauvegardés`, la période et le label de signal (ex. « très fort ») correspondant à `signalStrength`.
+- Un seul panneau ouvert à la fois : ouvrir la 2ᵉ referme la 1ʳᵉ.
+- Analytics `construire_flux.expand` tracké.
 
 ---
 
-### Scénario 4 : Header sticky sur carte ouverte
+### Scénario 4 : Edge 3 — Plus tard (snooze)
 
 **Parcours** :
-1. Ouvrir l'écran `/digest` en mode editorial
-2. Appuyer sur une carte topic pour l'ouvrir (expand)
-3. Scroller vers le bas jusqu'à ce que le contenu de la carte dépasse le haut de l'écran
+1. Tapper **Plus tard**.
 
 **Résultat attendu** :
-- Le header de la carte (titre du topic + badge) se "colle" en haut de l'écran visible de la carte
-- Le header naturel (dans le contenu) disparaît par fade quand le sticky prend le relais
-- En continuant à scroller, quand le bas de la carte dépasse le sticky, le sticky disparaît
-- Pas de doublon header visible à aucun moment
-
-**Edge case** : La carte ne doit PAS avoir de sticky quand elle n'est pas ouverte (compacte)
+- POST `/apply-proposals` avec `action=dismiss` pour toutes les propositions affichées.
+- Carte masquée, cooldown 24h actif.
+- Aucun toast succès sur snooze (seul Valider affiche le toast).
+- Au prochain cold-start avant 24h : carte toujours masquée.
 
 ---
 
-### Scénario 5 : Citation Serein en première position
+### Scénario 5 : Edge 4 — Modification source_priority via slider
 
 **Parcours** :
-1. Ouvrir `/digest`
-2. Activer le mode Serein (toggle en haut à droite)
-3. Observer le contenu de la carte principale
+1. Sur une proposition `source_priority` (ex. `currentValue=3`, `proposedValue=1`), tapper un autre dot proposé (ex. `2`).
+2. Tapper **Valider**.
 
 **Résultat attendu** :
-- La citation (QuoteBlock) apparaît **avant** le premier topic (Bonne Nouvelle)
-- La citation est présentée dans une card élégante avec :
-  - Un grand guillemet décoratif `«` en haut
-  - Le texte en italique centré, hauteur de ligne 1.55
-  - Une fine ligne horizontale accent sous le texte
-  - L'auteur en semi-gras en dessous
-  - Fond teinté subtil (primary 5% en clair, white 6% en sombre)
-
-**Edge case** : Si le digest n'a pas de citation (quote null), rien ne s'affiche en première position
+- Le dot actif change visuellement.
+- POST `/apply-proposals` contient `action=modify, value=2` pour cette ligne.
+- Analytics `construire_flux.validate` avec `modified_count ≥ 1`.
 
 ---
 
-### Scénario 6 : Pépite du jour styled
+### Scénario 6 : Edge 5 — Gating (carte absente)
 
 **Parcours** :
-1. Ouvrir `/digest` (un digest qui a une Pépite du jour)
-2. Scroller jusqu'au bloc "Pépite du jour"
+1. Se connecter avec un compte dont le backend retourne < 3 propositions OU `max_signal_strength < 0.6`, OU cooldown actif (`learning_checkpoint_last_action_at` il y a < 24h).
+2. Aller sur le feed.
 
 **Résultat attendu** :
-- Le bloc est dans un container encadré (border radius 16, tint, ombre)
-- Le badge "🌿 Pépite du jour" et le mini-éditorial apparaissent en header interne (padding 12px)
-- La FeedCard est à l'intérieur du container (padding 10px)
-- Visuellement cohérent avec les cartes topics
+- Aucune carte affichée, aucun titre « Construire ton flux · Cette semaine » visible.
+- Le feed reste fonctionnel, `CaughtUp` et autres intercalés s'affichent à leur place habituelle.
 
 ---
 
-### Scénario 7 : Coup de cœur styled
+### Scénario 7 : Edge 6 — Dismiss de la dernière proposition → snooze auto
 
 **Parcours** :
-1. Ouvrir `/digest` (digest avec Coup de cœur)
-2. Scroller jusqu'au bloc "Coup de cœur"
+1. Carte à 3 propositions. Tapper ✕ sur chacune, l'une après l'autre.
 
 **Résultat attendu** :
-- Même container styled que la Pépite
-- Le texte d'intro ("L'article le plus gardé hier...") dans le header interne
-- Cohérence visuelle avec le reste du flow
-
----
-
-### Scénario 8 : Toggle Serein ↔ Standard (animation)
-
-**Parcours** :
-1. Activer mode Serein → observer la citation en premier
-2. Désactiver mode Serein → la citation disparaît, layout standard
-3. Réactiver → citation réapparaît en premier
-
-**Résultat attendu** :
-- AnimatedSwitcher cross-fade de 300ms entre les deux layouts
-- Pas de flash / layout jump visible
-
----
-
-### Scénario 9 : Sticky header — transition vers le topic suivant
-
-**Parcours** :
-1. Ouvrir le premier topic (expand)
-2. Scroller jusqu'à voir la fin du premier topic et le début du deuxième
-3. Ouvrir également le deuxième topic
-
-**Résultat attendu** :
-- Quand le premier topic scroll hors de vue, son sticky header disparaît proprement
-- Le sticky du deuxième topic fonctionne indépendamment
-- Jamais deux sticky headers simultanément visibles
+- Après le 3ᵉ ✕, la carte se ferme (snooze automatique déclenché, POST `/apply-proposals` avec `action=dismiss` pour les 3).
+- Cooldown actif.
 
 ---
 
 ## Critères d'acceptation
 
-- [ ] BackdropFilter blur visible sur la carte mère (effet glass)
-- [ ] Gradient semi-transparent (app background visible à travers)
-- [ ] Teinte cards topics plus prononcée en dark et light mode
-- [ ] Header sticky activé uniquement sur card ouverte (expanded)
-- [ ] Header sticky release quand la card scroll hors de vue
-- [ ] Opacity fade du header naturel quand sticky actif
-- [ ] QuoteBlock affiché EN PREMIER en mode Serein (avant topics)
-- [ ] QuoteBlock design : guillemet décoratif + ligne accent + auteur stylé
-- [ ] QuoteBlock invisible si quote.text vide
-- [ ] PépiteBlock dans container styled (cohérent avec topics)
-- [ ] CoupDeCoeurBlock dans container styled (cohérent avec topics)
-- [ ] ActuDécalée dans container styled (cohérent avec topics)
-- [ ] Aucune régression en mode standard (non-serein)
-- [ ] flutter analyze : 0 errors, 0 warnings sur les fichiers modifiés
+- [ ] Carte visible uniquement si N≥3, max_signal≥0.6, cooldown inactif, 1/session max.
+- [ ] 3 types rendus correctement : slider `source_priority`, toggle `mute_entity`, toggle `follow_entity`.
+- [ ] Expand : un seul panneau ouvert, stats formatées, label signal correct.
+- [ ] Dismiss individuel puis Valider → actions mix `accept`/`dismiss`/`modify` envoyées.
+- [ ] Plus tard → toutes les propositions → `dismiss`.
+- [ ] Cooldown 24h persisté via `SharedPreferences` clé `learning_checkpoint_last_action_at`.
+- [ ] Toast succès uniquement après Valider (pas sur snooze).
+- [ ] Feed + sources + custom_topics invalidés après action.
+- [ ] Analytics : `construire_flux.shown`, `.expand`, `.dismiss_item`, `.validate`, `.snooze`.
+- [ ] Accessibilité : Semantics « Proposition : <label> », tooltips « Détails de la proposition » / « Ignorer cette proposition ».
 
 ## Zones de risque
 
-- **BackdropFilter** : peut être ignoré silencieusement sur certains devices Android anciens (API < 23) — l'app doit rester lisible sans le flou
-- **Sticky header** : la translation est calculée à partir de `localToGlobal` — à vérifier que le pin line est correct avec et sans notch/safe area
-- **Quote first position** : si `widget.digest?.quote == null`, rien ne doit s'afficher — vérifier que le layout ne laisse pas d'espace vide
-- **AnimatedSwitcher** + QuoteBlock en premier : vérifier que le cross-fade ne fait pas "sauter" le scroll position
+- **Interaction CaughtUp + Carte** : la carte est injectée en position 3, CaughtUp reste à position 8. `caughtUpEffectivePos = caughtUpPos + contentOffset` pour éviter collision avec le contenu. Vérifier visuellement que rien ne se chevauche quand le feed a 8+ articles.
+- **Refresh feed après validation** : l'invalidation feed+sources+custom_topics peut provoquer un flicker. Vérifier UX.
+- **Cooldown race** : après `_markCooldown()`, le provider cooldown est invalidé mais le notifier ne rebuild PAS (utilise `ref.read`, pas `ref.watch`). La carte doit rester en LcApplied jusqu'à pull-to-refresh ou cold-start.
+- **Kill-switch** : `LearningCheckpointFlags.enabled = false` OU SharedPreferences clé `learning_checkpoint_force_disabled = true` → carte jamais affichée (path de secours prod/QA).
 
 ## Dépendances
 
-- Aucun endpoint API modifié — les données (quote, pepite, coupDeCoeur) sont existantes
-- Nécessite un digest avec mode editorial activé (flag `usesEditorial`)
-- La citation Serein nécessite `digest.quote != null` (présent dans les vraies données API)
-- Tests sur device physique recommandés pour valider le backdrop blur
+- **Backend** : endpoints `GET /learning-checkpoint/proposals` et `POST /learning-checkpoint/apply-proposals` (stories 13.1-13.4).
+- **Providers** : `feedProvider`, `userSourcesProvider`, `customTopicsProvider`, `apiClientProvider`, `analyticsServiceProvider`.
+- **Services** : `NotificationService.showSuccess/showError`.
+- **Packages** : `shared_preferences`, `flutter_riverpod`, `phosphor_flutter`.
