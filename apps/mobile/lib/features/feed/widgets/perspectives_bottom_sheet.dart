@@ -144,14 +144,14 @@ class PerspectivesBottomSheet extends ConsumerStatefulWidget {
       _PerspectivesBottomSheetState();
 }
 
-enum _AnalysisState { idle, loading, done, error }
+enum PerspectivesAnalysisState { idle, loading, done, error }
 
 class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomSheet> {
   /// Collapsed groups: each group can be independently collapsed
   final Set<String> _collapsedGroups = {};
 
   /// Analysis state
-  late _AnalysisState _analysisState;
+  PerspectivesAnalysisState _analysisState = PerspectivesAnalysisState.idle;
   String? _analysisText;
   bool _isAnalysisExpanded = true;
   bool _isCachedAnalysis = false;
@@ -160,16 +160,22 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
   void initState() {
     super.initState();
     if (widget.initialAnalysis != null) {
-      _analysisState = _AnalysisState.done;
+      _analysisState = PerspectivesAnalysisState.done;
       _analysisText = widget.initialAnalysis;
       _isCachedAnalysis = widget.analysisCached;
     } else {
-      _analysisState = _AnalysisState.idle;
+      _analysisState = PerspectivesAnalysisState.idle;
     }
   }
 
+  /// Active bias filter (null = show all)
+  String? _selectedGroup;
+
   List<Perspective> get _filteredPerspectives {
-    return widget.perspectives;
+    if (_selectedGroup == null) return widget.perspectives;
+    return widget.perspectives
+        .where((p) => p.biasGroup == _selectedGroup)
+        .toList();
   }
 
   /// Compute merged 3-segment distribution from the 5-segment API data
@@ -190,7 +196,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
   }
 
   Future<void> _requestAnalysis() async {
-    setState(() => _analysisState = _AnalysisState.loading);
+    setState(() => _analysisState = PerspectivesAnalysisState.loading);
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -201,11 +207,11 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
       setState(() {
         _analysisText = result;
         _analysisState =
-            result != null ? _AnalysisState.done : _AnalysisState.error;
+            result != null ? PerspectivesAnalysisState.done : PerspectivesAnalysisState.error;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _analysisState = _AnalysisState.error);
+      setState(() => _analysisState = PerspectivesAnalysisState.error);
     }
   }
 
@@ -240,64 +246,69 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
           // Header
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  PhosphorIcons.eye(PhosphorIconsStyle.fill),
-                  color: colors.primary,
-                  size: 32,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Voir tous les points de vue',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.textPrimary,
-                          fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
-                        ),
-                      ),
-                      Text(
-                        '(${widget.keywords.join(', ')})',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: colors.textSecondary,
-                          fontSize: (textTheme.labelSmall?.fontSize ?? 11) + 1,
-                        ),
-                      ),
-                      if (widget.comparisonQuality == 'low')
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.textTertiary.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '⚠️ Comparaison limitée (sujet peu couvert)',
-                              style: textTheme.labelSmall?.copyWith(
-                                fontSize: 11,
-                                color: colors.textTertiary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Icon(
+                      PhosphorIcons.eye(PhosphorIconsStyle.fill),
+                      color: colors.primary,
+                      size: 32,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Voir tous les points de vue',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: colors.textPrimary,
+                              fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
                             ),
                           ),
+                          Text(
+                            '(${widget.keywords.join(', ')})',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colors.textSecondary,
+                              fontSize: (textTheme.labelSmall?.fontSize ?? 11) + 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+                      onPressed: () => Navigator.pop(context),
+                      color: colors.textSecondary,
+                    ),
+                  ],
+                ),
+                if (widget.comparisonQuality == 'low')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.textTertiary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '⚠️ Comparaison limitée (sujet peu couvert)',
+                        style: textTheme.labelSmall?.copyWith(
+                          fontSize: 11,
+                          color: colors.textTertiary,
                         ),
-                    ],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: Icon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
-                  onPressed: () => Navigator.pop(context),
-                  color: colors.textSecondary,
-                ),
               ],
             ),
           ),
@@ -311,7 +322,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                 ? _buildEmptyState(context, colors, textTheme)
                 : _shouldGroup
                     ? _buildGroupedList(context, colors, textTheme,
-                        widget.perspectives)
+                        filtered)
                     : ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -341,10 +352,10 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
         child: switch (_analysisState) {
-          _AnalysisState.idle => _buildAnalysisCta(colors, textTheme),
-          _AnalysisState.loading => _buildAnalysisSkeleton(colors),
-          _AnalysisState.done => _buildAnalysisResult(colors, textTheme),
-          _AnalysisState.error => _buildAnalysisError(colors, textTheme),
+          PerspectivesAnalysisState.idle => _buildAnalysisCta(colors, textTheme),
+          PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(colors),
+          PerspectivesAnalysisState.done => _buildAnalysisResult(colors, textTheme),
+          PerspectivesAnalysisState.error => _buildAnalysisError(colors, textTheme),
         },
       ),
     );
@@ -689,26 +700,43 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
             children: List.generate(segments.length, (i) {
               final seg = segments[i];
               final count = merged[seg.$1] ?? 0;
+              final isSelected = _selectedGroup == seg.$1;
+              final hasArticles = count > 0;
               return Expanded(
                 flex: flexValues[i],
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                  height: 12,
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  decoration: BoxDecoration(
-                    color: count > 0
-                        ? seg.$3.withOpacity(count == 1
-                                ? 0.55
-                                : (count == 2 ? 0.8 : 1.0))
-                        : seg.$3.withOpacity(0.25),
-                    borderRadius: BorderRadius.circular(6),
-                    border: count > 0
-                        ? Border.all(
-                            color: Colors.black.withOpacity(0.2),
-                            width: 0.8,
-                          )
-                        : null,
+                child: GestureDetector(
+                  onTap: hasArticles
+                      ? () => setState(() {
+                            _selectedGroup =
+                                isSelected ? null : seg.$1;
+                          })
+                      : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    height: 12,
+                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                    decoration: BoxDecoration(
+                      color: count > 0
+                          ? seg.$3.withValues(
+                              alpha: count == 1
+                                  ? 0.55
+                                  : (count == 2 ? 0.8 : 1.0))
+                          : seg.$3.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: isSelected
+                          ? Border.all(
+                              color: seg.$3,
+                              width: 2.0,
+                            )
+                          : count > 0
+                              ? Border.all(
+                                  color:
+                                      Colors.black.withValues(alpha: 0.2),
+                                  width: 0.8,
+                                )
+                              : null,
+                    ),
                   ),
                 ),
               );
@@ -747,7 +775,7 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
                         top: 0,
                         child: CustomPaint(
                           size: const Size(14, 8),
-                          painter: _TrianglePainter(color: sourceColor),
+                          painter: PerspectivesTrianglePainter(color: sourceColor),
                         ),
                       ),
                       Positioned(
@@ -783,31 +811,629 @@ class _PerspectivesBottomSheetState extends ConsumerState<PerspectivesBottomShee
 
   Widget _buildEmptyState(
       BuildContext context, FacteurColors colors, TextTheme textTheme) {
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
-            size: 48,
-            color: colors.textSecondary.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Sujet peu couvert',
-            style: textTheme.titleSmall?.copyWith(
-              color: colors.textSecondary,
-              fontWeight: FontWeight.w600,
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
+              size: 48,
+              color: colors.textSecondary.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sujet peu couvert',
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Inline (non-modal) version of the perspectives section.
+/// Designed to be embedded directly in the article scroll view below the body.
+class PerspectivesInlineSection extends ConsumerStatefulWidget {
+  final List<Perspective> perspectives;
+  final Map<String, int> biasDistribution;
+  final List<String> keywords;
+  final String sourceBiasStance;
+  final String sourceName;
+  final String contentId;
+  final String comparisonQuality;
+
+  /// Controlled mode: when provided, the parent owns the filter state.
+  final Set<String>? externalSelectedSegments;
+  final void Function(String)? onSegmentTap;
+  final VoidCallback? onClearSegments;
+
+  /// Analysis state controlled by the parent screen.
+  final PerspectivesAnalysisState analysisState;
+  final String? analysisText;
+  final VoidCallback? onRequestAnalysis;
+
+  /// Key attached to the analysis result zone so the parent can scroll to it.
+  final Key? analysisZoneKey;
+
+  const PerspectivesInlineSection({
+    super.key,
+    required this.perspectives,
+    required this.biasDistribution,
+    required this.keywords,
+    required this.contentId,
+    this.sourceBiasStance = 'unknown',
+    this.sourceName = '',
+    this.comparisonQuality = 'low',
+    this.externalSelectedSegments,
+    this.onSegmentTap,
+    this.onClearSegments,
+    this.analysisState = PerspectivesAnalysisState.idle,
+    this.analysisText,
+    this.onRequestAnalysis,
+    this.analysisZoneKey,
+  });
+
+  @override
+  ConsumerState<PerspectivesInlineSection> createState() =>
+      _PerspectivesInlineSectionState();
+}
+
+class _PerspectivesInlineSectionState
+    extends ConsumerState<PerspectivesInlineSection> {
+  bool _isAnalysisExpanded = true;
+  Set<String> _selectedSegments = {};
+
+  /// In controlled mode (widget.onSegmentTap != null), use the parent-provided
+  /// set; otherwise fall back to internal state.
+  Set<String> get _effectiveSegments =>
+      widget.externalSelectedSegments ?? _selectedSegments;
+
+  static const _groupOrder = ['gauche', 'centre', 'droite'];
+
+  Map<String, int> get _mergedDistribution {
+    final dist = widget.biasDistribution;
+    return {
+      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
+      'centre': dist['center'] ?? 0,
+      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
+    };
+  }
+
+  List<Perspective> get _sortedPerspectives {
+    final sorted = [...widget.perspectives];
+    sorted.sort((a, b) =>
+        _groupOrder.indexOf(a.biasGroup).compareTo(_groupOrder.indexOf(b.biasGroup)));
+    return sorted;
+  }
+
+  List<Perspective> get _filteredPerspectives {
+    final sorted = _sortedPerspectives;
+    if (_effectiveSegments.isEmpty) return sorted;
+    return sorted.where((p) => _effectiveSegments.contains(p.biasGroup)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final filtered = _filteredPerspectives;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.perspectives.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                      color: colors.primary,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Voir tous les points de vue',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colors.textPrimary,
+                          fontSize:
+                              (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.comparisonQuality == 'low')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.textTertiary
+                            .withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '⚠️ Comparaison limitée (sujet peu couvert)',
+                        style: textTheme.labelSmall?.copyWith(
+                          fontSize: 11,
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 16),
+                _buildBiasBar(context, colors),
+                SizedBox(
+                  height: 20,
+                  child: _effectiveSegments.isNotEmpty
+                      ? Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: () {
+                              if (widget.onClearSegments != null) {
+                                widget.onClearSegments!();
+                              } else {
+                                setState(() => _selectedSegments = {});
+                              }
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Tout afficher',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                                  size: 12,
+                                  color: colors.primary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
-            style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-            textAlign: TextAlign.center,
+          // Cards without extra horizontal padding (they have their own)
+          if (filtered.isEmpty)
+            _buildEmptyState(context, colors, textTheme)
+          else
+            ...filtered.map(
+              (p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _PerspectiveCard(perspective: p),
+              ),
+            ),
+          // Analysis zone below last card (loading / done / error only)
+          if (widget.analysisState != PerspectivesAnalysisState.idle)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _buildAnalysisZone(context, colors, textTheme),
+            ),
+          // Spacer so the last card isn't hidden behind the floating button
+          if (widget.analysisState == PerspectivesAnalysisState.idle)
+            const SizedBox(height: 32),
+        ] else ...[
+          // No articles: header without analysis/bar, then full-width empty state
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                  color: colors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Voir tous les points de vue',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colors.textPrimary,
+                      fontSize: (textTheme.titleMedium?.fontSize ?? 16) + 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildEmptyState(context, colors, textTheme),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAnalysisZone(
+      BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    return AnimatedSize(
+      key: widget.analysisZoneKey,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      child: switch (widget.analysisState) {
+        PerspectivesAnalysisState.idle => const SizedBox.shrink(),
+        PerspectivesAnalysisState.loading => _buildAnalysisSkeleton(colors),
+        PerspectivesAnalysisState.done => _buildAnalysisResult(colors, textTheme),
+        PerspectivesAnalysisState.error => _buildAnalysisError(colors, textTheme),
+      },
+    );
+  }
+
+  Widget _buildAnalysisSkeleton(FacteurColors colors) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _ShimmerLine(
+              width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
+              colors: colors,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisResult(FacteurColors colors, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () =>
+                setState(() => _isAnalysisExpanded = !_isAnalysisExpanded),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                  size: 18,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Analyse Facteur',
+                  style: textTheme.titleSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _isAnalysisExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                    size: 12,
+                    color: colors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isAnalysisExpanded) ...[
+            const SizedBox(height: 10),
+            MarkdownText(
+              text: widget.analysisText ?? '',
+              style: textTheme.bodySmall!.copyWith(
+                color: colors.textPrimary,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Analyse Facteur',
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: colors.textSecondary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalysisError(FacteurColors colors, TextTheme textTheme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.textSecondary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Analyse indisponible',
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: widget.onRequestAnalysis,
+            style: TextButton.styleFrom(
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Réessayer',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _handleSegmentTap(String key) {
+    if (widget.onSegmentTap != null) {
+      widget.onSegmentTap!(key);
+    } else {
+      _onSegmentTapInternal(key);
+    }
+  }
+
+  void _onSegmentTapInternal(String key) {
+    setState(() {
+      if (_selectedSegments.contains(key)) {
+        if (_selectedSegments.length == 1) {
+          _selectedSegments = {};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..remove(key);
+        }
+      } else {
+        if (_selectedSegments.isEmpty || _selectedSegments.length == 3) {
+          _selectedSegments = {key};
+        } else {
+          _selectedSegments = Set.from(_selectedSegments)..add(key);
+        }
+      }
+    });
+  }
+
+  Widget _buildBiasBar(BuildContext context, FacteurColors colors) {
+    final segments = [
+      ('gauche', 'Gauche', colors.biasLeft),
+      ('centre', 'Centre', colors.biasCenter),
+      ('droite', 'Droite', colors.biasRight),
+    ];
+
+    final merged = _mergedDistribution;
+    final total = merged.values.fold<int>(0, (sum, v) => sum + v);
+
+    final flexValues = <int>[];
+    for (final seg in segments) {
+      final count = merged[seg.$1] ?? 0;
+      if (count > 0 && total > 0) {
+        final proportion = count / total;
+        flexValues.add((proportion * 100).round().clamp(15, 100));
+      } else {
+        flexValues.add(15);
+      }
+    }
+
+    final sourceGroup = _toBarGroup(widget.sourceBiasStance);
+    final sourceIndex = segments.indexWhere((s) => s.$1 == sourceGroup);
+
+    return Column(
+      children: [
+        Row(
+          children: List.generate(segments.length, (i) {
+            final seg = segments[i];
+            final count = merged[seg.$1] ?? 0;
+            final isActive = _effectiveSegments.isEmpty ||
+                _effectiveSegments.contains(seg.$1);
+            return Expanded(
+              flex: flexValues[i],
+              child: GestureDetector(
+                onTap: count > 0 ? () => _handleSegmentTap(seg.$1) : null,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: isActive ? 1.0 : 0.3,
+                  child: Column(
+                    children: [
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: seg.$3
+                                .withValues(alpha: count > 0 ? 0.15 : 0.05),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              seg.$2,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color:
+                                    count > 0 ? seg.$3 : colors.textTertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                        height: 12,
+                        margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                        decoration: BoxDecoration(
+                          color: count > 0
+                              ? seg.$3.withValues(
+                                  alpha: count == 1
+                                      ? 0.55
+                                      : (count == 2 ? 0.8 : 1.0))
+                              : seg.$3.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(6),
+                          border: count > 0
+                              ? Border.all(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  width: 0.8,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        if (sourceIndex >= 0 && widget.sourceBiasStance != 'unknown') ...[
+          const SizedBox(height: 4),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final totalFlex =
+                  flexValues.fold<int>(0, (sum, f) => sum + f);
+              double offsetFraction = 0;
+              for (int i = 0; i < sourceIndex; i++) {
+                offsetFraction += flexValues[i] / totalFlex;
+              }
+              offsetFraction += (flexValues[sourceIndex] / totalFlex) / 2;
+
+              final markerX = constraints.maxWidth * offsetFraction;
+              final sourceColor = segments[sourceIndex].$3;
+              final displayName = widget.sourceName.isNotEmpty
+                  ? widget.sourceName
+                  : segments[sourceIndex].$2;
+
+              return SizedBox(
+                height: 28,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: markerX - 7,
+                      top: 0,
+                      child: CustomPaint(
+                        size: const Size(14, 8),
+                        painter: PerspectivesTrianglePainter(color: sourceColor),
+                      ),
+                    ),
+                    Positioned(
+                      left: (markerX - 50)
+                          .clamp(0.0, constraints.maxWidth - 100),
+                      top: 10,
+                      child: SizedBox(
+                        width: 100,
+                        child: Text(
+                          displayName,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: sourceColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEmptyState(
+      BuildContext context, FacteurColors colors, TextTheme textTheme) {
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.newspaperClipping(PhosphorIconsStyle.duotone),
+              size: 48,
+              color: colors.textSecondary.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sujet peu couvert',
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ce sujet est peu couvert par les médias.\nEssaie la comparaison sur un autre article !',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -866,10 +1492,10 @@ class _ShimmerLineState extends State<_ShimmerLine>
 }
 
 /// Triangle painter for the "Votre source" marker
-class _TrianglePainter extends CustomPainter {
+class PerspectivesTrianglePainter extends CustomPainter {
   final Color color;
 
-  _TrianglePainter({required this.color});
+  PerspectivesTrianglePainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
