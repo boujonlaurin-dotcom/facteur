@@ -101,26 +101,42 @@ async def init_db() -> None:
     # En production, les tables sont gérées via Supabase
     # Cette fonction vérifie juste que la connexion fonctionne
     try:
+        import asyncio
         import socket
 
-        # Diagnostic DNS préventif
+        # Diagnostic DNS préventif — exécuté dans un thread pour ne pas
+        # bloquer l'event loop. socket.gethostbyname() est synchrone et
+        # peut prendre 5-30s sur Railway ; si on l'appelle directement dans
+        # une coroutine, uvicorn ne peut plus servir /api/health → healthcheck
+        # timeout. Cf. docs/bugs/bug-infinite-load-requests.md.
+        loop = asyncio.get_event_loop()
         try:
             if db_host:
-                resolved_ip = socket.gethostbyname(db_host)
+                resolved_ip = await asyncio.wait_for(
+                    loop.run_in_executor(None, socket.gethostbyname, db_host),
+                    timeout=5.0,
+                )
                 logger.info("db_dns_resolved", host=db_host, ip=resolved_ip)
-        except socket.gaierror:
+        except (TimeoutError, socket.gaierror) as dns_err:
             logger.error(
                 "db_dns_error",
                 host=db_host,
                 port=db_port,
+                error=str(dns_err),
                 hint="Check your DATABASE_URL on Railway.",
             )
 
-        # Diagnostic TCP préventif — vérifier que le port est joignable
+        # Diagnostic TCP préventif — même raison : exécuté dans un thread.
+        def _tcp_check() -> None:
+            sock = socket.create_connection((db_host, db_port), timeout=5)
+            sock.close()
+
         try:
             if db_host and db_port:
-                sock = socket.create_connection((db_host, db_port), timeout=5)
-                sock.close()
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, _tcp_check),
+                    timeout=6.0,
+                )
                 logger.info("db_tcp_reachable", host=db_host, port=db_port)
         except (TimeoutError, ConnectionRefusedError, OSError) as tcp_err:
             logger.error(
