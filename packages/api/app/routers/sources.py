@@ -5,20 +5,19 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.failed_source_attempt import FailedSourceAttempt
-from sqlalchemy import func, select
-
 from app.models.source import Source
 from app.models.user import UserInterest
 from app.schemas.source import (
+    SmartSearchRecentItem,
     SmartSearchRequest,
     SmartSearchResponse,
     SmartSearchResultItem,
-    SmartSearchRecentItem,
     SourceCatalogResponse,
     SourceCreate,
     SourceDetectRequest,
@@ -26,9 +25,9 @@ from app.schemas.source import (
     SourceResponse,
     SourceSearchResponse,
     ThemeFollowed,
+    ThemesFollowedResponse,
     ThemeSourceGroup,
     ThemeSourcesResponse,
-    ThemesFollowedResponse,
     UpdateSourceSubscriptionRequest,
     UpdateSourceWeightRequest,
 )
