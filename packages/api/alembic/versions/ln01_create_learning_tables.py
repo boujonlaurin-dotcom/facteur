@@ -87,16 +87,33 @@ def upgrade() -> None:
         ),
     )
 
-    # Index for efficient lookup of entity preferences per user
+    # Partial index for the hot path: loading a user's muted entities during
+    # feed recommendation (see recommendation_service.py). Filtering on
+    # preference = 'mute' in the index avoids a seq scan / filter step once
+    # users accumulate both mute and follow rows.
     op.create_index(
-        "idx_entity_prefs_user",
+        "idx_entity_prefs_user_mute",
         "user_entity_preferences",
         ["user_id"],
+        postgresql_where=sa.text("preference = 'mute'"),
+    )
+
+    # Secondary composite index for generic (user_id, preference) lookups
+    # (e.g. settings screen listing all preferences grouped by type).
+    op.create_index(
+        "idx_entity_prefs_user_pref",
+        "user_entity_preferences",
+        ["user_id", "preference"],
     )
 
 
 def downgrade() -> None:
-    op.drop_index("idx_entity_prefs_user", table_name="user_entity_preferences")
+    op.drop_index(
+        "idx_entity_prefs_user_pref", table_name="user_entity_preferences"
+    )
+    op.drop_index(
+        "idx_entity_prefs_user_mute", table_name="user_entity_preferences"
+    )
     op.drop_table("user_entity_preferences")
     op.drop_index(
         "idx_learning_proposals_user_pending", table_name="user_learning_proposals"

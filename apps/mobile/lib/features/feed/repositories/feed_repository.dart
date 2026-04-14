@@ -7,6 +7,46 @@ class FeedRepository {
 
   FeedRepository(this._apiClient);
 
+  /// Parse the `pagination` block from a `GET /feed` response.
+  ///
+  /// - Legacy shape (raw `List`): falls back to `hasNext = itemsCount > 0`
+  ///   and `total = 0` (unknown).
+  /// - New shape (`Map` with `pagination: { has_next, total }`): trusts the
+  ///   backend-provided values. `has_next` is computed from
+  ///   `total_candidates` (pool pre-diversification) so it remains reliable
+  ///   even when clustering / regroupement shrinks the current page.
+  ///
+  /// Visible for unit testing. The provider layer combines the returned
+  /// `hasNext` with `items.isNotEmpty` — see `feed_provider.dart`.
+  static Pagination parsePagination({
+    required dynamic data,
+    required int page,
+    required int limit,
+    required int itemsCount,
+  }) {
+    int total = 0;
+    bool hasNext = itemsCount > 0;
+    if (data is Map<String, dynamic>) {
+      final paginationRaw = data['pagination'];
+      if (paginationRaw is Map<String, dynamic>) {
+        final backendHasNext = paginationRaw['has_next'];
+        if (backendHasNext is bool) {
+          hasNext = backendHasNext;
+        }
+        final backendTotal = paginationRaw['total'];
+        if (backendTotal is int) {
+          total = backendTotal;
+        }
+      }
+    }
+    return Pagination(
+      page: page,
+      perPage: limit,
+      total: total,
+      hasNext: hasNext,
+    );
+  }
+
   Future<FeedResponse> getFeed({
     int page = 1,
     int limit = 20,
@@ -405,34 +445,21 @@ class FeedRepository {
           itemsList = [];
         }
 
-        // Pagination: prefer backend metadata (based on total_candidates
-        // pre-diversification) when available. Fall back to inferring from
-        // items.isNotEmpty for the legacy List response shape.
-        // The provider combines both via a hybrid check — see feed_provider.
-        int paginationTotal = 0;
-        bool paginationHasNext = itemsList.isNotEmpty;
-        if (data is Map<String, dynamic>) {
-          final paginationRaw = data['pagination'];
-          if (paginationRaw is Map<String, dynamic>) {
-            final backendHasNext = paginationRaw['has_next'];
-            if (backendHasNext is bool) {
-              paginationHasNext = backendHasNext;
-            }
-            final backendTotal = paginationRaw['total'];
-            if (backendTotal is int) {
-              paginationTotal = backendTotal;
-            }
-          }
-        }
+        // Pagination: parsePagination handles both the legacy List shape
+        // (fallback: hasNext = itemsCount > 0) and the new Map shape with a
+        // `pagination` block emitted by the backend. The provider combines
+        // this with `items.isNotEmpty` via a hybrid check — see
+        // feed_provider.dart.
+        final pagination = FeedRepository.parsePagination(
+          data: data,
+          page: page,
+          limit: limit,
+          itemsCount: itemsList.length,
+        );
 
         return FeedResponse(
           items: itemsList,
-          pagination: Pagination(
-            page: page,
-            perPage: limit,
-            total: paginationTotal,
-            hasNext: paginationHasNext,
-          ),
+          pagination: pagination,
           carousels: carousels,
         );
       }
