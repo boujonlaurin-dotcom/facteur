@@ -100,21 +100,53 @@ Railway (ex. après le deploy bloqué par PR #394), ça peut :
   202 `preparing` (retry légitime)
 - Retries sur timeout réduits de 3 → 1
 
+### Fix 5 — DNS/TCP startup checks non bloquants (PR #397)
+
+`packages/api/app/database.py:init_db()`
+
+`socket.gethostbyname()` et `socket.create_connection()` sont synchrones et
+peuvent prendre 5-30s sur Railway au démarrage. Appelés directement dans une
+coroutine du `lifespan`, ils bloquaient l'event loop et empêchaient uvicorn
+de servir `/api/health` → Railway healthcheck timeout → redémarrage en
+boucle. Désormais wrappés dans `loop.run_in_executor()`.
+
+### Fix 6 — Budget global par requête HTTP (PR courante)
+
+`packages/api/app/main.py:_REQUEST_BUDGET_S = 60.0`
+
+Middleware qui borne **chaque** requête HTTP non-health à 60 s via
+`asyncio.wait_for(call_next(request), ...)`. Au-delà :
+- La task handler est annulée → sa session DB est libérée via le context
+  manager de `get_db` → la connexion retourne au pool
+- Le client reçoit `503 {"detail": "request_timeout"}` au lieu de hang
+- Log `request_budget_exceeded` avec `path` + `method` → Sentry voit
+  immédiatement quel endpoint est coupable
+
+Pourquoi 60 s : `pool_timeout` est à 30 s, et `/digest/both` peut
+légitimement prendre 25-30 s en cold path. 60 s laisse de la marge pour
+des pointes normales tout en tuant les vrais hangs.
+
+Exemptions : `/api/health*`, `/docs`, `/redoc`, `/openapi.json` — doivent
+rester répondants sous stress pour diagnostic.
+
 ## Ce que ça règle / ne règle pas
 
-✅ **Règle** : cascade hang → pool saturé → tout hang
-✅ **Règle** : startup catchup qui peut geler pour toujours
-✅ **Règle** : mobile qui retente 9 min un 503 "permanent"
+✅ **Règle** : cascade hang → pool saturé → tout hang (Fix 1–3, 6)
+✅ **Règle** : startup catchup qui peut geler pour toujours (Fix 2)
+✅ **Règle** : mobile qui retente 9 min un 503 "permanent" (Fix 4)
+✅ **Règle** : Railway healthcheck bloqué par DNS sync (Fix 5)
+✅ **Règle** : n'importe quel autre endpoint non borné qui bloque le pool (Fix 6)
 ⚠️ **Ne règle pas la cause racine amont** (qui fait hanger Mistral/Google
 News/Supabase ?). Les logs structlog existants + le nouveau endpoint pool
-donneront le signal pour identifier le vrai coupable sans bloquer la prod.
++ le log `request_budget_exceeded` donneront le signal pour identifier le
+vrai coupable sans bloquer la prod.
 
 ## Tests
 
-- `packages/api/tests/test_digest_router.py::test_digest_both_timeout_returns_503`
-- `packages/api/tests/test_main.py::test_startup_catchup_respects_timeout`
-- `packages/api/tests/test_main.py::test_startup_catchup_lock_prevents_double_run`
-- `packages/api/tests/test_health.py::test_pool_endpoint_returns_metrics`
+- `packages/api/tests/test_digest_both_timeout.py::test_digest_both_hanging_variant_returns_503_timeout`
+- `packages/api/tests/test_health_pool.py::test_pool_endpoint_returns_metrics`
+- `packages/api/tests/test_request_budget.py::test_healthcheck_never_times_out`
+- `packages/api/tests/test_request_budget.py::test_slow_endpoint_gets_503`
 
 ## Post-mortem
 
