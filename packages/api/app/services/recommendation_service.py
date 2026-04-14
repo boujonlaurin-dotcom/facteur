@@ -367,7 +367,10 @@ class RecommendationService:
                 for raw in c.entities:
                     try:
                         e = _json_mute.loads(raw)
-                        if isinstance(e, dict) and e.get("name", "").lower() in muted_lower:
+                        if (
+                            isinstance(e, dict)
+                            and e.get("name", "").lower() in muted_lower
+                        ):
                             return True
                     except (ValueError, TypeError):
                         if isinstance(raw, str) and raw.lower() in muted_lower:

@@ -50,9 +50,7 @@ class UserLearningProposal(Base):
     entity_id: Mapped[str] = mapped_column(
         Text, nullable=False
     )  # UUID pour source, nom canonique pour entite
-    entity_label: Mapped[str] = mapped_column(
-        Text, nullable=False
-    )  # Nom affichable
+    entity_label: Mapped[str] = mapped_column(Text, nullable=False)  # Nom affichable
 
     # Valeurs
     current_value: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -104,9 +102,7 @@ class UserEntityPreference(Base):
     )
     user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     entity_canonical: Mapped[str] = mapped_column(Text, nullable=False)
-    preference: Mapped[str] = mapped_column(
-        String(10), nullable=False
-    )  # follow | mute
+    preference: Mapped[str] = mapped_column(String(10), nullable=False)  # follow | mute
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )

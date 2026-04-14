@@ -79,7 +79,11 @@ class LearningService:
             .where(
                 UserContentStatus.last_impressed_at >= cutoff,
                 (
-                    (UserContentStatus.status.in_([ContentStatus.SEEN.value, ContentStatus.CONSUMED.value]))
+                    (
+                        UserContentStatus.status.in_(
+                            [ContentStatus.SEEN.value, ContentStatus.CONSUMED.value]
+                        )
+                    )
                     | (UserContentStatus.is_saved.is_(True))
                     | (UserContentStatus.reading_progress > 80)
                 ),
@@ -398,9 +402,7 @@ class LearningService:
     # Get Pending Proposals (Story 13.3)
     # ------------------------------------------------------------------
 
-    async def get_pending_proposals(
-        self, user_id: UUID
-    ) -> list[UserLearningProposal]:
+    async def get_pending_proposals(self, user_id: UUID) -> list[UserLearningProposal]:
         """Retourne les propositions pending pour un utilisateur."""
         result = await self.db.execute(
             select(UserLearningProposal)
@@ -438,9 +440,7 @@ class LearningService:
     # Apply Proposals (Story 13.4)
     # ------------------------------------------------------------------
 
-    async def apply_proposals(
-        self, user_id: UUID, actions: list[dict]
-    ) -> list[dict]:
+    async def apply_proposals(self, user_id: UUID, actions: list[dict]) -> list[dict]:
         """Applique les actions sur les propositions.
 
         actions: list of {proposal_id, action, value?}
@@ -489,7 +489,9 @@ class LearningService:
                 continue
 
             # Accept or modify
-            final_value = value if action == "modify" and value else proposal.proposed_value
+            final_value = (
+                value if action == "modify" and value else proposal.proposed_value
+            )
 
             try:
                 await self._apply_single_proposal(user_id, proposal, final_value)
@@ -608,14 +610,10 @@ class LearningService:
         await self.db.flush()
         return result.rowcount > 0
 
-    async def get_entity_preferences(
-        self, user_id: UUID
-    ) -> list[UserEntityPreference]:
+    async def get_entity_preferences(self, user_id: UUID) -> list[UserEntityPreference]:
         """Retourne toutes les preferences entite d'un utilisateur."""
         result = await self.db.execute(
-            select(UserEntityPreference).where(
-                UserEntityPreference.user_id == user_id
-            )
+            select(UserEntityPreference).where(UserEntityPreference.user_id == user_id)
         )
         return list(result.scalars().all())
 
@@ -630,9 +628,7 @@ class LearningService:
         return [row[0] for row in result.all()]
 
 
-def _diversify_proposals(
-    candidates: list[dict], max_count: int
-) -> list[dict]:
+def _diversify_proposals(candidates: list[dict], max_count: int) -> list[dict]:
     """Selectionne des propositions diversifiees par type.
 
     Garantit un mix de types differents plutot que N fois le meme type.
