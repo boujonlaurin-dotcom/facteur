@@ -116,10 +116,168 @@ donneront le signal pour identifier le vrai coupable sans bloquer la prod.
 - `packages/api/tests/test_main.py::test_startup_catchup_lock_prevents_double_run`
 - `packages/api/tests/test_health.py::test_pool_endpoint_returns_metrics`
 
-## Post-mortem — investigation 2026-04-14 (en cours)
+## Post-mortem — investigation 2026-04-14 (root cause confirmée)
 
 Après merge des PR #396 + #397, les users rapportent que les requêtes hangent
-toujours.
+toujours. Investigation en 2 temps : une première hypothèse invalidée, puis
+la vraie cause trouvée via probe `pg_stat_activity` sur prod.
+
+### 🎯 Root cause confirmée — sessions SQLAlchemy tenues trop longtemps
+
+**Preuve live** (`/api/health/pool` + `pg_stat_activity` sur prod, 2026-04-14) :
+
+```
+/api/health/pool :
+  size: 10, overflow: 10, checked_out: 16, usage_pct: 80%
+  → 80% du pool consommé en observation statique
+```
+
+```
+pg_stat_activity (WHERE state='idle in transaction') :
+  14 connexions coincées, wait_event=ClientRead
+  Ages: de 717s à 7090s (12 min à 2 heures)
+  Queries: 10 × SELECT contents.id, ...  |  4 × SELECT sources.id, ...
+```
+
+**Signature "idle in transaction + ClientRead"** = le client Python a ouvert
+une transaction, exécuté un SELECT, puis est parti `await` quelque chose qui
+n'est jamais revenu. Postgres attend passivement la prochaine commande. La
+transaction reste ouverte, la connexion reste checkée-out du pool.
+
+**Distribution des ages en pyramide** (plusieurs à 12-15 min, quelques-unes
+à 1-2h) = fuite **incrémentale** — chaque cycle de travail laisse derrière
+lui une ou deux sessions qui ne se referment jamais. Le pool se remplit au
+fil du temps jusqu'à saturation → `pool_timeout=30s` se déclenche pour
+chaque nouvelle requête → "tout charge à l'infini" côté mobile.
+
+**Driver asyncpg** (confirmé dans `database.py:31-62`) → les sessions ne
+sont pas bloquées par un thread pool saturé : c'est bien le code Python qui
+`await` sur une chaîne de dépendances trop longue tout en gardant la session
+ouverte.
+
+### Deux sites coupables
+
+Les signatures des queries matchent deux code paths qui **tiennent la session
+pendant une longue cascade d'`await`s externes** :
+
+#### Site A — `SyncService.process_source` (RSS sync, `sync_service.py:97-400+`)
+
+Patron :
+```python
+async def process_source(self, source):
+    # Session.session déjà ouverte
+    response = await self.client.get(source.feed_url)         # httpx 30s
+    feed = await loop.run_in_executor(..., feedparser.parse, content)
+    for entry in feed.entries[:50]:                           # ← 50 itérations
+        content_data = self._parse_entry(entry, source)
+        html_head = await self._fetch_html_head(...)          # 5s × 50 = 250s max
+        await self._save_content(data)                        # commits? non
+        # ContentEnricher._enrich_content :
+        await asyncio.wait_for(
+            run_in_executor(None, trafilatura.extract, url),  # 20s × 50 = 1000s max
+            timeout=20.0,
+        )
+```
+
+**Session tenue pendant 50 entries × ~5-25s = 4 à 20 min par source**.
+Semaphore=5 parallèle → 5 sessions simultanées pendant chaque cycle de sync
+(intervalle défaut : quelques minutes). Match parfait avec les ages 12-30 min
+observés sur les `SELECT sources.id, ...`.
+
+Pourquoi certaines montent à 1-2h : si `_enrich_content`'s `wait_for` cancel
+ne libère pas proprement la session (exception avalée, boucle continue), ou
+si un bug de sémantique empêche un rollback, la session peut rester active
+au-delà d'un cycle RSS. À investiguer spécifiquement.
+
+#### Site B — Pipeline éditoriale (`digest_service.get_or_create_digest` → `editorial/pipeline.py`)
+
+Patron :
+```python
+async def get_or_create_digest(self, user_id, ...):
+    # db session injectée par get_db()
+    profile = await user_service.get_or_create_profile(...)
+    # SELECT content candidates (grosse requête) ← c'est notre SELECT contents.*
+    digest_items = await selector.select_for_user(...)
+      # → EditorialPipeline.compute_global_context:
+      #   - cluster building
+      #   - LLM curation (Mistral) × 2-3           ← 30s × 3 = 90s
+      #   - perspective analysis per subject
+      #     × search_perspectives (Google News)    ← 10s × 5 = 50s
+      #     × analyze_divergences (Mistral)        ← 30s × 5 = 150s
+      #   - writing LLM × 5 subjects               ← 30s × 5 = 150s
+      #   - pepite + coup_de_coeur LLM             ← 30s × 2 = 60s
+```
+
+**Session tenue pendant 5 à 10 min dans le pire cas**. Match avec les ages
+5-15 min observés sur les `SELECT contents.*`. Pas borné côté handler pour
+`/api/digest` (seul `/digest/both` l'est via PR #396).
+
+### Pourquoi PR #396 + #397 n'ont pas suffi
+
+- PR #396 borne **seulement** `/digest/both` (25s/30s). Laisse `/api/digest`,
+  `/api/digest/generate`, et surtout **le scheduler RSS sync** totalement
+  non bornés.
+- PR #397 déplace la DNS en executor. Indépendant du problème de sessions
+  longues — corrige uniquement le healthcheck startup.
+- Aucun des deux n'adresse le pattern "session longue + await externe" qui
+  est la cause racine.
+
+### Fix architectural recommandé
+
+Par ordre de priorité (les 1-3 adressent la cause racine, les 4-6 sont
+defensive-in-depth) :
+
+1. **Scoper les sessions par unité de travail atomique** (site A) :
+   dans `process_source`, commit + close immédiatement après le SELECT initial
+   des sources. Pour chaque entry : ouvrir une session éphémère juste le
+   temps de l'INSERT + commit. Les appels httpx/trafilatura se font **hors
+   transaction**. C'est l'anti-pattern classique "transaction autour du world".
+
+2. **Même traitement pour la pipeline éditoriale** (site B) :
+   les appels LLM/Google News sont des I/O externes, ils ne doivent **jamais**
+   être dans un `with session:` bloc. Refactor : fetch contents, fermer la
+   session, faire les LLM appels, rouvrir une session pour le write final.
+
+3. **Request-budget middleware (commit `3d4ec06`) en filet de sécurité** :
+   même avec sessions courtes, un endpoint peut rester lent côté perçu.
+   Mérite d'être mergé pour borner tout à 60s + donner les logs
+   `request_budget_exceeded` pour visibilité.
+
+4. **Remplacer `trafilatura.fetch_url(url)` par httpx + `trafilatura.extract`** :
+   pattern identique à `rss_parser.py`. Évite le thread executor hang.
+
+5. **Remplacer les `feedparser.parse(url)` dormants** (`digest_selector.py:1526`
+   et `briefing_service.py:274`) par le même pattern httpx+parse(content).
+   Dormant aujourd'hui (0 rows `une_feed_url`), landmine demain.
+
+6. **`socket.setdefaulttimeout(15)`** en top de `main.py` comme ceinture+bretelles.
+
+### Probe additionnelle (à faire avant de coder)
+
+Pour départager site A vs site B en volume, cette query discrimine par
+signature de colonnes :
+
+```sql
+SELECT
+  CASE
+    WHEN query ILIKE 'SELECT sources.id, sources.name%' THEN 'sync_service (A)'
+    WHEN query ILIKE 'SELECT contents.id, contents.source_id%' THEN 'digest_or_sync (B or A)'
+    ELSE 'other'
+  END AS likely_site,
+  count(*),
+  round(avg(extract(epoch from now() - query_start))::numeric, 1) AS avg_age_s,
+  max(extract(epoch from now() - query_start))::int AS max_age_s
+FROM pg_stat_activity
+WHERE datname = 'postgres'
+  AND state = 'idle in transaction'
+  AND backend_type = 'client backend'
+GROUP BY 1
+ORDER BY count(*) DESC;
+```
+
+Si `sync_service (A)` domine en volume **et** en age max → prioriser fix #1.
+Si `digest_or_sync (B or A)` domine → probablement pipeline éditoriale, donc
+fix #2 d'abord.
 
 ### ⚠️ Hypothèse #1 INVALIDÉE — `feedparser.parse(url)` sur `une_feed_url`
 
