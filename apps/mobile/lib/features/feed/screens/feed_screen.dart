@@ -41,6 +41,8 @@ import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../saved/widgets/saved_nudge.dart';
 import '../../saved/providers/saved_summary_provider.dart';
+import '../../learning_checkpoint/providers/learning_checkpoint_provider.dart';
+import '../../learning_checkpoint/widgets/construire_son_flux_card.dart';
 import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
@@ -402,6 +404,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
         .read(feedProvider.notifier)
         .refreshArticlesWithSnapshot(visibleIds);
 
+    // Re-évalue la carte « Construire ton flux » (cooldown / propositions).
+    ref.invalidate(learningCheckpointProvider);
+
     // Scroll-to-top (convention pull-to-refresh).
     if (mounted && _scrollController.hasClients) {
       _scrollController.animateTo(
@@ -678,6 +683,14 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                             contents.length > 6;
                         const savedNudgePos = 6;
 
+                        // Construire ton flux : visible uniquement si
+                        // LcVisible et si le feed a assez d'articles pour
+                        // placer la carte en position 3.
+                        final lcAsync = ref.watch(learningCheckpointProvider);
+                        final lcValue = lcAsync.valueOrNull;
+                        final bool showConstruireFlux =
+                            lcValue is LcVisible && contents.length > 3;
+
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
                             notifier.selectedTheme != null ||
@@ -696,8 +709,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         // childCount calculé dynamiquement pour garantir exactement 1 slot
                         // trailing (loader ou spacer). CaughtUp et SavedNudge sont
                         // mutuellement exclusifs → intercalatedCount ≤ 1.
+                        // Position calculée : nominalement 3, décalée si des
+                        // carousels backend occupent des positions ≤ 3.
+                        final int carouselsBeforePos3 = sortedCarousels
+                            .where((c) => c.position <= 3)
+                            .length;
+                        final int constructionFluxPos =
+                            3 + carouselsBeforePos3;
+
                         final int intercalatedCount =
-                            (showCaughtUp ? 1 : 0) + (showSavedNudge ? 1 : 0) + sortedCarousels.length;
+                            (showCaughtUp ? 1 : 0) +
+                                (showSavedNudge ? 1 : 0) +
+                                (showConstruireFlux ? 1 : 0) +
+                                sortedCarousels.length;
                         final int effectiveChildCount =
                             contents.isEmpty ? 1 : contents.length + intercalatedCount + 1;
 
@@ -762,9 +786,30 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 // Interleaving logic - calculer l'offset pour les éléments intercalés
                                 int contentOffset = 0;
 
+                                // Construire ton flux (position 3, évaluée en
+                                // premier pour que son offset décale les cartes
+                                // suivantes (CaughtUp/SavedNudge)).
+                                if (showConstruireFlux) {
+                                  final lcEffectivePos = constructionFluxPos;
+                                  if (listIndex == lcEffectivePos) {
+                                    return const Padding(
+                                      key: ValueKey(
+                                          'construire_son_flux_card_slot'),
+                                      padding:
+                                          EdgeInsets.only(bottom: 16),
+                                      child: ConstruireSonFluxCard(),
+                                    );
+                                  }
+                                  if (listIndex > lcEffectivePos) {
+                                    contentOffset++;
+                                  }
+                                }
+
                                 // Caught up card - s'affiche après caughtUpPos articles
                                 if (showCaughtUp) {
-                                  if (listIndex == caughtUpPos) {
+                                  final caughtUpEffectivePos =
+                                      caughtUpPos + contentOffset;
+                                  if (listIndex == caughtUpEffectivePos) {
                                     return Padding(
                                         key: const ValueKey('caught_up_card'),
                                         padding:
@@ -778,12 +823,9 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               .loadMore();
                                         }));
                                   }
-                                  // Avant la carte : continuer normalement
-                                }
-
-                                // Compter la CaughtUpCard si elle est passée (pour le décalage)
-                                if (showCaughtUp && listIndex > caughtUpPos) {
-                                  contentOffset++;
+                                  if (listIndex > caughtUpEffectivePos) {
+                                    contentOffset++;
+                                  }
                                 }
 
                                 // Saved Nudge at position 6

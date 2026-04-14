@@ -591,6 +591,20 @@ class AnalyticsService {
     await prefs.setBool('has_launched_before', true);
   }
 
+  /// Enregistre un évènement générique.
+  /// Préféré pour les nouveaux domaines (learning_checkpoint, etc.).
+  /// Pour les interactions contenu, utiliser [trackContentInteraction].
+  Future<void> trackEvent(
+    String eventType,
+    Map<String, dynamic> eventData,
+  ) async {
+    final data = <String, dynamic>{
+      'session_id': _sessionId,
+      ...eventData,
+    };
+    await _logEvent(eventType, data);
+  }
+
   Future<void> _logEvent(
     String eventType,
     Map<String, dynamic> eventData,
