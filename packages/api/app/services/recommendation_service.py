@@ -17,6 +17,36 @@ from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
 
+
+async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
+    """Charge les entities mutées de l'user, tolérant au schema drift.
+
+    Si `user_entity_preferences` est absente (migration Epic 13 pas encore
+    appliquée) ou que la query échoue pour toute autre raison, on dégrade
+    en renvoyant un set vide plutôt que de faire tomber tout `/api/feed/`.
+    Cf. `.context/handoff-backend-resilience.md` (chantier A) — cause
+    racine de l'outage post-merge PR #395.
+    """
+    from app.models.learning import UserEntityPreference
+
+    try:
+        result = await session.execute(
+            select(UserEntityPreference.entity_canonical).where(
+                UserEntityPreference.user_id == user_id,
+                UserEntityPreference.preference == "mute",
+            )
+        )
+        return {row[0] for row in result.all()}
+    except Exception as exc:
+        logger.warning(
+            "feed_muted_entities_unavailable",
+            user_id=str(user_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return set()
+
+
 from app.schemas.content import RecommendationReason, ScoreContribution
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
@@ -148,16 +178,8 @@ class RecommendationService:
             async with async_session_maker() as s:
                 pz = await s.scalar(personalization_stmt)
                 digest = await s.scalar(digest_stmt)
-                # Epic 13: Load muted entities
-                from app.models.learning import UserEntityPreference
-
-                muted_entities_result = await s.execute(
-                    select(UserEntityPreference.entity_canonical).where(
-                        UserEntityPreference.user_id == user_id,
-                        UserEntityPreference.preference == "mute",
-                    )
-                )
-                muted_entities = {row[0] for row in muted_entities_result.all()}
+                # Epic 13: Load muted entities (defensive — tolère schema drift)
+                muted_entities = await _load_muted_entities_safe(s, user_id)
                 return pz, digest, muted_entities
 
         (

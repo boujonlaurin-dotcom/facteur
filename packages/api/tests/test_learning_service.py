@@ -265,11 +265,37 @@ class TestLearningServiceGetPending:
         assert proposals == []
 
     @pytest.mark.asyncio
-    async def test_get_pending_increments_shown(self):
+    async def test_get_pending_short_circuits_on_empty(self):
+        """Perf regression guard: when no pending proposals exist (hot path,
+        majorité des feed loads), on doit sortir SANS UPDATE ni flush.
+
+        Régression qui plombait `/feed/` : SELECT + UPDATE + N refresh sur
+        chaque feed page 1, même quand l'user n'a aucune proposal.
+        """
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        service = LearningService(mock_db)
+
+        proposals = await service.get_pending_proposals(uuid4())
+
+        assert proposals == []
+        # Exactly 1 SELECT — no UPDATE, no refresh loop.
+        assert mock_db.execute.call_count == 1
+        mock_db.flush.assert_not_called()
+        mock_db.refresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_pending_increments_shown_without_refresh(self):
+        """Perf regression guard: shown_count must be incremented via ORM
+        attribute mutation + single flush, NOT via a separate UPDATE followed
+        by per-proposal `db.refresh(p)` calls (N+1 round-trip regression).
+        """
         mock_db = AsyncMock()
         mock_proposal = MagicMock(spec=UserLearningProposal)
         mock_proposal.id = uuid4()
-        mock_proposal.shown_count = 0
+        mock_proposal.shown_count = 2
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_proposal]
@@ -279,9 +305,89 @@ class TestLearningServiceGetPending:
         proposals = await service.get_pending_proposals(uuid4())
 
         assert len(proposals) == 1
-        # execute called twice: once for select, once for update shown_count
-        assert mock_db.execute.call_count == 2
-        assert mock_db.flush.called
+        # Only 1 execute (SELECT). UPDATE is issued implicitly by flush().
+        assert mock_db.execute.call_count == 1
+        mock_db.flush.assert_called_once()
+        # Critical: no per-object refresh() round-trips.
+        mock_db.refresh.assert_not_called()
+        # shown_count mutated in place (was 2, +1 = 3).
+        assert mock_proposal.shown_count == 3
+
+
+# ------------------------------------------------------------------
+# Defensive muted entities loader (chantier A — backend resilience)
+# ------------------------------------------------------------------
+
+
+class TestLoadMutedEntitiesSafe:
+    """Guard-rail contre la régression qui a causé l'outage post-merge #395 :
+    si `user_entity_preferences` est absente (schema drift), `/api/feed/`
+    doit continuer à servir — pas crasher.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_set_when_query_succeeds(self):
+        try:
+            from app.services.recommendation_service import (
+                _load_muted_entities_safe,
+            )
+        except BaseException:
+            pytest.skip("recommendation_service import requires full deps")
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = [("Elon Musk",), ("Donald Trump",)]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        muted = await _load_muted_entities_safe(mock_session, uuid4())
+
+        assert muted == {"Elon Musk", "Donald Trump"}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_on_missing_table(self):
+        """Régression outage PR #395 : si la migration Epic 13 n'a pas encore
+        été appliquée, la requête lève `UndefinedTable`. Le feed doit
+        dégrader (set vide) plutôt que propager et faire tomber `/api/feed/`.
+        """
+        try:
+            from app.services.recommendation_service import (
+                _load_muted_entities_safe,
+            )
+        except BaseException:
+            pytest.skip("recommendation_service import requires full deps")
+
+        mock_session = AsyncMock()
+        # Simule une Postgres UndefinedTable error propagée par SQLAlchemy.
+        mock_session.execute = AsyncMock(
+            side_effect=Exception(
+                'relation "user_entity_preferences" does not exist'
+            )
+        )
+
+        muted = await _load_muted_entities_safe(mock_session, uuid4())
+
+        assert muted == set()
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_on_any_exception(self):
+        """Couvre aussi les erreurs transitoires (connection lost, timeout,
+        RLS denied) — aucune ne doit faire tomber le feed.
+        """
+        try:
+            from app.services.recommendation_service import (
+                _load_muted_entities_safe,
+            )
+        except BaseException:
+            pytest.skip("recommendation_service import requires full deps")
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=RuntimeError("connection closed")
+        )
+
+        muted = await _load_muted_entities_safe(mock_session, uuid4())
+
+        assert muted == set()
 
 
 # ------------------------------------------------------------------

@@ -403,7 +403,14 @@ class LearningService:
     # ------------------------------------------------------------------
 
     async def get_pending_proposals(self, user_id: UUID) -> list[UserLearningProposal]:
-        """Retourne les propositions pending pour un utilisateur."""
+        """Retourne les propositions pending pour un utilisateur.
+
+        Perf notes (appelé à chaque `/feed/` page 1) :
+        - 1 SELECT (partial index `status='pending'`) — coût constant.
+        - UPDATE shown_count via mutation d'attributs ORM + flush unique
+          (pas d'UPDATE séparé, pas de `db.refresh` en boucle).
+        - Retourne [] sans flush si aucune proposal pending (hot path commun).
+        """
         result = await self.db.execute(
             select(UserLearningProposal)
             .where(
@@ -415,24 +422,19 @@ class LearningService:
         )
         proposals = list(result.scalars().all())
 
-        # Increment shown_count
-        if proposals:
-            now = datetime.now(UTC)
-            ids = [p.id for p in proposals]
-            await self.db.execute(
-                update(UserLearningProposal)
-                .where(UserLearningProposal.id.in_(ids))
-                .values(
-                    shown_count=UserLearningProposal.shown_count + 1,
-                    shown_at=now,
-                    updated_at=now,
-                )
-            )
-            await self.db.flush()
+        if not proposals:
+            # Pas d'UPDATE, pas de flush — cold path (majorité des feed loads).
+            return []
 
-            # Refresh ORM objects so shown_count reflects the UPDATE
-            for p in proposals:
-                await self.db.refresh(p)
+        # Incrémente shown_count sur les objets ORM ; le flush émet un UPDATE
+        # batché. Évite le SELECT-then-UPDATE-then-N-REFRESH précédent
+        # (tracking d'impression qui plombait le `/feed/` en prod).
+        now = datetime.now(UTC)
+        for p in proposals:
+            p.shown_count = (p.shown_count or 0) + 1
+            p.shown_at = now
+            p.updated_at = now
+        await self.db.flush()
 
         return proposals
 
