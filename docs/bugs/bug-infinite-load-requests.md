@@ -116,141 +116,174 @@ donneront le signal pour identifier le vrai coupable sans bloquer la prod.
 - `packages/api/tests/test_main.py::test_startup_catchup_lock_prevents_double_run`
 - `packages/api/tests/test_health.py::test_pool_endpoint_returns_metrics`
 
-## Post-mortem — cause racine confirmée (2026-04-14)
+## Post-mortem — investigation 2026-04-14 (en cours)
 
 Après merge des PR #396 + #397, les users rapportent que les requêtes hangent
-toujours. Investigation : **la cause racine n'est pas dans `/digest/both` ni
-dans le startup catchup**. C'est un thread executor leak systémique.
+toujours.
 
-### Root cause : `feedparser.parse(url)` avec urllib sans timeout
+### ⚠️ Hypothèse #1 INVALIDÉE — `feedparser.parse(url)` sur `une_feed_url`
 
-Deux sites passent une **URL** (pas du contenu) à `feedparser.parse`, dans un
-`run_in_executor` :
+**Ce qu'on pensait** : deux sites passent une URL (pas du contenu) à
+`feedparser.parse` dans un `run_in_executor` (`digest_selector.py:1526` et
+`briefing_service.py:274`). feedparser utilise alors `urllib` en interne
+*sans timeout*, et `asyncio.wait_for` ne peut pas tuer un thread bloqué →
+thread pool poisoning systémique.
 
-- `packages/api/app/services/digest_selector.py:1526`
-  ```python
-  feed = await loop.run_in_executor(None, fp.parse, url)
-  ```
-- `packages/api/app/services/briefing_service.py:274`
-  ```python
-  feed = await loop.run_in_executor(None, feedparser.parse, url)
-  ```
+**Pourquoi c'est faux en pratique** : vérifié en DB — `SELECT count(*) FROM
+sources WHERE une_feed_url IS NOT NULL` renvoie **0**. Les deux fonctions
+`_fetch_une_guids` concernées early-return `set()` sans jamais atteindre le
+`run_in_executor`. Le code est un pattern dangereux (à corriger pour éviter
+une régression future), mais il **n'est pas exécuté en prod** → il ne peut
+pas être la cause racine du hang observé aujourd'hui.
 
-Quand feedparser reçoit une URL, il utilise `urllib.request.urlopen()`
-**en interne, de façon synchrone, sans timeout** (timeout=None par défaut,
-aucun `socket.setdefaulttimeout()` n'est posé ailleurs). Si l'host du
-`une_feed_url` d'une source est lent ou ne répond pas (TCP blackhole, TLS
-handshake qui stalle, redirect loop, serveur surchargé), **le thread reste
-vivant pour toujours**.
+### Ce qui a été écarté
 
-### Pourquoi c'est systémique (pas juste digest)
+| Piste                                     | Vérification                                                                                  | Statut                      |
+|-------------------------------------------|-----------------------------------------------------------------------------------------------|-----------------------------|
+| `feedparser.parse(url)` via `une_feed_url`| 0 rows en DB (`sources.une_feed_url IS NOT NULL`)                                             | ❌ écartée                  |
+| `rss_parser.py` sync-feedparser leaks     | Tous les appels fetchent d'abord via `self.client.get(url)` (httpx) puis parsent `resp.text`  | ❌ écartée                  |
+| `perspective_service.search_perspectives` | `httpx.AsyncClient(timeout=self.timeout)` avec `self.timeout=10.0` (default)                  | ❌ écartée                  |
+| `editorial/llm_client.py` (Mistral)       | `httpx.AsyncClient(timeout=30.0)` explicite, bornée par appel                                 | ❌ écartée                  |
+| `sync_service._fetch_html_head`           | `timeout=5.0` explicite sur le `client.get`                                                   | ❌ écartée                  |
+| `socket.setdefaulttimeout` globalement    | Aucune occurrence trouvée (mais pas nécessaire si chaque client borné individuellement)       | neutre                      |
 
-1. Le **default asyncio thread executor** est partagé par toute l'app. Sa
-   taille par défaut est `min(32, os.cpu_count() + 4)` — typiquement 5-6
-   threads sur un container Railway petit.
-2. `_fetch_une_guids` fait `asyncio.gather(*[parse_feed(s.une_feed_url)])`
-   → N tâches parallèles, N sources avec `une_feed_url` non-nul. Quelques
-   hôtes lents suffisent à remplir l'executor.
-3. Une fois l'executor saturé de threads zombies, **tout autre
-   `run_in_executor` queue indéfiniment** :
-   - La DNS check ajoutée par PR #397 (`socket.gethostbyname` in executor)
-   - SQLAlchemy AsyncAdaptedQueuePool (sync driver operations)
-   - Tout logger/librairie qui offload du blocking I/O
-4. `asyncio.wait_for(..., timeout=25s)` autour de `_gen_variant` (PR #396)
-   **annule la coroutine mais pas le thread**. `wait_for` est impuissant
-   sur du code qui tourne dans un thread — la socket reste ouverte, le
-   thread continue, il ne sera libéré que quand urllib rendra la main
-   (jamais, pour un TCP blackhole).
+### Suspects actifs (non écartés, ordonnés par probabilité)
 
-### Chaîne d'appel complète
+#### S1 — `GET /api/digest` (variante simple) sans timeout handler — **priorité haute**
 
+`packages/api/app/routers/digest.py:163-264`
+
+Contrairement à `/digest/both` (PR #396), le handler simple `GET /api/digest`
+n'a **aucun timeout autour de `service.get_or_create_digest`**. Mêmes
+upstream que `/both` :
+- `UserService.get_or_create_profile`
+- `DigestSelector.select_for_user` → pour un user sans digest existant (ni
+  aujourd'hui ni hier), déclenche la pipeline éditoriale complète : clusters,
+  LLM curation, perspective analysis (Google News RSS), writing LLM, pépites,
+  coup de cœur. **Chaque LLM call est borné à 30s mais ils sont séquentiels —
+  6 à 10+ appels possibles = 3 à 5 min dans le pire cas.**
+
+Pendant tout ce temps la session SQLAlchemy reste checked-out. 10-15 requêtes
+dans cet état saturent le pool (20 max) → toute autre requête attend
+`pool_timeout=30s` → 503 pour tout le monde → "tout charge à l'infini".
+
+`/api/digest/generate` (`digest.py:503-541`) a le même problème — pas de
+wrapper `wait_for`.
+
+Pourquoi PR #396 n'a rien changé sur ce front : le timeout a été ajouté
+*uniquement* autour de `/digest/both`, pas sur `/digest` ni `/digest/generate`.
+
+#### S2 — ContentExtractor (trafilatura) via `GET /api/contents/{id}` — priorité moyenne
+
+`packages/api/app/routers/contents.py:76-83` et
+`packages/api/app/services/sync_service.py:558-565`
+
+```python
+result = await asyncio.wait_for(
+    asyncio.get_event_loop().run_in_executor(None, extractor.extract, url),
+    timeout=15.0,
+)
 ```
-GET /api/digest                       (pas borné par PR #396, seul /both l'est)
-  └─ DigestService.get_or_create_digest
-       └─ DigestSelector.select_digest
-            └─ if mode == "pour_vous" and not precomputed:
-                 _build_global_trending_context        ← appelé aussi en batch job
-                   └─ _fetch_une_guids
-                        └─ asyncio.gather([parse_feed(url) for each source])
-                             └─ run_in_executor(fp.parse, url)   🔴 HANG forever
-```
 
-Le **même hang** est présent dans le job batch quotidien (`top3_job.py` →
-`BriefingService._build_global_context` → `briefing_service.py:274`) → les
-catchups startup ne finissent pas avant 300s (timeout PR #396), mais
-pendant ces 300s ils ont déjà pourri le thread pool.
+- `trafilatura.fetch_url` est synchrone, s'exécute dans le default executor.
+- `asyncio.wait_for` cancel la coroutine mais **pas le thread** (même pattern
+  anti-wait_for que l'hypothèse #1, mais ici réellement utilisé en prod).
+- `trafilatura` configure bien `DOWNLOAD_TIMEOUT=10-15s` via urllib3, **mais**
+  si un site reply lentement byte-par-byte sans jamais EOF, le read timeout
+  urllib3 peut lui-même stall — rare mais pas impossible. En pratique,
+  trafilatura est mieux bordé que feedparser.
+- Un cooldown de 6h empêche le retry storm par article, mais pas la pression
+  cumulative si plusieurs users ouvrent différents articles lents en même temps.
 
-### Amplificateur : session DB détenue pendant le hang
+Probabilité modérée : la fréquence (ouverture d'article) est haute, mais la
+protection par DOWNLOAD_TIMEOUT rend le hang infini moins plausible qu'un
+vrai blackhole.
 
-`_build_global_trending_context` tient la session SQLAlchemy pendant toute
-la durée de `_fetch_une_guids`. Quand ça hang, la conn reste checkée-out.
-Quelques requêtes coincées → pool à 20 saturé → toute nouvelle requête
-attend `pool_timeout=30s` → 503 pour tout le monde → **symptôme "tout
-charge à l'infini"**.
+#### S3 — APScheduler sur le même event loop que FastAPI — priorité moyenne
 
-### Preuves
+`packages/api/app/workers/scheduler.py` + `run_digest_generation` exécuté à
+06h00 Paris via `AsyncIOScheduler`.
 
-- **Code** : 2 sites concernés (grep ci-dessus), aucun `socket.setdefaulttimeout`
-  ailleurs. Le pattern correct existe déjà à `rss_parser.py:149-171`
-  (`await self.client.get(url)` puis `feedparser.parse(content)`).
-- **Pourquoi #396/#397 n'ont rien changé** : les deux agissent *autour* du
-  hang (timeout sur la coroutine, DNS déplacé), jamais *dedans* (annuler
-  le thread bloqué est impossible en pur Python).
-- **Pourquoi ça peut empirer avec #397** : mettre la DNS check dans l'executor
-  est correct pour unblock uvicorn, mais elle queue derrière les threads
-  feedparser zombies. Sous charge, ça dégrade le startup health.
+- `AsyncIOScheduler` partage l'event loop de l'API. Pendant le run batch, le
+  job tient des connexions DB et fait des `await` sérialisés pendant plusieurs
+  minutes.
+- Si le batch s'enchaîne sur le watchdog (07h30) et qu'un user request arrive
+  entre les deux, la pipeline éditoriale par user tire encore sur le pool.
+- Le lock anti-double-run existe pour le **startup catchup** (`_STARTUP_CATCHUP_LOCK`)
+  mais pas pour le scheduler lui-même (qui a `coalesce=True` toutefois).
+
+À confirmer : est-ce que le symptôme est corrélé aux fenêtres 06h-08h Paris ?
+
+#### S4 — Amplification côté mobile — priorité basse (mais visible)
+
+`apps/mobile/lib/features/digest/providers/digest_provider.dart`
+
+Jusqu'à 4 tentatives × 45s = 3 minutes de perçu "chargement infini" même
+pour un backend qui réponse en erreur rapide. Post-#396 le timeout côté
+backend répond 503 en 30s mais le provider retente quand même. Si la cause
+racine est S1/S2/S3, S4 ne l'aggrave que du côté UX — mais pour les users
+c'est indiscernable d'un backend cassé.
 
 ### Décision commit `3d4ec06` (middleware request-budget 60s)
 
-**Merger en défense en profondeur, oui.** Raisons :
-- Il donnera la preuve logs `request_budget_exceeded` avec `path=/api/digest`
-  (ou `/api/digest/generate`) qui confirme le site sur prod.
-- Il libère les sessions DB des requêtes hangées (via cancel du handler).
-- **Mais** il ne libère pas les threads executor — donc même avec lui, le
-  thread pool continuera à se poisoner jusqu'à ce qu'on règle
-  `_fetch_une_guids`.
+**Mergeer en défense en profondeur, oui — mais *d'abord pour collecter les
+preuves*, pas comme fix final.**
 
-→ Merger `3d4ec06` dans une PR séparée, puis attaquer le vrai fix juste
-après.
+- Le log `request_budget_exceeded` avec `path` + `method` donnera
+  **immédiatement** la réponse à "quel endpoint hang ?". C'est le signal
+  manquant pour trancher entre S1, S2, S3.
+- Il libère la session DB sur cancel → protège le pool.
+- **Ne règle pas** les threads executor (si S2 est le vrai coupable) : un
+  trafilatura bloqué en thread survit à la cancellation de la coroutine.
+- **Ne règle pas** un upstream LLM qui prend 5 min à répondre (S1) — il
+  coupe juste proprement à 60s au lieu de laisser `pool_timeout` trancher.
 
-### Fix root cause à faire
+→ Merger `3d4ec06` dans une PR séparée, laisser tourner **24-48h**, puis
+   relire :
+   1. `request_budget_exceeded` groupé par `path` dans Sentry
+   2. `/api/health/pool` snapshots à intervalles réguliers
+   3. Corrélation avec les fenêtres scheduler (06h/07h30/08h Paris)
 
-Remplacer les deux `feedparser.parse(url)` par le pattern async existant :
+### Probes à poser AVANT de coder un fix
 
-```python
-async def parse_feed(url: str) -> list[str]:
-    try:
-        async with httpx.AsyncClient(timeout=7.0, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-        feed = await asyncio.get_event_loop().run_in_executor(
-            None, feedparser.parse, resp.content
-        )
-        return [entry.id if hasattr(entry, "id") else entry.link
-                for entry in feed.entries[:5]]
-    except Exception as e:
-        logger.warning("une_feed_parse_failed", url=url, error=str(e))
-        return []
-```
+1. **Sentry** : filtrer `message:"request_budget_exceeded"` (post-déploiement
+   `3d4ec06`). Groupé par `path` → réponse directe à "S1 vs S2 vs S3".
+2. **Sentry** : chercher `message:"content_extractor_error"` et
+   `message:"content_extractor_fetch_failed"` groupés par `url` →
+   identifie si trafilatura a des hosts lents récurrents.
+3. **Railway logs** : chercher `digest_generating_new` +
+   `digest_step_selection` pour voir les `duration_ms` de la pipeline.
+   Si on voit régulièrement > 30 000 ms → S1 confirmé.
+4. **`/api/health/pool`** : boucle `curl` pendant 5 min, noter `checked_out`
+   pic et `status`. Si on voit `status:"saturated"` → mode pool-épuisé.
+   Si `checked_out` reste haut pendant > 60s post-`request_budget_exceeded`
+   → thread executor encore vivant → S2.
+5. **DB** : `SELECT count(*), avg(extract(epoch from now() - started_at))
+   FROM digest_generation_state WHERE status='running'` → combien de
+   générations fantômes en cours.
+6. **Corrélation temporelle** : superposer les heures Paris des spikes avec
+   les cron schedules (06h, 07h30, 08h, 3h) → test S3.
 
-Bornes complémentaires recommandées :
-1. **Semaphore de concurrence** sur `_fetch_une_guids` (ex. `asyncio.Semaphore(5)`)
-   pour éviter qu'un pic de sources lentes sature le loop en même temps.
-2. **Cache 15-30 min** des résultats : le contenu "À la Une" ne change pas
-   à chaque requête utilisateur — inutile de refetch 100× par heure.
-3. (défense en profondeur) Poser `socket.setdefaulttimeout(15)` au top du
-   module `main.py` pour couper net toute librairie sync qui oublierait
-   un timeout — ceinture + bretelles.
+### Fix root cause NON codé à ce stade
 
-### Vérification live recommandée une fois 3d4ec06 déployé
+Pas de patch tant que S1/S2/S3 ne sont pas départagés par les probes ci-dessus.
+Coder "dans le vide" risque d'ajouter du bruit sans résoudre la cause réelle.
 
-- Sentry : `message:"request_budget_exceeded"` groupé par `path`
-  → attendu : `/api/digest` et `/api/digest/generate` en tête, éventuellement
-  `/api/digest/both` résiduel.
-- `curl https://<prod>/api/health/pool` en boucle pendant une minute :
-  `checked_out` devrait retomber dès que les 60s budget auto-cancel
-  libèrent les sessions (sans ça, `checked_out` restait coincé jusqu'à
-  `pool_timeout`).
-- Railway logs : chercher `une_feed_parse_failed` → liste les hôtes coupables
-  (à corréler avec les sources actives en DB pour désactiver/fixer les
-  feeds morts).
+Pistes préparées (à dégainer *après* tri) :
+
+- **Si S1 gagne** : wrapper `asyncio.wait_for(service.get_or_create_digest(...), timeout=30)`
+  dans `/api/digest` et `/api/digest/generate`, même pattern que `/both`.
+- **Si S2 gagne** : remplacer `trafilatura.fetch_url(url)` par un
+  `httpx.AsyncClient.get(url, timeout=10)` + `trafilatura.extract(resp.text)`,
+  même pattern que `rss_parser.py`. Plus marquer `extraction_attempted_at`
+  *avant* l'appel (pas juste après/en erreur) pour garantir le cooldown même
+  si le thread hang.
+- **Si S3 gagne** : sortir `run_digest_generation` de l'AsyncIOScheduler vers
+  un worker process dédié (Railway service séparé), ou au minimum poser un
+  `asyncio.wait_for` global sur le job avec un budget < 15 min.
+- **Ceinture + bretelles transverses (à considérer quel que soit le gagnant)** :
+  - `socket.setdefaulttimeout(15)` en top de `main.py`.
+  - Augmenter `max_workers` du default executor (`loop.set_default_executor`)
+    pour donner plus de marge avant saturation.
+  - Semaphore + cache court sur les fan-outs upstream (Google News RSS,
+    trafilatura) pour cap la parallélisation.
