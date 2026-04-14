@@ -317,9 +317,7 @@ async def get_both_digests(
         async with async_session_maker() as session:
             svc = DigestService(session)
             return await asyncio.wait_for(
-                svc.get_or_create_digest(
-                    user_uuid, target_date, is_serene=is_serene
-                ),
+                svc.get_or_create_digest(user_uuid, target_date, is_serene=is_serene),
                 timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
             )
 
@@ -331,7 +329,7 @@ async def get_both_digests(
             ),
             timeout=DIGEST_BOTH_GATHER_TIMEOUT_S,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "digest_both_timeout",
             user_id=current_user_id,

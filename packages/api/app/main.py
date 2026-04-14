@@ -249,7 +249,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                                     timeout=_STARTUP_CATCHUP_TIMEOUT_S,
                                 )
                                 logger.info("digest_startup_catchup_completed")
-                            except asyncio.TimeoutError:
+                            except TimeoutError:
                                 logger.warning(
                                     "digest_startup_catchup_timeout",
                                     target_date=str(today),
