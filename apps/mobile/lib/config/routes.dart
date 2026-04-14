@@ -15,6 +15,7 @@ import '../features/detail/screens/content_detail_screen.dart';
 
 import '../features/sources/screens/sources_screen.dart';
 import '../features/sources/screens/add_source_screen.dart';
+import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/settings/screens/account_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
@@ -60,6 +61,7 @@ class RouteNames {
   static const String emailConfirmation = 'email-confirmation';
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
+  static const String themeSources = 'theme-sources';
 }
 
 /// Chemins des routes
@@ -322,6 +324,20 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) => const FullSwipeCupertinoPage(
                       child: AddSourceScreen(),
                     ),
+                  ),
+                  GoRoute(
+                    path: 'theme/:slug', // /settings/sources/theme/:slug
+                    name: RouteNames.themeSources,
+                    pageBuilder: (context, state) {
+                      final slug = state.pathParameters['slug']!;
+                      final themeName = state.extra as String?;
+                      return FullSwipeCupertinoPage(
+                        child: ThemeSourcesScreen(
+                          themeSlug: slug,
+                          themeName: themeName,
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),

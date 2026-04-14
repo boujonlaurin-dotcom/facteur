@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
+import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
 
 final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
@@ -12,6 +14,26 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
   return repository.getTrendingSources(limit: 10);
+});
+
+final smartSearchProvider =
+    FutureProvider.family<List<SmartSearchResult>, String>((ref, query) async {
+  if (query.trim().isEmpty) return [];
+  final repository = ref.watch(sourcesRepositoryProvider);
+  final response = await repository.smartSearch(query.trim());
+  return response.results;
+});
+
+final themesFollowedProvider =
+    FutureProvider<List<FollowedTheme>>((ref) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getThemesFollowed();
+});
+
+final sourcesByThemeProvider =
+    FutureProvider.family<ThemeSourcesResponse, String>((ref, slug) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getSourcesByTheme(slug);
 });
 
 final userSourcesProvider =

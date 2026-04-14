@@ -9,10 +9,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../widgets/community_gems_strip.dart';
+import '../widgets/example_chips.dart';
 import '../widgets/source_detail_modal.dart';
 import '../widgets/source_preview_card.dart';
+import '../widgets/theme_explorer.dart';
 
 class AddSourceScreen extends ConsumerStatefulWidget {
   const AddSourceScreen({super.key});
@@ -348,10 +352,13 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildUrlRssEmptyState() {
-    final colors = context.facteurColors;
-    final trendingAsyncValue = ref.watch(trendingSourcesProvider);
+  void _onExampleTap(String text) {
+    _searchController.text = text;
+    _detectOrSearchSource();
+    ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
+  }
 
+  Widget _buildUrlRssEmptyState() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -361,48 +368,17 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           isLoading: false,
         ),
         const SizedBox(height: 16),
-        _buildHelpCard(
-          title: 'Ajouter un site ou flux RSS',
-          examples: const [
-            'lemonde.fr',
-            'techcrunch.com',
-            'leplongeoir.substack.com',
-            'arstechnica.com',
-          ],
-          description:
-              'La plupart des sites d\'actualite, blogs et newsletters Substack ont un flux RSS automatiquement detecte.',
-        ),
-        const SizedBox(height: 40),
-        Text(
-          'Pepites de la communaute',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 16),
-        trendingAsyncValue.when(
-          data: (sources) {
-            if (sources.isEmpty) {
-              return Text(
-                'Aucune pepite pour le moment.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textTertiary),
-              );
-            }
-            return Column(
-              children: sources.map((s) => _buildSourceListTile(s)).toList(),
-            );
+        ExampleChips(onTap: _onExampleTap),
+        const SizedBox(height: 24),
+        const ThemeExplorer(),
+        const SizedBox(height: 24),
+        CommunityGemsStrip(
+          onSourceTap: _showSourceModal,
+          onGemTap: (sourceId) {
+            ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text(
-            'Impossible de charger les tendances.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: colors.error),
-          ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 24),
         _buildAtlasFluxCard(),
         const SizedBox(height: 24),
       ],
