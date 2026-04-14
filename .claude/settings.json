@@ -1,5 +1,15 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude-hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
@@ -68,17 +78,19 @@
     },
     "railway": {
       "type": "stdio",
-      "command": "python",
-      "args": ["mcp-servers/railway/server.py"],
+      "command": "npx",
+      "args": ["-y", "@railway/mcp@latest"],
       "env": {
-        "RAILWAY_API_TOKEN": "${RAILWAY_API_TOKEN}",
-        "RAILWAY_PROJECT_ID": "${RAILWAY_PROJECT_ID}",
-        "RAILWAY_SERVICE_ID": "${RAILWAY_SERVICE_ID}"
+        "RAILWAY_TOKEN": "${RAILWAY_TOKEN}"
       }
     },
     "supabase": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp?project_ref=ykuadtelnzavrqzbfdve"
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      }
     }
   }
 }
