@@ -1,8 +1,5 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
@@ -24,10 +21,7 @@ import 'serein_toggle_chip.dart';
 import 'topic_section.dart';
 import 'transition_text.dart';
 
-/// Digest Briefing Section with premium design.
-/// Container smoothly animates its background color, border, and glow
-/// based on the active DigestMode using TweenAnimationBuilder.
-///
+/// Digest Briefing Section.
 /// Compact iOS-style segmented control sits top-right in the header.
 class DigestBriefingSection extends StatefulWidget {
   final List<DigestItem> items;
@@ -164,135 +158,63 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
     if (widget.items.isEmpty && !_usesTopics) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Gradient adapté au thème : dark → gradients sombres, light → gradients clairs.
-    final gradStart = SereinColors.gradientStart(widget.isSerein, isDark: isDark);
-    final gradEnd = SereinColors.gradientEnd(widget.isSerein, isDark: isDark);
-
-    // Couleurs internes : texte et icônes s'adaptent au fond du container.
-    final textPrimary =
-        isDark ? Colors.white : const Color(0xFF2C1E10);
-
-    // TweenAnimationBuilder for smooth gradient transitions between modes.
-    // Only `end` is set so changes animate from current value → new.
-    return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(end: gradStart),
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeOutCubic,
-      builder: (context, animatedBaseColor, child) {
-        final baseColor = animatedBaseColor ?? gradStart;
-        final blendedEnd = Color.lerp(baseColor, gradEnd, 0.7)!;
-
-        // En light mode : gradient semi-transparent pour laisser le fond
-        // crème transparaître. Plus léger en haut, plus teinté en bas.
-        // Alpha réduit pour laisser l'effet de flou "liquid glass" transparaître.
-        final topColor = isDark
-            ? baseColor.withOpacity(0.72)
-            : baseColor.withOpacity(0.12);
-        final bottomColor = isDark
-            ? blendedEnd.withOpacity(0.78)
-            : blendedEnd.withOpacity(0.22);
-
-        return Container(
-          margin: const EdgeInsets.only(top: 12, bottom: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: isDark
-                    ? Colors.black.withOpacity(0.30)
-                    : baseColor.withOpacity(0.18),
-                blurRadius: isDark ? 24 : 16,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [topColor, bottomColor],
-                  ),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withOpacity(0.14)
-                        : Colors.white.withOpacity(0.38),
-                    width: 1,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header: title+progress (left) | selector+subtitle (right)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Left: title (dynamic in editorial mode)
-                  Expanded(
-                    child: Text(
-                      "L'Essentiel du jour",
-                      style: Theme.of(context)
-                          .textTheme
-                          .displaySmall
-                          ?.copyWith(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                            color: textPrimary,
-                          ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: title (left) | serein toggle (right)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    "L'Essentiel du jour",
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                      color: colors.textPrimary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 8),
-                  // Right: serein toggle chip
-                  const SereinToggleChip(),
-                ],
-              ),
-              ),
-              // Compact progress counter below title
-              if (widget.dailyGoal > 0)
-                Padding(
-                  padding: const EdgeInsets.only(left: 14, top: 6),
-                  child: _buildCompactCounter(colors),
                 ),
-              const SizedBox(height: 10),
-
-              // Content area with crossfade on serein toggle
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: child,
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey(widget.isSerein),
-                  child: widget.usesEditorial && _usesTopics
-                      ? _buildEditorialLayout()
-                      : _usesTopics
-                          ? _buildTopicsLayout()
-                          : _buildFlatLayout(context),
-                ),
-              ),
-            ],
-                ),
-              ),
+                const SizedBox(width: 8),
+                const SereinToggleChip(),
+              ],
             ),
           ),
-        );
-      },
+          // Compact progress counter below title
+          if (widget.dailyGoal > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 14, top: 6),
+              child: _buildCompactCounter(colors),
+            ),
+          const SizedBox(height: 10),
+          // Content area with crossfade on serein toggle
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: child,
+            ),
+            child: KeyedSubtree(
+              key: ValueKey(widget.isSerein),
+              child: widget.usesEditorial && _usesTopics
+                  ? _buildEditorialLayout()
+                  : _usesTopics
+                      ? _buildTopicsLayout()
+                      : _buildFlatLayout(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

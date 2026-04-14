@@ -639,25 +639,34 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
         ),
         const SizedBox(height: 8),
         Center(
-          child: GestureDetector(
-            onTap: () async {
-              Navigator.pop(context);
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              foregroundColor: colors.error,
+            ),
+            onPressed: () async {
               try {
                 final repo = ref.read(personalizationRepositoryProvider);
-                for (final topicSlug in widget.content.topics) {
-                  await repo.muteTopic(topicSlug);
-                }
-                ref.invalidate(personalizationProvider);
+                await repo.muteTopic(widget.topicSlug);
                 NotificationService.showInfo('Sujet masqué');
+                if (!mounted) return;
+                ref.invalidate(personalizationProvider);
+                Navigator.pop(context);
               } catch (e) {
                 NotificationService.showError(
                   'Impossible de masquer le sujet',
                 );
               }
             },
-            child: Text(
+            icon: Icon(
+              PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
+              size: 16,
+              color: colors.error,
+            ),
+            label: Text(
               'Masquer ce sujet',
-              style: textTheme.labelSmall?.copyWith(
+              style: textTheme.labelMedium?.copyWith(
                 color: colors.error,
                 fontWeight: FontWeight.w500,
               ),
