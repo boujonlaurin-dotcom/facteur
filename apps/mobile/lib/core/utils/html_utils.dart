@@ -131,3 +131,89 @@ bool isPartialContent(String? html) {
   if (text.length < 500) return true;
   return _truncationPatterns.any((p) => p.hasMatch(text));
 }
+
+/// Finds the position in [html] (a raw HTML string) after [wordLimit] plain-text words.
+///
+/// Walks char-by-char, skipping HTML tags. Returns the position in the HTML
+/// string immediately after the [wordLimit]th word boundary, or null if the
+/// text contains fewer words than [wordLimit].
+int? _findPositionAfterNWords(String html, int wordLimit) {
+  int wordCount = 0;
+  int i = 0;
+  bool inTag = false;
+  bool inWord = false;
+
+  while (i < html.length) {
+    final c = html[i];
+    if (c == '<') {
+      if (inWord) {
+        wordCount++;
+        inWord = false;
+        if (wordCount >= wordLimit) return i;
+      }
+      inTag = true;
+    } else if (c == '>') {
+      inTag = false;
+    } else if (!inTag) {
+      final isSpace = c == ' ' || c == '\n' || c == '\r' || c == '\t';
+      if (isSpace) {
+        if (inWord) {
+          wordCount++;
+          inWord = false;
+          if (wordCount >= wordLimit) return i;
+        }
+      } else {
+        inWord = true;
+      }
+    }
+    i++;
+  }
+  if (inWord) {
+    wordCount++;
+    if (wordCount >= wordLimit) return html.length;
+  }
+  return null;
+}
+
+/// Cuts sanitized HTML at the first natural break after [wordLimit] plain-text
+/// words, or just before the first subtitle (`<h1>`–`<h6>`), whichever is earlier.
+///
+/// Break-point search order after [wordLimit] words: `</p>`, then `<br`, then
+/// the raw word position (fallback for HTML without paragraph tags).
+///
+/// Returns the cut HTML string, or null if the content is too short to cut
+/// (fewer than [wordLimit] words and no heading found).
+String? cutHtmlAtPreview(String html, {int wordLimit = 150}) {
+  final sanitized = sanitizeArticleHtml(html);
+  if (sanitized.isEmpty) return null;
+
+  // Option B: position of first heading tag
+  final headingMatch =
+      RegExp(r'<h[1-6][\s>]', caseSensitive: false).firstMatch(sanitized);
+  final firstHeadingPos = headingMatch?.start;
+
+  // Option A: first natural break after the wordLimit-th word.
+  // Try </p>, then <br (as fallback), then cut at word position directly.
+  final wordPos = _findPositionAfterNWords(sanitized, wordLimit);
+  int? optionA;
+  if (wordPos != null) {
+    final pClose = sanitized.indexOf('</p>', wordPos);
+    final brTag = sanitized.indexOf('<br', wordPos);
+
+    if (pClose != -1 && (brTag == -1 || pClose <= brTag)) {
+      optionA = pClose + 4; // include </p>
+    } else if (brTag != -1) {
+      optionA = brTag; // cut just before <br
+    } else {
+      optionA = wordPos; // no block break found — cut at word boundary
+    }
+  }
+
+  if (optionA == null && firstHeadingPos == null) return null;
+  if (optionA == null) return sanitized.substring(0, firstHeadingPos!).trim();
+  if (firstHeadingPos == null) return sanitized.substring(0, optionA).trim();
+
+  final cutPos = optionA < firstHeadingPos ? optionA : firstHeadingPos;
+  if (cutPos <= 0) return null;
+  return sanitized.substring(0, cutPos).trim();
+}
