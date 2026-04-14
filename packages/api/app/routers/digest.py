@@ -43,6 +43,14 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+# Timeouts for /digest/both — exported as module-level constants so they can
+# be monkeypatched in tests. Cf. docs/bugs/bug-infinite-load-requests.md.
+# Each variant gets its own bound, and an outer bound protects against a hang
+# that slips past the inner one (e.g. a blocking DB fetch outside the inner
+# wait_for scope).
+DIGEST_BOTH_VARIANT_TIMEOUT_S = 25.0
+DIGEST_BOTH_GATHER_TIMEOUT_S = 30.0
+
 
 class ActionRequest(BaseModel):
     """Simple action request body model."""
@@ -297,18 +305,44 @@ async def get_both_digests(
             )
 
     # Generate both variants in parallel with separate DB sessions
-    # to avoid SQLAlchemy session conflicts and halve on-demand latency
+    # to avoid SQLAlchemy session conflicts and halve on-demand latency.
+    #
+    # BUG FIX (bug-infinite-load-requests.md) — each variant is bounded by
+    # DIGEST_BOTH_VARIANT_TIMEOUT_S; the whole gather is bounded by
+    # DIGEST_BOTH_GATHER_TIMEOUT_S. Without these, a slow upstream (Mistral
+    # LLM, Google News RSS, Supabase) hangs the request forever, holds 2 DB
+    # sessions, and rapidly exhausts the pool — making *every* other endpoint
+    # appear to "load indefinitely".
     async def _gen_variant(is_serene: bool) -> DigestResponse | None:
         async with async_session_maker() as session:
             svc = DigestService(session)
-            return await svc.get_or_create_digest(
-                user_uuid, target_date, is_serene=is_serene
+            return await asyncio.wait_for(
+                svc.get_or_create_digest(
+                    user_uuid, target_date, is_serene=is_serene
+                ),
+                timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
             )
 
-    normal, serein = await asyncio.gather(
-        _gen_variant(False),
-        _gen_variant(True),
-    )
+    try:
+        normal, serein = await asyncio.wait_for(
+            asyncio.gather(
+                _gen_variant(False),
+                _gen_variant(True),
+            ),
+            timeout=DIGEST_BOTH_GATHER_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "digest_both_timeout",
+            user_id=current_user_id,
+            variant_timeout_s=DIGEST_BOTH_VARIANT_TIMEOUT_S,
+            gather_timeout_s=DIGEST_BOTH_GATHER_TIMEOUT_S,
+            hint="Upstream hang detected — sessions released to protect pool.",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="digest_generation_timeout",
+        )
 
     # Use the original session for the lightweight preference read
     service = DigestService(db)

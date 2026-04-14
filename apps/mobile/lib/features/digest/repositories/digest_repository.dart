@@ -19,6 +19,17 @@ class DigestGenerationException implements Exception {
   String toString() => message;
 }
 
+/// Exception thrown when the backend hit its own timeout while generating
+/// the digest (503 with `detail: "digest_generation_timeout"`). Distinct from
+/// the generic 503 so callers can bound retries aggressively — a timeout
+/// means an upstream (LLM, Google News, Supabase) is still wedged and
+/// retrying in the next second is unlikely to succeed.
+/// Cf. docs/bugs/bug-infinite-load-requests.md.
+class DigestTimeoutException extends DigestGenerationException {
+  DigestTimeoutException()
+      : super('Le serveur a mis trop de temps à générer le briefing.');
+}
+
 /// Exception thrown when digest is being prepared (202)
 class DigestPreparingException implements Exception {
   final String message;
@@ -248,6 +259,15 @@ class DigestRepository {
         throw DigestNotFoundException();
       }
       if (e.response?.statusCode == 503) {
+        // Backend distingue hang upstream (digest_generation_timeout) vs
+        // échec générique. On propage un type dédié pour que le caller
+        // puisse borner les retries.
+        final detail = e.response?.data is Map
+            ? (e.response?.data as Map)['detail']
+            : null;
+        if (detail == 'digest_generation_timeout') {
+          throw DigestTimeoutException();
+        }
         throw DigestGenerationException();
       }
       rethrow;

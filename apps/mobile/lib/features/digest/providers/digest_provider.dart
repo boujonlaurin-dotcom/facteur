@@ -142,6 +142,19 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           continue;
         }
         rethrow;
+      } on DigestTimeoutException {
+        // Backend a lui-même timeout — retry agressif = pression inutile sur
+        // un upstream déjà wedgé + retries mobiles qui se chevauchent.
+        // Max 1 retry avec un delay long pour laisser l'upstream se remettre.
+        // Cf. docs/bugs/bug-infinite-load-requests.md.
+        if (attempt < 1) {
+          // ignore: avoid_print
+          print(
+              'DigestNotifier: 503 digest_generation_timeout, 1 retry only (attempt ${attempt + 1})...');
+          await Future<void>.delayed(const Duration(seconds: 15));
+          continue;
+        }
+        rethrow;
       } on DigestGenerationException {
         if (attempt < _digestMaxRetries) {
           // ignore: avoid_print

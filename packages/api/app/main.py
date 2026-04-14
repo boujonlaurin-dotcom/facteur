@@ -1,10 +1,22 @@
 """Point d'entrée de l'API Facteur."""
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
+
+# Bornes du startup digest catchup. Cf. docs/bugs/bug-infinite-load-requests.md :
+# sans timeout, une génération qui hang sur un upstream (Mistral, Google News,
+# Supabase) monopolisait le pool DB et gelait l'API entière. 5 min est large
+# pour un catchup normal (< 2 min typiquement) tout en garantissant qu'un run
+# cassé ne reste pas actif indéfiniment.
+_STARTUP_CATCHUP_TIMEOUT_S = 300.0
+# Lock anti-double-exécution : Railway peut relancer l'app pendant qu'un
+# catchup précédent tourne encore. Sans lock, chaque relance empilait un run
+# supplémentaire, multipliant la pression sur le pool DB.
+_STARTUP_CATCHUP_LOCK = asyncio.Lock()
 
 import sentry_sdk
 import structlog
@@ -163,67 +175,98 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Startup catch-up: vérifie la couverture digest (pas juste l'existence).
     # Si < 90 % des users actifs ont un digest, relance la génération.
+    #
+    # BUG FIX (bug-infinite-load-requests.md) — borne strictement la durée de ce
+    # catchup (5 min max) et garantit qu'une seule exécution tourne à la fois via
+    # un Lock module-level. Sans ça, un Railway qui redémarre plusieurs fois en
+    # cascade (ex. healthcheck flaky) empilait des runs de `run_digest_generation`
+    # qui monopolisaient le pool DB et faisaient apparaître toute l'API comme
+    # "loadant à l'infini".
     if _has_explicit_db:
 
         async def _startup_digest_catchup() -> None:
             """Vérifie la couverture digest du jour et relance si insuffisante."""
-            try:
-                from datetime import datetime
-                from zoneinfo import ZoneInfo
+            # Garde-fou anti-double-exécution : si un catchup précédent est
+            # encore en cours (ex. Railway relance l'app pendant que le premier
+            # run est toujours actif), on skip — un 2e catchup n'apportera rien
+            # et double la pression sur le pool DB.
+            if _STARTUP_CATCHUP_LOCK.locked():
+                logger.info(
+                    "digest_startup_catchup_skipped",
+                    reason="already_running",
+                )
+                return
 
-                from sqlalchemy import func
-                from sqlalchemy import select as sa_select
+            async with _STARTUP_CATCHUP_LOCK:
+                try:
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
 
-                from app.database import async_session_maker
-                from app.jobs.digest_generation_job import run_digest_generation
-                from app.models.daily_digest import DailyDigest
-                from app.models.user import UserProfile
+                    from sqlalchemy import func
+                    from sqlalchemy import select as sa_select
 
-                await asyncio.sleep(60)
+                    from app.database import async_session_maker
+                    from app.jobs.digest_generation_job import run_digest_generation
+                    from app.models.daily_digest import DailyDigest
+                    from app.models.user import UserProfile
 
-                async with async_session_maker() as session:
-                    today = datetime.now(ZoneInfo("Europe/Paris")).date()
+                    await asyncio.sleep(60)
 
-                    total_users = await session.scalar(
-                        sa_select(func.count()).select_from(UserProfile)
-                    )
-                    if not total_users:
-                        logger.info("digest_startup_catchup_no_users")
-                        return
+                    async with async_session_maker() as session:
+                        today = datetime.now(ZoneInfo("Europe/Paris")).date()
 
-                    digest_count = await session.scalar(
-                        sa_select(func.count(func.distinct(DailyDigest.user_id))).where(
-                            DailyDigest.target_date == today
+                        total_users = await session.scalar(
+                            sa_select(func.count()).select_from(UserProfile)
                         )
-                    )
+                        if not total_users:
+                            logger.info("digest_startup_catchup_no_users")
+                            return
 
-                    coverage = digest_count / total_users
-                    logger.info(
-                        "digest_startup_catchup_check",
-                        target_date=str(today),
-                        total_users=total_users,
-                        digest_count=digest_count,
-                        coverage_pct=round(coverage * 100, 1),
-                    )
+                        digest_count = await session.scalar(
+                            sa_select(
+                                func.count(func.distinct(DailyDigest.user_id))
+                            ).where(DailyDigest.target_date == today)
+                        )
 
-                    if coverage < 0.90:
+                        coverage = digest_count / total_users
                         logger.info(
-                            "digest_startup_catchup_triggered",
+                            "digest_startup_catchup_check",
                             target_date=str(today),
-                            missing=total_users - digest_count,
-                        )
-                        await run_digest_generation(target_date=today)
-                        logger.info("digest_startup_catchup_completed")
-                    else:
-                        logger.info(
-                            "digest_startup_catchup_skipped",
-                            reason="coverage_ok",
+                            total_users=total_users,
+                            digest_count=digest_count,
                             coverage_pct=round(coverage * 100, 1),
                         )
-            except Exception:
-                logger.exception("digest_startup_catchup_failed")
 
-        import asyncio
+                        if coverage < 0.90:
+                            logger.info(
+                                "digest_startup_catchup_triggered",
+                                target_date=str(today),
+                                missing=total_users - digest_count,
+                            )
+                            try:
+                                await asyncio.wait_for(
+                                    run_digest_generation(target_date=today),
+                                    timeout=_STARTUP_CATCHUP_TIMEOUT_S,
+                                )
+                                logger.info("digest_startup_catchup_completed")
+                            except asyncio.TimeoutError:
+                                logger.warning(
+                                    "digest_startup_catchup_timeout",
+                                    target_date=str(today),
+                                    timeout_s=_STARTUP_CATCHUP_TIMEOUT_S,
+                                    hint=(
+                                        "Catchup aborted to protect DB pool. "
+                                        "Scheduled runs will retry."
+                                    ),
+                                )
+                        else:
+                            logger.info(
+                                "digest_startup_catchup_skipped",
+                                reason="coverage_ok",
+                                coverage_pct=round(coverage * 100, 1),
+                            )
+                except Exception:
+                    logger.exception("digest_startup_catchup_failed")
 
         asyncio.create_task(_startup_digest_catchup())
 
@@ -384,6 +427,61 @@ async def readiness_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         "environment": settings.environment,
         "probe": "readiness",
     }
+
+
+@app.get("/api/health/pool", tags=["Health"])
+async def pool_metrics() -> dict[str, Any]:
+    """
+    DB pool metrics — diagnostic for "requests loading indefinitely" incidents.
+
+    Cf. docs/bugs/bug-infinite-load-requests.md. Quand le pool est saturé
+    (`checkedout >= pool_size + max_overflow`), toutes les nouvelles requêtes
+    attendent `pool_timeout` (30 s) avant de timeout → symptôme "tout charge
+    à l'infini". Cet endpoint expose l'état du pool pour diagnostic immédiat.
+
+    Unauth exprès : doit rester utilisable quand le reste de l'API est hors
+    service. N'expose pas de données utilisateur, seulement des métriques
+    agrégées.
+    """
+    from app.database import engine
+
+    pool = engine.pool
+    size = getattr(pool, "size", lambda: None)()
+    checked_in = getattr(pool, "checkedin", lambda: None)()
+    checked_out = getattr(pool, "checkedout", lambda: None)()
+    overflow = getattr(pool, "overflow", lambda: None)()
+
+    saturated = (
+        checked_out is not None
+        and size is not None
+        and checked_out >= size + max(overflow or 0, 0)
+    )
+
+    metrics: dict[str, Any] = {
+        "status": "saturated" if saturated else "ok",
+        "pool_class": type(pool).__name__,
+        "size": size,
+        "checked_in": checked_in,
+        "checked_out": checked_out,
+        "overflow": overflow,
+    }
+
+    # Signal warning à Sentry dès que la saturation est proche (> 75 %). Permet
+    # de corréler pics de latence et pool pressure sans avoir à déployer de
+    # l'instrumentation supplémentaire.
+    if checked_out is not None and size is not None and size > 0:
+        usage_pct = checked_out / (size + max(overflow or 0, 0))
+        metrics["usage_pct"] = round(usage_pct * 100, 1)
+        if usage_pct >= 0.75:
+            logger.warning(
+                "db_pool_pressure_high",
+                checked_out=checked_out,
+                size=size,
+                overflow=overflow,
+                usage_pct=round(usage_pct * 100, 1),
+            )
+
+    return metrics
 
 
 if __name__ == "__main__":
