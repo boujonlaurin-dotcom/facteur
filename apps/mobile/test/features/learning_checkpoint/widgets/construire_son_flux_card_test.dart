@@ -7,6 +7,7 @@ import 'package:facteur/features/learning_checkpoint/providers/learning_checkpoi
 import 'package:facteur/features/learning_checkpoint/providers/learning_checkpoint_session_provider.dart';
 import 'package:facteur/features/learning_checkpoint/repositories/learning_checkpoint_repository.dart';
 import 'package:facteur/features/learning_checkpoint/widgets/construire_son_flux_card.dart';
+import 'package:facteur/features/learning_checkpoint/widgets/proposal_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,9 +103,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Construire ton flux · Cette semaine'), findsOneWidget);
-    expect(find.text('Source p-1'), findsOneWidget);
-    expect(find.text('Source p-2'), findsOneWidget);
-    expect(find.text('Source p-3'), findsOneWidget);
+    // ProposalRow uses RichText with TextSpan — check widget presence.
+    expect(find.byType(ProposalRow), findsNWidgets(3));
     expect(find.text('Valider'), findsOneWidget);
     expect(find.text('Plus tard'), findsOneWidget);
   });

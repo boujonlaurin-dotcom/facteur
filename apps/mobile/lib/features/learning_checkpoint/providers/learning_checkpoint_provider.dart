@@ -188,8 +188,8 @@ class LearningCheckpointNotifier
   /// Valide l'ensemble des propositions : POST /apply-proposals.
   /// Accepte aussi LcError (retry) en restaurant l'état visible précédent.
   Future<void> validate() async {
-    var current = state.valueOrNull;
-    if (current is LcError) current = current.previous;
+    final raw = state.valueOrNull;
+    final current = raw is LcError ? raw.previous : raw;
     if (current is! LcVisible) return;
 
     final actions = <ApplyAction>[];
@@ -245,8 +245,8 @@ class LearningCheckpointNotifier
   /// Reporte l'ensemble des propositions restantes (« Plus tard »).
   /// Accepte aussi LcError (retry) en restaurant l'état visible précédent.
   Future<void> snooze() async {
-    var current = state.valueOrNull;
-    if (current is LcError) current = current.previous;
+    final raw = state.valueOrNull;
+    final current = raw is LcError ? raw.previous : raw;
     if (current is! LcVisible) return;
 
     final remaining = current.displayed

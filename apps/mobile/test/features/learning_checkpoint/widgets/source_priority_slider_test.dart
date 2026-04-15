@@ -58,16 +58,17 @@ void main() {
     expect(tappedLevel, 3);
   });
 
-  testWidgets('S4 — proposed group has Semantics value label', (tester) async {
+  testWidgets('S4 — each interactive dot has Semantics button label',
+      (tester) async {
     await tester.pumpWidget(wrap(
       SourcePrioritySlider(current: 1, proposed: 2, onChange: (_) {}),
     ));
     await tester.pumpAndSettle();
 
-    expect(
-      find.bySemanticsLabel(RegExp(r'Proposé 2 sur 3')),
-      findsOneWidget,
-    );
+    // 3 interactive dots in proposed group.
+    expect(find.bySemanticsLabel('Niveau 1 sur 3'), findsOneWidget);
+    expect(find.bySemanticsLabel('Niveau 2 sur 3'), findsOneWidget);
+    expect(find.bySemanticsLabel('Niveau 3 sur 3'), findsOneWidget);
   });
 
   testWidgets('S5 — interactive dots meet 48dp touch target', (tester) async {

@@ -123,7 +123,7 @@ void main() {
     expect(find.byType(ProposalStatsPanel), findsOneWidget);
   });
 
-  testWidgets('P7 — Semantics : label "Ignorer cette proposition" présent',
+  testWidgets('P7 — tooltip "Ignorer cette proposition" présent',
       (tester) async {
     final proposal = makeProposal(id: 'p-1', type: ProposalType.sourcePriority);
     final container = makeContainer(proposals: [proposal]);
@@ -133,6 +133,6 @@ void main() {
     await tester.pumpWidget(wrap(container, ProposalRow(proposal: proposal)));
     await tester.pumpAndSettle();
 
-    expect(find.bySemanticsLabel('Ignorer cette proposition'), findsOneWidget);
+    expect(find.byTooltip('Ignorer cette proposition'), findsOneWidget);
   });
 }
