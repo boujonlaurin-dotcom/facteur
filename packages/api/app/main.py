@@ -232,18 +232,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                             logger.info("digest_startup_catchup_no_users")
                             return
 
-                        digest_count = await session.scalar(
-                            sa_select(
-                                func.count(func.distinct(DailyDigest.user_id))
-                            ).where(DailyDigest.target_date == today)
+                        # Count (user_id, is_serene) pairs — aligned
+                        # with the watchdog formula. A user is only
+                        # "covered" when BOTH normal and serein exist.
+                        expected_pairs = total_users * 2
+                        pair_subq = (
+                            sa_select(DailyDigest.user_id, DailyDigest.is_serene)
+                            .where(DailyDigest.target_date == today)
+                            .group_by(DailyDigest.user_id, DailyDigest.is_serene)
+                            .subquery()
+                        )
+                        pair_count = (
+                            await session.scalar(
+                                sa_select(func.count()).select_from(pair_subq)
+                            )
+                            or 0
                         )
 
-                        coverage = digest_count / total_users
+                        coverage = pair_count / expected_pairs if expected_pairs else 0
                         logger.info(
                             "digest_startup_catchup_check",
                             target_date=str(today),
                             total_users=total_users,
-                            digest_count=digest_count,
+                            expected_pairs=expected_pairs,
+                            pair_count=pair_count,
                             coverage_pct=round(coverage * 100, 1),
                         )
 
@@ -251,7 +263,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                             logger.info(
                                 "digest_startup_catchup_triggered",
                                 target_date=str(today),
-                                missing=total_users - digest_count,
+                                missing=expected_pairs - pair_count,
                             )
                             try:
                                 await asyncio.wait_for(
