@@ -165,7 +165,12 @@ class DigestGenerationJob:
             try:
                 from app.services.editorial.pipeline import EditorialPipelineService
 
-                pipeline = EditorialPipelineService(session)
+                # session_maker : la pipeline ouvre ses propres sessions
+                # courtes pendant les 3-5 min de LLM ; évite d'agripper la
+                # session batch pour toute la durée. Cf. bug-infinite-load-requests.md P1.
+                pipeline = EditorialPipelineService(
+                    session, session_maker=async_session_maker
+                )
                 if pipeline.llm.is_ready and user_ids:
                     global_candidates = await self._get_global_candidates(session)
                     if global_candidates:
@@ -592,7 +597,12 @@ class DigestGenerationJob:
                         sensitive_themes = None
 
                     # Sélectionner les articles via DigestSelector
-                    selector = DigestSelector(session)
+                    # session_maker propagé → pipeline LLM utilisera des
+                    # sessions courtes et commit()ra user_session avant LLM
+                    # pour libérer la connexion au pool.
+                    selector = DigestSelector(
+                        session, session_maker=async_session_maker
+                    )
                     digest_items = await selector.select_for_user(
                         user_id=user_id,
                         limit=user_target,
@@ -861,8 +871,10 @@ async def generate_digest_for_user(
             except (ValueError, TypeError):
                 sensitive_themes = None
 
-            # Générer
-            selector = DigestSelector(session)
+            # Générer — session_maker pour que la pipeline LLM (si format
+            # éditorial activé) ouvre des sessions courtes et n'agrippe pas
+            # la session de regen. Cf. bug-infinite-load-requests.md (P1).
+            selector = DigestSelector(session, session_maker=async_session_maker)
             digest_items = await selector.select_for_user(
                 user_id=user_id,
                 limit=DiversityConstraints.TARGET_DIGEST_SIZE,

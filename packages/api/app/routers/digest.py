@@ -193,7 +193,11 @@ async def get_digest(
     - is_completed: Whether user has completed this digest
     - completed_at: Completion timestamp (if completed)
     """
-    service = DigestService(db)
+    # `session_maker` permet à la pipeline éditoriale d'ouvrir ses propres
+    # sessions courtes pendant le travail LLM (3-5 min). Sans ça, la session
+    # de `Depends(get_db)` reste idle-in-transaction pendant tout le LLM et
+    # épuise le pool. Cf. docs/bugs/bug-infinite-load-requests.md (P1).
+    service = DigestService(db, session_maker=async_session_maker)
     user_uuid = UUID(current_user_id)
     start = time.monotonic()
 
@@ -315,7 +319,7 @@ async def get_both_digests(
     # appear to "load indefinitely".
     async def _gen_variant(is_serene: bool) -> DigestResponse | None:
         async with async_session_maker() as session:
-            svc = DigestService(session)
+            svc = DigestService(session, session_maker=async_session_maker)
             return await asyncio.wait_for(
                 svc.get_or_create_digest(user_uuid, target_date, is_serene=is_serene),
                 timeout=DIGEST_BOTH_VARIANT_TIMEOUT_S,
@@ -523,7 +527,10 @@ async def generate_digest(
 
     Returns the complete DigestResponse with items (same format as GET endpoint).
     """
-    service = DigestService(db)
+    # Cf. bug-infinite-load-requests.md (P1) — la pipeline éditoriale doit
+    # pouvoir ouvrir ses propres sessions courtes hors de la session FastAPI
+    # pour libérer la connexion au pool pendant 3-5 min de travail LLM.
+    service = DigestService(db, session_maker=async_session_maker)
     user_uuid = UUID(current_user_id)
 
     # Generate digest, with optional force regeneration
