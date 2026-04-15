@@ -2,11 +2,11 @@
 
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -34,7 +34,7 @@ MIN_RESULTS_FOR_SHORTCIRCUIT = 3
 def _check_user_rate_limit(user_id: str) -> bool:
     """Returns True if user is within daily limit."""
     global _user_daily_reset_date
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     if _user_daily_reset_date != today:
         _user_daily_counts.clear()
         _user_daily_reset_date = today
