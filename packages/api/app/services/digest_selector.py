@@ -30,6 +30,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -306,15 +307,18 @@ class DigestSelector:
                             # session_maker pour ses ops DB internes, donc
                             # on n'a plus besoin de tenir self.session
                             # pendant tout ce temps.
+                            # On commit inconditionnellement (session_maker
+                            # fourni ou non) : à ce stade il n'y a aucune
+                            # écriture pendante, donc commit = noop métier +
+                            # libère la connexion physique dans tous les cas.
                             # cf. docs/bugs/bug-infinite-load-requests.md (P1)
-                            if self.session_maker is not None:
-                                try:
-                                    await self.session.commit()
-                                except Exception:
-                                    logger.warning(
-                                        "digest_selector_precommit_failed",
-                                        user_id=str(user_id),
-                                    )
+                            try:
+                                await self.session.commit()
+                            except SQLAlchemyError:
+                                logger.warning(
+                                    "digest_selector_precommit_failed",
+                                    user_id=str(user_id),
+                                )
                             global_ctx = await pipeline.compute_global_context(
                                 candidates, mode=mode
                             )

@@ -11,6 +11,7 @@ import feedparser
 import httpx
 import structlog
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
@@ -196,7 +197,7 @@ class SyncService:
                     is_new, content_id, needs_enrich, content_url = (
                         await self._save_content(content_data)
                     )
-                except Exception as save_err:
+                except SQLAlchemyError as save_err:
                     logger.warning(
                         "Failed to save content",
                         source=source_name,
@@ -215,7 +216,7 @@ class SyncService:
                     if extraction is not None:
                         try:
                             await self._apply_extraction(content_id, extraction)
-                        except Exception as enrich_err:
+                        except SQLAlchemyError as enrich_err:
                             logger.warning(
                                 "Failed to apply extraction",
                                 content_id=str(content_id),

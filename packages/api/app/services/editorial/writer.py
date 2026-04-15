@@ -12,6 +12,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -206,7 +207,7 @@ class EditorialWriterService:
             async with self._short_session() as session:
                 result = await session.execute(stmt)
                 return set(result.scalars().all())
-        except Exception:
+        except SQLAlchemyError:
             # Table may not yet exist (migration not applied) — graceful fail.
             logger.exception("editorial_writer.recent_highlights_query_failed")
             return set()
@@ -225,7 +226,7 @@ class EditorialWriterService:
                     )
                 )
                 await session.flush()
-        except Exception:
+        except SQLAlchemyError:
             logger.exception(
                 "editorial_writer.record_highlight_failed",
                 kind=kind,
