@@ -18,7 +18,7 @@ class ProposalStatsPanel extends StatelessWidget {
 
     if (ctx.articlesShown == null) {
       return Padding(
-        padding: const EdgeInsets.only(top: 8, left: 32),
+        padding: const EdgeInsets.only(top: FacteurSpacing.space2, left: FacteurSpacing.space8),
         child: Text(
           'Détails indisponibles',
           style: TextStyle(

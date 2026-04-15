@@ -24,7 +24,7 @@ class SourcePrioritySlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _DotGroup(level: current, faded: true, colors: colors),
-        const SizedBox(width: 4),
+        const SizedBox(width: FacteurSpacing.space1),
         Text(
           '→',
           style: TextStyle(
@@ -32,7 +32,7 @@ class SourcePrioritySlider extends StatelessWidget {
             fontSize: 14,
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: FacteurSpacing.space1),
         _DotGroup(
           level: proposed,
           faded: false,

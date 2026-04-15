@@ -33,7 +33,7 @@ class ProposalRow extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _EntityIcon(proposal: proposal, colors: colors),
-        const SizedBox(width: 12),
+        const SizedBox(width: FacteurSpacing.space3),
         Expanded(
           child: RichText(
             text: TextSpan(
@@ -52,9 +52,9 @@ class ProposalRow extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: FacteurSpacing.space2),
         _targetValueWidget(notifier),
-        const SizedBox(width: 4),
+        const SizedBox(width: FacteurSpacing.space1),
         IconButton(
           icon: Icon(
             isExpanded
@@ -83,12 +83,12 @@ class ProposalRow extends ConsumerWidget {
     );
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 180),
+      duration: FacteurDurations.fast,
       curve: Curves.easeInOut,
       child: Semantics(
         label: 'Proposition : ${proposal.entityLabel}',
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space1),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

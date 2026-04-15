@@ -40,19 +40,19 @@ class EntityToggle extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 48),
         child: InkWell(
           onTap: () => onChange(!preActive),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: bg,
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(FacteurRadius.full),
               border: Border.all(color: fg.withOpacity(0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(icon, color: fg, size: 14),
-                const SizedBox(width: 4),
+                const SizedBox(width: FacteurSpacing.space1),
                 Text(
                   label,
                   style: TextStyle(

@@ -90,17 +90,20 @@ class _ConstruireSonFluxCardState
 
     return Container(
       key: const ValueKey('construire_son_flux_card'),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(
+        horizontal: FacteurSpacing.space4,
+        vertical: FacteurSpacing.space2,
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
       decoration: BoxDecoration(
         color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _CardHeader(colors: colors),
-          const SizedBox(height: 12),
+          const SizedBox(height: FacteurSpacing.space3),
           Column(
             children: [
               for (final p in remaining)
@@ -113,7 +116,7 @@ class _ConstruireSonFluxCardState
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: FacteurSpacing.space3),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -121,7 +124,7 @@ class _ConstruireSonFluxCardState
                 onPressed: isApplying ? null : () => notifier.snooze(),
                 child: const Text('Plus tard'),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: FacteurSpacing.space2),
               FilledButton(
                 onPressed: isApplying ? null : () => notifier.validate(),
                 style: FilledButton.styleFrom(
