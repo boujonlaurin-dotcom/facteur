@@ -4,11 +4,10 @@ import html
 import json
 import re
 import xml.etree.ElementTree as ET
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
-
-from contextlib import asynccontextmanager
 
 import certifi
 import httpx
