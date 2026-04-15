@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import SourceType
 
@@ -110,7 +110,7 @@ class UpdateSourceSubscriptionRequest(BaseModel):
 class SmartSearchRequest(BaseModel):
     """Requête de recherche intelligente."""
 
-    query: str
+    query: str = Field(..., min_length=1, max_length=500)
 
 
 class SmartSearchRecentItem(BaseModel):

@@ -1,10 +1,12 @@
 """Smart source search orchestrator — cascading pipeline."""
 
+import asyncio
 import re
 import time
 from datetime import datetime
 from uuid import UUID
 
+import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +23,11 @@ from app.services.search.providers.reddit_search import RedditSearchProvider
 logger = structlog.get_logger()
 
 # ─── In-memory rate counters (reset on restart) ─────────────────
+# Note: these counters are per-process. In a multi-instance deployment,
+# each instance tracks independently. Acceptable for current volume
+# (100-200 users). Migrate to Postgres/Redis if scaling beyond that.
 
+_rate_lock = asyncio.Lock()
 _brave_calls_month: int = 0
 _mistral_calls_month: int = 0
 _user_daily_counts: dict[str, int] = {}
@@ -29,20 +35,22 @@ _user_daily_reset_date: str = ""
 
 USER_DAILY_LIMIT = 30
 MIN_RESULTS_FOR_SHORTCIRCUIT = 3
+PIPELINE_TIMEOUT_SECONDS = 8.0
 
 
-def _check_user_rate_limit(user_id: str) -> bool:
+async def _check_user_rate_limit(user_id: str) -> bool:
     """Returns True if user is within daily limit."""
     global _user_daily_reset_date
-    today = datetime.now(datetime.UTC).strftime("%Y-%m-%d")
-    if _user_daily_reset_date != today:
-        _user_daily_counts.clear()
-        _user_daily_reset_date = today
-    count = _user_daily_counts.get(user_id, 0)
-    if count >= USER_DAILY_LIMIT:
-        return False
-    _user_daily_counts[user_id] = count + 1
-    return True
+    async with _rate_lock:
+        today = datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+        if _user_daily_reset_date != today:
+            _user_daily_counts.clear()
+            _user_daily_reset_date = today
+        count = _user_daily_counts.get(user_id, 0)
+        if count >= USER_DAILY_LIMIT:
+            return False
+        _user_daily_counts[user_id] = count + 1
+        return True
 
 
 def _classify_query(query: str) -> str:
@@ -128,7 +136,7 @@ class SmartSourceSearchService:
         seen_urls: set[str] = set()
 
         # Rate limit check
-        if not _check_user_rate_limit(user_id):
+        if not await _check_user_rate_limit(user_id):
             return {
                 "query_normalized": normalized,
                 "results": [],
@@ -145,6 +153,37 @@ class SmartSourceSearchService:
             cached["cache_hit"] = True
             cached["latency_ms"] = elapsed
             return cached
+
+        try:
+            async with asyncio.timeout(PIPELINE_TIMEOUT_SECONDS):
+                return await self._run_pipeline(
+                    query, normalized, user_id,
+                    layers_called, results, seen_urls, start,
+                )
+        except TimeoutError:
+            logger.warning(
+                "smart_search.pipeline_timeout",
+                query=normalized,
+                layers_called=layers_called,
+                results_so_far=len(results),
+            )
+            # Return whatever we have so far
+            return await self._finalize(
+                normalized, results, layers_called, start, False
+            )
+
+    async def _run_pipeline(
+        self,
+        query: str,
+        normalized: str,
+        user_id: str,
+        layers_called: list[str],
+        results: list[dict],
+        seen_urls: set[str],
+        start: float,
+    ) -> dict:
+        """Core pipeline logic, wrapped by timeout in search()."""
+        global _brave_calls_month, _mistral_calls_month
 
         query_type = _classify_query(query)
         user_themes = await self._get_user_themes(user_id)
@@ -184,9 +223,16 @@ class SmartSourceSearchService:
 
         # (d) Brave Search
         settings = get_settings()
-        if self.brave.is_ready and _brave_calls_month < settings.brave_monthly_cap:
+        async with _rate_lock:
+            brave_allowed = (
+                self.brave.is_ready
+                and _brave_calls_month < settings.brave_monthly_cap
+            )
+            if brave_allowed:
+                _brave_calls_month += 1
+
+        if brave_allowed:
             brave_results = await self._search_brave(normalized, user_themes)
-            _brave_calls_month += 1
             for r in brave_results:
                 if r["feed_url"] not in seen_urls:
                     seen_urls.add(r["feed_url"])
@@ -220,9 +266,13 @@ class SmartSourceSearchService:
             )
 
         # (f) Mistral fallback
-        if _mistral_calls_month < settings.mistral_monthly_cap:
+        async with _rate_lock:
+            mistral_allowed = _mistral_calls_month < settings.mistral_monthly_cap
+            if mistral_allowed:
+                _mistral_calls_month += 1
+
+        if mistral_allowed:
             mistral_results = await self._search_mistral(normalized, user_themes)
-            _mistral_calls_month += 1
             for r in mistral_results:
                 if r["feed_url"] not in seen_urls:
                     seen_urls.add(r["feed_url"])
@@ -294,7 +344,7 @@ class SmartSourceSearchService:
                     "source_layer": "youtube",
                 }
             ]
-        except (ValueError, Exception) as e:
+        except (ValueError, httpx.RequestError) as e:
             logger.debug("smart_search.youtube_failed", query=query, error=str(e))
             return []
 
@@ -362,7 +412,7 @@ class SmartSourceSearchService:
                     ),
                     "source_layer": "brave",
                 })
-            except (ValueError, Exception):
+            except (ValueError, httpx.RequestError):
                 continue
 
         return items
@@ -397,7 +447,7 @@ class SmartSourceSearchService:
                     ),
                     "source_layer": "google_news",
                 })
-            except (ValueError, Exception):
+            except (ValueError, httpx.RequestError):
                 continue
 
         return items

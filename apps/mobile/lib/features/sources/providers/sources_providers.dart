@@ -2,11 +2,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/api/api_client.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../repositories/sources_repository.dart';
 
 final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
+});
+
+final smartSearchProvider =
+    FutureProvider.family<List<SmartSearchResult>, String>((ref, query) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.smartSearch(query);
 });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {

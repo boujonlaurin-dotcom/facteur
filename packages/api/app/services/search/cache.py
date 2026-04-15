@@ -1,7 +1,14 @@
-"""Postgres-backed search cache with 24h TTL."""
+"""Postgres-backed search cache with 24h TTL.
+
+Cache key is based on normalized query only (not user-specific).
+Theme affinity (10% of score) may differ per user, but caching a
+generic ranking is acceptable for the current volume. If personalized
+ranking becomes important, include user theme hash in the cache key.
+"""
 
 import hashlib
 import json
+import random
 import re
 from datetime import datetime, timedelta
 
@@ -12,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = structlog.get_logger()
 
 CACHE_TTL_HOURS = 24
+# Probability of cleaning expired entries on each write (1 in 20)
+CLEANUP_PROBABILITY = 0.05
 
 
 def normalize_query(query: str) -> str:
@@ -74,3 +83,20 @@ class SearchCache:
         )
         await self.db.flush()
         logger.info("search_cache.set", query_hash=query_hash[:12])
+
+        # Probabilistic cleanup of expired entries
+        if random.random() < CLEANUP_PROBABILITY:
+            try:
+                result = await self.db.execute(
+                    text(
+                        "DELETE FROM source_search_cache "
+                        "WHERE expires_at < :now"
+                    ),
+                    {"now": now},
+                )
+                await self.db.flush()
+                deleted = result.rowcount
+                if deleted:
+                    logger.info("search_cache.cleanup", deleted=deleted)
+            except Exception as e:
+                logger.warning("search_cache.cleanup_failed", error=str(e))

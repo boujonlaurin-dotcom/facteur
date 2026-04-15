@@ -1,4 +1,5 @@
 import '../../../core/api/api_client.dart';
+import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 
 class SourcesRepository {
@@ -140,6 +141,23 @@ class SourcesRepository {
     } catch (e) {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] addCustomSource: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<SmartSearchResult>> smartSearch(String query) async {
+    try {
+      final response = await _apiClient.dio.post<Map<String, dynamic>>(
+        'sources/smart-search',
+        data: {'query': query},
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return SmartSearchResponse.fromJson(response.data!).results;
+      }
+      return [];
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] smartSearch: $e');
       rethrow;
     }
   }
