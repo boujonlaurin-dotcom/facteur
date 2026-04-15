@@ -147,7 +147,6 @@ class ArticleReaderWidget extends StatelessWidget {
           if (footer != null) ...[
             const SizedBox(height: 32),
             footer!,
-            const SizedBox(height: 64),
           ],
         ],
       );
