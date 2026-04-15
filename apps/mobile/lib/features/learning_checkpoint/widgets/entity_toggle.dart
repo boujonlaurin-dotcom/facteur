@@ -29,7 +29,7 @@ class EntityToggle extends StatelessWidget {
         : PhosphorIcons.bell(PhosphorIconsStyle.regular);
     final label = kind == EntityToggleKind.mute ? 'Masquer' : 'Suivre';
 
-    final bg = preActive ? colors.primary.withOpacity(0.1) : colors.surface;
+    final bg = preActive ? colors.primary.withValues(alpha: 0.1) : colors.surface;
     final fg = preActive ? colors.primary : colors.textTertiary;
 
     return Semantics(
@@ -46,7 +46,7 @@ class EntityToggle extends StatelessWidget {
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(FacteurRadius.full),
-              border: Border.all(color: fg.withOpacity(0.4)),
+              border: Border.all(color: fg.withValues(alpha: 0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
