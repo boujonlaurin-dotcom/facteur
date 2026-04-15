@@ -6,6 +6,7 @@ Reuses the existing MISTRAL_API_KEY from classification_service.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -76,49 +77,83 @@ class EditorialLLMClient:
             ],
         }
 
-        try:
-            response = await client.post(MISTRAL_API_URL, json=payload)
-            response.raise_for_status()
+        _RETRYABLE_STATUSES = (429, 500, 502, 503)
+        max_retries = 2
 
-            data = response.json()
-            text = data["choices"][0]["message"]["content"]
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(MISTRAL_API_URL, json=payload)
+                response.raise_for_status()
 
-            # Strip markdown code fences if present
-            text = text.strip()
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(
-                    lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-                )
+                data = response.json()
+                text = data["choices"][0]["message"]["content"]
+
+                # Strip markdown code fences if present
                 text = text.strip()
+                if text.startswith("```"):
+                    lines = text.split("\n")
+                    text = "\n".join(
+                        lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+                    )
+                    text = text.strip()
 
-            parsed = json.loads(text)
+                parsed = json.loads(text)
 
-            logger.info(
-                "editorial_llm.success",
-                model=model,
-                prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
-                completion_tokens=data.get("usage", {}).get("completion_tokens"),
-            )
-            return parsed
+                logger.info(
+                    "editorial_llm.success",
+                    model=model,
+                    attempt=attempt + 1,
+                    prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+                    completion_tokens=data.get("usage", {}).get("completion_tokens"),
+                )
+                return parsed
 
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "editorial_llm.http_error",
-                status_code=e.response.status_code,
-                body=e.response.text[:500],
-            )
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(
-                "editorial_llm.json_parse_error",
-                error=str(e),
-                raw_text=text[:500] if "text" in dir() else "no_text",
-            )
-            return None
-        except Exception as e:
-            logger.error("editorial_llm.unexpected_error", error=str(e))
-            return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in _RETRYABLE_STATUSES and attempt < max_retries:
+                    wait = 3 * (attempt + 1)  # 3s, 6s
+                    logger.warning(
+                        "editorial_llm.retrying",
+                        attempt=attempt + 1,
+                        wait_s=wait,
+                        status_code=e.response.status_code,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(
+                    "editorial_llm.http_error",
+                    status_code=e.response.status_code,
+                    body=e.response.text[:500],
+                    attempts_exhausted=attempt + 1,
+                )
+                return None
+            except httpx.TimeoutException:
+                if attempt < max_retries:
+                    wait = 3 * (attempt + 1)
+                    logger.warning(
+                        "editorial_llm.timeout_retrying",
+                        attempt=attempt + 1,
+                        wait_s=wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(
+                    "editorial_llm.timeout_exhausted",
+                    attempts_exhausted=attempt + 1,
+                )
+                return None
+            except json.JSONDecodeError as e:
+                # No retry for parse errors — LLM returned bad JSON
+                logger.error(
+                    "editorial_llm.json_parse_error",
+                    error=str(e),
+                    raw_text=text[:500] if "text" in dir() else "no_text",
+                )
+                return None
+            except Exception as e:
+                logger.error("editorial_llm.unexpected_error", error=str(e))
+                return None
+
+        return None
 
     async def chat_text(
         self,

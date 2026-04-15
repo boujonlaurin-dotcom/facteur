@@ -292,8 +292,12 @@ class DigestSelector:
                     )
 
                     if not pipeline.llm.is_ready:
-                        logger.warning("digest_editorial_no_api_key")
-                        output_format = "topics"
+                        logger.warning(
+                            "digest_editorial_failed_no_fallback",
+                            user_id=str(user_id),
+                            reason="no_api_key",
+                        )
+                        return None
                     else:
                         # Use injected context (batch), then cache, then compute
                         # Cache key in Paris time so reader and batch agree on "today"
@@ -325,8 +329,12 @@ class DigestSelector:
                             if global_ctx is not None:
                                 _set_cached_editorial_ctx(_cache_date, mode, global_ctx)
                         if not global_ctx:
-                            logger.warning("digest_editorial_global_ctx_failed")
-                            output_format = "topics"
+                            logger.warning(
+                                "digest_editorial_failed_no_fallback",
+                                user_id=str(user_id),
+                                reason="global_ctx_failed",
+                            )
+                            return None
                         else:
                             # MVP V2: global digest — actu already matched
                             # in compute_global_context(), no per-user phase
@@ -372,10 +380,11 @@ class DigestSelector:
                             return result
                 except Exception:
                     logger.exception(
-                        "digest_editorial_failed_fallback_topics",
+                        "digest_editorial_failed_no_fallback",
                         user_id=str(user_id),
+                        reason="exception",
                     )
-                    output_format = "topics"
+                    return None
 
             # === TOPIC FORMAT: delegate to TopicSelector ===
             if output_format == "topics":

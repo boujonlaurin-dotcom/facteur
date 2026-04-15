@@ -196,6 +196,16 @@ class DigestGenerationJob:
                                 ctx = await pipeline.compute_global_context(
                                     mode_candidates, mode=mode
                                 )
+                                # Retry once if precompute failed
+                                if ctx is None:
+                                    logger.warning(
+                                        "digest_generation_editorial_ctx_retry",
+                                        mode=mode,
+                                    )
+                                    await asyncio.sleep(5)
+                                    ctx = await pipeline.compute_global_context(
+                                        mode_candidates, mode=mode
+                                    )
                                 if ctx:
                                     from app.services.digest_selector import (
                                         _set_cached_editorial_ctx,
@@ -548,17 +558,17 @@ class DigestGenerationJob:
                     # All users get editorial format — no per-user branching
                     expected_version = "editorial_v1"
 
+                    stale_digest = None
                     if existing and existing.format_version != expected_version:
                         logger.info(
-                            "digest_generation_stale_format_deleted",
+                            "digest_generation_stale_format_deferred",
                             user_id=str(user_id),
                             target_date=str(target_date),
                             is_serene=is_serene,
                             cached=existing.format_version,
                             expected=expected_version,
                         )
-                        await session.delete(existing)
-                        await session.flush()
+                        stale_digest = existing
                         existing = None
 
                     if existing:
@@ -629,6 +639,11 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         if digest:
+                            # Delete stale (non-editorial) digest now that
+                            # the new editorial_v1 is safely created.
+                            if stale_digest:
+                                await session.delete(stale_digest)
+                                await session.flush()
                             self.stats["success"] += 1
                             await state_mark_success(
                                 session, user_id, target_date, is_serene
@@ -667,47 +682,23 @@ class DigestGenerationJob:
                         )
                         continue
 
-                    # Construire les items JSONB
-                    items = []
-                    for item in digest_items:
-                        items.append(
-                            {
-                                "content_id": str(item.content.id),
-                                "rank": item.rank,
-                                "reason": item.reason,
-                                "score": item.score,
-                                "source_id": str(item.content.source_id)
-                                if item.content.source_id
-                                else None,
-                                "title": item.content.title,
-                                "published_at": item.content.published_at.isoformat()
-                                if item.content.published_at
-                                else None,
-                            }
-                        )
-
-                    # Insérer le digest
-                    digest = DailyDigest(
-                        user_id=user_id,
-                        target_date=target_date,
-                        items=items,
-                        mode=digest_mode,
-                        is_serene=is_serene,
-                        generated_at=datetime.datetime.utcnow(),
-                    )
-
-                    session.add(digest)
-
-                    logger.debug(
-                        "digest_generation_success",
+                    # Unexpected return type — editorial should always
+                    # return EditorialPipelineResult or None/empty.
+                    logger.error(
+                        "digest_generation_unexpected_return_type",
                         user_id=str(user_id),
                         target_date=str(target_date),
                         is_serene=is_serene,
-                        article_count=len(items),
+                        type=type(digest_items).__name__,
                     )
-
-                    self.stats["success"] += 1
-                    await state_mark_success(session, user_id, target_date, is_serene)
+                    self.stats["failed"] += 1
+                    await state_mark_failed(
+                        session,
+                        user_id,
+                        target_date,
+                        is_serene,
+                        f"unexpected return type: {type(digest_items).__name__}",
+                    )
                 except Exception as variant_err:
                     # Record the variant error but keep going so the other
                     # variant still has a chance to generate.
