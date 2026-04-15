@@ -20,7 +20,8 @@ import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content
@@ -36,8 +37,19 @@ logger = structlog.get_logger()
 
 
 class BriefingService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
         self.session = session
+        # `session_maker` est optionnel — il permet aux callers qui veulent
+        # borner strictement la durée de la transaction (ex. `/api/feed` lazy
+        # gen, round 2 bug-infinite-load-requests.md) de commit les lectures
+        # avant le scoring CPU-bound et de rouvrir une session courte pour
+        # la persistance finale. Non-fourni = mode rétro-compatible (une
+        # seule session pour tout le flow, comme avant).
+        self._session_maker = session_maker
         self.rec_service = RecommendationService(session)
         self.importance_detector = ImportanceDetector()
         self.top3_selector = Top3Selector()
@@ -142,6 +154,15 @@ class BriefingService:
 
         if not candidates:
             return []
+
+        # Round 2 fix (bug-infinite-load-requests.md) : commit AVANT le scoring
+        # CPU-bound pour libérer la transaction Postgres. Sans ça, l'état
+        # "idle in transaction" perdurait pendant les ~100-500 ms du scoring
+        # sur 200 items, alimentant la queue de fuite observée en prod.
+        try:
+            await self.session.commit()
+        except SQLAlchemyError:
+            logger.warning("briefing_precommit_failed", exc_info=True)
 
         # D. Scoring
         scored_contents = []

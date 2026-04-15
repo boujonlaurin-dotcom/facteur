@@ -313,6 +313,53 @@ class TestLearningServiceGetPending:
         # shown_count mutated in place (was 2, +1 = 3).
         assert mock_proposal.shown_count == 3
 
+    @pytest.mark.asyncio
+    async def test_get_pending_uses_session_maker_not_injected_db(self):
+        """Round 2 regression guard (bug-infinite-load-requests.md).
+
+        Quand `session_maker` est fourni, `get_pending_proposals` doit :
+        - ouvrir une session courte via le maker (pas toucher self.db)
+        - lire/commit/close cette session
+        - ne JAMAIS appeler execute/flush/commit sur `self.db`
+
+        Si ce test casse, `/api/feed` tient à nouveau la session injectée
+        pendant le SELECT+UPDATE Learning → leak de connexions en prod.
+        """
+        # Injected db that MUST NOT be touched
+        injected_db = AsyncMock()
+        injected_db.execute = AsyncMock(
+            side_effect=AssertionError("injected db must not be touched")
+        )
+        injected_db.flush = AsyncMock(
+            side_effect=AssertionError("injected db must not be flushed")
+        )
+        injected_db.commit = AsyncMock(
+            side_effect=AssertionError("injected db must not be committed")
+        )
+
+        # Short session from maker
+        short_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        short_session.execute = AsyncMock(return_value=mock_result)
+
+        # async context manager returning short_session
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=short_session)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        mock_maker = MagicMock(return_value=cm)
+
+        service = LearningService(db=injected_db, session_maker=mock_maker)
+        result = await service.get_pending_proposals(uuid4())
+
+        assert result == []
+        mock_maker.assert_called_once()
+        short_session.execute.assert_awaited_once()
+        # Injected db is never touched
+        injected_db.execute.assert_not_called()
+        injected_db.flush.assert_not_called()
+        injected_db.commit.assert_not_called()
+
 
 # ------------------------------------------------------------------
 # Defensive muted entities loader (chantier A — backend resilience)
