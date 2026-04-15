@@ -16,6 +16,7 @@ from uuid import UUID
 # top3_job NE DOIT PAS être importé ici.
 # -> On va déplacer les helpers de fetch ici en méthodes statiques ou privées.
 import feedparser
+import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -269,9 +270,21 @@ class BriefingService:
         une_guids: set[str] = set()
 
         async def parse_feed(url: str) -> list[str]:
+            # Pattern httpx + feedparser.parse(content) au lieu de
+            # feedparser.parse(url) — ce dernier utilise urllib en interne sans
+            # respecter de timeout côté coroutine, et `asyncio.wait_for` ne peut
+            # pas tuer le thread bloqué. Cf. docs/bugs/bug-infinite-load-requests.md
+            # (landmine documentée). Aucune source aujourd'hui n'a une_feed_url,
+            # mais la régression future est évitée.
             try:
+                async with httpx.AsyncClient(
+                    timeout=10.0, follow_redirects=True
+                ) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    content = resp.text
                 loop = asyncio.get_event_loop()
-                feed = await loop.run_in_executor(None, feedparser.parse, url)
+                feed = await loop.run_in_executor(None, feedparser.parse, content)
                 return [
                     entry.id if hasattr(entry, "id") else entry.link
                     for entry in feed.entries[:5]
