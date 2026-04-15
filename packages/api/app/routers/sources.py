@@ -5,21 +5,33 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.failed_source_attempt import FailedSourceAttempt
+from app.models.source import Source
+from app.models.user import UserInterest
 from app.schemas.source import (
+    SmartSearchRecentItem,
+    SmartSearchRequest,
+    SmartSearchResponse,
+    SmartSearchResultItem,
     SourceCatalogResponse,
     SourceCreate,
     SourceDetectRequest,
     SourceDetectResponse,
     SourceResponse,
     SourceSearchResponse,
+    ThemeFollowed,
+    ThemesFollowedResponse,
+    ThemeSourceGroup,
+    ThemeSourcesResponse,
     UpdateSourceSubscriptionRequest,
     UpdateSourceWeightRequest,
 )
+from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
 
 logger = structlog.get_logger()
@@ -61,6 +73,210 @@ async def get_trending_sources(
     service = SourceService(db)
     sources = await service.get_trending_sources(user_id=user_id, limit=limit)
     return sources
+
+
+THEME_LABELS = {
+    "tech": "Tech",
+    "society": "Société",
+    "environment": "Environnement",
+    "economy": "Économie",
+    "politics": "Politique",
+    "culture": "Culture",
+    "science": "Science",
+    "international": "International",
+}
+
+
+def _source_to_response(s: Source) -> SourceResponse:
+    """Convert Source model to SourceResponse (minimal, no user context)."""
+    return SourceResponse(
+        id=s.id,
+        name=s.name,
+        url=s.url,
+        type=s.type,
+        theme=s.theme,
+        description=s.description,
+        logo_url=s.logo_url,
+        is_curated=s.is_curated,
+        is_custom=not s.is_curated,
+        content_count=0,
+        bias_stance=getattr(s.bias_stance, "value", "unknown"),
+        reliability_score=getattr(s.reliability_score, "value", "unknown"),
+        bias_origin=getattr(s.bias_origin, "value", "unknown"),
+        secondary_themes=s.secondary_themes,
+        granular_topics=s.granular_topics,
+        source_tier=s.source_tier or "mainstream",
+        score_independence=s.score_independence,
+        score_rigor=s.score_rigor,
+        score_ux=s.score_ux,
+    )
+
+
+@router.post("/smart-search", response_model=SmartSearchResponse)
+async def smart_search(
+    data: SmartSearchRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SmartSearchResponse:
+    """Recherche intelligente multi-sources."""
+    service = SmartSourceSearchService(db)
+    try:
+        result = await service.search(data.query, user_id)
+
+        if result.get("error") == "rate_limit_exceeded":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded (30 searches/day)",
+            )
+
+        return SmartSearchResponse(
+            query_normalized=result["query_normalized"],
+            results=[
+                SmartSearchResultItem(
+                    name=r["name"],
+                    type=r["type"],
+                    url=r["url"],
+                    feed_url=r["feed_url"],
+                    favicon_url=r.get("favicon_url"),
+                    description=r.get("description"),
+                    in_catalog=r.get("in_catalog", False),
+                    is_curated=r.get("is_curated", False),
+                    source_id=r.get("source_id"),
+                    recent_items=[
+                        SmartSearchRecentItem(**i) for i in r.get("recent_items", [])
+                    ],
+                    score=r.get("score", 0.0),
+                    source_layer=r.get("source_layer", "unknown"),
+                )
+                for r in result.get("results", [])
+            ],
+            cache_hit=result.get("cache_hit", False),
+            layers_called=result.get("layers_called", []),
+            latency_ms=result.get("latency_ms", 0),
+        )
+    finally:
+        await service.close()
+
+
+@router.get("/by-theme/{slug}", response_model=ThemeSourcesResponse)
+async def get_sources_by_theme(
+    slug: str,
+    limit: int = 8,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> ThemeSourcesResponse:
+    """Sources par thème : Curées → Candidates → Communauté."""
+    from app.models.source import UserSource
+
+    groups: list[ThemeSourceGroup] = []
+    total = 0
+
+    # Curées
+    stmt_curated = (
+        select(Source)
+        .where(Source.is_active.is_(True))
+        .where(Source.is_curated.is_(True))
+        .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+        .order_by(Source.name)
+        .limit(limit)
+    )
+    result = await db.execute(stmt_curated)
+    curated_sources = result.scalars().all()
+    curated_responses = [_source_to_response(s) for s in curated_sources]
+    if curated_responses:
+        groups.append(ThemeSourceGroup(label="Curées", sources=curated_responses))
+        total += len(curated_responses)
+
+    # Candidates (non-curated)
+    remaining = limit - total
+    candidate_sources = []
+    if remaining > 0:
+        stmt_candidates = (
+            select(Source)
+            .where(Source.is_active.is_(True))
+            .where(Source.is_curated.is_(False))
+            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+            .order_by(Source.name)
+            .limit(remaining)
+        )
+        result = await db.execute(stmt_candidates)
+        candidate_sources = result.scalars().all()
+        candidate_responses = [_source_to_response(s) for s in candidate_sources]
+        if candidate_responses:
+            groups.append(
+                ThemeSourceGroup(label="Candidates", sources=candidate_responses)
+            )
+            total += len(candidate_responses)
+
+    # Communauté fallback (if total < 3)
+    if total < 3:
+        community_remaining = max(3 - total, 0)
+        if community_remaining > 0:
+            exclude_ids = [s.id for s in curated_sources] + [
+                s.id for s in candidate_sources
+            ]
+
+            stmt_community = (
+                select(Source, func.count(UserSource.user_id).label("followers"))
+                .join(UserSource, UserSource.source_id == Source.id)
+                .where(Source.is_active.is_(True))
+            )
+            if exclude_ids:
+                stmt_community = stmt_community.where(Source.id.notin_(exclude_ids))
+            stmt_community = (
+                stmt_community.group_by(Source.id)
+                .order_by(func.count(UserSource.user_id).desc())
+                .limit(community_remaining)
+            )
+            result = await db.execute(stmt_community)
+            community_rows = result.all()
+            community_responses = [
+                _source_to_response(row[0]) for row in community_rows
+            ]
+            if community_responses:
+                groups.append(
+                    ThemeSourceGroup(label="Communauté", sources=community_responses)
+                )
+                total += len(community_responses)
+
+    return ThemeSourcesResponse(theme=slug, groups=groups, total_count=total)
+
+
+@router.get("/themes-followed", response_model=ThemesFollowedResponse)
+async def get_themes_followed(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> ThemesFollowedResponse:
+    """Thèmes suivis par l'utilisateur avec count de sources."""
+    from app.models.source import UserSource
+
+    # Get user interests
+    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_id)
+    result = await db.execute(stmt)
+    slugs = [row[0] for row in result.fetchall()]
+
+    themes = []
+    for slug in slugs:
+        stmt_count = (
+            select(func.count())
+            .select_from(Source)
+            .join(UserSource, UserSource.source_id == Source.id)
+            .where(UserSource.user_id == user_id)
+            .where(Source.is_active.is_(True))
+            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+        )
+        result = await db.execute(stmt_count)
+        count = result.scalar() or 0
+
+        themes.append(
+            ThemeFollowed(
+                slug=slug,
+                label=THEME_LABELS.get(slug, slug.capitalize()),
+                followed_sources_count=count,
+            )
+        )
+
+    return ThemesFollowedResponse(themes=themes)
 
 
 @router.post("/custom", response_model=SourceResponse)

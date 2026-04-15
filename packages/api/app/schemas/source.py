@@ -102,3 +102,75 @@ class UpdateSourceSubscriptionRequest(BaseModel):
     """Mise à jour de l'abonnement premium à une source."""
 
     has_subscription: bool
+
+
+# ─── Smart Search Schemas ─────────────────────────────────────────
+
+
+class SmartSearchRequest(BaseModel):
+    """Requête de recherche intelligente."""
+
+    query: str
+
+
+class SmartSearchRecentItem(BaseModel):
+    """Item récent d'un feed pour preview."""
+
+    title: str
+    published_at: str = ""
+
+
+class SmartSearchResultItem(BaseModel):
+    """Résultat individuel du smart search."""
+
+    name: str
+    type: str
+    url: str
+    feed_url: str
+    favicon_url: str | None = None
+    description: str | None = None
+    in_catalog: bool = False
+    is_curated: bool = False
+    source_id: UUID | None = None
+    recent_items: list[SmartSearchRecentItem] = []
+    score: float = 0.0
+    source_layer: str = "unknown"
+
+
+class SmartSearchResponse(BaseModel):
+    """Réponse du smart search."""
+
+    query_normalized: str
+    results: list[SmartSearchResultItem]
+    cache_hit: bool = False
+    layers_called: list[str] = []
+    latency_ms: int = 0
+
+
+class ThemeSourceGroup(BaseModel):
+    """Groupe de sources par catégorie dans un thème."""
+
+    label: str
+    sources: list[SourceResponse]
+
+
+class ThemeSourcesResponse(BaseModel):
+    """Réponse sources par thème."""
+
+    theme: str
+    groups: list[ThemeSourceGroup]
+    total_count: int = 0
+
+
+class ThemeFollowed(BaseModel):
+    """Thème suivi par un utilisateur."""
+
+    slug: str
+    label: str
+    followed_sources_count: int = 0
+
+
+class ThemesFollowedResponse(BaseModel):
+    """Réponse thèmes suivis."""
+
+    themes: list[ThemeFollowed]
