@@ -34,7 +34,6 @@ import '../widgets/note_input_sheet.dart';
 import '../widgets/note_welcome_tooltip.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../digest/widgets/editorial_badge.dart';
-import '../../digest/widgets/article_thumbs_feedback.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -67,6 +66,10 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 /// Height of the header content area (below the status bar).
 const double _kHeaderContentHeight = 50;
 
+/// Height of the footer content area (above the safe-area bottom inset).
+/// = vertical padding (12+12) + button row height (44).
+const double _kFooterContentHeight = 68.0;
+
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _fabController;
@@ -85,6 +88,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showFab = false;
   bool _showShareFab = false;
   bool _isShortArticle = false;
+  bool _footerPermanent =
+      false; // true once user reaches end of displayed content
+  final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
   bool _showNoteWelcome = false;
   bool _linkCopiedFab = false;
   bool _linkCopiedHeader = false;
@@ -94,12 +100,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
-  bool _showWebView = false;
+  final bool _showWebView = false;
 
   // Scroll-to-site state
   final ScrollController _scrollController = ScrollController();
+  // In-app reader scroll controller (separate from scroll-to-site)
+  final ScrollController _inAppScrollController = ScrollController();
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
+  final GlobalKey _perspectivesKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeStartOffset = 0;
@@ -114,12 +123,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
-  double _prevNativeScrollOffset = 0.0;
   late AnimationController _headerAutoController;
   double _headerAutoStart = 0.0;
   double _headerAutoTarget = 0.0;
 
   final ValueNotifier<double> _fabOpacity = ValueNotifier<double>(0.07);
+
   /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
@@ -134,6 +143,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final ValueNotifier<double> _readingProgress = ValueNotifier<double>(0.0);
   double _maxReadingProgress = 0;
 
+  // Keys and cached extent for article-only reading progress measurement
+  final GlobalKey _articleEndKey = GlobalKey();
+  final GlobalKey _scrollViewKey = GlobalKey();
+  double? _articleContentExtent;
+
+  // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden (mirrors _headerOffset)
+  final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
+  double _footerAutoStart = 0.0;
+  double _footerAutoTarget = 0.0;
+  late AnimationController _footerAutoController;
+
   // Video detail screen state
   bool _isDescriptionExpanded = false;
   bool _isVideoPlaying = false;
@@ -145,6 +165,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // Perspectives pill state
   PerspectivesResponse? _perspectivesResponse;
   bool _perspectivesLoading = false;
+
+  // Perspectives analysis state (lifted from inline section)
+  PerspectivesAnalysisState _perspectivesAnalysisState =
+      PerspectivesAnalysisState.idle;
+  String? _perspectivesAnalysisText;
+  final GlobalKey _analysisZoneKey = GlobalKey();
+
+  // Perspectives sticky section header state
+  Set<String> _perspectivesSelectedSegments = {};
+  final ValueNotifier<bool> _showStickyPerspectivesHeader =
+      ValueNotifier(false);
 
   @override
   void initState() {
@@ -250,6 +281,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           (_headerAutoTarget - _headerAutoStart) * _headerAutoController.value;
     });
 
+    _footerAutoController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _footerAutoController.addListener(() {
+      _footerOffset.value = _footerAutoStart +
+          (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
+    });
+
     WidgetsBinding.instance.addObserver(this);
 
     // Show FAB after delay — start transparent, fade+scale in after 2s
@@ -306,9 +346,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Reading progress: track scroll depth
     _scrollController.addListener(_onScrollReadingProgress);
-
-    // Header hide/show: track scroll delta for native in-app content
-    _scrollController.addListener(_onNativeScrollHeader);
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -436,8 +473,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!_scrollController.hasClients) return;
     final maxExtent = _scrollController.position.maxScrollExtent;
     if (maxExtent <= 0) return;
-    final rawProgress = _scrollController.offset / maxExtent;
-    // Partial content: in-app scroll represents only ~25% of the full article
+    final pixels = _scrollController.offset;
+    // Use article-only extent so the perspectives section doesn't dilute progress
+    final articleExtent = _articleContentExtent ?? maxExtent;
+    final rawProgress = pixels / articleExtent;
     final progress = _isPartialContent
         ? (rawProgress * 0.25).clamp(0.0, 0.25)
         : rawProgress.clamp(0.0, 1.0);
@@ -447,11 +486,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Show header when user reaches the bottom of the article (progress ≥ 98%).
+  /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
   void _onReadingProgressNudge() {
-    if (_readingProgress.value >= 0.98 && _headerOffset.value > 0.0) {
+    if (_readingProgress.value >= 0.98) {
       _inactivityTimer?.cancel();
-      _animateHeaderTo(0.0);
+      if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
+      if (_footerOffset.value > 0.0) _animateFooterTo(0.0);
     }
   }
 
@@ -469,7 +509,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!_scrollController.hasClients) return;
     if (_scrollController.position.maxScrollExtent < 50) {
       _isShortArticle = true;
+      _footerPermanent = true;
     }
+  }
+
+  /// Measures the pixel distance from the top of the scroll content to the
+  /// end of the article section (before perspectives). Stored in
+  /// [_articleContentExtent] so the progress bar ignores perspectives height.
+  void _measureArticleExtent() {
+    final endBox =
+        _articleEndKey.currentContext?.findRenderObject() as RenderBox?;
+    final svBox =
+        _scrollViewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (endBox == null || svBox == null) return;
+    if (!_scrollController.hasClients) return;
+    // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
+    final extent = endBox.localToGlobal(Offset.zero).dy -
+        svBox.localToGlobal(Offset.zero).dy +
+        _scrollController.offset;
+    if (extent > 0) _articleContentExtent = extent;
   }
 
   /// Compute layout offsets for bridge zone.
@@ -492,6 +550,60 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     _offsetsComputed = true;
+  }
+
+  /// Updates [_atPerspectivesSection] based on whether the perspectives widget
+  /// is visible in the viewport. Called from the scroll notification handler.
+  /// Uses ValueNotifier to avoid triggering a full setState during scroll.
+  void _checkAtPerspectivesSection() {
+    final ctx = _perspectivesKey.currentContext;
+    if (ctx == null) return;
+    final perspBox = ctx.findRenderObject() as RenderBox?;
+    if (perspBox == null || !perspBox.hasSize) return;
+
+    final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final reached = perspScreenY < screenHeight * 0.85;
+
+    if (reached != _atPerspectivesSection.value) {
+      _atPerspectivesSection.value = reached;
+      // Footer becomes sticky as soon as the perspectives section is reached.
+      if (reached && !_footerPermanent) {
+        _footerPermanent = true;
+        _animateFooterTo(0.0);
+      }
+    }
+
+    // Sticky perspectives header: show as soon as the section title has
+    // scrolled above the bottom of the app header.
+    final appHeaderHeight =
+        MediaQuery.of(context).padding.top + _kHeaderContentHeight;
+    final appHeaderBottomY = appHeaderHeight * (1.0 - _headerOffset.value);
+    final shouldStick = perspScreenY < appHeaderBottomY;
+    if (shouldStick != _showStickyPerspectivesHeader.value) {
+      _showStickyPerspectivesHeader.value = shouldStick;
+    }
+  }
+
+  /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in
+  /// [_PerspectivesInlineSectionState._onSegmentTapInternal].
+  void _onPerspectivesSegmentTap(String key) {
+    setState(() {
+      final current = _perspectivesSelectedSegments;
+      if (current.contains(key)) {
+        _perspectivesSelectedSegments =
+            current.length == 1 ? {} : (Set.from(current)..remove(key));
+      } else {
+        _perspectivesSelectedSegments = current.isEmpty || current.length == 3
+            ? {key}
+            : (Set.from(current)..add(key));
+      }
+    });
+    // Re-check sticky visibility after the section has rebuilt (filtering may
+    // shrink the section back into view with no scroll event).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAtPerspectivesSection();
+    });
   }
 
   /// Scroll listener driving WebView activation.
@@ -541,14 +653,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _headerAutoController.forward(from: 0);
   }
 
-  /// Scroll listener for native (in-app) content — computes delta from previous
-  /// offset and forwards it to [_onScrollDelta].
-  void _onNativeScrollHeader() {
-    if (!_scrollController.hasClients || _isWebViewActive) return;
-    final current = _scrollController.offset;
-    final delta = current - _prevNativeScrollOffset;
-    _prevNativeScrollOffset = current;
-    if (delta != 0) _onScrollDelta(delta);
+  /// Smoothly animate the footer to [target] offset (0.0 = visible, 1.0 = hidden).
+  void _animateFooterTo(double target) {
+    _footerAutoController.stop();
+    _footerAutoStart = _footerOffset.value;
+    _footerAutoTarget = target;
+    _footerAutoController.forward(from: 0);
   }
 
   /// Update header offset and FAB opacity based on scroll delta (in pixels).
@@ -571,23 +681,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           MediaQuery.of(context).padding.top + _kHeaderContentHeight;
       final shift = delta / headerHeight;
       _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
+
+      // Footer mirrors header: hides on scroll-down, shows on scroll-up.
+      // Skipped once the user has reached the end of the displayed content.
+      if (!_footerPermanent) {
+        final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+        final footerHeight = _kFooterContentHeight + bottomInset;
+        final footerShift = delta / footerHeight;
+        _footerOffset.value =
+            (_footerOffset.value + footerShift).clamp(0.0, 1.0);
+      }
     }
-    // FABs reappear after 2.5s
+    // FABs + footer reappear after 2.5s of scroll inactivity
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 2500), () {
+    _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
       if (mounted) {
         _fabOpacity.value = 1.0;
         _fabReappearController.forward(from: 0);
+        _animateFooterTo(0.0);
       }
     });
     // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
     _inactivityTimer?.cancel();
     if (!isVideo && !_isShortArticle) {
       _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        final nativeScrollY =
-            _scrollController.hasClients ? _scrollController.offset : 0.0;
-        final scrolledPastTop = _webScrollY > 0 || nativeScrollY > 0;
-        if (mounted && scrolledPastTop && _headerOffset.value < 1.0) {
+        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
           _animateHeaderTo(1.0);
         }
       });
@@ -617,8 +735,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Fixes cases where RSS provides longer htmlContent than the API
           // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description: _pickLongest(content.description, _content?.description),
-            htmlContent: _pickLongest(content.htmlContent, _content?.htmlContent),
+            description:
+                _pickLongest(content.description, _content?.description),
+            htmlContent:
+                _pickLongest(content.htmlContent, _content?.htmlContent),
             editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
@@ -631,9 +751,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               !_isConsumed) {
             _startReadingTimer();
           }
-          // Re-check short article after content loads and renders
+          // Re-check short article + measure article extent after content loads and renders
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _checkShortArticle();
+            if (mounted) {
+              _checkShortArticle();
+              _measureArticleExtent();
+            }
           });
           // Pre-load WebView if not already initialized
           if (_webViewController == null) {
@@ -646,28 +769,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _fetchPerspectives();
           }
         } else {
-          // Content not found via API. Keep whatever was passed via extra
-          // (e.g. a digest "Pas de recul" article whose row was just culled
-          // server-side) so the screen still renders instead of bouncing
-          // the user back to the previous screen with a blank flash.
+          // Show error and pop if content not found
           setState(() => _contentResolved = true);
-          if (_content == null) {
-            NotificationService.showError('Contenu introuvable',
-                context: context);
-            context.pop();
-          }
+          NotificationService.showError('Contenu introuvable',
+              context: context);
+          context.pop();
         }
       }
     } catch (e) {
       debugPrint('Error fetching content: $e');
       if (mounted) {
         setState(() => _contentResolved = true);
-        // Same fallback: only pop when we truly have nothing to show.
-        if (_content == null) {
-          NotificationService.showError('Erreur de chargement',
-              context: context);
-          context.pop();
-        }
+        NotificationService.showError('Erreur de chargement', context: context);
+        context.pop();
       }
     }
   }
@@ -896,10 +1010,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Capture max progress reached before disposing ValueNotifier
     final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
 
-    // Persist reading progress + analytics BEFORE super.dispose() so that
-    // `ref` and Supabase.instance are still usable. Otherwise Riverpod throws
-    // "Cannot use ref after the widget was disposed" (cascade can also
-    // surface as LateInitializationError on Supabase.instance).
+    _readingTimer?.cancel();
+    _noteNudgeTimer?.cancel();
+    _scrollStopTimer?.cancel();
+    _sunflowerNudgeTimer?.cancel();
+    _inactivityTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
+    _linkCopiedFabTimer?.cancel();
+    _linkCopiedHeaderTimer?.cancel();
+    _fabController.dispose();
+    _bookmarkBounceController.dispose();
+    _likeBounceController.dispose();
+    _fabReappearController.dispose();
+    _shareFabController.dispose();
+    _exitAnimController.dispose();
+    _headerAutoController.dispose();
+    _footerAutoController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _fabOpacity.dispose();
+    _headerOffset.dispose();
+    _footerOffset.dispose();
+    _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.removeListener(_onShareFabProgress);
+    _readingProgress.dispose();
+    _scrollController.removeListener(_onScrollToSite);
+    _scrollController.removeListener(_onScrollReadingProgress);
+
+    _atPerspectivesSection.dispose();
+    _showStickyPerspectivesHeader.dispose();
+    _scrollController.dispose();
+    _inAppScrollController.dispose();
+    super.dispose();
+
+    // Persist reading progress + analytics on close
     try {
       if (_content != null) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
@@ -1057,6 +1200,49 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
+  /// Request Facteur analysis for the perspectives section.
+  /// Called by the floating button in the article reader.
+  Future<void> _requestPerspectivesAnalysis() async {
+    final contentId = _perspectivesResponse?.perspectives.isNotEmpty == true
+        ? _content?.id
+        : null;
+    if (contentId == null) return;
+
+    setState(
+        () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading);
+
+    // Scroll to analysis zone so the user can see the progress
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _analysisZoneKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeInOut,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+          alignment: 0.8,
+        );
+      }
+    });
+
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      final result = await repository.analyzePerspectives(contentId);
+      if (!mounted) return;
+      setState(() {
+        _perspectivesAnalysisText = result;
+        _perspectivesAnalysisState = result != null
+            ? PerspectivesAnalysisState.done
+            : PerspectivesAnalysisState.error;
+      });
+    } catch (e) {
+      debugPrint('Error requesting perspectives analysis: $e');
+      if (!mounted) return;
+      setState(
+          () => _perspectivesAnalysisState = PerspectivesAnalysisState.error);
+    }
+  }
+
   /// Show perspectives bottom sheet — uses pre-loaded data if available
   Future<void> _showPerspectives(BuildContext context) async {
     final content = _content;
@@ -1138,8 +1324,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sourceName: _content?.source.name ?? '',
         contentId: widget.contentId,
         comparisonQuality: response.comparisonQuality,
-        initialAnalysis: response.analysis,
-        analysisCached: response.analysisCached,
       ),
     );
   }
@@ -1267,130 +1451,241 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         },
         child: Stack(
-        children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollUpdateNotification) {
-                final delta = notification.scrollDelta ?? 0.0;
-                // Sync short-article flag from live scroll metrics (catches cases
-                // where the postFrameCallback hasn't fired yet).
-                if (!_isShortArticle &&
-                    notification.metrics.maxScrollExtent < 50) {
-                  _isShortArticle = true;
-                  _headerOffset.value = 0.0;
-                }
-                _onScrollDelta(delta);
-                // Track reading progress from any scrollable (including in-app reader)
-                final metrics = notification.metrics;
-                if (metrics.maxScrollExtent > 0) {
-                  final progress = metrics.pixels / metrics.maxScrollExtent;
-                  final capped = _isPartialContent
-                      ? (progress * 0.25).clamp(0.0, 0.25)
-                      : progress.clamp(0.0, 1.0);
-                  _readingProgress.value = capped;
-                  if (capped > _maxReadingProgress) {
-                    _maxReadingProgress = capped;
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollUpdateNotification) {
+                  final delta = notification.scrollDelta ?? 0.0;
+                  // Sync short-article flag from live scroll metrics (catches cases
+                  // where the postFrameCallback hasn't fired yet).
+                  if (!_isShortArticle &&
+                      notification.metrics.maxScrollExtent < 50) {
+                    _isShortArticle = true;
+                    _footerPermanent = true;
+                    _headerOffset.value = 0.0;
+                  }
+                  _onScrollDelta(delta);
+                  _checkAtPerspectivesSection();
+                  // Track reading progress from any scrollable (including in-app reader)
+                  final metrics = notification.metrics;
+                  if (metrics.maxScrollExtent > 0) {
+                    final rawProgress =
+                        metrics.pixels / metrics.maxScrollExtent;
+                    // Footer becomes permanent at end of ALL content (incl. perspectives)
+                    if (!_footerPermanent && rawProgress >= 0.98) {
+                      _footerPermanent = true;
+                      _animateFooterTo(0.0);
+                    }
+                    // Progress bar uses article-only extent so perspectives don't dilute it
+                    final articleExtent =
+                        _articleContentExtent ?? metrics.maxScrollExtent;
+                    final barProgress = metrics.pixels / articleExtent;
+                    final capped = _isPartialContent
+                        ? (barProgress * 0.25).clamp(0.0, 0.25)
+                        : barProgress.clamp(0.0, 1.0);
+                    _readingProgress.value = capped;
+                    if (capped > _maxReadingProgress) {
+                      _maxReadingProgress = capped;
+                    }
                   }
                 }
-              }
-              return false;
-            },
-            child: Positioned.fill(
-              child: isVideoContent
-                  ? _buildVideoContent(context, content)
-                  : useScrollToSite
-                      ? _buildScrollToSiteContent(context, content)
-                      : useInAppReading
-                          ? _buildInAppContent(context, content)
-                          : _buildWebViewFallback(content),
-            ),
-          ),
-          // Header — follows scroll: slides up on scroll-down, back on scroll-up
-          // For short articles the header stays pinned (offset is never updated).
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, child) {
-                final headerHeight =
-                    MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-                return Transform.translate(
-                  offset: Offset(0, -offset * headerHeight),
-                  child: child!,
-                );
+                return false;
               },
-              child: _buildHeader(context, content),
+              child: Positioned.fill(
+                child: isVideoContent
+                    ? _buildVideoContent(context, content)
+                    : useScrollToSite
+                        ? _buildScrollToSiteContent(context, content)
+                        : useInAppReading
+                            ? _buildInAppContent(context, content)
+                            : _buildWebViewFallback(content),
+              ),
             ),
-          ),
-          // Opaque status-bar backdrop — only when WebView is active and
-          // the header has slid off-screen, so WebView content doesn't
-          // bleed through the transparent status bar zone.
-          if (_isWebViewActive)
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, _) {
-                final statusBarHeight = MediaQuery.of(context).padding.top;
-                return Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: offset,
-                      child: SizedBox(
-                        height: statusBarHeight,
-                        child: ColoredBox(color: colors.backgroundPrimary),
+            // Header — follows scroll: slides up on scroll-down, back on scroll-up
+            // For short articles the header stays pinned (offset is never updated).
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, child) {
+                  final headerHeight = MediaQuery.of(context).padding.top +
+                      _kHeaderContentHeight;
+                  return Transform.translate(
+                    offset: Offset(0, -offset * headerHeight),
+                    child: child!,
+                  );
+                },
+                child: _buildHeader(context, content),
+              ),
+            ),
+            // Opaque status-bar backdrop — only when WebView is active and
+            // the header has slid off-screen, so WebView content doesn't
+            // bleed through the transparent status bar zone.
+            if (_isWebViewActive)
+              ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, _) {
+                  final statusBarHeight = MediaQuery.of(context).padding.top;
+                  return Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: offset,
+                        child: SizedBox(
+                          height: statusBarHeight,
+                          child: ColoredBox(color: colors.backgroundPrimary),
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
-          // Reading progress bar — follows header position continuously
-          if (content.hasInAppContent ||
-              _isWebViewActive ||
-              isVideoContent ||
-              (!useScrollToSite && !useInAppReading))
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (context, offset, _) {
-                final statusBarHeight = MediaQuery.of(context).padding.top;
-                final topWhenHeaderVisible =
-                    statusBarHeight + _kHeaderContentHeight;
-                final topWhenHeaderHidden = statusBarHeight;
-                final top = topWhenHeaderVisible -
-                    offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                return Positioned(
-                  top: top,
-                  left: 0,
-                  right: 0,
-                  child: _buildReadingProgressBar(colors),
-                );
-              },
-            ),
-          // Exit animation overlay — fade-to-white + scale-down
-          if (_isExitAnimating)
-            AnimatedBuilder(
-              animation: _exitAnimController,
-              builder: (context, _) {
-                return Positioned.fill(
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      color: Colors.white
-                          .withOpacity(0.6 * _exitAnimController.value),
+                  );
+                },
+              ),
+            // Reading progress bar — follows header position continuously
+            if (content.hasInAppContent ||
+                _isWebViewActive ||
+                isVideoContent ||
+                (!useScrollToSite && !useInAppReading))
+              ValueListenableBuilder<double>(
+                valueListenable: _headerOffset,
+                builder: (context, offset, _) {
+                  final statusBarHeight = MediaQuery.of(context).padding.top;
+                  final topWhenHeaderVisible =
+                      statusBarHeight + _kHeaderContentHeight;
+                  final topWhenHeaderHidden = statusBarHeight;
+                  final top = topWhenHeaderVisible -
+                      offset * (topWhenHeaderVisible - topWhenHeaderHidden);
+                  return Positioned(
+                    top: top,
+                    left: 0,
+                    right: 0,
+                    child: _buildReadingProgressBar(colors),
+                  );
+                },
+              ),
+            // Sticky perspectives section header — appears below the app header
+            // when the inline section header has scrolled off-screen.
+            // Only shown for in-app article reading.
+            if (useInAppReading &&
+                content.contentType == ContentType.article &&
+                _perspectivesResponse != null)
+              ValueListenableBuilder<bool>(
+                valueListenable: _showStickyPerspectivesHeader,
+                builder: (context, showSticky, _) {
+                  return ValueListenableBuilder<double>(
+                    valueListenable: _headerOffset,
+                    builder: (context, offset, _) {
+                      final statusBarHeight =
+                          MediaQuery.of(context).padding.top;
+                      // Sits immediately below the reading progress bar (+2px).
+                      final topWhenHeaderVisible =
+                          statusBarHeight + _kHeaderContentHeight + 2.0;
+                      final topWhenHeaderHidden = statusBarHeight + 2.0;
+                      final top = topWhenHeaderVisible -
+                          offset * (topWhenHeaderVisible - topWhenHeaderHidden);
+                      return Positioned(
+                        top: top,
+                        left: 0,
+                        right: 0,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: showSticky ? 1.0 : 0.0,
+                          child: IgnorePointer(
+                            ignoring: !showSticky,
+                            child: _buildPerspectivesStickyHeader(
+                                context, _perspectivesResponse!),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            // Exit animation overlay — fade-to-white + scale-down
+            if (_isExitAnimating)
+              AnimatedBuilder(
+                animation: _exitAnimController,
+                builder: (context, _) {
+                  return Positioned.fill(
+                    child: IgnorePointer(
+                      child: ColoredBox(
+                        color: Colors.white
+                            .withValues(alpha: 0.6 * _exitAnimController.value),
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+                  );
+                },
+              ),
+            // Floating "Lancer l'analyse Facteur" button — in-app articles only.
+            // Visible when the perspectives section is on screen and analysis
+            // hasn't been triggered yet.
+            if (useInAppReading && content.contentType == ContentType.article)
+              Positioned(
+                right: 16,
+                bottom: _kFooterContentHeight +
+                    MediaQuery.of(context).viewPadding.bottom +
+                    12,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _atPerspectivesSection,
+                  builder: (context, atPersp, _) {
+                    final show = atPersp &&
+                        _perspectivesAnalysisState ==
+                            PerspectivesAnalysisState.idle &&
+                        _perspectivesResponse != null &&
+                        _perspectivesResponse!.perspectives.isNotEmpty;
+                    return AnimatedOpacity(
+                      opacity: show ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: IgnorePointer(
+                        ignoring: !show,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            _requestPerspectivesAnalysis();
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: context.facteurColors.primary
+                                .withValues(alpha: 1.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: Icon(
+                            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            'Lancer l\'analyse Facteur',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            // Footer — shown for in-app article reading, mirrors header slide behavior
+            if (useScrollToSite ||
+                (useInAppReading && content.contentType == ContentType.article))
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildArticleFooter(context, content),
+              ),
+          ],
+        ),
       ),
       // FABs — vertical column with immersive scroll opacity
+      // Suppressed for articles (replaced by the persistent footer).
       // ValueListenableBuilder isolates FAB opacity rebuilds from the main widget tree.
-      floatingActionButton: _showFab
+      floatingActionButton: _showFab &&
+              !useScrollToSite &&
+              !(useInAppReading && content.contentType == ContentType.article)
           ? ValueListenableBuilder<double>(
               valueListenable: _fabOpacity,
               builder: (context, opacity, child) => AnimatedOpacity(
@@ -1612,6 +1907,242 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
+  /// CTA handler for "Lire sur…" in the footer.
+  /// For scroll-to-site mode: reveals WebView via scroll animation on first tap,
+  /// then opens external link on subsequent taps.
+  /// For all other modes: opens external link directly.
+  void _onReadOnSiteTap() {
+    if (kIsWeb) {
+      _openOriginalUrl();
+      return;
+    }
+    final content = _content;
+    if (content == null) return;
+    final articleText = content.htmlContent ?? content.description;
+    final hasEnoughContent = plainTextLength(articleText) >= 100;
+    final isScrollToSite = content.hasInAppContent &&
+        content.contentType == ContentType.article &&
+        hasEnoughContent &&
+        !_showWebView;
+    if (isScrollToSite && !_ctaTapped) {
+      setState(() => _ctaTapped = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOutCubic,
+          );
+        }
+      });
+    } else {
+      _openOriginalUrl();
+    }
+  }
+
+  /// Persistent footer bar shown for in-app article reading.
+  /// Mirrors header slide behavior: hides on scroll-down, shows on scroll-up.
+  Widget _buildArticleFooter(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    const iconButtonStyle = ButtonStyle(
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      padding: WidgetStatePropertyAll(EdgeInsets.all(10)),
+      minimumSize: WidgetStatePropertyAll(Size(46, 46)),
+      shape: WidgetStatePropertyAll(CircleBorder()),
+    );
+
+    final footerContent = DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.backgroundPrimary,
+        border: Border(
+          top: BorderSide(
+              color: colors.border.withValues(alpha: 0.5), width: 0.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // "Lire sur [Source]" — fills available space
+              Expanded(
+                child: SizedBox(
+                  height: 44,
+                  child: OutlinedButton(
+                    onPressed: _onReadOnSiteTap,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.5),
+                      foregroundColor: colors.textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      side: BorderSide(
+                          color: colors.border.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: Row(
+                      children: [
+                        if (content.source.logoUrl != null) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: content.source.logoUrl!,
+                              width: 28,
+                              height: 28,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            'Lire sur ${content.source.name}',
+                            style: textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.left,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                          size: 16,
+                          color: colors.textSecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+
+              // Autres points de vue / Retour à l'article
+              ValueListenableBuilder<bool>(
+                valueListenable: _atPerspectivesSection,
+                builder: (context, atPersp, _) {
+                  if (atPersp) {
+                    return Tooltip(
+                      message: 'Retour à l\'article',
+                      child: IconButton(
+                        style: iconButtonStyle,
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          _atPerspectivesSection.value = false;
+                          if (_inAppScrollController.hasClients) {
+                            _inAppScrollController.animateTo(
+                              0,
+                              duration: const Duration(milliseconds: 400),
+                              curve: Curves.easeInOut,
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
+                          size: 24,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    );
+                  }
+                  return _WinkingEyeButton(
+                    style: iconButtonStyle,
+                    iconColor: colors.textSecondary,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      _atPerspectivesSection.value = true;
+                      final ctx = _perspectivesKey.currentContext;
+                      if (ctx != null) {
+                        Scrollable.ensureVisible(
+                          ctx,
+                          duration: const Duration(milliseconds: 400),
+                          curve: Curves.easeInOut,
+                        );
+                      } else {
+                        _showPerspectives(context);
+                      }
+                    },
+                  );
+                },
+              ),
+
+              // Sauvegarder (long-press → collection picker)
+              GestureDetector(
+                onLongPress: () {
+                  HapticFeedback.mediumImpact();
+                  CollectionPickerSheet.show(
+                    context,
+                    content.id,
+                    onAddNote: () => _openNoteSheet(),
+                  );
+                },
+                child: ScaleTransition(
+                  scale: _bookmarkScaleAnimation,
+                  child: IconButton(
+                    style: iconButtonStyle,
+                    onPressed: _toggleBookmark,
+                    icon: Icon(
+                      content.isSaved
+                          ? PhosphorIcons.bookmarkSimple(
+                              PhosphorIconsStyle.fill)
+                          : PhosphorIcons.bookmarkSimple(
+                              PhosphorIconsStyle.regular),
+                      size: 24,
+                      color: content.isSaved
+                          ? colors.primary
+                          : colors.textSecondary,
+                    ),
+                    tooltip: 'Sauvegarder',
+                  ),
+                ),
+              ),
+
+              // 🌻 Recommander
+              ScaleTransition(
+                scale: _likeScaleAnimation,
+                child: IconButton(
+                  style: iconButtonStyle,
+                  onPressed: _toggleLike,
+                  icon: SunflowerIcon(
+                    isActive: content.isLiked,
+                    size: 24,
+                    inactiveColor: colors.textSecondary,
+                  ),
+                  tooltip: 'Recommander',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return ValueListenableBuilder<double>(
+      valueListenable: _footerOffset,
+      builder: (context, offset, child) => Transform.translate(
+        // Extra 8px to slide the top border shadow fully off-screen.
+        offset: Offset(0, offset * (_kFooterContentHeight + bottomInset + 8)),
+        child: child,
+      ),
+      child: footerContent,
+    );
+  }
+
   Widget _buildHeader(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
@@ -1651,135 +2182,153 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       Expanded(
                         child: _SourceBadgeNudge(
                           child: GestureDetector(
-                          onTap: () {
-                            ref.read(feedProvider.notifier).setSource(content.source.id);
-                            ref.read(feedScrollTriggerProvider.notifier).state++;
-                            context.pop(_content);
-                          },
-                          onLongPress: () => TopicChip.showArticleSheet(
-                            context, content,
-                            initialSection: ArticleSheetSection.source,
-                          ),
-                          behavior: HitTestBehavior.opaque,
-                          child: Row(
-                            children: [
-                              // Source logo (reduced from 32 to 28)
-                              if (content.source.logoUrl != null)
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: content.source.logoUrl!,
-                                    width: 28,
-                                    height: 28,
-                                    fit: BoxFit.cover,
-                                    errorWidget: (_, __, ___) =>
-                                        _buildSourcePlaceholder(colors),
-                                  ),
-                                )
-                              else
-                                _buildSourcePlaceholder(colors),
-                              const SizedBox(width: 8),
+                            onTap: () {
+                              ref
+                                  .read(feedProvider.notifier)
+                                  .setSource(content.source.id);
+                              ref
+                                  .read(feedScrollTriggerProvider.notifier)
+                                  .state++;
+                              context.pop(_content);
+                            },
+                            onLongPress: () => TopicChip.showArticleSheet(
+                              context,
+                              content,
+                              initialSection: ArticleSheetSection.source,
+                            ),
+                            behavior: HitTestBehavior.opaque,
+                            child: Row(
+                              children: [
+                                // Source logo (reduced from 32 to 28)
+                                if (content.source.logoUrl != null)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: CachedNetworkImage(
+                                      imageUrl: content.source.logoUrl!,
+                                      width: 28,
+                                      height: 28,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) =>
+                                          _buildSourcePlaceholder(colors),
+                                    ),
+                                  )
+                                else
+                                  _buildSourcePlaceholder(colors),
+                                const SizedBox(width: 8),
 
-                              // Source Name + Time + Badges
-                              Flexible(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Ligne 1 : Nom (mini-chip) + Badges
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Opacity(
-                                            opacity: 0.9,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: Text(
-                                                content.source.name,
-                                                style: textTheme.labelMedium?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: colors.textPrimary,
+                                // Source Name + Time + Badges
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Ligne 1 : Nom (mini-chip) + Badges
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Opacity(
+                                              opacity: 0.9,
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Color.lerp(
+                                                      colors
+                                                          .backgroundSecondary,
+                                                      Colors.black,
+                                                      0.003)!,
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                 ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                                child: Text(
+                                                  content.source.name,
+                                                  style: textTheme.labelMedium
+                                                      ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: colors.textPrimary,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        // Bias dot
-                                        if (content.source.biasStance != 'unknown') ...[
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            width: 7,
-                                            height: 7,
-                                            decoration: BoxDecoration(
-                                              color: content.source.getBiasColor(),
-                                              shape: BoxShape.circle,
+                                          // Bias dot
+                                          if (content.source.biasStance !=
+                                              'unknown') ...[
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              decoration: BoxDecoration(
+                                                color: content.source
+                                                    .getBiasColor(),
+                                                shape: BoxShape.circle,
+                                              ),
                                             ),
-                                          ),
-                                        ],
-                                        // Gear icon — same scale as bias dot
-                                        const SizedBox(width: 4),
-                                        Material(
-                                          color: Colors.transparent,
-                                          shape: const CircleBorder(),
-                                          clipBehavior: Clip.antiAlias,
-                                          child: InkWell(
-                                            onTap: () => TopicChip.showArticleSheet(
-                                              context, content,
-                                              initialSection: ArticleSheetSection.source,
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(3),
-                                              child: Icon(
-                                                PhosphorIcons.gear(PhosphorIconsStyle.regular),
-                                                size: 11,
-                                                color: colors.textTertiary,
+                                          ],
+                                          // Gear icon — same scale as bias dot
+                                          const SizedBox(width: 4),
+                                          Material(
+                                            color: Colors.transparent,
+                                            shape: const CircleBorder(),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: InkWell(
+                                              onTap: () =>
+                                                  TopicChip.showArticleSheet(
+                                                context,
+                                                content,
+                                                initialSection:
+                                                    ArticleSheetSection.source,
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(3),
+                                                child: Icon(
+                                                  PhosphorIcons.gear(
+                                                      PhosphorIconsStyle
+                                                          .regular),
+                                                  size: 11,
+                                                  color: colors.textTertiary,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        // Editorial badge (digest articles) — to the right of source name
-                                        if (content.editorialBadge != null) ...[
-                                          const SizedBox(width: 6),
-                                          EditorialBadge.chip(
-                                            content.editorialBadge,
-                                            context: context,
-                                          ) ?? const SizedBox.shrink(),
                                         ],
-                                      ],
-                                    ),
-                                    const SizedBox(height: 1),
-                                    // Ligne 2 : Temps relatif (icône + format court)
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          PhosphorIcons.clock(PhosphorIconsStyle.regular),
-                                          size: 11,
-                                          color: colors.textTertiary,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          timeago
-                                              .format(content.publishedAt, locale: 'fr_short')
-                                              .replaceAll('il y a ', ''),
-                                          style: textTheme.bodySmall?.copyWith(
+                                      ),
+                                      const SizedBox(height: 1),
+                                      // Ligne 2 : Temps relatif (icône + format court)
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            PhosphorIcons.clock(
+                                                PhosphorIconsStyle.regular),
+                                            size: 11,
                                             color: colors.textTertiary,
-                                            fontSize: 11,
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            timeago
+                                                .format(content.publishedAt,
+                                                    locale: 'fr_short')
+                                                .replaceAll('il y a ', ''),
+                                            style:
+                                                textTheme.bodySmall?.copyWith(
+                                              color: colors.textTertiary,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
                               ],
                             ),
-                        ),
+                          ),
                         ), // _SourceBadgeNudge
                       ),
                     ],
@@ -1838,33 +2387,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    // Dense layout: 4 tags max across macro-theme + topic + entities.
-    // Remaining entities are grouped into a "+X" overflow chip.
-    const maxTotalVisible = 4;
-    const chipPadding = EdgeInsets.symmetric(horizontal: 7, vertical: 3);
-
-    final hasMacroTheme = content.topics.isNotEmpty &&
-        getTopicMacroTheme(content.topics.first) != null;
-    final hasTopic = content.topics.isNotEmpty;
-    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
+    const maxVisible = 3;
     final entities = content.entities;
-    final maxEntitiesVisible =
-        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
-    final visible = entities.take(maxEntitiesVisible).toList();
-    final overflow = entities.length - maxEntitiesVisible;
+    final visible = entities.take(maxVisible).toList();
+    final overflow = entities.length - maxVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (hasMacroTheme)
+      if (content.topics.isNotEmpty &&
+          getTopicMacroTheme(content.topics.first) != null)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
           return GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+            onTap: () => TopicChip.showArticleSheet(context, content,
+                initialSection: ArticleSheetSection.topic),
             child: Container(
-              padding: chipPadding,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: colors.textTertiary.withOpacity(0.20),
+                color: colors.textTertiary.withValues(alpha: 0.20),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -1880,13 +2421,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (hasTopic)
+      if (content.topics.isNotEmpty)
         GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.topic),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.topic),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.textTertiary.withOpacity(0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1902,23 +2444,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
       // Entity chips
       ...visible.map((entity) {
-        final isFollowed =
-            followedNames.contains(entity.text.toLowerCase());
+        final isFollowed = followedNames.contains(entity.text.toLowerCase());
         return GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: isFollowed
-                  ? const Color(0xFFE07A5F).withOpacity(0.15)
-                  : colors.textTertiary.withOpacity(0.12),
+                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
+                  : colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 90),
+                  constraints: const BoxConstraints(maxWidth: 100),
                   child: Text(
                     entity.text,
                     style: textTheme.labelSmall?.copyWith(
@@ -1946,11 +2488,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }),
       if (overflow > 0)
         GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content, initialSection: ArticleSheetSection.entities),
+          onTap: () => TopicChip.showArticleSheet(context, content,
+              initialSection: ArticleSheetSection.entities),
           child: Container(
-            padding: chipPadding,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: colors.textTertiary.withOpacity(0.12),
+              color: colors.textTertiary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1979,7 +2522,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           colors.primary,
           clamped,
         )!
-            .withOpacity(alpha);
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -1995,6 +2538,109 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         );
       },
+    );
+  }
+
+  /// Renders the sticky version of the perspectives section header (icon +
+  /// title, optional quality badge, interactive bias bar).  Shown as a
+  /// [Positioned] overlay below the app header when the inline section header
+  /// has scrolled off-screen.
+  Widget _buildPerspectivesStickyHeader(
+      BuildContext context, PerspectivesResponse response) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    // Compute merged 3-group distribution from the raw bias distribution.
+    final dist = response.biasDistribution;
+    final merged = {
+      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
+      'centre': dist['center'] ?? 0,
+      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
+    };
+
+    final selected = _perspectivesSelectedSegments;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.backgroundPrimary,
+        border: Border(
+          bottom: BorderSide(color: colors.border, width: 1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Icon + title row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                PhosphorIcons.eye(PhosphorIconsStyle.regular),
+                color: colors.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Voir tous les points de vue',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              // "Tout afficher" clear button when a filter is active
+              if (selected.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    setState(() => _perspectivesSelectedSegments = {});
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _checkAtPerspectivesSection();
+                    });
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Tout afficher',
+                        style: textTheme.labelSmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        PhosphorIcons.x(PhosphorIconsStyle.bold),
+                        size: 12,
+                        color: colors.primary,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (response.comparisonQuality == 'low')
+            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
+          const SizedBox(height: 10),
+          PerspectivesBiasBar(
+            colors: colors,
+            mergedDistribution: merged,
+            sourceBiasStance: response.sourceBiasStance,
+            sourceName: _content?.source.name ?? '',
+            selectedSegments: selected,
+            onSegmentTap: _onPerspectivesSegmentTap,
+          ),
+        ],
+      ),
     );
   }
 
@@ -2029,7 +2675,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Container(
                 height: 14,
                 decoration: BoxDecoration(
-                  color: colors.textTertiary.withOpacity(0.15),
+                  color: colors.textTertiary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
               ),
@@ -2101,7 +2747,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     children: [
                       // Spacer: scrolls with content, initially behind the header overlay
                       SizedBox(height: headerHeight),
-                      // ZONE 1: Article content — opaque background hides WebView
+                      // ZONE 1: Article content — opaque background hides WebView.
                       Container(
                         key: _articleKey,
                         color: colors.backgroundPrimary,
@@ -2117,7 +2763,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           header: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Extra breathing room so tag chips aren't clipped by the header overlay
                               const SizedBox(height: FacteurSpacing.space2),
                               if (content.thumbnailUrl != null) ...[
                                 ClipRRect(
@@ -2130,9 +2775,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              // Entity chips + partial badge row
-                              if (content.entities.isNotEmpty ||
-                                  isPartial) ...[
+                              if (content.entities.isNotEmpty || isPartial) ...[
                                 Wrap(
                                   spacing: 6,
                                   runSpacing: 4,
@@ -2141,19 +2784,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     if (isPartial)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 4,
-                                        ),
+                                            horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
                                           color: colors.warning
-                                              .withOpacity(0.12),
+                                              .withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(
                                               FacteurRadius.pill),
                                         ),
                                         child: Text(
                                           'Aperçu — contenu partiel',
-                                          style:
-                                              textTheme.labelSmall?.copyWith(
+                                          style: textTheme.labelSmall?.copyWith(
                                             color: colors.warning,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -2165,6 +2805,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
+                              ],
+                              if (content.editorialBadge != null) ...[
+                                EditorialBadge.chip(
+                                      content.editorialBadge,
+                                      context: context,
+                                    ) ??
+                                    const SizedBox.shrink(),
+                                const SizedBox(height: FacteurSpacing.space2),
                               ],
                               Text(
                                 content.title,
@@ -2185,8 +2833,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     Text(
                                       readingTime,
                                       style: textTheme.bodySmall?.copyWith(
-                                        color: colors.textTertiary,
-                                      ),
+                                          color: colors.textTertiary),
                                     ),
                                   ],
                                 ),
@@ -2196,129 +2843,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
+                          footer: SizedBox(
+                              height: _kFooterContentHeight + bottomInset),
                         ),
                       ),
 
-                      // Article feedback thumbs
-                      Container(
-                        color: colors.backgroundPrimary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: FacteurSpacing.space4,
-                        ),
-                        child: ArticleThumbsFeedback(contentId: content.id),
-                      ),
-
-                      // ZONE 2: CTA button — intentional transition to WebView
-                      Container(
-                        color: colors.backgroundPrimary,
-                        child: Padding(
-                          key: _bridgeKey,
-                          padding: EdgeInsets.only(
-                            left: FacteurSpacing.space4,
-                            right: FacteurSpacing.space4,
-                            top: FacteurSpacing.space3,
-                            bottom: FacteurSpacing.space3 + bottomInset,
-                          ),
-                          child: GestureDetector(
-                            onTap: () {
-                              if (_offsetsComputed && !_ctaTapped) {
-                                setState(() {
-                                  _ctaTapped = true;
-                                });
-                                WidgetsBinding.instance
-                                    .addPostFrameCallback((_) {
-                                  if (mounted) {
-                                    _scrollController.animateTo(
-                                      _scrollController
-                                          .position.maxScrollExtent,
-                                      duration:
-                                          const Duration(milliseconds: 500),
-                                      curve: Curves.easeInOutCubic,
-                                    );
-                                  }
-                                });
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colors.surfaceElevated,
-                                borderRadius:
-                                    BorderRadius.circular(FacteurRadius.large),
-                                border: Border.all(
-                                  color: colors.border.withOpacity(0.5),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  if (content.source.logoUrl != null)
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: CachedNetworkImage(
-                                        imageUrl: content.source.logoUrl!,
-                                        width: 28,
-                                        height: 28,
-                                        fit: BoxFit.cover,
-                                        errorWidget: (_, __, ___) => Container(
-                                          width: 28,
-                                          height: 28,
-                                          decoration: BoxDecoration(
-                                            color: colors.surface,
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                          child: Icon(
-                                            PhosphorIcons.newspaper(
-                                                PhosphorIconsStyle.regular),
-                                            size: 16,
-                                            color: colors.textTertiary,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    Container(
-                                      width: 28,
-                                      height: 28,
-                                      decoration: BoxDecoration(
-                                        color: colors.surface,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        PhosphorIcons.newspaper(
-                                            PhosphorIconsStyle.regular),
-                                        size: 16,
-                                        color: colors.textTertiary,
-                                      ),
-                                    ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      'Lire sur ${content.source.name}',
-                                      style: textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        color: colors.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  Icon(
-                                    PhosphorIcons.arrowRight(
-                                        PhosphorIconsStyle.regular),
-                                    size: 20,
-                                    color: colors.textTertiary,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation
-                      if (_ctaTapped) SizedBox(height: availableHeight),
+                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
+                      // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
+                      if (_ctaTapped)
+                        SizedBox(key: _bridgeKey, height: availableHeight),
                     ],
                   ),
                 ),
@@ -2368,9 +2901,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText = rawDescription != null
-        ? stripHtml(rawDescription).trim()
-        : null;
+    final descriptionText =
+        rawDescription != null ? stripHtml(rawDescription).trim() : null;
 
     return LayoutBuilder(builder: (context, constraints) {
       final maxHeight = constraints.maxHeight;
@@ -2380,8 +2912,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Reserve ~160px below the player for metadata (scrollable, same
         // pattern as regular videos). FABs float over this Flutter text area
         // (not an iframe) so they remain clickable.
-        final shortsPlayerHeight = (maxHeight - headerHeight - 140)
-            .clamp(200.0, screenWidth * 16 / 9);
+        final shortsPlayerHeight =
+            (maxHeight - headerHeight - 140).clamp(200.0, screenWidth * 16 / 9);
 
         return Column(
           children: [
@@ -2512,8 +3044,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       const SizedBox(height: FacteurSpacing.space2),
                       GestureDetector(
                         onTap: () {
-                          setState(() => _isDescriptionExpanded =
-                              !_isDescriptionExpanded);
+                          setState(() =>
+                              _isDescriptionExpanded = !_isDescriptionExpanded);
                         },
                         child: Text(
                           _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
@@ -2563,126 +3095,125 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                // Video Title
-                Text(
-                  content.title,
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: FacteurSpacing.space2),
-
-                // Published date
-                Text(
-                  timeago.format(content.publishedAt, locale: 'fr_short'),
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
-
-                // Channel row: avatar + name + optional theme chip
-                Row(
-                  children: [
-                    if (content.source.logoUrl != null)
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundImage:
-                            CachedNetworkImageProvider(content.source.logoUrl!),
-                        backgroundColor: colors.surfaceElevated,
-                      )
-                    else
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: colors.surfaceElevated,
-                        child: Icon(
-                          PhosphorIcons.user(PhosphorIconsStyle.regular),
-                          size: 16,
-                          color: colors.textTertiary,
-                        ),
-                      ),
-                    const SizedBox(width: FacteurSpacing.space3),
-                    Expanded(
-                      child: Text(
-                        content.source.name,
-                        style: textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (content.source.theme != null &&
-                        content.source.theme!.isNotEmpty) ...[
-                      const SizedBox(width: FacteurSpacing.space2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.primary,
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.pill),
-                        ),
-                        child: Text(
-                          content.source.getThemeLabel(),
-                          style: textTheme.labelSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-
-                // Expandable description
-                if (descriptionText != null &&
-                    descriptionText.isNotEmpty) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  Divider(color: colors.border, height: 1),
-                  const SizedBox(height: FacteurSpacing.space4),
+                  // Video Title
                   Text(
-                    descriptionText,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                      height: 1.5,
+                    content.title,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                    maxLines: _isDescriptionExpanded ? null : 3,
-                    overflow: _isDescriptionExpanded
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: FacteurSpacing.space2),
-                  GestureDetector(
-                    onTap: () {
-                      setState(
-                          () => _isDescriptionExpanded = !_isDescriptionExpanded);
-                    },
-                    child: Text(
-                      _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+
+                  // Published date
+                  Text(
+                    timeago.format(content.publishedAt, locale: 'fr_short'),
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
                     ),
                   ),
-                ],
+                  const SizedBox(height: FacteurSpacing.space4),
 
-                // Bottom spacing for FABs
-                const SizedBox(height: 120),
-              ],
+                  // Channel row: avatar + name + optional theme chip
+                  Row(
+                    children: [
+                      if (content.source.logoUrl != null)
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundImage: CachedNetworkImageProvider(
+                              content.source.logoUrl!),
+                          backgroundColor: colors.surfaceElevated,
+                        )
+                      else
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: colors.surfaceElevated,
+                          child: Icon(
+                            PhosphorIcons.user(PhosphorIconsStyle.regular),
+                            size: 16,
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      const SizedBox(width: FacteurSpacing.space3),
+                      Expanded(
+                        child: Text(
+                          content.source.name,
+                          style: textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (content.source.theme != null &&
+                          content.source.theme!.isNotEmpty) ...[
+                        const SizedBox(width: FacteurSpacing.space2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.primary,
+                            borderRadius:
+                                BorderRadius.circular(FacteurRadius.pill),
+                          ),
+                          child: Text(
+                            content.source.getThemeLabel(),
+                            style: textTheme.labelSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+
+                  // Expandable description
+                  if (descriptionText != null &&
+                      descriptionText.isNotEmpty) ...[
+                    const SizedBox(height: FacteurSpacing.space4),
+                    Divider(color: colors.border, height: 1),
+                    const SizedBox(height: FacteurSpacing.space4),
+                    Text(
+                      descriptionText,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colors.textSecondary,
+                        height: 1.5,
+                      ),
+                      maxLines: _isDescriptionExpanded ? null : 3,
+                      overflow: _isDescriptionExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: FacteurSpacing.space2),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() =>
+                            _isDescriptionExpanded = !_isDescriptionExpanded);
+                      },
+                      child: Text(
+                        _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Bottom spacing for FABs
+                  const SizedBox(height: 120),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
     }); // LayoutBuilder
   }
-
 
   Widget _buildInAppContent(BuildContext context, Content content) {
     final topic = content.progressionTopic;
@@ -2708,166 +3239,176 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           readingTime = '$minutes min de lecture';
         }
 
-        return ArticleReaderWidget(
+        // Pure HTML renderer — no header/footer props, layout is owned by the
+        // outer Column below.
+        final articleWidget = ArticleReaderWidget(
           htmlContent: content.htmlContent,
           description: content.description,
           title: content.title,
+          shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder: !_contentResolved
-              ? _buildArticleBodySkeleton(colors)
-              : null,
-          header: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Spacer: scrolls with content, initially behind the header overlay
-              SizedBox(height: headerHeight),
-              // Extra breathing room so tag chips aren't clipped by the header overlay
-              const SizedBox(height: FacteurSpacing.space2),
-              // Hero thumbnail image (smooth integration)
-              if (content.thumbnailUrl != null) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(FacteurRadius.large),
-                  child: FacteurThumbnail(
-                    imageUrl: content.thumbnailUrl,
-                    aspectRatio: 16 / 9,
-                  ),
-                ),
-                const SizedBox(height: FacteurSpacing.space3),
-              ],
-              // Entity chips + partial badge row
-              if (content.entities.isNotEmpty || isPartial) ...[
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (isPartial)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.warning.withOpacity(0.12),
+          bodyPlaceholder:
+              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
+        );
+
+        return ScrollConfiguration(
+          // Hide the system scroll indicator — reading progress is shown by the
+          // progress bar instead.
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: SingleChildScrollView(
+            key: _scrollViewKey,
+            controller: _inAppScrollController,
+            child: Column(
+              spacing: 16,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Header clearance ──────────────────────────────────────
+                SizedBox(height: headerHeight),
+
+                // ── Top section: thumbnail → chips → title → reading time ─
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4),
+                  child: Column(
+                    spacing: 12,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (content.thumbnailUrl != null)
+                        ClipRRect(
                           borderRadius:
-                              BorderRadius.circular(FacteurRadius.pill),
-                        ),
-                        child: Text(
-                          'Aperçu — contenu partiel',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: colors.warning,
-                            fontWeight: FontWeight.w600,
+                              BorderRadius.circular(FacteurRadius.large),
+                          child: FacteurThumbnail(
+                            imageUrl: content.thumbnailUrl,
+                            aspectRatio: 16 / 9,
                           ),
                         ),
+                      if (content.entities.isNotEmpty || isPartial)
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (isPartial)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: colors.warning.withValues(alpha: 0.12),
+                                  borderRadius:
+                                      BorderRadius.circular(FacteurRadius.pill),
+                                ),
+                                child: Text(
+                                  'Aperçu — contenu partiel',
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: colors.warning,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            if (content.entities.isNotEmpty)
+                              ..._buildArticleTagWidgets(context, content),
+                          ],
+                        ),
+                      if (content.editorialBadge != null)
+                        EditorialBadge.chip(
+                              content.editorialBadge,
+                              context: context,
+                            ) ??
+                            const SizedBox.shrink(),
+                      Text(
+                        content.title,
+                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
                       ),
-                    if (content.entities.isNotEmpty)
-                      ..._buildArticleTagWidgets(context, content),
-                  ],
+                      if (readingTime != null)
+                        Row(
+                          children: [
+                            Icon(
+                              PhosphorIcons.timer(PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: colors.textTertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              readingTime,
+                              style: textTheme.bodySmall
+                                  ?.copyWith(color: colors.textTertiary),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: FacteurSpacing.space4),
-              ],
-              // Title
-              Text(
-                content.title,
-                style: textTheme.displayLarge?.copyWith(fontSize: 24),
-              ),
-              const SizedBox(height: FacteurSpacing.space2),
-              // Reading time
-              if (readingTime != null) ...[
-                Row(
+
+                // ── Divider: header / article ─────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4),
+                  child: Divider(color: colors.border, height: 1),
+                ),
+
+                // ── Article section ────────────────────────────────────────
+                // Zero-height marker at the end lets _measureArticleExtent()
+                // compute progress against article length only (excludes perspectives).
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      PhosphorIcons.timer(PhosphorIconsStyle.regular),
-                      size: 14,
-                      color: colors.textTertiary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      readingTime,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.textTertiary,
-                      ),
-                    ),
+                    articleWidget,
+                    SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
-                const SizedBox(height: FacteurSpacing.space3),
-              ],
-              Divider(color: colors.border, height: 1),
-              const SizedBox(height: FacteurSpacing.space4),
-            ],
-          ),
-          footer: GestureDetector(
-            onTap: kIsWeb
-                ? _openOriginalUrl
-                : () => setState(() => _showWebView = true),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 16,
-              ),
-              decoration: BoxDecoration(
-                color: colors.surfaceElevated,
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-                border: Border.all(
-                  color: colors.border.withOpacity(0.5),
-                ),
-              ),
-              child: Row(
-                children: [
-                  if (content.source.logoUrl != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: CachedNetworkImage(
-                        imageUrl: content.source.logoUrl!,
-                        width: 28,
-                        height: 28,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: colors.surface,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-                            size: 16,
-                            color: colors.textTertiary,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: colors.surface,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        PhosphorIcons.newspaper(PhosphorIconsStyle.regular),
-                        size: 16,
-                        color: colors.textTertiary,
-                      ),
-                    ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Lire sur ${content.source.name}',
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                    ),
+
+                // ── Perspectives section ───────────────────────────────────
+                if (_perspectivesResponse != null || _perspectivesLoading) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: FacteurSpacing.space4),
+                    child: Divider(color: colors.border, height: 1),
                   ),
-                  Icon(
-                    PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
-                    size: 20,
-                    color: colors.textTertiary,
-                  ),
+                  if (_perspectivesLoading && _perspectivesResponse == null)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_perspectivesResponse != null)
+                    PerspectivesInlineSection(
+                      key: _perspectivesKey,
+                      perspectives: _perspectivesResponse!.perspectives
+                          .map(
+                            (PerspectiveData p) => Perspective(
+                              title: p.title,
+                              url: p.url,
+                              sourceName: p.sourceName,
+                              sourceDomain: p.sourceDomain,
+                              biasStance: p.biasStance,
+                              publishedAt: p.publishedAt,
+                            ),
+                          )
+                          .toList(),
+                      biasDistribution: _perspectivesResponse!.biasDistribution,
+                      keywords: _perspectivesResponse!.keywords,
+                      sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
+                      sourceName: _content?.source.name ?? '',
+                      contentId: widget.contentId,
+                      comparisonQuality:
+                          _perspectivesResponse!.comparisonQuality,
+                      externalSelectedSegments: _perspectivesSelectedSegments,
+                      onSegmentTap: _onPerspectivesSegmentTap,
+                      onClearSegments: () {
+                        setState(() => _perspectivesSelectedSegments = {});
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _checkAtPerspectivesSection();
+                        });
+                      },
+                      analysisState: _perspectivesAnalysisState,
+                      analysisText: _perspectivesAnalysisText,
+                      onRequestAnalysis: _requestPerspectivesAnalysis,
+                      analysisZoneKey: _analysisZoneKey,
+                    ),
                 ],
-              ),
+
+                // ── Footer clearance ───────────────────────────────────────
+                SizedBox(
+                  height: _kFooterContentHeight +
+                      MediaQuery.of(context).viewPadding.bottom,
+                ),
+              ],
             ),
           ),
         );
@@ -2931,8 +3472,111 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return Column(
       children: [
         SizedBox(height: headerHeight),
+        // Extra breathing room so tag chips aren't clipped by the header overlay
+        const SizedBox(height: FacteurSpacing.space2),
+        if (content.entities.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: 6,
+            ),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _buildArticleTagWidgets(context, content),
+            ),
+          ),
         Expanded(child: WebViewWidget(controller: _webViewController!)),
       ],
+    );
+  }
+}
+
+/// Eye button that winks periodically (scaleY close → open) to hint at perspectives.
+class _WinkingEyeButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final ButtonStyle? style;
+  final Color iconColor;
+
+  const _WinkingEyeButton({
+    required this.onTap,
+    this.style,
+    required this.iconColor,
+  });
+
+  @override
+  State<_WinkingEyeButton> createState() => _WinkingEyeButtonState();
+}
+
+class _WinkingEyeButtonState extends State<_WinkingEyeButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scaleY;
+  final math.Random _rng = math.Random();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _scaleY = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 0.05)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 30, // close fast (~96ms)
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.05, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 70, // open slower (~224ms)
+      ),
+    ]).animate(_controller);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _scheduleNext();
+    });
+    _scheduleNext();
+  }
+
+  void _scheduleNext() {
+    final delayMs = 4000 + _rng.nextInt(11000); // 4–15 s
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: delayMs), () {
+      if (mounted) _controller.forward(from: 0);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _scaleY,
+      builder: (context, _) {
+        final isWinking = _scaleY.value < 0.5;
+        return IconButton(
+          style: widget.style,
+          onPressed: widget.onTap,
+          tooltip: 'Autres points de vue',
+          icon: Transform.scale(
+            scaleY: _scaleY.value,
+            child: Icon(
+              isWinking
+                  ? PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular)
+                  : PhosphorIcons.eye(PhosphorIconsStyle.regular),
+              size: 22,
+              color: widget.iconColor,
+            ),
+          ),
+        );
+      },
     );
   }
 }

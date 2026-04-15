@@ -40,22 +40,26 @@ class DigestModeQuestion extends ConsumerWidget {
                   .bodyMedium
                   ?.copyWith(color: colors.textSecondary),
               children: const [
-                TextSpan(text: OnboardingStrings.digestModeSereinPart1),
+                TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart1),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold1,
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                TextSpan(text: OnboardingStrings.digestModeSereinPart2),
+                TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart2),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold2,
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                TextSpan(text: OnboardingStrings.digestModeSereinPart3),
+                TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart3),
                 TextSpan(
                   text: OnboardingStrings.digestModeSereinBold3,
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                TextSpan(text: OnboardingStrings.digestModeSereinPart4),
+                TextSpan(
+                    text: OnboardingStrings.digestModeSereinPart4),
               ],
             ),
             textAlign: TextAlign.center,

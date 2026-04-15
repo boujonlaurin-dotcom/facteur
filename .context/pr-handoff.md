@@ -4,17 +4,23 @@ Branche : `claude/smart-search-pr1-backend` → `main`
 Commit : `9dcb80ac` feat(sources): smart search pipeline with Brave + Mistral fallback
 16 fichiers, +1559 lignes
 
----
-
-## Quoi
-
-Pipeline de recherche intelligente multi-sources pour l'ajout de source. 3 nouveaux endpoints (`POST /smart-search`, `GET /by-theme/{slug}`, `GET /themes-followed`), cache Postgres 24h, et providers pour Brave Search, Reddit JSON, et Google News RSS. Mistral-small en fallback uniquement si < 3 résultats après les couches gratuites.
+Refonte de la mise en page de l'écran de lecture in-app :
+- Nouveau footer animé (slide comme le header) qui remplace les FABs flottants une fois que l'utilisateur atteint la section Perspectives ou la fin de l'article
+- Section Perspectives embarquée inline dans le scroll view (nouveau widget `PerspectivesInlineSection`) avec filtre par biais cliquable et header sticky
+- Barre de progression limitée à la longueur de l'article (exclut la section Perspectives)
+- Utilitaire `cutHtmlAtPreview()` dans `html_utils.dart` pour couper du HTML à N mots
 
 ## Pourquoi
 
+Pipeline de recherche intelligente multi-sources pour l'ajout de source. 3 nouveaux endpoints (`POST /smart-search`, `GET /by-theme/{slug}`, `GET /themes-followed`), cache Postgres 24h, et providers pour Brave Search, Reddit JSON, et Google News RSS. Mistral-small en fallback uniquement si < 3 résultats après les couches gratuites.
+
+- **Mobile — core :**
+  - `apps/mobile/lib/core/utils/html_utils.dart` — ajout de `cutHtmlAtPreview()` + `_findPositionAfterNWords()`
+
 La recherche actuelle est un simple ILIKE sur `Source.name`/`Source.url` du catalogue curé. Si l'utilisateur tape un nom approximatif ("stratechery", "lenny newsletter") ou un sujet vague, il n'obtient rien et doit deviner l'URL exacte. Ce pipeline comble la zone grise entre "je connais l'URL exacte" et "c'est dans le catalogue curé".
 
-## Fichiers modifiés
+- **Mobile — onboarding :**
+  - `digest_mode_question.dart`, `intro_screen.dart`, `media_concentration_screen.dart` — fix lint `const` sur les listes `TextSpan`
 
 ### Backend — Nouveaux fichiers
 - `app/services/search/smart_source_search.py` — Orchestrateur du pipeline cascadé (548 lignes, le fichier central)
