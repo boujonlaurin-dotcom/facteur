@@ -191,6 +191,36 @@ void main() {
       expect((state as LcVisible).dismissedIds, contains('p-2'));
     });
 
+    test('G10 — dismiss tous les items → auto-snooze', () async {
+      final repo = MockRepo();
+      when(() => repo.fetchProposals()).thenAnswer((_) async => [
+            priorityProp('p-1', signal: 0.8),
+            priorityProp('p-2'),
+            priorityProp('p-3'),
+          ]);
+      when(() => repo.applyProposals(any())).thenAnswer((_) async =>
+          const ApplyProposalsResponse(updatedPreferences: []));
+
+      final container = await buildContainer(repo: repo);
+      await container.read(learningCheckpointProvider.future);
+
+      final notifier = container.read(learningCheckpointProvider.notifier);
+      notifier.dismissItem('p-1');
+      notifier.dismissItem('p-2');
+      // Le dernier dismiss déclenche snooze() automatiquement.
+      notifier.dismissItem('p-3');
+
+      // Attendre que snooze() async se termine.
+      await Future<void>.delayed(Duration.zero);
+
+      // Vérifie que applyProposals a été appelé (par snooze auto).
+      verify(() => repo.applyProposals(any())).called(1);
+
+      // État final = LcSnoozed (ou LcApplying → LcSnoozed).
+      final state = container.read(learningCheckpointProvider).value;
+      expect(state, anyOf(isA<LcSnoozed>(), isA<LcApplying>()));
+    });
+
     test('G11 — modifyValue stocke la valeur', () async {
       final repo = MockRepo();
       when(() => repo.fetchProposals()).thenAnswer((_) async => [
