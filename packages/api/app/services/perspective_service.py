@@ -4,6 +4,7 @@ import html
 import json
 import re
 import xml.etree.ElementTree as ET
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
@@ -12,7 +13,7 @@ import certifi
 import httpx
 import structlog
 from sqlalchemy import func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = structlog.get_logger(__name__)
 
@@ -163,12 +164,37 @@ class PerspectiveService:
         # header consistently shows exactly this number, results are likely
         # truncated — bump this cap or audit upstream filters.
         max_results: int = 10,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
     ):
+        # Préférer `session_maker` : chaque requête DB s'exécute dans une
+        # session courte, évitant de tenir une connexion pendant les
+        # appels Google News / LLM qui dominent le temps du service.
+        # Cf. docs/bugs/bug-infinite-load-requests.md (P1).
         self.db = db
+        self._session_maker = session_maker
         self.timeout = timeout
         self.max_results = max_results
         # Cache for DB bias lookups within a single request
         self._bias_cache: dict[str, str] = {}
+
+    @asynccontextmanager
+    async def _short_session(self):
+        """Open a short-lived session, or fall back to self.db."""
+        if self._session_maker is None:
+            if self.db is None:
+                yield None
+                return
+            yield self.db
+            return
+        async with self._session_maker() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+
+    def _has_db(self) -> bool:
+        return self._session_maker is not None or self.db is not None
 
     async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
         """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
@@ -183,35 +209,40 @@ class PerspectiveService:
             return self._bias_cache[cache_key]
 
         # 3. DB lookup if session available
-        if self.db:
+        if self._has_db():
             try:
                 from app.models.source import Source
 
-                # 3a. Try domain match on source URL
-                if domain:
-                    stmt = select(Source.bias_stance).where(
-                        Source.url.ilike(f"%{domain}%"),
-                        Source.is_active.is_(True),
-                    )
-                    result = await self.db.execute(stmt)
-                    source_bias = result.scalar_one_or_none()
+                async with self._short_session() as session:
+                    if session is None:
+                        self._bias_cache[cache_key] = "unknown"
+                        return "unknown"
 
-                    if source_bias and source_bias != "unknown":
-                        self._bias_cache[cache_key] = source_bias
-                        return source_bias
+                    # 3a. Try domain match on source URL
+                    if domain:
+                        stmt = select(Source.bias_stance).where(
+                            Source.url.ilike(f"%{domain}%"),
+                            Source.is_active.is_(True),
+                        )
+                        result = await session.execute(stmt)
+                        source_bias = result.scalar_one_or_none()
 
-                # 3b. Fallback: fuzzy match by source name (Google News source name)
-                if source_name and source_name != "Unknown":
-                    stmt = select(Source.bias_stance).where(
-                        Source.name.ilike(f"%{source_name}%"),
-                        Source.is_active.is_(True),
-                    )
-                    result = await self.db.execute(stmt)
-                    source_bias = result.scalar_one_or_none()
+                        if source_bias and source_bias != "unknown":
+                            self._bias_cache[cache_key] = source_bias
+                            return source_bias
 
-                    if source_bias and source_bias != "unknown":
-                        self._bias_cache[cache_key] = source_bias
-                        return source_bias
+                    # 3b. Fallback: fuzzy match by source name (Google News source name)
+                    if source_name and source_name != "Unknown":
+                        stmt = select(Source.bias_stance).where(
+                            Source.name.ilike(f"%{source_name}%"),
+                            Source.is_active.is_(True),
+                        )
+                        result = await session.execute(stmt)
+                        source_bias = result.scalar_one_or_none()
+
+                        if source_bias and source_bias != "unknown":
+                            self._bias_cache[cache_key] = source_bias
+                            return source_bias
             except Exception as e:
                 logger.warning(
                     "resolve_bias_db_error",
@@ -385,7 +416,7 @@ class PerspectiveService:
         self, content, time_window_hours: int = 72
     ) -> list[Perspective]:
         """Search DB for articles sharing PERSON/ORG entities with the source article."""
-        if not self.db:
+        if not self._has_db():
             return []
 
         entity_names = _parse_entity_names(content.entities, types={"PERSON", "ORG"})
@@ -420,8 +451,11 @@ class PerspectiveService:
         )
 
         try:
-            result = await self.db.execute(stmt)
-            rows = result.scalars().all()
+            async with self._short_session() as session:
+                if session is None:
+                    return []
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
         except Exception as e:
             logger.warning("search_internal_perspectives_error", error=str(e))
             return []

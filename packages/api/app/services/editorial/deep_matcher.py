@@ -10,10 +10,11 @@ No time limit on deep articles (can be months old).
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 
 import structlog
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content
@@ -34,11 +35,30 @@ class DeepMatcher:
         session: AsyncSession,
         llm: EditorialLLMClient,
         config: EditorialConfig,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        # Préférer `session_maker` pour ouvrir des sessions courtes autour
+        # de chaque opération DB. Cf. docs/bugs/bug-infinite-load-requests.md
+        # (P1). `session` est conservé pour compat ascendante (tests, appels
+        # legacy) ; il est utilisé uniquement si `session_maker` est None.
         self._session = session
+        self._session_maker = session_maker
         self._llm = llm
         self._config = config
         self._detector = ImportanceDetector()
+
+    @asynccontextmanager
+    async def _short_session(self):
+        """Open a short-lived session, or fall back to the injected one."""
+        if self._session_maker is None:
+            yield self._session
+            return
+        async with self._session_maker() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
 
     async def match_for_topics(
         self,
@@ -175,7 +195,12 @@ class DeepMatcher:
         }
 
     async def _load_deep_articles(self) -> list[Content]:
-        """Load all articles from deep sources (no time limit)."""
+        """Load all articles from deep sources (no time limit).
+
+        Ouvre une session courte dédiée : la requête dure <1s et les
+        objets Content restent utilisables hors session (expire_on_commit=False,
+        selectinload sur `source`). Cf. bug-infinite-load-requests.md (P1).
+        """
         stmt = (
             select(Content)
             .join(Content.source)
@@ -187,8 +212,9 @@ class DeepMatcher:
             .order_by(Content.published_at.desc())
             .limit(3000)  # Safety cap
         )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        async with self._short_session() as session:
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
     async def _expand_query(self, topic: SelectedTopic) -> set[str]:
         """Generate semantically adjacent keywords via small LLM."""

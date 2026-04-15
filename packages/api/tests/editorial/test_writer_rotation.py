@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+
+from sqlalchemy.exc import SQLAlchemyError
 from uuid import UUID, uuid4
 
 import pytest
@@ -186,7 +188,9 @@ class TestRecentHighlightsQuery:
     @pytest.mark.asyncio
     async def test_returns_empty_on_query_failure(self, writer, mock_session):
         """If the DB query raises, return empty set (table may not exist yet)."""
-        mock_session.execute = AsyncMock(side_effect=Exception("table missing"))
+        mock_session.execute = AsyncMock(
+            side_effect=SQLAlchemyError("table missing")
+        )
 
         result = await writer._recent_highlight_content_ids("pepite")
         assert result == set()
@@ -225,6 +229,6 @@ class TestRecordHighlight:
     @pytest.mark.asyncio
     async def test_record_highlight_swallows_exception(self, writer, mock_session):
         """If flush fails, the exception is logged but not raised."""
-        mock_session.flush = AsyncMock(side_effect=Exception("boom"))
+        mock_session.flush = AsyncMock(side_effect=SQLAlchemyError("boom"))
         # Must not raise
         await writer.record_highlight("coup_de_coeur", uuid4())

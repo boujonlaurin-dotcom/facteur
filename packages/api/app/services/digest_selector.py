@@ -30,7 +30,8 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
@@ -161,8 +162,18 @@ class DigestSelector:
         digest_items = await selector.select_for_user(user_id)
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
+        # `session_maker` permet à la pipeline éditoriale d'ouvrir ses propres
+        # sessions courtes pendant les 3-5 min de travail LLM. `self.session`
+        # reste utilisée pour les ops rapides (build_context, get_candidates,
+        # < 1s cumulé) mais sera commit()ée juste avant la pipeline pour
+        # libérer la connexion au pool. Cf. bug-infinite-load-requests.md.
         self.session = session
+        self.session_maker = session_maker
         self.rec_service = RecommendationService(session)
         self.constraints = DiversityConstraints()
         self.importance_detector = ImportanceDetector()
@@ -276,7 +287,9 @@ class DigestSelector:
 
                 try:
                     step_start = time.time()
-                    pipeline = EditorialPipelineService(self.session)
+                    pipeline = EditorialPipelineService(
+                        self.session, session_maker=self.session_maker
+                    )
 
                     if not pipeline.llm.is_ready:
                         logger.warning("digest_editorial_no_api_key")
@@ -289,6 +302,23 @@ class DigestSelector:
                         if global_ctx is None:
                             global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
                         if global_ctx is None:
+                            # CRITICAL: libérer la connexion au pool avant
+                            # les 3-5 min de LLM. La pipeline utilise
+                            # session_maker pour ses ops DB internes, donc
+                            # on n'a plus besoin de tenir self.session
+                            # pendant tout ce temps.
+                            # On commit inconditionnellement (session_maker
+                            # fourni ou non) : à ce stade il n'y a aucune
+                            # écriture pendante, donc commit = noop métier +
+                            # libère la connexion physique dans tous les cas.
+                            # cf. docs/bugs/bug-infinite-load-requests.md (P1)
+                            try:
+                                await self.session.commit()
+                            except SQLAlchemyError:
+                                logger.warning(
+                                    "digest_selector_precommit_failed",
+                                    user_id=str(user_id),
+                                )
                             global_ctx = await pipeline.compute_global_context(
                                 candidates, mode=mode
                             )
@@ -1521,9 +1551,20 @@ class DigestSelector:
         une_guids: set[str] = set()
 
         async def parse_feed(url: str) -> list[str]:
+            # Pattern httpx + feedparser.parse(content) — fp.parse(url) utilise
+            # urllib en interne sans timeout côté coroutine. Cf.
+            # docs/bugs/bug-infinite-load-requests.md.
+            import httpx as _httpx
+
             try:
+                async with _httpx.AsyncClient(
+                    timeout=10.0, follow_redirects=True
+                ) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    content = resp.text
                 loop = asyncio.get_event_loop()
-                feed = await loop.run_in_executor(None, fp.parse, url)
+                feed = await loop.run_in_executor(None, fp.parse, content)
                 return [
                     entry.id if hasattr(entry, "id") else entry.link
                     for entry in feed.entries[:5]
