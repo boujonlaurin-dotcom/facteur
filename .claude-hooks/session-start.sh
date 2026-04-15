@@ -73,4 +73,21 @@ install_supabase_cli() {
 install_railway_cli
 install_supabase_cli
 
+# Charger les tokens depuis .env si présent (Railway, Supabase, Sentry…)
+# Ces vars sont ensuite disponibles pour les commandes Bash dans la session.
+# Note : les MCP servers lisent les vars au lancement de Claude Code lui-même ;
+# pour qu'ils les voient, relancer Claude Code APRÈS avoir rempli .env.
+ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+if [ -f "$ENV_FILE" ]; then
+  # Export uniquement les lignes KEY=value (ignore commentaires et lignes vides)
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+  echo "[session-start] .env chargé — tokens Railway/Supabase/Sentry disponibles."
+else
+  echo "[session-start] .env absent — MCP servers Railway/Supabase/Sentry inactifs."
+  echo "[session-start] → Copier .env.example en .env et renseigner les tokens."
+fi
+
 exit 0  # Toujours non-bloquant
