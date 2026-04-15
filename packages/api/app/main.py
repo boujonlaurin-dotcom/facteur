@@ -237,13 +237,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                         # "covered" when BOTH normal and serein exist.
                         expected_pairs = total_users * 2
                         pair_subq = (
-                            sa_select(
-                                DailyDigest.user_id, DailyDigest.is_serene
-                            )
+                            sa_select(DailyDigest.user_id, DailyDigest.is_serene)
                             .where(DailyDigest.target_date == today)
-                            .group_by(
-                                DailyDigest.user_id, DailyDigest.is_serene
-                            )
+                            .group_by(DailyDigest.user_id, DailyDigest.is_serene)
                             .subquery()
                         )
                         pair_count = (
@@ -253,11 +249,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                             or 0
                         )
 
-                        coverage = (
-                            pair_count / expected_pairs
-                            if expected_pairs
-                            else 0
-                        )
+                        coverage = pair_count / expected_pairs if expected_pairs else 0
                         logger.info(
                             "digest_startup_catchup_check",
                             target_date=str(today),

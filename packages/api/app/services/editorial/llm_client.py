@@ -109,7 +109,10 @@ class EditorialLLMClient:
                 return parsed
 
             except httpx.HTTPStatusError as e:
-                if e.response.status_code in _RETRYABLE_STATUSES and attempt < max_retries:
+                if (
+                    e.response.status_code in _RETRYABLE_STATUSES
+                    and attempt < max_retries
+                ):
                     wait = 3 * (attempt + 1)  # 3s, 6s
                     logger.warning(
                         "editorial_llm.retrying",
