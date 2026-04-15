@@ -324,6 +324,65 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+
+# Budget max par requête HTTP — défense ultime contre "tout charge à l'infini".
+# Cf. docs/bugs/bug-infinite-load-requests.md. Les PR #396/#397/#405 ont borné
+# `/digest/both`, le startup catchup et la pipeline éditoriale. La round 2 a
+# borné `/digest` et `/digest/generate` individuellement. Il manquait un
+# filet global pour tous les autres endpoints (`/feed`, writes diverses) qui
+# n'avaient toujours aucun timeout. Un seul endpoint qui hang sur un upstream
+# (Mistral, Google News, Supabase) bloque sa connexion DB ; le pool (20 max)
+# se remplit ; chaque nouvelle requête attend `pool_timeout` (30 s) → symptôme
+# "tout l'API charge à l'infini" côté mobile, même si seule une minorité
+# d'endpoints est réellement coincée.
+#
+# Cette middleware borne *chaque* requête à 60 s. Au-delà, la task est annulée
+# (ce qui libère la session DB via le context manager de `get_db`) et on
+# renvoie un 503 structuré que le client peut retry intelligemment. Les
+# healthchecks et le /pool endpoint sont exemptés — ils doivent répondre
+# instantanément même sous stress pour que l'on puisse diagnostiquer la panne.
+_REQUEST_BUDGET_S = 60.0
+_REQUEST_BUDGET_EXEMPT_PREFIXES = (
+    "/api/health",  # liveness/readiness/pool — doivent rester observables
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def request_timeout_middleware(request: Request, call_next: Any) -> Any:
+    """Borne toute requête HTTP à `_REQUEST_BUDGET_S` secondes."""
+    path = request.url.path
+    if any(path.startswith(p) for p in _REQUEST_BUDGET_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=_REQUEST_BUDGET_S)
+    except TimeoutError:
+        # La task a été annulée → ses ressources (session DB, cursors) sont
+        # relâchées via les context managers, ce qui protège le pool.
+        logger.warning(
+            "request_budget_exceeded",
+            path=path,
+            method=request.method,
+            budget_s=_REQUEST_BUDGET_S,
+            hint=(
+                "Handler took longer than the global request budget. "
+                "DB session released. Client should retry with backoff."
+            ),
+        )
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "request_timeout",
+                "budget_s": _REQUEST_BUDGET_S,
+            },
+        )
+
+
 # Routes
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
