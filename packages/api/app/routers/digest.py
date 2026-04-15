@@ -51,6 +51,13 @@ router = APIRouter()
 DIGEST_BOTH_VARIANT_TIMEOUT_S = 25.0
 DIGEST_BOTH_GATHER_TIMEOUT_S = 30.0
 
+# Timeout for /api/digest (single variant) and /api/digest/generate. Même
+# motif que /digest/both : sans wait_for, la pipeline éditoriale
+# (6-10 appels LLM séquentiels, 30 s chacun max) peut hang 3-5 min avant
+# d'être coupée par pool_timeout/request_budget. Round 2 fix.
+DIGEST_SINGLE_TIMEOUT_S = 30.0
+DIGEST_GENERATE_TIMEOUT_S = 60.0  # force=True peut prendre plus
+
 
 class ActionRequest(BaseModel):
     """Simple action request body model."""
@@ -227,8 +234,24 @@ async def get_digest(
             )
 
     try:
-        digest = await service.get_or_create_digest(
-            user_uuid, target_date, is_serene=serein
+        digest = await asyncio.wait_for(
+            service.get_or_create_digest(
+                user_uuid, target_date, is_serene=serein
+            ),
+            timeout=DIGEST_SINGLE_TIMEOUT_S,
+        )
+    except TimeoutError:
+        elapsed = time.monotonic() - start
+        logger.warning(
+            "digest_single_timeout",
+            user_id=current_user_id,
+            timeout_s=DIGEST_SINGLE_TIMEOUT_S,
+            elapsed_ms=round(elapsed * 1000, 1),
+            hint="Pipeline hang detected — session released via task cancel.",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="digest_generation_timeout",
         )
     except Exception:
         elapsed = time.monotonic() - start
@@ -533,13 +556,33 @@ async def generate_digest(
     service = DigestService(db, session_maker=async_session_maker)
     user_uuid = UUID(current_user_id)
 
-    # Generate digest, with optional force regeneration
-    digest = await service.get_or_create_digest(
-        user_uuid,
-        target_date,
-        force_regenerate=force,
-        is_serene=serein,
-    )
+    # Round 2 fix (item 4) : wait_for sur la génération — même motif que
+    # /digest/both. Sans borne, un upstream LLM qui hang peut monopoliser
+    # la connexion DB pendant 3-5 min. DIGEST_GENERATE_TIMEOUT_S est plus
+    # large que DIGEST_SINGLE_TIMEOUT_S car /generate peut être appelé
+    # avec force=True (recalcul complet).
+    try:
+        digest = await asyncio.wait_for(
+            service.get_or_create_digest(
+                user_uuid,
+                target_date,
+                force_regenerate=force,
+                is_serene=serein,
+            ),
+            timeout=DIGEST_GENERATE_TIMEOUT_S,
+        )
+    except TimeoutError:
+        logger.warning(
+            "digest_generate_timeout",
+            user_id=current_user_id,
+            timeout_s=DIGEST_GENERATE_TIMEOUT_S,
+            force=force,
+            hint="Pipeline hang detected — session released via task cancel.",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="digest_generation_timeout",
+        )
 
     if not digest:
         raise HTTPException(status_code=503, detail="Digest generation failed")
