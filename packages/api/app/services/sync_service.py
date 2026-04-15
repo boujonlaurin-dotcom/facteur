@@ -176,9 +176,7 @@ class SyncService:
                 # 3a. HTML head fetch (HORS session DB) — paywall detection
                 html_head = None
                 if content_data.get("content_type") == ContentType.ARTICLE:
-                    html_head = await self._fetch_html_head(
-                        content_data.get("url", "")
-                    )
+                    html_head = await self._fetch_html_head(content_data.get("url", ""))
 
                 # 3b. Paywall detection (pure CPU, HORS session DB)
                 content_data["is_paid"] = detect_paywall(
@@ -194,9 +192,12 @@ class SyncService:
                 # 3c. Upsert atomique (session COURTE) — retourne ce qu'il faut
                 # pour décider de l'enrichissement trafilatura suivant.
                 try:
-                    is_new, content_id, needs_enrich, content_url = (
-                        await self._save_content(content_data)
-                    )
+                    (
+                        is_new,
+                        content_id,
+                        needs_enrich,
+                        content_url,
+                    ) = await self._save_content(content_data)
                 except SQLAlchemyError as save_err:
                     logger.warning(
                         "Failed to save content",
