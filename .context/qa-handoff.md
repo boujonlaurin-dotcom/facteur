@@ -129,12 +129,40 @@ feed + sources + custom_topics après validation/snooze.
 - [ ] Analytics : `construire_flux.shown`, `.expand`, `.dismiss_item`, `.validate`, `.snooze`.
 - [ ] Accessibilité : Semantics « Proposition : <label> », tooltips « Détails de la proposition » / « Ignorer cette proposition ».
 
+### Scénario 8 : Edge 7 — Erreur API → retry (ajouté phase 2)
+
+**Parcours** :
+1. Provoquer une erreur API sur POST `/apply-proposals` (couper le réseau ou forcer un 500).
+2. Tapper **Valider** sur la carte.
+
+**Résultat attendu** :
+- Toast erreur « Une erreur est survenue ».
+- La carte reste visible avec le bouton « Réessayer » (au lieu de « Valider »).
+- Tapper « Réessayer » relance le POST.
+- Si le POST réussit : toast succès, carte masquée, cooldown activé.
+
+---
+
+### Scénario 9 : Accessibilité — Touch targets 48dp (ajouté phase 2)
+
+**Parcours** :
+1. Utiliser l'inspecteur de layout Flutter pour vérifier les zones tactiles.
+
+**Résultat attendu** :
+- Les boutons ℹ︎ et ✕ dans ProposalRow ont une zone ≥ 48x48dp.
+- Chaque dot du slider source_priority a une zone de 48x48dp.
+- Le pill EntityToggle (Masquer/Suivre) a une hauteur minimum de 48dp.
+
+---
+
 ## Zones de risque
 
 - **Interaction CaughtUp + Carte** : la carte est injectée en position 3, CaughtUp reste à position 8. `caughtUpEffectivePos = caughtUpPos + contentOffset` pour éviter collision avec le contenu. Vérifier visuellement que rien ne se chevauche quand le feed a 8+ articles.
 - **Refresh feed après validation** : l'invalidation feed+sources+custom_topics peut provoquer un flicker. Vérifier UX.
 - **Cooldown race** : après `_markCooldown()`, le provider cooldown est invalidé mais le notifier ne rebuild PAS (utilise `ref.read`, pas `ref.watch`). La carte doit rester en LcApplied jusqu'à pull-to-refresh ou cold-start.
 - **Kill-switch** : `LearningCheckpointFlags.enabled = false` OU SharedPreferences clé `learning_checkpoint_force_disabled = true` → carte jamais affichée (path de secours prod/QA).
+- **LcError + retry** (phase 2) : en état LcError, la carte reste visible et le bouton passe à « Réessayer ». `validate()`/`snooze()` extraient `LcError.previous` pour reconstruire les actions. Vérifier que le retry fonctionne après une erreur réseau transitoire.
+- **Touch targets agrandis** (phase 2) : les zones tactiles 48dp dans la ProposalRow augmentent la hauteur visuelle de chaque ligne. Vérifier sur écrans étroits (360dp) que le layout ne déborde pas.
 
 ## Dépendances
 
