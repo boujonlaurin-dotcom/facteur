@@ -1,4 +1,4 @@
-"""Router pour les endpoints de personnalisation du feed (Story 4.7)."""
+"""Router pour les endpoints de personnalisation du feed (Story 4.7 + Epic 13)."""
 
 from uuid import UUID
 
@@ -13,6 +13,16 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.source import UserSource
 from app.models.user_personalization import UserPersonalization
+from app.schemas.learning import (
+    ApplyProposalResult,
+    ApplyProposalsRequest,
+    ApplyProposalsResponse,
+    EntityPreferenceRequest,
+    EntityPreferenceResponse,
+    LearningCheckpointResponse,
+    proposal_to_response,
+)
+from app.services.learning_service import LearningService
 from app.services.user_service import UserService
 
 logger = structlog.get_logger()
@@ -456,3 +466,128 @@ async def toggle_paid_content(
         raise HTTPException(
             status_code=500, detail=f"Erreur lors du changement de préférence: {str(e)}"
         )
+
+
+# --- Epic 13: Learning Checkpoint Endpoints ---
+
+
+@router.get("/learning-proposals", response_model=LearningCheckpointResponse)
+async def get_learning_proposals(
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Retourne les propositions d'apprentissage pending pour l'utilisateur.
+
+    Genere de nouvelles propositions si necessaire (lazy compute).
+    """
+    user_uuid = UUID(current_user_id)
+    service = LearningService(db)
+
+    # Try to get existing pending proposals
+    proposals = await service.get_pending_proposals(user_uuid)
+
+    # If not enough, generate new ones
+    if len(proposals) < 2:
+        proposals = await service.generate_proposals(user_uuid)
+        await db.commit()
+
+        # Re-fetch with shown_count increment
+        if proposals:
+            proposals = await service.get_pending_proposals(user_uuid)
+            await db.commit()
+
+    if not proposals:
+        await db.commit()
+        return LearningCheckpointResponse(proposals=[], total_pending=0)
+
+    await db.commit()
+
+    proposal_responses = [proposal_to_response(p) for p in proposals]
+
+    return LearningCheckpointResponse(
+        proposals=proposal_responses,
+        total_pending=len(proposals),
+    )
+
+
+@router.post("/apply-proposals", response_model=ApplyProposalsResponse)
+async def apply_proposals(
+    request: ApplyProposalsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Applique les actions sur les propositions (accept/modify/dismiss)."""
+    user_uuid = UUID(current_user_id)
+    service = LearningService(db)
+
+    actions = [
+        {
+            "proposal_id": a.proposal_id,
+            "action": a.action,
+            "value": a.value,
+        }
+        for a in request.actions
+    ]
+
+    # Validate actions
+    valid_actions = {"accept", "modify", "dismiss"}
+    for a in actions:
+        if a["action"] not in valid_actions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Action invalide: '{a['action']}'. Valeurs: {', '.join(valid_actions)}",
+            )
+
+    results = await service.apply_proposals(user_uuid, actions)
+    await db.commit()
+
+    applied = sum(1 for r in results if r["success"])
+    return ApplyProposalsResponse(
+        applied=applied,
+        results=[ApplyProposalResult(**r) for r in results],
+    )
+
+
+@router.post("/entity-preference", status_code=201)
+async def set_entity_preference(
+    request: EntityPreferenceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Cree ou met a jour une preference entite (follow/mute)."""
+    user_uuid = UUID(current_user_id)
+
+    if request.preference not in ("follow", "mute"):
+        raise HTTPException(
+            status_code=400,
+            detail="Preference invalide. Valeurs: 'follow', 'mute'",
+        )
+
+    service = LearningService(db)
+    await service.set_entity_preference(
+        user_uuid, request.entity_canonical, request.preference
+    )
+    await db.commit()
+
+    return EntityPreferenceResponse(
+        entity_canonical=request.entity_canonical,
+        preference=request.preference,
+    )
+
+
+@router.delete("/entity-preference/{entity_canonical}")
+async def remove_entity_preference(
+    entity_canonical: str,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Supprime une preference entite."""
+    user_uuid = UUID(current_user_id)
+    service = LearningService(db)
+    removed = await service.remove_entity_preference(user_uuid, entity_canonical)
+    await db.commit()
+
+    if not removed:
+        raise HTTPException(status_code=404, detail="Preference non trouvee")
+
+    return {"message": f"Preference pour '{entity_canonical}' supprimee"}

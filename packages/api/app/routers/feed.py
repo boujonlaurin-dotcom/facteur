@@ -29,6 +29,11 @@ from app.schemas.feed import (
     TopicOverflowInfo,
     TrendingTopicResponse,
 )
+from app.schemas.learning import (
+    LearningCheckpointResponse,
+    proposal_to_response,
+)
+from app.services.learning_service import LearningService
 from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
@@ -156,6 +161,21 @@ async def get_personalized_feed(
             )
         )
 
+    # Epic 13: Learning Checkpoint — include proposals on first page only
+    checkpoint_data = None
+    if offset == 0 and not saved_only:
+        try:
+            learning_service = LearningService(db)
+            proposals = await learning_service.get_pending_proposals(user_uuid)
+            if len(proposals) >= 2:
+                checkpoint_data = LearningCheckpointResponse(
+                    proposals=[proposal_to_response(p) for p in proposals],
+                    total_pending=len(proposals),
+                )
+                await db.commit()
+        except Exception as e:
+            logger.warning("learning_checkpoint_error", error=str(e))
+
     return FeedResponse(
         items=feed_items,
         pagination=PaginationMeta(
@@ -170,6 +190,7 @@ async def get_personalized_feed(
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
         carousels=carousels_data,
+        learning_checkpoint=checkpoint_data,
     )
 
 

@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
 from sqlalchemy import or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content
 from app.models.source import Source
@@ -48,15 +49,39 @@ logger = structlog.get_logger()
 class EditorialPipelineService:
     """Orchestrates the editorial digest pipeline."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
+        # `session_maker` est la voie préférée : chaque requête DB s'exécute
+        # dans une session courte au lieu de tenir `self.session` ouverte
+        # pendant 3-5 min de pipeline LLM. Cf. bug-infinite-load-requests.md
+        # (site B, P1). `session` reste pour compat ascendante.
         self.session = session
+        self.session_maker = session_maker
         self.config = load_editorial_config()
         self.llm = EditorialLLMClient()
         self.curation = CurationService(self.llm, self.config)
         self.actu_matcher = ActuMatcher(
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours
         )
-        self.deep_matcher = DeepMatcher(session, self.llm, self.config)
+        self.deep_matcher = DeepMatcher(
+            session, self.llm, self.config, session_maker=session_maker
+        )
+
+    @asynccontextmanager
+    async def _short_session(self):
+        """Open a short-lived session, or fall back to the injected one."""
+        if self.session_maker is None:
+            yield self.session
+            return
+        async with self.session_maker() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
 
     async def compute_global_context(
         self,
@@ -276,7 +301,12 @@ class EditorialPipelineService:
                 )
 
         # ÉTAPE 3C: Perspective analysis (batch, parallel)
-        perspective_service = PerspectiveService(db=self.session)
+        # Pass session_maker: chaque resolve_bias / search_internal s'exécute
+        # dans sa propre session courte, évitant 6-10 parallel DB calls sur
+        # la même session tenue pendant la phase perspectives (~30s).
+        perspective_service = PerspectiveService(
+            db=self.session, session_maker=self.session_maker
+        )
         step_start = time.time()
 
         async def _process_perspectives(
@@ -353,8 +383,10 @@ class EditorialPipelineService:
                         ),
                         Source.logo_url.is_not(None),
                     )
-                    result = await self.session.execute(stmt)
-                    for row in result.all():
+                    async with self._short_session() as session:
+                        result = await session.execute(stmt)
+                        logo_rows = list(result.all())
+                    for row in logo_rows:
                         try:
                             parsed = urlparse(row.url)
                             domain = parsed.netloc
@@ -453,7 +485,9 @@ class EditorialPipelineService:
 
         # ÉTAPES 4+5+6: Writing + Pépite + Coup de coeur (parallel)
         step_start = time.time()
-        writer = EditorialWriterService(self.session, self.llm, self.config)
+        writer = EditorialWriterService(
+            self.session, self.llm, self.config, session_maker=self.session_maker
+        )
 
         selected_topic_ids = {s.topic_id for s in subjects}
         selected_content_ids: set[UUID] = set()

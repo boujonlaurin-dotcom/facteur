@@ -12,6 +12,7 @@ from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.failed_source_attempt import FailedSourceAttempt
+from app.models.learning import UserEntityPreference, UserLearningProposal
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.serene_report import SereneReport
@@ -73,4 +74,7 @@ __all__ = [
     "WaitlistSurveyResponse",
     # Serene Feedback
     "SereneReport",
+    # Learning Checkpoint (Epic 13)
+    "UserLearningProposal",
+    "UserEntityPreference",
 ]

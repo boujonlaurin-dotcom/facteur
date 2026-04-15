@@ -6,12 +6,14 @@ Story 10.24: Fills all null editorial text fields via LLM + DB query.
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import structlog
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
@@ -45,10 +47,36 @@ class EditorialWriterService:
         session: AsyncSession,
         llm: EditorialLLMClient,
         config: EditorialConfig,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
+        # Cf. docs/bugs/bug-infinite-load-requests.md (P1).
+        # Ouvrir une session courte par op DB évite de tenir la connexion
+        # pendant les appels LLM (write_editorial / select_pepite durent
+        # plusieurs secondes chacun). `session` reste utilisé en fallback
+        # pour compat ascendante.
         self._session = session
+        self._session_maker = session_maker
         self._llm = llm
         self._config = config
+
+    @asynccontextmanager
+    async def _short_session(self, commit: bool = False):
+        """Open a short-lived session (or fall back to the injected one).
+
+        When `commit=True`, the session is committed on nominal exit — used
+        by writes (`record_highlight`). Reads use `commit=False`.
+        """
+        if self._session_maker is None:
+            yield self._session
+            return
+        async with self._session_maker() as session:
+            try:
+                yield session
+                if commit:
+                    await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     # ------------------------------------------------------------------
     # ÉTAPE 4: Editorial writing (1 LLM call)
@@ -176,9 +204,10 @@ class EditorialWriterService:
             EditorialHighlightsHistory.target_date > cutoff,
         )
         try:
-            result = await self._session.execute(stmt)
-            return set(result.scalars().all())
-        except Exception:
+            async with self._short_session() as session:
+                result = await session.execute(stmt)
+                return set(result.scalars().all())
+        except SQLAlchemyError:
             # Table may not yet exist (migration not applied) — graceful fail.
             logger.exception("editorial_writer.recent_highlights_query_failed")
             return set()
@@ -188,15 +217,16 @@ class EditorialWriterService:
     ) -> None:
         """Persist a pépite / coup de cœur pick to the rotation history."""
         try:
-            self._session.add(
-                EditorialHighlightsHistory(
-                    kind=kind,
-                    content_id=content_id,
-                    target_date=target_date or today_paris(),
+            async with self._short_session(commit=True) as session:
+                session.add(
+                    EditorialHighlightsHistory(
+                        kind=kind,
+                        content_id=content_id,
+                        target_date=target_date or today_paris(),
+                    )
                 )
-            )
-            await self._session.flush()
-        except Exception:
+                await session.flush()
+        except SQLAlchemyError:
             logger.exception(
                 "editorial_writer.record_highlight_failed",
                 kind=kind,
@@ -406,8 +436,9 @@ class EditorialWriterService:
         )
 
         try:
-            result = await self._session.execute(stmt)
-            row = result.first()
+            async with self._short_session() as session:
+                result = await session.execute(stmt)
+                row = result.first()
         except Exception:
             # Likely the editorial_highlights_history table is missing
             # (migration not yet applied); fall back to the simple query.
@@ -424,8 +455,9 @@ class EditorialWriterService:
             .where(Content.id == row.id)
             .options(selectinload(Content.source))
         )
-        content_result = await self._session.execute(content_stmt)
-        content = content_result.scalar_one_or_none()
+        async with self._short_session() as session:
+            content_result = await session.execute(content_stmt)
+            content = content_result.scalar_one_or_none()
 
         source_name = (
             content.source.name if content and content.source else "Source inconnue"
@@ -481,8 +513,9 @@ class EditorialWriterService:
             .limit(15)
         )
 
-        result = await self._session.execute(stmt)
-        eligible = list(result.scalars().all())
+        async with self._short_session() as session:
+            result = await session.execute(stmt)
+            eligible = list(result.scalars().all())
 
         if not eligible:
             logger.info("editorial_writer.no_actu_decalee_candidates")

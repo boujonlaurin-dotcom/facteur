@@ -74,6 +74,7 @@ class ThemeSection extends ConsumerWidget {
                 await ref
                     .read(personalizationRepositoryProvider)
                     .unmuteTheme(themeSlug);
+                if (!context.mounted) return;
                 ref.invalidate(personalizationProvider);
               },
               child: Icon(
@@ -126,15 +127,14 @@ class ThemeSection extends ConsumerWidget {
                     await ref
                         .read(personalizationRepositoryProvider)
                         .muteTheme(themeSlug);
+                    if (!context.mounted) return;
                     ref.invalidate(personalizationProvider);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Thème retiré'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Thème retiré'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -149,6 +149,7 @@ class ThemeSection extends ConsumerWidget {
                   currentMultiplier: themePriorities[themeLabel] ?? 1.0,
                   onChanged: (multiplier) async {
                     await setThemePriority(themeLabel, multiplier);
+                    if (!context.mounted) return;
                     ref.invalidate(themePriorityProvider);
                   },
                   usageWeight: algoProfile != null &&
@@ -161,6 +162,7 @@ class ThemeSection extends ConsumerWidget {
                       ? () async {
                           final client = ref.read(apiClientProvider);
                           await client.post('/users/interests/$themeSlug/reset');
+                          if (!context.mounted) return;
                           ref.invalidate(algorithmProfileProvider);
                         }
                       : null,
@@ -192,18 +194,18 @@ class ThemeSection extends ConsumerWidget {
                       final repo = ref.read(personalizationRepositoryProvider);
                       try {
                         await repo.muteTopic(slug);
+                        if (!context.mounted) return;
                         await ref
                             .read(customTopicsProvider.notifier)
                             .unfollowTopic(topic.id);
+                        if (!context.mounted) return;
                         ref.invalidate(personalizationProvider);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Sujet masqué'),
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sujet masqué'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -220,6 +222,7 @@ class ThemeSection extends ConsumerWidget {
                             await ref
                                 .read(personalizationRepositoryProvider)
                                 .unmuteTopic(topicSlug);
+                            if (!context.mounted) return;
                             ref.invalidate(personalizationProvider);
                           }
                         : null,
@@ -227,6 +230,7 @@ class ThemeSection extends ConsumerWidget {
                         ? () async {
                             final client = ref.read(apiClientProvider);
                             await client.post('/users/subtopics/$topicSlug/reset');
+                            if (!context.mounted) return;
                             ref.invalidate(algorithmProfileProvider);
                           }
                         : null,
@@ -290,15 +294,14 @@ class ThemeSection extends ConsumerWidget {
                     await ref
                         .read(personalizationRepositoryProvider)
                         .muteTheme(themeSlug);
+                    if (!context.mounted) return;
                     ref.invalidate(personalizationProvider);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Thème masqué'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Thème masqué'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
                   },
                   child: Text(
                     '\u{1F441}\u{0338} Masquer ce thème',
@@ -362,6 +365,7 @@ class ThemeSection extends ConsumerWidget {
                           await ref
                               .read(personalizationRepositoryProvider)
                               .unmuteTopic(slug);
+                          if (!context.mounted) return;
                           ref.invalidate(personalizationProvider);
                         },
                         child: Icon(
@@ -525,15 +529,14 @@ class _SuggestionsBlockState extends ConsumerState<_SuggestionsBlock> {
                     final repo = ref.read(personalizationRepositoryProvider);
                     try {
                       await repo.muteTopic(slug);
+                      if (!mounted) return;
                       ref.invalidate(personalizationProvider);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Sujet masqué'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Sujet masqué'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(

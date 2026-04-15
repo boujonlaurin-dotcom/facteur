@@ -76,6 +76,48 @@ class TestLoadDeepArticles:
         assert len(result) == 2
         session.execute.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_uses_session_maker_and_does_not_touch_injected_session(self):
+        """P1 fix — when session_maker is provided, each DB op opens a
+        short-lived session. The injected `session` must NOT be used, so
+        the pool isn't held during the LLM pipeline.
+        cf. docs/bugs/bug-infinite-load-requests.md
+        """
+        articles = [_make_deep_content("A")]
+        short_session = _mock_session_with_articles(articles)
+
+        # session_maker is an async context manager factory
+        maker_calls = []
+
+        class _Maker:
+            def __call__(self):
+                maker_calls.append(1)
+                return self
+
+            async def __aenter__(self):
+                return short_session
+
+            async def __aexit__(self, *a):
+                return None
+
+        injected = AsyncMock()  # Would blow up if used
+        injected.execute.side_effect = AssertionError(
+            "injected session must NOT be used when session_maker is set"
+        )
+
+        llm = MagicMock()
+        llm.is_ready = False
+
+        matcher = DeepMatcher(
+            injected, llm, _make_config(), session_maker=_Maker()
+        )
+        result = await matcher._load_deep_articles()
+
+        assert len(result) == 1
+        assert len(maker_calls) == 1
+        short_session.execute.assert_awaited_once()
+        injected.execute.assert_not_called()
+
 
 class TestPrefilter:
     def test_filters_by_jaccard_threshold(self):
