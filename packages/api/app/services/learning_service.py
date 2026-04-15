@@ -4,13 +4,16 @@ Calcul des signaux d'engagement, generation et application des propositions.
 """
 
 import json as _json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
@@ -32,8 +35,34 @@ CHECKPOINT_DISMISS_AFTER = 3
 class LearningService:
     """Moteur d'apprentissage : signaux, propositions, application."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession | None,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
+        # `session_maker` permet d'ouvrir des sessions courtes hors du
+        # context manager de `Depends(get_db)` — critique pour le hot path
+        # `/api/feed` (item 1, bug-infinite-load-requests.md round 2) où
+        # la session injectée doit être libérée AVANT l'appel à
+        # `get_pending_proposals` pour ne pas tenir la connexion pendant
+        # un SELECT+UPDATE sur `user_learning_proposals`.
         self.db = db
+        self._session_maker = session_maker
+
+    @asynccontextmanager
+    async def _short_session(self) -> AsyncIterator[AsyncSession]:
+        """Ouvre une session courte si `session_maker` fourni, sinon fallback.
+
+        Le caller est responsable du commit. Le context manager gère seulement
+        open/close (via `async_sessionmaker.__aexit__`).
+        """
+        if self._session_maker is not None:
+            async with self._session_maker() as session:
+                yield session
+        else:
+            if self.db is None:  # pragma: no cover — guard
+                raise RuntimeError("LearningService needs db or session_maker")
+            yield self.db
 
     # ------------------------------------------------------------------
     # Signal Computation (Story 13.1)
@@ -410,33 +439,56 @@ class LearningService:
         - UPDATE shown_count via mutation d'attributs ORM + flush unique
           (pas d'UPDATE séparé, pas de `db.refresh` en boucle).
         - Retourne [] sans flush si aucune proposal pending (hot path commun).
+
+        Round 2 fix (bug-infinite-load-requests.md) : quand `session_maker`
+        est fourni, cette méthode utilise une **session courte** (ouverture,
+        SELECT, UPDATE+flush+commit, fermeture). La session injectée au
+        router n'est donc jamais tenue pendant l'UPDATE. Cette méthode est
+        appelée sur chaque `/api/feed` page 1, soit l'endpoint le plus
+        chaud — la moindre latence DB s'y accumulait en leak de connexions.
         """
-        result = await self.db.execute(
-            select(UserLearningProposal)
-            .where(
-                UserLearningProposal.user_id == user_id,
-                UserLearningProposal.status == "pending",
+        async with self._short_session() as session:
+            result = await session.execute(
+                select(UserLearningProposal)
+                .where(
+                    UserLearningProposal.user_id == user_id,
+                    UserLearningProposal.status == "pending",
+                )
+                .order_by(UserLearningProposal.signal_strength.desc())
+                .limit(CHECKPOINT_MAX_PROPOSALS)
             )
-            .order_by(UserLearningProposal.signal_strength.desc())
-            .limit(CHECKPOINT_MAX_PROPOSALS)
-        )
-        proposals = list(result.scalars().all())
+            proposals = list(result.scalars().all())
 
-        if not proposals:
-            # Pas d'UPDATE, pas de flush — cold path (majorité des feed loads).
-            return []
+            if not proposals:
+                # Cold path (majorité des feed loads) : pas d'UPDATE, pas
+                # de flush. On ferme la courte session immédiatement.
+                return []
 
-        # Incrémente shown_count sur les objets ORM ; le flush émet un UPDATE
-        # batché. Évite le SELECT-then-UPDATE-then-N-REFRESH précédent
-        # (tracking d'impression qui plombait le `/feed/` en prod).
-        now = datetime.now(UTC)
-        for p in proposals:
-            p.shown_count = (p.shown_count or 0) + 1
-            p.shown_at = now
-            p.updated_at = now
-        await self.db.flush()
+            # Incrémente shown_count sur les objets ORM ; le flush émet un
+            # UPDATE batché. Évite le SELECT-then-UPDATE-then-N-REFRESH
+            # (tracking d'impression qui plombait `/feed/` en prod).
+            now = datetime.now(UTC)
+            for p in proposals:
+                p.shown_count = (p.shown_count or 0) + 1
+                p.shown_at = now
+                p.updated_at = now
+            try:
+                await session.flush()
+                # Commit quand on tourne sur notre propre session courte ;
+                # en fallback (pas de maker), on laisse le caller gérer.
+                if self._session_maker is not None:
+                    await session.commit()
+            except SQLAlchemyError:
+                logger.warning(
+                    "learning_pending_flush_failed",
+                    user_id=str(user_id),
+                    exc_info=True,
+                )
+                if self._session_maker is not None:
+                    await session.rollback()
+                return []
 
-        return proposals
+            return proposals
 
     # ------------------------------------------------------------------
     # Apply Proposals (Story 13.4)
