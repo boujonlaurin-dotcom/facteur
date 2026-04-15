@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.schemas.content import ContentResponse
+from app.schemas.learning import LearningCheckpointResponse
 
 
 class PaginationMeta(BaseModel):
@@ -116,6 +117,8 @@ class FeedResponse(BaseModel):
     keyword_overflow: list[KeywordOverflowInfo] = []
     entity_overflow: list[EntityOverflowInfo] = []
     carousels: list[CarouselInfo] = []
+    # Epic 13: Learning Checkpoint
+    learning_checkpoint: LearningCheckpointResponse | None = None
 
 
 class TrendingTopicResponse(BaseModel):

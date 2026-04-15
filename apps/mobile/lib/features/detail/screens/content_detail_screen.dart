@@ -1068,6 +1068,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
     }
+
+    _readingTimer?.cancel();
+    _noteNudgeTimer?.cancel();
+    _scrollStopTimer?.cancel();
+    _inactivityTimer?.cancel();
+    _videoPlayHideTimer?.cancel();
+    _linkCopiedFabTimer?.cancel();
+    _linkCopiedHeaderTimer?.cancel();
+    _fabController.dispose();
+    _bookmarkBounceController.dispose();
+    _likeBounceController.dispose();
+    _fabReappearController.dispose();
+    _shareFabController.dispose();
+    _exitAnimController.dispose();
+    _headerAutoController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _fabOpacity.dispose();
+    _headerOffset.dispose();
+    _readingProgress.removeListener(_onReadingProgressNudge);
+    _readingProgress.removeListener(_onShareFabProgress);
+    _readingProgress.dispose();
+    _scrollController.removeListener(_onScrollToSite);
+    _scrollController.removeListener(_onScrollReadingProgress);
+
+    _scrollController.dispose();
+    super.dispose();
   }
 
   /// Handle video progress updates from YouTubePlayerWidget.
