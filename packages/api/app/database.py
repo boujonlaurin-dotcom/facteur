@@ -58,6 +58,15 @@ if _use_queue_pool:
         connect_args={
             "prepare_threshold": None,  # Disable prepared statements for PgBouncer transaction mode
             "connect_timeout": 10,  # Fail fast if DB host/port unreachable (prevents indefinite hang)
+            # Round 2 fix (docs/bugs/bug-infinite-load-requests.md item 6) :
+            # statement_timeout côté Postgres — si une requête tourne plus de
+            # 30 s, Postgres la tue et renvoie une erreur au client. C'est
+            # notre dernier rempart quand (a) un driver async coincé,
+            # (b) un `await` qui ne revient pas, ou (c) un scénario
+            # rare où le middleware request-budget ne peut pas annuler
+            # la task parce qu'elle est bloquée sur un I/O bas niveau.
+            # Note libpq syntax : "-c statement_timeout=30000" (millisecondes).
+            "options": "-c statement_timeout=30000",
         },
     )
 else:
