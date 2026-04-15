@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
 from app.models.content import Content
 from app.models.enums import ContentType
@@ -74,6 +74,18 @@ async def get_content_detail(
         )
 
         if quality != "full" and cooldown_expired:
+            # Round 2 fix (bug-infinite-load-requests.md item 3) : libère la
+            # session `db` AVANT le `run_in_executor(trafilatura.extract)`
+            # qui peut prendre 15 s. Sans ça la session reste idle-in-tx
+            # pendant toute la durée du thread executor, et chaque ouverture
+            # d'article matin (cold cache) monopolise une conn du pool pour
+            # 15 s. Après extraction, on rouvre une session courte dédiée à
+            # la persistance.
+            try:
+                await db.commit()
+            except Exception:
+                logger.warning("content_detail_precommit_failed", exc_info=True)
+
             try:
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
@@ -82,38 +94,44 @@ async def get_content_detail(
                     timeout=15.0,
                 )
 
-                # Persist enrichment to DB (single commit)
-                stmt = select(Content).where(Content.id == content_id)
-                db_content = await db.scalar(stmt)
-                if db_content:
-                    db_content.extraction_attempted_at = datetime.now(UTC)
-                    if result.html_content:
-                        content_data["html_content"] = result.html_content
-                        content_data["content_quality"] = result.content_quality
-                        db_content.html_content = result.html_content
-                        db_content.content_quality = result.content_quality
-                        if (
-                            result.reading_time_seconds
-                            and not db_content.duration_seconds
-                        ):
-                            db_content.duration_seconds = result.reading_time_seconds
-                            content_data["duration_seconds"] = (
-                                result.reading_time_seconds
-                            )
-                    elif not db_content.content_quality:
-                        db_content.content_quality = quality or "none"
-                    await db.commit()
-
-            except Exception:
-                # Mark attempt even on failure to prevent retry storm
-                try:
+                # Persist enrichment via a short-lived session.
+                async with async_session_maker() as write_session:
                     stmt = select(Content).where(Content.id == content_id)
-                    db_content = await db.scalar(stmt)
+                    db_content = await write_session.scalar(stmt)
                     if db_content:
                         db_content.extraction_attempted_at = datetime.now(UTC)
-                        if not db_content.content_quality:
+                        if result.html_content:
+                            content_data["html_content"] = result.html_content
+                            content_data["content_quality"] = result.content_quality
+                            db_content.html_content = result.html_content
+                            db_content.content_quality = result.content_quality
+                            if (
+                                result.reading_time_seconds
+                                and not db_content.duration_seconds
+                            ):
+                                db_content.duration_seconds = (
+                                    result.reading_time_seconds
+                                )
+                                content_data["duration_seconds"] = (
+                                    result.reading_time_seconds
+                                )
+                        elif not db_content.content_quality:
                             db_content.content_quality = quality or "none"
-                        await db.commit()
+                        await write_session.commit()
+
+            except Exception:
+                # Mark attempt even on failure to prevent retry storm.
+                # Courte session dédiée — n'emprunte pas `db` qui est déjà
+                # committée (connexion rendue au pool).
+                try:
+                    async with async_session_maker() as fallback_session:
+                        stmt = select(Content).where(Content.id == content_id)
+                        db_content = await fallback_session.scalar(stmt)
+                        if db_content:
+                            db_content.extraction_attempted_at = datetime.now(UTC)
+                            if not db_content.content_quality:
+                                db_content.content_quality = quality or "none"
+                            await fallback_session.commit()
                 except Exception:
                     pass  # Don't fail the request over persistence
                 logger.exception(
