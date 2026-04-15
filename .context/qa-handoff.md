@@ -1,186 +1,163 @@
-# QA Handoff — Digest UI/UX Adjustments (Glass effect + Special blocks redesign)
+# QA Handoff — Epic 13 Learning Checkpoint + Mobile Stability Fixes
 
 > Ce fichier est rempli par l'agent dev à la fin du développement.
 > Il sert d'input à la commande /validate-feature de l'agent QA.
 
 ## Feature développée
 
-Ajustements UI/UX du digest editorial : (1) effet liquidglass sur la carte "L'Essentiel du jour", (2) teinte renforcée sur les cartes topics, (3) header sticky sur carte ouverte, (4) citation Serein repositionnée en premier + redesign card, (5) Pépite/CoupDeCoeur/ActuDécalée dans des containers styled cohérents.
+Epic 13 Learning Checkpoint — **backend** (Stories 13.1 à 13.4) + corrections de régressions mobile bloquantes introduites pendant le développement :
+
+1. **Backend Epic 13**
+   - Nouvelle migration Alembic `ln01` (tables `user_learning_proposals` et `user_entity_preferences`, renommée depuis `lc01` pour supprimer un cycle de révisions)
+   - Service `LearningService` : agrégation de signaux, génération de propositions d'ajustement, résolution (accept/reject/alternative)
+   - Endpoints `/learning/proposals` (GET, PATCH) et `/learning/entity-preferences` (POST, DELETE)
+   - Intégration dans `recommendation_service.py` : filtrage des candidats par `UserEntityPreference.mute` (ligne 358-385)
+   - Intégration dans `feed.py` : `learning_checkpoint` injecté dans `FeedResponse` quand `offset=0` et feed non-saved
+   - `pagination.has_next` basé sur `total_candidates` (pool pré-diversification) pour une pagination fiable
+
+2. **Régressions mobile corrigées**
+   - **`content_detail_screen.dart`** : "Cannot use ref after the widget was disposed" + cascade `LateInitializationError` sur `Supabase.instance`. Le code de tracking (progression lecture + analytics) était exécuté APRÈS `super.dispose()`. Déplacé AVANT, avec `try/catch` défensif.
+   - **`theme_section.dart`** : ~7 `await` suivis de `ref.invalidate(...)` sans garde `context.mounted` → "ref after dispose" si l'utilisateur quittait la page pendant la requête. Ajout de `if (!context.mounted) return;` après chaque await pour `ThemeSection` (ConsumerWidget) et `if (!mounted) return;` pour `_SuggestionsBlockState` (ConsumerStatefulWidget).
+   - **`feed_screen.dart`** : `Future.delayed(...)` qui lisait `ref.read(streakProvider.notifier)` après le délai → risque de disposed ref. Capture du notifier AVANT le delay.
+   - **`feed_provider.dart`** :
+     - Suppression du `ref.listen(sereinToggleProvider)` dupliqué (était déclaré 2× de suite, provoquait double refresh).
+     - Pagination hybride : `_hasNext = response.pagination.hasNext && response.items.isNotEmpty` (trust backend + stop si page vide pour éviter boucle infinie si regroupement renvoie 0).
+     - `loadMore` ne remplace plus l'état par `AsyncError` sur un échec de page 2+ (ce qui effaçait le feed existant) — log + stop paging, l'utilisateur peut pull-to-refresh.
+   - **`feed_repository.dart`** : parse désormais le bloc `pagination` renvoyé par le backend et expose `pagination.hasNext` / `pagination.total` via `FeedResponse`.
+
+> Stories 13.5/13.6 (UI mobile du Learning Checkpoint — bannière, modal) sont **hors périmètre** de cette PR. Elles seront implémentées dans une PR dédiée.
 
 ## PR associée
 
-Branche : `claude/digest-card-glass-effect-vzYe2`
+Branche : `claude/learning-checkpoint-algo-UDwDy`
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Digest (mode standard) | `/digest` | Modifié |
-| Digest (mode Serein) | `/digest` (toggle Serein) | Modifié |
-| Digest editorial ouvert | `/digest` (card expanded) | Modifié |
+| Feed | `/feed` | Modifié (pagination, serein toggle, streak refresh) |
+| Article detail | `/feed/content/:id` | Modifié (dispose order — tracking fix) |
+| Custom topics / Themes | `/custom-topics` (ThemeSection) | Modifié (mounted guards sur follow/mute/priority) |
+| (Backend) Learning API | `/learning/proposals`, `/learning/entity-preferences` | Nouveau |
+| (Backend) Feed | `/feed` — la réponse inclut désormais `pagination.has_next` + éventuel `learning_checkpoint` | Modifié |
 
 ## Scénarios de test
 
-### Scénario 1 : Liquid glass sur la carte principale (mode clair)
-
+### Scénario 1 : Post-login → ouverture d'un article puis back feed
 **Parcours** :
-1. Ouvrir l'écran `/digest`
-2. Thème clair activé
-3. Faire défiler lentement le scroll vers le bas
-
+1. Se connecter à l'app (login frais)
+2. Dans le feed, tap sur le premier article → content_detail_screen s'ouvre
+3. Scroller l'article (progression > 10 %)
+4. Appuyer sur back avant la fin de lecture
+5. Observer la console / les logs
 **Résultat attendu** :
-- La carte "L'Essentiel du jour" a un effet de flou derrière elle (backdrop blur)
-- Le fond crème de l'app est légèrement visible à travers le dégradé de la carte
-- Un fin bord blanc semi-transparent encadre la carte (effet glass edge)
-- Une ombre plus prononcée que l'ancienne version
+- Aucune exception `Cannot use 'ref' after the widget was disposed`
+- Aucune `LateInitializationError` sur Supabase
+- Le feed se réaffiche avec l'article marqué lu (progression persistée)
+- Les analytics `trackArticleRead` sont envoyés
 
----
-
-### Scénario 2 : Liquid glass sur la carte principale (mode sombre)
-
+### Scénario 2 : Feed pagination (scroll infini)
 **Parcours** :
-1. Ouvrir l'écran `/digest`
-2. Activer le thème sombre
-3. Observer la carte
-
+1. Ouvrir `/feed` avec un compte contenant >50 articles disponibles
+2. Scroller jusqu'au bas de la page 1
+3. Observer le loader inline + apparition de la page 2
+4. Continuer jusqu'à épuiser le pool
 **Résultat attendu** :
-- Même effet de flou, mais avec un fond sombre translucide (gradient 72-78% alpha)
-- Bord subtil blanc (14% alpha)
-- Shadow plus prononcée sur fond sombre
+- Chaque fin de page déclenche le fetch de la suivante tant que `pagination.has_next == true` côté backend ET que la page renvoyée n'est pas vide
+- Quand le backend retourne `has_next: false` ou `items: []`, l'indicateur de chargement disparaît et reste un `SizedBox(height: 64)` en bas
+- **Pas de boucle infinie** de `loadMore` quand le regroupement (clustering backend) renvoie 0 items alors que `has_next` disait true
 
----
-
-### Scénario 3 : Teinte plus marquée sur les cartes topic
-
+### Scénario 3 : Feed — échec transitoire sur page 2+
 **Parcours** :
-1. Ouvrir l'écran `/digest` en mode editorial
-2. Observer les cartes de topics (avant l'ouverture)
-
+1. Charger le feed (page 1 OK)
+2. Couper le réseau (airplane mode)
+3. Scroller pour déclencher `loadMore`
+4. Réactiver le réseau et pull-to-refresh
 **Résultat attendu** :
-- En mode sombre : fond légèrement plus prononcé (white 11% vs 6% avant)
-- En mode clair : teinte légèrement plus foncée (black 7% vs 3% avant)
-- La distinction visuelle entre la carte mère et les cartes topic est plus nette
+- L'échec de page 2 est logué mais le feed page 1 reste visible (pas de remplacement par erreur plein écran)
+- `_hasNext` devient `false` — plus d'auto-paging
+- Pull-to-refresh recharge page 1 proprement
 
----
-
-### Scénario 4 : Header sticky sur carte ouverte
-
+### Scénario 4 : Themes — follow / mute / priority avec navigation rapide
 **Parcours** :
-1. Ouvrir l'écran `/digest` en mode editorial
-2. Appuyer sur une carte topic pour l'ouvrir (expand)
-3. Scroller vers le bas jusqu'à ce que le contenu de la carte dépasse le haut de l'écran
-
+1. Ouvrir `/custom-topics`
+2. Tap rapidement sur un bouton mute/follow d'un thème
+3. Immédiatement faire back pour quitter l'écran avant que la requête ne termine
 **Résultat attendu** :
-- Le header de la carte (titre du topic + badge) se "colle" en haut de l'écran visible de la carte
-- Le header naturel (dans le contenu) disparaît par fade quand le sticky prend le relais
-- En continuant à scroller, quand le bas de la carte dépasse le sticky, le sticky disparaît
-- Pas de doublon header visible à aucun moment
+- Aucune exception "ref after dispose" ou "context is not mounted"
+- La requête termine côté API, mais aucune invalidation n'est tentée sur un widget démonté (gardes `context.mounted`)
 
-**Edge case** : La carte ne doit PAS avoir de sticky quand elle n'est pas ouverte (compacte)
-
----
-
-### Scénario 5 : Citation Serein en première position
-
+### Scénario 5 : Serein toggle
 **Parcours** :
-1. Ouvrir `/digest`
-2. Activer le mode Serein (toggle en haut à droite)
-3. Observer le contenu de la carte principale
-
+1. Ouvrir `/feed`
+2. Activer puis désactiver le mode Serein plusieurs fois
 **Résultat attendu** :
-- La citation (QuoteBlock) apparaît **avant** le premier topic (Bonne Nouvelle)
-- La citation est présentée dans une card élégante avec :
-  - Un grand guillemet décoratif `«` en haut
-  - Le texte en italique centré, hauteur de ligne 1.55
-  - Une fine ligne horizontale accent sous le texte
-  - L'auteur en semi-gras en dessous
-  - Fond teinté subtil (primary 5% en clair, white 6% en sombre)
+- Un **seul** refresh est déclenché à chaque toggle (plus de double refresh lié au listener dupliqué)
+- L'indicateur de chargement s'affiche brièvement puis le feed se met à jour
 
-**Edge case** : Si le digest n'a pas de citation (quote null), rien ne s'affiche en première position
+### Scénario 6 : Backend — Endpoints Learning
+**Parcours** (via curl ou Postman, JWT valide) :
+1. `GET /learning/proposals` → liste (vide au démarrage)
+2. Consommer 5+ articles d'un même thème → recalcul signal
+3. `GET /learning/proposals` → doit contenir au moins une proposition pending
+4. `PATCH /learning/proposals/{id}` avec `{"status": "accepted"}` → OK, proposition resolved
+5. `POST /learning/entity-preferences` `{"entity_canonical": "Elon Musk", "preference": "mute"}` → 201
+6. `GET /feed` → les articles mentionnant "Elon Musk" sont absents
+**Résultat attendu** :
+- Schéma réponse conforme (`id`, `proposal_type`, `entity_label`, `signal_strength`, `status`…)
+- Filtrage entity mute effectif sur `/feed` (recommendation_service)
 
----
-
-### Scénario 6 : Pépite du jour styled
-
+### Scénario 7 : Pagination backend — `has_next`
 **Parcours** :
-1. Ouvrir `/digest` (un digest qui a une Pépite du jour)
-2. Scroller jusqu'au bloc "Pépite du jour"
-
+1. `GET /feed?offset=0&limit=20` avec un pool de 50 candidats
+2. Vérifier `pagination.has_next: true` (30 restants)
+3. `GET /feed?offset=40&limit=20` → `has_next: false`
 **Résultat attendu** :
-- Le bloc est dans un container encadré (border radius 16, tint, ombre)
-- Le badge "🌿 Pépite du jour" et le mini-éditorial apparaissent en header interne (padding 12px)
-- La FeedCard est à l'intérieur du container (padding 10px)
-- Visuellement cohérent avec les cartes topics
-
----
-
-### Scénario 7 : Coup de cœur styled
-
-**Parcours** :
-1. Ouvrir `/digest` (digest avec Coup de cœur)
-2. Scroller jusqu'au bloc "Coup de cœur"
-
-**Résultat attendu** :
-- Même container styled que la Pépite
-- Le texte d'intro ("L'article le plus gardé hier...") dans le header interne
-- Cohérence visuelle avec le reste du flow
-
----
-
-### Scénario 8 : Toggle Serein ↔ Standard (animation)
-
-**Parcours** :
-1. Activer mode Serein → observer la citation en premier
-2. Désactiver mode Serein → la citation disparaît, layout standard
-3. Réactiver → citation réapparaît en premier
-
-**Résultat attendu** :
-- AnimatedSwitcher cross-fade de 300ms entre les deux layouts
-- Pas de flash / layout jump visible
-
----
-
-### Scénario 9 : Sticky header — transition vers le topic suivant
-
-**Parcours** :
-1. Ouvrir le premier topic (expand)
-2. Scroller jusqu'à voir la fin du premier topic et le début du deuxième
-3. Ouvrir également le deuxième topic
-
-**Résultat attendu** :
-- Quand le premier topic scroll hors de vue, son sticky header disparaît proprement
-- Le sticky du deuxième topic fonctionne indépendamment
-- Jamais deux sticky headers simultanément visibles
-
----
+- `has_next = (offset + limit) < service.total_candidates` (feed.py:119)
+- `total` reflète `total_candidates` (pool pré-diversification), pas le nombre d'items dans la page
 
 ## Critères d'acceptation
 
-- [ ] BackdropFilter blur visible sur la carte mère (effet glass)
-- [ ] Gradient semi-transparent (app background visible à travers)
-- [ ] Teinte cards topics plus prononcée en dark et light mode
-- [ ] Header sticky activé uniquement sur card ouverte (expanded)
-- [ ] Header sticky release quand la card scroll hors de vue
-- [ ] Opacity fade du header naturel quand sticky actif
-- [ ] QuoteBlock affiché EN PREMIER en mode Serein (avant topics)
-- [ ] QuoteBlock design : guillemet décoratif + ligne accent + auteur stylé
-- [ ] QuoteBlock invisible si quote.text vide
-- [ ] PépiteBlock dans container styled (cohérent avec topics)
-- [ ] CoupDeCoeurBlock dans container styled (cohérent avec topics)
-- [ ] ActuDécalée dans container styled (cohérent avec topics)
-- [ ] Aucune régression en mode standard (non-serein)
-- [ ] flutter analyze : 0 errors, 0 warnings sur les fichiers modifiés
+**Backend**
+- [ ] Alembic : exactement **1 head** (`alembic heads` = `ln01`)
+- [ ] Migration `ln01` applicable et réversible (upgrade + downgrade)
+- [ ] Tables `user_learning_proposals` + `user_entity_preferences` créées avec index et UK
+- [ ] `tests/test_learning_service.py` : **25/25 pass** ✅ (vérifié localement)
+- [ ] Endpoints `/learning/*` JWT-protégés
+- [ ] `recommendation_service` filtre par entity mute (preuve : test ou requête manuelle)
+- [ ] Feed inclut `learning_checkpoint` uniquement quand `offset=0` et feed non-saved
+- [ ] Réponse `/feed` inclut `pagination.has_next` / `pagination.total`
+
+**Mobile**
+- [ ] Aucune exception "Cannot use 'ref' after the widget was disposed" sur le parcours post-login → detail → back
+- [ ] Aucune `LateInitializationError` sur `Supabase.instance` en dispose
+- [ ] Pagination feed : pas de boucle infinie, pas de perte d'état sur erreur page 2+
+- [ ] Serein toggle : un seul refresh par changement
+- [ ] `flutter analyze` : 0 errors sur les fichiers modifiés (à valider côté QA — flutter non dispo en sandbox)
+- [ ] `flutter test` : suite verte (à valider côté QA — flutter non dispo en sandbox)
 
 ## Zones de risque
 
-- **BackdropFilter** : peut être ignoré silencieusement sur certains devices Android anciens (API < 23) — l'app doit rester lisible sans le flou
-- **Sticky header** : la translation est calculée à partir de `localToGlobal` — à vérifier que le pin line est correct avec et sans notch/safe area
-- **Quote first position** : si `widget.digest?.quote == null`, rien ne doit s'afficher — vérifier que le layout ne laisse pas d'espace vide
-- **AnimatedSwitcher** + QuoteBlock en premier : vérifier que le cross-fade ne fait pas "sauter" le scroll position
+- **Dispose order** : tout nouveau ConsumerStatefulWidget qui track des analytics en dispose() doit respecter le pattern "tracking AVANT super.dispose()" avec try/catch.
+- **ref.read dans un Future.delayed** : toujours capturer le notifier en dehors du callback retardé.
+- **Alembic heads** : le rename `lc01 → ln01` ne doit être appliqué sur aucun env qui aurait déjà exécuté la migration sous le nom `lc01` (non applicable ici, migration jamais déployée).
+- **Pagination hybride** : si le backend corrige son `has_next` pour tenir compte du regroupement post-diversification, retirer la garde `items.isNotEmpty` côté mobile deviendra sûr.
+- **Filtrage entity mute** : le canonical-name est comparé en lowercase simple — les variantes orthographiques ne sont PAS déduplées (limitation connue, Story 13.7+).
 
 ## Dépendances
 
-- Aucun endpoint API modifié — les données (quote, pepite, coupDeCoeur) sont existantes
-- Nécessite un digest avec mode editorial activé (flag `usesEditorial`)
-- La citation Serein nécessite `digest.quote != null` (présent dans les vraies données API)
-- Tests sur device physique recommandés pour valider le backdrop blur
+- **Backend**
+  - Migration Alembic `ln01` à appliquer (via Supabase SQL Editor en prod, jamais sur Railway).
+  - Pas de nouvelle variable d'env.
+- **Mobile**
+  - Aucune dépendance pub.dev nouvelle.
+  - Nécessite un backend à jour (endpoints `/learning/*` + `pagination.has_next` dans `/feed`).
+
+## Tests backend exécutés en local
+
+```
+PYTHONPATH=. pytest tests/test_learning_service.py -q
+→ 25 passed, 18 warnings in 1.05s
+```
+
+Les autres failures observées dans la suite complète (`test_classification_queue`, `test_custom_topics`, `test_feed_refresh_undo`, `test_serein_filter`, `test_source_*`, `test_feed_filter_inspiration`) sont des **erreurs de plomberie sandbox** (sqlalchemy async + httpx AsyncClient API change), **sans rapport avec cette PR**.
