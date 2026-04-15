@@ -3,9 +3,10 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
@@ -161,18 +162,32 @@ async def get_personalized_feed(
             )
         )
 
-    # Epic 13: Learning Checkpoint — include proposals on first page only
+    # Epic 13: Learning Checkpoint — include proposals on first page only.
+    # Round 2 fix (bug-infinite-load-requests.md) : commit+release la session
+    # `db` AVANT l'appel Learning, et faire tourner Learning sur une session
+    # courte via `async_session_maker`. Sans ça, le feed hot path tient `db`
+    # pendant SELECT + UPDATE Learning, ce qui en pic d'usage monopolise le
+    # pool DB.
     checkpoint_data = None
     if offset == 0 and not saved_only:
+        # Libère la connexion DB avant l'appel Learning — s'il y avait des
+        # writes pending (hydrate_user_status), ils sont persistés ; sur
+        # erreur DB (exceptionnelle à ce stade), on trace mais on continue.
         try:
-            learning_service = LearningService(db)
+            await db.commit()
+        except SQLAlchemyError:
+            logger.warning("feed_precommit_failed", exc_info=True)
+
+        try:
+            learning_service = LearningService(
+                db=None, session_maker=async_session_maker
+            )
             proposals = await learning_service.get_pending_proposals(user_uuid)
             if len(proposals) >= 2:
                 checkpoint_data = LearningCheckpointResponse(
                     proposals=[proposal_to_response(p) for p in proposals],
                     total_pending=len(proposals),
                 )
-                await db.commit()
         except Exception as e:
             logger.warning("learning_checkpoint_error", error=str(e))
 
