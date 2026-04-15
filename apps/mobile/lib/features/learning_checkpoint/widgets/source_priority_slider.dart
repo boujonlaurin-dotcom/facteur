@@ -80,12 +80,13 @@ class _DotGroup extends StatelessWidget {
         return Semantics(
           button: true,
           label: 'Niveau ${i + 1} sur 3',
-          child: InkWell(
-            onTap: () => onTap!(i + 1),
-            customBorder: const CircleBorder(),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: dot,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: InkWell(
+              onTap: () => onTap!(i + 1),
+              customBorder: const CircleBorder(),
+              child: Center(child: dot),
             ),
           ),
         );
