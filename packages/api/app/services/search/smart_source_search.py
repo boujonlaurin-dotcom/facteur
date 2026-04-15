@@ -229,23 +229,17 @@ class SmartSourceSearchService:
                     results.append(r)
             layers_called.append("mistral")
 
-        return await self._finalize(
-            normalized, results, layers_called, start, False
-        )
+        return await self._finalize(normalized, results, layers_called, start, False)
 
     # ─── Layer implementations ────────────────────────────────────
 
-    async def _search_catalog(
-        self, query: str, user_themes: list[str]
-    ) -> list[dict]:
+    async def _search_catalog(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search catalog via ILIKE on name and url."""
         pattern = f"%{query}%"
         stmt = (
             select(Source)
             .where(Source.is_active.is_(True))
-            .where(
-                (Source.name.ilike(pattern)) | (Source.url.ilike(pattern))
-            )
+            .where((Source.name.ilike(pattern)) | (Source.url.ilike(pattern)))
             .order_by(Source.is_curated.desc())
             .limit(10)
         )
@@ -254,14 +248,10 @@ class SmartSourceSearchService:
 
         items = []
         for s in sources:
-            items.append(
-                self._source_to_result(s, "catalog", user_themes)
-            )
+            items.append(self._source_to_result(s, "catalog", user_themes))
         return items
 
-    async def _search_youtube(
-        self, query: str, user_themes: list[str]
-    ) -> list[dict]:
+    async def _search_youtube(self, query: str, user_themes: list[str]) -> list[dict]:
         """Resolve YouTube handle to feed via RSSParser."""
         q = query.strip()
         if q.startswith("@"):
@@ -288,7 +278,12 @@ class SmartSourceSearchService:
                         for e in detected.entries[:3]
                     ],
                     "score": _compute_score(
-                        "youtube", False, False, 0, None, True,
+                        "youtube",
+                        False,
+                        False,
+                        0,
+                        None,
+                        True,
                         any(t in (detected.title or "").lower() for t in user_themes),
                     ),
                     "source_layer": "youtube",
@@ -298,9 +293,7 @@ class SmartSourceSearchService:
             logger.debug("smart_search.youtube_failed", query=query, error=str(e))
             return []
 
-    async def _search_reddit(
-        self, query: str, user_themes: list[str]
-    ) -> list[dict]:
+    async def _search_reddit(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search Reddit for subreddits."""
         q = query.strip()
         if q.lower().startswith("r/"):
@@ -309,29 +302,33 @@ class SmartSourceSearchService:
         results = await self.reddit.search(q)
         items = []
         for r in results:
-            items.append({
-                "name": r["name"],
-                "type": "reddit",
-                "url": r["url"],
-                "feed_url": r["feed_url"],
-                "favicon_url": None,
-                "description": r.get("description"),
-                "in_catalog": False,
-                "is_curated": False,
-                "source_id": None,
-                "recent_items": [],
-                "score": _compute_score(
-                    "reddit", False, False,
-                    min(r.get("subscribers", 0) // 1000, 100),
-                    None, True, False,
-                ),
-                "source_layer": "reddit",
-            })
+            items.append(
+                {
+                    "name": r["name"],
+                    "type": "reddit",
+                    "url": r["url"],
+                    "feed_url": r["feed_url"],
+                    "favicon_url": None,
+                    "description": r.get("description"),
+                    "in_catalog": False,
+                    "is_curated": False,
+                    "source_id": None,
+                    "recent_items": [],
+                    "score": _compute_score(
+                        "reddit",
+                        False,
+                        False,
+                        min(r.get("subscribers", 0) // 1000, 100),
+                        None,
+                        True,
+                        False,
+                    ),
+                    "source_layer": "reddit",
+                }
+            )
         return items
 
-    async def _search_brave(
-        self, query: str, user_themes: list[str]
-    ) -> list[dict]:
+    async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search Brave, then validate top URLs via feed discovery."""
         brave_results = await self.brave.search(query)
         items = []
@@ -342,26 +339,38 @@ class SmartSourceSearchService:
                 continue
             try:
                 detected = await self.rss_parser.detect(url)
-                items.append({
-                    "name": detected.title,
-                    "type": detected.feed_type,
-                    "url": url,
-                    "feed_url": detected.feed_url,
-                    "favicon_url": detected.logo_url,
-                    "description": detected.description,
-                    "in_catalog": False,
-                    "is_curated": False,
-                    "source_id": None,
-                    "recent_items": [
-                        {"title": e["title"], "published_at": e.get("published_at", "")}
-                        for e in detected.entries[:3]
-                    ],
-                    "score": _compute_score(
-                        "brave", False, False, 0, None, False,
-                        any(t in (detected.title or "").lower() for t in user_themes),
-                    ),
-                    "source_layer": "brave",
-                })
+                items.append(
+                    {
+                        "name": detected.title,
+                        "type": detected.feed_type,
+                        "url": url,
+                        "feed_url": detected.feed_url,
+                        "favicon_url": detected.logo_url,
+                        "description": detected.description,
+                        "in_catalog": False,
+                        "is_curated": False,
+                        "source_id": None,
+                        "recent_items": [
+                            {
+                                "title": e["title"],
+                                "published_at": e.get("published_at", ""),
+                            }
+                            for e in detected.entries[:3]
+                        ],
+                        "score": _compute_score(
+                            "brave",
+                            False,
+                            False,
+                            0,
+                            None,
+                            False,
+                            any(
+                                t in (detected.title or "").lower() for t in user_themes
+                            ),
+                        ),
+                        "source_layer": "brave",
+                    }
+                )
             except (ValueError, Exception):
                 continue
 
@@ -377,34 +386,44 @@ class SmartSourceSearchService:
         for base_url in base_urls[:5]:
             try:
                 detected = await self.rss_parser.detect(base_url)
-                items.append({
-                    "name": detected.title,
-                    "type": detected.feed_type,
-                    "url": base_url,
-                    "feed_url": detected.feed_url,
-                    "favicon_url": detected.logo_url,
-                    "description": detected.description,
-                    "in_catalog": False,
-                    "is_curated": False,
-                    "source_id": None,
-                    "recent_items": [
-                        {"title": e["title"], "published_at": e.get("published_at", "")}
-                        for e in detected.entries[:3]
-                    ],
-                    "score": _compute_score(
-                        "google_news", False, False, 0, None, False,
-                        any(t in (detected.title or "").lower() for t in user_themes),
-                    ),
-                    "source_layer": "google_news",
-                })
+                items.append(
+                    {
+                        "name": detected.title,
+                        "type": detected.feed_type,
+                        "url": base_url,
+                        "feed_url": detected.feed_url,
+                        "favicon_url": detected.logo_url,
+                        "description": detected.description,
+                        "in_catalog": False,
+                        "is_curated": False,
+                        "source_id": None,
+                        "recent_items": [
+                            {
+                                "title": e["title"],
+                                "published_at": e.get("published_at", ""),
+                            }
+                            for e in detected.entries[:3]
+                        ],
+                        "score": _compute_score(
+                            "google_news",
+                            False,
+                            False,
+                            0,
+                            None,
+                            False,
+                            any(
+                                t in (detected.title or "").lower() for t in user_themes
+                            ),
+                        ),
+                        "source_layer": "google_news",
+                    }
+                )
             except (ValueError, Exception):
                 continue
 
         return items
 
-    async def _search_mistral(
-        self, query: str, user_themes: list[str]
-    ) -> list[dict]:
+    async def _search_mistral(self, query: str, user_themes: list[str]) -> list[dict]:
         """Mistral-small fallback: suggest feed URLs for query."""
         from app.services.editorial.llm_client import EditorialLLMClient
 
@@ -441,32 +460,39 @@ class SmartSourceSearchService:
                     continue
                 try:
                     detected = await self.rss_parser.detect(url)
-                    items.append({
-                        "name": detected.title,
-                        "type": detected.feed_type,
-                        "url": url,
-                        "feed_url": detected.feed_url,
-                        "favicon_url": detected.logo_url,
-                        "description": detected.description,
-                        "in_catalog": False,
-                        "is_curated": False,
-                        "source_id": None,
-                        "recent_items": [
-                            {
-                                "title": e["title"],
-                                "published_at": e.get("published_at", ""),
-                            }
-                            for e in detected.entries[:3]
-                        ],
-                        "score": _compute_score(
-                            "mistral", False, False, 0, None, False,
-                            any(
-                                t in (detected.title or "").lower()
-                                for t in user_themes
+                    items.append(
+                        {
+                            "name": detected.title,
+                            "type": detected.feed_type,
+                            "url": url,
+                            "feed_url": detected.feed_url,
+                            "favicon_url": detected.logo_url,
+                            "description": detected.description,
+                            "in_catalog": False,
+                            "is_curated": False,
+                            "source_id": None,
+                            "recent_items": [
+                                {
+                                    "title": e["title"],
+                                    "published_at": e.get("published_at", ""),
+                                }
+                                for e in detected.entries[:3]
+                            ],
+                            "score": _compute_score(
+                                "mistral",
+                                False,
+                                False,
+                                0,
+                                None,
+                                False,
+                                any(
+                                    t in (detected.title or "").lower()
+                                    for t in user_themes
+                                ),
                             ),
-                        ),
-                        "source_layer": "mistral",
-                    })
+                            "source_layer": "mistral",
+                        }
+                    )
                 except (ValueError, Exception):
                     continue
             return items
