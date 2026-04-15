@@ -41,13 +41,15 @@ class RedditSearchProvider:
                 name = sr.get("display_name", "")
                 if not name:
                     continue
-                results.append({
-                    "name": f"r/{name}",
-                    "url": f"https://www.reddit.com/r/{name}/",
-                    "feed_url": f"https://www.reddit.com/r/{name}/.rss",
-                    "description": (sr.get("public_description") or "")[:200],
-                    "subscribers": sr.get("subscribers", 0),
-                })
+                results.append(
+                    {
+                        "name": f"r/{name}",
+                        "url": f"https://www.reddit.com/r/{name}/",
+                        "feed_url": f"https://www.reddit.com/r/{name}/.rss",
+                        "description": (sr.get("public_description") or "")[:200],
+                        "subscribers": sr.get("subscribers", 0),
+                    }
+                )
 
             logger.info("reddit.search_success", query=query, count=len(results))
             return results

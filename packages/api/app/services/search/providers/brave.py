@@ -52,11 +52,13 @@ class BraveSearchProvider:
 
             results = []
             for item in data.get("web", {}).get("results", []):
-                results.append({
-                    "url": item.get("url", ""),
-                    "title": item.get("title", ""),
-                    "description": item.get("description", ""),
-                })
+                results.append(
+                    {
+                        "url": item.get("url", ""),
+                        "title": item.get("title", ""),
+                        "description": item.get("description", ""),
+                    }
+                )
 
             logger.info("brave.search_success", query=query, count=len(results))
             return results

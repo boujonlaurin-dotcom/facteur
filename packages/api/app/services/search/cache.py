@@ -88,10 +88,7 @@ class SearchCache:
         if random.random() < CLEANUP_PROBABILITY:
             try:
                 result = await self.db.execute(
-                    text(
-                        "DELETE FROM source_search_cache "
-                        "WHERE expires_at < :now"
-                    ),
+                    text("DELETE FROM source_search_cache WHERE expires_at < :now"),
                     {"now": now},
                 )
                 await self.db.flush()

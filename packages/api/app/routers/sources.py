@@ -170,8 +170,7 @@ async def smart_search(
                     is_curated=r.get("is_curated", False),
                     source_id=r.get("source_id"),
                     recent_items=[
-                        SmartSearchRecentItem(**i)
-                        for i in r.get("recent_items", [])
+                        SmartSearchRecentItem(**i) for i in r.get("recent_items", [])
                     ],
                     score=r.get("score", 0.0),
                     source_layer=r.get("source_layer", "unknown"),
@@ -204,10 +203,7 @@ async def get_sources_by_theme(
         select(Source)
         .where(Source.is_active.is_(True))
         .where(Source.is_curated.is_(True))
-        .where(
-            (Source.theme == slug)
-            | (Source.secondary_themes.any(slug))
-        )
+        .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
         .order_by(Source.name)
         .limit(limit)
     )
@@ -226,10 +222,7 @@ async def get_sources_by_theme(
             select(Source)
             .where(Source.is_active.is_(True))
             .where(Source.is_curated.is_(False))
-            .where(
-                (Source.theme == slug)
-                | (Source.secondary_themes.any(slug))
-            )
+            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
             .order_by(Source.name)
             .limit(remaining)
         )
@@ -256,9 +249,7 @@ async def get_sources_by_theme(
                 .where(Source.is_active.is_(True))
             )
             if exclude_ids:
-                stmt_community = stmt_community.where(
-                    Source.id.notin_(exclude_ids)
-                )
+                stmt_community = stmt_community.where(Source.id.notin_(exclude_ids))
             stmt_community = (
                 stmt_community.group_by(Source.id)
                 .order_by(func.count(UserSource.user_id).desc())
@@ -271,9 +262,7 @@ async def get_sources_by_theme(
             ]
             if community_responses:
                 groups.append(
-                    ThemeSourceGroup(
-                        label="Communauté", sources=community_responses
-                    )
+                    ThemeSourceGroup(label="Communauté", sources=community_responses)
                 )
                 total += len(community_responses)
 
@@ -289,9 +278,7 @@ async def get_themes_followed(
     from app.models.source import UserSource
 
     # Get user interests
-    stmt = select(UserInterest.interest_slug).where(
-        UserInterest.user_id == user_id
-    )
+    stmt = select(UserInterest.interest_slug).where(UserInterest.user_id == user_id)
     result = await db.execute(stmt)
     slugs = [row[0] for row in result.fetchall()]
 
@@ -303,10 +290,7 @@ async def get_themes_followed(
             .join(UserSource, UserSource.source_id == Source.id)
             .where(UserSource.user_id == user_id)
             .where(Source.is_active.is_(True))
-            .where(
-                (Source.theme == slug)
-                | (Source.secondary_themes.any(slug))
-            )
+            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
         )
         result = await db.execute(stmt_count)
         count = result.scalar() or 0
