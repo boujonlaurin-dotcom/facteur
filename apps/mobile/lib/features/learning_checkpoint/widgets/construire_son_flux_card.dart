@@ -68,7 +68,10 @@ class _ConstruireSonFluxCardState
     if (value is LcApplying) {
       return _buildCard(context, visible: value.previous, isApplying: true);
     }
-    // LcHidden / LcApplied / LcSnoozed / LcError / loading → invisible.
+    if (value is LcError && value.previous != null) {
+      return _buildCard(context, visible: value.previous!, hasError: true);
+    }
+    // LcHidden / LcApplied / LcSnoozed / loading → invisible.
     return const SizedBox.shrink();
   }
 
@@ -76,6 +79,7 @@ class _ConstruireSonFluxCardState
     BuildContext context, {
     required LcVisible visible,
     bool isApplying = false,
+    bool hasError = false,
   }) {
     final colors = context.facteurColors;
     final notifier = ref.read(learningCheckpointProvider.notifier);
@@ -131,7 +135,7 @@ class _ConstruireSonFluxCardState
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text('Valider'),
+                    : Text(hasError ? 'Réessayer' : 'Valider'),
               ),
             ],
           ),

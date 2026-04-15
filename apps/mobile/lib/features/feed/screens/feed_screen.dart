@@ -689,7 +689,10 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                         final lcAsync = ref.watch(learningCheckpointProvider);
                         final lcValue = lcAsync.valueOrNull;
                         final bool showConstruireFlux =
-                            lcValue is LcVisible && contents.length > 3;
+                            (lcValue is LcVisible ||
+                                lcValue is LcApplying ||
+                                lcValue is LcError) &&
+                            contents.length > 3;
 
                         // Empty state when a filter is active but no results
                         final hasActiveFilter =
