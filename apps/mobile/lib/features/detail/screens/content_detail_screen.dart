@@ -1744,7 +1744,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 _perspectivesResponse!.perspectives.isEmpty,
                             onTap: () {
                               HapticFeedback.lightImpact();
-                              _showPerspectives(context);
+                              final ctx =
+                                  _perspectivesKey.currentContext;
+                              if (ctx != null) {
+                                Scrollable.ensureVisible(
+                                  ctx,
+                                  duration: const Duration(
+                                      milliseconds: 400),
+                                  curve: Curves.easeInOut,
+                                );
+                              } else {
+                                _showPerspectives(context);
+                              }
                             },
                           ),
                           const SizedBox(height: 12),
@@ -2270,6 +2281,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               ),
                                             ),
                                           ],
+                                          // Editorial badge (digest articles)
+                                          if (content.editorialBadge !=
+                                              null) ...[
+                                            const SizedBox(width: 6),
+                                            EditorialBadge.chip(
+                                                  content.editorialBadge,
+                                                  context: context,
+                                                ) ??
+                                                const SizedBox.shrink(),
+                                          ],
                                           // Gear icon — same scale as bias dot
                                           const SizedBox(width: 4),
                                           Material(
@@ -2387,15 +2408,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .map((t) => t.canonicalName!.toLowerCase())
         .toSet();
 
-    const maxVisible = 3;
+    // Dense layout: 4 tags max across macro-theme + topic + entities.
+    // Remaining entities are grouped into a "+X" overflow chip.
+    const maxTotalVisible = 4;
+
+    final hasMacroTheme = content.topics.isNotEmpty &&
+        getTopicMacroTheme(content.topics.first) != null;
+    final hasTopic = content.topics.isNotEmpty;
+    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
     final entities = content.entities;
-    final visible = entities.take(maxVisible).toList();
-    final overflow = entities.length - maxVisible;
+    final maxEntitiesVisible =
+        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
+    final visible = entities.take(maxEntitiesVisible).toList();
+    final overflow = entities.length - maxEntitiesVisible;
 
     return [
       // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (content.topics.isNotEmpty &&
-          getTopicMacroTheme(content.topics.first) != null)
+      if (hasMacroTheme)
         Builder(builder: (context) {
           final macroTheme = getTopicMacroTheme(content.topics.first)!;
           final emoji = getMacroThemeEmoji(macroTheme);
@@ -2421,7 +2450,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           );
         }),
       // Topic chip
-      if (content.topics.isNotEmpty)
+      if (hasTopic)
         GestureDetector(
           onTap: () => TopicChip.showArticleSheet(context, content,
               initialSection: ArticleSheetSection.topic),
@@ -2805,14 +2834,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   ],
                                 ),
                                 const SizedBox(height: FacteurSpacing.space4),
-                              ],
-                              if (content.editorialBadge != null) ...[
-                                EditorialBadge.chip(
-                                      content.editorialBadge,
-                                      context: context,
-                                    ) ??
-                                    const SizedBox.shrink(),
-                                const SizedBox(height: FacteurSpacing.space2),
                               ],
                               Text(
                                 content.title,
@@ -3309,12 +3330,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               ..._buildArticleTagWidgets(context, content),
                           ],
                         ),
-                      if (content.editorialBadge != null)
-                        EditorialBadge.chip(
-                              content.editorialBadge,
-                              context: context,
-                            ) ??
-                            const SizedBox.shrink(),
                       Text(
                         content.title,
                         style: textTheme.displayLarge?.copyWith(fontSize: 24),
