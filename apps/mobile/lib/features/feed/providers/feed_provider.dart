@@ -108,15 +108,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedEntity = null;
     _selectedKeyword = null;
 
-    // Watch serein toggle to refetch feed when it changes
-    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
-      if (prev != next) refresh();
-    });
-
-    // Watch serein toggle to refetch feed when it changes
-    ref.listen(sereinToggleProvider.select((s) => s.enabled), (prev, next) {
-      if (prev != next) refresh();
-    });
+    // NB: serein toggle is observed in feed_screen.dart (which wraps the
+    // refresh in a loading indicator). Listening here as well would cause
+    // duplicate concurrent refreshes and race conditions on the feed state.
 
     // Fetch initial page
     final sw = Stopwatch()..start();
@@ -207,10 +201,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         keyword: _selectedKeyword,
         serein: isSerein);
 
-    // Update pagination state: keep loading as long as the backend returns
-    // ANY items. Post-processing (regroupement, clustering) can shrink the
-    // response below `limit`, so count >= limit is unreliable.
-    _hasNext = response.items.isNotEmpty;
+    // Hybrid pagination: trust the backend's `has_next` (based on the
+    // total_candidates pool pre-diversification), but stop anyway if we got
+    // an empty page so we don't loop forever if the backend says "more"
+    // while returning nothing due to regroupement/clustering shrinkage.
+    _hasNext = response.pagination.hasNext && response.items.isNotEmpty;
 
     return response;
   }
@@ -227,23 +222,25 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final newItems = response.items;
 
       if (newItems.isEmpty) {
-        _hasNext = false;
+        // `_fetchPage` already updated `_hasNext` via the hybrid check.
         return;
       }
 
-      if (newItems.isNotEmpty) {
-        _page = nextPage;
-        // Append new items to the existing list
-        final currentItems = state.value?.items ?? [];
-        final currentCarousels = state.value?.carousels ?? [];
+      _page = nextPage;
+      // Append new items to the existing list
+      final currentItems = state.value?.items ?? [];
+      final currentCarousels = state.value?.carousels ?? [];
 
-        state = AsyncData(FeedState(
-          items: [...currentItems, ...newItems],
-          carousels: currentCarousels, // Keep page 1 carousels
-        ));
-      }
-    } catch (e, stack) {
-      state = AsyncError(e, stack);
+      state = AsyncData(FeedState(
+        items: [...currentItems, ...newItems],
+        carousels: currentCarousels, // Keep page 1 carousels
+      ));
+    } catch (e) {
+      // Don't replace state with AsyncError — that would wipe the existing
+      // feed items on a transient page 2+ failure. Log and stop paging; the
+      // user can pull-to-refresh to retry.
+      print('FeedNotifier: loadMore failed on page ${_page + 1}: $e');
+      _hasNext = false;
     } finally {
       _isLoadingMore = false;
     }

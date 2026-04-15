@@ -26,7 +26,7 @@ import yaml
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.content import Content, UserContentStatus
@@ -286,9 +286,19 @@ class DigestService:
     - StreakService: For completion gamification
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
+        # `session_maker` est propagé au DigestSelector/EditorialPipeline :
+        # la pipeline LLM ouvre ses propres sessions courtes pour ses ops
+        # DB, et DigestSelector commit la session avant d'appeler la
+        # pipeline (libère la connexion au pool pendant 3-5 min).
+        # Cf. docs/bugs/bug-infinite-load-requests.md (P1 — site B).
         self.session = session
-        self.selector = DigestSelector(session)
+        self.session_maker = session_maker
+        self.selector = DigestSelector(session, session_maker=session_maker)
         self.streak_service = StreakService(session)
 
     async def get_or_create_digest(

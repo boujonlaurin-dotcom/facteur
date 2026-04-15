@@ -445,3 +445,83 @@ Pistes préparées (à dégainer *après* tri) :
     pour donner plus de marge avant saturation.
   - Semaphore + cache court sur les fan-outs upstream (Google News RSS,
     trafilatura) pour cap la parallélisation.
+
+---
+
+## Résolution — 2026-04-15 (branche `claude/fix-infinite-loading-requests-dKoY8`)
+
+Après vérification `pg_stat_activity` sur prod : **4 sessions idle in
+transaction, age moyen 53 min**, signature de queries pointant sur Site B
+(~57 % de la fuite) et Site A (~36 %). Fix architectural codé selon le plan
+1-3 + hygiène transverse, dans cet ordre :
+
+### P1 — Pipeline éditoriale (Site B)
+
+Pattern : **session_maker injecté + short sessions** pour toute opération DB
+à l'intérieur de la pipeline, avec **commit explicite de la session injectée
+AVANT l'appel LLM** pour libérer la connexion au pool.
+
+Services modifiés (chacun accepte désormais `session_maker=None` optionnel +
+helper `_short_session()` qui délègue au maker si présent, sinon retombe sur
+la session injectée — 100 % rétro-compatible) :
+
+- `app/services/editorial/deep_matcher.py` — `_load_deep_articles` ouvre
+  une session courte le temps du SELECT puis la ferme, les appels LLM
+  (`match_for_topics`) tournent **hors transaction**.
+- `app/services/editorial/writer.py` — `_recent_highlight_content_ids`,
+  `record_highlight` (commit=True), `get_coup_de_coeur` (2 queries) et
+  `select_actu_decalee` → short sessions.
+- `app/services/perspective_service.py` — `resolve_bias` + `search_internal_perspectives`
+  → short sessions. Les calls Google News / Mistral restent hors transaction.
+- `app/services/editorial/pipeline.py` — propage `session_maker` aux trois
+  services ci-dessus ; SELECT logos encapsulé en short session.
+- `app/services/digest_selector.py` — reçoit `session_maker`, le passe à
+  `EditorialPipelineService`, **commit la session injectée juste avant
+  `compute_global_context`** pour rendre la connexion au pool.
+- `app/services/digest_service.py` — expose `session_maker` sur le
+  constructeur et le passe à `DigestSelector`.
+
+Call sites mis à jour :
+- `app/routers/digest.py` : `get_digest`, `_gen_variant`, `generate_digest`
+  instancient `DigestService(db, session_maker=async_session_maker)`.
+- `app/jobs/digest_generation_job.py` : 3 sites (l. 168, 595, 865) passent
+  `session_maker=async_session_maker` à `EditorialPipelineService` et
+  `DigestSelector`.
+
+Test ajouté :
+`tests/editorial/test_deep_matcher.py::test_uses_session_maker_and_does_not_touch_injected_session`
+— verrouille l'invariant "quand un maker est fourni, la session injectée
+n'est JAMAIS touchée" (échec = régression directe vers le leak).
+
+### P2 — RSS sync (Site A)
+
+Pattern : **short session par entry**, I/O externes (httpx, trafilatura,
+_fetch_html_head) **hors session**. `_save_content` renvoie désormais un
+tuple `(is_new, content_id, needs_enrich, url)` pour que l'enrichissement
+trafilatura se fasse après commit+close. Fichier : `app/services/sync_service.py`
+(~400 lignes impactées). Test `test_save_content_deduplication` adapté au
+nouveau contrat de retour.
+
+### P3 — Hygiène transverse
+
+- `app/main.py` — `socket.setdefaulttimeout(30)` posé très tôt. Filet contre
+  un thread executor bloqué byte-par-byte par un upstream stall.
+- `app/services/briefing_service.py:269-290` — `feedparser.parse(url)`
+  remplacé par pattern `httpx.AsyncClient.get(...) + feedparser.parse(content)`
+  (timeout=10s explicite). Même landmine corrigée à `digest_selector.py:1526`.
+
+### Validation
+
+- `pytest tests/editorial/ tests/test_sync_service.py -q` → 100 passed
+- `pytest tests/editorial/test_deep_matcher.py -q` → 11 passed (dont le test
+  session_maker ajouté)
+- Full non-DB suite (462 passed, 13 skipped). Les tests DB-dépendants
+  échouent uniquement parce que le Postgres local n'est pas disponible —
+  indépendant de ce fix.
+
+### À suivre post-merge
+
+1. Observer `pg_stat_activity` pendant 48 h. Les sessions idle in transaction
+   de + de 5 min doivent disparaître.
+2. **Nettoyage P0** (PR séparée) : retirer le scheduled restart 01h/09h/17h
+   Paris une fois la pg_stat_activity clean confirmée sur 48 h.

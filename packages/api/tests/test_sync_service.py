@@ -116,8 +116,11 @@ async def test_save_content_deduplication(sync_service, mock_session):
         "duration_seconds": None
     }
     
-    is_new = await sync_service._save_content(data)
-    
+    # _save_content now returns a tuple (is_new, content_id, needs_enrich, url)
+    # because the I/O for trafilatura runs OUTSIDE the DB session
+    # (cf. docs/bugs/bug-infinite-load-requests.md, P2).
+    is_new, content_id, needs_enrich, url = await sync_service._save_content(data)
+
     assert is_new is False
     # Check if we updated the existing content
     assert mock_existing.thumbnail_url == "thumb"
