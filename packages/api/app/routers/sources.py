@@ -146,7 +146,6 @@ async def smart_search(
             detail="Too many requests (max 10/minute)",
         )
 
-
     service = SmartSourceSearchService(db)
     try:
         result = await service.search(data.query, user_id)

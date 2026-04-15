@@ -235,9 +235,7 @@ async def get_digest(
 
     try:
         digest = await asyncio.wait_for(
-            service.get_or_create_digest(
-                user_uuid, target_date, is_serene=serein
-            ),
+            service.get_or_create_digest(user_uuid, target_date, is_serene=serein),
             timeout=DIGEST_SINGLE_TIMEOUT_S,
         )
     except TimeoutError:
