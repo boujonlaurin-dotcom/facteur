@@ -1,6 +1,8 @@
-# PR — Article Reader Layout Rework (story 5.9)
+# PR #402 — Smart search pipeline backend (PR 1/3)
 
-## Quoi
+Branche : `claude/smart-search-pr1-backend` → `main`
+Commit : `9dcb80ac` feat(sources): smart search pipeline with Brave + Mistral fallback
+16 fichiers, +1559 lignes
 
 Refonte de la mise en page de l'écran de lecture in-app :
 - Nouveau footer animé (slide comme le header) qui remplace les FABs flottants une fois que l'utilisateur atteint la section Perspectives ou la fin de l'article
@@ -10,52 +12,96 @@ Refonte de la mise en page de l'écran de lecture in-app :
 
 ## Pourquoi
 
-Les FABs flottants masquaient le contenu et offraient une mauvaise ergonomie en fin d'article. L'objectif est d'avoir un footer persistant et contextuel qui apparaît naturellement quand l'utilisateur a terminé sa lecture, et d'intégrer les Perspectives directement dans le flux de lecture plutôt qu'en bottom sheet.
-
-## Fichiers modifiés
+Pipeline de recherche intelligente multi-sources pour l'ajout de source. 3 nouveaux endpoints (`POST /smart-search`, `GET /by-theme/{slug}`, `GET /themes-followed`), cache Postgres 24h, et providers pour Brave Search, Reddit JSON, et Google News RSS. Mistral-small en fallback uniquement si < 3 résultats après les couches gratuites.
 
 - **Mobile — core :**
   - `apps/mobile/lib/core/utils/html_utils.dart` — ajout de `cutHtmlAtPreview()` + `_findPositionAfterNWords()`
 
-- **Mobile — detail :**
-  - `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` — footer animé, sticky header Perspectives, mesure de l'extent article, state Perspectives lifté au niveau écran
-  - `apps/mobile/lib/features/detail/widgets/article_reader_widget.dart` — suppression du `SizedBox(height: 64)` superflu en fin de widget
-
-- **Mobile — feed :**
-  - `apps/mobile/lib/features/feed/widgets/perspectives_bottom_sheet.dart` — enum `PerspectivesAnalysisState` passé public, nouveau `PerspectivesInlineSection`, `PerspectivesTrianglePainter` public, filtre biais dans le bottom sheet
+La recherche actuelle est un simple ILIKE sur `Source.name`/`Source.url` du catalogue curé. Si l'utilisateur tape un nom approximatif ("stratechery", "lenny newsletter") ou un sujet vague, il n'obtient rien et doit deviner l'URL exacte. Ce pipeline comble la zone grise entre "je connais l'URL exacte" et "c'est dans le catalogue curé".
 
 - **Mobile — onboarding :**
   - `digest_mode_question.dart`, `intro_screen.dart`, `media_concentration_screen.dart` — fix lint `const` sur les listes `TextSpan`
 
-- **Docs :**
-  - `docs/stories/core/5.9.article-reader-layout-rework.md` — story technique
+### Backend — Nouveaux fichiers
+- `app/services/search/smart_source_search.py` — Orchestrateur du pipeline cascadé (548 lignes, le fichier central)
+- `app/services/search/cache.py` — Cache Postgres 24h avec SHA-256 normalization
+- `app/services/search/providers/brave.py` — Client Brave Search API (free tier)
+- `app/services/search/providers/reddit_search.py` — Client Reddit JSON search
+- `app/services/search/providers/google_news.py` — Extraction domaines depuis Google News RSS
+- `alembic/versions/ss01_create_source_search_cache.py` — Migration table `source_search_cache`
+
+### Backend — Fichiers modifiés
+- `app/config.py` — +3 settings : `brave_api_key`, `brave_monthly_cap`, `mistral_monthly_cap`
+- `app/routers/sources.py` — +3 endpoints + helper `_source_to_response()` + mapping `THEME_LABELS`
+- `app/schemas/source.py` — +7 schemas Pydantic (SmartSearch*, Theme*)
+
+### Tests (31 tests)
+- `tests/services/search/test_smart_source_search.py` — 20 tests (classify, score, normalize, dedup)
+- `tests/services/search/providers/test_brave.py` — 6 tests (mock HTTP, 429, timeout)
+- `tests/services/search/providers/test_reddit_search.py` — 5 tests (mock JSON, errors)
 
 ## Zones à risque
 
-- **`content_detail_screen.dart`** — fichier le plus critique et le plus large du projet mobile (~1 400 lignes). Deux `ScrollController` coexistent maintenant (`_scrollController` pour le mode scroll-to-site, `_inAppScrollController` pour le reader in-app). S'assurer qu'ils ne sont pas mélangés.
-- **`_measureArticleExtent()`** — utilise `RenderBox.localToGlobal` post-frame. Si l'article n'est pas encore rendu (images lazy-loaded), l'extent peut être sous-estimé. Ce n'est pas bloquant (fallback sur `maxScrollExtent`) mais peut affecter la barre de progression.
-- **`_footerAutoController`** — vérifier que `dispose()` l'inclut bien (memory leak sinon).
-- **Renommage `_AnalysisState` → `PerspectivesAnalysisState`** — l'enum est maintenant public et partagé entre le bottom sheet et `content_detail_screen`. Casser ce contrat affecterait les deux.
+1. **`smart_source_search.py`** — C'est le coeur du pipeline (548 lignes). La logique de court-circuit (≥3 résultats → stop) et l'ordre des couches déterminent le coût et la latence. Une erreur ici pourrait brûler le budget Brave/Mistral inutilement.
+
+2. **Rate limiting en mémoire** — Les compteurs `_brave_calls_month`, `_mistral_calls_month`, `_user_daily_counts` sont des globales qui se reset au restart. Ce n'est pas idéal pour un déploiement multi-instance mais acceptable pour le volume actuel (100-200 users). Si ça devient un problème → migrer vers Postgres ou Redis.
+
+3. **`by-theme/{slug}` fallback communauté** — Le fallback fait un `JOIN user_sources + GROUP BY + ORDER BY count`. Sur un gros volume de `user_sources`, ça pourrait être lent. À surveiller.
 
 ## Points d'attention pour le reviewer
 
-1. **Footer permanent** : `_footerPermanent = true` se déclenche dans deux endroits — `_checkIsShortArticle()` et `_checkAtPerspectivesSection()`. Vérifier absence de double-trigger ou race condition.
-2. **Sticky header Perspectives** : calculé à chaque événement scroll via `_checkAtPerspectivesSection()`. L'algo utilise `_headerOffset.value` pour calculer la position réelle du header — vérifier que l'offset est cohérent avec la valeur animée courante.
-3. **`PerspectivesInlineSection` — mode contrôlé vs autonome** : le widget supporte deux modes. En mode contrôlé (via `onSegmentTap`), le parent est propriétaire du filtre. L'écran de détail utilise ce mode pour synchroniser le sticky header — vérifier que `_onPerspectivesSegmentTap` dans le screen reflète la même logique que `_onSegmentTapInternal` dans le widget.
-4. **Barre de progression** : `_articleContentExtent` est mesuré via `_measureArticleExtent()` après rendu. Si null, fallback sur `maxScrollExtent`. Vérifier que `_articleEndKey` est bien positionné dans le widget tree juste avant la section Perspectives.
+1. **Pipeline order** — L'ordre catalog → YouTube → Reddit → Brave → Google News → Mistral est critique. Les couches gratuites passent en premier, Brave (limité à 1800/mois) et Mistral (2000/mois) en dernier. Vérifier que les short-circuits (`MIN_RESULTS_FOR_SHORTCIRCUIT = 3`) sont bien placés.
+
+2. **`_compute_score`** — Le scoring composite (confidence × 0.40 + popularity × 0.25 + freshness × 0.15 + type_match × 0.10 + theme_affinity × 0.10) est codé en dur. Les poids sont arbitraires mais raisonnables. On ajustera en v1.1 si le ranking est mauvais en pratique.
+
+3. **Feed validation séquentielle** — Chaque URL trouvée par Brave/Google News/Mistral passe par `RSSParser.detect()` (HTTP + feedparser). Pour Brave, on valide les top 5 URLs séquentiellement. On pourrait paralléliser avec `asyncio.gather()` plus tard si la latence P95 dépasse 4s.
+
+4. **Cache SQL brut** — Le cache utilise `sa.text()` avec des requêtes SQL brutes plutôt qu'un modèle SQLAlchemy. C'est un choix délibéré pour éviter de polluer le namespace des models avec une table utilitaire. Le reviewer pourrait préférer un vrai modèle.
+
+5. **`_source_to_response()` dans le router** — Helper local dans `sources.py` qui construit un `SourceResponse` sans contexte user (pas de `is_trusted`, `is_muted`, `priority_multiplier`). C'est suffisant pour `by-theme` et `themes-followed` car ces endpoints sont exploratoires (découverte, pas gestion d'abonnement).
+
+6. **`datetime.now(datetime.UTC)`** — Les fichiers utilisent `datetime.now(datetime.UTC)` (linter auto-fix) au lieu de `datetime.now(timezone.utc)`. Les deux sont équivalents en Python 3.12+.
 
 ## Ce qui N'A PAS changé (mais pourrait sembler affecté)
 
-- **Mode scroll-to-site et WebView** : `_showWebView`, `_isWebViewActive`, `_scrollController` et `_webViewController` ne sont pas modifiés fonctionnellement. Le seul changement est `bool _showWebView = false` → `final bool _showWebView = false` (lint fix).
-- **`PerspectivesBottomSheet`** (modal) : le comportement du bottom sheet existant est préservé. Le filtre biais a été ajouté mais ne change pas l'API publique du widget.
-- **Onboarding** : les 3 fichiers ont uniquement un fix de lint (`const` hissé au niveau de la liste), aucun comportement ne change.
+- **`POST /sources/detect`** — L'endpoint existant est inchangé. `smart-search` est un nouvel endpoint parallèle, pas un remplacement.
+- **`rss_parser.py`** — Réutilisé tel quel (`RSSParser.detect()`, `_resolve_youtube_channel_id()`), aucune modification.
+- **`llm_client.py`** — Réutilisé tel quel (`chat_json()` avec `mistral-small-latest`), aucune modification.
+- **`source_service.py`** — Non modifié. Le pattern ILIKE du catalog est re-implémenté inline dans l'orchestrateur (même logique, intégrée au pipeline).
+- **Aucun changement mobile** — C'est PR 1/3, backend only.
 
 ## Comment tester
 
-1. **Footer slide** : ouvrir un article long en mode in-app → scroller jusqu'au bas → vérifier que le footer apparaît progressivement. Remonter → le footer suit le header (se cache en scrollant vers le bas, réapparaît vers le haut).
-2. **Footer permanent** : scroller jusqu'à la section Perspectives → le footer doit rester visible même en remontant.
-3. **Filtre biais inline** : tapper sur un segment de la barre de biais → seuls les articles du groupe sélectionné s'affichent. Tapper à nouveau → reset. Vérifier que le sticky header reflète le filtre actif.
-4. **Sticky header Perspectives** : scroller au-delà du titre "Voir tous les points de vue" → un mini-header doit apparaître dans l'app header. Rescroller vers le haut → il disparaît.
-5. **Barre de progression** : vérifier que la barre atteint 100% à la fin de l'article, pas en milieu de la section Perspectives.
-6. **Article court** : le footer doit être immédiatement visible (sans nécessiter de scroll).
-7. `flutter analyze` doit passer sans nouveaux warnings.
+### Unit tests
+```bash
+cd packages/api
+SKIP_STARTUP_CHECKS=true .venv/bin/python -m pytest tests/services/search/ -v
+# 31 tests, ~1s
+```
+
+### Alembic
+```bash
+SKIP_STARTUP_CHECKS=true .venv/bin/python -m alembic heads
+# Doit afficher: ss01_search_cache (head) — 1 seule head
+```
+
+### Smoke test (après déploiement staging + migration)
+```bash
+# Smart search
+curl -X POST https://api-staging/api/sources/smart-search \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "lenny newsletter"}'
+
+# By theme
+curl https://api-staging/api/sources/by-theme/tech \
+  -H "Authorization: Bearer $TOKEN"
+
+# Themes followed
+curl https://api-staging/api/sources/themes-followed \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Pré-requis avant déploiement
+- `BRAVE_API_KEY` doit être définie dans Railway (staging + prod)
+- Migration SQL `ss01_search_cache` exécutée manuellement via Supabase SQL Editor (JAMAIS Railway)

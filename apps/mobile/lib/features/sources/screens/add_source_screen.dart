@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,15 +6,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
-import '../../../shared/widgets/buttons/primary_button.dart';
-import '../../../core/ui/notification_service.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/ui/notification_service.dart';
+import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../widgets/community_gems_strip.dart';
 import '../widgets/example_chips.dart';
+import '../widgets/smart_search_field.dart';
 import '../widgets/source_detail_modal.dart';
-import '../widgets/source_preview_card.dart';
+import '../widgets/source_result_card.dart';
+import '../widgets/source_result_skeleton.dart';
 import '../widgets/theme_explorer.dart';
 
 class AddSourceScreen extends ConsumerStatefulWidget {
@@ -26,163 +27,65 @@ class AddSourceScreen extends ConsumerStatefulWidget {
 }
 
 class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
-  final _searchController = TextEditingController();
-  final _youtubeController = TextEditingController(text: 'youtube.com/@');
-  int _currentTab = 0;
-  bool _isLoading = false;
-  Map<String, dynamic>? _previewData;
-  List<Source>? _searchResults;
+  String _currentQuery = '';
+  final Set<String> _addedSourceIds = {};
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _youtubeController.dispose();
-    super.dispose();
-  }
+  // ─── Smart Search Actions ──────────────────────────────────────
 
-  // ─── Shared Logic ──────────────────────────────────────────────
-
-  Future<void> _detectOrSearchSource() async {
-    final controller = _currentTab == 1 ? _youtubeController : _searchController;
-    final query = controller.text.trim();
-    if (query.isEmpty) return;
-
-    // Smart transform per tab
-    String resolvedQuery = query;
-    if (_currentTab == 1) {
-      resolvedQuery = _transformYouTubeInput(query);
-    } else if (_currentTab == 2) {
-      resolvedQuery = _transformRedditInput(query);
-    }
-
-    setState(() => _isLoading = true);
-    _resetResults();
-
+  Future<void> _addSource(SmartSearchResult result) async {
     try {
       final repository = ref.read(sourcesRepositoryProvider);
-      final data = await repository.detectSource(resolvedQuery);
+      final sourceId = result.sourceId;
 
-      setState(() {
-        if (data.containsKey('results')) {
-          final resultsList = data['results'] as List<dynamic>;
-          _searchResults = resultsList
-              .map((json) => Source.fromJson(json as Map<String, dynamic>))
-              .toList();
-        } else {
-          _previewData = data;
-        }
-      });
-    } catch (e) {
-      NotificationService.showError(
-          'Impossible de trouver une source avec cette recherche');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  String _transformRedditInput(String input) {
-    final trimmed = input.trim();
-
-    // Already a full URL
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
-    }
-
-    // reddit.com/r/... without protocol
-    if (trimmed.startsWith('reddit.com/') ||
-        trimmed.startsWith('www.reddit.com/') ||
-        trimmed.startsWith('old.reddit.com/')) {
-      return 'https://$trimmed';
-    }
-
-    // r/subreddit format
-    final rSlashMatch = RegExp(r'^r/(\w+)$').firstMatch(trimmed);
-    if (rSlashMatch != null) {
-      return 'https://www.reddit.com/r/${rSlashMatch.group(1)}';
-    }
-
-    // Plain subreddit name
-    if (RegExp(r'^\w+$').hasMatch(trimmed)) {
-      return 'https://www.reddit.com/r/$trimmed';
-    }
-
-    return trimmed;
-  }
-
-  String _transformYouTubeInput(String input) {
-    final trimmed = input.trim();
-
-    // Already a full URL
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
-    }
-
-    // youtube.com/... without protocol
-    if (trimmed.startsWith('youtube.com/') ||
-        trimmed.startsWith('www.youtube.com/')) {
-      return 'https://$trimmed';
-    }
-
-    // @handle format
-    if (trimmed.startsWith('@')) {
-      return 'https://www.youtube.com/$trimmed';
-    }
-
-    // Plain channel name (no spaces, no special chars except dots/hyphens/underscores)
-    if (RegExp(r'^[\w.\-]+$').hasMatch(trimmed)) {
-      return 'https://www.youtube.com/@$trimmed';
-    }
-
-    return trimmed;
-  }
-
-  Future<void> _confirmSourceFromPreview() async {
-    if (_previewData == null) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final repository = ref.read(sourcesRepositoryProvider);
-      final sourceId = _previewData!['source_id'] as String?;
-
-      if (sourceId != null && sourceId.isNotEmpty && sourceId != 'fallback') {
+      if (sourceId != null && sourceId.isNotEmpty && sourceId != 'null') {
         await repository.trustSource(sourceId);
+        setState(() => _addedSourceIds.add(sourceId));
       } else {
-        final feedUrl = _previewData!['feed_url'] as String?;
-        if (feedUrl == null || feedUrl.isEmpty) {
+        if (result.feedUrl.isEmpty) {
           NotificationService.showError('URL du flux introuvable');
           return;
         }
-        await repository.addCustomSource(feedUrl,
-            name: _previewData!['name'] as String?);
+        await repository.addCustomSource(result.feedUrl, name: result.name);
       }
 
       if (mounted) {
         NotificationService.showSuccess(
-            'Source ajoutée ! Ses contenus apparaîtront dans ton feed.');
+            'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
         ref.invalidate(userSourcesProvider);
-        context.pop();
       }
     } catch (e) {
       if (mounted) {
         NotificationService.showError('Erreur lors de l\'ajout : $e');
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _resetResults() {
-    setState(() {
-      _previewData = null;
-      _searchResults = null;
-    });
+  void _previewSource(SmartSearchResult result) {
+    final source = Source(
+      id: result.sourceId ?? '',
+      name: result.name,
+      url: result.url,
+      type: _parseSourceType(result.type),
+      description: result.description,
+      logoUrl: result.faviconUrl,
+      isCurated: result.isCurated,
+    );
+    _showSourceModal(source);
   }
 
-  void _resetAll() {
-    _resetResults();
-    _searchController.clear();
-    _youtubeController.text = 'youtube.com/@';
+  SourceType _parseSourceType(String type) {
+    switch (type) {
+      case 'youtube':
+        return SourceType.youtube;
+      case 'reddit':
+        return SourceType.reddit;
+      case 'podcast':
+        return SourceType.podcast;
+      case 'video':
+        return SourceType.video;
+      default:
+        return SourceType.article;
+    }
   }
 
   void _openAtlasFlux() async {
@@ -203,17 +106,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         await repository.trustSource(source.id);
         if (mounted) {
           NotificationService.showSuccess(
-              'Source ajoutée ! Ses contenus apparaîtront dans ton feed.');
+              'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
         }
-      }
-      if (mounted && _searchResults != null) {
-        setState(() {
-          _searchResults = _searchResults!
-              .map((s) => s.id == source.id
-                  ? s.copyWith(isTrusted: !source.isTrusted)
-                  : s)
-              .toList();
-        });
       }
       ref.invalidate(trendingSourcesProvider);
       ref.invalidate(userSourcesProvider);
@@ -266,108 +160,45 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // SegmentedControl
-            SizedBox(
-              width: double.infinity,
-              child: CupertinoSlidingSegmentedControl<int>(
-                groupValue: _currentTab,
-                onValueChanged: (value) {
-                  setState(() {
-                    _currentTab = value!;
-                    _resetAll();
-                  });
-                },
-                backgroundColor: colors.surface,
-                thumbColor: colors.backgroundPrimary,
-                children: {
-                  0: _buildSegment(
-                    PhosphorIcons.globe(PhosphorIconsStyle.regular),
-                    'URL / RSS',
-                  ),
-                  1: _buildSegment(
-                    PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
-                    'YouTube',
-                  ),
-                  2: _buildSegment(
-                    PhosphorIcons.redditLogo(PhosphorIconsStyle.regular),
-                    'Reddit',
-                  ),
-                },
-              ),
+            SmartSearchField(
+              onSearch: (query) => setState(() => _currentQuery = query),
             ),
-            const SizedBox(height: 20),
-
-            // Tab content
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _currentTab == 0
-                  ? _buildUrlRssPage()
-                  : _currentTab == 1
-                      ? _buildYouTubePage()
-                      : _buildRedditPage(),
-            ),
+            const SizedBox(height: 16),
+            _buildContent(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSegment(IconData icon, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 12)),
-        ],
-      ),
-    );
-  }
+  Widget _buildContent() {
+    if (_currentQuery.isEmpty) {
+      return _buildEmptyState();
+    }
 
-  // ─── Tab 0: URL / RSS ──────────────────────────────────────────
+    final searchAsync = ref.watch(smartSearchProvider(_currentQuery));
 
-  Widget _buildUrlRssPage() {
-    return Column(
-      key: const ValueKey('url_rss'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildInputField(
-          hint: 'Rechercher ou coller une URL...',
-          icon: PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          keyboardType: TextInputType.url,
-        ),
-        const SizedBox(height: 16),
-        if (_isLoading)
-          _buildLoadingIndicator()
-        else if (_previewData != null)
-          _buildPreviewCard()
-        else if (_searchResults != null)
-          _buildSearchResults()
-        else
-          _buildUrlRssEmptyState(),
-      ],
+    return searchAsync.when(
+      loading: () => const SourceResultSkeleton(),
+      error: (error, _) => _buildErrorState(),
+      data: (results) {
+        if (results.isEmpty) return _buildNoResults();
+        return _buildResults(results);
+      },
     );
   }
 
   void _onExampleTap(String text) {
-    _searchController.text = text;
-    _detectOrSearchSource();
+    setState(() => _currentQuery = text);
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
   }
+
+  Widget _buildEmptyState() => _buildUrlRssEmptyState();
 
   Widget _buildUrlRssEmptyState() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PrimaryButton(
-          label: 'Rechercher',
-          onPressed: _detectOrSearchSource,
-          isLoading: false,
-        ),
-        const SizedBox(height: 16),
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: 24),
         const ThemeExplorer(),
@@ -385,170 +216,89 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  // ─── Tab 1: YouTube ────────────────────────────────────────────
-
-  Widget _buildYouTubePage() {
+  Widget _buildResults(List<SmartSearchResult> results) {
     return Column(
-      key: const ValueKey('youtube'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildInputField(
-          hint: 'Nom de la chaine...',
-          icon: PhosphorIcons.youtubeLogo(PhosphorIconsStyle.regular),
-          keyboardType: TextInputType.url,
-          controller: _youtubeController,
+        Text(
+          '${results.length} resultat${results.length > 1 ? 's' : ''}',
+          style: Theme.of(context).textTheme.titleMedium,
         ),
-        const SizedBox(height: 16),
-        if (_isLoading)
-          _buildLoadingIndicator()
-        else if (_previewData != null)
-          _buildPreviewCard()
-        else ...[
-          PrimaryButton(
-            label: 'Rechercher',
-            onPressed: _detectOrSearchSource,
-            isLoading: false,
-          ),
-          const SizedBox(height: 16),
-          _buildHelpCard(
-            title: 'Exemples de chaines',
-            examples: const [
-              'ScienceEtonnante',
-              'Heu7reka',
-              'Fouloscopie',
-              'HugoDecrypte',
-            ],
-            description:
-                'Tapez le nom de la chaine apres youtube.com/@ puis appuyez sur Rechercher.',
-          ),
-        ],
-        const SizedBox(height: 40),
-        _buildAtlasFluxCard(),
-        const SizedBox(height: 24),
+        const SizedBox(height: 12),
+        ...results.map((result) => SourceResultCard(
+              result: result,
+              isAdded: _addedSourceIds.contains(result.sourceId),
+              onAdd: () => _addSource(result),
+              onPreview: () => _previewSource(result),
+            )),
       ],
     );
   }
 
-  // ─── Tab 2: Reddit ─────────────────────────────────────────────
-
-  Widget _buildRedditPage() {
+  Widget _buildNoResults() {
     final colors = context.facteurColors;
-
-    return Column(
-      key: const ValueKey('reddit'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildInputField(
-          hint: 'Nom du subreddit ou URL...',
-          icon: PhosphorIcons.redditLogo(PhosphorIconsStyle.regular),
-          keyboardType: TextInputType.url,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          children: [
+            Icon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+                size: 48, color: colors.textTertiary),
+            const SizedBox(height: 16),
+            Text(
+              'Aucun resultat pour "$_currentQuery"',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Essayez avec une URL directe ou d\'autres mots-cles.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
-        if (_isLoading)
-          _buildLoadingIndicator()
-        else if (_previewData != null)
-          _buildPreviewCard()
-        else ...[
-          PrimaryButton(
-            label: 'Rechercher',
-            onPressed: _detectOrSearchSource,
-            isLoading: false,
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: colors.border),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final colors = context.facteurColors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          children: [
+            Icon(PhosphorIcons.warning(PhosphorIconsStyle.regular),
+                size: 48, color: colors.error),
+            const SizedBox(height: 16),
+            Text(
+              'Impossible de rechercher pour le moment.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              textAlign: TextAlign.center,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Vous pouvez entrer :',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colors.textPrimary,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                _buildBulletPoint(context, 'Le nom : technology'),
-                const SizedBox(height: 4),
-                _buildBulletPoint(
-                    context, 'L\'URL : reddit.com/r/technology'),
-              ],
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: () =>
+                  ref.invalidate(smartSearchProvider(_currentQuery)),
+              child: const Text('Reessayer'),
             ),
-          ),
-          const SizedBox(height: 16),
-          _buildHelpCard(
-            title: 'Exemples de subreddits',
-            examples: const [
-              'r/technology',
-              'r/worldnews',
-              'r/selfhosted',
-              'r/science',
-            ],
-            description:
-                'Facteur recupere les 25 derniers posts du subreddit.',
-          ),
-        ],
-        const SizedBox(height: 40),
-        _buildAtlasFluxCard(),
-        const SizedBox(height: 24),
-      ],
+          ],
+        ),
+      ),
     );
   }
 
   // ─── Shared Widgets ────────────────────────────────────────────
 
-  Widget _buildInputField({
-    required String hint,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-    TextEditingController? controller,
-  }) {
-    final effectiveController = controller ?? _searchController;
-    return TextField(
-      controller: effectiveController,
-      decoration: InputDecoration(
-        hintText: hint,
-        prefixIcon: Icon(icon),
-        suffixIcon: IconButton(
-          icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill)),
-          onPressed: _resetAll,
-        ),
-      ),
-      keyboardType: keyboardType,
-      autocorrect: false,
-      enabled: !_isLoading,
-      style: Theme.of(context).textTheme.bodyMedium,
-      onSubmitted: (_) => _detectOrSearchSource(),
-    );
-  }
-
-  Widget _buildLoadingIndicator() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32.0),
-        child: CircularProgressIndicator(),
-      ),
-    );
-  }
-
-  Widget _buildPreviewCard() {
-    return SourcePreviewCard(
-      data: _previewData!,
-      onConfirm: _confirmSourceFromPreview,
-      onCancel: _resetAll,
-      isLoading: _isLoading,
-    );
-  }
-
   Widget _buildHelpCard({
     required String title,
-    List<String>? examples,
-    List<String>? steps,
     String? description,
   }) {
     final colors = context.facteurColors;
@@ -563,60 +313,26 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: colors.textPrimary,
-                ),
+          Row(
+            children: [
+              Icon(PhosphorIcons.lightbulb(PhosphorIconsStyle.regular),
+                  size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colors.textPrimary,
+                    ),
+              ),
+            ],
           ),
-          if (steps != null) ...[
-            const SizedBox(height: 12),
-            ...steps.asMap().entries.map((entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        child: Text(
-                          '${entry.key + 1}.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(
-                                color: colors.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          entry.value,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: colors.textSecondary,
-                                    height: 1.4,
-                                  ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )),
-          ],
-          if (examples != null) ...[
-            const SizedBox(height: 12),
-            ...examples.map((ex) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: _buildBulletPoint(context, ex),
-                )),
-          ],
           if (description != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               description,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textTertiary,
+                    color: colors.textSecondary,
                     height: 1.4,
                   ),
             ),
@@ -675,44 +391,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           )
         ],
       ),
-    );
-  }
-
-  Widget _buildSearchResults() {
-    final colors = context.facteurColors;
-
-    if (_searchResults!.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            children: [
-              Icon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-                  size: 48, color: colors.textTertiary),
-              const SizedBox(height: 16),
-              Text(
-                'Aucun resultat trouve',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Resultats de la recherche',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 16),
-        ..._searchResults!.map((source) => _buildSourceListTile(source)),
-      ],
     );
   }
 
@@ -793,29 +471,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
                 color: colors.textTertiary),
         onTap: () => _showSourceModal(source),
       ),
-    );
-  }
-
-  Widget _buildBulletPoint(BuildContext context, String text) {
-    final colors = context.facteurColors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('•  ',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.primary)),
-        Expanded(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.textSecondary,
-                  height: 1.4,
-                ),
-          ),
-        ),
-      ],
     );
   }
 }

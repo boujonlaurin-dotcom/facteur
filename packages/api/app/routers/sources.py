@@ -1,6 +1,8 @@
 """Routes sources."""
 
-import re
+import time
+from collections import defaultdict
+from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
@@ -37,6 +39,25 @@ from app.services.source_service import SourceService
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+# ─── Endpoint-level rate limiter for smart-search ────────────────
+# Prevents hammering: max 10 requests per minute per user.
+_search_request_log: dict[str, list[float]] = defaultdict(list)
+_SEARCH_RATE_LIMIT = 10  # requests
+_SEARCH_RATE_WINDOW = 60  # seconds
+
+
+def _check_search_endpoint_rate(user_id: str) -> bool:
+    """Returns True if user is within endpoint rate limit."""
+    now = time.monotonic()
+    timestamps = _search_request_log[user_id]
+    # Trim old entries
+    cutoff = now - _SEARCH_RATE_WINDOW
+    _search_request_log[user_id] = [t for t in timestamps if t > cutoff]
+    if len(_search_request_log[user_id]) >= _SEARCH_RATE_LIMIT:
+        return False
+    _search_request_log[user_id].append(now)
+    return True
 
 
 @router.get("", response_model=SourceCatalogResponse)
@@ -119,6 +140,13 @@ async def smart_search(
     db: AsyncSession = Depends(get_db),
 ) -> SmartSearchResponse:
     """Recherche intelligente multi-sources."""
+    if not _check_search_endpoint_rate(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests (max 10/minute)",
+        )
+
+
     service = SmartSourceSearchService(db)
     try:
         result = await service.search(data.query, user_id)
@@ -349,14 +377,17 @@ async def detect_source(
     try:
         url_input = data.url.strip()
 
-        # Robust URL detection: checks for protocol or a string that looks like a domain (e.g. domain.tld)
-        is_url_like = (
-            url_input.startswith("http://")
-            or url_input.startswith("https://")
-            or "youtube.com" in url_input
-            or "youtu.be" in url_input
-            or re.match(r"^[\w\.-]+\.[a-z]{2,6}(/.*)?$", url_input.lower())
-        )
+        # URL detection via urlparse — handles protocols and bare domains
+        if url_input.startswith(("http://", "https://")):
+            is_url_like = True
+        else:
+            # Try parsing as https:// to check if it has a valid netloc
+            parsed = urlparse(f"https://{url_input}")
+            is_url_like = bool(
+                parsed.netloc
+                and "." in parsed.netloc
+                and not parsed.netloc.startswith(".")
+            )
 
         if is_url_like and not url_input.startswith("http"):
             url_input = "https://" + url_input

@@ -11,17 +11,17 @@ final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
 });
 
-final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getTrendingSources(limit: 10);
-});
-
 final smartSearchProvider =
     FutureProvider.family<List<SmartSearchResult>, String>((ref, query) async {
   if (query.trim().isEmpty) return [];
   final repository = ref.watch(sourcesRepositoryProvider);
   final response = await repository.smartSearch(query.trim());
   return response.results;
+});
+
+final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getTrendingSources(limit: 10);
 });
 
 final themesFollowedProvider =
