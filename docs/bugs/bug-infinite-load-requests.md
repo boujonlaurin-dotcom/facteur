@@ -525,3 +525,207 @@ nouveau contrat de retour.
    de + de 5 min doivent disparaître.
 2. **Nettoyage P0** (PR séparée) : retirer le scheduled restart 01h/09h/17h
    Paris une fois la pg_stat_activity clean confirmée sur 48 h.
+
+---
+
+## Post-PR #405 — investigation 2026-04-15 (round 2)
+
+Le user rapporte des freezes TOUJOURS présents en prod, quelques heures après
+le merge de PR #405. Investigation sans accès MCP Railway / Sentry / Supabase
+(seul GitHub et git local disponibles — noté explicitement).
+
+### Ground truth dispo sans MCP prod
+
+**Sur `origin/main` (`d2f8a721`, 2026-04-15 12:35 Paris)** :
+
+- ✅ PR #405 bien mergée (`4fd4ef3c`). Les 4 commits P1/P2/P3 sont dans
+  l'historique. Le code sur main contient :
+  - `socket.setdefaulttimeout(30)` dans `main.py:18`
+  - `session_maker` propagé dans `DigestService`, `DigestSelector`,
+    `EditorialPipelineService`, `deep_matcher`, `writer`, `perspective_service`
+  - Pre-commit de `self.session` dans `digest_selector.py:317` avant
+    `pipeline.compute_global_context`
+  - `SyncService._save_content` découpé en short sessions +
+    enrichissement trafilatura hors-session (`sync_service.py:556`, `:665`, `:680`)
+  - feedparser.parse(url) → httpx+parse(content) dans `briefing_service.py`
+    et `digest_selector.py`
+
+- ⚠️ **PR #395 (d2f8a721) a été mergée APRÈS #405, le même jour**. Elle
+  introduit **Epic 13 Learning Checkpoint** : nouveau service
+  `learning_service.py` (662 lignes) et injection d'un appel dans le hot
+  path `GET /api/feed` (21 lignes ajoutées dans `routers/feed.py`). Cet
+  appel s'exécute à **chaque première page de feed** pour tous les users,
+  ajoute un SELECT + éventuellement un UPDATE/flush/commit **sur la même
+  session** que le reste du handler.
+
+- ❌ **Le middleware `request-budget` (commit `3d4ec06`) n'a jamais été
+  mergé**. Le post-mortem 2026-04-14 l'annonçait comme "à merger en
+  défense en profondeur en PR séparée" — cette PR n'a pas été faite.
+  Conséquence : aucun filet global qui borne les endpoints à 60 s et
+  libère la session sur cancel. Les endpoints non-protégés individuellement
+  (cf. ci-dessous) peuvent toujours hang indéfiniment.
+
+- ❌ **Pas d'accès aux logs prod live** : impossible de confirmer
+  `pg_stat_activity`, `/api/health/pool`, Sentry `digest_selector_precommit_failed`,
+  ni la liste des deploys Railway. Ce rapport est donc basé sur **l'audit
+  statique du code déployé**. Le user doit soit me fournir les MCP tools
+  Railway/Supabase/Sentry, soit me passer manuellement un snapshot
+  `pg_stat_activity` + un extrait Sentry 24 h.
+
+### Sites de fuite encore ouverts (audit statique origin/main)
+
+Ordonnés par **fréquence × durée de session** (probabilité de saturation) :
+
+#### Site C — `GET /api/feed` + Learning Checkpoint (NOUVEAU via #395, PRIORITÉ HAUTE)
+
+**Fichiers** : `routers/feed.py:44-193`, `services/recommendation_service.py:128-698`,
+`services/learning_service.py:404-440`
+
+- Le handler `get_personalized_feed` tient `db` ouverte (via `Depends(get_db)`)
+  pendant **toute la durée du feed build** : `_get_candidates`, hydrate,
+  source_weights, `_hydrate_user_status` ×3, carousel build, **puis**
+  `LearningService.get_pending_proposals` (SELECT + flush) **puis**
+  `await db.commit()` (feed.py:175).
+- `RecommendationService.get_feed` crée en parallèle 5-6 sessions
+  `async_session_maker()` internes pour les batchs (lignes 171-182, 460,
+  545, 553) — mais la session `self.session` (= `db`) reste tenue pendant
+  tout le flow pour `self.session.execute(source_weight_rows)` (ligne 421),
+  les hydrate, etc.
+- Durée typique estimée du handler : 800 ms à 3 s sous charge normale ;
+  plusieurs secondes sur cold cache.
+- Appelé à **CHAQUE** refresh mobile, pull-to-refresh, retour d'app, focus
+  d'écran → endpoint le plus chaud du service.
+- Endpoint appelé à ~N × freq pour N users actifs. À 20 users concurrents
+  à 1 s chacun + Learning flush + 3 × hydrate = facilement 15-20 conns
+  checked-out en pic.
+- **Pas de `asyncio.wait_for` sur le handler**. Aucun budget serveur.
+
+**% de fuite estimée** : 30-40 % du checkout pool en pic d'usage.
+
+#### Site D — `BriefingService.generate_briefing_for_user` (EXISTANT, non adressé par #405)
+
+**Fichier** : `services/briefing_service.py:93-238`
+
+```python
+async def generate_briefing_for_user(self, user_id, ...):
+    # self.session tenu tout du long
+    global_context = await self._build_global_context()     # _fetch_une_guids + recent_contents
+    res = await self.session.execute(...)                   # SELECT UserSource
+    profile_res = await self.session.execute(stmt_profile)  # SELECT UserProfile + joinedload
+    candidates = await self.rec_service._get_candidates(...) # SELECT contents grosse requête
+    # Scoring loop (CPU-bound, 200 items)
+    top3_items = self.top3_selector.select_top3(...)
+    for item in top3_items:
+        await self.session.execute(stmt_insert)  # INSERT DailyTop3
+    await self.session.commit()
+```
+
+- Appelé depuis `top3_job.py` (scheduler) et depuis `get_or_create_briefing`
+  (flow lazy gen via `/api/feed`).
+- **Aucun `session_maker` ici, aucun commit précoce.** Session tenue
+  pendant 2-5 s typique, plus si `_get_candidates` est lent.
+- Signature query : `SELECT contents.id, contents.source_id%` — match
+  parfait avec les signatures idle-in-transaction observées en prod
+  avant #405.
+
+**% de fuite estimée** : 15-25 % — fréquence moindre que feed mais
+durée similaire au site B original.
+
+#### Site E — `GET /api/contents/{content_id}` + trafilatura (EXISTANT, non adressé)
+
+**Fichier** : `routers/contents.py:76-125`
+
+```python
+async def get_content_detail(..., db: AsyncSession = Depends(get_db)):
+    content_data = await service.get_content_detail(content_id, user_uuid)
+    # ...
+    if quality != "full" and cooldown_expired:
+        result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, extractor.extract, url),
+            timeout=15.0,
+        )                      # ← 15 s, db session encore tenue
+        db_content = await db.scalar(...)
+        db_content.html_content = ...
+        await db.commit()
+```
+
+- La session `db` est checked-out pendant les **15 s** d'extraction
+  trafilatura (thread executor). Pire : si l'event loop est saturé,
+  le `wait_for` peut cancel la coroutine mais le thread survit — et le
+  bug connu `socket.setdefaulttimeout(30)` limite seulement le socket,
+  pas le parsing CPU-bound.
+- Appelé à **chaque ouverture d'article** (très fréquent, 5-20 par session
+  user). Hot site avec cooldown 6 h mais cold cache sur articles neufs
+  (tous les matins après sync) = burst de checkouts de 15 s.
+- **Pas de fix trafilatura livré dans #405** (pourtant mentionné comme
+  piste si S2).
+
+**% de fuite estimée** : 10-20 % en pic matinal (6-9h Paris).
+
+#### Site F — `GET /api/digest` (non `/both`) sans timeout handler
+
+**Fichier** : `routers/digest.py:163-264` et `:503-541` (`POST /digest/generate`)
+
+- Contrairement à `/digest/both` (avec `asyncio.wait_for(..., timeout=30)`),
+  les handlers `GET /api/digest` et `POST /api/digest/generate`
+  **n'ont pas de `wait_for`**.
+- Le pre-commit P1 dans `digest_selector.py` libère la connexion physique
+  **si** `compute_global_context` est atteint. Mais :
+  - Si la pipeline échoue tôt (avant pre-commit), la session reste ouverte
+    pendant le stack trace / fallback / `_enrich_community_carousel`.
+  - `_enrich_community_carousel` (ligne 264 de digest.py) s'exécute
+    APRÈS la pipeline et utilise encore `db`.
+  - Le code path "existing digest cache hit" fait
+    `_build_digest_response(existing_digest)` qui peut faire des selects
+    supplémentaires sans commit.
+
+**% de fuite estimée** : 5-10 % (le pre-commit P1 couvre le gros cas).
+
+### Pourquoi PR #405 n'a pas suffi
+
+1. **Couverture partielle du graph de services** : le fix a ciblé
+   `DigestService`/`DigestSelector`/`EditorialPipeline`/`SyncService`, mais
+   `BriefingService` (site D) et `GET /api/contents/{id}` (site E) n'ont
+   pas été touchés.
+2. **Régression immédiate via PR #395** : l'Epic 13 a été mergée le
+   même jour et a ajouté une opération DB + commit sur le hot path
+   `/api/feed` sans coordination avec #405.
+3. **Le middleware `request-budget` n'a pas été mergé** : filet de sécurité
+   manquant + on n'a pas les logs `request_budget_exceeded` pour
+   identifier quel endpoint hang en prod.
+4. **Pas de `statement_timeout` côté Postgres / pool** : si un upstream
+   réellement bloque pour 30+ min, Postgres ne tue pas la transaction
+   idle. Le scheduled restart P0 (01/09/17h) est toujours la seule ligne
+   de défense absolue.
+
+### Plan de fix round 2 (par priorité, pas de code avant GO)
+
+| # | Site | Fichier(s) | Pattern | Tests | % fuite |
+|---|------|-----------|---------|-------|---------|
+| 1 | **C** — `/api/feed` + Learning | `services/learning_service.py`, `routers/feed.py`, `recommendation_service.py` | Injecter `session_maker` dans `LearningService`. Pour `get_pending_proposals` : short session (SELECT + flush + commit dans un `async with session_maker()`). Dans `feed.py`, libérer `db` AVANT l'appel Learning. Pour `get_feed` : wrapper le handler dans `asyncio.wait_for(..., timeout=15.0)`. | Test unitaire `test_learning_checkpoint_uses_session_maker`. Test E2E feed timeout 503. | 30-40 % |
+| 2 | **D** — `BriefingService` | `services/briefing_service.py`, appelants | Même pattern P1 : constructeur accepte `session_maker`, `_build_global_context` + `_get_candidates` dans short sessions, insert dans une session finale dédiée. Call sites : `top3_job.py` + lazy gen. | Test `test_briefing_service_releases_session_during_candidates`. | 15-25 % |
+| 3 | **E** — trafilatura content detail | `routers/contents.py` | Libérer `db` (commit) AVANT le `run_in_executor` trafilatura. Rouvrir une courte session via `async_session_maker()` seulement pour la persistance post-extract. Remplacer `trafilatura.fetch_url` par `httpx + trafilatura.extract(resp.text)` pour supprimer le thread executor hang. | Test `test_get_content_detail_releases_db_before_extraction`. | 10-20 % |
+| 4 | **F** — `/api/digest` + `/api/digest/generate` | `routers/digest.py` | Wrapper `asyncio.wait_for(service.get_or_create_digest(...), timeout=30.0)` sur les 2 endpoints, même pattern que `/both`. Sur `TimeoutError` → 503 explicite. | Tests parallèles à ceux existants de `/both`. | 5-10 % |
+| 5 | **Filet global** — request-budget middleware | `app/main.py` (cherry-pick `3d4ec06`) | Merger le commit existant. Budget 60 s. Log `request_budget_exceeded` avec `path`+`method` → source de vérité Sentry pour le prochain round. Sur cancel : cleanup de la session via `Request.state`. | Test `test_request_budget_middleware_kills_long_request`. | — (safety net) |
+| 6 | **Filet DB** — `statement_timeout` Postgres | `database.py` connect_args | Ajouter `"options": "-c statement_timeout=30000"` dans `connect_args` (30 s hard kill côté Postgres). Le driver asyncpg supporte cette option via `server_settings`. | Test smoke : query qui dure > 30 s renvoie `QueryCanceledError`. | — (safety net) |
+| 7 | **Observabilité** | Logger — `/api/health/pool` + Sentry breadcrumb | Loguer `idle_in_transaction_count` via query `pg_stat_activity` toutes les 60 s en background task. Alerte Sentry si > 5. | Test de la tâche périodique. | — (visibilité) |
+
+**Exécution** : implémenter dans cet ordre. Items 1-4 sont les vrais fix
+de cause. Items 5-7 sont des defense-in-depth qui auraient dû être
+livrés avec #405 et qui manquent aujourd'hui.
+
+### Probes demandées avant code (user)
+
+Pour trancher définitivement, merci de fournir (si possible) :
+
+1. Snapshot `pg_stat_activity` sur prod (query discriminante du bug doc ligne 260).
+2. `GET /api/health/pool` actuel + snapshot à chaque heure sur 4 h.
+3. Dernières 24 h de Sentry filtrées `path:/api/feed OR path:/api/digest OR path:/api/contents`
+   groupées par `message`.
+4. Confirmation Railway que le déploy de `d2f8a721` est bien actif (pas
+   de deploy pending ni rollback).
+
+Si aucun de ces éléments n'est dispo, je procède quand même sur les
+items 1-6 : ils adressent des leaks statiquement avérés dans le code
+`origin/main`, indépendamment de quel site domine en prod. Item 7 (obs)
+devient prioritaire pour éviter un round 3 en aveugle.
