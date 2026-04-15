@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import text
@@ -34,7 +34,7 @@ class SearchCache:
     async def get(self, query: str) -> dict | None:
         """Look up cached result. Returns None if miss or expired."""
         query_hash = hash_query(query)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         result = await self.db.execute(
             text(
@@ -53,7 +53,7 @@ class SearchCache:
         """Insert or update cache entry with 24h TTL."""
         query_hash = hash_query(query)
         normalized = normalize_query(query)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(hours=CACHE_TTL_HOURS)
 
         await self.db.execute(
