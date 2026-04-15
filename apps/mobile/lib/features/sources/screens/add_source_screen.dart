@@ -6,14 +6,18 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../widgets/community_gems_strip.dart';
+import '../widgets/example_chips.dart';
 import '../widgets/smart_search_field.dart';
 import '../widgets/source_detail_modal.dart';
 import '../widgets/source_result_card.dart';
 import '../widgets/source_result_skeleton.dart';
+import '../widgets/theme_explorer.dart';
 
 class AddSourceScreen extends ConsumerStatefulWidget {
   const AddSourceScreen({super.key});
@@ -184,49 +188,26 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
-    final colors = context.facteurColors;
-    final trendingAsyncValue = ref.watch(trendingSourcesProvider);
+  void _onExampleTap(String text) {
+    setState(() => _currentQuery = text);
+    ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
+  }
 
+  Widget _buildEmptyState() => _buildUrlRssEmptyState();
+
+  Widget _buildUrlRssEmptyState() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildHelpCard(
-          title: 'Recherche intelligente',
-          description:
-              'Tapez un nom de site, une URL, une chaine YouTube (@handle), '
-              'un subreddit (r/nom) ou des mots-cles. '
-              'Facteur trouvera la source automatiquement.',
-        ),
+        ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: 24),
-        Text(
-          'Pepites de la communaute',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 12),
-        trendingAsyncValue.when(
-          data: (sources) {
-            if (sources.isEmpty) {
-              return Text(
-                'Aucune pepite pour le moment.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textTertiary),
-              );
-            }
-            return Column(
-              children: sources.map((s) => _buildSourceListTile(s)).toList(),
-            );
+        const ThemeExplorer(),
+        const SizedBox(height: 24),
+        CommunityGemsStrip(
+          onSourceTap: _showSourceModal,
+          onGemTap: (sourceId) {
+            ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Text(
-            'Impossible de charger les tendances.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: colors.error),
-          ),
         ),
         const SizedBox(height: 24),
         _buildAtlasFluxCard(),

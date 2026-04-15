@@ -1,6 +1,5 @@
 """Google News RSS provider for smart source search."""
 
-import ipaddress
 from urllib.parse import quote, urlparse
 
 import feedparser
@@ -9,10 +8,11 @@ import structlog
 
 logger = structlog.get_logger()
 
-USER_AGENT = "Facteur-RSS-Reader/1.0"
-
-# Max RSS response size to parse (512 KB)
-MAX_RESPONSE_BYTES = 512 * 1024
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 
 class GoogleNewsProvider:
@@ -45,9 +45,7 @@ class GoogleNewsProvider:
                     )
                     return []
 
-                # Limit response size to prevent XML bomb attacks
-                content = resp.content[:MAX_RESPONSE_BYTES]
-                feed = feedparser.parse(content)
+                feed = feedparser.parse(resp.content)
 
             seen_domains: set[str] = set()
             base_urls: list[str] = []
@@ -61,16 +59,6 @@ class GoogleNewsProvider:
                 # Skip Google's own redirects
                 if "google.com" in domain:
                     continue
-                # Only allow public HTTP(S) URLs
-                if parsed.scheme not in ("http", "https"):
-                    continue
-                # Reject private/loopback IPs
-                try:
-                    ip = ipaddress.ip_address(domain.split(":")[0])
-                    if ip.is_private or ip.is_loopback:
-                        continue
-                except ValueError:
-                    pass  # Not an IP — hostname is fine
                 if domain not in seen_domains:
                     seen_domains.add(domain)
                     base_urls.append(f"{parsed.scheme}://{domain}")

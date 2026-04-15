@@ -157,6 +157,19 @@ class AnalyticsService {
     await _logEvent('source_remove', {'source_id': sourceId});
   }
 
+
+  Future<void> trackAddSourceThemeTap(String themeSlug) async {
+    await _logEvent('add_source_theme_tap', {'theme_slug': themeSlug});
+  }
+
+  Future<void> trackAddSourceExampleTap(String exampleText) async {
+    await _logEvent('add_source_example_tap', {'example_text': exampleText});
+  }
+
+  Future<void> trackAddSourceGemTap(String sourceId) async {
+    await _logEvent('add_source_gem_tap', {'source_id': sourceId});
+  }
+
   Future<void> trackAppFirstLaunch() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('has_launched_before') == true) return;

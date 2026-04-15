@@ -1,6 +1,7 @@
 import '../../../core/api/api_client.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
+import '../models/theme_source_model.dart';
 
 class SourcesRepository {
   final ApiClient _apiClient;
@@ -145,19 +146,54 @@ class SourcesRepository {
     }
   }
 
-  Future<List<SmartSearchResult>> smartSearch(String query) async {
+  Future<SmartSearchResponse> smartSearch(String query) async {
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
         'sources/smart-search',
         data: {'query': query},
       );
       if (response.statusCode == 200 && response.data != null) {
-        return SmartSearchResponse.fromJson(response.data!).results;
+        return SmartSearchResponse.fromJson(response.data!);
+      }
+      throw Exception('Smart search failed');
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] smartSearch: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<FollowedTheme>> getThemesFollowed() async {
+    try {
+      final response =
+          await _apiClient.dio.get<dynamic>('sources/themes-followed');
+      if (response.statusCode == 200 && response.data is List) {
+        return (response.data as List)
+            .map((json) =>
+                FollowedTheme.fromJson(json as Map<String, dynamic>))
+            .toList();
       }
       return [];
     } catch (e) {
       // ignore: avoid_print
-      print('SourcesRepository: [ERROR] smartSearch: $e');
+      print('SourcesRepository: [ERROR] getThemesFollowed: $e');
+      return [];
+    }
+  }
+
+  Future<ThemeSourcesResponse> getSourcesByTheme(String slug) async {
+    try {
+      final response =
+          await _apiClient.dio.get<dynamic>('sources/by-theme/$slug');
+      if (response.statusCode == 200 && response.data is Map) {
+        return ThemeSourcesResponse.fromJson(
+            response.data as Map<String, dynamic>);
+      }
+      return const ThemeSourcesResponse(
+          curated: [], candidates: [], community: []);
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] getSourcesByTheme: $e');
       rethrow;
     }
   }
