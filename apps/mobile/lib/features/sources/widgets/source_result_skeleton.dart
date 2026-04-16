@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 
@@ -15,6 +18,15 @@ class _SourceResultSkeletonState extends State<SourceResultSkeleton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
+  int _dotCount = 1;
+  late final Timer _dotTimer;
+
+  static const _messages = [
+    'En train de parcourir le web',
+    'Recherche en cours',
+    'Analyse des sources',
+  ];
+  int _messageIndex = 0;
 
   @override
   void initState() {
@@ -24,24 +36,63 @@ class _SourceResultSkeletonState extends State<SourceResultSkeleton>
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
     _opacity = Tween<double>(begin: 0.3, end: 0.7).animate(_controller);
+
+    _dotTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      setState(() {
+        _dotCount = (_dotCount % 3) + 1;
+        if (_dotCount == 1) {
+          _messageIndex = (_messageIndex + 1) % _messages.length;
+        }
+      });
+    });
   }
 
   @override
   void dispose() {
+    _dotTimer.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  String get _dots => '.' * _dotCount;
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _opacity,
-      builder: (context, _) {
-        return Column(
-          children: List.generate(
-              widget.count, (_) => _buildSkeletonCard(context)),
-        );
-      },
+    final colors = context.facteurColors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+                size: 16,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${_messages[_messageIndex]}$_dots',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        AnimatedBuilder(
+          animation: _opacity,
+          builder: (context, _) {
+            return Column(
+              children: List.generate(
+                  widget.count, (_) => _buildSkeletonCard(context)),
+            );
+          },
+        ),
+      ],
     );
   }
 
