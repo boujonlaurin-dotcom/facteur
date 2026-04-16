@@ -65,7 +65,7 @@ class BiasSpectrumBar extends StatelessWidget {
               Text(
                 'Gauche ($left)',
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 8,
                   color: colors.textTertiary,
                 ),
               ),
@@ -73,14 +73,14 @@ class BiasSpectrumBar extends StatelessWidget {
                 Text(
                   'Centre ($center)',
                   style: TextStyle(
-                    fontSize: 9,
+                    fontSize: 8,
                     color: colors.textTertiary,
                   ),
                 ),
               Text(
                 'Droite ($right)',
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 8,
                   color: colors.textTertiary,
                 ),
               ),
