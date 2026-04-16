@@ -28,6 +28,7 @@ import '../widgets/compact_theme_chip.dart';
 import '../widgets/animated_feed_card.dart';
 import '../widgets/caught_up_card.dart';
 import '../widgets/swipe_to_open_card.dart';
+import '../widgets/feedback_inline.dart';
 import '../providers/swipe_hint_provider.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
@@ -84,6 +85,19 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
   // Story 4.5b: Show the undo banner after a viewport-aware pull-to-refresh.
   bool _showUndoBanner = false;
+
+  /// Articles swipe-dismissés en attente de feedback (rendus en banner inline
+  /// à la place de la carte). Le hide API a déjà été appelé au moment du
+  /// swipe ; la résolution (CTA, X, ou viewport-exit) déclenche
+  /// `removeFromState` pour retirer l'item du provider.
+  final Map<String, Content> _pendingFeedback = {};
+
+  void _resolveFeedback(String contentId) {
+    if (!mounted) return;
+    if (!_pendingFeedback.containsKey(contentId)) return;
+    setState(() => _pendingFeedback.remove(contentId));
+    ref.read(feedProvider.notifier).removeFromState(contentId);
+  }
 
   Future<void> _withFeedLoading(Future<void> Function() action) async {
     if (mounted) setState(() => _isFeedRefreshing = true);
@@ -811,6 +825,71 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                 }
 
                                 final content = contents[contentIndex];
+
+                                // Carte swipe-dismissée → remplacée par le
+                                // banner inline de feedback, à la même position.
+                                // Hide API a déjà été appelé (au swipe).
+                                // Résolution = CTA, X, ou viewport-exit.
+                                if (_pendingFeedback.containsKey(content.id)) {
+                                  return Padding(
+                                    key: ValueKey('feedback_${content.id}'),
+                                    padding:
+                                        const EdgeInsets.only(bottom: 16),
+                                    child: VisibilityDetector(
+                                      key: Key('feedback_vis_${content.id}'),
+                                      onVisibilityChanged: (info) {
+                                        if (info.visibleFraction == 0) {
+                                          _resolveFeedback(content.id);
+                                        }
+                                      },
+                                      child: FeedbackInline(
+                                        onSelectSource: () async {
+                                          await TopicChip.showArticleSheet(
+                                            context,
+                                            content,
+                                            initialSection:
+                                                ArticleSheetSection.source,
+                                            highlightInitialSection: true,
+                                          );
+                                          _resolveFeedback(content.id);
+                                        },
+                                        onSelectTopic: () async {
+                                          await TopicChip.showArticleSheet(
+                                            context,
+                                            content,
+                                            initialSection:
+                                                ArticleSheetSection.topic,
+                                            highlightInitialSection: true,
+                                          );
+                                          _resolveFeedback(content.id);
+                                        },
+                                        onSelectAlreadySeen: () =>
+                                            _resolveFeedback(content.id),
+                                        onUndo: () {
+                                          // Re-surface la carte : annule
+                                          // le hide côté backend et retire
+                                          // simplement l'entrée pending
+                                          // (l'item est toujours dans
+                                          // state.items, donc la FeedCard
+                                          // reprendra sa place).
+                                          unawaited(ref
+                                              .read(feedRepositoryProvider)
+                                              .unhideContent(content.id)
+                                              .catchError((Object e) {
+                                            // ignore: avoid_print
+                                            print(
+                                                'FeedScreen: unhideContent failed for ${content.id}: $e');
+                                          }));
+                                          setState(() => _pendingFeedback
+                                              .remove(content.id));
+                                        },
+                                        onClose: () =>
+                                            _resolveFeedback(content.id),
+                                      ),
+                                    ),
+                                  );
+                                }
+
                                 final isConsumed = ref
                                     .read(feedProvider.notifier)
                                     .isContentConsumed(content.id);
@@ -822,8 +901,22 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                                 Widget cardWidget = SwipeToOpenCard(
                                   onSwipeOpen: () => _showArticleModal(content),
-                                  onSwipeDismiss: () =>
-                                      TopicChip.showArticleSheet(context, content),
+                                  onSwipeDismiss: () {
+                                    // Hide API immédiat — le swipe est
+                                    // l'engagement. Silent failure : l'inline
+                                    // reste affiché même si le réseau échoue
+                                    // (le user peut juste re-tap pour résoudre).
+                                    unawaited(ref
+                                        .read(feedRepositoryProvider)
+                                        .hideContent(content.id)
+                                        .catchError((Object e) {
+                                      // ignore: avoid_print
+                                      print(
+                                          'FeedScreen: hideContent failed for ${content.id}: $e');
+                                    }));
+                                    setState(() =>
+                                        _pendingFeedback[content.id] = content);
+                                  },
                                   enableHintAnimation: showHint,
                                   onHintAnimationComplete: () {
                                     if (!_swipeHintSeen) {

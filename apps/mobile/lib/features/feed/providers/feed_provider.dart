@@ -528,6 +528,23 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  /// Retrait local de l'item du state, sans appel API.
+  ///
+  /// À utiliser quand le hide a déjà été émis ailleurs (ex: résolution du
+  /// FeedbackInline après un swipe-left, où `hideContent` a été appelé
+  /// immédiatement et le banner inline a remplacé la carte en attente d'un
+  /// CTA).
+  void removeFromState(String contentId) {
+    final currentState = state.value;
+    if (currentState == null) return;
+    final updatedItems = List<Content>.from(currentState.items)
+      ..removeWhere((c) => c.id == contentId);
+    state = AsyncData(FeedState(
+      items: updatedItems,
+      carousels: currentState.carousels,
+    ));
+  }
+
   /// Undo a swipe-dismiss: re-insert article at original position.
   Future<void> undoSwipeDismiss(Content content, int originalIndex) async {
     final currentState = state.value;
