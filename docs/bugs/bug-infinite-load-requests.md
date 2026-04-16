@@ -525,3 +525,105 @@ nouveau contrat de retour.
    de + de 5 min doivent disparaître.
 2. **Nettoyage P0** (PR séparée) : retirer le scheduled restart 01h/09h/17h
    Paris une fois la pg_stat_activity clean confirmée sur 48 h.
+
+---
+
+## Round 3 — 2026-04-16 (analyse Sentry live)
+
+### Constat
+
+Round 2 deployé (release Sentry `654588e3…`, alembic `ln01`). Crash persistant
+malgré :
+- Site F OK (logs `digest_generation_timeout` tracés correctement 01:20-01:22
+  Paris, 5 événements d'affilée).
+- Request-budget middleware actif, mais **pas déclenché** : le pool saturé
+  tue la requête avec `QueuePool limit … reached` avant que le budget 60s
+  ne soit atteint.
+
+Traces Sentry du 2026-04-15 au 2026-04-16, 1 seul user testant (UA `Dart/3.10`,
+IP `86.252.7.47`) :
+
+| UTC | Sentry | Culprit | Signature |
+|-----|--------|---------|-----------|
+| 23:00 | PYTHON-4 | `apscheduler.executors.default` | `OperationalError: server closed the connection unexpectedly` |
+| 23:11 | PYTHON-5 | `app.database.init_db` | `InternalError: DbHandler exited` sur `SELECT pg_catalog.version()` |
+| 23:11 | PYTHON-6 | `app.main.readiness_check` | `PendingRollbackError: Can't reconnect until invalid transaction is rolled back` |
+| 23:35 | PYTHON-E | `app.routers.feed.get_personalized_feed` | `QueuePool limit of size 10 overflow 10, connection timed out` |
+| 23:37 | PYTHON-M | `app.routers.digest.get_both_digests` | idem |
+
+### Cause racine (R1 / R2 / R3)
+
+**R1 — Supabase/PgBouncer tue les connexions de façon asynchrone.** Les
+signatures `DbHandler exited`, `server closed the connection unexpectedly`,
+`consuming input failed` n'étaient PAS classées comme `is_disconnect=True`
+par SQLAlchemy. Résultat : le slot restait dans le pool en état invalide,
+toutes les requêtes suivantes levaient `PendingRollbackError`, le pool
+se remplissait de zombies jusqu'à `QueuePool limit reached`.
+
+**R2 — `_scheduled_restart` (01/09/17h Paris) amplifiait la fuite.** SIGTERM
+sur un process avec un job APScheduler en cours → connexion DB coupée brutalement
+côté pooler → `server closed the connection unexpectedly`. Au redémarrage,
+Supabase renvoyait parfois un pooler dans un état dégradé (`DbHandler exited`
+dès le `SELECT pg_catalog.version()` d'`init_db`).
+
+**R3 — Sessions partagées entre users dans `top3_job.py`.** Une seule
+session ouverte pour tout le batch : échec sur user N → session en
+`PendingRollbackError` → tous les users N+1 à N+M échouaient en cascade.
+Contribution directe à la saturation du pool.
+
+### Fixes Round 3 (ce document)
+
+**F0.1 — Table manquante `source_search_cache`** (SQL via Supabase SQL Editor).
+Non liée aux crashes, mais fait du bruit dans Sentry (PYTHON-S, PYTHON-1).
+
+**F0.2 — Coercion `DigestTopic.divergence_analysis`**
+(`app/services/editorial/pipeline.py`, `app/services/digest_service.py`).
+Le LLM renvoyait parfois un dict, le schéma Pydantic attendait une string.
+Erreur de validation qui cassait `get_both_digests` (PYTHON-R) indépendamment
+du pool.
+
+**F0.3 — Parse défensif `DailyDigest.items`**
+(`app/services/recommendation_service.py:269+`). Si `items` est stocké en
+string JSON au lieu de list, `feed_digest_exclusion_failed` loggait un
+warning et le feed n'excluait pas les articles déjà dans le digest.
+
+**F1.1 — Listener SQLAlchemy `handle_error` pour invalidation pool**
+(`app/database.py`). `event.listens_for(engine.sync_engine, "handle_error")`
+détecte les signatures Supabase-kill (`server closed the connection`,
+`dbhandler exited`, `consuming input failed`, etc.) et force
+`is_disconnect=True`. SQLAlchemy évacue alors le slot au lieu de le
+remettre dans le pool avec une connexion morte.
+
+**F1.2 — Hardening `get_db()`** (`app/database.py`). `rollback()` et
+`close()` maintenant wrappés en try/except pour que l'échec d'un
+cleanup sur connexion déjà morte ne masque pas l'exception originale du
+handler (plus de cascade confuse de `PendingRollbackError` dans Sentry).
+
+**F1.3 — Isolation session par user dans `top3_job.py`**
+(`app/workers/top3_job.py`). Chaque user ouvre maintenant sa propre
+session courte via `async_session_maker()` avec rollback explicite sur
+exception. Une erreur sur user N n'empoisonne plus le reste du batch.
+- `sync_all_sources` déjà conforme depuis P2.
+- `run_digest_generation::_process_batch` déjà conforme (session fresh
+  par user dans `process_with_limit`).
+- `_digest_watchdog` déjà conforme.
+
+**F2.3 — Semaphore trafilatura** (`app/routers/contents.py`).
+`asyncio.Semaphore(3)` module-level qui borne à 3 extractions concurrentes.
+Empêche `get_content_detail` / `get_perspectives` / `update_content_status`
+(PYTHON-F/H/J) de saturer l'executor + le pool quand plusieurs articles
+sont ouverts en parallèle.
+
+### À ne PAS retirer encore
+
+- `_scheduled_restart` à conserver pendant la validation 48 h des fixes
+  F1.x. S'il se confirme que Sentry ne remonte plus `QueuePool limit` ni
+  `PendingRollbackError`, on pourra proposer un retrait en PR séparée.
+
+### Validation attendue
+
+- Sentry : 0 événement `QueuePool limit` sur 24 h.
+- Sentry : `DbHandler exited` rare (< 5/jour) et sans cascade
+  `PendingRollbackError`.
+- `/api/health/pool` : `checked_out` < 10 en steady state.
+- Test solo 01:35 Paris post-restart : pas de reproduction du crash.

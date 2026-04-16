@@ -441,7 +441,23 @@ class EditorialPipelineService:
                         article_description=representative.description,
                     )
                     if isinstance(divergence_result, dict):
-                        subject.divergence_analysis = divergence_result.get("analysis")
+                        analysis_raw = divergence_result.get("analysis")
+                        # Round 3 fix (Sentry PYTHON-R) : le LLM peut renvoyer
+                        # un dict imbriqué (ex: {"contexte": "...", "liens": [...]})
+                        # au lieu d'une string plate. Pydantic rejette → 500 sur
+                        # /digest/both. Coerce en string propre ici, source du bug.
+                        if isinstance(analysis_raw, dict):
+                            import json as _json
+
+                            subject.divergence_analysis = _json.dumps(
+                                analysis_raw, ensure_ascii=False
+                            )
+                        elif analysis_raw is not None and not isinstance(
+                            analysis_raw, str
+                        ):
+                            subject.divergence_analysis = str(analysis_raw)
+                        else:
+                            subject.divergence_analysis = analysis_raw
                         subject.divergence_level = divergence_result.get(
                             "divergence_level"
                         )

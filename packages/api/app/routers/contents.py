@@ -29,6 +29,15 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+# Round 3 fix (docs/bugs/bug-infinite-load-requests.md — F2.3) :
+# trafilatura.extract peut prendre 10-15s par article. Sans borne, N
+# ouvertures simultanées monopolisent N threads de l'executor par défaut
+# + pressurisent le pool DB au retour (réouverture session pour persist).
+# Cap à 3 extractions concurrentes globales : un user qui ouvre rapidement
+# plusieurs articles ne déclenche pas une tempête parallèle qui sature
+# l'executor ET le pool.
+_EXTRACTION_SEMAPHORE = asyncio.Semaphore(3)
+
 
 @router.get(
     "/{content_id}",
@@ -87,12 +96,15 @@ async def get_content_detail(
                 logger.warning("content_detail_precommit_failed", exc_info=True)
 
             try:
-                result = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None, extractor.extract, content_data["url"]
-                    ),
-                    timeout=15.0,
-                )
+                # Bornage global (F2.3) : bloque si 3 extractions déjà en
+                # cours pour éviter la saturation executor/pool.
+                async with _EXTRACTION_SEMAPHORE:
+                    result = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None, extractor.extract, content_data["url"]
+                        ),
+                        timeout=15.0,
+                    )
 
                 # Persist enrichment via a short-lived session.
                 async with async_session_maker() as write_session:
