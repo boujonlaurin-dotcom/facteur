@@ -100,11 +100,19 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     return await _loadBothDigests();
   }
 
-  static const _digestMaxRetries = 3;
+  // Retry budget sized for the "new user just finished onboarding" flow:
+  // the server pre-generates the digest during the 10s conclusion animation,
+  // but the editorial LLM pipeline can take up to ~90s on cold start. 5
+  // retries with escalating delays (~80s total) keep the mobile client
+  // polling on the 202 contract until the digest is ready, without hammering
+  // a server that's already working.
+  static const _digestMaxRetries = 5;
   static const _digestRetryDelays = [
     Duration(seconds: 5),
     Duration(seconds: 10),
     Duration(seconds: 15),
+    Duration(seconds: 20),
+    Duration(seconds: 30),
   ];
 
   Future<DigestResponse?> _loadBothDigests({DateTime? date}) async {
@@ -156,10 +164,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         }
         rethrow;
       } on DigestGenerationException {
-        if (attempt < _digestMaxRetries) {
+        // Real 503 (backend raised HTTPException). Keep the retry budget
+        // bounded to 3 so we don't hammer a genuinely failing server — the
+        // "digest is being prepared" case is already handled by the 202 path
+        // above, so a persistent 503 here signals a real problem.
+        const maxGenerationRetries = 3;
+        if (attempt < maxGenerationRetries) {
           // ignore: avoid_print
           print(
-              'DigestNotifier: 503 error, retry ${attempt + 1}/$_digestMaxRetries...');
+              'DigestNotifier: 503 error, retry ${attempt + 1}/$maxGenerationRetries...');
           await Future<void>.delayed(_digestRetryDelays[attempt]);
           continue;
         }

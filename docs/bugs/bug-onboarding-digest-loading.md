@@ -1,6 +1,6 @@
 # Bug — Nouveaux utilisateurs bloqués sur "Essentiel loading..." après onboarding
 
-- **Statut** : PLAN (en attente GO)
+- **Statut** : IMPLEMENTED (tests backend verts, mobile test runtime indisponible dans le sandbox)
 - **Branche** : `claude/fix-onboarding-loading-0iUm9`
 - **Date** : 2026-04-16
 - **Zone à risque** : Backend digest pipeline + onboarding — moyen

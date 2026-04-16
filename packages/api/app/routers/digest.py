@@ -35,7 +35,7 @@ from app.schemas.digest import (
 from app.services.community_recommendation_service import (
     CommunityRecommendationService,
 )
-from app.services.digest_service import DigestService
+from app.services.digest_service import DigestService, schedule_digest_regen
 from app.services.generation_state import is_generation_running
 from app.utils.time import today_paris
 
@@ -266,13 +266,27 @@ async def get_digest(
     elapsed = time.monotonic() - start
 
     if not digest:
+        # Generation returned no content (new user with empty history, sources
+        # without recent articles, etc.). Instead of 503 — which makes the
+        # mobile app bail out after 3 retries — schedule a background regen
+        # and return 202 so the client keeps polling on the same contract as
+        # the "batch running" branch above. This is what unblocks the
+        # infinite-loading loop for users who just finished onboarding.
+        effective_date = target_date or today_paris()
+        schedule_digest_regen(user_uuid, effective_date, serein)
         logger.warning(
-            "digest_generation_returned_none",
+            "digest_generation_returned_none_scheduled_regen",
             user_id=current_user_id,
+            target_date=str(effective_date),
+            is_serene=serein,
             elapsed_ms=round(elapsed * 1000, 1),
         )
-        raise HTTPException(
-            status_code=503, detail="Digest generation failed. Please try again later."
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "preparing",
+                "message": "Votre briefing est en cours de préparation...",
+            },
         )
 
     # Enrich with community carousel
@@ -365,6 +379,26 @@ async def get_both_digests(
         raise HTTPException(
             status_code=503,
             detail="digest_generation_timeout",
+        )
+
+    # Both variants empty → don't return a 200 with null fields (mobile client
+    # mishandles that as a permanent failure). Schedule regen and ask client to
+    # retry on the same 202 contract as the batch-running branch.
+    if normal is None and serein is None:
+        effective_date = target_date or today_paris()
+        schedule_digest_regen(user_uuid, effective_date, is_serene=False)
+        schedule_digest_regen(user_uuid, effective_date, is_serene=True)
+        logger.warning(
+            "digest_both_returned_none_scheduled_regen",
+            user_id=current_user_id,
+            target_date=str(effective_date),
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "preparing",
+                "message": "Votre briefing est en cours de préparation...",
+            },
         )
 
     # Use the original session for the lightweight preference read

@@ -2,8 +2,9 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy import select as sa_select
@@ -24,6 +25,7 @@ from app.schemas.user import (
     UserProfileUpdate,
     UserStatsResponse,
 )
+from app.services.digest_service import schedule_initial_digest_generation
 from app.services.streak_service import StreakService
 from app.services.user_service import UserService
 
@@ -70,20 +72,35 @@ async def update_profile(
 @router.post("/onboarding", response_model=OnboardingResponse)
 async def save_onboarding(
     data: OnboardingRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> OnboardingResponse:
-    """Sauvegarder les réponses de l'onboarding."""
+    """Sauvegarder les réponses de l'onboarding.
+
+    Pré-génère le digest des deux variantes en tâche de fond : l'animation de
+    conclusion côté mobile dure ~10s, ce qui laisse au scheduler le temps de
+    produire un digest avant le premier `GET /digest/both`. Sans ce trigger,
+    un nouveau user qui termine l'onboarding hors fenêtre batch (6h Paris)
+    attend le lendemain pour voir son Essentiel.
+    """
     service = UserService(db)
     try:
         result = await service.save_onboarding(user_id, data.answers)
-        return OnboardingResponse.model_validate(result)
     except Exception as e:
         logger.error(f"Onboarding save failed for user {user_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save onboarding data. Please retry.",
         )
+
+    # Schedule digest pre-generation AFTER response is sent and the onboarding
+    # transaction is committed (BackgroundTasks guarantees post-commit timing
+    # via get_db's yield/commit pattern). The background regen helper opens its
+    # own session so it sees the freshly committed UserSource rows.
+    background_tasks.add_task(schedule_initial_digest_generation, UUID(user_id))
+
+    return OnboardingResponse.model_validate(result)
 
 
 @router.get("/preferences", response_model=list[UserPreferenceResponse])

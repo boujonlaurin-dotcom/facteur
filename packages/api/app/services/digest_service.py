@@ -224,6 +224,36 @@ def _schedule_background_regen(
         )
 
 
+def schedule_digest_regen(
+    user_id: UUID,
+    target_date: date,
+    is_serene: bool,
+) -> None:
+    """Public wrapper around the background digest regen scheduler.
+
+    Used by callers outside this module (e.g. the onboarding endpoint pre-warming
+    a new user's digest, or the digest router when on-demand generation returns
+    None). Preserves the rate-limit and batch-running-skip semantics of the
+    private helper.
+    """
+    _schedule_background_regen(user_id, target_date, is_serene)
+
+
+def schedule_initial_digest_generation(user_id: UUID) -> None:
+    """Pre-warm both digest variants for a user who just completed onboarding.
+
+    Invoked from a FastAPI BackgroundTask so it runs after the onboarding
+    request has been committed — meaning the fresh UserSource / UserInterest /
+    UserSubtopic rows are visible to the background session.
+
+    Using the existing rate-limited scheduler means this is idempotent: if the
+    user retries onboarding, we won't spawn duplicate generations.
+    """
+    target = today_paris()
+    for is_serene in (False, True):
+        _schedule_background_regen(user_id, target, is_serene)
+
+
 def _count_digest_items(digest_items) -> int:
     """Count items in either EditorialPipelineResult or list."""
     if isinstance(digest_items, EditorialPipelineResult):
