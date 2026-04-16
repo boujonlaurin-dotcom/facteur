@@ -150,7 +150,44 @@ class PertinencePillar(BasePillar):
         score += format_result[0]
         contributions.extend(format_result[1])
 
+        # --- 6. Theme Mismatch Malus ---
+        # Léger désavantage pour les articles hors des thèmes/sous-thèmes suivis,
+        # sans les exclure. Ne s'applique qu'aux utilisateurs ayant déclaré des
+        # préférences (cold start préservé).
+        mismatch_result = self._score_theme_mismatch(
+            theme_score[0], topic_result[0], custom_result[0], context
+        )
+        score += mismatch_result[0]
+        contributions.extend(mismatch_result[1])
+
         return score, contributions
+
+    def _score_theme_mismatch(
+        self,
+        theme_points: float,
+        subtopic_points: float,
+        custom_topic_points: float,
+        context: ScoringContext,
+    ) -> tuple[float, list[PillarContribution]]:
+        """Malus léger quand aucun thème/sous-thème/custom topic ne matche."""
+        has_preferences = bool(
+            context.user_interests
+            or context.user_subtopics
+            or context.user_custom_topics
+        )
+        if not has_preferences:
+            return 0.0, []
+        if theme_points > 0 or subtopic_points > 0 or custom_topic_points > 0:
+            return 0.0, []
+
+        malus = ScoringWeights.THEME_MISMATCH_MALUS
+        return malus, [
+            PillarContribution(
+                label="Thème non suivi",
+                points=malus,
+                is_positive=False,
+            )
+        ]
 
     def _score_theme(
         self, content: Content, context: ScoringContext

@@ -20,10 +20,10 @@ void main() {
   }
 
   group('TopicPrioritySlider', () {
-    testWidgets('displays 1 filled block for multiplier 0.5',
+    testWidgets('displays 1 filled block for multiplier 0.2',
         (tester) async {
       await tester.pumpWidget(createWidget(
-        currentMultiplier: 0.5,
+        currentMultiplier: 0.2,
         onChanged: (_) {},
       ));
 
@@ -71,7 +71,7 @@ void main() {
       expect(changedValue, 2.0);
     });
 
-    testWidgets('tap on left block area calls onChanged with 0.5',
+    testWidgets('tap on left block area calls onChanged with 0.2',
         (tester) async {
       double? changedValue;
       await tester.pumpWidget(createWidget(
@@ -89,7 +89,7 @@ void main() {
       ));
       await tester.pump();
 
-      expect(changedValue, 0.5);
+      expect(changedValue, 0.2);
     });
 
     testWidgets('same cran tap does not call onChanged',
@@ -116,7 +116,7 @@ void main() {
         (tester) async {
       // Cran 1: "Moins" — always visible
       await tester.pumpWidget(createWidget(
-        currentMultiplier: 0.5,
+        currentMultiplier: 0.2,
         onChanged: (_) {},
       ));
       expect(find.text('Moins'), findsOneWidget);
