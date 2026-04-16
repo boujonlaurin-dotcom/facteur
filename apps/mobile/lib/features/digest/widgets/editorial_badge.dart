@@ -13,8 +13,6 @@ class EditorialBadge {
   /// Returns the display label for a badge code, or null if unknown.
   static String? labelFor(String? badge) {
     switch (badge) {
-      case 'actu':
-        return "L'actu du jour";
       case 'pas_de_recul':
         return '\u{1F52D} Prendre du recul';
       case 'pepite':
@@ -73,7 +71,7 @@ class EditorialBadge {
   static Widget _buildChip(_ChipConfig config, BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: config.color.withOpacity(isDark ? 0.15 : 0.10),
         borderRadius: BorderRadius.circular(12),
@@ -82,7 +80,7 @@ class EditorialBadge {
         config.label,
         style: TextStyle(
           color: config.color,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -120,11 +118,6 @@ class EditorialBadge {
   static _ChipConfig? _chipConfig(String badge, BuildContext context) {
     final colors = context.facteurColors;
     switch (badge) {
-      case 'actu':
-        return _ChipConfig(
-          label: "L'actu du jour",
-          color: colors.primary,
-        );
       case 'pas_de_recul':
         return _ChipConfig(
           label: '\u{1F52D} Prendre du recul',

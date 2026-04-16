@@ -44,16 +44,16 @@ class CoupDeCoeurBlock extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withOpacity(0.08)
-            : Colors.black.withOpacity(0.04),
+            ? Colors.white.withOpacity(0.05)
+            : Colors.black.withOpacity(0.025),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: colors.border.withOpacity(isDark ? 0.22 : 0.16),
+          color: colors.border.withOpacity(isDark ? 0.15 : 0.10),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
             offset: const Offset(0, 3),
           ),
         ],

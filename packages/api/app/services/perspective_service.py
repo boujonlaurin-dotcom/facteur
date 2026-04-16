@@ -293,16 +293,28 @@ class PerspectiveService:
         system = (
             "Analyste média français. Compare les couvertures d'un même sujet.\n\n"
             "Réponds en JSON avec deux clés :\n"
-            '- "analysis": texte court (~150 mots max), '
-            '1-2 phrases de contexte, puis 2 constats "→" nommant les médias. '
-            "Chaque constat : un angle couvert par certains mais pas d'autres, "
-            "ou un même fait cadré différemment.\n"
-            '- "divergence_level": "low" si les médias couvrent le sujet de manière '
-            'similaire, "medium" si les angles diffèrent sensiblement, '
-            '"high" si les cadrages sont opposés ou contradictoires.\n\n'
-            "RÈGLES : uniquement les titres/résumés fournis, pas de faits inventés. "
-            "Précise \"d'après son titre\" si tu parles d'un angle absent. "
-            "Ton naturel, pas de jargon. Pas de titre en gras. Français."
+            '- "analysis": texte court (~120 mots max), structuré ainsi :\n'
+            "  1. Une phrase de contexte (le fait central que tous couvrent).\n"
+            "  2. Un saut de ligne double (\\n\\n).\n"
+            '  3. Exactement 2 constats, chacun sur sa propre ligne, préfixés par "→ ".\n'
+            "  Dans chaque constat : nomme 1 ou 2 médias en **gras**, et mets en **gras** "
+            "le verbe ou nom-clé qui exprime l'angle. Maximum 3 segments en gras par ligne. "
+            "Pas d'en-tête, pas de titre de section.\n"
+            '- "divergence_level": "low" (couvertures similaires), "medium" '
+            '(angles sensiblement différents), "high" (cadrages opposés ou contradictoires).\n\n'
+            "Exemple d'analysis :\n"
+            "\"Tous couvrent l'annonce du plan budgétaire.\\n\\n"
+            "→ **Le Monde** et **Libération** **insistent** sur le volet social et les "
+            "arbitrages à venir.\\n"
+            "→ **Le Figaro** **cadre** la mesure comme un tournant sécuritaire, "
+            "d'après son titre.\"\n\n"
+            "RÈGLES :\n"
+            "- Uniquement les titres/résumés fournis, pas de faits inventés.\n"
+            "- Précise \"d'après son titre\" si tu parles d'un angle absent d'un résumé.\n"
+            "- Verbes concrets : insiste sur, minimise, cadre comme, ignore, met en avant, oppose.\n"
+            "- Interdits : \"met en lumière\", \"soulève des questions\", \"révèle la fragilité\", "
+            "\"fait écho\".\n"
+            "- Ton factuel, phrases courtes. Français."
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)

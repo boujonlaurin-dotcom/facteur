@@ -403,7 +403,7 @@ class DigestCard extends StatelessWidget {
             ? '${config.emoji} ${config.label}'
             : config.label;
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
           decoration: BoxDecoration(
             color: config.backgroundColor,
             borderRadius: BorderRadius.circular(12),
@@ -412,7 +412,7 @@ class DigestCard extends StatelessWidget {
             label,
             style: TextStyle(
               color: config.textColor,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
             maxLines: 1,
@@ -423,7 +423,7 @@ class DigestCard extends StatelessWidget {
     }
     // Fallback: algorithmic reason badge
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: colors.primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
@@ -432,7 +432,7 @@ class DigestCard extends StatelessWidget {
         _simplifyReason(item.reason),
         style: TextStyle(
           color: colors.primary,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
         maxLines: 1,

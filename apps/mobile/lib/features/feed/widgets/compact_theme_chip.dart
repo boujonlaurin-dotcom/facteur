@@ -168,7 +168,7 @@ class _InactiveChip extends StatelessWidget {
               Text(
                 'Thèmes',
                 style: TextStyle(
-                    fontSize: 12, color: muted, fontWeight: FontWeight.w500),
+                    fontSize: 11, color: muted, fontWeight: FontWeight.w500),
               ),
               const SizedBox(width: 2),
             ] else ...[
@@ -236,7 +236,7 @@ class _ActiveChip extends StatelessWidget {
             Text(
               name,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: primary,
               ),

@@ -143,7 +143,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
     final charsPerLine = (cardWidth - _bodyPadding) / 10;
     final titleLines =
-        (article.title.length / charsPerLine).ceil().clamp(1, 3);
+        (article.title.length / charsPerLine).round().clamp(1, 3);
     final titleHeight = titleLines * 20.0 * 1.2;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
@@ -154,7 +154,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       if (desc.isNotEmpty) {
         final descCharsPerLine = (cardWidth - _bodyPadding) / 8;
         final descLines =
-            (desc.length / descCharsPerLine).ceil().clamp(1, 4);
+            (desc.length / descCharsPerLine).round().clamp(1, 4);
         // descriptionFontSize: 15, lineHeight: 1.3
         final descHeight = descLines * 15.0 * 1.3;
         bodyHeight += _spacer + descHeight;
@@ -162,10 +162,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     }
 
     final imageHeight = hasImage ? cardWidth / (16 / 9) : 0.0;
-    // Badge chip above card (only outside editorial mode)
-    // + 8px safety margin for text estimation variance
+    // Badge chip above card (only outside editorial mode).
+    // Estimation volontairement serrée ; tout écart résiduel est
+    // absorbé par Align(center) dans _buildPageView (moitié/moitié).
     final badgeHeight = widget.editorialMode ? 0.0 : _badgeHeight;
-    return imageHeight + bodyHeight + _footerHeight + badgeHeight + 8.0;
+    return imageHeight + bodyHeight + _footerHeight + badgeHeight;
   }
 
   /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
@@ -219,12 +220,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: colors.border.withOpacity(isDark ? 0.28 : 0.22),
+              color: colors.border.withOpacity(isDark ? 0.15 : 0.10),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 14,
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 20,
                 offset: const Offset(0, 3),
               ),
             ],
@@ -233,8 +234,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             borderRadius: BorderRadius.circular(16),
             child: Container(
               color: isDark
-                  ? Colors.white.withOpacity(0.11)
-                  : Colors.black.withOpacity(0.07),
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.black.withOpacity(0.025),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -473,7 +474,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 children: [
                   Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                       color: colors.primary,
                       borderRadius: BorderRadius.circular(8),
@@ -482,7 +483,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                       widget.isSerene ? 'Bonne nouvelle' : 'À la Une',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -668,13 +669,19 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
             // ── Articles actu ──
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
             if (isActuMulti) ...[
               LayoutBuilder(
                 builder: (context, constraints) {
                   final cardWidth = constraints.maxWidth * 0.88;
+                  // Per-page dynamic height (current card only) so the viewport
+                  // matches the visible card's height → no empty space above
+                  // or below. The AnimatedContainer smoothly transitions when
+                  // swiping between cards of different heights.
+                  final currentArticle = actuArticles[
+                      _currentPage.clamp(0, actuArticles.length - 1)];
                   final computedHeight =
-                      _computeHeight(actuArticles, cardWidth);
+                      _estimateCardHeight(currentArticle, cardWidth);
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
@@ -683,12 +690,15 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   );
                 },
               ),
-              const SizedBox(height: 2),
-              _buildPageIndicator(colors, actuArticles.length),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _buildPageIndicator(colors, actuArticles.length),
+              ),
             ] else if (!actuArticles.first.isDismissed)
               _buildSingleArticle(actuArticles.first),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
             // ── Analyse Facteur (juste sous les carrousels) ──
             if (topic.divergenceAnalysis != null) ...[
@@ -704,7 +714,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   perspectiveSources: topic.perspectiveSources,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
             ],
 
             // ── Pas de recul (intègre le contexte du sujet) ──
@@ -717,7 +727,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   onTap: () => widget.onArticleTap(deepArticle),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
             ] else if (topic.introText != null) ...[
               // Fallback : sujet sans deep article → intro text en
               // paragraphe discret (pas de carte).
@@ -734,7 +744,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
             ],
 
             // ── Thumbs feedback ──
@@ -821,14 +831,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             Text(
               '${topic.rank}',
               style: TextStyle(
-                color: colors.textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
+                color: colors.textSecondary.withOpacity(0.7),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
               ),
             ),
             Text(
               ' \u2013 ',
-              style: TextStyle(color: colors.textSecondary),
+              style: TextStyle(color: colors.textSecondary.withOpacity(0.5)),
             ),
             EditorialBadge.chip(mainBadge, context: context) ??
                 const SizedBox.shrink(),
@@ -879,7 +889,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                 style: TextStyle(
                   color: colors.primary.withOpacity(0.6),
                   fontWeight: FontWeight.w700,
-                  fontSize: 12,
+                  fontSize: 11,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -899,7 +909,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   style: TextStyle(
                     color: labelColor,
                     fontWeight: FontWeight.w600,
-                    fontSize: 11,
+                    fontSize: 10,
                     letterSpacing: 0.5,
                   ),
                   maxLines: 1,
@@ -950,7 +960,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     required String label,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: colors.primary.withOpacity(isDark ? 0.15 : 0.10),
         borderRadius: BorderRadius.circular(FacteurRadius.small),
@@ -964,7 +974,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             label,
             style: TextStyle(
               color: colors.primary,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1083,7 +1093,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         return Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Align(
-            alignment: Alignment.topCenter,
+            alignment: Alignment.center,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,

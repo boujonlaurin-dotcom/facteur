@@ -441,9 +441,9 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               Text(
                 'N\u00B0$rank',
                 style: TextStyle(
-                  color: colors.primary.withOpacity(0.9),
+                  color: colors.primary.withOpacity(0.6),
                   fontWeight: FontWeight.w900,
-                  fontSize: 13,
+                  fontSize: 12,
                   letterSpacing: 1.0,
                 ),
               ),
