@@ -204,6 +204,11 @@ class ScoringWeights:
 
     IMPRESSION_MANUAL = -120.0  # "J'ai déjà vu" — malus permanent, pas de decay
 
+    # Fenêtre pendant laquelle un article récemment impressionné est exclu du
+    # feed chronologique par défaut (pull-to-refresh). Aligné sur le tier
+    # IMPRESSION_VERY_RECENT (<1h = "invisible après refresh").
+    IMPRESSION_HIDE_WINDOW_HOURS = 1
+
     # --- SOURCE AFFINITY (Learned from interactions) ---
 
     # Maximum bonus for a source with highest engagement.
