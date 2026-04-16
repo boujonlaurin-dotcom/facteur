@@ -1,6 +1,6 @@
 import asyncio
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import httpx
@@ -21,14 +21,67 @@ _ANTIBOT_MARKERS = [
     "cf-chl-bypass",
 ]
 
-# Regex to detect feed-like paths in <a href> attributes
+# Regex to detect feed-like paths in <a href> attributes on *homepages*.
+# Kept narrow on purpose: a busy French homepage has cross-links to sibling
+# sections (e.g. France Culture nav linking to /franceinter/rss), and a
+# greedy match turns the homepage <a> scan into a random picker.
 _FEED_HREF_PATTERN = re.compile(
     r"/(feed|rss|atom)(\.xml|\.rss)?(/[\w-]*)?$",
     re.IGNORECASE,
 )
 
+# Broader regex used *only* inside a known feed-index page (/rss, /flux,
+# …) — there the surrounding HTML has already been vetted as a curated
+# list of feeds, so per-rubrique file names like "figaro_actualites.xml"
+# or "alaune.xml" are safe to accept.
+_FEED_URL_LIKE_PATTERN = re.compile(
+    r"("
+    r"/(?:feed|rss|atom|flux|syndication)(?:[./][\w\-]*)*(?:\.(?:xml|rss|atom))?/?"
+    r"|/[\w\-]*\.(?:rss|atom)"
+    r"|/[\w\-]*(?:rss|feed|atom)[\w\-]*\.xml"
+    r")(?:\?[^\s\"']*)?$",
+    re.IGNORECASE,
+)
+
 # Keywords in link text that suggest an RSS link
 _FEED_TEXT_KEYWORDS = ["rss", "flux rss", "syndication", "feed", "fil rss"]
+
+# HTML paths that are commonly *index pages* listing multiple feeds (not
+# themselves feed URLs).  Many French mainstream sites publish a dedicated
+# /rss/ or /flux/ page that lists dozens of per-rubrique XML feeds without
+# advertising them on the homepage.
+_FEED_INDEX_PATHS = [
+    "/rss",
+    "/rss/",
+    "/flux",
+    "/flux/",
+    "/flux-rss",
+    "/flux-rss/",
+    "/feeds",
+    "/feeds/",
+    "/syndication",
+    "/syndication/",
+]
+
+# Domain → known-good feed URL overrides.
+#
+# For sites where automated discovery is impossible (subdomain custom APIs,
+# aggressive anti-bot on the homepage, etc.) we short-circuit the whole
+# pipeline with a verified feed URL.  Keep this list *small* and add entries
+# only when the probe harness (scripts/probe_failed_sources.py) confirms no
+# generic stage works.
+#
+# Host matching is suffix-based: "liberation.fr" matches both
+# "www.liberation.fr" and "liberation.fr".
+DOMAIN_FEED_OVERRIDES: dict[str, str] = {
+    # L'Équipe exposes its feed on a separate subdomain only reachable via
+    # a custom API path — neither <link rel> nor any of the common suffixes
+    # point at it.
+    "lequipe.fr": "https://dwh.lequipe.fr/api/edito/rss?path=/",
+    # Libération returns 403 to both httpx and curl-cffi on the homepage,
+    # but the Arc Publishing feed is openly reachable.
+    "liberation.fr": "https://www.liberation.fr/arc/outboundfeeds/rss/?outputType=xml",
+}
 
 
 class DetectedFeed(BaseModel):
@@ -290,6 +343,175 @@ class RSSParser:
             logger.warning("HTML channel_id fallback failed", error=str(e))
         return None
 
+    # ─── Domain override & index-page helpers ─────────────────────
+
+    @staticmethod
+    def _lookup_domain_override(url: str) -> str | None:
+        """Return a known-good feed URL for hard-case domains, else None."""
+        try:
+            host = (urlparse(url).hostname or "").lower().lstrip(".")
+        except Exception:
+            return None
+        if not host:
+            return None
+        if host.startswith("www."):
+            host = host[4:]
+        for domain, feed_url in DOMAIN_FEED_OVERRIDES.items():
+            if host == domain or host.endswith("." + domain):
+                return feed_url
+        return None
+
+    async def _try_feed_index_pages(
+        self,
+        base_url: str,
+        html_candidates: list[str],
+        loop: asyncio.AbstractEventLoop,
+    ) -> DetectedFeed | None:
+        """Follow HTML *feed index pages* to find the real per-rubrique feed.
+
+        French mainstream sites (Le Figaro, Les Echos, L'Express, BFMTV, …)
+        publish a dedicated ``/rss`` or ``/flux`` HTML page listing dozens
+        of XML feeds that are never linked from the homepage.  This helper:
+
+        1. First tries the HTML candidates harvested from the homepage
+           ``<a href>`` scan (they point at /rss/ etc. on the same site).
+        2. Then blind-tries ``_FEED_INDEX_PATHS`` appended to ``base_url``.
+
+        For each reachable HTML page, scan it with the same ``<link rel>``
+        + ``<a href>`` logic used on the homepage and return the first
+        feed URL that parses with at least one entry.
+        """
+        seen: set[str] = set()
+        to_try: list[str] = []
+
+        for candidate in html_candidates:
+            if candidate not in seen:
+                seen.add(candidate)
+                to_try.append(candidate)
+
+        for path in _FEED_INDEX_PATHS:
+            index_url = base_url.rstrip("/") + path
+            if index_url not in seen:
+                seen.add(index_url)
+                to_try.append(index_url)
+
+        for index_url in to_try:
+            html: str | None = None
+            try:
+                resp = await self.client.get(index_url)
+            except Exception as e:
+                logger.debug(
+                    "Feed index page fetch failed",
+                    url=index_url,
+                    error=str(e),
+                )
+                resp = None
+
+            if resp is not None and resp.status_code == 200:
+                ct = resp.headers.get("content-type", "").lower()
+                # Only follow HTML pages — direct feeds are handled by
+                # Stage 3b and the suffix fallback.
+                if "html" in ct:
+                    html = resp.text
+            elif resp is not None and self._is_antibot_response(
+                resp.status_code, resp.text
+            ):
+                # Same anti-bot fallback used by Stage 1 — sites like Les
+                # Echos serve /rss/ behind the same DataDome wall as their
+                # homepage.
+                impersonated = await self._fetch_with_impersonation(index_url)
+                if impersonated and "<html" in impersonated.lower()[:4000]:
+                    html = impersonated
+
+            if html is None:
+                continue
+
+            feed = await self._scan_html_for_feed(index_url, html, loop)
+            if feed is not None:
+                logger.info(
+                    "Found feed via index page",
+                    index_url=index_url,
+                    feed_url=feed.feed_url,
+                )
+                return feed
+        return None
+
+    async def _scan_html_for_feed(
+        self,
+        page_url: str,
+        html: str,
+        loop: asyncio.AbstractEventLoop,
+    ) -> DetectedFeed | None:
+        """Scan an HTML page for feed URLs (link rel + a href) and return
+        the first candidate that parses with at least one entry."""
+        soup = BeautifulSoup(html, "html.parser")
+        seen: set[str] = set()
+        candidates: list[str] = []
+
+        for link in soup.find_all("link", rel="alternate"):
+            type_attr = (link.get("type") or "").lower()
+            href = link.get("href") or ""
+            if "oembed" in type_attr or "comments" in type_attr:
+                continue
+            if not ("rss" in type_attr or "atom" in type_attr or "xml" in type_attr):
+                continue
+            if not href:
+                continue
+            absolute = urljoin(page_url, href) if not href.startswith("http") else href
+            if absolute not in seen:
+                seen.add(absolute)
+                candidates.append(absolute)
+
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag.get("href") or ""
+            matched = _FEED_URL_LIKE_PATTERN.search(href)
+            if not matched:
+                link_text = (
+                    a_tag.get_text() + " " + (a_tag.get("title") or "")
+                ).lower()
+                if not any(kw in link_text for kw in _FEED_TEXT_KEYWORDS):
+                    continue
+            if href.startswith("/"):
+                absolute = urljoin(page_url, href)
+            elif href.startswith("http"):
+                absolute = href
+            else:
+                continue
+            if absolute not in seen and absolute != page_url:
+                seen.add(absolute)
+                candidates.append(absolute)
+
+        for candidate in candidates[:10]:
+            feed_text: str | None = None
+            try:
+                resp = await self.client.get(candidate)
+            except Exception:
+                resp = None
+
+            if (
+                resp is not None
+                and resp.status_code == 200
+                and self._is_feed_content_type(resp)
+            ):
+                feed_text = resp.text
+            elif resp is not None and self._is_antibot_response(
+                resp.status_code, resp.text
+            ):
+                # Some sites (Les Echos) serve their RSS XML behind the
+                # same DataDome wall as their homepage.
+                impersonated = await self._fetch_with_impersonation(candidate)
+                if impersonated and impersonated.lstrip().startswith(
+                    ("<?xml", "<rss", "<feed", "<atom")
+                ):
+                    feed_text = impersonated
+
+            if feed_text is None:
+                continue
+            feed_data = await loop.run_in_executor(None, feedparser.parse, feed_text)
+            if len(feed_data.entries) > 0:
+                return await self._format_response(candidate, feed_data)
+        return None
+
     # ─── Main Detection ───────────────────────────────────────────
 
     async def detect(self, url: str) -> DetectedFeed:
@@ -297,19 +519,44 @@ class RSSParser:
         Smart detection of a feed from a URL.
 
         Pipeline:
-        0. Platform-specific URL transforms (Substack, GitHub, Mastodon, Medium).
+        0. Domain override (verified feed URL for hard cases).
+        0b. Platform-specific URL transforms (Substack, GitHub, Mastodon, Medium).
         1. Platform-specific handlers (Reddit, YouTube).
         2. Fetch URL (httpx → curl-cffi fallback on 403/CAPTCHA).
         3. Direct feedparser parse.
         4. HTML <link rel="alternate"> auto-discovery.
         4b. HTML <a href> deep scan for feed-like links.
+        4c. Feed index page follow (recurse into /rss, /flux, … HTML lists).
         5. Expanded suffix fallback with Content-Type validation.
         """
         logger.info("Detecting feed", url=url)
         loop = asyncio.get_event_loop()
         detection_log: list[str] = []
 
-        # ── Step 0: Platform-specific URL transforms ──────────────
+        # ── Step 0: Domain override ───────────────────────────────
+        override_feed = self._lookup_domain_override(url)
+        if override_feed:
+            logger.info("Domain override matched", url=url, feed_url=override_feed)
+            detection_log.append(f"override={override_feed}")
+            try:
+                resp = await self.client.get(override_feed)
+                if resp.status_code == 200:
+                    feed_data = await loop.run_in_executor(
+                        None, feedparser.parse, resp.text
+                    )
+                    if len(feed_data.entries) > 0:
+                        return await self._format_response(override_feed, feed_data)
+                detection_log.append("override_feed=no_entries")
+            except Exception as e:
+                detection_log.append(f"override_error={e}")
+                logger.warning(
+                    "Domain override feed failed, continuing detection",
+                    url=url,
+                    feed_url=override_feed,
+                    error=str(e),
+                )
+
+        # ── Step 0b: Platform-specific URL transforms ──────────────
         transformed_url = self._try_platform_transform(url)
         if transformed_url:
             logger.info(
@@ -534,26 +781,39 @@ class RSSParser:
                 seen.add(href)
                 candidate_urls.append(href)
 
+        html_index_candidates: list[str] = []
         if candidate_urls:
             detection_log.append(f"a_tag_scan={len(candidate_urls)}_candidates")
             for candidate in candidate_urls[:5]:
                 try:
                     cand_resp = await self.client.get(candidate)
-                    if cand_resp.status_code == 200 and self._is_feed_content_type(
-                        cand_resp
-                    ):
+                    if cand_resp.status_code != 200:
+                        continue
+                    if self._is_feed_content_type(cand_resp):
                         cand_feed = await loop.run_in_executor(
                             None, feedparser.parse, cand_resp.text
                         )
                         if len(cand_feed.entries) > 0:
                             logger.info("Found feed via <a> tag scan", url=candidate)
                             return await self._format_response(candidate, cand_feed)
+                    elif "html" in cand_resp.headers.get("content-type", "").lower():
+                        # Candidate is an HTML *index page* (common on French
+                        # mainstream sites : /rss, /rss/, /flux-rss, …).
+                        # Defer recursion to Stage 3c below so we dedupe with
+                        # the blind-tried index paths.
+                        html_index_candidates.append(candidate)
                 except Exception:
                     continue
         else:
             detection_log.append("a_tag_scan=0_candidates")
 
         # ── Stage 4: Expanded suffix fallback + Content-Type check
+        # Runs BEFORE index-page follow so that "/rss" appended to the
+        # *current* URL (e.g. radiofrance.fr/franceculture + /rss =
+        # /franceculture/rss, a direct XML feed) is tried before the
+        # <a href="/rss"> link on the page — which urljoins to the
+        # *root* (radiofrance.fr/rss, a global HTML index listing all
+        # stations, from which we'd pick the wrong feed).
         common_suffixes = [
             "/feed",  # WordPress
             "/rss",  # Generic
@@ -565,6 +825,12 @@ class RSSParser:
             "/feed/rss",  # CMS variants
             "/blog/feed",  # WordPress with /blog prefix
             "/.rss",  # Reddit-style
+            # Observed on top French mainstream sites (see
+            # docs/maintenance/failed-sources-dataset.md):
+            "/titres.rss",  # France Info & France Télévisions
+            "/articles/feed",  # Mediapart (free articles feed)
+            "/arc/outboundfeeds/rss/?outputType=xml",  # Arc Publishing
+            "/feed/all/rss.xml",  # Courrier International-style
         ]
         suffix_tried = 0
         for suffix in common_suffixes:
@@ -588,6 +854,17 @@ class RSSParser:
         detection_log.append(
             f"suffix_fallback=tried_{suffix_tried}_of_{len(common_suffixes)}"
         )
+
+        # ── Stage 5: Feed index page follow (Pattern A) ───────────
+        # Last resort: some sites (Les Echos, L'Express) require
+        # fetching an HTML "RSS directory" page (/rss/, /flux-rss/)
+        # and scanning it for the real feed URLs. Includes a
+        # curl-cffi fallback for anti-bot-protected directories.
+        index_feed = await self._try_feed_index_pages(url, html_index_candidates, loop)
+        if index_feed is not None:
+            detection_log.append(f"index_page={index_feed.feed_url}")
+            return index_feed
+        detection_log.append("index_page=none")
 
         # ── Failure: detailed diagnostic ──────────────────────────
         log_str = "; ".join(detection_log)

@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source
@@ -39,6 +39,40 @@ from app.services.source_service import SourceService
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+
+async def _log_failed_source_attempt(
+    *,
+    user_id: str,
+    input_text: str,
+    input_type: str,
+    endpoint: str,
+    error_message: str,
+) -> None:
+    # Uses its own session so the commit survives the HTTPException that the
+    # caller is about to raise. The request-scoped `get_db` dependency does
+    # rollback-on-BaseException (database.py:257) which would otherwise erase
+    # the insert.
+    try:
+        async with async_session_maker() as session:
+            session.add(
+                FailedSourceAttempt(
+                    user_id=UUID(user_id),
+                    input_text=input_text[:500],
+                    input_type=input_type,
+                    endpoint=endpoint,
+                    error_message=error_message[:1000],
+                )
+            )
+            await session.commit()
+    except Exception as log_exc:
+        logger.warning(
+            "failed_source_attempt_log_error",
+            endpoint=endpoint,
+            error=str(log_exc),
+            exc_type=type(log_exc).__name__,
+        )
+
 
 # ─── Endpoint-level rate limiter for smart-search ────────────────
 # Prevents hammering: max 10 requests per minute per user.
@@ -326,16 +360,13 @@ async def add_source(
 
         return source
     except ValueError as e:
-        # Log failed custom source attempt
-        attempt = FailedSourceAttempt(
-            user_id=UUID(user_id),
-            input_text=str(data.url)[:500],
+        await _log_failed_source_attempt(
+            user_id=user_id,
+            input_text=str(data.url),
             input_type="url",
             endpoint="custom",
-            error_message=str(e)[:1000],
+            error_message=str(e),
         )
-        db.add(attempt)
-        await db.flush()
         logger.info(
             "failed_source_attempt", endpoint="custom", input=str(data.url)[:100]
         )
@@ -399,16 +430,13 @@ async def detect_source(
             results = await service.search_sources(url_input, user_id=user_id)
             return SourceSearchResponse(results=results)
     except ValueError as e:
-        # Log failed detect/search attempt
-        attempt = FailedSourceAttempt(
-            user_id=UUID(user_id),
-            input_text=data.url.strip()[:500],
+        await _log_failed_source_attempt(
+            user_id=user_id,
+            input_text=data.url.strip(),
             input_type="url" if is_url_like else "keyword",
             endpoint="detect",
-            error_message=str(e)[:1000],
+            error_message=str(e),
         )
-        db.add(attempt)
-        await db.flush()
         logger.info(
             "failed_source_attempt", endpoint="detect", input=data.url.strip()[:100]
         )
