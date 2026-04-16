@@ -414,9 +414,7 @@ class SmartSourceSearchService:
         if not urls:
             return []
 
-        detections = await asyncio.gather(
-            *(self._try_detect_feed(url) for url in urls)
-        )
+        detections = await asyncio.gather(*(self._try_detect_feed(url) for url in urls))
         return [
             self._build_result(url, "google_news", user_themes, det)
             for url, det in zip(urls, detections, strict=True)
@@ -467,7 +465,9 @@ class SmartSourceSearchService:
                 self._build_result(
                     url, "mistral", user_themes, det, name, fallback_type=stype
                 )
-                for (url, name, stype), det in zip(urls_and_meta, detections, strict=True)
+                for (url, name, stype), det in zip(
+                    urls_and_meta, detections, strict=True
+                )
             ]
 
         except Exception as e:
