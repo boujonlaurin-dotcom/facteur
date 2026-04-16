@@ -23,6 +23,14 @@ class AuthState {
   /// Le refresh token a expiré — l'utilisateur doit se reconnecter
   final bool sessionExpired;
 
+  /// Timestamp du dernier event `tokenRefreshed` reçu depuis Supabase.
+  ///
+  /// Utilisé comme signal d'invalidation pour les data providers (ex.
+  /// `feedProvider`) : à chaque rotation de JWT, ce champ change et tous les
+  /// listeners de `authStateProvider` rebuildent avec un access token frais.
+  /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
+  final DateTime? lastTokenRefreshAt;
+
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -31,6 +39,7 @@ class AuthState {
     this.pendingEmailConfirmation,
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
+    this.lastTokenRefreshAt,
   });
 
   bool get isAuthenticated => user != null;
@@ -69,6 +78,7 @@ class AuthState {
     bool clearPendingEmail = false,
     bool? forceUnconfirmed,
     bool? sessionExpired,
+    DateTime? lastTokenRefreshAt,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -80,6 +90,7 @@ class AuthState {
           : (pendingEmailConfirmation ?? this.pendingEmailConfirmation),
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
+      lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
     );
   }
 }
@@ -223,6 +234,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         'AuthStateNotifier: Auth event: ${data.event}, User: ${user?.email ?? "None"}',
       );
 
+      // Event tokenRefreshed : on ne short-circuite JAMAIS, on propage un
+      // nouveau `lastTokenRefreshAt` dans le state pour signaler aux data
+      // providers (feedProvider, etc.) qu'ils peuvent re-fetcher avec un
+      // access token frais. Cf. docs/bugs/bug-feed-403-auth-recovery.md.
+      final bool isTokenRefresh =
+          data.event == AuthChangeEvent.tokenRefreshed;
+
       // Éviter les mises à jour inutiles si l'user n'a pas changé.
       // IMPORTANT: si `forceUnconfirmed` est true, on NE court-circuite PAS —
       // tout event Supabase (notamment TOKEN_REFRESHED avec un JWT à jour)
@@ -231,7 +249,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       final bool sameUser = state.user?.id == user?.id &&
           !state.isLoading &&
           state.user != null;
-      if (sameUser && !state.forceUnconfirmed) {
+      if (sameUser && !state.forceUnconfirmed && !isTokenRefresh) {
         final bool emailStatusChanged =
             state.user?.emailConfirmedAt != user?.emailConfirmedAt;
         if (!emailStatusChanged) {
@@ -253,6 +271,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         user: user,
         isLoading: false,
         forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
+        lastTokenRefreshAt: isTokenRefresh ? DateTime.now() : null,
       );
 
       if (user != null) {

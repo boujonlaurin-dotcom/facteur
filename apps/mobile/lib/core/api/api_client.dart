@@ -106,7 +106,13 @@ class ApiClient {
             // Un 403 `email_not_confirmed` peut provenir d'un JWT stale (le
             // user vient de confirmer mais son access token n'a pas encore été
             // roté). On tente un refresh + retry AVANT de verrouiller l'app sur
-            // l'écran de confirmation. Cf. docs/bugs/bug-auth-session-persistence.md
+            // l'écran de confirmation. Cf. docs/bugs/bug-feed-403-auth-recovery.md
+            //
+            // RÈGLE : on ne déclenche `onAuthError(403)` (→ setForceUnconfirmed)
+            // QUE si on a une preuve forte : un 2ème 403 obtenu après retry avec
+            // un JWT frais. Toute autre issue (refresh timeout, session null,
+            // erreur réseau au retry) laisse le 403 bubble up sans verrouiller
+            // l'app — évite le lock irrémédiable sur réseau/DB lent.
             final detail = _extractErrorDetail(error.response?.data);
             final isEmailNotConfirmed = detail == _emailNotConfirmedDetail;
 
@@ -127,7 +133,8 @@ class ApiClient {
                     onAuthRecovered?.call();
                     return handler.resolve(response);
                   } on DioException catch (retryErr) {
-                    // Toujours 403 après refresh → l'email est réellement non confirmé
+                    // Toujours 403 après refresh → l'email est réellement non
+                    // confirmé : seule voie qui déclenche `onAuthError(403)`.
                     if (retryErr.response?.statusCode == 403 &&
                         onAuthError != null) {
                       // ignore: avoid_print
@@ -138,21 +145,22 @@ class ApiClient {
                     _logError(retryErr);
                     return handler.next(retryErr);
                   }
+                } else {
+                  // ignore: avoid_print
+                  print(
+                      '⚠️ ApiClient: 403 — refresh returned null session. Letting original 403 bubble (no lockdown).');
                 }
-              } catch (_) {
-                // Refresh a échoué — fallthrough vers onAuthError
+              } catch (e) {
+                // Refresh timeout ou AuthException — on ne verrouille PAS l'app
+                // sur un échec transitoire. Le 403 original bubble au caller
+                // (FeedNotifier le rendra comme une erreur récupérable).
+                // ignore: avoid_print
+                print(
+                    '⚠️ ApiClient: 403 refresh failed (${e.runtimeType}), not triggering onAuthError — bubbling original 403.');
               }
             }
-
-            // 403 non-email-related OU refresh impossible → comportement legacy
-            if (onAuthError != null && isEmailNotConfirmed) {
-              // ignore: avoid_print
-              print(
-                  '⛔️ ApiClient: 403 email_not_confirmed unrecoverable. Triggering onAuthError(403).');
-              onAuthError!(403);
-            }
-            // Les 403 non-email (ex. rate limit, RLS) ne déclenchent PAS
-            // setForceUnconfirmed : ils bubble tels quels au caller.
+            // Aucun fallthrough vers onAuthError(403) ici : les 403 transients
+            // et non-email (rate limit, RLS) passent tels quels au caller.
           }
 
           // Logger les erreurs (sans les tokens)
