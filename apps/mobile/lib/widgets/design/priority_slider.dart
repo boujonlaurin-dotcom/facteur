@@ -9,7 +9,7 @@ const Color _terracotta = Color(0xFFE07A5F);
 /// 3-cran compact slider for priority weighting.
 ///
 /// Maps multiplier values to visual blocks:
-/// - 0.5 (Moins):   [filled] [empty] [empty]
+/// - 0.2 (Moins):   [filled] [empty] [empty]
 /// - 1.0 (Normal):  [filled] [filled] [empty]
 /// - 2.0 (Plus):    [filled] [filled] [filled]
 ///
@@ -40,7 +40,7 @@ class PrioritySlider extends StatefulWidget {
 
 class _PrioritySliderState extends State<PrioritySlider>
     with SingleTickerProviderStateMixin {
-  static const _multipliers = [0.5, 1.0, 2.0];
+  static const _multipliers = [0.2, 1.0, 2.0];
   static const _blockWidth = 28.0;
   static const _blockHeight = 12.0;
   static const _blockGap = 3.0;
@@ -61,7 +61,7 @@ class _PrioritySliderState extends State<PrioritySlider>
     return '';
   }
 
-  /// Normalize a multiplier (0.5/1.0/2.0) to 0.0-1.0 range for comparison.
+  /// Normalize a multiplier (0.2/1.0/2.0) to 0.0-1.0 range for comparison.
   double _multiplierToNormalized(double m) {
     if (m <= 0.5) return 0.0;
     if (m <= 1.0) return 0.5;
