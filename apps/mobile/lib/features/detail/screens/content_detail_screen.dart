@@ -2083,7 +2083,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: ScaleTransition(
                   scale: _bookmarkScaleAnimation,
                   child: IconButton(
-                    style: iconButtonStyle,
+                    style: iconButtonStyle.copyWith(
+                      backgroundColor: content.isSaved
+                          ? WidgetStatePropertyAll(colors.primary)
+                          : null,
+                    ),
                     onPressed: _toggleBookmark,
                     icon: Icon(
                       content.isSaved
@@ -2093,7 +2097,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               PhosphorIconsStyle.regular),
                       size: 24,
                       color: content.isSaved
-                          ? colors.primary
+                          ? Colors.white
                           : colors.textSecondary,
                     ),
                     tooltip: 'Sauvegarder',
@@ -2107,9 +2111,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: IconButton(
                   style: iconButtonStyle.copyWith(
                     backgroundColor: content.isLiked
-                        ? WidgetStatePropertyAll(
-                            SunflowerIcon.sunflowerYellow
-                                .withValues(alpha: 0.18))
+                        ? WidgetStatePropertyAll(colors.primary)
                         : null,
                   ),
                   onPressed: _toggleLike,
