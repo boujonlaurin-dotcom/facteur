@@ -135,9 +135,17 @@ class RecommendationService:
         3. Appliquer la pénalité de fatigue de source (Diversité).
         4. Trier et paginer.
         """
-        # 1. Fetch user context in parallel using 2 batched sessions
-        # Queries are grouped into 2 sessions (instead of 5) to limit pool
-        # pressure while still cutting latency vs fully sequential execution.
+        # 1. Fetch user context in parallel using 2 sessions
+        # Round 4 fix (docs/bugs/bug-infinite-load-requests.md — burst
+        # 2026-04-16 12:50 UTC) : la version précédente ouvrait DEUX short
+        # sessions via async_session_maker() en plus de la session injectée
+        # `self.session` → 3 connexions concurrentes par requête /api/feed/.
+        # Pool 10+10=20 → saturation à ~6-7 requêtes feed concurrentes
+        # (Sentry PYTHON-1C/1D/1F/1G/1J et al). On réutilise maintenant
+        # `self.session` pour le batch user_context, en gardant
+        # _batch_personalization() en parallèle sur sa propre short session
+        # → 2 connexions/req, plafond ~10 feeds concurrents, sans toucher
+        # le pool config ni l'invariant de parallélisme du gather.
         from datetime import date as date_module
 
         from sqlalchemy.orm import joinedload
@@ -167,12 +175,12 @@ class RecommendationService:
             DailyDigest.target_date == date_module.today(),
         )
 
-        async def _batch_user_context():
-            async with async_session_maker() as s:
-                profile = await s.scalar(profile_stmt)
-                sources = (await s.execute(sources_stmt)).all()
-                subtopics = (await s.scalars(subtopics_stmt)).all()
-                return profile, sources, subtopics
+        async def _user_context_on_self():
+            # Réutilise la session injectée — pas de nouvelle connexion pool.
+            profile = await self.session.scalar(profile_stmt)
+            sources = (await self.session.execute(sources_stmt)).all()
+            subtopics = (await self.session.scalars(subtopics_stmt)).all()
+            return profile, sources, subtopics
 
         async def _batch_personalization():
             async with async_session_maker() as s:
@@ -182,11 +190,14 @@ class RecommendationService:
                 muted_entities = await _load_muted_entities_safe(s, user_id)
                 return pz, digest, muted_entities
 
+        # gather() préserve le parallélisme : self.session et la short
+        # session de _batch_personalization sont des sessions distinctes,
+        # aucun risque de "concurrent operations on same session".
         (
             (user_profile, followed_sources_rows, subtopics_rows),
             (personalization, digest_row, muted_entities),
         ) = await asyncio.gather(
-            _batch_user_context(),
+            _user_context_on_self(),
             _batch_personalization(),
         )
 
