@@ -1,107 +1,46 @@
-# PR #402 — Smart search pipeline backend (PR 1/3)
+# PR — Reader: WebView isolation + Perspectives inline (scroll-to-site) + footer UI
 
-Branche : `claude/smart-search-pr1-backend` → `main`
-Commit : `9dcb80ac` feat(sources): smart search pipeline with Brave + Mistral fallback
-16 fichiers, +1559 lignes
+## Quoi
 
-Refonte de la mise en page de l'écran de lecture in-app :
-- Nouveau footer animé (slide comme le header) qui remplace les FABs flottants une fois que l'utilisateur atteint la section Perspectives ou la fin de l'article
-- Section Perspectives embarquée inline dans le scroll view (nouveau widget `PerspectivesInlineSection`) avec filtre par biais cliquable et header sticky
-- Barre de progression limitée à la longueur de l'article (exclut la section Perspectives)
-- Utilitaire `cutHtmlAtPreview()` dans `html_utils.dart` pour couper du HTML à N mots
+3 corrections dans le reader article (`_buildScrollToSiteContent`) et ajustements UI du footer :
+1. **WebView isolation** : `_isWebViewActive` devient un verrou one-way — impossible de revenir au reader après activation de la WebView.
+2. **Perspectives inline en scroll-to-site** : `PerspectivesInlineSection` est maintenant rendue dans le layout scroll-to-site (articles >= 100 chars), ce qui manquait. Le FAB "œil" scroll vers elle au lieu d'ouvrir la modal.
+3. **Footer UI** : footer +20% plus haut, boutons icônes +20%, border-radius "Lire sur" 8→16px, fond orange (alpha 0.18) sur le bouton Tournesol quand actif.
 
 ## Pourquoi
 
-Pipeline de recherche intelligente multi-sources pour l'ajout de source. 3 nouveaux endpoints (`POST /smart-search`, `GET /by-theme/{slug}`, `GET /themes-followed`), cache Postgres 24h, et providers pour Brave Search, Reddit JSON, et Google News RSS. Mistral-small en fallback uniquement si < 3 résultats après les couches gratuites.
+- **Bug critique** : après tap "Lire sur...", l'utilisateur pouvait remonter dans l'article et interagir avec le reader au lieu de la WebView. La WebView n'était pas cliquable tant que `_isWebViewActive` était false.
+- **Bug perspectives** : `PerspectivesInlineSection` existait dans `_buildInAppContent` mais pas dans `_buildScrollToSiteContent`, le layout utilisé par tous les articles complets. Le FAB ne trouvait jamais `_perspectivesKey.currentContext` → fallback modal systématique.
+- **UI** : footer jugé trop compact visuellement.
 
-- **Mobile — core :**
-  - `apps/mobile/lib/core/utils/html_utils.dart` — ajout de `cutHtmlAtPreview()` + `_findPositionAfterNWords()`
+## Fichiers modifiés
 
-La recherche actuelle est un simple ILIKE sur `Source.name`/`Source.url` du catalogue curé. Si l'utilisateur tape un nom approximatif ("stratechery", "lenny newsletter") ou un sujet vague, il n'obtient rien et doit deviner l'URL exacte. Ce pipeline comble la zone grise entre "je connais l'URL exacte" et "c'est dans le catalogue curé".
-
-- **Mobile — onboarding :**
-  - `digest_mode_question.dart`, `intro_screen.dart`, `media_concentration_screen.dart` — fix lint `const` sur les listes `TextSpan`
-
-### Backend — Nouveaux fichiers
-- `app/services/search/smart_source_search.py` — Orchestrateur du pipeline cascadé (548 lignes, le fichier central)
-- `app/services/search/cache.py` — Cache Postgres 24h avec SHA-256 normalization
-- `app/services/search/providers/brave.py` — Client Brave Search API (free tier)
-- `app/services/search/providers/reddit_search.py` — Client Reddit JSON search
-- `app/services/search/providers/google_news.py` — Extraction domaines depuis Google News RSS
-- `alembic/versions/ss01_create_source_search_cache.py` — Migration table `source_search_cache`
-
-### Backend — Fichiers modifiés
-- `app/config.py` — +3 settings : `brave_api_key`, `brave_monthly_cap`, `mistral_monthly_cap`
-- `app/routers/sources.py` — +3 endpoints + helper `_source_to_response()` + mapping `THEME_LABELS`
-- `app/schemas/source.py` — +7 schemas Pydantic (SmartSearch*, Theme*)
-
-### Tests (31 tests)
-- `tests/services/search/test_smart_source_search.py` — 20 tests (classify, score, normalize, dedup)
-- `tests/services/search/providers/test_brave.py` — 6 tests (mock HTTP, 429, timeout)
-- `tests/services/search/providers/test_reddit_search.py` — 5 tests (mock JSON, errors)
+- Mobile :
+  - `apps/mobile/lib/features/detail/screens/content_detail_screen.dart` — tous les changements
 
 ## Zones à risque
 
-1. **`smart_source_search.py`** — C'est le coeur du pipeline (548 lignes). La logique de court-circuit (≥3 résultats → stop) et l'ordre des couches déterminent le coût et la latence. Une erreur ici pourrait brûler le budget Brave/Mistral inutilement.
-
-2. **Rate limiting en mémoire** — Les compteurs `_brave_calls_month`, `_mistral_calls_month`, `_user_daily_counts` sont des globales qui se reset au restart. Ce n'est pas idéal pour un déploiement multi-instance mais acceptable pour le volume actuel (100-200 users). Si ça devient un problème → migrer vers Postgres ou Redis.
-
-3. **`by-theme/{slug}` fallback communauté** — Le fallback fait un `JOIN user_sources + GROUP BY + ORDER BY count`. Sur un gros volume de `user_sources`, ça pourrait être lent. À surveiller.
+- `_onScrollToSite()` — le verrou one-way empêche `_isWebViewActive` de repasser à `false`. Si la WebView échoue à charger, l'utilisateur ne peut plus revenir au reader sans quitter l'écran. C'est intentionnel (comportement attendu), mais à surveiller si des cas de WebView en erreur remontent.
+- `_buildScrollToSiteContent` — la section perspectives est insérée entre l'article et le spacer transparent. Elle a un fond opaque `colors.backgroundPrimary` pour masquer la WebView sous-jacente. Si ce fond venait à manquer, la WebView serait visible à travers.
+- `_kFooterContentHeight` 68→82 — tous les calculs qui référencent cette constante (offset de slide du footer, clearance en bas des listes) sont impactés. Vérifier visuellement sur iPhone SE (petit écran).
 
 ## Points d'attention pour le reviewer
 
-1. **Pipeline order** — L'ordre catalog → YouTube → Reddit → Brave → Google News → Mistral est critique. Les couches gratuites passent en premier, Brave (limité à 1800/mois) et Mistral (2000/mois) en dernier. Vérifier que les short-circuits (`MIN_RESULTS_FOR_SHORTCIRCUIT = 3`) sont bien placés.
-
-2. **`_compute_score`** — Le scoring composite (confidence × 0.40 + popularity × 0.25 + freshness × 0.15 + type_match × 0.10 + theme_affinity × 0.10) est codé en dur. Les poids sont arbitraires mais raisonnables. On ajustera en v1.1 si le ranking est mauvais en pratique.
-
-3. **Feed validation séquentielle** — Chaque URL trouvée par Brave/Google News/Mistral passe par `RSSParser.detect()` (HTTP + feedparser). Pour Brave, on valide les top 5 URLs séquentiellement. On pourrait paralléliser avec `asyncio.gather()` plus tard si la latence P95 dépasse 4s.
-
-4. **Cache SQL brut** — Le cache utilise `sa.text()` avec des requêtes SQL brutes plutôt qu'un modèle SQLAlchemy. C'est un choix délibéré pour éviter de polluer le namespace des models avec une table utilitaire. Le reviewer pourrait préférer un vrai modèle.
-
-5. **`_source_to_response()` dans le router** — Helper local dans `sources.py` qui construit un `SourceResponse` sans contexte user (pas de `is_trusted`, `is_muted`, `priority_multiplier`). C'est suffisant pour `by-theme` et `themes-followed` car ces endpoints sont exploratoires (découverte, pas gestion d'abonnement).
-
-6. **`datetime.now(datetime.UTC)`** — Les fichiers utilisent `datetime.now(datetime.UTC)` (linter auto-fix) au lieu de `datetime.now(timezone.utc)`. Les deux sont équivalents en Python 3.12+.
+1. **Verrou one-way** (`_onScrollToSite`, ligne ~619) : `shouldActivate && !_isWebViewActive` remplace `shouldActivate != _isWebViewActive`. Simple mais critique — vérifier que le reset de `_isWebViewActive` se fait bien à la destruction du widget (dispose) et non pendant la session.
+2. **Fond opaque sur les containers perspectives** : chaque container a `color: colors.backgroundPrimary`. Sans ça, la WebView (Layer 0) saignerait visuellement pendant le scroll. Tester sur un article avec perspectives chargées puis taper "Lire sur...".
+3. **`_ctaTapped` vs `_isWebViewActive` pour la transparence** : le `ColoredBox` utilise maintenant `_isWebViewActive` au lieu de `_ctaTapped` pour passer en transparent, évitant l'artefact visuel entre le tap CTA et le seuil d'activation.
+4. **Tournesol** : fond via `SunflowerIcon.sunflowerYellow.withValues(alpha: 0.18)` — constante exposée par le widget, cohérent avec le bookmark qui change d'icône à l'état actif.
 
 ## Ce qui N'A PAS changé (mais pourrait sembler affecté)
 
-- **`POST /sources/detect`** — L'endpoint existant est inchangé. `smart-search` est un nouvel endpoint parallèle, pas un remplacement.
-- **`rss_parser.py`** — Réutilisé tel quel (`RSSParser.detect()`, `_resolve_youtube_channel_id()`), aucune modification.
-- **`llm_client.py`** — Réutilisé tel quel (`chat_json()` avec `mistral-small-latest`), aucune modification.
-- **`source_service.py`** — Non modifié. Le pattern ILIKE du catalog est re-implémenté inline dans l'orchestrateur (même logique, intégrée au pipeline).
-- **Aucun changement mobile** — C'est PR 1/3, backend only.
+- `_buildInAppContent` — inchangé, les perspectives inline y existent déjà depuis PR #400.
+- `PerspectivesInlineSection` widget — inchangé, utilisé tel quel.
+- `_showPerspectives` / `_showPerspectivesSheet` (modal fallback) — inchangé. Le fallback modal reste pour les cas où la section n'est pas encore rendue (loading).
+- `pubspec.lock` — bump automatique de `flutter_lints` 3→6 et `lints` 3→6, sans changement de fonctionnalité.
 
 ## Comment tester
 
-### Unit tests
-```bash
-cd packages/api
-SKIP_STARTUP_CHECKS=true .venv/bin/python -m pytest tests/services/search/ -v
-# 31 tests, ~1s
-```
-
-### Alembic
-```bash
-SKIP_STARTUP_CHECKS=true .venv/bin/python -m alembic heads
-# Doit afficher: ss01_search_cache (head) — 1 seule head
-```
-
-### Smoke test (après déploiement staging + migration)
-```bash
-# Smart search
-curl -X POST https://api-staging/api/sources/smart-search \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "lenny newsletter"}'
-
-# By theme
-curl https://api-staging/api/sources/by-theme/tech \
-  -H "Authorization: Bearer $TOKEN"
-
-# Themes followed
-curl https://api-staging/api/sources/themes-followed \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Pré-requis avant déploiement
-- `BRAVE_API_KEY` doit être définie dans Railway (staging + prod)
-- Migration SQL `ss01_search_cache` exécutée manuellement via Supabase SQL Editor (JAMAIS Railway)
+1. Ouvrir un article complet (>100 chars de contenu).
+2. **Bug 1** : Taper "Lire sur [Source]" → la WebView s'anime. Essayer de scroller vers le haut → impossible de revenir au reader. La WebView est cliquable et interactive.
+3. **Bug 2** : Attendre que les perspectives se chargent (pill FAB). Taper le bouton œil → la page scrolle vers la `PerspectivesInlineSection` intégrée (pas de modal). Vérifier que la section apparaît bien avant le bouton "Lire sur...".
+4. **UI Footer** : Vérifier la hauteur du footer sur iPhone SE et grand écran. Le bouton Tournesol doit avoir un fond orange clair quand l'article est liké.
