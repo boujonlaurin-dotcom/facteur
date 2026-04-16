@@ -233,12 +233,16 @@ class _ActiveChip extends StatelessWidget {
             if (emoji.isNotEmpty)
               Text(emoji, style: const TextStyle(fontSize: 14)),
             const SizedBox(width: 4),
-            Text(
-              name,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: primary,
+            Flexible(
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             GestureDetector(

@@ -400,59 +400,69 @@ class _FeedCardState extends State<FeedCard>
                         ),
                       ),
 
-                      // Actions (Like, Save, NotInterested, Personalize)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Save button (tap = save/unsave, long press = collection picker)
-                          if (widget.onSave != null)
-                            GestureDetector(
-                              onTap: widget.onSave,
-                              onLongPress: widget.onSaveLongPress,
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                child: Icon(
-                                  widget.isSaved
-                                      ? PhosphorIcons.bookmarkSimple(
-                                          PhosphorIconsStyle.fill)
-                                      : PhosphorIcons.bookmarkSimple(),
-                                  size: 18,
-                                  color: widget.isSaved
-                                      ? colors.primary
-                                      : colors.textSecondary,
+                      // Actions (Like, Save, NotInterested, Personalize).
+                      // Capped at 40% of screen width so topic tag grows into
+                      // available space but remains first to truncate when the
+                      // row gets crowded (Flexible on topic handles the ellipsis).
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.4,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Save button (tap = save/unsave, long press = collection picker)
+                            if (widget.onSave != null)
+                              GestureDetector(
+                                onTap: widget.onSave,
+                                onLongPress: widget.onSaveLongPress,
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  child: Icon(
+                                    widget.isSaved
+                                        ? PhosphorIcons.bookmarkSimple(
+                                            PhosphorIconsStyle.fill)
+                                        : PhosphorIcons.bookmarkSimple(),
+                                    size: 18,
+                                    color: widget.isSaved
+                                        ? colors.primary
+                                        : colors.textSecondary,
+                                  ),
                                 ),
                               ),
-                            ),
 
-                          // TODO(beta-post): "Pas serein" report button masqué pour Beta 1.0.
-                          // Le tap ne se déclenche pas de manière fiable — cause non identifiée
-                          // malgré plusieurs tentatives (InkWell, GestureDetector, restructuration
-                          // du widget tree). À investiguer après le lancement Beta.
-                          // Ticket : bug-report-not-serene-feed
+                            // TODO(beta-post): "Pas serein" report button masqué pour Beta 1.0.
+                            // Le tap ne se déclenche pas de manière fiable — cause non identifiée
+                            // malgré plusieurs tentatives (InkWell, GestureDetector, restructuration
+                            // du widget tree). À investiguer après le lancement Beta.
+                            // Ticket : bug-report-not-serene-feed
 
-                          // Topic chip (replaces NotInterested when provided)
-                          if (widget.topicChipWidget != null)
-                            _FooterBadgeNudge(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                child: widget.topicChipWidget!,
-                              ),
-                            )
-                          else if (widget.onNotInterested != null)
-                            InkWell(
-                              onTap: widget.onNotInterested,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                child: Icon(
-                                  PhosphorIcons.eyeSlash(),
-                                  size: 18,
-                                  color: colors.textSecondary,
+                            // Topic chip (replaces NotInterested when provided)
+                            if (widget.topicChipWidget != null)
+                              Flexible(
+                                child: _FooterBadgeNudge(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    child: widget.topicChipWidget!,
+                                  ),
+                                ),
+                              )
+                            else if (widget.onNotInterested != null)
+                              InkWell(
+                                onTap: widget.onNotInterested,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  child: Icon(
+                                    PhosphorIcons.eyeSlash(),
+                                    size: 18,
+                                    color: colors.textSecondary,
+                                  ),
                                 ),
                               ),
-                            ),
 
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   ),

@@ -385,7 +385,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
+                        child: Center(child: FacteurLogo(size: 26.4, showIcon: true, showText: false)),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -460,59 +460,65 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                           return Row(
                             children: [
-                              CompactSourceChip(
-                                followedSources: followedSources,
-                                selectedSourceId: selectedSourceId,
-                                selectedSourceName: selectedSourceName,
-                                selectedSourceLogoUrl: selectedSourceLogoUrl,
-                                onSourceChanged: (sourceId) {
-                                  if (sourceId != null) {
-                                    _withFeedLoading(
-                                        () => notifier.setSource(sourceId));
-                                  } else {
-                                    notifier.setSource(null);
-                                  }
-                                  _scrollToTop();
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              CompactThemeChip(
-                                followedTopics: customTopics,
-                                selectedSlug: notifier.selectedTopic ??
-                                    notifier.selectedTheme ??
-                                    notifier.selectedEntity,
-                                selectedName: _selectedInterestName,
-                                selectedIsTheme: _selectedIsTheme,
-                                onInterestChanged: (slug, name,
-                                    {isTheme = false, isEntity = false}) {
-                                  setState(() {
-                                    _selectedInterestName = name;
-                                    _selectedIsTheme = isTheme;
-                                  });
-                                  _withFeedLoading(() async {
-                                    if (slug == null) {
-                                      await notifier.setTopic(null);
-                                      await notifier.setTheme(null);
-                                      await notifier.setEntity(null);
-                                    } else if (isTheme) {
-                                      await notifier.setTheme(slug);
-                                    } else if (isEntity) {
-                                      await notifier.setEntity(slug);
+                              Flexible(
+                                child: CompactSourceChip(
+                                  followedSources: followedSources,
+                                  selectedSourceId: selectedSourceId,
+                                  selectedSourceName: selectedSourceName,
+                                  selectedSourceLogoUrl: selectedSourceLogoUrl,
+                                  onSourceChanged: (sourceId) {
+                                    if (sourceId != null) {
+                                      _withFeedLoading(
+                                          () => notifier.setSource(sourceId));
                                     } else {
-                                      await notifier.setTopic(slug);
+                                      notifier.setSource(null);
                                     }
-                                  });
-                                  _scrollToTop();
-                                },
+                                    _scrollToTop();
+                                  },
+                                ),
                               ),
                               const SizedBox(width: 8),
-                              CompactSearchChip(
-                                activeKeyword: notifier.selectedKeyword,
-                                onSearchChanged: (keyword) {
-                                  _withFeedLoading(
-                                      () => notifier.setKeyword(keyword));
-                                  _scrollToTop();
-                                },
+                              Flexible(
+                                child: CompactThemeChip(
+                                  followedTopics: customTopics,
+                                  selectedSlug: notifier.selectedTopic ??
+                                      notifier.selectedTheme ??
+                                      notifier.selectedEntity,
+                                  selectedName: _selectedInterestName,
+                                  selectedIsTheme: _selectedIsTheme,
+                                  onInterestChanged: (slug, name,
+                                      {isTheme = false, isEntity = false}) {
+                                    setState(() {
+                                      _selectedInterestName = name;
+                                      _selectedIsTheme = isTheme;
+                                    });
+                                    _withFeedLoading(() async {
+                                      if (slug == null) {
+                                        await notifier.setTopic(null);
+                                        await notifier.setTheme(null);
+                                        await notifier.setEntity(null);
+                                      } else if (isTheme) {
+                                        await notifier.setTheme(slug);
+                                      } else if (isEntity) {
+                                        await notifier.setEntity(slug);
+                                      } else {
+                                        await notifier.setTopic(slug);
+                                      }
+                                    });
+                                    _scrollToTop();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: CompactSearchChip(
+                                  activeKeyword: notifier.selectedKeyword,
+                                  onSearchChanged: (keyword) {
+                                    _withFeedLoading(
+                                        () => notifier.setKeyword(keyword));
+                                    _scrollToTop();
+                                  },
+                                ),
                               ),
                             ],
                           );
