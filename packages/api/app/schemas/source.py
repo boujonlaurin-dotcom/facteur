@@ -126,7 +126,7 @@ class SmartSearchResultItem(BaseModel):
     name: str
     type: str
     url: str
-    feed_url: str
+    feed_url: str | None = None
     favicon_url: str | None = None
     description: str | None = None
     in_catalog: bool = False

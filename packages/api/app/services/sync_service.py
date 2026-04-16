@@ -90,15 +90,21 @@ class SyncService:
         async def sync_with_semaphore(source: Source):
             async with semaphore:
                 if self.session_maker:
+                    # Read source in a SHORT session, then close it before I/O.
+                    # process_source() uses _short_session() for all DB ops,
+                    # so it does NOT need an outer session held open.
                     async with self.session_maker() as session:
                         stmt = select(Source).where(Source.id == source.id)
                         res = await session.execute(stmt)
                         source_obj = res.scalar_one()
+                        # Detach from session so attributes remain accessible
+                        await session.commit()
+                        session.expunge(source_obj)
+                    # Session is now CLOSED — pool connection returned.
 
-                        # Shallow copy isolates session state without creating a new httpx client
-                        task_service = copy.copy(self)
-                        task_service.session = session
-                        return await task_service.process_source(source_obj)
+                    task_service = copy.copy(self)
+                    task_service.session = None  # No long-lived session
+                    return await task_service.process_source(source_obj)
                 else:
                     return await self.process_source(source)
 
