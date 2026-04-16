@@ -183,7 +183,7 @@ class TestLearningServiceApplyProposals:
         mock_proposal.status = "pending"
         mock_proposal.proposal_type = "source_priority"
         mock_proposal.entity_id = str(source_id)
-        mock_proposal.proposed_value = "0.5"
+        mock_proposal.proposed_value = "0.2"
 
         mock_db.scalar = AsyncMock(return_value=mock_proposal)
         service = LearningService(mock_db)
@@ -210,7 +210,7 @@ class TestLearningServiceApplyProposals:
         mock_proposal.status = "pending"
         mock_proposal.proposal_type = "source_priority"
         mock_proposal.entity_id = str(source_id)
-        mock_proposal.proposed_value = "0.5"
+        mock_proposal.proposed_value = "0.2"
 
         mock_db.scalar = AsyncMock(return_value=mock_proposal)
         service = LearningService(mock_db)
@@ -615,7 +615,7 @@ class TestSchemas:
             entity_id=str(uuid4()),
             entity_label="Le Figaro",
             current_value="1.0",
-            proposed_value="0.5",
+            proposed_value="0.2",
             signal_strength=0.85,
             signal_context=SignalContext(
                 articles_shown=14, articles_clicked=0, period_days=7

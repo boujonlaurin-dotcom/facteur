@@ -304,7 +304,7 @@ class LearningService:
 
             # Signal: user ignores source (low engagement, high multiplier)
             if ratio < SIGNAL_THRESHOLD_SOURCE and multiplier >= 1.0:
-                proposed = max(0.5, multiplier * 0.5)
+                proposed = max(0.2, multiplier * 0.5)
                 delta = abs(multiplier - proposed) / max(multiplier, 1.0)
                 candidates.append(
                     {
@@ -586,8 +586,8 @@ class LearningService:
         if proposal.proposal_type == "source_priority":
             source_id = UUID(proposal.entity_id)
             new_multiplier = float(value)
-            # Clamp to [0.5, 2.0]
-            new_multiplier = max(0.5, min(2.0, new_multiplier))
+            # Clamp to [0.2, 2.0]
+            new_multiplier = max(0.2, min(2.0, new_multiplier))
             await self.db.execute(
                 update(UserSource)
                 .where(
