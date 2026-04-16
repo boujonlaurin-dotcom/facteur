@@ -49,6 +49,7 @@ Future<void> main() async {
   await _openBoxSafe<dynamic>('settings');
   final authBox = await _openBoxSafe<dynamic>('auth_prefs');
   final supabaseBox = await _openBoxSafe<String>('supabase_auth_persistence');
+  await _openBoxSafe<String>('feed_cache');
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(

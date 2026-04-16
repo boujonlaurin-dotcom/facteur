@@ -61,6 +61,42 @@ class FeedRepository {
     String? keyword,
     bool serein = false,
   }) async {
+    final result = await getFeedWithRaw(
+      page: page,
+      limit: limit,
+      contentType: contentType,
+      savedOnly: savedOnly,
+      mode: mode,
+      theme: theme,
+      topic: topic,
+      hasNote: hasNote,
+      sourceId: sourceId,
+      entity: entity,
+      keyword: keyword,
+      serein: serein,
+    );
+    return result.feed;
+  }
+
+  /// Fetch the feed and return both the parsed [FeedResponse] AND the raw
+  /// decoded JSON payload (Map/List) so callers that need to cache the
+  /// response can persist the exact shape that [parseFeedData] expects.
+  ///
+  /// Regular UI code should prefer [getFeed] which throws away the raw data.
+  Future<({FeedResponse feed, dynamic raw})> getFeedWithRaw({
+    int page = 1,
+    int limit = 20,
+    String? contentType,
+    bool savedOnly = false,
+    String? mode,
+    String? theme,
+    String? topic,
+    bool hasNote = false,
+    String? sourceId,
+    String? entity,
+    String? keyword,
+    bool serein = false,
+  }) async {
     try {
       // Le backend renvoie directement une List<dynamic> pour le moment
       // et non une enveloppe { items: [], pagination: {} }
@@ -124,11 +160,31 @@ class FeedRepository {
         print(
             '[PERF] feed_repository GET /feed/: ${sw.elapsedMilliseconds}ms, response ~${(responseSize / 1024).toStringAsFixed(1)}KB');
 
-        List<Content> itemsList = [];
-        final List<FeedCarouselData> carousels = [];
+        final parsed = parseFeedData(data: data, page: page, limit: limit);
+        return (feed: parsed, raw: data);
+      }
+      throw Exception('Failed to load feed: ${response.statusCode}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('FeedRepository: [ERROR] getFeed: $e');
+      rethrow;
+    }
+  }
 
-        // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
-        if (data is List) {
+  /// Parse a raw `/feed/` response payload into a [FeedResponse].
+  ///
+  /// Extracted from [getFeed] so the same parsing path can be reused for
+  /// cached payloads restored from [FeedCacheService]. Visible for testing.
+  static FeedResponse parseFeedData({
+    required dynamic data,
+    required int page,
+    required int limit,
+  }) {
+    List<Content> itemsList = [];
+    final List<FeedCarouselData> carousels = [];
+
+    // Robustness: Handle both List (Legacy/Prod) and Map (New Backend) responses
+    if (data is List) {
           // Legacy format (List returned directly)
           for (final e in data) {
             try {
@@ -457,18 +513,11 @@ class FeedRepository {
           itemsCount: itemsList.length,
         );
 
-        return FeedResponse(
-          items: itemsList,
-          pagination: pagination,
-          carousels: carousels,
-        );
-      }
-      throw Exception('Failed to load feed: ${response.statusCode}');
-    } catch (e) {
-      // ignore: avoid_print
-      print('FeedRepository: [ERROR] getFeed: $e');
-      rethrow;
-    }
+    return FeedResponse(
+      items: itemsList,
+      pagination: pagination,
+      carousels: carousels,
+    );
   }
 
   /// @deprecated Briefing has moved to the dedicated Digest tab.

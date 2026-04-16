@@ -308,6 +308,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     final profileBox = await Hive.openBox<dynamic>('user_profile');
     await profileBox.clear();
 
+    // Drop the locally cached feed so a subsequent login never briefly flashes
+    // another user's content. The feed cache is a pure optimization; its
+    // absence is silently tolerated by FeedNotifier.
+    if (Hive.isBoxOpen('feed_cache')) {
+      await Hive.box<String>('feed_cache').clear();
+    }
+
     state = const AuthState();
   }
 
