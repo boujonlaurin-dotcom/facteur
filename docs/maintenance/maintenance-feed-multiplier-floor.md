@@ -54,6 +54,9 @@ Le plancher 0.5 était insuffisant pour un signal utilisateur fort.
 | `app/services/recommendation/scoring_config.py` | Ajout constante `THEME_MISMATCH_MALUS = -8.0` |
 | `app/services/recommendation/pillars/pertinence.py` | Nouveau step `_score_theme_mismatch()` appliqué après les 5 steps existants. Conditions d'application : user a au moins un thème OU sous-thème OU custom topic déclaré + aucun n'a matché |
 | `tests/recommendation/test_pertinence_pillar.py` | Nouveau test file (6 cas) : malus appliqué, non appliqué (match thème), non appliqué (sous-thème), cold start, match custom topic, clamp normalisation |
+| `app/services/learning_service.py:307, 590` | Alignement du plancher learning sur la nouvelle grille : `max(0.5, …)` → `max(0.2, …)`. Évite que le learning propose/applique une valeur rejetée par le validator, et supprime le UP-clamp silencieux d'un user à 0.2 vers 0.5 |
+| `app/routers/sources.py:428` ; `app/services/recommendation/scoring_engine.py:38` ; `app/models/source.py:159` | Docstrings/commentaires alignés `(0.2, 1.0, 2.0)` |
+| `tests/test_learning_service.py` | Mocks `proposed_value` alignés `"0.5"` → `"0.2"` (3 fixtures) |
 
 ### Mobile (`apps/mobile`)
 
@@ -70,6 +73,13 @@ Les comparaisons de seuil (`currentMultiplier <= 0.5`) fonctionnent encore corre
 -- Applique rétroactivement le nouveau plancher aux rows existantes
 UPDATE user_sources SET priority_multiplier = 0.2 WHERE priority_multiplier = 0.5;
 UPDATE user_topic_profiles SET priority_multiplier = 0.2 WHERE priority_multiplier = 0.5;
+
+-- Aligne les propositions LearningService pending (générées avec l'ancien plancher 0.5)
+UPDATE user_learning_proposals
+SET proposed_value = '0.2'
+WHERE proposal_type = 'source_priority'
+  AND proposed_value = '0.5'
+  AND status = 'pending';
 ```
 
 **⚠️ À exécuter en post-merge, AVANT que les nouveaux déploiements backend rejettent les requêtes avec 0.5.**
@@ -123,4 +133,9 @@ En cas de régression sévère :
    ```sql
    UPDATE user_sources SET priority_multiplier = 0.5 WHERE priority_multiplier = 0.2;
    UPDATE user_topic_profiles SET priority_multiplier = 0.5 WHERE priority_multiplier = 0.2;
+   UPDATE user_learning_proposals
+   SET proposed_value = '0.5'
+   WHERE proposal_type = 'source_priority'
+     AND proposed_value = '0.2'
+     AND status = 'pending';
    ```
