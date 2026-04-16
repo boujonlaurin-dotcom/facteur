@@ -54,6 +54,7 @@ def _best_keyword(titles: list[str]) -> str:
         return titles[0][:30] if titles else ""
     return max(freq, key=lambda k: freq[k])
 
+
 router = APIRouter()
 
 
