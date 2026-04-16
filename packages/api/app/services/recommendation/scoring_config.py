@@ -106,6 +106,12 @@ class ScoringWeights:
     # Réduit de 20→18.
     SUBTOPIC_PRECISION_BONUS = 18.0
 
+    # Malus léger appliqué quand l'article ne matche aucun thème ni sous-thème
+    # suivi par l'utilisateur (et que l'user a déclaré des thèmes/sous-thèmes).
+    # Calibré à ~16% du bonus THEME_MATCH : assez pour désavantager sans exclure.
+    # Ne s'applique pas en cold start (aucun thème/sous-thème suivi).
+    THEME_MISMATCH_MALUS = -8.0
+
     # --- DIGEST DIVERSITY (Revue de presse) ---
 
     # Diviseur appliqué au score du 2ème article d'une même source dans le digest.
