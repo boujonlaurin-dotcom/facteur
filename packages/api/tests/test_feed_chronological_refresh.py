@@ -15,17 +15,37 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType
+from app.models.source import Source, SourceType
 from app.services.recommendation_service import RecommendationService
 
 
 @pytest.fixture
-async def test_contents(db_session, test_source):
-    """Create 2 Content rows from the same source, published now."""
+async def curated_source(db_session):
+    """Source curée (is_curated=True) requise pour passer le filtre de _get_candidates
+    sans followed_source_ids — la branche par défaut filtre sur Source.is_curated."""
+    source = Source(
+        id=uuid4(),
+        name="Curated Test Source",
+        url="https://curated-test.com",
+        feed_url=f"https://curated-test.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="society",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(source)
+    await db_session.commit()
+    return source
+
+
+@pytest.fixture
+async def test_contents(db_session, curated_source):
+    """Create 2 Content rows from a curated source, published now."""
     contents = []
     for i in range(2):
         c = Content(
             id=uuid4(),
-            source_id=test_source.id,
+            source_id=curated_source.id,
             title=f"Chrono refresh article {i}",
             url=f"https://example.com/chrono-{i}-{uuid4()}",
             guid=f"chrono-guid-{uuid4()}",
@@ -125,7 +145,7 @@ class TestChronologicalRefreshFilter:
         assert target.id in {c.id for c in candidates}
 
     async def test_explicit_source_filter_ignores_impression(
-        self, db_session, test_contents, test_source, user_id
+        self, db_session, test_contents, curated_source, user_id
     ):
         """source_id explicite → articles impressionés encore visibles."""
         target, _ = test_contents
@@ -142,7 +162,7 @@ class TestChronologicalRefreshFilter:
             user_id=user_id,
             limit_candidates=50,
             mode=None,
-            source_id=test_source.id,
+            source_id=curated_source.id,
         )
 
         assert target.id in {c.id for c in candidates}
