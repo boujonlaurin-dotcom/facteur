@@ -3,6 +3,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../../widgets/design/priority_slider.dart';
+import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../../../widgets/design/facteur_button.dart';
 
@@ -14,6 +15,7 @@ class SourceDetailModal extends StatelessWidget {
   final VoidCallback? onToggleSubscription;
   final ValueChanged<double>? onPriorityChanged; // Epic 12: frequency slider
   final double? usageWeight;
+  final List<SmartSearchRecentItem>? recentItems;
 
   const SourceDetailModal({
     super.key,
@@ -24,6 +26,7 @@ class SourceDetailModal extends StatelessWidget {
     this.onToggleSubscription,
     this.onPriorityChanged,
     this.usageWeight,
+    this.recentItems,
   });
 
   @override
@@ -92,6 +95,12 @@ class SourceDetailModal extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
+          // Recent articles (only shown when provided, e.g. from smart search)
+          if (recentItems != null && recentItems!.isNotEmpty) ...[
+            _buildRecentArticles(context, colors),
+            const SizedBox(height: 16),
+          ],
+
           // FQS Score Card
           Container(
             padding: const EdgeInsets.all(16),
@@ -149,27 +158,41 @@ class SourceDetailModal extends StatelessWidget {
                 border: Border.all(
                     color: colors.textTertiary.withOpacity(0.2)),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    PhosphorIcons.slidersHorizontal(PhosphorIconsStyle.regular),
-                    size: 18,
-                    color: colors.textSecondary,
+                  Row(
+                    children: [
+                      Icon(
+                        PhosphorIcons.slidersHorizontal(
+                            PhosphorIconsStyle.regular),
+                        size: 18,
+                        color: colors.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Fréquence',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      const Spacer(),
+                      PrioritySlider(
+                        key: ValueKey(source.id),
+                        currentMultiplier: source.priorityMultiplier,
+                        onChanged: onPriorityChanged!,
+                        usageWeight: usageWeight,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 6),
                   Text(
-                    'Fréquence',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w600,
+                    'Ajustez à quel point vous souhaitez voir cette source',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                          height: 1.3,
                         ),
-                  ),
-                  const Spacer(),
-                  PrioritySlider(
-                    key: ValueKey(source.id),
-                    currentMultiplier: source.priorityMultiplier,
-                    onChanged: onPriorityChanged!,
-                    usageWeight: usageWeight,
                   ),
                 ],
               ),
@@ -285,6 +308,65 @@ class SourceDetailModal extends StatelessWidget {
             ],
           ],
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentArticles(BuildContext context, FacteurColors colors) {
+    final items = recentItems!.take(3).toList();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.backgroundSecondary,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.textTertiary.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(PhosphorIcons.newspaperClipping(PhosphorIconsStyle.regular),
+                  size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Derniers articles',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...items.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Icon(
+                          PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
+                          size: 12,
+                          color: colors.primary),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                              height: 1.4,
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
         ],
       ),
     );

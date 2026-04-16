@@ -4,13 +4,23 @@ import 'package:facteur/features/sources/widgets/smart_search_field.dart';
 import 'package:facteur/config/theme.dart';
 
 void main() {
-  Widget buildTestWidget({required ValueChanged<String> onSearch}) {
+  Widget buildTestWidget({
+    required TextEditingController controller,
+    required ValueChanged<String> onSubmit,
+    required VoidCallback onClear,
+    VoidCallback? onSearch,
+  }) {
     return MaterialApp(
       theme: FacteurTheme.lightTheme,
       home: Scaffold(
         body: Padding(
           padding: const EdgeInsets.all(16),
-          child: SmartSearchField(onSearch: onSearch),
+          child: SmartSearchField(
+            controller: controller,
+            onSubmit: onSubmit,
+            onClear: onClear,
+            onSearch: onSearch,
+          ),
         ),
       ),
     );
@@ -18,76 +28,72 @@ void main() {
 
   group('SmartSearchField', () {
     testWidgets('renders with hint text', (tester) async {
-      await tester.pumpWidget(buildTestWidget(onSearch: (_) {}));
+      final controller = TextEditingController();
+      await tester.pumpWidget(buildTestWidget(
+        controller: controller,
+        onSubmit: (_) {},
+        onClear: () {},
+      ));
 
       expect(find.byType(TextField), findsOneWidget);
       expect(find.text('Rechercher une source...'), findsOneWidget);
     });
 
-    testWidgets('debounces input at 350ms', (tester) async {
+    testWidgets('does NOT fire onSubmit while typing (no debounce)',
+        (tester) async {
       String? lastQuery;
-      await tester.pumpWidget(
-          buildTestWidget(onSearch: (q) => lastQuery = q));
+      final controller = TextEditingController();
+      await tester.pumpWidget(buildTestWidget(
+        controller: controller,
+        onSubmit: (q) => lastQuery = q,
+        onClear: () {},
+      ));
 
       await tester.enterText(find.byType(TextField), 'test');
+      await tester.pump(const Duration(milliseconds: 500));
 
-      // Before debounce fires
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(lastQuery, isNull);
-
-      // After debounce fires
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(lastQuery, 'test');
+      expect(lastQuery, isNull,
+          reason: 'Search must only fire on explicit submit, not on typing.');
     });
 
-    testWidgets('fires immediately on submit', (tester) async {
+    testWidgets('fires onSubmit on keyboard submit (trimmed)', (tester) async {
       String? lastQuery;
-      await tester.pumpWidget(
-          buildTestWidget(onSearch: (q) => lastQuery = q));
+      final controller = TextEditingController();
+      await tester.pumpWidget(buildTestWidget(
+        controller: controller,
+        onSubmit: (q) => lastQuery = q,
+        onClear: () {},
+      ));
 
-      await tester.enterText(find.byType(TextField), 'lemonde.fr');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.enterText(find.byType(TextField), '  lemonde.fr  ');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
 
       expect(lastQuery, 'lemonde.fr');
     });
 
-    testWidgets('clear button appears when text is entered', (tester) async {
-      String? lastQuery;
-      await tester.pumpWidget(
-          buildTestWidget(onSearch: (q) => lastQuery = q));
+    testWidgets('clear button appears when text is entered and triggers onClear',
+        (tester) async {
+      var clearCalled = false;
+      final controller = TextEditingController();
+      await tester.pumpWidget(buildTestWidget(
+        controller: controller,
+        onSubmit: (_) {},
+        onClear: () => clearCalled = true,
+      ));
 
-      // No clear button initially
+      // No clear button initially.
       expect(find.byType(IconButton), findsNothing);
 
-      // Enter text
       await tester.enterText(find.byType(TextField), 'hello');
       await tester.pump();
 
-      // Clear button should appear
       expect(find.byType(IconButton), findsOneWidget);
 
-      // Tap clear
       await tester.tap(find.byType(IconButton));
       await tester.pump();
 
-      expect(lastQuery, '');
-      // TextField should be empty
-      final textField =
-          tester.widget<TextField>(find.byType(TextField));
-      expect(textField.controller?.text, '');
-    });
-
-    testWidgets('trims whitespace from query', (tester) async {
-      String? lastQuery;
-      await tester.pumpWidget(
-          buildTestWidget(onSearch: (q) => lastQuery = q));
-
-      await tester.enterText(find.byType(TextField), '  test  ');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pump();
-
-      expect(lastQuery, 'test');
+      expect(clearCalled, isTrue);
     });
   });
 }

@@ -1,81 +1,70 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 
-class SmartSearchField extends StatefulWidget {
-  final ValueChanged<String> onSearch;
+/// Champ de recherche de sources.
+///
+/// Le déclenchement de la recherche est explicite : `onSubmit` est appelé
+/// uniquement quand l'utilisateur valide (touche "Rechercher" du clavier)
+/// ou quand le parent le déclenche via le bouton "Rechercher" attenant.
+/// Aucun debounce sur les keystrokes — chaque appel coûte du quota
+/// Brave/Mistral côté backend.
+class SmartSearchField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onSubmit;
+  final VoidCallback onClear;
+  final VoidCallback? onSearch;
   final bool enabled;
 
   const SmartSearchField({
     super.key,
-    required this.onSearch,
+    required this.controller,
+    required this.onSubmit,
+    required this.onClear,
+    this.onSearch,
     this.enabled = true,
   });
-
-  @override
-  State<SmartSearchField> createState() => _SmartSearchFieldState();
-}
-
-class _SmartSearchFieldState extends State<SmartSearchField> {
-  final _controller = TextEditingController();
-  Timer? _debounce;
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onChanged(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      widget.onSearch(value.trim());
-    });
-  }
-
-  void _onSubmitted(String value) {
-    _debounce?.cancel();
-    widget.onSearch(value.trim());
-  }
-
-  void _clear() {
-    _controller.clear();
-    _debounce?.cancel();
-    widget.onSearch('');
-  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
 
     return TextField(
-      controller: _controller,
+      controller: controller,
       decoration: InputDecoration(
         hintText: 'Rechercher une source...',
         prefixIcon: Icon(
             PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular)),
         suffixIcon: ValueListenableBuilder<TextEditingValue>(
-          valueListenable: _controller,
+          valueListenable: controller,
           builder: (_, value, __) {
-            if (value.text.isEmpty) return const SizedBox.shrink();
-            return IconButton(
-              icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
-                  color: colors.textTertiary),
-              onPressed: _clear,
-            );
+            final hasText = value.text.isNotEmpty;
+            if (hasText) {
+              return IconButton(
+                icon: Icon(PhosphorIcons.xCircle(PhosphorIconsStyle.fill),
+                    color: colors.textTertiary),
+                onPressed: onClear,
+              );
+            }
+            if (onSearch != null) {
+              return IconButton(
+                icon: Icon(
+                    PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+                    color: colors.primary),
+                onPressed: onSearch,
+              );
+            }
+            return const SizedBox.shrink();
           },
         ),
       ),
       keyboardType: TextInputType.url,
+      textInputAction: TextInputAction.search,
       autocorrect: false,
-      enabled: widget.enabled,
+      enabled: enabled,
       style: Theme.of(context).textTheme.bodyMedium,
-      onChanged: _onChanged,
-      onSubmitted: _onSubmitted,
+      onSubmitted: (value) => onSubmit(value.trim()),
     );
   }
 }

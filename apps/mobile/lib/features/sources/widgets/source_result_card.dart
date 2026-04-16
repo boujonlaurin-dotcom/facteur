@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
-import '../../../../shared/widgets/buttons/primary_button.dart';
 import '../../../../widgets/design/facteur_image.dart';
 import '../models/smart_search_result.dart';
 
@@ -189,10 +188,18 @@ class SourceResultCard extends StatelessWidget {
                           side: BorderSide(color: colors.success),
                         ),
                       )
-                    : PrimaryButton(
-                        label: 'Ajouter',
+                    : ElevatedButton(
                         onPressed: onAdd,
-                        isLoading: false,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.textPrimary,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Ajouter'),
                       ),
               ),
             ],

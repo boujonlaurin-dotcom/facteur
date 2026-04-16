@@ -3,17 +3,44 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
+enum _ExampleType { youtube, newsletter, podcast, reddit, media }
+
+class _Example {
+  final String label;
+  final _ExampleType type;
+  const _Example(this.label, this.type);
+}
+
 class ExampleChips extends StatelessWidget {
   final void Function(String text) onTap;
 
   const ExampleChips({super.key, required this.onTap});
 
-  static const _examples = [
-    "Lenny's newsletter",
-    'r/france',
-    '@fireship',
-    'Stratechery',
+  static const _examples = <_Example>[
+    _Example('@HugoDécrypte', _ExampleType.youtube),
+    _Example('@Underscore_', _ExampleType.youtube),
+    _Example('Snowball', _ExampleType.newsletter),
+    _Example('Sismique', _ExampleType.podcast),
+    _Example('GDIY', _ExampleType.podcast),
+    _Example('r/france', _ExampleType.reddit),
+    _Example('Numerama', _ExampleType.media),
+    _Example('Le Grand Continent', _ExampleType.media),
   ];
+
+  IconData _iconFor(_ExampleType type) {
+    switch (type) {
+      case _ExampleType.youtube:
+        return PhosphorIcons.youtubeLogo(PhosphorIconsStyle.fill);
+      case _ExampleType.newsletter:
+        return PhosphorIcons.envelope(PhosphorIconsStyle.fill);
+      case _ExampleType.podcast:
+        return PhosphorIcons.microphone(PhosphorIconsStyle.fill);
+      case _ExampleType.reddit:
+        return PhosphorIcons.redditLogo(PhosphorIconsStyle.fill);
+      case _ExampleType.media:
+        return PhosphorIcons.newspaper(PhosphorIconsStyle.fill);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +55,7 @@ class ExampleChips extends StatelessWidget {
                 size: 16, color: colors.textSecondary),
             const SizedBox(width: 6),
             Text(
-              'Essaie :',
+              'Quelques exemples :',
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -42,7 +69,9 @@ class ExampleChips extends StatelessWidget {
           runSpacing: 8,
           children: _examples
               .map((example) => ActionChip(
-                    label: Text(example),
+                    avatar: Icon(_iconFor(example.type),
+                        size: 16, color: colors.primary),
+                    label: Text(example.label),
                     labelStyle: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -52,7 +81,7 @@ class ExampleChips extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(100),
                     ),
-                    onPressed: () => onTap(example),
+                    onPressed: () => onTap(example.label),
                   ))
               .toList(),
         ),

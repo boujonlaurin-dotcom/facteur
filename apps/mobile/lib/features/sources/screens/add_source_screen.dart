@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -29,15 +28,44 @@ class AddSourceScreen extends ConsumerStatefulWidget {
 class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   String _currentQuery = '';
   final Set<String> _addedSourceIds = {};
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // ─── Smart Search Actions ──────────────────────────────────────
+
+  void _runSearch([String? query]) {
+    final value = (query ?? _searchController.text).trim();
+    if (value.isEmpty) return;
+    if (_searchController.text != value) {
+      _searchController.text = value;
+    }
+    setState(() => _currentQuery = value);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _currentQuery = '');
+  }
 
   Future<void> _addSource(SmartSearchResult result) async {
     try {
       final repository = ref.read(sourcesRepositoryProvider);
       final sourceId = result.sourceId;
+      final hasCatalogId =
+          sourceId != null && sourceId.isNotEmpty && sourceId != 'null';
 
-      if (sourceId != null && sourceId.isNotEmpty && sourceId != 'null') {
+      if (hasCatalogId) {
         await repository.trustSource(sourceId);
         setState(() => _addedSourceIds.add(sourceId));
       } else {
@@ -48,10 +76,30 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         await repository.addCustomSource(result.feedUrl, name: result.name);
       }
 
-      if (mounted) {
+      if (!mounted) return;
+      ref.invalidate(userSourcesProvider);
+
+      if (hasCatalogId) {
+        // Default new sources to max priority (3/3) — user explicitly opted-in.
+        await repository.updateSourceWeight(sourceId, 2.0);
+        if (!mounted) return;
+
+        // Open modal so user can fine-tune subscription + priority right away.
+        final source = Source(
+          id: sourceId,
+          name: result.name,
+          url: result.url,
+          type: _parseSourceType(result.type),
+          description: result.description,
+          logoUrl: result.faviconUrl,
+          isCurated: result.isCurated,
+          isTrusted: true,
+          priorityMultiplier: 2.0,
+        );
+        _showSourceModal(source, recentItems: result.recentItems);
+      } else {
         NotificationService.showSuccess(
             'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
-        ref.invalidate(userSourcesProvider);
       }
     } catch (e) {
       if (mounted) {
@@ -70,7 +118,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
       logoUrl: result.faviconUrl,
       isCurated: result.isCurated,
     );
-    _showSourceModal(source);
+    _showSourceModal(source, recentItems: result.recentItems);
   }
 
   SourceType _parseSourceType(String type) {
@@ -85,15 +133,6 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
         return SourceType.video;
       default:
         return SourceType.article;
-    }
-  }
-
-  void _openAtlasFlux() async {
-    final Uri url = Uri.parse('https://atlasflux.saynete.net/');
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (mounted) {
-        NotificationService.showError('Impossible d\'ouvrir AtlasFlux');
-      }
     }
   }
 
@@ -116,14 +155,41 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     }
   }
 
-  void _showSourceModal(Source source) {
+  void _showSourceModal(
+    Source source, {
+    List<SmartSearchRecentItem>? recentItems,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => SourceDetailModal(
         source: source,
+        recentItems: recentItems,
         onToggleTrust: () => _toggleTrustSource(source),
+        onPriorityChanged: source.id.isNotEmpty
+            ? (multiplier) {
+                ref
+                    .read(userSourcesProvider.notifier)
+                    .updateWeight(source.id, multiplier);
+              }
+            : null,
+        onToggleSubscription: source.id.isNotEmpty
+            ? () {
+                final current = ref
+                        .read(userSourcesProvider)
+                        .valueOrNull
+                        ?.firstWhere(
+                          (s) => s.id == source.id,
+                          orElse: () => source,
+                        )
+                        .hasSubscription ??
+                    source.hasSubscription;
+                ref
+                    .read(userSourcesProvider.notifier)
+                    .toggleSubscription(source.id, current);
+              }
+            : null,
         onCopyFeedUrl: source.isCustom && (source.url?.isNotEmpty ?? false)
             ? () async {
                 await Clipboard.setData(ClipboardData(text: source.url!));
@@ -161,7 +227,10 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SmartSearchField(
-              onSearch: (query) => setState(() => _currentQuery = query),
+              controller: _searchController,
+              onSubmit: (value) => _runSearch(value),
+              onClear: _clearSearch,
+              onSearch: () => _runSearch(),
             ),
             const SizedBox(height: 16),
             _buildContent(),
@@ -189,6 +258,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
   }
 
   void _onExampleTap(String text) {
+    _searchController.text = text;
     setState(() => _currentQuery = text);
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
   }
@@ -199,6 +269,8 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _buildSourceTypesRow(),
+        const SizedBox(height: 20),
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: 24),
         const ThemeExplorer(),
@@ -210,7 +282,7 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
           },
         ),
         const SizedBox(height: 24),
-        _buildAtlasFluxCard(),
+        _buildInspirationHints(),
         const SizedBox(height: 24),
       ],
     );
@@ -342,53 +414,114 @@ class _AddSourceScreenState extends ConsumerState<AddSourceScreen> {
     );
   }
 
-  Widget _buildAtlasFluxCard() {
+  Widget _buildSourceTypesRow() {
     final colors = context.facteurColors;
+    final types = <(IconData, String)>[
+      (PhosphorIcons.newspaper(PhosphorIconsStyle.fill), 'Médias'),
+      (PhosphorIcons.envelope(PhosphorIconsStyle.fill), 'Newsletters'),
+      (PhosphorIcons.youtubeLogo(PhosphorIconsStyle.fill), 'YouTube'),
+      (PhosphorIcons.redditLogo(PhosphorIconsStyle.fill), 'Reddit'),
+      (PhosphorIcons.microphone(PhosphorIconsStyle.fill), 'Podcasts'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ajoutez n\'importe quelle source à Facteur !',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: context.facteurColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: types
+              .map((t) => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(t.$1, size: 14, color: colors.textSecondary),
+                      const SizedBox(width: 5),
+                      Text(
+                        t.$2,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                      ),
+                    ],
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildInspirationHints() {
+    final colors = context.facteurColors;
+    const hints = <String>[
+      'Une newsletter qui s\'accumule dans la boîte mail',
+      'Une chaîne YouTube recommandée par un proche',
+      'Un compte Instagram ou LinkedIn d\'expert',
+      'Un subreddit qui revient souvent dans les conversations',
+    ];
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.primary.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.primary.withOpacity(0.3)),
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(PhosphorIcons.books(PhosphorIconsStyle.light),
-              size: 32, color: colors.primary),
+          Row(
+            children: [
+              Icon(PhosphorIcons.lightbulb(PhosphorIconsStyle.fill),
+                  size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Quelques conseils',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colors.textPrimary,
+                      ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
-          Text(
-            'Toujours en manque d\'inspiration ?',
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(color: colors.textPrimary),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Plongez dans la bibliotheque francophone AtlasFlux.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _openAtlasFlux,
-            icon: Icon(
-                PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.regular),
-                size: 18,
-                color: colors.primary),
-            label: Text('Explorer AtlasFlux',
-                style: TextStyle(color: colors.primary)),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: colors.primary),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-          )
+          ...hints.map((hint) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 7),
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: colors.textTertiary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        hint,
+                        style:
+                            Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colors.textSecondary,
+                                  height: 1.4,
+                                ),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
         ],
       ),
     );
