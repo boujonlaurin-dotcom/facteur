@@ -90,10 +90,10 @@ class UpdateSourceWeightRequest(BaseModel):
     @field_validator("priority_multiplier")
     @classmethod
     def validate_multiplier(cls, v: float) -> float:
-        allowed = {0.5, 1.0, 2.0}
+        allowed = {0.2, 1.0, 2.0}
         if v not in allowed:
             raise ValueError(
-                f"priority_multiplier doit être 0.5, 1.0 ou 2.0 (reçu: {v})"
+                f"priority_multiplier doit être 0.2, 1.0 ou 2.0 (reçu: {v})"
             )
         return v
 
