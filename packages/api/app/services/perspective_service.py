@@ -312,8 +312,8 @@ class PerspectiveService:
             "- Uniquement les titres/résumés fournis, pas de faits inventés.\n"
             "- Précise \"d'après son titre\" si tu parles d'un angle absent d'un résumé.\n"
             "- Verbes concrets : insiste sur, minimise, cadre comme, ignore, met en avant, oppose.\n"
-            "- Interdits : \"met en lumière\", \"soulève des questions\", \"révèle la fragilité\", "
-            "\"fait écho\".\n"
+            '- Interdits : "met en lumière", "soulève des questions", "révèle la fragilité", '
+            '"fait écho".\n'
             "- Ton factuel, phrases courtes. Français."
         )
 
