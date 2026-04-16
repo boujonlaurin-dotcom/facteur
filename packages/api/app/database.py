@@ -116,6 +116,46 @@ async_session_maker = async_sessionmaker(
 )
 
 
+# Round 3 fix (docs/bugs/bug-infinite-load-requests.md — Sentry PYTHON-4/5/6) :
+# Supabase/PgBouncer tue parfois des connexions de façon asynchrone et renvoie
+# des erreurs qui ne sont PAS automatiquement classées comme "disconnect" par
+# SQLAlchemy. Résultat : le slot reste dans le pool en état invalid, toutes
+# les requêtes suivantes lèvent PendingRollbackError, le pool se remplit de
+# zombies, QueuePool limit reached → "infinite loading".
+#
+# Ce listener force `is_disconnect=True` sur les signatures Supabase-spécifiques
+# pour que SQLAlchemy évacue le slot et en crée un neuf à la prochaine demande.
+_DISCONNECT_SIGNATURES = (
+    "server closed the connection",
+    "dbhandler exited",
+    "consuming input failed",
+    "connection reset by peer",
+    "connection is closed",
+    "ssl connection has been closed",
+    "terminating connection",
+)
+
+
+if _use_queue_pool:
+
+    @event.listens_for(engine.sync_engine, "handle_error")
+    def _invalidate_on_supabase_kill(exception_context):
+        exc = exception_context.original_exception
+        if exc is None:
+            return
+        msg = str(exc).lower()
+        matched = next((s for s in _DISCONNECT_SIGNATURES if s in msg), None)
+        if matched is None:
+            return
+        # Force SQLAlchemy à marquer la connexion morte → évacuée du pool.
+        exception_context.is_disconnect = True
+        logger.warning(
+            "db_connection_invalidated_by_signature",
+            signature=matched,
+            exc_type=type(exc).__name__,
+        )
+
+
 class Base(DeclarativeBase):
     """Base class pour les modèles SQLAlchemy."""
 
@@ -208,13 +248,32 @@ async def get_db() -> AsyncSession:
     the rollback branch and relies solely on ``finally`` to close the
     session.  If ``close()`` itself is interrupted the connection leaks
     into an "idle in transaction" state, gradually filling the pool.
+
+    Round 3 hardening : rollback et close sont wrappés en try/except pour que
+    l'échec d'un cleanup (sur connexion déjà morte) ne masque pas l'exception
+    originale du handler. Sinon Starlette/Sentry capturent une cascade confuse
+    de PendingRollbackError au lieu de la vraie cause.
     """
     async with async_session_maker() as session:
         try:
             yield session
             await session.commit()
         except BaseException:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception as rollback_exc:
+                logger.debug(
+                    "get_db_rollback_failed",
+                    error=str(rollback_exc),
+                    exc_type=type(rollback_exc).__name__,
+                )
             raise
         finally:
-            await session.close()
+            try:
+                await session.close()
+            except Exception as close_exc:
+                logger.debug(
+                    "get_db_close_failed",
+                    error=str(close_exc),
+                    exc_type=type(close_exc).__name__,
+                )

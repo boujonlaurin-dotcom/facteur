@@ -1844,6 +1844,21 @@ class DigestService:
                 )
 
             if topic_articles:
+                # Round 3 fix (Sentry PYTHON-R) : certains digests persistés
+                # en DB avant le fix source contiennent un dict imbriqué au
+                # lieu d'une string. Coerce défensivement au boundary pour ne
+                # pas casser les digests historiques côté read.
+                _divergence_raw = subject.get("divergence_analysis")
+                if isinstance(_divergence_raw, dict):
+                    import json as _json
+
+                    _divergence_str = _json.dumps(_divergence_raw, ensure_ascii=False)
+                elif _divergence_raw is not None and not isinstance(
+                    _divergence_raw, str
+                ):
+                    _divergence_str = str(_divergence_raw)
+                else:
+                    _divergence_str = _divergence_raw
                 response_topics.append(
                     DigestTopic(
                         topic_id=subject.get("topic_id", ""),
@@ -1862,7 +1877,7 @@ class DigestService:
                         perspective_count=subject.get("perspective_count", 0),
                         bias_distribution=subject.get("bias_distribution"),
                         bias_highlights=subject.get("bias_highlights"),
-                        divergence_analysis=subject.get("divergence_analysis"),
+                        divergence_analysis=_divergence_str,
                         divergence_level=subject.get("divergence_level"),
                         perspective_sources=subject.get("perspective_sources"),
                         representative_content_id=subject.get(

@@ -267,11 +267,23 @@ class RecommendationService:
             return results
 
         # 2. Process digest exclusion (already fetched in Phase 1)
+        # Round 3 fix (Sentry warning feed_digest_exclusion_failed, type
+        # "string indices must be integers") : certains rows DailyDigest.items
+        # ont été persistés en string JSON au lieu de list — probablement via
+        # une insertion qui a passé le JSON déjà sérialisé. Parse défensif ici
+        # pour couvrir les deux représentations sans resérialiser en DB.
         digest_content_ids: list[UUID] = []
         try:
-            if digest_row and digest_row.items:
+            items_raw = digest_row.items if digest_row else None
+            if isinstance(items_raw, str):
+                import json as _json
+
+                items_raw = _json.loads(items_raw)
+            if items_raw:
                 digest_content_ids = [
-                    UUID(item["content_id"]) for item in digest_row.items
+                    UUID(item["content_id"])
+                    for item in items_raw
+                    if isinstance(item, dict) and item.get("content_id")
                 ]
         except Exception as e:
             logger.warning("feed_digest_exclusion_failed", error=str(e))
