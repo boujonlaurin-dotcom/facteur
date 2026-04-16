@@ -169,9 +169,9 @@ class DigestSelector:
     ):
         # `session_maker` permet à la pipeline éditoriale d'ouvrir ses propres
         # sessions courtes pendant les 3-5 min de travail LLM. `self.session`
-        # reste utilisée pour les ops rapides (build_context, get_candidates,
-        # < 1s cumulé) mais sera commit()ée juste avant la pipeline pour
-        # libérer la connexion au pool. Cf. bug-infinite-load-requests.md.
+        # est utilisée pour les ops rapides (build_context, get_candidates,
+        # < 1s cumulé) puis close()ée juste avant la pipeline pour libérer
+        # la connexion au pool. SQLAlchemy auto-reconnecte sur prochain usage.
         self.session = session
         self.session_maker = session_maker
         self.rec_service = RecommendationService(session)
@@ -307,20 +307,18 @@ class DigestSelector:
                             global_ctx = _get_cached_editorial_ctx(_cache_date, mode)
                         if global_ctx is None:
                             # CRITICAL: libérer la connexion au pool avant
-                            # les 3-5 min de LLM. La pipeline utilise
-                            # session_maker pour ses ops DB internes, donc
-                            # on n'a plus besoin de tenir self.session
-                            # pendant tout ce temps.
-                            # On commit inconditionnellement (session_maker
-                            # fourni ou non) : à ce stade il n'y a aucune
-                            # écriture pendante, donc commit = noop métier +
-                            # libère la connexion physique dans tous les cas.
-                            # cf. docs/bugs/bug-infinite-load-requests.md (P1)
+                            # les 3-5 min de LLM. commit() seul ne restitue
+                            # PAS la connexion au pool — seul close() le fait.
+                            # La pipeline utilise session_maker pour ses ops
+                            # DB internes (via _short_session()), donc
+                            # self.session n'est plus nécessaire.
+                            # Après ce point, la fonction retourne directement
+                            # le résultat — self.session n'est plus utilisée.
                             try:
-                                await self.session.commit()
+                                await self.session.close()
                             except SQLAlchemyError:
                                 logger.warning(
-                                    "digest_selector_precommit_failed",
+                                    "digest_selector_session_close_failed",
                                     user_id=str(user_id),
                                 )
                             global_ctx = await pipeline.compute_global_context(

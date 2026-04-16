@@ -293,8 +293,10 @@ class DigestService:
     ):
         # `session_maker` est propagé au DigestSelector/EditorialPipeline :
         # la pipeline LLM ouvre ses propres sessions courtes pour ses ops
-        # DB, et DigestSelector commit la session avant d'appeler la
-        # pipeline (libère la connexion au pool pendant 3-5 min).
+        # DB, et DigestSelector close() la session avant d'appeler la
+        # pipeline (libère la connexion au pool pendant 3-5 min de LLM).
+        # Après la pipeline, la session est réutilisable : SQLAlchemy
+        # auto-begin une nouvelle transaction avec une connexion fraîche.
         # Cf. docs/bugs/bug-infinite-load-requests.md (P1 — site B).
         self.session = session
         self.session_maker = session_maker
