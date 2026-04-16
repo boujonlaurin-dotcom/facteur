@@ -627,3 +627,84 @@ sont ouverts en parallèle.
   `PendingRollbackError`.
 - `/api/health/pool` : `checked_out` < 10 en steady state.
 - Test solo 01:35 Paris post-restart : pas de reproduction du crash.
+
+---
+
+## Round 4 — 2026-04-16 (burst /api/feed/ web app)
+
+### Constat
+
+Round 3 deployé (release `0a7aa275`, merge `2026-04-16 08:52 UTC`).
+Quatre heures plus tard (`12:50–12:51 UTC`, release `9eade82e` = main +
+PR #415/#416), Sentry remonte un nouveau pic massif **NON couvert par
+Round 3** :
+
+| Sentry ID | Type | Culprit | Events |
+|-----------|------|---------|--------|
+| PYTHON-1C/D/E/F/G/H/J/M | `QueuePool limit … overflow 10 reached` | `feed.get_personalized_feed` (×6), `users.get_streak`, `custom_topics.list_topics`, `digest.get_both_digests` | 8 issues |
+| PYTHON-Y/1B/1K/1M/1N/15/16 | `InternalError: DbHandler exited` | `feed.get_personalized_feed` (×3), `users.get_streak`, `custom_topics.list_topics`, `sources.get_sources`, `collections.list_collections` | 7 issues |
+| PYTHON-14 | `PendingRollbackError` | `community.get_community_recommendations` | 1 issue |
+
+User unique `61140df7-1029-4d46-811e-7f309574c556`, **Chrome 147 web**
+(pas iPhone/Dart — handoff précédent erroné). 16 issues distinctes en
+~70 secondes — burst de requêtes parallèles depuis l'app web.
+
+### Cause racine (R4)
+
+**`/api/feed/` tient 3 connexions DB simultanées par requête** :
+- `db: AsyncSession = Depends(get_db)` (session principale, vivante toute
+  la requête)
+- `_batch_user_context()` ouvre une short session dédiée
+- `_batch_personalization()` ouvre une autre short session dédiée
+- Les deux short sessions tournent en parallèle via `asyncio.gather`.
+
+Pool config (Round 1/2) : `pool_size=10 + max_overflow=10 = 20` max.
+À 3 conn/req, le plafond effectif est **~6-7 requêtes feed concurrentes**.
+Un burst d'ouverture d'app web (Chrome ouvre `/api/feed/`,
+`/api/users/streak`, `/api/digest/both`, `/api/sources/`,
+`/api/collections/`, etc. en parallèle) sature le pool en quelques
+secondes. Les requêtes suivantes attendent `pool_timeout=30s` puis
+remontent `QueuePool limit reached`. Pendant que le pool est saturé,
+Supabase peut tuer des connexions idle → `DbHandler exited` cascade.
+
+Round 3 (listener `_invalidate_on_supabase_kill` + per-user session
+`top3_job` + semaphore trafilatura) ne touchait pas `/api/feed/` —
+le listener invalide les slots morts mais ne réduit pas la pression
+de connexions vivantes tenues trop longtemps.
+
+### Fix Round 4
+
+**F4.1 — `/api/feed/` : 3 sessions → 2 sessions** (`app/services/recommendation_service.py::RecommendationService.get_feed`).
+
+Le batch `_batch_user_context()` (3 SELECTs profile + sources + subtopics)
+réutilise désormais `self.session` au lieu d'ouvrir une nouvelle short
+session. `_batch_personalization()` reste sur sa propre short session
+parallèle. `asyncio.gather` préserve le parallélisme entre les deux
+batches (sessions distinctes, pas de "concurrent operations on same
+session").
+
+Net : **2 conn/req** (au lieu de 3), plafond ~10 feeds concurrents
+(au lieu de ~6). Aucun changement sur `pool_size`/`max_overflow`/
+`pool_timeout`/`pool_recycle`.
+
+### À ne PAS faire (refusé pour cette PR)
+
+- Augmenter `pool_size`/`max_overflow` : interdit sans diff métrique
+  solide (cf. handoff). Masquerait l'amplification.
+- Retirer `_scheduled_restart` : conserver pendant 48 h post-F1.1.
+- Ajouter un nouvel endpoint pool-stats : `/api/health/pool` existe déjà
+  (`app/main.py:455`) avec `status`/`usage_pct`/Sentry warning à 75 %.
+- Ajouter `wait_for` budgets endpoint-level sur `/feed/`, `/streak/`,
+  etc. : changerait la nature du timeout sans réduire la cause
+  (saturation). À envisager seulement si le burst persiste post-F4.1.
+
+### Validation attendue (post-déploiement)
+
+- Sentry : 0 événement `QueuePool limit` sur `feed.get_personalized_feed`
+  pendant 24 h.
+- `/api/health/pool` pendant un burst Chrome (rapid tab switches) :
+  `checked_out + overflow ≤ 14` (vs ~20 avant).
+- Log `feed_phase1_context` `duration_ms` : régression acceptable
+  (< +200ms p50).
+- 48 h Sentry watch : pas de récurrence des signatures Round 3
+  (`db_connection_invalidated_by_signature` reste rare).
