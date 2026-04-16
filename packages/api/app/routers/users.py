@@ -100,7 +100,17 @@ async def save_onboarding(
     # own session so it sees the freshly committed UserSource rows.
     background_tasks.add_task(schedule_initial_digest_generation, UUID(user_id))
 
-    return OnboardingResponse.model_validate(result)
+    try:
+        return OnboardingResponse.model_validate(result)
+    except Exception as e:
+        logger.error(
+            f"Onboarding response serialization failed for user {user_id}: {e}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Onboarding saved but response serialization failed.",
+        )
 
 
 @router.get("/preferences", response_model=list[UserPreferenceResponse])

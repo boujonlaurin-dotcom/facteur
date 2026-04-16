@@ -19,6 +19,7 @@ These tests lock in:
    variants come back empty, with regen scheduled for both variants.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -26,6 +27,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.schemas.user import OnboardingResponse, UserProfileResponse
 
 
 @pytest.mark.asyncio
@@ -165,13 +167,53 @@ async def test_onboarding_schedules_initial_digest_generation():
     app.dependency_overrides[get_current_user_id] = _fake_user
     app.dependency_overrides[get_db] = _fake_db
 
+    now = datetime.now(UTC)
+    fake_profile = UserProfileResponse(
+        id=uuid4(),
+        user_id=uuid4(),
+        display_name=None,
+        age_range="25-34",
+        gender="other",
+        onboarding_completed=True,
+        gamification_enabled=True,
+        weekly_goal=5,
+        created_at=now,
+        updated_at=now,
+    )
+    fake_response = OnboardingResponse(
+        profile=fake_profile,
+        interests_created=3,
+        subtopics_created=2,
+        preferences_created=5,
+        sources_created=4,
+        sources_removed=0,
+    )
     fake_result = {
-        "profile": None,
+        "profile": fake_profile,
         "interests_created": 3,
         "subtopics_created": 2,
         "preferences_created": 5,
         "sources_created": 4,
         "sources_removed": 0,
+    }
+
+    # Payload must include all required OnboardingAnswers fields (objective,
+    # approach, response_style) so the request doesn't 422 before reaching the
+    # handler — otherwise the schedule assertion would be silently skipped.
+    # camelCase keys because OnboardingAnswers uses an alias_generator.
+    valid_payload = {
+        "answers": {
+            "objective": "learn",
+            "approach": "direct",
+            "responseStyle": "decisive",
+            "ageRange": "25-34",
+            "gender": "other",
+            "gamificationEnabled": True,
+            "weeklyGoal": 5,
+            "themes": ["tech"],
+            "subtopics": [],
+            "preferredSources": [],
+        }
     }
 
     try:
@@ -182,7 +224,7 @@ async def test_onboarding_schedules_initial_digest_generation():
             ),
             patch(
                 "app.routers.users.OnboardingResponse.model_validate",
-                return_value={},
+                return_value=fake_response,
             ),
             patch(
                 "app.routers.users.schedule_initial_digest_generation"
@@ -192,24 +234,18 @@ async def test_onboarding_schedules_initial_digest_generation():
             async with AsyncClient(
                 transport=transport, base_url="http://test", timeout=5.0
             ) as ac:
-                resp = await ac.post(
-                    "/api/users/onboarding",
-                    json={
-                        "answers": {
-                            "age_range": "25-34",
-                            "gender": "other",
-                            "themes": ["tech"],
-                            "subtopics": [],
-                            "preferred_sources": [],
-                        }
-                    },
-                )
+                resp = await ac.post("/api/users/onboarding", json=valid_payload)
     finally:
         app.dependency_overrides.clear()
 
-    # The endpoint completes (200) and the BackgroundTasks runner invoked our
-    # scheduler. If this assertion fails, new users will fall back to waiting
-    # for the next 6 AM batch.
-    assert resp.status_code in (200, 422), resp.text[:200]
-    if resp.status_code == 200:
-        mock_schedule.assert_called_once()
+    # Strict assertion: if the endpoint doesn't 200, the BackgroundTask never
+    # ran and new users will fall back to waiting for the next 6 AM batch.
+    assert resp.status_code == 200, (
+        f"Expected 200, got {resp.status_code}: {resp.text[:300]}"
+    )
+    mock_schedule.assert_called_once()
+    # Called with the user UUID (positional arg from routers/users.py)
+    called_args, _ = mock_schedule.call_args
+    assert str(called_args[0]) == fake_user_id, (
+        f"Scheduler called with {called_args[0]}, expected {fake_user_id}"
+    )

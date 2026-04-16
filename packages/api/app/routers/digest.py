@@ -273,7 +273,6 @@ async def get_digest(
         # the "batch running" branch above. This is what unblocks the
         # infinite-loading loop for users who just finished onboarding.
         effective_date = target_date or today_paris()
-        schedule_digest_regen(user_uuid, effective_date, serein)
         logger.warning(
             "digest_generation_returned_none_scheduled_regen",
             user_id=current_user_id,
@@ -281,6 +280,7 @@ async def get_digest(
             is_serene=serein,
             elapsed_ms=round(elapsed * 1000, 1),
         )
+        schedule_digest_regen(user_uuid, effective_date, serein)
         return JSONResponse(
             status_code=202,
             content={
@@ -381,18 +381,25 @@ async def get_both_digests(
             detail="digest_generation_timeout",
         )
 
-    # Both variants empty → don't return a 200 with null fields (mobile client
-    # mishandles that as a permanent failure). Schedule regen and ask client to
-    # retry on the same 202 contract as the batch-running branch.
-    if normal is None and serein is None:
+    # If either variant is missing, don't return a 200 with null fields (the
+    # mobile client mishandles null variants as a permanent failure). Schedule
+    # regen for the specific missing variant(s) and ask the client to retry
+    # on the same 202 contract as the batch-running branch. Both-None and
+    # partial-None converge on the same response so the mobile side stays
+    # on a single polling contract.
+    if normal is None or serein is None:
         effective_date = target_date or today_paris()
-        schedule_digest_regen(user_uuid, effective_date, is_serene=False)
-        schedule_digest_regen(user_uuid, effective_date, is_serene=True)
         logger.warning(
             "digest_both_returned_none_scheduled_regen",
             user_id=current_user_id,
             target_date=str(effective_date),
+            normal_missing=normal is None,
+            serein_missing=serein is None,
         )
+        if normal is None:
+            schedule_digest_regen(user_uuid, effective_date, is_serene=False)
+        if serein is None:
+            schedule_digest_regen(user_uuid, effective_date, is_serene=True)
         return JSONResponse(
             status_code=202,
             content={

@@ -250,6 +250,11 @@ def schedule_initial_digest_generation(user_id: UUID) -> None:
     user retries onboarding, we won't spawn duplicate generations.
     """
     target = today_paris()
+    logger.info(
+        "digest_pre_generation_scheduled_on_onboarding",
+        user_id=str(user_id),
+        target_date=str(target),
+    )
     for is_serene in (False, True):
         _schedule_background_regen(user_id, target, is_serene)
 
