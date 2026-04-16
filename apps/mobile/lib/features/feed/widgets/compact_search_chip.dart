@@ -102,6 +102,15 @@ class _InactiveChip extends StatelessWidget {
                 color: muted,
               ),
             ),
+            const SizedBox(width: 5),
+            Text(
+              'Rechercher une actu ↗',
+              style: TextStyle(
+                fontSize: 12,
+                color: muted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),
@@ -125,51 +134,56 @@ class _ActiveChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: primary.withOpacity(0.12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-              size: 14,
-              color: primary,
-            ),
-            const SizedBox(width: 4),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 100),
-              child: Text(
-                keyword,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: primary.withOpacity(0.12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: onTap,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+                  size: 14,
                   color: primary,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onClear,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-                child: Icon(
-                  PhosphorIcons.x(PhosphorIconsStyle.bold),
-                  size: 13,
-                  color: primary,
+                const SizedBox(width: 4),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 100),
+                  child: Text(
+                    keyword,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: primary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onClear,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+              child: Icon(
+                PhosphorIcons.x(PhosphorIconsStyle.bold),
+                size: 13,
+                color: primary,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

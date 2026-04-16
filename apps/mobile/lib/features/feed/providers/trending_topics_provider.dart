@@ -5,6 +5,7 @@ import '../../../core/auth/auth_state.dart';
 
 class TrendingTopic {
   final String label;
+  final String keyword;
   final int articleCount;
   final int sourceCount;
   final String? topicSlug;
@@ -12,6 +13,7 @@ class TrendingTopic {
 
   TrendingTopic({
     required this.label,
+    required this.keyword,
     required this.articleCount,
     required this.sourceCount,
     this.topicSlug,
@@ -21,6 +23,7 @@ class TrendingTopic {
   factory TrendingTopic.fromJson(Map<String, dynamic> json) {
     return TrendingTopic(
       label: json['label'] as String? ?? '',
+      keyword: json['keyword'] as String? ?? '',
       articleCount: json['article_count'] as int? ?? 0,
       sourceCount: json['source_count'] as int? ?? 0,
       topicSlug: json['topic_slug'] as String?,

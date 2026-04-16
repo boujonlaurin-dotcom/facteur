@@ -266,11 +266,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
                                 return _TrendingChip(
                                   topic: topic,
                                   colors: colors,
-                                  onTap: () {
-                                    final keyword =
-                                        _extractKeyword(topic.label);
-                                    _submitSearch(keyword);
-                                  },
+                                  onTap: () => _submitSearch(topic.keyword),
                                 );
                               }).toList(),
                             ),
@@ -301,13 +297,6 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     );
   }
 
-  String _extractKeyword(String title) {
-    if (title.length <= 40) return title;
-    final truncated = title.substring(0, 40);
-    final lastSpace = truncated.lastIndexOf(' ');
-    if (lastSpace > 20) return truncated.substring(0, lastSpace);
-    return truncated;
-  }
 }
 
 class _HistoryChip extends StatelessWidget {

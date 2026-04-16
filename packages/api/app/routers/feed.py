@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -35,9 +36,23 @@ from app.schemas.learning import (
     proposal_to_response,
 )
 from app.services.learning_service import LearningService
+from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
 
 logger = structlog.get_logger()
+
+
+def _best_keyword(titles: list[str]) -> str:
+    """Extrait le mot-clé le plus fréquent d'une liste de titres d'articles."""
+    freq: dict[str, int] = {}
+    for title in titles:
+        tokens = re.findall(r"[a-zàâäéèêëïîôùûüÿçœæ\-]+", title.lower())
+        for token in tokens:
+            if len(token) >= 4 and token not in FRENCH_STOP_WORDS:
+                freq[token] = freq.get(token, 0) + 1
+    if not freq:
+        return titles[0][:30] if titles else ""
+    return max(freq, key=lambda k: freq[k])
 
 router = APIRouter()
 
@@ -419,9 +434,11 @@ async def get_trending_topics(
                 topic_slug = content.topics[0]
                 break
 
+        titles = [c.title for c in cluster.contents]
         response.append(
             TrendingTopicResponse(
                 label=best_content.title,
+                keyword=_best_keyword(titles),
                 article_count=len(cluster.contents),
                 source_count=len(cluster.source_ids),
                 topic_slug=topic_slug,
