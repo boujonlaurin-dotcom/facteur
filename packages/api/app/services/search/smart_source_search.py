@@ -1,5 +1,6 @@
 """Smart source search orchestrator — cascading pipeline."""
 
+import asyncio
 import re
 import time
 from datetime import UTC, datetime
@@ -152,8 +153,8 @@ class SmartSourceSearchService:
         # (a) Catalog ILIKE
         catalog_results = await self._search_catalog(normalized, user_themes)
         for r in catalog_results:
-            if r["feed_url"] not in seen_urls:
-                seen_urls.add(r["feed_url"])
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
                 results.append(r)
         layers_called.append("catalog")
 
@@ -168,8 +169,8 @@ class SmartSourceSearchService:
         if query_type == "youtube_handle" or "youtube" in normalized:
             yt_results = await self._search_youtube(query, user_themes)
             for r in yt_results:
-                if r["feed_url"] not in seen_urls:
-                    seen_urls.add(r["feed_url"])
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
                     results.append(r)
             layers_called.append("youtube")
 
@@ -177,8 +178,8 @@ class SmartSourceSearchService:
         if query_type == "reddit_sub" or "reddit" in normalized or "r/" in normalized:
             reddit_results = await self._search_reddit(query, user_themes)
             for r in reddit_results:
-                if r["feed_url"] not in seen_urls:
-                    seen_urls.add(r["feed_url"])
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
                     results.append(r)
             layers_called.append("reddit")
 
@@ -188,8 +189,8 @@ class SmartSourceSearchService:
             brave_results = await self._search_brave(normalized, user_themes)
             _brave_calls_month += 1
             for r in brave_results:
-                if r["feed_url"] not in seen_urls:
-                    seen_urls.add(r["feed_url"])
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
                     results.append(r)
             layers_called.append("brave")
 
@@ -209,8 +210,8 @@ class SmartSourceSearchService:
         # (e) Google News RSS
         gnews_results = await self._search_google_news(normalized, user_themes)
         for r in gnews_results:
-            if r["feed_url"] not in seen_urls:
-                seen_urls.add(r["feed_url"])
+            if r["url"] not in seen_urls:
+                seen_urls.add(r["url"])
                 results.append(r)
         layers_called.append("google_news")
 
@@ -224,8 +225,8 @@ class SmartSourceSearchService:
             mistral_results = await self._search_mistral(normalized, user_themes)
             _mistral_calls_month += 1
             for r in mistral_results:
-                if r["feed_url"] not in seen_urls:
-                    seen_urls.add(r["feed_url"])
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
                     results.append(r)
             layers_called.append("mistral")
 
@@ -328,100 +329,98 @@ class SmartSourceSearchService:
             )
         return items
 
-    async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
-        """Search Brave, then validate top URLs via feed discovery."""
-        brave_results = await self.brave.search(query)
-        items = []
-
-        for br in brave_results[:5]:
-            url = br.get("url", "")
-            if not url:
-                continue
-            try:
-                detected = await self.rss_parser.detect(url)
-                items.append(
+    async def _try_detect_feed(self, url: str) -> dict | None:
+        """Try RSS feed detection on a URL. Returns enrichment dict or None."""
+        try:
+            detected = await self.rss_parser.detect(url)
+            return {
+                "feed_url": detected.feed_url,
+                "name": detected.title,
+                "type": detected.feed_type,
+                "favicon_url": detected.logo_url,
+                "description": detected.description,
+                "recent_items": [
                     {
-                        "name": detected.title,
-                        "type": detected.feed_type,
-                        "url": url,
-                        "feed_url": detected.feed_url,
-                        "favicon_url": detected.logo_url,
-                        "description": detected.description,
-                        "in_catalog": False,
-                        "is_curated": False,
-                        "source_id": None,
-                        "recent_items": [
-                            {
-                                "title": e["title"],
-                                "published_at": e.get("published_at", ""),
-                            }
-                            for e in detected.entries[:3]
-                        ],
-                        "score": _compute_score(
-                            "brave",
-                            False,
-                            False,
-                            0,
-                            None,
-                            False,
-                            any(
-                                t in (detected.title or "").lower() for t in user_themes
-                            ),
-                        ),
-                        "source_layer": "brave",
+                        "title": e["title"],
+                        "published_at": e.get("published_at", ""),
                     }
-                )
-            except (ValueError, Exception):
-                continue
+                    for e in detected.entries[:3]
+                ],
+            }
+        except (ValueError, Exception) as e:
+            logger.debug("smart_search.feed_detect_failed", url=url, error=str(e))
+            return None
 
-        return items
+    def _build_result(
+        self,
+        url: str,
+        layer: str,
+        user_themes: list[str],
+        feed_meta: dict | None,
+        fallback_name: str = "",
+        fallback_description: str = "",
+        fallback_type: str = "article",
+    ) -> dict:
+        """Build a search result dict, enriched with feed metadata if available."""
+        name = (feed_meta or {}).get("name") or fallback_name or url
+        return {
+            "name": name,
+            "type": (feed_meta or {}).get("type") or fallback_type,
+            "url": url,
+            "feed_url": (feed_meta or {}).get("feed_url"),
+            "favicon_url": (feed_meta or {}).get("favicon_url"),
+            "description": (feed_meta or {}).get("description") or fallback_description,
+            "in_catalog": False,
+            "is_curated": False,
+            "source_id": None,
+            "recent_items": (feed_meta or {}).get("recent_items", []),
+            "score": _compute_score(
+                layer,
+                False,
+                False,
+                0,
+                None,
+                False,
+                any(t in name.lower() for t in user_themes),
+            ),
+            "source_layer": layer,
+        }
+
+    async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
+        """Search Brave, then optionally enrich top URLs via feed discovery."""
+        brave_results = await self.brave.search(query)
+        urls_and_meta = [
+            (br.get("url", ""), br.get("title", ""), br.get("description", ""))
+            for br in brave_results[:5]
+            if br.get("url")
+        ]
+        if not urls_and_meta:
+            return []
+
+        detections = await asyncio.gather(
+            *(self._try_detect_feed(url) for url, _, _ in urls_and_meta)
+        )
+        return [
+            self._build_result(url, "brave", user_themes, det, title, desc)
+            for (url, title, desc), det in zip(urls_and_meta, detections)
+        ]
 
     async def _search_google_news(
         self, query: str, user_themes: list[str]
     ) -> list[dict]:
-        """Search Google News RSS, extract domains, validate feeds."""
+        """Search Google News RSS, extract domains, optionally enrich feeds."""
         base_urls = await self.google_news.search(query)
-        items = []
+        urls = [u for u in base_urls[:5] if u]
+        if not urls:
+            return []
 
-        for base_url in base_urls[:5]:
-            try:
-                detected = await self.rss_parser.detect(base_url)
-                items.append(
-                    {
-                        "name": detected.title,
-                        "type": detected.feed_type,
-                        "url": base_url,
-                        "feed_url": detected.feed_url,
-                        "favicon_url": detected.logo_url,
-                        "description": detected.description,
-                        "in_catalog": False,
-                        "is_curated": False,
-                        "source_id": None,
-                        "recent_items": [
-                            {
-                                "title": e["title"],
-                                "published_at": e.get("published_at", ""),
-                            }
-                            for e in detected.entries[:3]
-                        ],
-                        "score": _compute_score(
-                            "google_news",
-                            False,
-                            False,
-                            0,
-                            None,
-                            False,
-                            any(
-                                t in (detected.title or "").lower() for t in user_themes
-                            ),
-                        ),
-                        "source_layer": "google_news",
-                    }
-                )
-            except (ValueError, Exception):
-                continue
-
-        return items
+        detections = await asyncio.gather(
+            *(self._try_detect_feed(url) for url in urls)
+        )
+        return [
+            self._build_result(url, "google_news", user_themes, det)
+            for url, det in zip(urls, detections)
+        ]
 
     async def _search_mistral(self, query: str, user_themes: list[str]) -> list[dict]:
         """Mistral-small fallback: suggest feed URLs for query."""
@@ -453,49 +452,23 @@ class SmartSourceSearchService:
                 return []
 
             suggestions = result.get("suggestions", [])
-            items = []
-            for s in suggestions[:5]:
-                url = s.get("url", "")
-                if not url:
-                    continue
-                try:
-                    detected = await self.rss_parser.detect(url)
-                    items.append(
-                        {
-                            "name": detected.title,
-                            "type": detected.feed_type,
-                            "url": url,
-                            "feed_url": detected.feed_url,
-                            "favicon_url": detected.logo_url,
-                            "description": detected.description,
-                            "in_catalog": False,
-                            "is_curated": False,
-                            "source_id": None,
-                            "recent_items": [
-                                {
-                                    "title": e["title"],
-                                    "published_at": e.get("published_at", ""),
-                                }
-                                for e in detected.entries[:3]
-                            ],
-                            "score": _compute_score(
-                                "mistral",
-                                False,
-                                False,
-                                0,
-                                None,
-                                False,
-                                any(
-                                    t in (detected.title or "").lower()
-                                    for t in user_themes
-                                ),
-                            ),
-                            "source_layer": "mistral",
-                        }
-                    )
-                except (ValueError, Exception):
-                    continue
-            return items
+            urls_and_meta = [
+                (s.get("url", ""), s.get("name", ""), s.get("type", "article"))
+                for s in suggestions[:5]
+                if s.get("url")
+            ]
+            if not urls_and_meta:
+                return []
+
+            detections = await asyncio.gather(
+                *(self._try_detect_feed(url) for url, _, _ in urls_and_meta)
+            )
+            return [
+                self._build_result(
+                    url, "mistral", user_themes, det, name, fallback_type=stype
+                )
+                for (url, name, stype), det in zip(urls_and_meta, detections)
+            ]
 
         except Exception as e:
             logger.warning("smart_search.mistral_failed", error=str(e))

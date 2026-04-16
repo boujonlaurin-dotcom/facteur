@@ -167,11 +167,14 @@ class SourcesRepository {
     try {
       final response =
           await _apiClient.dio.get<dynamic>('sources/themes-followed');
-      if (response.statusCode == 200 && response.data is List) {
-        return (response.data as List)
-            .map((json) =>
-                FollowedTheme.fromJson(json as Map<String, dynamic>))
-            .toList();
+      if (response.statusCode == 200 && response.data is Map) {
+        final themes = (response.data as Map<String, dynamic>)['themes'];
+        if (themes is List) {
+          return themes
+              .map((json) =>
+                  FollowedTheme.fromJson(json as Map<String, dynamic>))
+              .toList();
+        }
       }
       return [];
     } catch (e) {
