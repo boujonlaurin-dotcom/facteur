@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'config/theme.dart';
 import 'config/routes.dart';
+import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
 import 'core/ui/notification_service.dart';
@@ -16,6 +17,11 @@ class FacteurApp extends ConsumerWidget {
     debugPrint('FacteurApp: build() called');
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeNotifierProvider);
+
+    // Keep feed preloader alive for the entire authenticated session: it
+    // watches auth state and kicks off `feedProvider.future` in the
+    // background so the Feed tab renders instantly on first tap.
+    ref.watch(feedPreloadProvider);
 
     return MaterialApp.router(
       title: 'Facteur',

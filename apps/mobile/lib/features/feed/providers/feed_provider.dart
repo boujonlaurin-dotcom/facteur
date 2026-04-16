@@ -6,9 +6,17 @@ import '../../../core/auth/auth_state.dart';
 import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
+import '../services/feed_cache_service.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../saved/providers/saved_feed_provider.dart';
+
+/// Provider for the local feed cache (Hive-backed).
+/// Returns null when the Hive box is not open (e.g. unit tests without Hive
+/// init); callers must gracefully degrade to no-cache mode.
+final feedCacheServiceProvider = Provider<FeedCacheService?>((ref) {
+  return FeedCacheService.tryFromHive();
+});
 
 // Provider du repository
 final feedRepositoryProvider = Provider<FeedRepository>((ref) {
@@ -112,6 +120,34 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // refresh in a loading indicator). Listening here as well would cause
     // duplicate concurrent refreshes and race conditions on the feed state.
 
+    // Stale-while-revalidate: if we have a fresh cached default feed (page 1,
+    // no filters, serein-agnostic snapshot), paint it instantly and kick off
+    // a silent refresh so the next frame is up-to-date. This is the main
+    // lever for the "feed takes 4-5s on open" UX issue — subsequent opens in
+    // the same 10-minute window become near-instant.
+    final userId = authState.user!.id;
+    final cache = ref.read(feedCacheServiceProvider);
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    final cached = (!isSerein) ? cache?.readRaw(userId) : null;
+    if (cached != null && cached.isFresh) {
+      try {
+        final parsed = FeedRepository.parseFeedData(
+          data: cached.data,
+          page: 1,
+          limit: _limit,
+        );
+        _hasNext = parsed.pagination.hasNext && parsed.items.isNotEmpty;
+        _scheduleSilentRevalidation();
+        print(
+            '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${DateTime.now().difference(cached.savedAt).inSeconds}s)');
+        return FeedState(items: parsed.items, carousels: parsed.carousels);
+      } catch (e) {
+        // Corrupted cache or schema drift — drop silently and fall through.
+        print('FeedNotifier: cached feed parse failed, evicting: $e');
+        await cache?.clearForUser(userId);
+      }
+    }
+
     // Fetch initial page
     final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);
@@ -119,6 +155,35 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
 
     return FeedState(items: response.items, carousels: response.carousels);
+  }
+
+  /// Fire-and-forget background refresh triggered after a cache hit. Keeps
+  /// the user's scroll position intact; a failure is silent (the stale cache
+  /// stays visible until the next interaction).
+  void _scheduleSilentRevalidation() {
+    scheduleMicrotask(() async {
+      try {
+        final response = await _fetchPage(page: 1);
+        // Only overwrite if still the "default" view (no filter change in-flight)
+        // and state hasn't been replaced by the user meanwhile (e.g. a manual
+        // refresh completed first).
+        if (_selectedFilter != null ||
+            _selectedTheme != null ||
+            _selectedTopic != null ||
+            _selectedSourceId != null ||
+            _selectedEntity != null ||
+            _selectedKeyword != null) {
+          return;
+        }
+        state = AsyncData(FeedState(
+          items: response.items,
+          carousels: response.carousels,
+        ));
+      } catch (e) {
+        // Silent: user still sees the cached feed.
+        print('FeedNotifier: silent revalidation failed: $e');
+      }
+    });
   }
 
   Future<void> setFilter(String? filter) async {
@@ -190,6 +255,36 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   Future<FeedResponse> _fetchPage({required int page}) async {
     final repository = ref.read(feedRepositoryProvider);
     final isSerein = ref.read(sereinToggleProvider).enabled;
+
+    // Only the page-1 "default" view (no filters, serein off) is cache-worthy:
+    // that's what the user lands on after cold-open or tab switch. Filtered
+    // views and paginated loads bypass the cache entirely.
+    final bool isDefaultView = page == 1 &&
+        !isSerein &&
+        _selectedFilter == null &&
+        _selectedTheme == null &&
+        _selectedTopic == null &&
+        _selectedSourceId == null &&
+        _selectedEntity == null &&
+        _selectedKeyword == null;
+
+    if (isDefaultView) {
+      final result = await repository.getFeedWithRaw(
+          page: page,
+          limit: _limit,
+          mode: _selectedFilter,
+          theme: _selectedTheme,
+          topic: _selectedTopic,
+          sourceId: _selectedSourceId,
+          entity: _selectedEntity,
+          keyword: _selectedKeyword,
+          serein: isSerein);
+      _hasNext = result.feed.pagination.hasNext && result.feed.items.isNotEmpty;
+      // Persist in the background — cache write failures never block the UI.
+      _persistDefaultFeedCache(result.raw);
+      return result.feed;
+    }
+
     final response = await repository.getFeed(
         page: page,
         limit: _limit,
@@ -208,6 +303,18 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _hasNext = response.pagination.hasNext && response.items.isNotEmpty;
 
     return response;
+  }
+
+  /// Best-effort persistence of the default feed response for the current
+  /// user. Silent on error (cache is a pure optimization).
+  void _persistDefaultFeedCache(dynamic rawData) {
+    final authState = ref.read(authStateProvider);
+    final userId = authState.user?.id;
+    if (userId == null) return;
+    final cache = ref.read(feedCacheServiceProvider);
+    if (cache == null) return;
+    // Fire-and-forget: a failed write must never surface to the UI.
+    unawaited(cache.saveRaw(userId, rawData));
   }
 
   Future<void> loadMore() async {
