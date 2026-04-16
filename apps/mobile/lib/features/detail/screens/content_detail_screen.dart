@@ -111,7 +111,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _perspectivesKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
-  double _bridgeStartOffset = 0;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
 
@@ -530,24 +529,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (extent > 0) _articleContentExtent = extent;
   }
 
-  /// Compute layout offsets for bridge zone.
-  /// Re-measures on every call to handle late HTML rendering (images, etc).
+  /// Compute the scroll offset threshold at which the WebView should activate.
+  ///
+  /// Derived from [ScrollPosition.maxScrollExtent] rather than from per-zone
+  /// heights (article, perspectives, bridge). This guarantees the threshold is
+  /// always reachable regardless of the Column layout — header spacer, article
+  /// size, perspectives presence/height all get accounted for automatically.
+  ///
+  /// The old formula (`articleHeight + bridgeHeight`) ignored the top header
+  /// spacer AND the perspectives section, making the threshold unreachable for
+  /// articles without large perspectives (maxScrollExtent < threshold).
   void _computeScrollOffsets() {
-    final articleBox =
-        _articleKey.currentContext?.findRenderObject() as RenderBox?;
-    final bridgeBox =
-        _bridgeKey.currentContext?.findRenderObject() as RenderBox?;
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) return;
 
-    if (articleBox == null || bridgeBox == null) return;
+    final max = position.maxScrollExtent;
+    if (max <= 0) return;
 
-    final articleHeight = articleBox.size.height;
-    final bridgeHeight = bridgeBox.size.height;
-
-    // Update offsets if article height changed (handles late HTML rendering)
-    if ((articleHeight - _bridgeStartOffset).abs() > 1.0) {
-      _bridgeStartOffset = articleHeight;
-      _bridgeEndOffset = articleHeight + bridgeHeight;
-    }
+    // Activate WebView 8px before max scroll so overscroll bounce doesn't
+    // flicker the latch between frames at the very end.
+    _bridgeEndOffset = (max - 8).clamp(0.0, max);
 
     _offsetsComputed = true;
   }
