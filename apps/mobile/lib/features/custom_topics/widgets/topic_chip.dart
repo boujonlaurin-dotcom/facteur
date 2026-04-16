@@ -85,10 +85,16 @@ class TopicChip extends StatelessWidget {
   }
 
   /// Opens the unified article sheet with blur backdrop.
+  ///
+  /// [highlightInitialSection] triggers a pulse-glow on the primary control
+  /// (slider or main CTA) of [initialSection] — used when the sheet is opened
+  /// from the post-swipe feedback banner to hint the user toward the slider
+  /// they should adjust.
   static Future<void> showArticleSheet(
     BuildContext context,
     Content content, {
     ArticleSheetSection initialSection = ArticleSheetSection.topic,
+    bool highlightInitialSection = false,
   }) {
     final topicSlug = content.topics.isNotEmpty ? content.topics.first : '';
     final topicLabel =
@@ -105,6 +111,7 @@ class TopicChip extends StatelessWidget {
           topicSlug: topicSlug,
           topicLabel: topicLabel,
           initialSection: initialSection,
+          highlightInitialSection: highlightInitialSection,
         ),
       ),
     );
@@ -122,12 +129,18 @@ class ArticleSheet extends ConsumerStatefulWidget {
   final String topicLabel;
   final ArticleSheetSection initialSection;
 
+  /// When true, the slider/CTA of [initialSection] pulses for ~2s after the
+  /// sheet opens. Used to hint the user toward the control they should
+  /// adjust when entering via the post-swipe feedback banner.
+  final bool highlightInitialSection;
+
   const ArticleSheet({
     super.key,
     required this.content,
     required this.topicSlug,
     required this.topicLabel,
     this.initialSection = ArticleSheetSection.topic,
+    this.highlightInitialSection = false,
   });
 
   @override
@@ -247,6 +260,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     colorScheme: colorScheme,
                     colors: colors,
                     textTheme: textTheme,
+                    shouldHighlight: widget.highlightInitialSection &&
+                        widget.initialSection == ArticleSheetSection.topic,
                   ),
                 ],
               ],
@@ -322,9 +337,12 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 if (_sourceExpanded) ...[
                   const SizedBox(height: FacteurSpacing.space3),
                   _buildSourceContent(
-                      colorScheme: colorScheme,
-                      colors: colors,
-                      textTheme: textTheme),
+                    colorScheme: colorScheme,
+                    colors: colors,
+                    textTheme: textTheme,
+                    shouldHighlight: widget.highlightInitialSection &&
+                        widget.initialSection == ArticleSheetSection.source,
+                  ),
                 ],
               ],
 
@@ -440,6 +458,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     required ColorScheme colorScheme,
     required FacteurColors colors,
     required TextTheme textTheme,
+    bool shouldHighlight = false,
   }) {
     if (isFollowed && matchedTopic != null) {
       return Column(
@@ -520,37 +539,40 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       ? algoProfile.normalizeWeight(
                           algoProfile.subtopicWeights[topicSlug]!)
                       : null;
-                  return TopicPrioritySlider(
-                    currentMultiplier: matchedTopic.priorityMultiplier,
-                    onChanged: (multiplier) async {
-                      try {
-                        await ref
-                            .read(customTopicsProvider.notifier)
-                            .updatePriority(matchedTopic.id, multiplier);
-                      } on DioException catch (e) {
-                        if (context.mounted) {
-                          final detail = e.response?.data;
-                          final msg =
-                              (detail is Map && detail['detail'] is String)
-                                  ? detail['detail'] as String
-                                  : 'Erreur lors de la mise à jour';
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(msg),
-                              duration: const Duration(seconds: 3),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    usageWeight: topicUsage,
-                    onReset: topicUsage != null
-                        ? () async {
-                            final client = ref.read(apiClientProvider);
-                            await client.post('/users/subtopics/$topicSlug/reset');
-                            ref.invalidate(algorithmProfileProvider);
+                  return _PulseHighlight(
+                    active: shouldHighlight,
+                    child: TopicPrioritySlider(
+                      currentMultiplier: matchedTopic.priorityMultiplier,
+                      onChanged: (multiplier) async {
+                        try {
+                          await ref
+                              .read(customTopicsProvider.notifier)
+                              .updatePriority(matchedTopic.id, multiplier);
+                        } on DioException catch (e) {
+                          if (context.mounted) {
+                            final detail = e.response?.data;
+                            final msg =
+                                (detail is Map && detail['detail'] is String)
+                                    ? detail['detail'] as String
+                                    : 'Erreur lors de la mise à jour';
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
                           }
-                        : null,
+                        }
+                      },
+                      usageWeight: topicUsage,
+                      onReset: topicUsage != null
+                          ? () async {
+                              final client = ref.read(apiClientProvider);
+                              await client.post('/users/subtopics/$topicSlug/reset');
+                              ref.invalidate(algorithmProfileProvider);
+                            }
+                          : null,
+                    ),
                   );
                 }),
               ],
@@ -590,49 +612,52 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () async {
-              try {
-                await ref
-                    .read(customTopicsProvider.notifier)
-                    .followTopic(widget.topicLabel,
-                        slugParent: widget.topicSlug);
-              } on DioException catch (e) {
-                if (context.mounted) {
-                  final detail = e.response?.data;
-                  final msg = (detail is Map && detail['detail'] is String)
-                      ? detail['detail'] as String
-                      : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(msg),
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
+        _PulseHighlight(
+          active: shouldHighlight,
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                try {
+                  await ref
+                      .read(customTopicsProvider.notifier)
+                      .followTopic(widget.topicLabel,
+                          slugParent: widget.topicSlug);
+                } on DioException catch (e) {
+                  if (context.mounted) {
+                    final detail = e.response?.data;
+                    final msg = (detail is Map && detail['detail'] is String)
+                        ? detail['detail'] as String
+                        : 'Erreur lors de l\'ajout de ${widget.topicLabel}';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
                 }
-              }
-            },
-            icon: Icon(
-              PhosphorIcons.plus(),
-              size: 16,
-              color: Colors.white,
-            ),
-            label: const Text(
-              'Suivre ce sujet',
-              style: TextStyle(
+              },
+              icon: Icon(
+                PhosphorIcons.plus(),
+                size: 16,
                 color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
               ),
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(FacteurRadius.medium),
+              label: const Text(
+                'Suivre ce sujet',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                ),
               ),
             ),
           ),
@@ -710,6 +735,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     required ColorScheme colorScheme,
     required FacteurColors colors,
     required TextTheme textTheme,
+    bool shouldHighlight = false,
   }) {
     return Builder(builder: (context) {
       final sourcesAsync = ref.watch(userSourcesProvider);
@@ -727,35 +753,38 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  await ref
-                      .read(userSourcesProvider.notifier)
-                      .toggleTrust(widget.content.source.id, false);
-                  ref.invalidate(userSourcesProvider);
-                },
-                icon: Icon(
-                  PhosphorIcons.plus(),
-                  size: 16,
-                  color: Colors.white,
-                ),
-                label: const Text(
-                  'Suivre cette source',
-                  style: TextStyle(
+            _PulseHighlight(
+              active: shouldHighlight,
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    await ref
+                        .read(userSourcesProvider.notifier)
+                        .toggleTrust(widget.content.source.id, false);
+                    ref.invalidate(userSourcesProvider);
+                  },
+                  icon: Icon(
+                    PhosphorIcons.plus(),
+                    size: 16,
                     color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
                   ),
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(FacteurRadius.medium),
+                  label: const Text(
+                    'Suivre cette source',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(FacteurRadius.medium),
+                    ),
                   ),
                 ),
               ),
@@ -892,17 +921,20 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       final algoProfile = ref.watch(algorithmProfileProvider).valueOrNull;
                       final sourceId = widget.content.source.id;
                       final sourceUsage = algoProfile?.sourceAffinities[sourceId];
-                      return PrioritySlider(
-                        currentMultiplier: currentMultiplier,
-                        onChanged: (multiplier) {
-                          ref
-                              .read(userSourcesProvider.notifier)
-                              .updateWeight(
-                                widget.content.source.id,
-                                multiplier,
-                              );
-                        },
-                        usageWeight: sourceUsage,
+                      return _PulseHighlight(
+                        active: shouldHighlight,
+                        child: PrioritySlider(
+                          currentMultiplier: currentMultiplier,
+                          onChanged: (multiplier) {
+                            ref
+                                .read(userSourcesProvider.notifier)
+                                .updateWeight(
+                                  widget.content.source.id,
+                                  multiplier,
+                                );
+                          },
+                          usageWeight: sourceUsage,
+                        ),
                       );
                     }),
                   ],
@@ -1333,6 +1365,97 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Pulse-glow highlight used to draw attention to a control inside
+/// [ArticleSheet] when the sheet is opened from the post-swipe feedback
+/// banner.
+///
+/// Renders a terracotta [BoxShadow] that fades in/out for 3 cycles of 700 ms,
+/// starting 300 ms after build (so the sheet's slide-in animation finishes
+/// first). When [active] is `false`, renders [child] verbatim (no shadow,
+/// no animation, no rebuilds).
+class _PulseHighlight extends StatefulWidget {
+  final Widget child;
+  final bool active;
+
+  const _PulseHighlight({required this.child, required this.active});
+
+  @override
+  State<_PulseHighlight> createState() => _PulseHighlightState();
+}
+
+class _PulseHighlightState extends State<_PulseHighlight>
+    with SingleTickerProviderStateMixin {
+  static const _cycleDuration = Duration(milliseconds: 700);
+  static const _startDelay = Duration(milliseconds: 300);
+  static const _cycles = 3;
+
+  late final AnimationController _ctrl;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: _cycleDuration);
+    _glow = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 50,
+      ),
+    ]).animate(_ctrl);
+
+    if (widget.active) {
+      Future.delayed(_startDelay, () {
+        if (!mounted) return;
+        _ctrl.repeat();
+        Future.delayed(_cycleDuration * _cycles, () {
+          if (!mounted) return;
+          _ctrl.stop();
+          _ctrl.value = 0;
+        });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active) return widget.child;
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (_, child) {
+        final v = _glow.value;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+            boxShadow: v > 0
+                ? [
+                    BoxShadow(
+                      color: _terracotta.withOpacity(0.45 * v),
+                      blurRadius: 16 * v,
+                      spreadRadius: 2 * v,
+                    ),
+                  ]
+                : const [],
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }

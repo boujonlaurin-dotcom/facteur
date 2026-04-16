@@ -4,12 +4,17 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 
-/// Wraps a card to allow swiping right to open and optionally left to adjust.
+/// Terracotta accent — discreet "removal" semantic shared with the inline
+/// feedback banner that replaces a dismissed card.
+const Color _terracotta = Color(0xFFE07A5F);
+
+/// Wraps a card to allow swiping right to open and optionally left to dismiss.
 ///
 /// Right swipe: reveals a blue "Lire" background. Past threshold → [onSwipeOpen].
-/// Left swipe: reveals a gray "Régler" background. Past threshold → card snaps
-/// back and [onSwipeDismiss] fires. Left swipe only active when [onSwipeDismiss]
-/// is non-null (backwards compatible).
+/// Left swipe: reveals a discreet terracotta "Masquer" background. Past
+/// threshold → card snaps back and [onSwipeDismiss] fires (parent typically
+/// replaces the card with an inline feedback banner). Left swipe only active
+/// when [onSwipeDismiss] is non-null (backwards compatible).
 ///
 /// [enableHintAnimation]: plays a subtle micro-slide to hint at left-swipe
 /// discoverability. Should only be true once per app lifetime.
@@ -260,15 +265,14 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                 ),
               ),
             ),
-          // Left-swipe background: gray "Masquer"
+          // Left-swipe background: discreet terracotta "Masquer"
           if (_dragExtent < 0)
             Positioned.fill(
               child: Container(
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.only(right: 24),
                 decoration: BoxDecoration(
-                  color: colors.textSecondary
-                      .withOpacity(0.08 * leftProgress),
+                  color: _terracotta.withOpacity(0.07 * leftProgress),
                   borderRadius: BorderRadius.circular(FacteurRadius.small),
                 ),
                 child: Opacity(
@@ -277,18 +281,17 @@ class _SwipeToOpenCardState extends State<SwipeToOpenCard>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Régler',
+                        'Masquer',
                         style: TextStyle(
-                          color: colors.textSecondary.withOpacity(0.5),
+                          color: _terracotta.withOpacity(0.7),
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Icon(
-                        PhosphorIcons.slidersHorizontal(
-                            PhosphorIconsStyle.bold),
-                        color: colors.textSecondary.withOpacity(0.5),
+                        PhosphorIcons.eyeClosed(PhosphorIconsStyle.bold),
+                        color: _terracotta.withOpacity(0.7),
                         size: 22,
                       ),
                     ],
