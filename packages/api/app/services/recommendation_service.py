@@ -2129,7 +2129,14 @@ class RecommendationService:
                 UserContentStatus.is_hidden,
             )
         else:
-            # Default feed: exclude hidden, saved, seen, consumed
+            # Default feed: exclude hidden, saved, seen, consumed, et les
+            # articles récemment impressionés (pull-to-refresh) ou marqués
+            # comme "déjà vus". Traduit en SQL la sémantique de
+            # ImpressionLayer (<1h = "invisible après refresh") qui est
+            # sinon ignorée par le tri chronologique.
+            impression_cutoff = datetime.datetime.now(
+                datetime.UTC
+            ) - datetime.timedelta(hours=ScoringWeights.IMPRESSION_HIDE_WINDOW_HOURS)
             exists_stmt = exists().where(
                 UserContentStatus.content_id == Content.id,
                 UserContentStatus.user_id == user_id,
@@ -2139,6 +2146,8 @@ class RecommendationService:
                     UserContentStatus.status.in_(
                         [ContentStatus.SEEN, ContentStatus.CONSUMED]
                     ),
+                    UserContentStatus.last_impressed_at > impression_cutoff,
+                    UserContentStatus.manually_impressed.is_(True),
                 ),
             )
 
