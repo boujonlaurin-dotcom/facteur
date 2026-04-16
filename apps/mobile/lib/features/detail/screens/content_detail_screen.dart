@@ -68,7 +68,7 @@ const double _kHeaderContentHeight = 50;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
-const double _kFooterContentHeight = 68.0;
+const double _kFooterContentHeight = 82.0;
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -616,9 +616,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
-    if (shouldActivate != _isWebViewActive) {
+    // One-way latch: once WebView is active, never deactivate it.
+    if (shouldActivate && !_isWebViewActive) {
       setState(() {
-        _isWebViewActive = shouldActivate;
+        _isWebViewActive = true;
       });
     }
   }
@@ -1961,8 +1962,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     const iconButtonStyle = ButtonStyle(
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      padding: WidgetStatePropertyAll(EdgeInsets.all(10)),
-      minimumSize: WidgetStatePropertyAll(Size(46, 46)),
+      padding: WidgetStatePropertyAll(EdgeInsets.all(12)),
+      minimumSize: WidgetStatePropertyAll(Size(56, 56)),
       shape: WidgetStatePropertyAll(CircleBorder()),
     );
 
@@ -1990,14 +1991,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               // "Lire sur [Source]" — fills available space
               Expanded(
                 child: SizedBox(
-                  height: 44,
+                  height: 53,
                   child: OutlinedButton(
                     onPressed: _onReadOnSiteTap,
                     style: OutlinedButton.styleFrom(
                       backgroundColor: Colors.white.withValues(alpha: 0.5),
                       foregroundColor: colors.textPrimary,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       side: BorderSide(
                           color: colors.border.withValues(alpha: 0.5)),
@@ -2127,7 +2128,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               ScaleTransition(
                 scale: _likeScaleAnimation,
                 child: IconButton(
-                  style: iconButtonStyle,
+                  style: iconButtonStyle.copyWith(
+                    backgroundColor: content.isLiked
+                        ? WidgetStatePropertyAll(
+                            SunflowerIcon.sunflowerYellow
+                                .withValues(alpha: 0.18))
+                        : null,
+                  ),
                   onPressed: _toggleLike,
                   icon: SunflowerIcon(
                     isActive: content.isLiked,
@@ -2763,7 +2770,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             child: IgnorePointer(
               ignoring: _isWebViewActive,
               child: ColoredBox(
-                color: _ctaTapped
+                color: _isWebViewActive
                     ? const Color(0x00000000)
                     : colors.backgroundPrimary,
                 child: SingleChildScrollView(
@@ -2868,6 +2875,81 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               height: _kFooterContentHeight + bottomInset),
                         ),
                       ),
+
+                      // ZONE 2: Inline perspectives (articles only)
+                      if (_perspectivesResponse != null ||
+                          _perspectivesLoading) ...[
+                        Container(
+                          color: colors.backgroundPrimary,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: FacteurSpacing.space4),
+                            child: Divider(color: colors.border, height: 1),
+                          ),
+                        ),
+                        Container(
+                          color: colors.backgroundPrimary,
+                          child: _perspectivesLoading &&
+                                  _perspectivesResponse == null
+                              ? const Center(
+                                  child: CircularProgressIndicator())
+                              : _perspectivesResponse != null
+                                  ? PerspectivesInlineSection(
+                                      key: _perspectivesKey,
+                                      perspectives: _perspectivesResponse!
+                                          .perspectives
+                                          .map(
+                                            (PerspectiveData p) =>
+                                                Perspective(
+                                              title: p.title,
+                                              url: p.url,
+                                              sourceName: p.sourceName,
+                                              sourceDomain: p.sourceDomain,
+                                              biasStance: p.biasStance,
+                                              publishedAt: p.publishedAt,
+                                            ),
+                                          )
+                                          .toList(),
+                                      biasDistribution:
+                                          _perspectivesResponse!
+                                              .biasDistribution,
+                                      keywords:
+                                          _perspectivesResponse!.keywords,
+                                      sourceBiasStance:
+                                          _perspectivesResponse!
+                                              .sourceBiasStance,
+                                      sourceName:
+                                          _content?.source.name ?? '',
+                                      contentId: widget.contentId,
+                                      comparisonQuality:
+                                          _perspectivesResponse!
+                                              .comparisonQuality,
+                                      externalSelectedSegments:
+                                          _perspectivesSelectedSegments,
+                                      onSegmentTap:
+                                          _onPerspectivesSegmentTap,
+                                      onClearSegments: () {
+                                        setState(() =>
+                                            _perspectivesSelectedSegments =
+                                                {});
+                                        WidgetsBinding.instance
+                                            .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            _checkAtPerspectivesSection();
+                                          }
+                                        });
+                                      },
+                                      analysisState:
+                                          _perspectivesAnalysisState,
+                                      analysisText:
+                                          _perspectivesAnalysisText,
+                                      onRequestAnalysis:
+                                          _requestPerspectivesAnalysis,
+                                      analysisZoneKey: _analysisZoneKey,
+                                    )
+                                  : const SizedBox.shrink(),
+                        ),
+                      ],
 
                       // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                       // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
