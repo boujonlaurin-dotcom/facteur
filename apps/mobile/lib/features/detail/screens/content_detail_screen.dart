@@ -1011,6 +1011,34 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Capture max progress reached before disposing ValueNotifier
     final progressPct = (_maxReadingProgress * 100).round().clamp(0, 100);
 
+    // Persist reading progress + analytics on close.
+    // Must happen before super.dispose() — ref.read() requires active ConsumerState.
+    try {
+      if (_content != null) {
+        final duration = DateTime.now().difference(_startTime).inSeconds;
+
+        // Persist reading progress via status endpoint
+        if (progressPct > 0) {
+          final supabase = Supabase.instance.client;
+          final apiClient = ApiClient(supabase);
+          final repository = FeedRepository(apiClient);
+          repository.updateContentStatusWithProgress(
+            _content!.id,
+            progressPct,
+          );
+        }
+
+        // Track article read duration
+        ref.read(analyticsServiceProvider).trackArticleRead(
+              _content!.id,
+              _content!.source.id,
+              duration,
+            );
+      }
+    } catch (e) {
+      debugPrint('Error tracking on dispose: $e');
+    }
+
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
@@ -1041,59 +1069,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _showStickyPerspectivesHeader.dispose();
     _scrollController.dispose();
     _inAppScrollController.dispose();
-    super.dispose();
-
-    // Persist reading progress + analytics on close
-    try {
-      if (_content != null) {
-        final duration = DateTime.now().difference(_startTime).inSeconds;
-
-        // Persist reading progress via status endpoint
-        if (progressPct > 0) {
-          final supabase = Supabase.instance.client;
-          final apiClient = ApiClient(supabase);
-          final repository = FeedRepository(apiClient);
-          repository.updateContentStatusWithProgress(
-            _content!.id,
-            progressPct,
-          );
-        }
-
-        // Track article read duration
-        ref.read(analyticsServiceProvider).trackArticleRead(
-              _content!.id,
-              _content!.source.id,
-              duration,
-            );
-      }
-    } catch (e) {
-      debugPrint('Error tracking on dispose: $e');
-    }
-
-    _readingTimer?.cancel();
-    _noteNudgeTimer?.cancel();
-    _scrollStopTimer?.cancel();
-    _inactivityTimer?.cancel();
-    _videoPlayHideTimer?.cancel();
-    _linkCopiedFabTimer?.cancel();
-    _linkCopiedHeaderTimer?.cancel();
-    _fabController.dispose();
-    _bookmarkBounceController.dispose();
-    _likeBounceController.dispose();
-    _fabReappearController.dispose();
-    _shareFabController.dispose();
-    _exitAnimController.dispose();
-    _headerAutoController.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    _fabOpacity.dispose();
-    _headerOffset.dispose();
-    _readingProgress.removeListener(_onReadingProgressNudge);
-    _readingProgress.removeListener(_onShareFabProgress);
-    _readingProgress.dispose();
-    _scrollController.removeListener(_onScrollToSite);
-    _scrollController.removeListener(_onScrollReadingProgress);
-
-    _scrollController.dispose();
     super.dispose();
   }
 
