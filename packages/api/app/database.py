@@ -1,6 +1,8 @@
 """Configuration de la base de données avec SQLAlchemy async."""
 
-from sqlalchemy import text
+import time
+
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
@@ -81,6 +83,27 @@ else:
             "prepare_threshold": None,
         },
     )
+
+
+# Pool observability: log connections held longer than 10 seconds.
+# Helps detect session leaks that cause pool exhaustion.
+if _use_queue_pool:
+
+    @event.listens_for(engine.sync_engine, "checkout")
+    def _on_checkout(dbapi_conn, connection_record, connection_proxy):
+        connection_record._checkout_time = time.monotonic()
+
+    @event.listens_for(engine.sync_engine, "checkin")
+    def _on_checkin(dbapi_conn, connection_record):
+        checkout_time = getattr(connection_record, "_checkout_time", None)
+        if checkout_time:
+            duration = time.monotonic() - checkout_time
+            if duration > 10.0:
+                logger.warning(
+                    "long_session_checkout",
+                    duration_s=round(duration, 1),
+                )
+            connection_record._checkout_time = None
 
 
 # Session factory
@@ -177,12 +200,20 @@ async def close_db() -> None:
 
 
 async def get_db() -> AsyncSession:
-    """Dependency pour obtenir une session de base de données."""
+    """Dependency pour obtenir une session de base de données.
+
+    Uses ``except BaseException`` (not ``Exception``) so that
+    ``asyncio.CancelledError`` — a ``BaseException`` since Python 3.9 —
+    also triggers a rollback.  Without this, a cancelled handler skips
+    the rollback branch and relies solely on ``finally`` to close the
+    session.  If ``close()`` itself is interrupted the connection leaks
+    into an "idle in transaction" state, gradually filling the pool.
+    """
     async with async_session_maker() as session:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except BaseException:
             await session.rollback()
             raise
         finally:
