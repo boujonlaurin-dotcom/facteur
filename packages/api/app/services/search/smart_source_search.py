@@ -402,7 +402,7 @@ class SmartSourceSearchService:
         )
         return [
             self._build_result(url, "brave", user_themes, det, title, desc)
-            for (url, title, desc), det in zip(urls_and_meta, detections)
+            for (url, title, desc), det in zip(urls_and_meta, detections, strict=True)
         ]
 
     async def _search_google_news(
@@ -419,7 +419,7 @@ class SmartSourceSearchService:
         )
         return [
             self._build_result(url, "google_news", user_themes, det)
-            for url, det in zip(urls, detections)
+            for url, det in zip(urls, detections, strict=True)
         ]
 
     async def _search_mistral(self, query: str, user_themes: list[str]) -> list[dict]:
@@ -467,7 +467,7 @@ class SmartSourceSearchService:
                 self._build_result(
                     url, "mistral", user_themes, det, name, fallback_type=stype
                 )
-                for (url, name, stype), det in zip(urls_and_meta, detections)
+                for (url, name, stype), det in zip(urls_and_meta, detections, strict=True)
             ]
 
         except Exception as e:
