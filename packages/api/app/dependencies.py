@@ -246,9 +246,36 @@ async def get_current_user_id(
                     # DB unreachable — fail-open: user has a valid JWT, allow access
                     # rather than blocking confirmed users due to infrastructure issues
                     logger.warning("auth_db_unreachable_fail_open", user_id=user_id)
+                    # Sentry breadcrumb for baseline tracking of fail-open usage
+                    # (cf. docs/bugs/bug-feed-403-auth-recovery.md)
+                    sentry_sdk.add_breadcrumb(
+                        category="auth",
+                        message="auth_db_unreachable_fail_open",
+                        level="info",
+                        data={"user_id": user_id, "jwt_alg": alg},
+                    )
                     return user_id
                 else:
                     logger.warning("auth_user_blocked_unconfirmed", user_id=user_id)
+                    # Sentry event : permet de mesurer la fréquence des 403
+                    # `Email not confirmed` réellement déclenchés (vs. faux
+                    # positifs récupérés côté mobile par refresh+retry).
+                    # Cf. docs/bugs/bug-feed-403-auth-recovery.md.
+                    with sentry_sdk.push_scope() as scope:
+                        scope.set_tag("auth.reason", "email_not_confirmed")
+                        scope.set_tag("auth.jwt_alg", alg)
+                        scope.set_tag("auth.provider", provider)
+                        scope.set_context(
+                            "auth",
+                            {
+                                "user_id": user_id,
+                                "jwt_email_verified": email_verified,
+                                "db_check": False,
+                            },
+                        )
+                        sentry_sdk.capture_message(
+                            "auth_user_blocked_unconfirmed", level="warning"
+                        )
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Email not confirmed",

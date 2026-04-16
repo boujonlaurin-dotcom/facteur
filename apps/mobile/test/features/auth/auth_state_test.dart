@@ -175,5 +175,49 @@ void main() {
       expect(state.isEmailConfirmed, isTrue,
           reason: 'Apple Sign-In doit être considéré comme confirmé d\'office');
     });
+
+    // --- Tests pour lastTokenRefreshAt (signal d'invalidation feedProvider) ---
+    //
+    // Bug : au resume après JWT expiré, refreshUser() rafraîchissait le token
+    // Supabase MAIS ne signalait pas aux data providers qu'ils pouvaient
+    // re-fetcher. Conséquence : feedProvider continuait de servir du state
+    // stale, et la première requête partait avec l'ancien JWT → 403.
+    //
+    // Fix : `lastTokenRefreshAt` est bumpé à chaque event `tokenRefreshed`
+    // reçu du listener Supabase. Les providers qui `ref.watch(authStateProvider)`
+    // voient une nouvelle identité d'AuthState et rebuildent.
+    //
+    // Cf. docs/bugs/bug-feed-403-auth-recovery.md.
+    test('lastTokenRefreshAt default is null', () {
+      const state = AuthState();
+      expect(state.lastTokenRefreshAt, isNull);
+    });
+
+    test('copyWith(lastTokenRefreshAt: now) sets the field', () {
+      const state = AuthState();
+      final ts = DateTime.now();
+      final updated = state.copyWith(lastTokenRefreshAt: ts);
+      expect(updated.lastTokenRefreshAt, ts);
+    });
+
+    test('copyWith without lastTokenRefreshAt preserves the previous value', () {
+      final ts = DateTime.utc(2026, 1, 1);
+      final state = AuthState(lastTokenRefreshAt: ts);
+      final updated = state.copyWith(isLoading: true);
+      expect(updated.lastTokenRefreshAt, ts,
+          reason: 'copyWith must not wipe lastTokenRefreshAt when not passed');
+    });
+
+    test(
+        'two copyWith with different lastTokenRefreshAt produce distinct AuthState instances '
+        '(Riverpod listeners rebuild)', () {
+      final t1 = DateTime.utc(2026, 1, 1, 10, 0, 0);
+      final t2 = DateTime.utc(2026, 1, 1, 10, 45, 0);
+      final s1 = AuthState(lastTokenRefreshAt: t1);
+      final s2 = s1.copyWith(lastTokenRefreshAt: t2);
+      expect(identical(s1, s2), isFalse);
+      expect(s1.lastTokenRefreshAt, t1);
+      expect(s2.lastTokenRefreshAt, t2);
+    });
   });
 }

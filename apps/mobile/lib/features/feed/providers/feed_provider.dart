@@ -369,8 +369,31 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         carousels: response.carousels,
       ));
     } catch (e, stack) {
-      state = AsyncError(e, stack);
-      rethrow;
+      // Recovery policy : ne JAMAIS figer le provider en AsyncError si on a
+      // déjà des items à l'écran. Un AsyncError wipe `state.value` → tous les
+      // handlers guardés sur `if (currentState == null) return;` deviennent
+      // no-op (muteSource, toggleSave, etc.), ET un 2ème pull-to-refresh reste
+      // coincé sur le même cycle d'échec car le provider semble « gelé ».
+      //
+      // On ré-émet donc l'état précédent pour débloquer les retries UI.
+      // L'exception est re-throw via le catch du caller (FeedScreen._refresh
+      // ne catch pas — le RefreshIndicator absorbe le throw et se ferme),
+      // et les handlers optimistes peuvent re-tenter leur opération.
+      //
+      // Cf. docs/bugs/bug-feed-403-auth-recovery.md
+      final previous = state.valueOrNull;
+      if (previous != null) {
+        // ignore: avoid_print
+        print(
+            'FeedNotifier: refresh failed, keeping previous feed state: $e');
+        state = AsyncData(previous);
+      } else {
+        // Premier chargement jamais abouti : AsyncError est la bonne
+        // sémantique (le screen affichera un état d'erreur avec retry).
+        // ignore: avoid_print
+        print('FeedNotifier: refresh failed with no previous state: $e');
+        state = AsyncError(e, stack);
+      }
     }
   }
 
