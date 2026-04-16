@@ -466,7 +466,9 @@ class RSSParser:
             href = a_tag.get("href") or ""
             matched = _FEED_URL_LIKE_PATTERN.search(href)
             if not matched:
-                link_text = (a_tag.get_text() + " " + (a_tag.get("title") or "")).lower()
+                link_text = (
+                    a_tag.get_text() + " " + (a_tag.get("title") or "")
+                ).lower()
                 if not any(kw in link_text for kw in _FEED_TEXT_KEYWORDS):
                     continue
             if href.startswith("/"):
@@ -505,9 +507,7 @@ class RSSParser:
 
             if feed_text is None:
                 continue
-            feed_data = await loop.run_in_executor(
-                None, feedparser.parse, feed_text
-            )
+            feed_data = await loop.run_in_executor(None, feedparser.parse, feed_text)
             if len(feed_data.entries) > 0:
                 return await self._format_response(candidate, feed_data)
         return None
@@ -860,9 +860,7 @@ class RSSParser:
         # fetching an HTML "RSS directory" page (/rss/, /flux-rss/)
         # and scanning it for the real feed URLs. Includes a
         # curl-cffi fallback for anti-bot-protected directories.
-        index_feed = await self._try_feed_index_pages(
-            url, html_index_candidates, loop
-        )
+        index_feed = await self._try_feed_index_pages(url, html_index_candidates, loop)
         if index_feed is not None:
             detection_log.append(f"index_page={index_feed.feed_url}")
             return index_feed
