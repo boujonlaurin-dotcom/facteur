@@ -425,7 +425,7 @@ async def update_source_weight(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourceResponse:
-    """Mettre à jour le poids d'une source (0.5, 1.0, 2.0)."""
+    """Mettre à jour le poids d'une source (0.2, 1.0, 2.0)."""
     service = SourceService(db)
     result = await service.update_source_weight(
         user_id, str(source_id), data.priority_multiplier
