@@ -39,13 +39,15 @@ import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
-import '../../custom_topics/widgets/cluster_chip.dart';
-import '../widgets/keyword_overflow_chip.dart';
-import '../widgets/entity_overflow_chip.dart';
+// DEADCODE: Feature "X autres articles" masquée
+// import '../../custom_topics/widgets/cluster_chip.dart';
+// import '../widgets/keyword_overflow_chip.dart';
+// import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
@@ -460,64 +462,80 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
 
                           return Row(
                             children: [
-                              CompactSourceChip(
-                                followedSources: followedSources,
-                                selectedSourceId: selectedSourceId,
-                                selectedSourceName: selectedSourceName,
-                                selectedSourceLogoUrl: selectedSourceLogoUrl,
-                                onSourceChanged: (sourceId) {
-                                  if (sourceId != null) {
-                                    _withFeedLoading(
-                                        () => notifier.setSource(sourceId));
-                                  } else {
-                                    notifier.setSource(null);
-                                  }
-                                  _scrollToTop();
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              CompactThemeChip(
-                                followedTopics: customTopics,
-                                selectedSlug: notifier.selectedTopic ??
-                                    notifier.selectedTheme ??
-                                    notifier.selectedEntity,
-                                selectedName: _selectedInterestName,
-                                selectedIsTheme: _selectedIsTheme,
-                                onInterestChanged: (slug, name,
-                                    {isTheme = false, isEntity = false}) {
-                                  setState(() {
-                                    _selectedInterestName = name;
-                                    _selectedIsTheme = isTheme;
-                                  });
-                                  _withFeedLoading(() async {
-                                    if (slug == null) {
-                                      await notifier.setTopic(null);
-                                      await notifier.setTheme(null);
-                                      await notifier.setEntity(null);
-                                    } else if (isTheme) {
-                                      await notifier.setTheme(slug);
-                                    } else if (isEntity) {
-                                      await notifier.setEntity(slug);
+                              Flexible(
+                                child: CompactSourceChip(
+                                  followedSources: followedSources,
+                                  selectedSourceId: selectedSourceId,
+                                  selectedSourceName: selectedSourceName,
+                                  selectedSourceLogoUrl: selectedSourceLogoUrl,
+                                  onSourceChanged: (sourceId) {
+                                    if (sourceId != null) {
+                                      _withFeedLoading(
+                                          () => notifier.setSource(sourceId));
                                     } else {
-                                      await notifier.setTopic(slug);
+                                      notifier.setSource(null);
                                     }
-                                  });
-                                  _scrollToTop();
-                                },
+                                    _scrollToTop();
+                                  },
+                                ),
                               ),
                               const SizedBox(width: 8),
-                              CompactSearchChip(
-                                activeKeyword: notifier.selectedKeyword,
-                                onSearchChanged: (keyword) {
-                                  _withFeedLoading(
-                                      () => notifier.setKeyword(keyword));
-                                  _scrollToTop();
-                                },
+                              Flexible(
+                                child: CompactThemeChip(
+                                  followedTopics: customTopics,
+                                  selectedSlug: notifier.selectedTopic ??
+                                      notifier.selectedTheme ??
+                                      notifier.selectedEntity,
+                                  selectedName: _selectedInterestName,
+                                  selectedIsTheme: _selectedIsTheme,
+                                  onInterestChanged: (slug, name,
+                                      {isTheme = false, isEntity = false}) {
+                                    setState(() {
+                                      _selectedInterestName = name;
+                                      _selectedIsTheme = isTheme;
+                                    });
+                                    _withFeedLoading(() async {
+                                      if (slug == null) {
+                                        await notifier.setTopic(null);
+                                        await notifier.setTheme(null);
+                                        await notifier.setEntity(null);
+                                      } else if (isTheme) {
+                                        await notifier.setTheme(slug);
+                                      } else if (isEntity) {
+                                        await notifier.setEntity(slug);
+                                      } else {
+                                        await notifier.setTopic(slug);
+                                      }
+                                    });
+                                    _scrollToTop();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: CompactSearchChip(
+                                  activeKeyword: notifier.selectedKeyword,
+                                  onSearchChanged: (keyword) {
+                                    _withFeedLoading(
+                                        () => notifier.setKeyword(keyword));
+                                    _scrollToTop();
+                                  },
+                                ),
                               ),
                             ],
                           );
                         }),
                       ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Consumer(builder: (context, ref, _) {
+                        final keyword =
+                            ref.watch(feedProvider.notifier).selectedKeyword;
+                        if (keyword == null || keyword.trim().isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return FollowKeywordSuggestionCard(keyword: keyword);
+                      }),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     // Brief loading indicator when serein toggle triggers feed refresh
@@ -1004,6 +1022,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               }
                                             : null,
                                       ),
+                                      // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
+                                      /*
                                       clusterChipWidget:
                                           // Suppress overflow chips when filter is active
                                           // (diversification is bypassed server-side)
@@ -1031,6 +1051,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                       : content.keywordOverflowCount >= 4
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                           : const SizedBox.shrink(),
+                                      */
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),

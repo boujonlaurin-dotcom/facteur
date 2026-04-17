@@ -68,17 +68,14 @@ class TopicChip extends StatelessWidget {
               : Color.lerp(colors.backgroundSecondary, Colors.black, 0.003)!,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 80),
-          child: Text(
-            topicLabel,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+        child: Text(
+          topicLabel,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );

@@ -110,11 +110,14 @@ class Content {
   final bool isFollowedSource; // Feed fallback: source suivie par l'utilisateur
 
   // Epic 11: Cluster fields (populated by FeedRepository when clusters are present)
+  // DEADCODE: Feature "X autres articles" masquée (encombrement / utilité actuelle). Conservé pour mémoire.
+  /*
   final String? clusterTopic;
   final int clusterHiddenCount;
   final List<String> clusterHiddenIds;
   final List<Content> clusterHiddenArticles;
   final List<KeywordOverflowSource> clusterSources;
+  */
 
   // Epic 12: Source overflow (populated by FeedRepository from diversification)
   final int sourceOverflowCount;
@@ -169,11 +172,14 @@ class Content {
     this.noteText,
     this.noteUpdatedAt,
     this.isFollowedSource = false,
+    // DEADCODE: Feature masquée
+    /*
     this.clusterTopic,
     this.clusterHiddenCount = 0,
     this.clusterHiddenIds = const [],
     this.clusterHiddenArticles = const [],
     this.clusterSources = const [],
+    */
     this.sourceOverflowCount = 0,
     this.topicOverflowCount = 0,
     this.topicOverflowLabel,
@@ -253,11 +259,14 @@ class Content {
       noteText: null,
       noteUpdatedAt: null,
       isFollowedSource: isFollowedSource,
+      // DEADCODE: Feature masquée
+      /*
       clusterTopic: clusterTopic,
       clusterHiddenCount: clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds,
       clusterHiddenArticles: clusterHiddenArticles,
       clusterSources: clusterSources,
+      */
       sourceOverflowCount: sourceOverflowCount,
       topicOverflowCount: topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel,
@@ -369,11 +378,14 @@ class Content {
     String? noteText,
     DateTime? noteUpdatedAt,
     bool? isFollowedSource,
+    // DEADCODE: Feature masquée
+    /*
     String? clusterTopic,
     int? clusterHiddenCount,
     List<String>? clusterHiddenIds,
     List<Content>? clusterHiddenArticles,
     List<KeywordOverflowSource>? clusterSources,
+    */
     int? sourceOverflowCount,
     int? topicOverflowCount,
     String? topicOverflowLabel,
@@ -418,12 +430,15 @@ class Content {
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
       isFollowedSource: isFollowedSource ?? this.isFollowedSource,
+      // DEADCODE: Feature masquée
+      /*
       clusterTopic: clusterTopic ?? this.clusterTopic,
       clusterHiddenCount: clusterHiddenCount ?? this.clusterHiddenCount,
       clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
       clusterHiddenArticles:
           clusterHiddenArticles ?? this.clusterHiddenArticles,
       clusterSources: clusterSources ?? this.clusterSources,
+      */
       sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
       topicOverflowCount: topicOverflowCount ?? this.topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel ?? this.topicOverflowLabel,

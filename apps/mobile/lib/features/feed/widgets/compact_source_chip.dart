@@ -220,12 +220,16 @@ class _ActiveChip extends StatelessWidget {
                 size: 18,
               ),
             const SizedBox(width: 6),
-            Text(
-              sourceName,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: primary,
+            Flexible(
+              child: Text(
+                sourceName,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: primary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             GestureDetector(
