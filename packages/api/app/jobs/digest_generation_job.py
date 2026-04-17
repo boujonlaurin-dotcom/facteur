@@ -282,9 +282,7 @@ class DigestGenerationJob:
                     },
                 )
             except Exception as exc:  # pragma: no cover — defensive
-                logger.warning(
-                    "digest_generation_posthog_failed", error=str(exc)
-                )
+                logger.warning("digest_generation_posthog_failed", error=str(exc))
 
             return {
                 "success": True,

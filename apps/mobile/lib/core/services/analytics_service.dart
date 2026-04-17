@@ -157,17 +157,30 @@ class AnalyticsService {
   // ──────────────────────────────────────────────────────────────
 
   /// @deprecated Use [trackContentInteraction] with action='read' instead.
+  ///
+  /// Story 14.1 — even though this is deprecated, it's still the only call
+  /// site for feed/detail reading flows (which carry real `timeSpentSeconds`).
+  /// We MUST mirror to PostHog from here too, otherwise `article_read` and
+  /// `article_completed` PostHog events would never fire from the surfaces
+  /// where users actually spend reading time. The digest "save" flow that
+  /// uses `trackContentInteraction` hardcodes `timeSpentSeconds: 0`.
   Future<void> trackArticleRead(
     String contentId,
     String sourceId,
     int timeSpentSeconds,
   ) async {
-    await _logEvent('article_read', {
+    final props = {
       'session_id': _sessionId,
       'content_id': contentId,
       'source_id': sourceId,
       'time_spent_seconds': timeSpentSeconds,
-    });
+    };
+    await _logEvent('article_read', props);
+
+    await _capturePostHog('article_read', props);
+    if (timeSpentSeconds >= 30) {
+      await _capturePostHog('article_completed', props);
+    }
   }
 
   /// @deprecated Use [trackFeedSession] instead.

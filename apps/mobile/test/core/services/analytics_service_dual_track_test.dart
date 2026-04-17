@@ -150,6 +150,28 @@ void main() {
     ).called(2);
   });
 
+  test('trackArticleRead mirrors article_read + article_completed when >=30s',
+      () async {
+    // Story 14.1 — feed/detail surfaces still call the legacy
+    // trackArticleRead, so it must mirror to PostHog with the same
+    // threshold logic as trackContentInteraction. Otherwise
+    // article_completed would never fire from real reading flows.
+    final service = AnalyticsService(api, posthog: posthog);
+    await service.trackArticleRead('c1', 's1', 45);
+
+    final events = posthog.captured.map((e) => e.event).toList();
+    expect(events, containsAll(<String>['article_read', 'article_completed']));
+  });
+
+  test('trackArticleRead <30s emits article_read but NOT completed', () async {
+    final service = AnalyticsService(api, posthog: posthog);
+    await service.trackArticleRead('c1', 's1', 12);
+
+    final events = posthog.captured.map((e) => e.event).toList();
+    expect(events, contains('article_read'));
+    expect(events, isNot(contains('article_completed')));
+  });
+
   test('backend failure does not crash analytics layer', () async {
     when(() => dio.post(any(), data: any(named: 'data')))
         .thenThrow(DioException(requestOptions: RequestOptions(path: '')));
