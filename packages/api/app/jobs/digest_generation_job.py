@@ -267,6 +267,25 @@ class DigestGenerationJob:
                 **self.stats,
             )
 
+            # Story 14.1 — operational event to PostHog for ops dashboards.
+            # Uses a synthetic distinct_id since this is a system-level event.
+            try:
+                from app.services.posthog_client import get_posthog_client
+
+                get_posthog_client().capture(
+                    user_id="system:digest_job",
+                    event="digest_generated",
+                    properties={
+                        "target_date": str(target_date),
+                        "duration_seconds": round(duration, 1),
+                        **self.stats,
+                    },
+                )
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning(
+                    "digest_generation_posthog_failed", error=str(exc)
+                )
+
             return {
                 "success": True,
                 "target_date": str(target_date),

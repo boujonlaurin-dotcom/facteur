@@ -65,6 +65,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import close_db, get_db, init_db, text
 from app.routers import (
+    admin_cohorts,
     analytics,
     app_update,
     auth,
@@ -310,6 +311,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         await ml_worker.stop()
         logger.info("lifespan_ml_worker_stopped")
     stop_scheduler()
+    try:
+        from app.services.posthog_client import get_posthog_client
+
+        get_posthog_client().shutdown()
+    except Exception as exc:
+        logger.warning("lifespan_posthog_shutdown_failed", error=str(exc))
     await close_db()
 
 
@@ -366,6 +373,7 @@ app.include_router(
 )
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
+app.include_router(admin_cohorts.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.exception_handler(Exception)

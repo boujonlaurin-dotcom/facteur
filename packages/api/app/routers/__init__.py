@@ -1,6 +1,7 @@
 """Routers API."""
 
 from app.routers import (
+    admin_cohorts,
     analytics,
     app_update,
     auth,
@@ -20,6 +21,7 @@ from app.routers import (
 )
 
 __all__ = [
+    "admin_cohorts",
     "analytics",
     "app_update",
     "auth",

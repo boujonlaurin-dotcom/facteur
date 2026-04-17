@@ -40,6 +40,9 @@ structlog==24.1.0
 # Error Tracking
 sentry-sdk[fastapi]==1.40.0
 
+# Product Analytics (Story 14.1 — retention cohorts)
+posthog>=3.7.0
+
 # Multipart (file uploads)
 python-multipart==0.0.6
 

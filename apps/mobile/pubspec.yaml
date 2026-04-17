@@ -61,6 +61,9 @@ dependencies:
 
   # Error Tracking
   sentry_flutter: ^9.9.2
+
+  # Product Analytics (Story 14.1 — retention cohorts)
+  posthog_flutter: ^5.0.0
   google_fonts: ^7.0.0
   flutter_animate: ^4.5.2
   haptic_feedback: ^0.6.4+3

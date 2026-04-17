@@ -19,6 +19,7 @@ dependencies = [
     "apscheduler>=3.10.4",
     "structlog>=24.1.0",
     "sentry-sdk[fastapi]>=1.40.0",
+    "posthog>=3.7.0",
     "python-multipart>=0.0.6",
     "alembic>=1.13.1",
     # ML Classification (Story 4.1d)

@@ -94,6 +94,17 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # PostHog (Story 14.1 — retention cohorts)
+    posthog_api_key: str = ""
+    posthog_host: str = "https://eu.i.posthog.com"
+    posthog_enabled: bool = False
+    # Cohort identification (comma-separated emails, case-insensitive)
+    posthog_creator_emails: str = ""
+    posthog_close_circle_emails: str = ""
+
+    # Admin endpoints shared secret (Story 14.1)
+    admin_api_token: str = ""
+
     # YouTube Data API v3
     youtube_api_key: str = ""
 
