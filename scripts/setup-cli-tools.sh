@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# setup-cli-tools.sh — Installation des CLI Railway et Supabase
+# setup-cli-tools.sh — Installation des CLI Railway, Supabase et Sentry
 #
 # À exécuter une fois sur une machine de développement avec accès à github.com.
 # Prérequis : curl, Node.js >= 18
@@ -56,6 +56,23 @@ else
   echo "[OK] Supabase CLI installé: $(supabase --version 2>/dev/null)"
 fi
 
+# ─── Sentry CLI ───────────────────────────────────────────────────────────────
+if command -v sentry-cli &>/dev/null; then
+  echo "[OK] Sentry CLI déjà installé: $(sentry-cli --version 2>/dev/null)"
+else
+  echo "[...] Installation Sentry CLI via script officiel..."
+  # Le script officiel détecte l'OS et installe dans /usr/local/bin
+  # (ou ~/.local/bin via INSTALL_DIR si non writable).
+  if [ -w /usr/local/bin ]; then
+    curl -sL https://sentry.io/get-cli/ | bash
+  else
+    mkdir -p "$HOME/.local/bin"
+    curl -sL https://sentry.io/get-cli/ | INSTALL_DIR="$HOME/.local/bin" bash
+    echo "    Installé dans ~/.local/bin — assure-toi que ce dossier est dans ton PATH"
+  fi
+  echo "[OK] Sentry CLI installé: $(sentry-cli --version 2>/dev/null)"
+fi
+
 # ─── Vérification finale ──────────────────────────────────────────────────────
 echo ""
 echo "=== Vérification ==="
@@ -71,8 +88,9 @@ check_cmd() {
 }
 
 all_ok=true
-check_cmd railway   || all_ok=false
-check_cmd supabase  || all_ok=false
+check_cmd railway    || all_ok=false
+check_cmd supabase   || all_ok=false
+check_cmd sentry-cli || all_ok=false
 
 echo ""
 if [ "$all_ok" = true ]; then
@@ -81,6 +99,7 @@ if [ "$all_ok" = true ]; then
   echo "Variables d'environnement requises (voir .env.example) :"
   echo "  RAILWAY_TOKEN         → railway.app > Account Settings > Tokens"
   echo "  SUPABASE_ACCESS_TOKEN → app.supabase.com > Account > Access Tokens (PAT)"
+  echo "  SENTRY_AUTH_TOKEN     → sentry.io > Settings > Account > Auth Tokens"
 else
   echo "ERREUR: Certains CLI n'ont pas pu être installés."
   echo "Vérification de l'accès réseau à github.com et réessaie."

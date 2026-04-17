@@ -2,7 +2,7 @@
 # =============================================================================
 # session-start.sh — Hook SessionStart Claude Code
 #
-# Auto-installe Railway CLI et Supabase CLI si absents.
+# Auto-installe Railway CLI, Supabase CLI et Sentry CLI si absents.
 # Non-bloquant : toujours exit 0 même en cas d'échec réseau.
 #
 # Note : les CLIs nécessitent un accès réseau à github.com pour les binaires.
@@ -96,7 +96,50 @@ install_supabase_cli() {
   fi
 }
 
+install_sentry_cli() {
+  if command -v sentry-cli &>/dev/null; then
+    echo "[session-start] sentry-cli OK ($(sentry-cli --version 2>/dev/null | head -1))"
+    return 0
+  fi
+
+  echo "[session-start] sentry-cli absent — tentative d'installation via script officiel..."
+  if command -v curl &>/dev/null; then
+    # Script officiel Sentry : https://sentry.io/get-cli/
+    # Installe dans /usr/local/bin par défaut, ou ~/.local/bin via INSTALL_DIR.
+    if [ -w /usr/local/bin ]; then
+      curl -sL https://sentry.io/get-cli/ | bash 2>&1 || true
+    else
+      mkdir -p "$HOME/.local/bin"
+      curl -sL https://sentry.io/get-cli/ | INSTALL_DIR="$HOME/.local/bin" bash 2>&1 || true
+      if [ -x "$HOME/.local/bin/sentry-cli" ] && ! command -v sentry-cli &>/dev/null; then
+        export PATH="$HOME/.local/bin:$PATH"
+        persist_path_in_bashrc 'export PATH="$HOME/.local/bin:$PATH"'
+      fi
+    fi
+
+    if command -v sentry-cli &>/dev/null; then
+      echo "[session-start] sentry-cli installé ($(sentry-cli --version 2>/dev/null | head -1))."
+    else
+      echo "[session-start] WARN: sentry-cli install failed (accès sentry.io requis)"
+      echo "[session-start] → Lancer manuellement : bash scripts/setup-cli-tools.sh"
+    fi
+  else
+    echo "[session-start] WARN: curl absent — impossible d'installer sentry-cli"
+  fi
+}
+
 install_railway_cli
 install_supabase_cli
+install_sentry_cli
+
+# Fallback idempotent : si l'un des CLI reste manquant après les tentatives
+# individuelles, relancer le script de setup unifié. `|| true` neutralise le
+# `set -euo pipefail` du script et préserve le contrat non-bloquant du hook.
+if ! command -v railway &>/dev/null \
+  || ! command -v supabase &>/dev/null \
+  || ! command -v sentry-cli &>/dev/null; then
+  echo "[session-start] Au moins un CLI manquant — fallback via setup-cli-tools.sh..."
+  bash scripts/setup-cli-tools.sh 2>&1 | tail -20 || true
+fi
 
 exit 0  # Toujours non-bloquant
