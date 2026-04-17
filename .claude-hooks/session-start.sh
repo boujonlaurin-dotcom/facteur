@@ -10,6 +10,13 @@
 # indépendamment via npx (npm registry accessible).
 # =============================================================================
 
+persist_path_in_bashrc() {
+  local line="$1"
+  local bashrc="$HOME/.bashrc"
+  [ -f "$bashrc" ] || touch "$bashrc"
+  grep -qxF "$line" "$bashrc" 2>/dev/null || echo "$line" >> "$bashrc"
+}
+
 install_railway_cli() {
   if command -v railway &>/dev/null; then
     echo "[session-start] railway OK ($(railway --version 2>/dev/null | head -1))"
@@ -19,10 +26,18 @@ install_railway_cli() {
   echo "[session-start] railway absent — tentative d'installation via script officiel..."
   if command -v curl &>/dev/null; then
     # Script officiel Railway : https://railway.app/install.sh
-    if bash <(curl -fsSL https://railway.app/install.sh) 2>&1; then
-      echo "[session-start] railway installé."
+    # Le script dépose souvent le binaire dans ~/.railway/bin/ sans toucher le PATH du shell courant.
+    bash <(curl -fsSL https://railway.app/install.sh) 2>&1 || true
+
+    if [ -x "$HOME/.railway/bin/railway" ]; then
+      export PATH="$HOME/.railway/bin:$PATH"
+      persist_path_in_bashrc 'export PATH="$HOME/.railway/bin:$PATH"'
+    fi
+
+    if command -v railway &>/dev/null; then
+      echo "[session-start] railway installé ($(railway --version 2>/dev/null | head -1))."
     else
-      echo "[session-start] WARN: Impossible d'installer railway (accès github.com requis)"
+      echo "[session-start] WARN: railway install failed (PATH issue? check ~/.railway/bin)"
       echo "[session-start] → Lancer manuellement : bash scripts/setup-cli-tools.sh"
     fi
   else
@@ -53,12 +68,23 @@ install_supabase_cli() {
 
   if command -v curl &>/dev/null; then
     if curl -fsSL "$url" -o "${tmp_dir}/supabase.tar.gz" 2>&1; then
-      tar -xzf "${tmp_dir}/supabase.tar.gz" -C "${tmp_dir}"
+      tar -xzf "${tmp_dir}/supabase.tar.gz" -C "${tmp_dir}" 2>/dev/null || true
+      mkdir -p "$HOME/.local/bin"
       install -m 755 "${tmp_dir}/supabase" /usr/local/bin/supabase 2>/dev/null \
-        || cp "${tmp_dir}/supabase" ~/.local/bin/supabase 2>/dev/null \
-        || echo "[session-start] WARN: Impossible d'installer supabase dans PATH"
+        || cp "${tmp_dir}/supabase" "$HOME/.local/bin/supabase" 2>/dev/null \
+        || true
       rm -rf "$tmp_dir"
-      echo "[session-start] supabase installé."
+
+      if [ -x "$HOME/.local/bin/supabase" ] && ! command -v supabase &>/dev/null; then
+        export PATH="$HOME/.local/bin:$PATH"
+        persist_path_in_bashrc 'export PATH="$HOME/.local/bin:$PATH"'
+      fi
+
+      if command -v supabase &>/dev/null; then
+        echo "[session-start] supabase installé ($(supabase --version 2>/dev/null | head -1))."
+      else
+        echo "[session-start] WARN: supabase install failed (PATH issue? check ~/.local/bin)"
+      fi
     else
       rm -rf "$tmp_dir"
       echo "[session-start] WARN: Impossible de télécharger supabase (accès github.com requis)"
