@@ -48,11 +48,15 @@ Après le GO utilisateur, implémente et teste en autonomie :
 4. **Suite complète** : lance la suite de tests complète (`pytest -v` backend, `flutter test` mobile) et corrige tout échec
 5. Le hook `stop-verify-tests.sh` vérifie automatiquement que les tests passent avant de terminer — si un test échoue, l'agent doit corriger avant de pouvoir conclure
 
+> **Raccourci recommandé** : une fois le code écrit, lance **[`/go`](.claude/commands/go.md)** pour enchaîner automatiquement VERIFY (tests + Playwright + scripts QA) → SIMPLIFY (skill `simplify`) → PR vers `main`. Voir [/go — chaîne verify→simplify→PR](#go--chaîne-verifysimplifypr) plus bas.
+
 ### 3. PR (confirmation requise)
 
 1. Crée la PR vers `main` — **OBLIGATOIRE : `--base main`** (`staging` est DÉPRÉCIÉ, le hook `pre-bash-no-staging.sh` bloquera toute PR sans `--base main`)
 2. **STOP → Notifie "PR #XX prête pour review"**
 3. Attends CI green + Peer Review APPROVED avant merge
+
+> La commande `/go` prend en charge les étapes 2 et 3 (push, création PR avec base `main`, body depuis `.context/pr-handoff.md`, arrêt après "PR #XX prête pour review").
 
 ---
 
@@ -143,3 +147,47 @@ Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étap
 
 - [ ] QA Handoff rédigé (`.context/qa-handoff.md`) si feature UI
 - [ ] /validate-feature exécuté si feature UI (rapport QA dans .context/)
+
+---
+
+## /go — chaîne verify→simplify→PR
+
+> **Commande de référence pour conclure une tâche.** Fichier :
+> [`.claude/commands/go.md`](.claude/commands/go.md).
+
+Quand l'agent a fini d'écrire le code, `/go` prend le relais et fait **en
+autonomie** les 3 étapes qui restent — avec la preuve que ça marche :
+
+1. **VERIFY**
+   - Backend : `pytest -v` + démarrage `uvicorn` + `curl` sur les endpoints
+     touchés (cas nominal + 1 cas limite) + `docs/qa/scripts/verify_<task>.sh`
+     si présent.
+   - Mobile : `flutter test && flutter analyze` + Playwright MCP
+     (viewport 390x844, console sans erreurs, réseau sans 4xx/5xx inattendus,
+     edge cases).
+   - Alembic : exactement 1 head, `upgrade head` local OK, jamais sur Railway.
+   - Re-run systématique de la suite complète avant de conclure
+     (anticipe le hook `stop-verify-tests.sh`).
+2. **SIMPLIFY** : invoque la skill `simplify` puis re-run VERIFY si du code a
+   été modifié.
+3. **PR** : push (`-u origin`, retry backoff 2/4/8/16s), création PR via
+   `mcp__github__create_pull_request` vers `main` **obligatoirement**, body
+   repris depuis `.context/pr-handoff.md` s'il existe, puis STOP avec
+   `PR #<num> prête pour review — <url>` et propose
+   `subscribe_pr_activity` pour suivre CI/reviews.
+
+### Quand lancer /go
+
+- **Toujours** en fin de tâche, quelle qu'elle soit (feature, bug, maintenance).
+- Remplace les étapes 2 (phase VERIFY) + 3 du workflow PLAN → CODE+TEST → PR.
+- Compatible avec `/validate-feature` : si la feature touche l'UI, lance
+  `/validate-feature` *avant* `/go` pour générer le rapport QA, puis `/go`
+  enchaîne simplify + PR.
+
+### Règles non négociables de /go
+
+- `--base main` **toujours** (staging bloqué par hook).
+- Jamais `--no-verify`, jamais `--force-with-lease` sur `main`, jamais amender
+  un commit déjà poussé.
+- Si VERIFY échoue à la 2e tentative après fix → **stop** et demande à
+  l'utilisateur au lieu de boucler.
