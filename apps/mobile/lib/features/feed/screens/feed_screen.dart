@@ -47,6 +47,7 @@ import '../widgets/feed_carousel.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../widgets/empty_filter_state.dart';
+import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/interest_filter_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../digest/widgets/serein_toggle_chip.dart';
@@ -525,6 +526,16 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           );
                         }),
                       ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Consumer(builder: (context, ref, _) {
+                        final keyword =
+                            ref.watch(feedProvider.notifier).selectedKeyword;
+                        if (keyword == null || keyword.trim().isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return FollowKeywordSuggestionCard(keyword: keyword);
+                      }),
                     ),
                     const SliverToBoxAdapter(child: SizedBox(height: 16)),
                     // Brief loading indicator when serein toggle triggers feed refresh
