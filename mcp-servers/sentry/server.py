@@ -13,6 +13,7 @@ Nécessite les variables d'environnement :
 """
 
 import os
+import sys
 import httpx
 from mcp.server.fastmcp import FastMCP
 
@@ -295,4 +296,11 @@ async def search_errors(
 
 
 if __name__ == "__main__":
+    config_status = "missing_credentials" if _check_config() else "configured"
+    print(
+        f"sentry_mcp_ready status={config_status} "
+        f"org={SENTRY_ORG or 'unset'} project={SENTRY_PROJECT or 'unset'}",
+        file=sys.stderr,
+        flush=True,
+    )
     mcp.run()
