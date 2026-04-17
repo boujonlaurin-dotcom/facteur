@@ -406,6 +406,7 @@ async def get_trending_topics(
 ):
     """Retourne les sujets tendance du moment (clusters multi-sources des dernières 24h)."""
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from app.models.content import Content
     from app.services.briefing.importance_detector import ImportanceDetector
@@ -413,6 +414,7 @@ async def get_trending_topics(
     cutoff = datetime.now(UTC) - timedelta(hours=24)
     stmt = (
         select(Content)
+        .options(selectinload(Content.source))
         .where(Content.published_at >= cutoff)
         .order_by(Content.published_at.desc())
     )
