@@ -1,4 +1,9 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:facteur-production.up.railway.app)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
