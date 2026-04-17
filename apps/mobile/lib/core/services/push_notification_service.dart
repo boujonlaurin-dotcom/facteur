@@ -50,8 +50,11 @@ class PushNotificationService {
     }
 
     // Configuration Android
+    // Note: notification small icon must be white/alpha on transparent background.
+    // ic_launcher_foreground is the Facteur logo foreground layer (correct format).
+    // Using @mipmap/ic_launcher would show the full-color icon as a gray blob.
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_launcher_foreground');
 
     // Configuration iOS
     const iosSettings = DarwinInitializationSettings(
@@ -190,6 +193,7 @@ class PushNotificationService {
           'Notification quotidienne quand votre digest est prêt',
       importance: Importance.high,
       priority: Priority.high,
+      icon: '@drawable/ic_launcher_foreground',
       styleInformation: BigTextStyleInformation(
         notificationBody,
         contentTitle: defaultTitle,
