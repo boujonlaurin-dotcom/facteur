@@ -248,7 +248,8 @@ class _FeedCarouselState extends State<FeedCarousel> {
               ? () => widget.onSourceLongPress!(article)
               : null,
           topicChipWidget: widget.topicChipBuilder?.call(article),
-          clusterChipWidget: const SizedBox.shrink(),
+          // DEADCODE (ClusterChip feature temporairement masquée)
+          // clusterChipWidget: const SizedBox.shrink(),
           isFollowedSource: article.isFollowedSource,
           isSaved: article.isSaved,
           isLiked: article.isLiked,
@@ -345,7 +346,8 @@ class _FeedCarouselState extends State<FeedCarousel> {
           ? () => widget.onSourceLongPress!(article)
           : null,
       topicChipWidget: widget.topicChipBuilder?.call(article),
-      clusterChipWidget: const SizedBox.shrink(),
+      // DEADCODE (ClusterChip feature temporairement masquée)
+      // clusterChipWidget: const SizedBox.shrink(),
       isFollowedSource: article.isFollowedSource,
       isSaved: article.isSaved,
       isLiked: article.isLiked,

@@ -6,12 +6,14 @@ import 'package:facteur/config/theme.dart';
 class FacteurLogo extends StatelessWidget {
   final double size;
   final bool showIcon;
+  final bool showText;
   final Color? color;
 
   const FacteurLogo({
     super.key,
     this.size = 24.0,
     this.showIcon = true,
+    this.showText = true,
     this.color,
   });
 
@@ -66,17 +68,18 @@ class FacteurLogo extends StatelessWidget {
                     child: buildLogoImage(logoPath),
                   ),
           ),
-          SizedBox(width: size * 0.06), // Tight spacing between logo and text
+          if (showText) SizedBox(width: size * 0.06),
         ],
-        Text(
-          'Facteur',
-          style: GoogleFonts.fraunces(
-            fontSize: size,
-            fontWeight: FontWeight.w700,
-            color: effectiveColor,
-            letterSpacing: -0.5,
+        if (showText)
+          Text(
+            'Facteur',
+            style: GoogleFonts.fraunces(
+              fontSize: size,
+              fontWeight: FontWeight.w700,
+              color: effectiveColor,
+              letterSpacing: -0.5,
+            ),
           ),
-        ),
       ],
     );
   }

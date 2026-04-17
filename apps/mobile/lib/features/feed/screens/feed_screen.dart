@@ -39,9 +39,10 @@ import '../../../core/ui/notification_service.dart';
 import 'dart:math' as math;
 import '../../gamification/providers/streak_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
-import '../../custom_topics/widgets/cluster_chip.dart';
-import '../widgets/keyword_overflow_chip.dart';
-import '../widgets/entity_overflow_chip.dart';
+// DEADCODE: Feature "X autres articles" masquée
+// import '../../custom_topics/widgets/cluster_chip.dart';
+// import '../widgets/keyword_overflow_chip.dart';
+// import '../widgets/entity_overflow_chip.dart';
 import '../widgets/feed_carousel.dart';
 import '../widgets/feed_refresh_undo_banner.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
@@ -385,7 +386,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                           horizontal: FacteurSpacing.space6,
                           vertical: FacteurSpacing.space3,
                         ),
-                        child: Center(child: FacteurLogo(size: 26.4, showIcon: true, showText: false)),
+                        child: Center(child: FacteurLogo(size: 22, showIcon: false)),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -1010,6 +1011,8 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                               }
                                             : null,
                                       ),
+                                      // DEADCODE: Bloc masqué temporairement (cluster/overflow chips)
+                                      /*
                                       clusterChipWidget:
                                           // Suppress overflow chips when filter is active
                                           // (diversification is bypassed server-side)
@@ -1037,6 +1040,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                                       : content.keywordOverflowCount >= 4
                                                           ? KeywordOverflowChip(content: content, onOverflowTap: _scrollToTop)
                                                           : const SizedBox.shrink(),
+                                      */
                                       isFollowedSource: content.isFollowedSource,
                                       isSourceSubscribed: subscribedSourceIds
                                           .contains(content.source.id),

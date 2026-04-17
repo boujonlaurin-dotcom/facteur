@@ -214,6 +214,8 @@ class FeedRepository {
           // The briefing field in response is ignored
 
           // Epic 11: Parse clusters if present
+          // DEADCODE: Feature "X autres articles" masquée.
+          /*
           final clustersRaw = data['clusters'];
           if (clustersRaw is List) {
             final clusters = <FeedCluster>[];
@@ -262,6 +264,7 @@ class FeedRepository {
               }).toList();
             }
           }
+          */
 
           // Epic 12: Parse source_overflow and annotate last card per source
           final overflowRaw = data['source_overflow'];
@@ -292,11 +295,11 @@ class FeedRepository {
                 final idx = entry.value;
                 final item = itemsList[idx];
                 // Don't annotate if cluster chip already present
-                if (item.clusterHiddenCount == 0) {
+                // if (item.clusterHiddenCount == 0) {
                   itemsList[idx] = item.copyWith(
                     sourceOverflowCount: overflowMap[entry.key]!,
                   );
-                }
+                // }
               }
             }
           }
@@ -342,7 +345,7 @@ class FeedRepository {
                 if (lastMatchIdx != null) {
                   final item = itemsList[lastMatchIdx];
                   // Don't overwrite cluster chip (highest priority)
-                  if (item.clusterHiddenCount == 0) {
+                  // if (item.clusterHiddenCount == 0) {
                     // Fallback: if backend sends empty sources, use article's own source
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
@@ -362,7 +365,7 @@ class FeedRepository {
                       topicOverflowHiddenIds: overflow.hiddenIds,
                       topicOverflowSources: sources,
                     );
-                  }
+                  // }
                 }
               }
             }
@@ -401,7 +404,7 @@ class FeedRepository {
                 if (lastMatchIdx != null) {
                   final item = itemsList[lastMatchIdx];
                   // Don't overwrite cluster chip (highest priority)
-                  if (item.clusterHiddenCount == 0) {
+                  // if (item.clusterHiddenCount == 0) {
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
                         : [
@@ -419,7 +422,7 @@ class FeedRepository {
                       entityOverflowHiddenIds: overflow.hiddenIds,
                       entityOverflowSources: sources,
                     );
-                  }
+                  // }
                 }
               }
             }
@@ -455,7 +458,7 @@ class FeedRepository {
                 if (lastMatchIdx != null) {
                   final item = itemsList[lastMatchIdx];
                   // Don't overwrite cluster chip (highest priority)
-                  if (item.clusterHiddenCount == 0) {
+                  // if (item.clusterHiddenCount == 0) {
                     final sources = overflow.sources.isNotEmpty
                         ? overflow.sources
                         : [
@@ -474,7 +477,7 @@ class FeedRepository {
                       keywordOverflowSources: sources,
                       keywordOverflowIsCustomTopic: overflow.isCustomTopic,
                     );
-                  }
+                  // }
                 }
               }
             }

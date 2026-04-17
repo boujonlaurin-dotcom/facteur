@@ -178,6 +178,8 @@ void main() {
     });
   });
 
+  // DEADCODE: Test masqué car champs commentés dans modèle Content
+  /*
   group('Content cluster fields', () {
     test('default cluster fields are null/zero/empty', () {
       final content = Content(
@@ -253,6 +255,7 @@ void main() {
       expect(cleared.clusterHiddenCount, 2);
     });
   });
+  */
 
   group('FeedResponse with clusters', () {
     test('fromJson parses items and clusters', () {

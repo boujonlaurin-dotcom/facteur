@@ -29,7 +29,8 @@ class FeedCard extends StatefulWidget {
   final VoidCallback? onSourceTap; // Epic 12: tap source name/logo → detail
   final VoidCallback? onSourceLongPress; // Long-press → ArticleSheet (source section)
   final Widget? topicChipWidget;
-  final Widget? clusterChipWidget;
+  // DEADCODE (ClusterChip feature temporairement masquée)
+  // final Widget? clusterChipWidget;
   final bool isSaved;
   final bool isLiked;
   final bool isFollowedSource;
@@ -60,7 +61,7 @@ class FeedCard extends StatefulWidget {
     this.onSourceTap,
     this.onSourceLongPress,
     this.topicChipWidget,
-    this.clusterChipWidget,
+    // this.clusterChipWidget,
     this.isSaved = false,
     this.isLiked = false,
     this.isFollowedSource = false,
@@ -468,8 +469,8 @@ class _FeedCardState extends State<FeedCard>
                   ),
                 ),
 
-                // Cluster chip (below footer)
-                if (widget.clusterChipWidget != null) widget.clusterChipWidget!,
+                // DEADCODE (ClusterChip feature temporairement masquée, l'espace occupé n'étant pas justifié actuellement)
+                // if (widget.clusterChipWidget != null) widget.clusterChipWidget!,
               ],
             ),
           ),
