@@ -533,6 +533,7 @@ async def submit_article_feedback(
         await service._adjust_subtopic_weights(user_uuid, content_id, delta)
 
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         logger.info(
             "article_feedback_recorded",

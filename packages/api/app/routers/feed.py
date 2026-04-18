@@ -98,7 +98,7 @@ def _is_default_view(
     )
 
 
-@router.get("/")
+@router.get("/", response_model=FeedResponse)
 async def get_personalized_feed(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),

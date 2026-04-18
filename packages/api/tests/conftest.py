@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database import Base
 from app.models.enums import SourceType
 from app.models.source import Source
+from app.services.feed_cache import FEED_CACHE
 
 settings = get_settings()
 
@@ -33,6 +34,20 @@ TestSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_feed_cache():
+    # The module-level FEED_CACHE singleton survives across tests; without
+    # an explicit reset a test that populates it for `user_uuid=X` can
+    # silently feed its cached payload to the next test that reuses the
+    # same UUID (heisenbugs). Clearing before AND after also guards
+    # against test-ordering flakes.
+    FEED_CACHE.clear()
+    FEED_CACHE.reset_stats()
+    yield
+    FEED_CACHE.clear()
+    FEED_CACHE.reset_stats()
 
 
 @pytest.fixture(scope="session")

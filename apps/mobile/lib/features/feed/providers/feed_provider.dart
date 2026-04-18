@@ -605,6 +605,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       await repository.toggleSave(content.id, newIsSaved);
       // Invalidate SavedFeed so it refreshes when the user navigates there
       ref.invalidate(savedFeedProvider);
+      // R5 fix — drop the 5s dedupe result so any subsequent fetch
+      // (silent revalidation, cross-screen remount) sees the new isSaved.
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       await refresh();
       rethrow;
@@ -642,6 +645,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.toggleLike(content.id, newIsLiked);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       await refresh();
       rethrow;
@@ -661,6 +665,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.hideContent(content.id, reason);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       await refresh();
       rethrow;
@@ -680,6 +685,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.hideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       // Silent failure — optimistic remove stays
       print('FeedNotifier: swipeDismiss failed for ${content.id}: $e');
@@ -717,6 +723,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.unhideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: undoSwipeDismiss failed for ${content.id}: $e');
     }
@@ -744,6 +751,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteSource(content.source.id);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: swipeDismissAndMuteSource mute failed: $e');
     }
@@ -772,6 +780,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(topic);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: swipeDismissAndMuteTopic mute failed: $e');
     }
@@ -794,6 +803,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteSource(sourceId);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: muteSourceById failed for $sourceId: $e');
     }
@@ -812,6 +822,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTheme(theme);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: muteTheme failed for $theme: $e');
     }
@@ -832,6 +843,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(topic);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: muteTopic failed for $topic: $e');
     }
@@ -854,6 +866,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteTopic(lowerName);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: muteEntity failed for $entityName: $e');
     }
@@ -874,6 +887,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final repo = ref.read(personalizationRepositoryProvider);
       await repo.muteContentType(contentType);
       ref.invalidate(personalizationProvider);
+      FeedRepository.clearDefaultViewCache();
     } catch (e) {
       print('FeedNotifier: muteContentType failed for $contentType: $e');
     }

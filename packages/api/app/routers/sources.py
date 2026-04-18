@@ -33,6 +33,7 @@ from app.schemas.source import (
     UpdateSourceSubscriptionRequest,
     UpdateSourceWeightRequest,
 )
+from app.services.feed_cache import FEED_CACHE
 from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
 
@@ -352,6 +353,8 @@ async def add_source(
 
     try:
         source = await service.add_custom_source(user_id, str(data.url), data.name)
+        await db.commit()
+        FEED_CACHE.invalidate(UUID(user_id))
 
         # Trigger immediate sync in background after request returns (and DB commits)
         from app.workers.rss_sync import sync_source
@@ -392,6 +395,8 @@ async def delete_source(
             detail="Source not found or not owned by user",
         )
 
+    await db.commit()
+    FEED_CACHE.invalidate(UUID(user_id))
     return {"status": "deleted"}
 
 
@@ -465,6 +470,8 @@ async def update_source_weight(
             detail="Source not found or not followed by user",
         )
 
+    await db.commit()
+    FEED_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -487,6 +494,8 @@ async def update_source_subscription(
             detail="Source not found or not followed by user",
         )
 
+    await db.commit()
+    FEED_CACHE.invalidate(UUID(user_id))
     return result
 
 
@@ -506,6 +515,8 @@ async def trust_source(
             detail="Source not found",
         )
 
+    await db.commit()
+    FEED_CACHE.invalidate(UUID(user_id))
     return {"status": "trusted"}
 
 
@@ -525,4 +536,6 @@ async def untrust_source(
             detail="Source not found or not trusted",
         )
 
+    await db.commit()
+    FEED_CACHE.invalidate(UUID(user_id))
     return {"status": "untrusted"}

@@ -463,6 +463,7 @@ async def toggle_paid_content(
 
         await db.execute(stmt)
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         return {
             "message": f"Filtrage articles payants {'activé' if request.hide_paid else 'désactivé'}",
@@ -549,6 +550,7 @@ async def apply_proposals(
 
     results = await service.apply_proposals(user_uuid, actions)
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     applied = sum(1 for r in results if r["success"])
     return ApplyProposalsResponse(
@@ -577,6 +579,7 @@ async def set_entity_preference(
         user_uuid, request.entity_canonical, request.preference
     )
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     return EntityPreferenceResponse(
         entity_canonical=request.entity_canonical,
@@ -595,6 +598,7 @@ async def remove_entity_preference(
     service = LearningService(db)
     removed = await service.remove_entity_preference(user_uuid, entity_canonical)
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     if not removed:
         raise HTTPException(status_code=404, detail="Preference non trouvee")

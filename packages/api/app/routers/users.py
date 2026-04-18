@@ -26,6 +26,7 @@ from app.schemas.user import (
     UserStatsResponse,
 )
 from app.services.digest_service import schedule_initial_digest_generation
+from app.services.feed_cache import FEED_CACHE
 from app.services.streak_service import StreakService
 from app.services.user_service import UserService
 
@@ -87,6 +88,8 @@ async def save_onboarding(
     service = UserService(db)
     try:
         result = await service.save_onboarding(user_id, data.answers)
+        await db.commit()
+        FEED_CACHE.invalidate(UUID(user_id))
     except Exception as e:
         logger.error(f"Onboarding save failed for user {user_id}: {e}", exc_info=True)
         raise HTTPException(
@@ -197,6 +200,7 @@ async def reset_interest_weight(
     await db.commit()
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Interest not found")
+    FEED_CACHE.invalidate(UUID(user_id))
     return {"success": True}
 
 
@@ -219,6 +223,7 @@ async def reset_subtopic_weight(
     await db.commit()
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Subtopic not found")
+    FEED_CACHE.invalidate(UUID(user_id))
     return {"success": True}
 
 

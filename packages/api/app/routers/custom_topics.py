@@ -31,6 +31,7 @@ from app.services.ml.classification_service import (
     VALID_ENTITY_TYPES,
     VALID_TOPIC_SLUGS,
 )
+from app.services.feed_cache import FEED_CACHE
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.user_service import UserService
 
@@ -288,6 +289,8 @@ async def create_topic(
     db.add(topic)
     await db.flush()
     await db.refresh(topic)
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_created",
@@ -454,6 +457,8 @@ async def update_topic(
     topic.priority_multiplier = request.priority_multiplier
     await db.flush()
     await db.refresh(topic)
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_updated",
@@ -494,6 +499,9 @@ async def delete_topic(
                 UserSubtopic.topic_slug == slug,
             )
         )
+
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_deleted",
