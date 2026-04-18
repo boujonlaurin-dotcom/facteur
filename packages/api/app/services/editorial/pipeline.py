@@ -41,7 +41,7 @@ from app.services.editorial.schemas import (
     compute_divergence_level,
 )
 from app.services.editorial.writer import EditorialWriterService
-from app.services.perspective_service import PerspectiveService
+from app.services.perspective_service import Perspective, PerspectiveService
 
 logger = structlog.get_logger()
 
@@ -309,11 +309,86 @@ class EditorialPipelineService:
         )
         step_start = time.time()
 
+        async def _build_cluster_perspectives(
+            cluster: TopicCluster,
+        ) -> list[Perspective]:
+            """Build Perspective objects from the cluster's own articles.
+
+            One perspective per unique source_id (most recent article wins).
+            Bias is resolved via PerspectiveService.resolve_bias so the same
+            code path as Google News perspectives populates `bias_stance`.
+            """
+            seen: set = set()
+            result: list[Perspective] = []
+            ordered = sorted(
+                cluster.contents, key=lambda c: c.published_at, reverse=True
+            )
+            for content in ordered:
+                if content.source_id in seen:
+                    continue
+                seen.add(content.source_id)
+
+                domain = ""
+                source_name = ""
+                if content.source:
+                    source_name = content.source.name or ""
+                    if content.source.url:
+                        try:
+                            parsed = urlparse(content.source.url)
+                            domain = parsed.netloc
+                            if domain.startswith("www."):
+                                domain = domain[4:]
+                        except Exception:
+                            domain = ""
+                # Fallback: extract domain from article URL
+                if not domain and content.url:
+                    try:
+                        parsed = urlparse(content.url)
+                        domain = parsed.netloc
+                        if domain.startswith("www."):
+                            domain = domain[4:]
+                    except Exception:
+                        domain = ""
+
+                bias = await perspective_service.resolve_bias(
+                    domain=domain, source_name=source_name
+                )
+
+                result.append(
+                    Perspective(
+                        title=content.title,
+                        url=content.url,
+                        source_name=source_name or domain,
+                        source_domain=domain,
+                        bias_stance=bias,
+                        published_at=(
+                            content.published_at.isoformat()
+                            if content.published_at
+                            else None
+                        ),
+                        description=content.description,
+                    )
+                )
+            return result
+
         async def _process_perspectives(
             subject: EditorialSubject,
             cluster: TopicCluster | None,
         ) -> None:
-            """Enrich one subject with perspective data. Fallback on error."""
+            """Enrich one subject with perspective data. Fallback on error.
+
+            The cluster (articles ingested in our DB within the last 24-48h)
+            is the source of truth for "how many media cover this topic". We:
+              1. Build cluster-based perspectives — one per unique source.
+              2. Augment with Google News for NEW domains only.
+              3. Compute perspective_count / bias_distribution on the merged
+                 list (filtered on known bias), so `sum(bias_distribution)
+                 == perspective_count` while the count includes our own
+                 curated sources — not just Google News.
+            This aligns the carousel source_count with the Analyse de biais
+            header and ensures the LLM divergence analysis talks about the
+            same media set.
+            """
             if not cluster or not cluster.contents:
                 return
 
@@ -321,6 +396,21 @@ class EditorialPipelineService:
                 cluster.contents, key=lambda c: c.published_at, reverse=True
             )[0]
 
+            # Step 1 — cluster-based perspectives (source of truth)
+            try:
+                cluster_perspectives = await _build_cluster_perspectives(cluster)
+            except Exception:
+                logger.warning(
+                    "editorial_pipeline.cluster_perspectives_failed",
+                    topic_id=subject.topic_id,
+                )
+                cluster_perspectives = []
+
+            cluster_domains = {
+                p.source_domain for p in cluster_perspectives if p.source_domain
+            }
+
+            # Step 2 — Google News augmentation (new domains only)
             exclude_domain = None
             if representative.source and representative.source.url:
                 try:
@@ -332,17 +422,28 @@ class EditorialPipelineService:
                     pass
 
             try:
-                perspectives, _ = await perspective_service.get_perspectives_hybrid(
-                    content=representative,
-                    exclude_domain=exclude_domain,
+                gnews_perspectives, _ = (
+                    await perspective_service.get_perspectives_hybrid(
+                        content=representative,
+                        exclude_domain=exclude_domain,
+                    )
                 )
             except Exception:
                 logger.warning(
                     "editorial_pipeline.perspectives_fallback",
                     topic_id=subject.topic_id,
                 )
-                subject.perspective_count = len(cluster.source_ids)
-                return
+                gnews_perspectives = []
+
+            # Keep only Google News perspectives whose domain is not already
+            # covered by the cluster — no double-counting.
+            new_gnews = [
+                p
+                for p in gnews_perspectives
+                if p.source_domain and p.source_domain not in cluster_domains
+            ]
+
+            merged_perspectives: list[Perspective] = cluster_perspectives + new_gnews
 
             # Pivot stable: propagate representative id so the mobile bottom sheet
             # re-fetches /perspectives on the SAME content as the one used here.
@@ -351,12 +452,29 @@ class EditorialPipelineService:
             # Single source of truth for the 3 UI counters (header, spectrum bar,
             # bottom sheet): exclude perspectives without a known bias_stance.
             # The bottom sheet endpoint (routers/contents.py) applies the same
-            # filter, so the 3 counts stay aligned.
-            # Invariant: sum(bias_distribution.values()) == perspective_count.
-            known_perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
+            # filter, so the invariant `sum(bias_distribution) == perspective_count`
+            # holds. The new twist vs. PR #390: the merged pool includes the
+            # cluster's own sources, so the count actually reflects what users
+            # see in the carousel.
+            known_perspectives = [
+                p for p in merged_perspectives if p.bias_stance != "unknown"
+            ]
             subject.perspective_count = len(known_perspectives)
             subject.bias_distribution = compute_bias_distribution(known_perspectives)
             subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
+
+            # Axe C — observability: log the composition so we can verify in
+            # prod that the cluster count, perspective count and LLM analysis
+            # describe the same media set.
+            logger.info(
+                "editorial_pipeline.perspectives_composition",
+                topic_id=subject.topic_id,
+                cluster_sources=len(cluster_perspectives),
+                gnews_added=len(new_gnews),
+                total_merged=len(merged_perspectives),
+                known_bias=len(known_perspectives),
+                unknown_bias=len(merged_perspectives) - len(known_perspectives),
+            )
 
             # Build perspective_sources — max 6, deduplicated by domain.
             # Use known_perspectives so the CTA logos match the bottom sheet
@@ -412,7 +530,10 @@ class EditorialPipelineService:
                 for p in unique_perspectives
             ]
 
-            if len(perspectives) >= 3:
+            # The LLM divergence analysis must describe the SAME media set
+            # as the counters above — feed it the merged list (cluster +
+            # Google News), not just Google News.
+            if len(merged_perspectives) >= 3:
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",
@@ -436,7 +557,7 @@ class EditorialPipelineService:
                                 "published_at": p.published_at,
                                 "description": p.description,
                             }
-                            for p in perspectives
+                            for p in merged_perspectives
                         ],
                         article_description=representative.description,
                     )
@@ -482,9 +603,25 @@ class EditorialPipelineService:
         )
 
         perspective_time = time.time() - step_start
+        # Axe C — roll-up across all subjects so a single log line is enough
+        # to verify that carousel source_count ~ perspective_count on each
+        # topic, and to catch regressions on the cluster/GNews merge.
+        coherent = sum(
+            1
+            for s in subjects
+            if s.perspective_count >= s.source_count and s.source_count > 0
+        )
         logger.info(
             "editorial_pipeline.perspectives_done",
             duration_ms=round(perspective_time * 1000, 2),
+            subjects=len(subjects),
+            subjects_with_perspectives=sum(1 for s in subjects if s.perspective_count > 0),
+            # "coherent" means the header count is at least the cluster count
+            # — the invariant we want to hold after this fix.
+            subjects_coherent_with_cluster=coherent,
+            divergence_analyses=sum(
+                1 for s in subjects if s.divergence_analysis
+            ),
         )
 
         # Serialize cluster data (clusters are dataclasses)

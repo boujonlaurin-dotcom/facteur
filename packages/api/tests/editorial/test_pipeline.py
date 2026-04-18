@@ -302,30 +302,58 @@ class TestPerspectiveCountAlignment:
     """Regression coverage for the 3-counter alignment fix.
 
     The pipeline must:
-      1. Filter out ``unknown`` bias before computing ``perspective_count`` so
-         that ``sum(bias_distribution.values()) == perspective_count`` (header
-         vs spectrum bar invariant).
-      2. Persist the cluster's most-recent content id as
+      1. Include the cluster's own sources in ``perspective_count`` so the
+         header reflects the carousel coverage (not just Google News).
+      2. De-duplicate Google News domains already present in the cluster —
+         no double-counting.
+      3. Filter out ``unknown`` bias before computing ``perspective_count``
+         so ``sum(bias_distribution.values()) == perspective_count`` (header
+         vs spectrum bar invariant from PR #390).
+      4. Persist the cluster's most-recent content id as
          ``representative_content_id`` so the mobile bottom sheet re-fetches
          on the same pivot.
     """
 
     @pytest.mark.asyncio
-    async def test_filters_unknown_and_sets_representative_id(self, mock_dependencies):
+    async def test_cluster_perspectives_merged_with_gnews(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService
 
-        # Two contents in the cluster — most recent should win as pivot.
+        # Two cluster contents sharing one source (same outlet, two articles).
+        # Cluster source has a resolvable domain.
+        shared_source_id = uuid4()
         older = _make_content_mock(title="older")
         older.published_at = datetime(2026, 4, 1, tzinfo=UTC)
+        older.source_id = shared_source_id
+        older.source.url = "https://www.cluster.fr/"
+        older.url = "https://www.cluster.fr/older"
+
         newer = _make_content_mock(title="newer")
         newer.published_at = datetime(2026, 4, 12, tzinfo=UTC)
+        newer.source_id = shared_source_id
+        newer.source.url = "https://www.cluster.fr/"
+        newer.url = "https://www.cluster.fr/newer"
 
         cluster = _make_cluster_mock(
             cluster_id="c1",
             label="Retraites",
             contents=[older, newer],
         )
-        # Mock get_perspectives_hybrid: 3 known + 2 unknown = 5 raw, 3 known.
+
+        # resolve_bias: "center" for cluster.fr, look-up map for GNews hosts.
+        async def _resolve(domain: str, source_name: str | None = None) -> str:
+            if domain == "cluster.fr":
+                return "center"
+            return {
+                "left.fr": "left",
+                "center.fr": "center",
+                "right.fr": "right",
+                "overlap.fr": "center-left",  # same domain also surfaced by GNews
+            }.get(domain, "unknown")
+
+        mock_dependencies["perspective"].resolve_bias = AsyncMock(side_effect=_resolve)
+
+        # Google News returns 5 entries (3 known, 2 unknown) + 1 duplicate
+        # of cluster domain that must be de-duplicated.
         mock_dependencies["perspective"].get_perspectives_hybrid = AsyncMock(
             return_value=(
                 [
@@ -334,19 +362,22 @@ class TestPerspectiveCountAlignment:
                     _StubPerspective("right", "R", "right.fr"),
                     _StubPerspective("unknown", "U1", "u1.fr"),
                     _StubPerspective("unknown", "U2", "u2.fr"),
+                    # Same domain as cluster — must be filtered out.
+                    _StubPerspective("center", "Dup", "cluster.fr"),
                 ],
                 [],
             )
         )
 
         session = AsyncMock()
-        # Avoid hitting the DB for logo resolution — return empty rowset.
         session.execute = AsyncMock(
             return_value=MagicMock(all=MagicMock(return_value=[]))
         )
         svc = EditorialPipelineService(session)
 
-        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
             mock_detector = MagicMock()
             mock_detector.build_topic_clusters.return_value = [cluster]
             mock_detector_cls.return_value = mock_detector
@@ -369,10 +400,16 @@ class TestPerspectiveCountAlignment:
         assert result is not None
         subject = result.subjects[0]
 
-        # Header / spectrum-bar invariant.
-        assert subject.perspective_count == 3
+        # 1 cluster source (center) + 3 new GNews known (left, center, right)
+        # = 4 known. GNews duplicate on cluster.fr must be filtered out.
+        assert subject.perspective_count == 4
         assert subject.bias_distribution is not None
+        # Invariant preserved.
         assert sum(subject.bias_distribution.values()) == subject.perspective_count
+        # Breakdown: 1 left, 2 center (cluster + GNews), 1 right.
+        assert subject.bias_distribution["left"] == 1
+        assert subject.bias_distribution["center"] == 2
+        assert subject.bias_distribution["right"] == 1
 
-        # Pivot must be the most recent content of the cluster.
+        # Pivot = most recent content of the cluster.
         assert subject.representative_content_id == newer.id

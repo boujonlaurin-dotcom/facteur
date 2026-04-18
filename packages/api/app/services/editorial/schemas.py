@@ -23,7 +23,10 @@ class SelectedTopic(BaseModel):
     topic_id: str
     label: str  # 5-8 words
     selection_reason: str
-    deep_angle: str  # systemic angle to search for in deep sources
+    # `None` when the topic has no meaningful systemic/structural angle
+    # (people, faits divers, actualité purement événementielle). When null,
+    # DeepMatcher skips the topic — no "Pas de recul" is forced.
+    deep_angle: str | None = None
     source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     is_a_la_une: bool = False

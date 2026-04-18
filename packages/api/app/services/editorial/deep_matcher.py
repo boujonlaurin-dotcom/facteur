@@ -2,7 +2,13 @@
 
 Two-pass strategy:
   Pass 1: Jaccard pre-filter (no LLM) → top N candidates
-  Pass 2: LLM evaluates candidates and picks best match
+  Pass 2: LLM evaluates candidates and picks best match.
+          If the LLM returns `selected_index: null`, the topic ends with
+          no deep article — there is no deterministic Pass 3 fallback.
+          Better a missing "Pas de recul" than a hors-sujet one.
+
+Topics with `deep_angle` null/empty are skipped entirely (people,
+faits divers, actualité purement événementielle).
 
 No time limit on deep articles (can be months old).
 """
@@ -85,14 +91,27 @@ class DeepMatcher:
 
         logger.info("deep_matcher.pool_loaded", count=len(deep_articles))
 
+        # Skip topics flagged as having no meaningful deep angle — we refuse
+        # to force a "Pas de recul" on purely eventful / people / faits-divers
+        # subjects. Curation can set deep_angle=None to signal this. Skipped
+        # topics don't trigger any LLM call (no query expansion either).
+        matchable_topics = [t for t in selected_topics if (t.deep_angle or "").strip()]
+        skipped = [t for t in selected_topics if not (t.deep_angle or "").strip()]
+        for topic in skipped:
+            logger.info(
+                "deep_matcher.skipped_no_angle",
+                topic_id=topic.topic_id,
+                label=topic.label,
+            )
+
         # Query expansion: enrich search tokens via small LLM (parallel)
         expanded_tokens: dict[str, set[str]] = {}
-        if self._llm.is_ready:
-            expansion_tasks = [self._expand_query(t) for t in selected_topics]
+        if self._llm.is_ready and matchable_topics:
+            expansion_tasks = [self._expand_query(t) for t in matchable_topics]
             expansion_results = await asyncio.gather(
                 *expansion_tasks, return_exceptions=True
             )
-            for topic, result in zip(selected_topics, expansion_results, strict=False):
+            for topic, result in zip(matchable_topics, expansion_results, strict=False):
                 if isinstance(result, set):
                     expanded_tokens[topic.topic_id] = result
                     logger.info(
@@ -112,7 +131,7 @@ class DeepMatcher:
         threshold = self._config.pipeline.deep_jaccard_threshold
         candidates_per_topic: dict[str, list[tuple[Content, float]]] = {}
 
-        for topic in selected_topics:
+        for topic in matchable_topics:
             # Boost prefilter for "à la une" topic: wider net, lower threshold
             topic_limit = prefilter_limit * 2 if topic.is_a_la_une else prefilter_limit
             topic_threshold = threshold / 2 if topic.is_a_la_une else threshold
@@ -131,68 +150,55 @@ class DeepMatcher:
                 candidates=len(candidates),
             )
 
-        # Pass 2: LLM evaluation (parallel)
+        # Pass 2: LLM evaluation (parallel) — LLM rejection is final, no
+        # broader fallback. Better no "Pas de recul" than a hors-sujet one.
         if self._llm.is_ready:
             tasks = [
                 self._llm_evaluate(topic, candidates_per_topic.get(topic.topic_id, []))
-                for topic in selected_topics
+                for topic in matchable_topics
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            matches: dict[str, MatchedDeepArticle | None] = {}
-            for topic, result in zip(selected_topics, results, strict=False):
+            matches: dict[str, MatchedDeepArticle | None] = {
+                t.topic_id: None for t in skipped
+            }
+            llm_rejected = 0
+            for topic, result in zip(matchable_topics, results, strict=False):
                 if isinstance(result, Exception):
                     logger.error(
                         "deep_matcher.llm_error",
                         topic_id=topic.topic_id,
                         error=str(result),
                     )
-                    # Fallback: top Jaccard candidate
+                    # Exception ≠ rejection: fall back to top Jaccard.
                     matches[topic.topic_id] = self._fallback_pick(
                         candidates_per_topic.get(topic.topic_id, [])
                     )
                 else:
                     matches[topic.topic_id] = result
+                    if result is None:
+                        llm_rejected += 1
 
-            # Pass 3: Broader fallback for topics with no match
-            for topic in selected_topics:
-                if matches.get(topic.topic_id) is not None:
-                    continue
-                broader_candidates = self._prefilter(
-                    topic=topic,
-                    articles=deep_articles,
-                    limit=prefilter_limit * 2,
-                    threshold=threshold * 0.7,
-                    extra_tokens=expanded_tokens.get(topic.topic_id, set()),
-                    cluster_entities=_cluster_entities.get(topic.topic_id),
-                )
-                if broader_candidates:
-                    matches[topic.topic_id] = self._fallback_pick(broader_candidates)
-                    logger.info(
-                        "deep_matcher.broader_fallback_hit",
-                        topic_id=topic.topic_id,
-                        candidates=len(broader_candidates),
-                    )
-
-            # Log topics that ended up with no match
-            for topic in selected_topics:
-                if matches.get(topic.topic_id) is None:
-                    logger.info(
-                        "deep_matcher.no_match_found",
-                        topic_id=topic.topic_id,
-                        label=topic.label,
-                    )
+            logger.info(
+                "deep_matcher.llm_rejections",
+                rejected=llm_rejected,
+                matched=sum(1 for v in matches.values() if v is not None),
+                skipped_no_angle=len(skipped),
+                total=len(selected_topics),
+            )
 
             return matches
 
-        # No LLM: use Jaccard fallback for all
+        # No LLM: use Jaccard fallback for all matchable topics
         logger.info("deep_matcher.no_llm_fallback_all")
-        return {
-            topic.topic_id: self._fallback_pick(
+        fallback_matches: dict[str, MatchedDeepArticle | None] = {
+            t.topic_id: None for t in skipped
+        }
+        for topic in matchable_topics:
+            fallback_matches[topic.topic_id] = self._fallback_pick(
                 candidates_per_topic.get(topic.topic_id, [])
             )
-            for topic in selected_topics
-        }
+        return fallback_matches
 
     async def _load_deep_articles(self) -> list[Content]:
         """Load all articles from deep sources (no time limit).
@@ -356,9 +362,15 @@ class DeepMatcher:
     @staticmethod
     def _fallback_pick(
         candidates: list[tuple[Content, float]],
-        min_score: float = 0.08,
+        min_score: float = 0.15,
     ) -> MatchedDeepArticle | None:
-        """Fallback: pick top Jaccard candidate if above minimum threshold."""
+        """Fallback: pick top Jaccard candidate if above minimum threshold.
+
+        Raised from 0.08 to 0.15 together with the removal of Pass 3
+        broader fallback: the deterministic pick only runs when the LLM
+        errored (exception), so the bar for accepting a weak match must
+        be high — worse no article than a hors-sujet one.
+        """
         if not candidates:
             return None
 

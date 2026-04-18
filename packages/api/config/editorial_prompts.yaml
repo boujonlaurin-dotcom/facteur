@@ -12,17 +12,20 @@ curation:
     1. Impact reel sur la vie des gens (pas juste du bruit mediatique)
     2. Diversite thematique (pas 3 sujets du meme domaine)
     3. Interet citoyen (le lecteur sera content d'etre au courant)
-    4. Potentiel de "pas de recul" (existe-t-il un angle systemique/structurel ?)
 
     Pour chaque sujet retenu, renvoie :
     - topic_id : l'identifiant du cluster (tel quel, ne pas inventer)
     - label : titre court (5-8 mots, informatif)
     - selection_reason : 1 phrase expliquant pourquoi ce sujet est important
     - deep_angle : 1 phrase decrivant quel angle systemique/structurel chercher
-      dans des sources d'analyse (pas de l'actualite chaude, mais du recul)
+      dans des sources d'analyse (pas de l'actualite chaude, mais du recul).
+      IMPORTANT : renvoie `null` si le sujet est purement evenementiel
+      (mort de celebrite, faits divers, evenement sportif, people, buzz)
+      ou si aucun angle de fond pertinent n'existe. Mieux vaut pas de
+      "pas de recul" qu'un article de fond hors-sujet.
 
     Reponds en JSON valide : un objet avec une cle "topics" contenant un array de {subjects_count} objets.
-    Exemple : {{"topics": [{{...}}, {{...}}, {{...}}]}}
+    Exemple : {{"topics": [{{..., "deep_angle": "..."}}, {{..., "deep_angle": null}}]}}
   model: mistral-large-latest
   temperature: 0.3
   max_tokens: 1000
@@ -30,20 +33,34 @@ curation:
 deep_matching:
   system: |
     Pour le sujet "{topic_label}", tu cherches un article de fond qui offre
-    un "pas de recul" — un eclairage systemique, structurel ou historique.
+    un "pas de recul" — un eclairage systemique, structurel ou historique
+    DIRECTEMENT lie au sujet de l'actualite chaude.
 
     Angle recherche : {deep_angle}
 
-    Evalue les articles candidats ci-dessous et selectionne le meilleur.
+    Evalue les articles candidats et, UNIQUEMENT si l'un d'eux a un lien
+    thematique clair avec le sujet, selectionne-le.
 
-    Criteres :
-    - Pertinence systemique (PAS evenementiel — on cherche de l'analyse, du recul)
-    - Complementarite avec l'actualite chaude (apporte une perspective differente)
+    EXIGENCE STRICTE — REFUSE (`selected_index: null`) si :
+    - L'article parle d'un tout autre domaine (ex: sujet = people,
+      candidat = geopolitique ; sujet = foot, candidat = economie).
+    - Le lien est anecdotique ou force (mots en commun accidentels,
+      pas de convergence thematique de fond).
+    - Aucun candidat ne partage au moins une entite nommee (personne,
+      organisation, pays, concept) ou un champ lexical structurel avec
+      le sujet.
+    - Tu hesites. En cas de doute, renvoie `null`. Mieux vaut pas de
+      "pas de recul" qu'un article hors-sujet qui decredibilise le digest.
+
+    Criteres si tu choisis (cumulatifs) :
+    - Pertinence systemique (PAS evenementiel — on cherche de l'analyse)
+    - Complementarite avec l'actualite chaude (perspective differente
+      mais sur le MEME sujet)
     - Qualite de la source et de l'analyse
 
     Reponds UNIQUEMENT en JSON valide :
-    - Si un candidat convient : {{"selected_index": N, "reason": "1 phrase"}}
-    - Si aucun ne convient : {{"selected_index": null, "reason": "1 phrase"}}
+    - Si un candidat convient : {{"selected_index": N, "reason": "1 phrase precisant le lien thematique"}}
+    - Sinon (cas par defaut si doute) : {{"selected_index": null, "reason": "1 phrase expliquant pourquoi aucun ne convient"}}
 
     N est l'index (0-based) du candidat dans la liste.
   model: mistral-large-latest
