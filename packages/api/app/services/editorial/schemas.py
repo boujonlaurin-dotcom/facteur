@@ -62,7 +62,9 @@ class EditorialSubject(BaseModel):
     topic_id: str
     label: str
     selection_reason: str
-    deep_angle: str
+    # `None` for topics with no meaningful systemic angle (people, faits
+    # divers, sport, buzz). DeepMatcher skips these; see SelectedTopic.
+    deep_angle: str | None = None
     source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     is_a_la_une: bool = False  # headline subject (rank 1, most covered)

@@ -553,6 +553,104 @@ _analysis_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 _perspectives_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 
 
+async def _load_cluster_articles_for_representative(
+    db: AsyncSession,
+    content_id: UUID,
+    user_id: UUID,
+) -> list:
+    """Load the editorial-subject carousel articles containing ``content_id``.
+
+    Mirrors the cluster-based perspectives computation in
+    ``editorial/pipeline.py`` so the /perspectives endpoint returns a count
+    consistent with the digest's ``perspective_count`` header. Returns the
+    list of Content objects (ordered by published_at desc) for the subject
+    the content_id belongs to, or an empty list if:
+      - the user has no recent editorial_v1 digest;
+      - the content_id is not part of any subject (standalone feed article).
+
+    Only carousel articles (actu + extras) are returned — ``deep_article``
+    is the "Pas de recul" article, not part of the sources list.
+    """
+    import structlog
+    from sqlalchemy import desc, select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.content import Content
+    from app.models.daily_digest import DailyDigest
+
+    logger = structlog.get_logger(__name__)
+
+    # Recent editorial digest for this user (last 48h covers generation
+    # windows + caching lag).
+    stmt = (
+        select(DailyDigest)
+        .where(
+            DailyDigest.user_id == user_id,
+            DailyDigest.format_version == "editorial_v1",
+        )
+        .order_by(desc(DailyDigest.generated_at))
+        .limit(4)  # up to 2 per day * 2 days (normal + serene)
+    )
+    result = await db.execute(stmt)
+    digests = list(result.scalars().all())
+    if not digests:
+        return []
+
+    target_str = str(content_id)
+    match_ids: set[str] = set()
+    for digest in digests:
+        items = digest.items if isinstance(digest.items, dict) else {}
+        for subject in items.get("subjects", []):
+            actu = subject.get("actu_article")
+            extras = subject.get("extra_actu_articles", []) or []
+            subject_ids: set[str] = set()
+            if actu and actu.get("content_id"):
+                subject_ids.add(actu["content_id"])
+            for extra in extras:
+                if extra.get("content_id"):
+                    subject_ids.add(extra["content_id"])
+            rep = subject.get("representative_content_id")
+            if rep:
+                subject_ids.add(rep)
+            # The subject owns this content_id either because it's its
+            # representative, or because it's one of the carousel articles.
+            if target_str in subject_ids:
+                # Skip representative from the perspective pool if it's not
+                # also in actu/extras — keep only what the user actually
+                # sees in the carousel, so the cluster reflects the visible
+                # coverage.
+                match_ids = {
+                    i
+                    for i in subject_ids
+                    if i == (actu.get("content_id") if actu else None)
+                    or any(i == e.get("content_id") for e in extras)
+                }
+                break
+        if match_ids:
+            break
+
+    if not match_ids:
+        return []
+
+    try:
+        uuids = [UUID(i) for i in match_ids]
+    except (ValueError, TypeError):
+        logger.warning(
+            "perspectives_cluster_invalid_uuid",
+            content_id=str(content_id),
+        )
+        return []
+
+    content_stmt = (
+        select(Content)
+        .options(selectinload(Content.source))
+        .where(Content.id.in_(uuids))
+        .order_by(desc(Content.published_at))
+    )
+    content_result = await db.execute(content_stmt)
+    return list(content_result.scalars().all())
+
+
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
 async def get_perspectives(
     content_id: UUID,
@@ -634,18 +732,57 @@ async def get_perspectives(
 
     # Hybrid perspectives search: DB entities → Google News entities → fallback keywords
     service = PerspectiveService(db=db)
-    perspectives_raw, keywords = await service.get_perspectives_hybrid(
+
+    # Mirror the editorial pipeline: if this content_id is a representative
+    # (or any carousel article) of a subject in the user's recent digest,
+    # the header / spectrum bar counters include the cluster's own sources.
+    # The bottom sheet must describe the SAME set, otherwise the count on
+    # the CTA ("Voir les N perspectives") mismatches what the sheet renders.
+    cluster_perspectives: list = []
+    cluster_domains: set[str] = set()
+    try:
+        cluster_contents = await _load_cluster_articles_for_representative(
+            db=db,
+            content_id=content_id,
+            user_id=UUID(current_user_id),
+        )
+        if cluster_contents:
+            cluster_perspectives = await service.build_cluster_perspectives(
+                cluster_contents
+            )
+            cluster_domains = {
+                p.source_domain for p in cluster_perspectives if p.source_domain
+            }
+    except Exception as e:
+        logger.warning(
+            "perspectives_cluster_lookup_failed",
+            content_id=cache_key,
+            error=str(e),
+        )
+
+    gnews_perspectives, keywords = await service.get_perspectives_hybrid(
         content=content,
         exclude_domain=source_domain,
     )
-    perspectives = perspectives_raw
 
-    # Filter out unknown perspectives — they don't add value to political comparison.
-    # Mirrors the filter applied in editorial/pipeline.py when computing
-    # subject.perspective_count and subject.bias_distribution. Keeping both in
-    # sync is what makes the digest header / spectrum bar / bottom-sheet counts
-    # agree on the same number.
-    perspectives = [p for p in perspectives if p.bias_stance != "unknown"]
+    # Keep only Google News entries whose domain isn't already covered by
+    # the cluster — no double-counting.
+    new_gnews = [
+        p for p in gnews_perspectives
+        if p.source_domain and p.source_domain not in cluster_domains
+    ]
+
+    # Single source of truth for the 3 UI counters — mirror pipeline.py.
+    merged = cluster_perspectives + new_gnews
+    perspectives = [p for p in merged if p.bias_stance != "unknown"]
+
+    logger.info(
+        "perspectives_composition",
+        content_id=cache_key,
+        cluster_sources=len(cluster_perspectives),
+        gnews_added=len(new_gnews),
+        known_bias=len(perspectives),
+    )
 
     # Calculate bias distribution (without "unknown")
     bias_distribution = {

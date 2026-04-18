@@ -344,10 +344,30 @@ class TestFallbackPick:
         assert result is None
 
     def test_rejects_weak_match_below_min_score(self):
-        """min_score raised to 0.15: weak matches must be rejected now that
-        there is no broader_fallback safety net."""
+        """Default min_score (0.15, no-LLM floor): weak matches rejected
+        now that there is no broader_fallback safety net."""
         article = _make_deep_content("Weak match")
         # Below default min_score (0.15)
         assert DeepMatcher._fallback_pick([(article, 0.10)]) is None
         # Above
         assert DeepMatcher._fallback_pick([(article, 0.20)]) is not None
+
+    def test_split_thresholds_llm_exception_vs_no_llm(self):
+        """LLM-exception path uses 0.08 (permissive, the LLM never ran);
+        no-LLM path uses 0.15 (strict, no semantic arbiter)."""
+        article = _make_deep_content("Borderline match")
+        # Jaccard 0.10: above exception floor (0.08), below no-LLM floor (0.15).
+        assert (
+            DeepMatcher._fallback_pick(
+                [(article, 0.10)],
+                min_score=DeepMatcher.FALLBACK_MIN_SCORE_LLM_EXCEPTION,
+            )
+            is not None
+        )
+        assert (
+            DeepMatcher._fallback_pick(
+                [(article, 0.10)],
+                min_score=DeepMatcher.FALLBACK_MIN_SCORE_NO_LLM,
+            )
+            is None
+        )

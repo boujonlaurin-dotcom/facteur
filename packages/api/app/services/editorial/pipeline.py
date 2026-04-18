@@ -309,68 +309,6 @@ class EditorialPipelineService:
         )
         step_start = time.time()
 
-        async def _build_cluster_perspectives(
-            cluster: TopicCluster,
-        ) -> list[Perspective]:
-            """Build Perspective objects from the cluster's own articles.
-
-            One perspective per unique source_id (most recent article wins).
-            Bias is resolved via PerspectiveService.resolve_bias so the same
-            code path as Google News perspectives populates `bias_stance`.
-            """
-            seen: set = set()
-            result: list[Perspective] = []
-            ordered = sorted(
-                cluster.contents, key=lambda c: c.published_at, reverse=True
-            )
-            for content in ordered:
-                if content.source_id in seen:
-                    continue
-                seen.add(content.source_id)
-
-                domain = ""
-                source_name = ""
-                if content.source:
-                    source_name = content.source.name or ""
-                    if content.source.url:
-                        try:
-                            parsed = urlparse(content.source.url)
-                            domain = parsed.netloc
-                            if domain.startswith("www."):
-                                domain = domain[4:]
-                        except Exception:
-                            domain = ""
-                # Fallback: extract domain from article URL
-                if not domain and content.url:
-                    try:
-                        parsed = urlparse(content.url)
-                        domain = parsed.netloc
-                        if domain.startswith("www."):
-                            domain = domain[4:]
-                    except Exception:
-                        domain = ""
-
-                bias = await perspective_service.resolve_bias(
-                    domain=domain, source_name=source_name
-                )
-
-                result.append(
-                    Perspective(
-                        title=content.title,
-                        url=content.url,
-                        source_name=source_name or domain,
-                        source_domain=domain,
-                        bias_stance=bias,
-                        published_at=(
-                            content.published_at.isoformat()
-                            if content.published_at
-                            else None
-                        ),
-                        description=content.description,
-                    )
-                )
-            return result
-
         async def _process_perspectives(
             subject: EditorialSubject,
             cluster: TopicCluster | None,
@@ -396,9 +334,19 @@ class EditorialPipelineService:
                 cluster.contents, key=lambda c: c.published_at, reverse=True
             )[0]
 
-            # Step 1 — cluster-based perspectives (source of truth)
+            # Step 1 — cluster-based perspectives (source of truth).
+            # Helper is shared with /contents/{id}/perspectives so the
+            # endpoint returns the same merged count as this pipeline (the
+            # PR #390 invariant still holds between header and bottom sheet).
+            ordered_contents = sorted(
+                cluster.contents, key=lambda c: c.published_at, reverse=True
+            )
             try:
-                cluster_perspectives = await _build_cluster_perspectives(cluster)
+                cluster_perspectives = (
+                    await perspective_service.build_cluster_perspectives(
+                        ordered_contents
+                    )
+                )
             except Exception:
                 logger.warning(
                     "editorial_pipeline.cluster_perspectives_failed",
@@ -488,12 +436,17 @@ class EditorialPipelineService:
                 if len(unique_perspectives) >= 6:
                     break
 
-            # Best-effort logo resolution from DB
+            # Best-effort logo resolution from DB. Skip perspectives with
+            # empty source_domain: the ILIKE "%%" pattern would match every
+            # row in the sources table.
             logo_map: dict[str, str] = {}
-            if unique_perspectives:
+            perspectives_with_domain = [
+                p for p in unique_perspectives if p.source_domain
+            ]
+            if perspectives_with_domain:
                 try:
                     domain_patterns = [
-                        f"%{p.source_domain}%" for p in unique_perspectives
+                        f"%{p.source_domain}%" for p in perspectives_with_domain
                     ]
                     stmt = select(Source.url, Source.logo_url).where(
                         or_(

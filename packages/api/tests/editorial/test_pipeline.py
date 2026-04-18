@@ -171,6 +171,43 @@ class TestComputeGlobalContext:
         assert result.generated_at is not None
 
     @pytest.mark.asyncio
+    async def test_null_deep_angle_does_not_crash_pipeline(self, mock_dependencies):
+        """Regression: curation prompt authorizes deep_angle=null for
+        people/faits-divers; the pipeline must accept it end-to-end without
+        Pydantic validation errors (EditorialSubject.deep_angle is Optional)."""
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        session = AsyncMock()
+        svc = EditorialPipelineService(session)
+
+        cluster = _make_cluster_mock("c1", "Mort d'une célébrité")
+        cluster.is_trending = False
+
+        with patch("app.services.editorial.pipeline.ImportanceDetector") as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            # LLM explicitly sets deep_angle=None (valid per the fix).
+            mock_dependencies["curation"].select_topics.return_value = [
+                SelectedTopic(
+                    topic_id="c1",
+                    label="Mort d'une célébrité",
+                    selection_reason="Actu people",
+                    deep_angle=None,
+                )
+            ]
+            mock_dependencies["deep"].match_for_topics.return_value = {"c1": None}
+            mock_dependencies["actu"].match_global.side_effect = (
+                lambda subjects, clusters, excluded_source_ids=None, excluded_content_ids=None: subjects
+            )
+
+            result = await svc.compute_global_context([_make_content_mock()])
+
+        assert result is not None
+        assert result.subjects[0].deep_angle is None
+
+    @pytest.mark.asyncio
     async def test_no_clusters_returns_none(self, mock_dependencies):
         from app.services.editorial.pipeline import EditorialPipelineService
 

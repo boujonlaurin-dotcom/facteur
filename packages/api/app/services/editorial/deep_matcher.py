@@ -170,9 +170,11 @@ class DeepMatcher:
                         topic_id=topic.topic_id,
                         error=str(result),
                     )
-                    # Exception ≠ rejection: fall back to top Jaccard.
+                    # Exception ≠ rejection: fall back to top Jaccard with
+                    # the permissive threshold (the LLM never evaluated).
                     matches[topic.topic_id] = self._fallback_pick(
-                        candidates_per_topic.get(topic.topic_id, [])
+                        candidates_per_topic.get(topic.topic_id, []),
+                        min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION,
                     )
                 else:
                     matches[topic.topic_id] = result
@@ -189,14 +191,17 @@ class DeepMatcher:
 
             return matches
 
-        # No LLM: use Jaccard fallback for all matchable topics
+        # No LLM: use Jaccard fallback for all matchable topics with the
+        # stricter floor — there's no semantic arbiter, so we'd rather skip
+        # than promote a weak Jaccard match.
         logger.info("deep_matcher.no_llm_fallback_all")
         fallback_matches: dict[str, MatchedDeepArticle | None] = {
             t.topic_id: None for t in skipped
         }
         for topic in matchable_topics:
             fallback_matches[topic.topic_id] = self._fallback_pick(
-                candidates_per_topic.get(topic.topic_id, [])
+                candidates_per_topic.get(topic.topic_id, []),
+                min_score=self.FALLBACK_MIN_SCORE_NO_LLM,
             )
         return fallback_matches
 
@@ -321,7 +326,10 @@ class DeepMatcher:
         )
 
         if not raw or not isinstance(raw, dict):
-            return self._fallback_pick(candidates)
+            # Malformed JSON — exception-like, use permissive threshold.
+            return self._fallback_pick(
+                candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
+            )
 
         selected_index = raw.get("selected_index")
         reason = raw.get("reason", "")
@@ -330,6 +338,7 @@ class DeepMatcher:
             logger.info(
                 "deep_matcher.llm_no_match",
                 topic_id=topic.topic_id,
+                label=topic.label,
                 reason=reason,
             )
             return None
@@ -344,7 +353,10 @@ class DeepMatcher:
                 index=selected_index,
                 candidates_count=len(candidates),
             )
-            return self._fallback_pick(candidates)
+            # Invalid index — exception-like, use permissive threshold.
+            return self._fallback_pick(
+                candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
+            )
 
         content, _score = candidates[selected_index]
         source_name = content.source.name if content.source else "Source inconnue"
@@ -359,6 +371,17 @@ class DeepMatcher:
             description=content.description,
         )
 
+    # Split thresholds per review P1-3:
+    # - LLM exception path (5xx, timeout, malformed JSON): keep the old
+    #   permissive 0.08. An exception is not a semantic rejection; the LLM
+    #   never got to evaluate, so we fall back to deterministic pick
+    #   with the same bar as before the broader_fallback removal.
+    # - No-LLM environment (tests, degraded mode): require 0.15. Without
+    #   any semantic arbiter at all we need a higher Jaccard floor so a
+    #   weak accidental overlap doesn't slip through.
+    FALLBACK_MIN_SCORE_LLM_EXCEPTION: float = 0.08
+    FALLBACK_MIN_SCORE_NO_LLM: float = 0.15
+
     @staticmethod
     def _fallback_pick(
         candidates: list[tuple[Content, float]],
@@ -366,10 +389,9 @@ class DeepMatcher:
     ) -> MatchedDeepArticle | None:
         """Fallback: pick top Jaccard candidate if above minimum threshold.
 
-        Raised from 0.08 to 0.15 together with the removal of Pass 3
-        broader fallback: the deterministic pick only runs when the LLM
-        errored (exception), so the bar for accepting a weak match must
-        be high — worse no article than a hors-sujet one.
+        ``min_score`` is supplied by the caller — see the two class
+        constants ``FALLBACK_MIN_SCORE_LLM_EXCEPTION`` (0.08, LLM errored
+        out) and ``FALLBACK_MIN_SCORE_NO_LLM`` (0.15, no LLM at all).
         """
         if not candidates:
             return None
