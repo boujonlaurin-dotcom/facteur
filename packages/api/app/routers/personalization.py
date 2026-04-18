@@ -22,6 +22,7 @@ from app.schemas.learning import (
     LearningCheckpointResponse,
     proposal_to_response,
 )
+from app.services.feed_cache import FEED_CACHE
 from app.services.learning_service import LearningService
 from app.services.user_service import UserService
 
@@ -143,6 +144,7 @@ async def mute_source(
             await db.delete(existing_trust)
 
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
         return {
             "message": "Source mutée avec succès",
             "source_id": str(request.source_id),
@@ -202,6 +204,7 @@ async def mute_theme(
 
         await db.execute(stmt)
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         return {"message": f"Thème '{theme_slug}' muté avec succès"}
 
@@ -255,6 +258,7 @@ async def mute_topic(
 
         await db.execute(stmt)
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         return {"message": f"Topic '{topic_slug}' muté avec succès"}
 
@@ -314,6 +318,7 @@ async def mute_content_type(
 
         await db.execute(stmt)
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         return {"message": f"Type de contenu '{ct_slug}' muté avec succès"}
 
@@ -351,6 +356,7 @@ async def unmute_source(
         new_list = [s for s in result.muted_sources if s != source_id]
         result.muted_sources = new_list
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
     return {"message": "Source démuée avec succès", "source_id": str(source_id)}
 
@@ -375,6 +381,7 @@ async def unmute_theme(
     if result.muted_themes and theme_slug in result.muted_themes:
         result.muted_themes = [t for t in result.muted_themes if t != theme_slug]
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
     return {"message": f"Thème '{theme_slug}' démuté"}
 
@@ -399,6 +406,7 @@ async def unmute_topic(
     if result.muted_topics and topic_slug in result.muted_topics:
         result.muted_topics = [t for t in result.muted_topics if t != topic_slug]
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
     return {"message": f"Topic '{topic_slug}' démuté"}
 
@@ -425,6 +433,7 @@ async def unmute_content_type(
             t for t in result.muted_content_types if t != ct_slug
         ]
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
     return {"message": f"Type de contenu '{ct_slug}' démuté"}
 

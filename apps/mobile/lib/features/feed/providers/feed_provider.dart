@@ -77,6 +77,13 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   // Internal state for pagination
   int _page = 1;
   static const int _limit = 20;
+
+  /// R5.1 — minimum age (seconds) of a cache hit before we trigger a
+  /// silent background revalidation. Below this, the backend's own 30 s
+  /// page-1 cache would just echo the same payload — saves a round-trip
+  /// and contributes to the / api/feed/ amplification problem documented
+  /// in `docs/bugs/bug-infinite-load-requests.md` (Round 5).
+  static const int _silentRevalSkipSeconds = 60;
   bool _hasNext = true;
   bool _isLoadingMore = false;
   String? _selectedFilter;
@@ -103,6 +110,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final authState = ref.watch(authStateProvider);
 
     if (!authState.isAuthenticated || authState.user == null) {
+      // R5.1 — drop the static repository-level dedupe state on logout
+      // so the next user (or the same user after re-login) can't see a
+      // stale payload from the previous session.
+      FeedRepository.clearDefaultViewCache();
       return FeedState(items: []);
     }
 
@@ -137,9 +148,18 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
           limit: _limit,
         );
         _hasNext = parsed.pagination.hasNext && parsed.items.isNotEmpty;
-        _scheduleSilentRevalidation();
+        // R5.1 — Skip silent revalidation when the cache is very fresh.
+        // The backend now caches `/api/feed/?page=1` for 30 s, so a
+        // revalidation < 60 s after the last fetch would just hit the
+        // server cache and bring no new data — wasted round-trip + extra
+        // burst on the API. Past 60 s we still revalidate to keep the
+        // stale-while-revalidate UX intact.
+        final ageSeconds = DateTime.now().difference(cached.savedAt).inSeconds;
+        if (ageSeconds >= _silentRevalSkipSeconds) {
+          _scheduleSilentRevalidation();
+        }
         print(
-            '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${DateTime.now().difference(cached.savedAt).inSeconds}s)');
+            '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})');
         return FeedState(items: parsed.items, carousels: parsed.carousels);
       } catch (e) {
         // Corrupted cache or schema drift — drop silently and fall through.
@@ -252,7 +272,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await refresh();
   }
 
-  Future<FeedResponse> _fetchPage({required int page}) async {
+  Future<FeedResponse> _fetchPage({
+    required int page,
+    bool forceFresh = false,
+  }) async {
     final repository = ref.read(feedRepositoryProvider);
     final isSerein = ref.read(sereinToggleProvider).enabled;
 
@@ -278,7 +301,8 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
           sourceId: _selectedSourceId,
           entity: _selectedEntity,
           keyword: _selectedKeyword,
-          serein: isSerein);
+          serein: isSerein,
+          forceFresh: forceFresh);
       _hasNext = result.feed.pagination.hasNext && result.feed.items.isNotEmpty;
       // Persist in the background — cache write failures never block the UI.
       _persistDefaultFeedCache(result.raw);
@@ -363,7 +387,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // et reset la position de scroll. Le RefreshIndicator gère déjà le feedback visuel.
 
     try {
-      final response = await _fetchPage(page: 1);
+      // R5.1 — pull-to-refresh / explicit refresh always bypasses the
+      // repository-level dedupe so the user gesture produces a real network
+      // call (the backend cache will still give a fast response, but the
+      // user has the right to ask for fresh data).
+      final response = await _fetchPage(page: 1, forceFresh: true);
       state = AsyncData(FeedState(
         items: response.items,
         carousels: response.carousels,
