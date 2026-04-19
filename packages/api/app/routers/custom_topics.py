@@ -26,12 +26,12 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user import UserSubtopic
 from app.models.user_topic_profile import UserTopicProfile
+from app.services.feed_cache import FEED_CACHE
 from app.services.ml.classification_service import (
     SLUG_TO_LABEL,
     VALID_ENTITY_TYPES,
     VALID_TOPIC_SLUGS,
 )
-from app.services.feed_cache import FEED_CACHE
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
 from app.services.user_service import UserService
 

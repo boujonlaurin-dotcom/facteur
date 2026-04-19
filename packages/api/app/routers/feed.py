@@ -12,7 +12,6 @@ from app.database import async_session_maker, get_db
 from app.dependencies import get_current_user_id
 from app.models.content import UserContentStatus
 from app.models.enums import ContentType, FeedFilterMode
-from app.services.feed_cache import FEED_CACHE
 from app.schemas.content import (
     FeedRefreshRequest,
     FeedRefreshResponse,
@@ -37,6 +36,7 @@ from app.schemas.learning import (
     LearningCheckpointResponse,
     proposal_to_response,
 )
+from app.services.feed_cache import FEED_CACHE
 from app.services.learning_service import LearningService
 from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
