@@ -299,8 +299,8 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         'DigestNotifier: Updated notification with ${topicLabels.length} topics'
         ' (serein: $isSerein)',
       );
-    } catch (e) {
-      debugPrint('DigestNotifier: Failed to update notification: $e');
+    } catch (e, stack) {
+      debugPrint('DigestNotifier: Failed to update notification: $e\n$stack');
     }
   }
 
