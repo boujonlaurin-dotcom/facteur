@@ -10,8 +10,8 @@ class FacteurLoader extends StatelessWidget {
 
   const FacteurLoader({
     super.key,
-    this.width = 160,
-    this.height = 160,
+    this.width = 120,
+    this.height = 120,
     this.color,
   });
 
