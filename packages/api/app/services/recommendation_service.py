@@ -520,9 +520,7 @@ class RecommendationService:
                 if tp.slug_parent:
                     ct_slugs.add(tp.slug_parent.lower().strip())
                 if tp.keywords:
-                    ct_keywords.extend(
-                        kw.lower().strip() for kw in tp.keywords if kw
-                    )
+                    ct_keywords.extend(kw.lower().strip() for kw in tp.keywords if kw)
             interest_context = InterestContext(
                 user_interests={s.lower().strip() for s in user_interests if s},
                 user_subtopics={s.lower().strip() for s in user_subtopics if s}
