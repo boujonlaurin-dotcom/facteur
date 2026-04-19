@@ -109,6 +109,20 @@ def _get_alembic_head() -> str:
         return "unknown"
 
 
+# Drop trafilatura HTTP noise (not 200 / download error) saturating Sentry quota.
+def _sentry_before_send(event: dict, hint: dict) -> dict | None:
+    logger_name = event.get("logger") or ""
+    if not logger_name.startswith("trafilatura"):
+        return event
+    message = (
+        event.get("logentry", {}).get("message", "") or event.get("message", "") or ""
+    )
+    message_lower = message.lower()
+    if "not a 200 response" in message_lower or "download error:" in message_lower:
+        return None
+    return event
+
+
 # --- Sentry Initialization ---
 if settings.sentry_dsn:
     sentry_sdk.init(
@@ -127,6 +141,7 @@ if settings.sentry_dsn:
             ),
         ],
         send_default_pii=False,
+        before_send=_sentry_before_send,
     )
     sentry_sdk.set_tag("alembic_head", _get_alembic_head())
     sentry_sdk.set_tag(
