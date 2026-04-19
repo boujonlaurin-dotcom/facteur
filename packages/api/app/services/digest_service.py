@@ -1413,6 +1413,7 @@ class DigestService:
                     "divergence_analysis": s.divergence_analysis,
                     "divergence_level": s.divergence_level,
                     "perspective_sources": s.perspective_sources,
+                    "perspective_articles": s.perspective_articles,
                     "representative_content_id": (
                         str(s.representative_content_id)
                         if s.representative_content_id

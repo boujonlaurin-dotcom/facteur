@@ -651,6 +651,67 @@ async def _load_cluster_articles_for_representative(
     return list(content_result.scalars().all())
 
 
+async def _load_stored_perspectives_for_representative(
+    db: AsyncSession,
+    content_id: UUID,
+    user_id: UUID,
+) -> tuple[list[dict], dict[str, int]] | None:
+    """Return the perspective_articles list the pipeline persisted on the
+    digest subject containing ``content_id``, plus its bias_distribution.
+
+    Why this path exists: the editorial pipeline runs Google News once at
+    digest generation time and merges with the cluster sources. If the
+    /perspectives endpoint re-runs Google News at call time (hours later),
+    it gets a different result set — so the CTA logos (built from the
+    persisted ``perspective_sources``) drift away from the bottom-sheet
+    list (live API). Reading from the same JSONB snapshot eliminates the
+    divergence by construction.
+
+    Returns ``None`` if the content_id is not part of any recent
+    editorial_v1 digest (standalone feed article) — caller should fall
+    back to live computation.
+    """
+    from sqlalchemy import desc, select
+
+    from app.models.daily_digest import DailyDigest
+
+    stmt = (
+        select(DailyDigest)
+        .where(
+            DailyDigest.user_id == user_id,
+            DailyDigest.format_version == "editorial_v1",
+        )
+        .order_by(desc(DailyDigest.generated_at))
+        .limit(4)
+    )
+    result = await db.execute(stmt)
+    digests = list(result.scalars().all())
+    if not digests:
+        return None
+
+    target_str = str(content_id)
+    for digest in digests:
+        items = digest.items if isinstance(digest.items, dict) else {}
+        for subject in items.get("subjects", []):
+            actu = subject.get("actu_article")
+            extras = subject.get("extra_actu_articles", []) or []
+            ids = {subject.get("representative_content_id")}
+            if actu and actu.get("content_id"):
+                ids.add(actu["content_id"])
+            for extra in extras:
+                if extra.get("content_id"):
+                    ids.add(extra["content_id"])
+            if target_str in ids:
+                stored = subject.get("perspective_articles")
+                bias = subject.get("bias_distribution") or {}
+                if stored is not None:
+                    return list(stored), dict(bias)
+                # Subject found but no stored snapshot (legacy digest pre-fix
+                # or pipeline bug) → caller falls back to live compute.
+                return None
+    return None
+
+
 @router.get("/{content_id}/perspectives", status_code=status.HTTP_200_OK)
 async def get_perspectives(
     content_id: UUID,
@@ -733,11 +794,71 @@ async def get_perspectives(
     # Hybrid perspectives search: DB entities → Google News entities → fallback keywords
     service = PerspectiveService(db=db)
 
-    # Mirror the editorial pipeline: if this content_id is a representative
-    # (or any carousel article) of a subject in the user's recent digest,
-    # the header / spectrum bar counters include the cluster's own sources.
-    # The bottom sheet must describe the SAME set, otherwise the count on
-    # the CTA ("Voir les N perspectives") mismatches what the sheet renders.
+    # Fast path — return the snapshot the editorial pipeline persisted on
+    # the digest subject containing this content_id. This guarantees the
+    # bottom-sheet list matches the CTA preview logos (both derived from
+    # the same JSONB blob) instead of running a fresh Google News query
+    # that drifts from the digest-time results.
+    try:
+        stored = await _load_stored_perspectives_for_representative(
+            db=db,
+            content_id=content_id,
+            user_id=UUID(current_user_id),
+        )
+    except Exception as e:
+        stored = None
+        logger.warning(
+            "perspectives_stored_lookup_failed",
+            content_id=cache_key,
+            error=str(e),
+        )
+
+    if stored is not None:
+        stored_perspectives, stored_bias = stored
+        bias_groups = len([v for v in stored_bias.values() if v > 0])
+        count = len(stored_perspectives)
+        has_entities = bool(
+            _parse_entity_names(content.entities, types={"PERSON", "ORG"})
+        )
+        if has_entities and count >= 5 and bias_groups >= 3:
+            comparison_quality = "high"
+        elif count >= 3 and bias_groups >= 2:
+            comparison_quality = "medium"
+        else:
+            comparison_quality = "low"
+
+        from app.models.perspective_analysis import PerspectiveAnalysis as _PA
+
+        analysis_result = await db.execute(
+            select(_PA).where(_PA.content_id == content_id)
+        )
+        cached_row = analysis_result.scalars().first()
+        cached_analysis = cached_row.analysis_text if cached_row else None
+
+        response = {
+            "content_id": cache_key,
+            # Empty keywords: the snapshot was built without re-running the
+            # Google News query path. Mobile uses keywords only as a hint
+            # for the analyse/refresh flow — the empty list degrades cleanly.
+            "keywords": [],
+            "source_bias_stance": source_bias_stance,
+            "perspectives": stored_perspectives,
+            "bias_distribution": stored_bias,
+            "comparison_quality": comparison_quality,
+            "analysis": cached_analysis,
+            "analysis_cached": cached_analysis is not None,
+        }
+        _perspectives_cache[cache_key] = response
+        logger.info(
+            "perspectives_endpoint_stored_snapshot",
+            content_id=cache_key,
+            count=count,
+        )
+        return response
+
+    # Live path (non-digest content_id, or stored snapshot missing).
+    # Mirrors the editorial pipeline: include cluster's own sources so the
+    # count converges back to the digest header on the next regeneration.
     cluster_perspectives: list = []
     cluster_domains: set[str] = set()
     try:

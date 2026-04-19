@@ -412,6 +412,24 @@ class EditorialPipelineService:
             subject.bias_distribution = compute_bias_distribution(known_perspectives)
             subject.bias_highlights = compute_bias_highlights(subject.bias_distribution)
 
+            # Persist the full known-bias merged list so the
+            # /contents/{id}/perspectives endpoint can return the exact same
+            # snapshot — otherwise the bottom sheet re-runs Google News at
+            # call time and shows different media than the CTA logos that
+            # come from this pipeline run.
+            subject.perspective_articles = [
+                {
+                    "title": p.title,
+                    "url": p.url,
+                    "source_name": p.source_name,
+                    "source_domain": p.source_domain,
+                    "bias_stance": p.bias_stance,
+                    "published_at": p.published_at,
+                    "description": p.description,
+                }
+                for p in known_perspectives
+            ]
+
             # Axe C — observability: log the composition so we can verify in
             # prod that the cluster count, perspective count and LLM analysis
             # describe the same media set.

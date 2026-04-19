@@ -153,24 +153,28 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                         : colors.textSecondary,
                   ),
                 ),
-                // CTA — outline pill "Voir les N perspectives [logo][logo][logo]".
-                // Logos are up to 3 other sources from the perspective pool
-                // (excluding the singleton's own source already on the card).
+                // CTA — pill discrète "Voir les N perspectives [logo×3]".
+                // Style volontairement effacé : couleur tertiaire, bord
+                // léger, taille compacte. Le focus visuel reste sur la
+                // barre de biais ; le bouton complète sans s'imposer.
                 if (widget.onCompare != null &&
                     widget.perspectiveCount > 1) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerRight,
                     child: SizedBox(
-                      height: 36,
+                      height: 30,
                       child: OutlinedButton(
                         onPressed: widget.onCompare,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: colors.primary,
-                          side: BorderSide(color: colors.primary, width: 1.2),
+                          foregroundColor: colors.textSecondary,
+                          side: BorderSide(
+                            color: colors.textSecondary.withOpacity(0.25),
+                            width: 0.8,
+                          ),
                           shape: const StadiumBorder(),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 2),
+                              horizontal: 10, vertical: 0),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Row(
@@ -178,9 +182,10 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
                           children: [
                             Text(
                               'Voir les ${widget.perspectiveCount} perspectives',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: colors.textSecondary,
                               ),
                             ),
                             ..._buildCtaLogos(colors),
@@ -200,11 +205,13 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
 
   /// Up to 3 mini source logos rendered after the CTA text, showing
   /// "other" sources covering the topic (i.e. excluding the singleton's
-  /// source — already visible on the card). Returns an empty list if
-  /// nothing to show so the button layout degrades cleanly.
+  /// source — already visible on the card). Logos are sized to slot
+  /// inside the discreet 30px-tall button without inflating it.
+  /// Returns an empty list if nothing to show so the layout degrades
+  /// cleanly.
   List<Widget> _buildCtaLogos(FacteurColors colors) {
     const maxLogos = 3;
-    const size = 20.0;
+    const size = 16.0;
 
     bool isExcluded(SourceMini s) =>
         (widget.excludeSourceId != null && s.id == widget.excludeSourceId) ||
@@ -221,9 +228,9 @@ class _DivergenceAnalysisBlockState extends State<DivergenceAnalysisBlock> {
 
     if (others.isEmpty) return const [];
 
-    final widgets = <Widget>[const SizedBox(width: 8)];
+    final widgets = <Widget>[const SizedBox(width: 6)];
     for (var i = 0; i < others.length; i++) {
-      if (i > 0) widgets.add(const SizedBox(width: 4));
+      if (i > 0) widgets.add(const SizedBox(width: 3));
       widgets.add(_logoCircle(others[i], size, colors));
     }
     return widgets;
