@@ -114,7 +114,9 @@ def _sentry_before_send(event: dict, hint: dict) -> dict | None:
     logger_name = event.get("logger") or ""
     if not logger_name.startswith("trafilatura"):
         return event
-    message = event.get("logentry", {}).get("message", "") or event.get("message", "") or ""
+    message = (
+        event.get("logentry", {}).get("message", "") or event.get("message", "") or ""
+    )
     message_lower = message.lower()
     if "not a 200 response" in message_lower or "download error:" in message_lower:
         return None
