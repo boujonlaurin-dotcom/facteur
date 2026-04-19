@@ -132,7 +132,8 @@ class TestBuildCarouselsHot:
         assert c["carousel_type"] == "hot"
         assert "Trump" in c["title"]
         assert c["emoji"] == "\U0001f50d"
-        assert c["position"] == 5
+        # Story 12.8: hot base position is 15 (business order), no jitter without user_id
+        assert c["position"] == 15
         assert len(c["items"]) == 5  # rep + 4 hidden
         assert len(c["badges"]) == len(c["items"])
         assert c["badges"][0]["code"] == "actu_chaude"
@@ -705,7 +706,7 @@ class TestMinCarouselPosition:
 
     @pytest.mark.asyncio
     async def test_hot_position_unchanged_without_user_id(self):
-        """Without user_id, hot carousel keeps its original position (5 >= 4)."""
+        """Without user_id, hot carousel falls back to its business-order base."""
         service = _setup_service()
         rep = MockContent(title="Trump article")
         hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
@@ -718,7 +719,8 @@ class TestMinCarouselPosition:
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
         assert len(carousels) == 1
-        assert carousels[0]["position"] == 5  # No shuffle, 5 >= MIN(4)
+        # Story 12.8: hot base position is 15 (no jitter without user_id)
+        assert carousels[0]["position"] == 15
 
 
 def _setup_service_with_overflow_and_mocks():
@@ -730,9 +732,11 @@ def _setup_service_with_overflow_and_mocks():
     return service
 
 
-class TestDailySlotShuffle:
+class TestDailyJitter:
+    """Story 12.8: deterministic daily jitter around business-order base."""
+
     @pytest.mark.asyncio
-    async def test_shuffle_deterministic_same_day(self):
+    async def test_jitter_deterministic_same_day(self):
         """Same user_id + same day → same positions on repeated calls."""
         service = _setup_service_with_overflow_and_mocks()
         user_id = uuid4()
@@ -757,7 +761,7 @@ class TestDailySlotShuffle:
         assert pos1 == pos2
 
     @pytest.mark.asyncio
-    async def test_shuffle_varies_across_users(self):
+    async def test_jitter_varies_across_users(self):
         """Different user_ids on the same day may get different positions."""
         service = _setup_service_with_overflow_and_mocks()
         rep = MockContent(title="Trump article")
@@ -769,7 +773,6 @@ class TestDailySlotShuffle:
         ]
         service.keyword_overflow = []
 
-        # Run for many different user_ids — at least some should differ
         positions = set()
         for _ in range(20):
             _, carousels = await service._build_carousels(
@@ -778,12 +781,13 @@ class TestDailySlotShuffle:
             if carousels:
                 positions.add(carousels[0]["position"])
 
-        # With 20 random user_ids and slots [4-6], we expect multiple distinct positions
         assert len(positions) > 1, "Positions should vary across different users"
 
     @pytest.mark.asyncio
-    async def test_all_shuffled_positions_within_slot_ranges(self):
-        """Shuffled positions must fall within defined slot ranges."""
+    async def test_jitter_stays_within_base_plus_minus_2(self):
+        """Jittered positions stay within base ±2 of the business-order slot."""
+        from app.services.recommendation_service import RecommendationService
+
         service = _setup_service_with_overflow_and_mocks()
         rep = MockContent(title="Trump article")
         hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
@@ -794,16 +798,18 @@ class TestDailySlotShuffle:
         ]
         service.keyword_overflow = []
 
-        VALID_RANGES = [(4, 6), (8, 11), (14, 17)]
+        base_hot = RecommendationService._CAROUSEL_BASE_POSITIONS["hot"]
+        MIN_POS = 4
         for _ in range(20):
             _, carousels = await service._build_carousels(
                 [], pre_regroup_map, user_id=uuid4(),
             )
             for c in carousels:
                 pos = c["position"]
-                in_any_range = any(lo <= pos <= hi for lo, hi in VALID_RANGES)
-                assert in_any_range, (
-                    f"Position {pos} not in any valid slot range {VALID_RANGES}"
+                # Only one carousel here → no collisions. Jitter is ±2 around
+                # the base, clamped to MIN_CAROUSEL_POSITION.
+                assert max(MIN_POS, base_hot - 2) <= pos <= base_hot + 2, (
+                    f"Hot position {pos} outside jitter band for base {base_hot}"
                 )
 
 
