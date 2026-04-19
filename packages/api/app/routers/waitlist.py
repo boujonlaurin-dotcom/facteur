@@ -1,5 +1,7 @@
 """Router waitlist — endpoint public pour inscription landing page."""
 
+import hashlib
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,9 +13,19 @@ from app.schemas.waitlist import (
     WaitlistRequest,
     WaitlistResponse,
 )
+from app.services.posthog_client import get_posthog_client
 from app.services.waitlist_service import WaitlistService
 
 router = APIRouter()
+
+
+def _email_distinct_id(email: str) -> str:
+    """Distinct_id stable pour un lead non authentifié (hash de l'email).
+
+    On ne push pas l'email en clair à PostHog — on déterministe un id qui
+    pourra être alias'é au vrai user_id après signup côté mobile.
+    """
+    return "lead_" + hashlib.sha256(email.strip().lower().encode()).hexdigest()[:16]
 
 
 @router.get("/count", response_model=WaitlistCountResponse)
@@ -40,6 +52,17 @@ async def join_waitlist(
         utm_medium=request.utm_medium,
         utm_campaign=request.utm_campaign,
     )
+    if is_new:
+        get_posthog_client().capture(
+            user_id=_email_distinct_id(request.email),
+            event="waitlist_signup",
+            properties={
+                "source": request.source,
+                "utm_source": request.utm_source,
+                "utm_medium": request.utm_medium,
+                "utm_campaign": request.utm_campaign,
+            },
+        )
     return WaitlistResponse(
         message="Merci ! On t'écrit très vite. 💌",
         is_new=is_new,

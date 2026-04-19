@@ -330,6 +330,24 @@ class UserService:
             else 0,
         )
 
+        # Story 14.1 — capture signup_completed server-side for retention cohorts.
+        # Fire-and-forget, never blocks the onboarding response.
+        try:
+            from app.services.posthog_client import get_posthog_client
+
+            get_posthog_client().capture(
+                user_id=user_id,
+                event="signup_completed",
+                properties={
+                    "themes_count": interest_count,
+                    "subtopics_count": subtopic_count,
+                    "sources_count": sources_created,
+                    "gamification_enabled": answers.gamification_enabled,
+                },
+            )
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("onboarding_posthog_capture_failed", error=str(exc))
+
         return {
             "profile": profile,
             "interests_created": interest_count,

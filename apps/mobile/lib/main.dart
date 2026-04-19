@@ -10,6 +10,7 @@ import 'package:home_widget/home_widget.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/ui/notification_service.dart';
 
@@ -154,6 +155,34 @@ Future<void> main() async {
     debugPrint('Main: Supabase initialized correctly.');
     final hasSession = Supabase.instance.client.auth.currentSession != null;
     debugPrint('Main: Supabase Session restored immediately: $hasSession');
+
+    // Story 14.1 — init PostHog after Supabase so we can piggyback on the
+    // auth state stream to identify/reset the distinct_id automatically.
+    final posthog = PostHogService();
+    await posthog.init();
+    if (hasSession) {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        await posthog.identify(userId: user.id);
+      }
+    }
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      switch (data.event) {
+        case AuthChangeEvent.signedIn:
+        case AuthChangeEvent.tokenRefreshed:
+        case AuthChangeEvent.userUpdated:
+          final user = data.session?.user;
+          if (user != null) {
+            posthog.identify(userId: user.id);
+          }
+          break;
+        case AuthChangeEvent.signedOut:
+          posthog.reset();
+          break;
+        default:
+          break;
+      }
+    });
   } catch (e) {
     debugPrint('ERROR: Failed to initialize Supabase: $e');
     _runErrorApp(

@@ -224,6 +224,26 @@ class AppUpdateConstants {
   static bool get isReleaseBuild => releaseTag.isNotEmpty;
 }
 
+/// Configuration PostHog (Story 14.1 — retention cohorts)
+class PostHogConstants {
+  PostHogConstants._();
+
+  /// Clé projet PostHog (injectée via --dart-define à build-time)
+  static const String apiKey = String.fromEnvironment(
+    'POSTHOG_API_KEY',
+    defaultValue: '',
+  );
+
+  /// Host PostHog (EU par défaut)
+  static const String host = String.fromEnvironment(
+    'POSTHOG_HOST',
+    defaultValue: 'https://eu.i.posthog.com',
+  );
+
+  /// Enabled flag — off par défaut si pas de clé
+  static bool get isEnabled => apiKey.isNotEmpty;
+}
+
 /// Liens externes
 class ExternalLinks {
   ExternalLinks._();
