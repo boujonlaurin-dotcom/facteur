@@ -44,6 +44,10 @@ class FeedCard extends StatefulWidget {
   final bool alwaysShowDescription;
   final VoidCallback? onImageError;
   final double? descriptionFontSize;
+  /// Max lines for the article title. Defaults to 3 — feed cards keep the
+  /// tight, scannable layout. Digest singleton cards override to 5 so
+  /// long titles can breathe on the "closure" moment of the app.
+  final int titleMaxLines;
 
   const FeedCard({
     super.key,
@@ -75,6 +79,7 @@ class FeedCard extends StatefulWidget {
     this.alwaysShowDescription = false,
     this.onImageError,
     this.descriptionFontSize,
+    this.titleMaxLines = 3,
   });
 
   @override
@@ -553,7 +558,7 @@ class _FeedCardState extends State<FeedCard>
               fontWeight: FontWeight.w700,
               height: 1.2,
             ),
-            maxLines: widget.expandContent ? null : 3,
+            maxLines: widget.expandContent ? null : widget.titleMaxLines,
             overflow: widget.expandContent ? null : TextOverflow.ellipsis,
           ),
           if (showDescription) ...[

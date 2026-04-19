@@ -94,6 +94,25 @@ class TestSelectedTopic:
         assert st.topic_id == "c1"
         assert st.deep_angle == "Modèle social"
 
+    def test_deep_angle_optional_for_eventful_topics(self):
+        """People / faits divers / event-only topics can opt out of deep
+        matching by setting deep_angle to None, which DeepMatcher will
+        skip."""
+        st = SelectedTopic(
+            topic_id="c1",
+            label="Mort d'une célébrité",
+            selection_reason="Actu people",
+            deep_angle=None,
+        )
+        assert st.deep_angle is None
+        # Default when omitted entirely.
+        st2 = SelectedTopic(
+            topic_id="c2",
+            label="Foot: match du soir",
+            selection_reason="Actu sportive",
+        )
+        assert st2.deep_angle is None
+
 
 class TestMatchedActuArticle:
     def test_construct_valid(self):

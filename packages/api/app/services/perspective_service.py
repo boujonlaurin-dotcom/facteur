@@ -528,6 +528,82 @@ class PerspectiveService:
 
         return quoted + context_words
 
+    async def build_cluster_perspectives(self, contents: list) -> list[Perspective]:
+        """Build Perspective objects from a list of Content (cluster articles).
+
+        One Perspective per unique source_id (caller's ordering preserved —
+        pipeline orders by published_at desc so the most-recent article wins
+        per outlet). Bias is resolved via ``resolve_bias`` so cluster
+        perspectives share the same code path as Google News perspectives.
+
+        Articles without domain AND source_name are skipped: they can't be
+        part of a bias spectrum and would pollute logo lookups / dedup with
+        empty-string keys.
+
+        Shared between ``editorial/pipeline.py`` and the
+        ``/contents/{id}/perspectives`` endpoint so the 3-counter invariant
+        from PR #390 holds: header, spectrum bar, and bottom-sheet all
+        describe the same merged set (cluster ∪ Google News).
+        """
+        from urllib.parse import urlparse
+
+        seen_source_ids: set = set()
+        result: list[Perspective] = []
+        for content in contents:
+            source_id = getattr(content, "source_id", None)
+            if source_id is not None:
+                if source_id in seen_source_ids:
+                    continue
+                seen_source_ids.add(source_id)
+
+            domain = ""
+            source_name = ""
+            source = getattr(content, "source", None)
+            if source is not None:
+                source_name = getattr(source, "name", "") or ""
+                source_url = getattr(source, "url", "") or ""
+                if isinstance(source_url, str) and source_url:
+                    try:
+                        parsed = urlparse(source_url)
+                        domain = parsed.netloc or ""
+                        if domain.startswith("www."):
+                            domain = domain[4:]
+                    except Exception:
+                        domain = ""
+            # Fallback: extract from article URL.
+            if not domain:
+                url = getattr(content, "url", "") or ""
+                if isinstance(url, str) and url:
+                    try:
+                        parsed = urlparse(url)
+                        domain = parsed.netloc or ""
+                        if domain.startswith("www."):
+                            domain = domain[4:]
+                    except Exception:
+                        domain = ""
+
+            if not domain and not source_name:
+                continue
+
+            bias = await self.resolve_bias(domain=domain, source_name=source_name)
+
+            result.append(
+                Perspective(
+                    title=getattr(content, "title", "") or "",
+                    url=getattr(content, "url", "") or "",
+                    source_name=source_name or domain,
+                    source_domain=domain,
+                    bias_stance=bias,
+                    published_at=(
+                        content.published_at.isoformat()
+                        if getattr(content, "published_at", None)
+                        else None
+                    ),
+                    description=getattr(content, "description", None),
+                )
+            )
+        return result
+
     async def get_perspectives_hybrid(
         self, content, exclude_domain: str | None = None
     ) -> tuple[list[Perspective], list[str]]:

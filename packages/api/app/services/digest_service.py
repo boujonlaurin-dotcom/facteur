@@ -1413,6 +1413,7 @@ class DigestService:
                     "divergence_analysis": s.divergence_analysis,
                     "divergence_level": s.divergence_level,
                     "perspective_sources": s.perspective_sources,
+                    "perspective_articles": s.perspective_articles,
                     "representative_content_id": (
                         str(s.representative_content_id)
                         if s.representative_content_id
@@ -1905,7 +1906,14 @@ class DigestService:
                         source_count=subject.get("source_count", 0),
                         theme=subject.get("theme"),
                         topic_score=0.0,
-                        subjects=[subject.get("deep_angle", "")],
+                        # `deep_angle` is optional (null for people/faits-divers).
+                        # `subject.get("deep_angle", "")` returns None when the
+                        # key exists with value null, which breaks the
+                        # DigestTopic.subjects: list[str] validation. Emit an
+                        # empty list for null angles rather than [""].
+                        subjects=(
+                            [subject["deep_angle"]] if subject.get("deep_angle") else []
+                        ),
                         articles=topic_articles,
                         intro_text=subject.get("intro_text"),
                         transition_text=subject.get("transition_text"),

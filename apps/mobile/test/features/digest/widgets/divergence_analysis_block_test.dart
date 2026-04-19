@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/widgets/divergence_analysis_block.dart';
 import 'package:facteur/features/digest/widgets/markdown_text.dart';
+import 'package:facteur/features/feed/widgets/initial_circle.dart';
 
 void main() {
   Widget buildWidget({
@@ -10,6 +12,9 @@ void main() {
     String? divergenceLevel,
     VoidCallback? onCompare,
     int perspectiveCount = 0,
+    List<SourceMini> perspectiveSources = const [],
+    String? excludeSourceId,
+    String? excludeSourceName,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -20,6 +25,9 @@ void main() {
             divergenceLevel: divergenceLevel,
             onCompare: onCompare,
             perspectiveCount: perspectiveCount,
+            perspectiveSources: perspectiveSources,
+            excludeSourceId: excludeSourceId,
+            excludeSourceName: excludeSourceName,
           ),
         ),
       ),
@@ -171,6 +179,58 @@ void main() {
       ));
       expect(find.byIcon(Icons.info_outline), findsNothing);
       expect(find.byType(Tooltip), findsNothing);
+    });
+
+    testWidgets(
+        'CTA shows up to 3 other-source logos and excludes the singleton source',
+        (tester) async {
+      const singleton = SourceMini(id: 's0', name: 'Ouest-France');
+      const others = [
+        SourceMini(id: 's1', name: 'Le Monde'),
+        SourceMini(id: 's2', name: 'France Info'),
+        SourceMini(id: 's3', name: 'Libération'),
+        SourceMini(id: 's4', name: 'Le Figaro'),
+      ];
+      await tester.pumpWidget(buildWidget(
+        divergenceAnalysis: 'Analyse',
+        onCompare: () {},
+        perspectiveCount: 5,
+        perspectiveSources: [singleton, ...others],
+        excludeSourceId: singleton.id,
+        excludeSourceName: singleton.name,
+      ));
+      await tester.tap(find.text("Lire l'analyse"));
+      await tester.pump();
+
+      // No logo for the singleton source ('O' initial) in the CTA area.
+      expect(
+        find.descendant(
+          of: find.byType(OutlinedButton),
+          matching: find.text('O'),
+        ),
+        findsNothing,
+      );
+      // Up to 3 InitialCircles for the 3 first other sources (L, F, L).
+      final circlesInCta = find.descendant(
+        of: find.byType(OutlinedButton),
+        matching: find.byType(InitialCircle),
+      );
+      expect(circlesInCta, findsNWidgets(3));
+    });
+
+    testWidgets('CTA logos degrade to zero when no other source is available',
+        (tester) async {
+      const only = SourceMini(id: 's0', name: 'Ouest-France');
+      await tester.pumpWidget(buildWidget(
+        divergenceAnalysis: 'Analyse',
+        onCompare: () {},
+        perspectiveCount: 1,
+        perspectiveSources: [only],
+        excludeSourceId: only.id,
+        excludeSourceName: only.name,
+      ));
+      // perspectiveCount = 1 → button hidden anyway (existing invariant).
+      expect(find.byType(OutlinedButton), findsNothing);
     });
   });
 }

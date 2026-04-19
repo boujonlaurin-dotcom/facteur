@@ -89,6 +89,18 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   /// Content IDs whose images failed to load (detected at runtime).
   final Set<String> _collapsedImages = {};
 
+  /// Singleton mode — always display a single article per topic (no
+  /// carousel, no page indicator). Priority:
+  ///   1. A followed-source article in the pool (user affinity bonus),
+  ///   2. otherwise the first actu_article (pivot rank 1, also the anchor
+  ///      the backend used to compute perspectives / bias distribution).
+  DigestItem _pickSingleton(List<DigestItem> actuArticles) {
+    for (final a in actuArticles) {
+      if (a.isFollowedSource) return a;
+    }
+    return actuArticles.first;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +114,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     _pageController.dispose();
     super.dispose();
   }
+
+  /// Digest card titles get more room than feed cards — 5 lines in the
+  /// expanded FeedCard and the compact card variants. The hero variant
+  /// keeps its tighter 3-line budget because the stacked image + gradient
+  /// already constrains vertical space visually. Feed cards are unchanged
+  /// (FeedCard defaults titleMaxLines to 3).
+  static const int _digestTitleMaxLines = 5;
+  static const int _digestHeroTitleMaxLines = 3;
 
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
   static const double _footerHeight = 57.0;
@@ -138,12 +158,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   double _estimateCardHeight(DigestItem article, double cardWidth) {
     final hasImage = _imageWillRender(article);
 
-    // Title: fontSize 20, lineHeight 1.2, maxLines 3
+    // Title: fontSize 20, lineHeight 1.2, max lines = digest title budget.
     // Estimate line count from title length vs available width.
     // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
     final charsPerLine = (cardWidth - _bodyPadding) / 10;
-    final titleLines =
-        (article.title.length / charsPerLine).round().clamp(1, 3);
+    final titleLines = (article.title.length / charsPerLine)
+        .round()
+        .clamp(1, _digestTitleMaxLines);
     final titleHeight = titleLines * 20.0 * 1.2;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
@@ -195,13 +216,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     final allDismissed = topic.articles.every((a) => a.isDismissed);
     if (allDismissed) return const SizedBox.shrink();
 
-    // Editorial mode: toggle expand/collapse
+    // Editorial mode: toggle expand/collapse. The carousel is gone —
+    // editorial topics always render as a singleton (_pickSingleton).
+    // Extras still drive perspective_count / bias_distribution downstream.
     if (widget.editorialMode) {
       final actuArticles = topic.articles
           .where((a) => a.badge != 'pas_de_recul')
           .toList();
       if (actuArticles.isEmpty) return const SizedBox.shrink();
-      final isActuMulti = actuArticles.length > 1;
 
       // Plain header pinned at the top of the card (no sticky overlay).
       // The previous sticky-overlay implementation was fragile across route
@@ -242,8 +264,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   naturalHeader,
                   const SizedBox(height: 8),
                   if (_isExpanded)
-                    _buildExpandedEditorial(colors, isDark, topic,
-                        actuArticles, isActuMulti)
+                    _buildExpandedEditorial(
+                        colors, isDark, topic, actuArticles)
                   else
                     _buildCompactEditorialCard(
                         colors, isDark, topic, actuArticles),
@@ -307,8 +329,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     DigestTopic topic,
     List<DigestItem> actuArticles,
   ) {
-    final safeIndex = _currentPage.clamp(0, actuArticles.length - 1);
-    final article = actuArticles[safeIndex];
+    final article = _pickSingleton(actuArticles);
     final hasImage = _imageWillRender(article);
     final timeAgo = article.publishedAt != null
         ? timeago
@@ -379,7 +400,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   // Title
                   Text(
                     article.title,
-                    maxLines: 4,
+                    maxLines: _digestTitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
@@ -390,7 +411,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   ),
                   const SizedBox(height: 6),
                   // Footer: source logos · time · expand icon
-                  _buildCompactFooter(colors, isDark, topic, timeAgo),
+                  _buildCompactFooter(colors, isDark, topic, timeAgo, article),
                 ],
               ),
             ),
@@ -414,7 +435,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         children: [
           Text(
             article.title,
-            maxLines: 4,
+            maxLines: _digestTitleMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 15,
@@ -424,7 +445,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ),
           ),
           const SizedBox(height: 6),
-          _buildCompactFooter(colors, isDark, topic, timeAgo),
+          _buildCompactFooter(colors, isDark, topic, timeAgo, article),
         ],
       ),
     );
@@ -491,7 +512,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   const SizedBox(height: 8),
                   Text(
                     article.title,
-                    maxLines: 3,
+                    maxLines: _digestHeroTitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 17,
@@ -508,7 +529,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         // Footer: source logos + time + chevron
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: _buildCompactFooter(colors, isDark, topic, timeAgo),
+          child: _buildCompactFooter(colors, isDark, topic, timeAgo, article),
         ),
       ],
     );
@@ -528,7 +549,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         children: [
           Text(
             article.title,
-            maxLines: 4,
+            maxLines: _digestTitleMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 15,
@@ -538,7 +559,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             ),
           ),
           const SizedBox(height: 6),
-          _buildCompactFooter(colors, isDark, topic, timeAgo),
+          _buildCompactFooter(colors, isDark, topic, timeAgo, article),
         ],
       ),
     );
@@ -549,8 +570,9 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     bool isDark,
     DigestTopic topic,
     String? timeAgo,
+    DigestItem singleton,
   ) {
-    // Use perspectiveSources if available, fallback to article sources
+    // Use perspectiveSources if available, fallback to article sources.
     final List<({String? id, String name, String? logoUrl})> allSources;
     if (topic.perspectiveSources.isNotEmpty) {
       final seen = <String>{};
@@ -566,6 +588,35 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         if (s != null && s.id != null && seen.add(s.id!)) {
           allSources.add((id: s.id, name: s.name, logoUrl: s.logoUrl));
         }
+      }
+    }
+
+    // Pin the singleton's source first so the big (20px) logo visually
+    // matches the article rendered in the card. Match on id when possible,
+    // fall back to name for backends that don't populate source_id on
+    // perspective_sources (Google News entries).
+    final singletonSource = singleton.source;
+    final singletonId = singletonSource?.id;
+    final singletonName = singletonSource?.name;
+    if (singletonSource != null) {
+      final idx = allSources.indexWhere(
+        (s) => (singletonId != null && s.id == singletonId) ||
+            (singletonName != null && s.name == singletonName),
+      );
+      if (idx > 0) {
+        final pinned = allSources.removeAt(idx);
+        allSources.insert(0, pinned);
+      } else if (idx < 0) {
+        // Singleton source isn't in perspective_sources (e.g. unknown bias
+        // filtered upstream). Prepend it so the visual anchor holds.
+        allSources.insert(
+          0,
+          (
+            id: singletonId,
+            name: singletonName ?? 'Inconnu',
+            logoUrl: singletonSource.logoUrl,
+          ),
+        );
       }
     }
 
@@ -658,49 +709,28 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     bool isDark,
     DigestTopic topic,
     List<DigestItem> actuArticles,
-    bool isActuMulti,
   ) {
     final deepArticle = topic.articles
         .where((a) => a.badge == 'pas_de_recul')
         .cast<DigestItem?>()
         .firstOrNull;
 
+    // Singleton mode: show one article per topic even when the backend
+    // sends 2-3 (carousel deprecated — see review iteration). The extras
+    // still drive `perspective_sources` / `bias_distribution` for the
+    // "Analyse de biais" block below.
+    final singleton = _pickSingleton(actuArticles);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            // ── Articles actu ──
+            // ── Article unique (singleton) ──
             const SizedBox(height: 2),
-            if (isActuMulti) ...[
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final cardWidth = constraints.maxWidth * 0.88;
-                  // Per-page dynamic height (current card only) so the viewport
-                  // matches the visible card's height → no empty space above
-                  // or below. The AnimatedContainer smoothly transitions when
-                  // swiping between cards of different heights.
-                  final currentArticle = actuArticles[
-                      _currentPage.clamp(0, actuArticles.length - 1)];
-                  final computedHeight =
-                      _estimateCardHeight(currentArticle, cardWidth);
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOut,
-                    height: computedHeight,
-                    child: ClipRect(child: _buildPageView(actuArticles)),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _buildPageIndicator(colors, actuArticles.length),
-              ),
-            ] else if (!actuArticles.first.isDismissed)
-              _buildSingleArticle(actuArticles.first),
+            if (!singleton.isDismissed) _buildSingleArticle(singleton),
 
             const SizedBox(height: 12),
 
-            // ── Analyse Facteur (juste sous les carrousels) ──
+            // ── Analyse Facteur (juste sous le singleton) ──
             if (topic.divergenceAnalysis != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -712,6 +742,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   onCompare: _handleCompare,
                   perspectiveCount: topic.perspectiveCount,
                   perspectiveSources: topic.perspectiveSources,
+                  excludeSourceId: singleton.source?.id,
+                  excludeSourceName: singleton.source?.name,
                 ),
               ),
               const SizedBox(height: 6),
@@ -749,9 +781,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
             // ── Thumbs feedback ──
             ArticleThumbsFeedback(
-              contentId: isActuMulti
-                  ? actuArticles[_currentPage.clamp(0, actuArticles.length - 1)].contentId
-                  : actuArticles.first.contentId,
+              contentId: singleton.contentId,
             ),
           ],
     );
@@ -766,7 +796,12 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         ? widget.topic.articles.where((a) => a.badge != 'pas_de_recul').toList()
         : widget.topic.articles;
     if (articles.isEmpty) return;
-    final article = articles[_currentPage.clamp(0, articles.length - 1)];
+    // Editorial mode is singleton — use the same selection logic as the
+    // compact card so "Comparer" operates on the visible article. Non-
+    // editorial paths keep the legacy _currentPage behavior.
+    final article = widget.editorialMode
+        ? _pickSingleton(articles)
+        : articles[_currentPage.clamp(0, articles.length - 1)];
     // Prefer the backend-provided pivot id (the same content used to compute
     // perspective_count / bias_distribution). Falls back to the currently
     // displayed article for legacy cached digests where the field is absent.
@@ -1021,6 +1056,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             content: _convertToContent(article),
             alwaysShowDescription: !imageVisible,
             descriptionFontSize: 15,
+            titleMaxLines: _digestTitleMaxLines,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1065,6 +1101,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           content: _convertToContent(article),
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
+          titleMaxLines: _digestTitleMaxLines,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null

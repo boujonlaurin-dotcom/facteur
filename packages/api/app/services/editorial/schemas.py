@@ -23,7 +23,10 @@ class SelectedTopic(BaseModel):
     topic_id: str
     label: str  # 5-8 words
     selection_reason: str
-    deep_angle: str  # systemic angle to search for in deep sources
+    # `None` when the topic has no meaningful systemic/structural angle
+    # (people, faits divers, actualité purement événementielle). When null,
+    # DeepMatcher skips the topic — no "Pas de recul" is forced.
+    deep_angle: str | None = None
     source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     is_a_la_une: bool = False
@@ -59,7 +62,9 @@ class EditorialSubject(BaseModel):
     topic_id: str
     label: str
     selection_reason: str
-    deep_angle: str
+    # `None` for topics with no meaningful systemic angle (people, faits
+    # divers, sport, buzz). DeepMatcher skips these; see SelectedTopic.
+    deep_angle: str | None = None
     source_count: int = 0  # number of unique sources covering this topic
     theme: str | None = None
     is_a_la_une: bool = False  # headline subject (rank 1, most covered)
@@ -77,6 +82,14 @@ class EditorialSubject(BaseModel):
     divergence_analysis: str | None = None
     divergence_level: str | None = None  # "low" | "medium" | "high"
     perspective_sources: list[dict] | None = None  # PerspectiveSourceMini dicts
+    # Full merged perspectives (cluster + GNews, known-bias filtered) used
+    # to compute perspective_count / bias_distribution. Persisted so the
+    # /contents/{id}/perspectives endpoint can return the SAME set the
+    # digest header was built from — preview logos and bottom-sheet list
+    # reference one snapshot. Each dict mirrors the Perspective dataclass:
+    # {title, url, source_name, source_domain, bias_stance,
+    #  published_at, description}.
+    perspective_articles: list[dict] | None = None
     # Pivot content used to compute perspectives (cluster's most-recent article).
     # Mobile re-uses this id when calling /perspectives so the bottom sheet count
     # matches the header / bias spectrum bar. None on legacy cached digests.

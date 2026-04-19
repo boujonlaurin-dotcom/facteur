@@ -198,8 +198,14 @@ class TestMatchForTopics:
         assert match.match_reason == "Directly relevant analysis"
 
     @pytest.mark.asyncio
-    async def test_llm_null_index_broader_fallback(self):
-        """When LLM returns null, broader fallback (pass 3) picks best Jaccard."""
+    async def test_llm_null_index_is_respected(self):
+        """When LLM returns null, we trust it — no broader fallback.
+
+        Better no "Pas de recul" than a hors-sujet article. The previous
+        broader_fallback would pick the top Jaccard candidate even after
+        an explicit LLM rejection, which produced the Nathalie Baye →
+        "mines des empires" bug.
+        """
         articles = [_make_deep_content("Some article")]
         session = _mock_session_with_articles(articles)
 
@@ -219,9 +225,51 @@ class TestMatchForTopics:
         ):
             result = await matcher.match_for_topics([topic])
 
-        # Pass 3 broader fallback should find the article
-        assert result[topic.topic_id] is not None
-        assert result[topic.topic_id].content_id == articles[0].id
+        # LLM rejection is final.
+        assert result[topic.topic_id] is None
+
+    @pytest.mark.asyncio
+    async def test_skips_topics_without_deep_angle(self):
+        """Topics with null/empty deep_angle must be skipped — no LLM call."""
+        articles = [_make_deep_content("Any article")]
+        session = _mock_session_with_articles(articles)
+
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock()
+
+        topic_with_angle = _make_topic(topic_id="c1", deep_angle="Modèle social")
+        topic_null = SelectedTopic(
+            topic_id="c2",
+            label="Celeb death",
+            selection_reason="Actu people",
+            deep_angle=None,
+        )
+        topic_empty = SelectedTopic(
+            topic_id="c3",
+            label="Fait divers",
+            selection_reason="Actu local",
+            deep_angle="  ",
+        )
+
+        matcher = DeepMatcher(session, llm, _make_config())
+        with patch.object(
+            matcher,
+            "_prefilter",
+            return_value=[(articles[0], 0.5)],
+        ):
+            # LLM accepts the only matchable topic
+            llm.chat_json.return_value = {"selected_index": 0, "reason": "ok"}
+            result = await matcher.match_for_topics(
+                [topic_with_angle, topic_null, topic_empty]
+            )
+
+        assert result[topic_null.topic_id] is None
+        assert result[topic_empty.topic_id] is None
+        assert result[topic_with_angle.topic_id] is not None
+        # Exactly 2 LLM calls (query expansion + evaluation) for the single
+        # matchable topic — skipped topics produce zero LLM cost.
+        assert llm.chat_json.await_count == 2
 
     @pytest.mark.asyncio
     async def test_llm_fail_fallback_jaccard(self):
@@ -294,3 +342,32 @@ class TestFallbackPick:
     def test_empty_candidates_returns_none(self):
         result = DeepMatcher._fallback_pick([])
         assert result is None
+
+    def test_rejects_weak_match_below_min_score(self):
+        """Default min_score (0.15, no-LLM floor): weak matches rejected
+        now that there is no broader_fallback safety net."""
+        article = _make_deep_content("Weak match")
+        # Below default min_score (0.15)
+        assert DeepMatcher._fallback_pick([(article, 0.10)]) is None
+        # Above
+        assert DeepMatcher._fallback_pick([(article, 0.20)]) is not None
+
+    def test_split_thresholds_llm_exception_vs_no_llm(self):
+        """LLM-exception path uses 0.08 (permissive, the LLM never ran);
+        no-LLM path uses 0.15 (strict, no semantic arbiter)."""
+        article = _make_deep_content("Borderline match")
+        # Jaccard 0.10: above exception floor (0.08), below no-LLM floor (0.15).
+        assert (
+            DeepMatcher._fallback_pick(
+                [(article, 0.10)],
+                min_score=DeepMatcher.FALLBACK_MIN_SCORE_LLM_EXCEPTION,
+            )
+            is not None
+        )
+        assert (
+            DeepMatcher._fallback_pick(
+                [(article, 0.10)],
+                min_score=DeepMatcher.FALLBACK_MIN_SCORE_NO_LLM,
+            )
+            is None
+        )
