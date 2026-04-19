@@ -115,6 +115,14 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     super.dispose();
   }
 
+  /// Digest card titles get more room than feed cards — 5 lines in the
+  /// expanded FeedCard and the compact card variants. The hero variant
+  /// keeps its tighter 3-line budget because the stacked image + gradient
+  /// already constrains vertical space visually. Feed cards are unchanged
+  /// (FeedCard defaults titleMaxLines to 3).
+  static const int _digestTitleMaxLines = 5;
+  static const int _digestHeroTitleMaxLines = 3;
+
   /// Footer height: border (1) + padding (4×2) + icon row (~28) = ~37
   static const double _footerHeight = 57.0;
 
@@ -150,12 +158,13 @@ class _TopicSectionState extends ConsumerState<TopicSection>
   double _estimateCardHeight(DigestItem article, double cardWidth) {
     final hasImage = _imageWillRender(article);
 
-    // Title: fontSize 20, lineHeight 1.2, maxLines 3
+    // Title: fontSize 20, lineHeight 1.2, max lines = digest title budget.
     // Estimate line count from title length vs available width.
     // Average char width ≈ 10px at fontSize 20 → chars per line ≈ cardWidth / 10.
     final charsPerLine = (cardWidth - _bodyPadding) / 10;
-    final titleLines =
-        (article.title.length / charsPerLine).round().clamp(1, 3);
+    final titleLines = (article.title.length / charsPerLine)
+        .round()
+        .clamp(1, _digestTitleMaxLines);
     final titleHeight = titleLines * 20.0 * 1.2;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
@@ -391,7 +400,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   // Title
                   Text(
                     article.title,
-                    maxLines: 4,
+                    maxLines: _digestTitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
@@ -426,7 +435,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         children: [
           Text(
             article.title,
-            maxLines: 4,
+            maxLines: _digestTitleMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 15,
@@ -503,7 +512,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   const SizedBox(height: 8),
                   Text(
                     article.title,
-                    maxLines: 3,
+                    maxLines: _digestHeroTitleMaxLines,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 17,
@@ -540,7 +549,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         children: [
           Text(
             article.title,
-            maxLines: 4,
+            maxLines: _digestTitleMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 15,
@@ -1047,6 +1056,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             content: _convertToContent(article),
             alwaysShowDescription: !imageVisible,
             descriptionFontSize: 15,
+            titleMaxLines: _digestTitleMaxLines,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1091,6 +1101,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           content: _convertToContent(article),
           alwaysShowDescription: !imageVisible,
           descriptionFontSize: 15,
+          titleMaxLines: _digestTitleMaxLines,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null

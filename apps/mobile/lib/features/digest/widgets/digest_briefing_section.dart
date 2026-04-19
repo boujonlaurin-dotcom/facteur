@@ -501,6 +501,7 @@ class _DigestBriefingSectionState extends State<DigestBriefingSection> {
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
+              titleMaxLines: 5,
               onTap: () => widget.onItemTap(item),
               onSourceTap: widget.onSourceTap != null && item.source?.id != null
                   ? () => widget.onSourceTap!(item.source!.id!)

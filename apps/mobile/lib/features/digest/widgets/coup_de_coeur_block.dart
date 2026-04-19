@@ -98,6 +98,7 @@ class CoupDeCoeurBlock extends StatelessWidget {
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
               content: _convertToContent(item),
               descriptionFontSize: 15,
+              titleMaxLines: 5,
               onTap: () => onTap(item),
               onSourceTap: onSourceTap != null && coupDeCoeur.source?.id != null
                   ? () => onSourceTap!(coupDeCoeur.source!.id!)
