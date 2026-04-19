@@ -708,3 +708,222 @@ Net : **2 conn/req** (au lieu de 3), plafond ~10 feeds concurrents
   (< +200ms p50).
 - 48 h Sentry watch : pas de récurrence des signatures Round 3
   (`db_connection_invalidated_by_signature` reste rare).
+
+---
+
+## Round 5 — PLAN (en attente GO utilisateur)
+
+**Statut** : PLAN — pas encore implémenté
+**Branche** : `claude/debug-infinite-load-Lnryd`
+**PR cible** : `main`
+
+### Hypothèse cause racine R5 — amplification des appels `/api/feed/`
+
+Les Rounds 1-4 ont tous été **tactiques** (timeout/gather, listener, sessions
+courtes, 3→2 conn/req). La récurrence suggère un problème de **volume** pas
+de latence unitaire :
+
+1. **PR #423** (preload + stale-while-revalidate) déclenche `feed_preload_provider`
+   dès `isAuthenticated && isEmailConfirmed && !needsOnboarding`, puis
+   `_scheduleSilentRevalidation()` re-tape `/api/feed/?page=1` immédiatement
+   après chaque cache hit. Résultat observable (`feed_provider.dart:140`) :
+   **2-3 appels `/api/feed/` par session utilisateur là où il y en avait 1**.
+2. **PR #426** (pull-to-refresh mode chrono) ajoute un chemin supplémentaire.
+3. **PR #425** (recovery 403) relance les retries plus souvent.
+
+Hot-path `/api/feed/` (analyse `recommendation_service.py`) tient **2 conns
+pendant 1,5-5 s** : 500 candidats scorés + `_build_carousels` fait 7-12
+SELECTs **séquentiels** sur la session principale (L1036 consumed_ids, L167-196
+perspectives ×2, L1209 decale, L1283-1297 new_source, L1361 community,
+L1443 saved). Aucune protection cache applicative côté backend.
+
+À +100 DAU, 2-3× le volume d'appels sature le plafond effectif (~10 feeds
+concurrents après R4). Les tunes pool ne tiennent plus la croissance.
+
+### Approche
+
+**Deux leviers complémentaires** : (1) réduire côté mobile les appels
+redondants à l'intérieur d'une même fenêtre de 30-60 s ; (2) casser côté
+backend la règle « chaque `/api/feed/` = full recompute DB » via un cache
+applicatif court keyé par user, TTL 30 s, invalidé aux writes.
+
+---
+
+### R5.1 — Quick wins mobile (debounce + dedupe)
+
+**Objectif** : supprimer les doubles appels `/api/feed/?page=1` déclenchés
+en cascade par preload + silent revalidation dans la même fenêtre courte.
+
+**Fichiers** :
+- `apps/mobile/lib/features/feed/providers/feed_provider.dart:140`
+- `apps/mobile/lib/features/feed/providers/feed_preload_provider.dart:33`
+- `apps/mobile/lib/features/feed/repositories/feed_repository.dart:86`
+
+**Changements** :
+
+1. **Skip silent revalidation si cache < 60 s** (`feed_provider.dart:140`).
+   Si `cached.savedAt` est récent (< 60 s), ne pas relancer `_fetchPage(1)`
+   en background — la donnée vient d'être écrite, probablement par le
+   preload. Garde la stale-while-revalidate intacte au-delà de 60 s.
+
+2. **Gate preload sur dernier fetch** (`feed_preload_provider.dart`). Ajouter
+   une vérification `cache.readRaw(userId)?.savedAt` > `now - 60s` : si le
+   cache est très frais, le preload est inutile (le user vient juste de
+   fermer/rouvrir l'app, les données sont déjà là).
+
+3. **Debounce applicatif `/api/feed/?page=1`** (`feed_repository.dart`).
+   `static DateTime? _lastDefaultFetchAt` + `static Future<FeedResponse>?
+   _inflight` au niveau `FeedRepository`. Sur `getFeedWithRaw(page:1, default)`:
+   - si un fetch est in-flight, retourner le même future (dedupe)
+   - si le dernier fetch a < 5 s, retourner la future déjà résolue via cache
+   
+   **Scope** : page=1 + serein off + pas de filtre (seule vue pertinente pour
+   le cache). Pas de debounce sur les autres fetch (filtre, loadMore, refresh
+   explicite via pull-to-refresh qui doit rester responsive).
+
+**Note sur le pull-to-refresh** : l'appel via `refresh()` et
+`refreshArticlesWithSnapshot` doit **bypasser** le debounce (geste user
+explicite). Une variante `getFeedWithRaw(..., forceFresh: true)` permet ça.
+
+**Gain attendu** : -40 à -60 % du volume `/api/feed/` par session.
+
+---
+
+### R5.2 — Big fix backend : cache applicatif per-user feed page-1 TTL 30 s
+
+**Objectif** (≥90 % confiance sur la cause racine) : neutraliser l'effet de
+l'amplification mobile **et** protéger le backend contre tout futur PR qui
+déclencherait plus d'appels `/api/feed/`. Un cache 30 s TTL avec invalidation
+aux writes rend le pool DB insensible au volume d'ouvertures feed.
+
+**Pourquoi >90 % confiance sur la racine** :
+- Les 4 rounds précédents ont réduit conns/req (3→2), timeouts, sessions
+  courtes — mais jamais attaqué **« pourquoi recomputer identique »** à chaque
+  ouverture. Dans une fenêtre de 30 s, l'output est identique à 99 %
+  (même scoring, même candidats, même user state). Le cache est conceptuellement
+  gratuit.
+- Sentry Round 3-4 confirme le mode de panne : pool saturé par `feed.get_personalized_feed`
+  × N, pas par latence unitaire. Si N effectif devient ~N/10 (cache hit rate
+  attendu), la saturation disparaît mécaniquement.
+- Pas de risque de staleness visible : 30 s est invisible pour l'UX (le user
+  vient de voir le feed il y a < 30 s de toute façon), et toute écriture
+  user (save/like/hide/mute/impress/refresh) invalide immédiatement sa clé.
+
+**Fichier** : nouveau `packages/api/app/services/feed_cache.py` + wiring dans
+`packages/api/app/routers/feed.py`.
+
+**Implémentation** :
+
+```python
+# feed_cache.py
+import asyncio
+import time
+from dataclasses import dataclass
+from uuid import UUID
+
+@dataclass
+class _Entry:
+    expires_at: float
+    payload: bytes  # orjson-serialized FeedResponse
+
+class FeedPageCache:
+    """In-memory per-user cache for /api/feed/ page 1 default view.
+
+    TTL 30 s. Single-flight via per-user asyncio.Lock to avoid thundering herd
+    on cache miss. Invalidation API for write handlers."""
+
+    def __init__(self, ttl_seconds: float = 30.0) -> None:
+        self._ttl = ttl_seconds
+        self._entries: dict[UUID, _Entry] = {}
+        self._locks: dict[UUID, asyncio.Lock] = {}
+
+    def _lock(self, user_id: UUID) -> asyncio.Lock:
+        lock = self._locks.get(user_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[user_id] = lock
+        return lock
+
+    def get(self, user_id: UUID) -> bytes | None:
+        e = self._entries.get(user_id)
+        if e is None or e.expires_at < time.monotonic():
+            return None
+        return e.payload
+
+    def put(self, user_id: UUID, payload: bytes) -> None:
+        self._entries[user_id] = _Entry(
+            expires_at=time.monotonic() + self._ttl, payload=payload
+        )
+
+    def invalidate(self, user_id: UUID) -> None:
+        self._entries.pop(user_id, None)
+
+FEED_CACHE = FeedPageCache()
+```
+
+**Wiring dans `/api/feed/`** (feed.py:61) :
+
+- **Scope d'éligibilité** cache : `offset == 0 and limit == 20 and not any filter
+  (mode, theme, topic, source_id, entity, keyword) and not serein and not saved_only`.
+  Exactement la vue par défaut mobile.
+- Sur hit : `return Response(content=payload, media_type="application/json")`
+  (bypass Pydantic serialization).
+- Sur miss : prendre `FEED_CACHE._lock(user_uuid)`, re-check (double-check
+  pattern), sinon compute normalement, `orjson.dumps(response.model_dump())`
+  → `FEED_CACHE.put(user_uuid, payload)` → return.
+
+**Invalidation hooks** (appels explicites `FEED_CACHE.invalidate(user_uuid)`) :
+- `POST /api/feed/refresh` (feed.py:228)
+- `POST /api/feed/refresh/undo` (feed.py:302)
+- `POST /api/contents/{id}/impress` (contents.py:374)
+- `PATCH /api/contents/{id}` status/saved/liked (routers/contents.py)
+- `POST /api/contents/{id}/hide` + `unhide`
+- `POST /api/personalization/mute-source|mute-topic|mute-theme|mute-content-type`
+
+**Mesures et garde-fous** :
+- Métrique simple : counter stderr `feed_cache hit=N miss=M` toutes les 60 s.
+- Pas de limite dure sur la taille (une entrée ≈ 150 KB × 100 DAU = 15 MB max).
+- Si un bug de fraîcheur est détecté : **feature flag** via env var
+  `FEED_CACHE_TTL_SECONDS=0` désactive le cache sans redéploiement.
+
+**Gain attendu** :
+- DB calls `/api/feed/` : -70 à -90 % (hit rate attendu ~80 % sur la fenêtre).
+- `/api/health/pool` `checked_out` p95 : < 10 au lieu de 14-18 lors des
+  bursts Chrome.
+- Latence p50 hit : ~5-20 ms vs 1,5-5 s (facteur ×100-200).
+
+---
+
+### R5.3 — Tests
+
+**Backend** :
+- `tests/services/test_feed_cache.py` : TTL expiry, invalidation, single-flight
+  (10 tâches concurrentes → 1 seul compute).
+- `tests/routers/test_feed_cache.py` : hit retourne payload identique, miss
+  populate, écritures invalidante (refresh/impress/save/mute/hide).
+- Non-regression : filtres (theme/topic/source) **bypass** le cache.
+
+**Mobile** :
+- `test/features/feed/providers/feed_provider_silent_reval_test.dart` : cache
+  < 60 s → pas de silent reval ; cache > 60 s → silent reval appelé.
+- `test/features/feed/repositories/feed_repository_debounce_test.dart` : 3
+  appels simultanés `getFeedWithRaw(page:1, default)` → 1 seul réseau.
+- `test/features/feed/providers/feed_preload_provider_test.dart` : cache
+  récent → pas de preload.
+
+### R5.4 — Critères d'acceptation
+
+- [ ] Hit rate cache backend ≥ 70 % sur la fenêtre 30 s (métrique stderr).
+- [ ] Sentry : 0 `QueuePool limit` sur `/api/feed/` pendant 72 h post-deploy.
+- [ ] `/api/health/pool` `checked_out` p95 ≤ 10 pendant les heures de pic.
+- [ ] Aucun ticket support « feed obsolète » (sanity check staleness).
+- [ ] Volume `/api/feed/` par session mobile divisé par ≥ 2 (Sentry perf).
+
+### R5.5 — Hors-scope Round 5
+
+- Split `_build_carousels` en endpoint séparé `/api/feed/carousels` (gain
+  marginal comparé au cache, ajoute complexité client).
+- Offline precompute des feeds (option B de l'analyse systémique — ROI élevé
+  mais refonte de 5-7 j).
+- Read replica Supabase (option G — à évaluer après mesure R5.2).
+- Augmentation `pool_size` — toujours interdite sans preuve métrique.
