@@ -257,11 +257,12 @@ class AnalyticsService {
     String event,
     Map<String, dynamic> rawProps,
   ) async {
-    if (_posthog == null || !_posthog.isEnabled) return;
+    final ph = _posthog;
+    if (ph == null || !ph.isEnabled) return;
     final cleanProps = <String, Object>{};
     rawProps.forEach((key, value) {
       if (value != null) cleanProps[key] = value as Object;
     });
-    await _posthog.capture(event: event, properties: cleanProps);
+    await ph.capture(event: event, properties: cleanProps);
   }
 }
