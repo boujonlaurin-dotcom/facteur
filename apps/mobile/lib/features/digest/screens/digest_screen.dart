@@ -9,7 +9,10 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../shared/widgets/mode_accent.dart';
+import '../../../shared/widgets/states/friendly_error_view.dart';
+import '../../../shared/widgets/states/laurin_fallback_view.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import '../../feed/models/content_model.dart';
@@ -53,6 +56,7 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   bool _hasCheckedWelcome = false;
   bool _notifBannerDismissed = false;
   bool _hasCheckedUpdate = false;
+  int _consecutiveErrorCount = 0;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -307,6 +311,21 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
               .initFromDigestResponse(digest.formatVersion);
         }
       });
+    });
+
+    // Compteur d'échecs consécutifs (alimente FriendlyErrorView vs
+    // LaurinFallbackView). Reset sur succès, incrément à chaque transition
+    // vers un état d'erreur.
+    ref.listen(digestProvider, (previous, next) {
+      if (next is AsyncError && previous is! AsyncError) {
+        if (mounted) {
+          setState(() => _consecutiveErrorCount++);
+        }
+      } else if (next is AsyncData && _consecutiveErrorCount != 0) {
+        if (mounted) {
+          setState(() => _consecutiveErrorCount = 0);
+        }
+      }
     });
 
     // Listen to scroll to top trigger
@@ -700,9 +719,9 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
                             },
                           );
                         },
-                        loading: () => _buildLoadingState(colors),
+                        loading: () => _buildLoadingState(),
                         error: (error, stack) =>
-                            _buildErrorState(context, ref, colors, error),
+                            _buildErrorState(context, ref, error),
                       ),
                     ),
                   ),
@@ -722,25 +741,8 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
     );
   }
 
-  Widget _buildLoadingState(FacteurColors colors) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(
-            color: colors.primary,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Chargement de votre Essentiel...',
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
+  Widget _buildLoadingState() {
+    return const LoadingView();
   }
 
   Widget _buildEmptyState(FacteurColors colors) {
@@ -778,62 +780,13 @@ class _DigestScreenState extends ConsumerState<DigestScreen> {
   Widget _buildErrorState(
     BuildContext context,
     WidgetRef ref,
-    FacteurColors colors,
     Object error,
   ) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            PhosphorIcons.warningCircle(),
-            size: 64,
-            color: colors.error,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Erreur de chargement',
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              _userFriendlyError(error),
-              style: TextStyle(
-                color: colors.textTertiary,
-                fontSize: 14,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => ref.read(digestProvider.notifier).refreshDigest(),
-            icon: Icon(PhosphorIcons.arrowClockwise()),
-            label: const Text('Réessayer'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _userFriendlyError(Object error) {
-    if (error is TimeoutException) {
-      return 'Le serveur met trop de temps à répondre.\nVérifiez votre connexion et réessayez.';
+    void retry() => ref.read(digestProvider.notifier).refreshDigest();
+    if (_consecutiveErrorCount >= 2) {
+      return LaurinFallbackView(onRetry: retry);
     }
-    final msg = error.toString().toLowerCase();
-    if (msg.contains('socket') || msg.contains('connection')) {
-      return 'Connexion au serveur impossible.\nVérifiez votre connexion internet.';
-    }
-    if (msg.contains('503') || msg.contains('service unavailable')) {
-      return 'Le serveur est temporairement indisponible.\nRéessayez dans quelques instants.';
-    }
-    return 'Une erreur est survenue.\nVeuillez réessayer.';
+    return FriendlyErrorView(error: error, onRetry: retry);
   }
 
   /// Converts DigestItem to Content for navigation and PersonalizationSheet
