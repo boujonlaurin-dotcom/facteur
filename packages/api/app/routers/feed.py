@@ -325,6 +325,14 @@ async def _compute_feed(
             await db.commit()
         except SQLAlchemyError:
             logger.warning("feed_precommit_failed", exc_info=True)
+            # Round 6 — commit échoué = session dirty. Sans rollback explicite,
+            # le commit final de get_db lève PendingRollbackError au return.
+            try:
+                await db.rollback()
+            except Exception as rb_exc:
+                logger.debug(
+                    "feed_precommit_rollback_failed", error=str(rb_exc)
+                )
 
         try:
             learning_service = LearningService(

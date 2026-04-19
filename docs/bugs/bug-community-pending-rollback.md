@@ -68,4 +68,38 @@ Arbitrage CTO D3 : **targeted first, audit after 24h metrics**.
 - Sentry issue : `PYTHON-14`
 - Round 3 (`bug-infinite-load-requests.md`) : contexte du listener `_invalidate_on_supabase_kill`.
 - `packages/api/app/database.py` l.120-156 (listener), l.242-280 (`get_db`).
-- `packages/api/app/routers/community.py` l.143-150 (fix).
+- `packages/api/app/routers/community.py` l.143-150 (fix D3 initial).
+
+## Extension Round 6 (2026-04-19)
+
+Après le crash 16:59 Paris (cf. `.context/perf-watch/2026-04-19-round6-1659.md`),
+audit des handlers fail-open. Deux sites supplémentaires identifiés avec le
+**même anti-pattern** que PYTHON-14 :
+
+1. **`packages/api/app/routers/digest.py` l.164** — `_enrich_community_carousel` :
+   `except Exception: logger.exception(...)` sans rollback. Appelé depuis
+   `get_digest` (l.293) et `get_both_digests` (l.417-419). Risque HAUT : tout
+   kill PgBouncer pendant l'enrichissement carousel laissait la session `db`
+   injectée en état dirty → 500 via `PendingRollbackError` au commit final de
+   `get_db`. Patch : rollback explicite garde par try/except (même pattern D3).
+
+2. **`packages/api/app/routers/feed.py` l.326** — `feed_precommit_failed` :
+   `except SQLAlchemyError: logger.warning(...)` sans rollback. Si `db.commit()`
+   échoue à ce point (commit transitoire avant l'appel Learning), la session
+   est dirty. Risque moyen (l'erreur à ce point précis est rare) mais patché
+   par défense en profondeur — mêmes conséquences potentielles.
+
+### Tests R6
+
+- `tests/test_enrich_community_carousel_rollback.py` — 3 cas (service raise →
+  rollback + fail-open ; rollback raise → toujours fail-open ; nominal empty →
+  pas de rollback).
+- Pas de test dédié pour `feed.py:326` — fix est un mirror 1:1 du pattern D3
+  déjà couvert par `test_community_recommendations_rollback.py`.
+
+### Systémique (D5 — pas dans ce patch)
+
+L'audit Round 6 a confirmé que D3 ciblé était insuffisant. La même famille de
+bugs peut exister sur d'autres endpoints non audités. Backlog story à ouvrir :
+audit systématique des `except` fail-open dans `packages/api/app/routers/`
+utilisant une session `db` injectée par `get_db` sans ni reraise ni rollback.
