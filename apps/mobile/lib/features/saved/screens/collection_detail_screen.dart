@@ -218,6 +218,7 @@ class _CollectionDetailScreenState
                             padding: const EdgeInsets.only(bottom: 16),
                             child: FeedCard(
                               content: content,
+                              titleMaxLines: 5,
                               isSaved: content.isSaved,
                               isLiked: content.isLiked,
                               onTap: () => context.pushNamed(

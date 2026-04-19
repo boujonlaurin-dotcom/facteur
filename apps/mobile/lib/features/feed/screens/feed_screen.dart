@@ -947,6 +947,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
                                     isConsumed: isConsumed,
                                     child: FeedCard(
                                       content: content,
+                                      titleMaxLines: 5,
                                       onTap: () => _showArticleModal(content),
                                       onLongPressStart: (_) =>
                                           ArticlePreviewOverlay.show(

@@ -261,6 +261,7 @@ class TopicExplorerScreen extends ConsumerWidget {
                         ),
                         child: FeedCard(
                           content: article,
+                          titleMaxLines: 5,
                           onTap: () {
                             // Navigate to article detail
                             Navigator.of(context).pushNamed(

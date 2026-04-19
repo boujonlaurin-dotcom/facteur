@@ -169,6 +169,7 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: FeedCard(
                                   content: content,
+                                  titleMaxLines: 5,
                                   isSaved: true,
                                   isLiked: content.isLiked,
                                   onSourceTap: () {

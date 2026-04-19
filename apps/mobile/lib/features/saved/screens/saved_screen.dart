@@ -337,6 +337,7 @@ class _WeeklyNotesSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: FeedCard(
                 content: article,
+                titleMaxLines: 5,
                 isSaved: article.isSaved,
                 isLiked: article.isLiked,
                 onTap: () => context.pushNamed(
@@ -410,6 +411,7 @@ class _RecentSavedSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: FeedCard(
                 content: article,
+                titleMaxLines: 5,
                 isSaved: article.isSaved,
                 isLiked: article.isLiked,
                 onTap: () => context.pushNamed(

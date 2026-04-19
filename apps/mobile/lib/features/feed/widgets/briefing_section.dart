@@ -227,6 +227,7 @@ class BriefingSection extends StatelessWidget {
           opacity: item.isConsumed ? 0.6 : 1.0,
           child: FeedCard(
             content: item.content,
+            titleMaxLines: 5,
             onTap: () => onItemTap(item),
           ),
         ),
