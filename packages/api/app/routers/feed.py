@@ -1,9 +1,10 @@
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,7 @@ from app.schemas.learning import (
     LearningCheckpointResponse,
     proposal_to_response,
 )
+from app.services.feed_cache import FEED_CACHE
 from app.services.learning_service import LearningService
 from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
@@ -56,6 +58,44 @@ def _best_keyword(titles: list[str]) -> str:
 
 
 router = APIRouter()
+
+
+def _is_default_view(
+    *,
+    limit: int,
+    offset: int,
+    content_type: ContentType | None,
+    mode: FeedFilterMode | None,
+    serein: bool,
+    theme: str | None,
+    topic: str | None,
+    saved_only: bool,
+    has_note: bool,
+    source_id: str | None,
+    entity: str | None,
+    keyword: str | None,
+) -> bool:
+    """Eligibility predicate for the page-1 cache.
+
+    Only the cold-open / tab-switch landing view is cached: page 1, default
+    page size, no filter, serein off. Filtered/paginated views bypass —
+    lower volume, harder to invalidate, lower ROI. Cf. R5 in
+    `docs/bugs/bug-infinite-load-requests.md`.
+    """
+    return (
+        offset == 0
+        and limit == 20
+        and content_type is None
+        and mode is None
+        and not serein
+        and theme is None
+        and topic is None
+        and not saved_only
+        and not has_note
+        and source_id is None
+        and entity is None
+        and keyword is None
+    )
 
 
 @router.get("/", response_model=FeedResponse)
@@ -87,9 +127,101 @@ async def get_personalized_feed(
 
     Note: Le briefing (Top 3) a été déplacé vers l'endpoint dédié /api/digest.
     Le feed retourne uniquement les articles réguliers.
+
+    Round 5 — Cache applicatif TTL 30s sur la vue par défaut (page=1, no
+    filter, serein off). Hit retourne le payload sérialisé sans recompute.
+    Single-flight via `FEED_CACHE.lock(user_id)` pour éviter le thundering
+    herd au cache miss.
     """
-    service = RecommendationService(db)
     user_uuid = UUID(current_user_id)
+
+    cache_eligible = FEED_CACHE.enabled and _is_default_view(
+        limit=limit,
+        offset=offset,
+        content_type=content_type,
+        mode=mode,
+        serein=serein,
+        theme=theme,
+        topic=topic,
+        saved_only=saved_only,
+        has_note=has_note,
+        source_id=source_id,
+        entity=entity,
+        keyword=keyword,
+    )
+
+    if cache_eligible:
+        # Fast path: cached and fresh → no DB work, no Pydantic.
+        cached = FEED_CACHE.get(user_uuid)
+        if cached is not None:
+            return Response(content=cached, media_type="application/json")
+
+        # Single-flight: serialize concurrent first-misses for the same user.
+        # 2nd+ waiters re-check after acquiring the lock and pick up the
+        # payload populated by the 1st.
+        async with FEED_CACHE.lock(user_uuid):
+            cached = FEED_CACHE.get(user_uuid)
+            if cached is not None:
+                return Response(content=cached, media_type="application/json")
+            response = await _compute_feed(
+                db=db,
+                user_uuid=user_uuid,
+                limit=limit,
+                offset=offset,
+                content_type=content_type,
+                mode=mode,
+                serein=serein,
+                theme=theme,
+                topic=topic,
+                saved_only=saved_only,
+                has_note=has_note,
+                source_id=source_id,
+                entity=entity,
+                keyword=keyword,
+            )
+            payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
+            FEED_CACHE.put(user_uuid, payload)
+            return Response(content=payload, media_type="application/json")
+
+    response = await _compute_feed(
+        db=db,
+        user_uuid=user_uuid,
+        limit=limit,
+        offset=offset,
+        content_type=content_type,
+        mode=mode,
+        serein=serein,
+        theme=theme,
+        topic=topic,
+        saved_only=saved_only,
+        has_note=has_note,
+        source_id=source_id,
+        entity=entity,
+        keyword=keyword,
+    )
+    return response
+
+
+async def _compute_feed(
+    *,
+    db: AsyncSession,
+    user_uuid: UUID,
+    limit: int,
+    offset: int,
+    content_type: ContentType | None,
+    mode: FeedFilterMode | None,
+    serein: bool,
+    theme: str | None,
+    topic: str | None,
+    saved_only: bool,
+    has_note: bool,
+    source_id: str | None,
+    entity: str | None,
+    keyword: str | None,
+) -> FeedResponse:
+    """Run the full recommendation pipeline. Identical to the pre-Round-5
+    body of `get_personalized_feed`, extracted for cache-miss reuse."""
+    service = RecommendationService(db)
 
     # serein=True overrides mode to use the serein filter (same as INSPIRATION)
     if serein and not mode:
@@ -292,6 +424,7 @@ async def refresh_feed(
         refreshed += 1
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     logger.info("feed_refresh", user_id=current_user_id, refreshed=refreshed)
     return FeedRefreshResponse(
         refreshed=refreshed,
@@ -347,6 +480,7 @@ async def undo_refresh(
         restored += 1
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     logger.info("feed_refresh_undo", user_id=current_user_id, restored=restored)
     return {"restored": restored}
 

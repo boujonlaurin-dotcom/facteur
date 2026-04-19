@@ -160,6 +160,8 @@ async def test_onboarding_schedules_initial_digest_generation():
             return None
         async def scalar(self, *args, **kwargs):
             return None
+        async def commit(self):
+            return None
 
     async def _fake_db():
         yield _FakeDB()

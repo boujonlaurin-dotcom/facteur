@@ -7,6 +7,34 @@ class FeedRepository {
 
   FeedRepository(this._apiClient);
 
+  /// R5.1 — single-flight + short-window dedupe for the *default* feed
+  /// view (`page=1`, no filter, serein off). Two concurrent callers
+  /// (typically: preload provider + cache hit silent revalidation) get
+  /// the same in-flight `Future`, and a successful response is held for
+  /// [_defaultViewDedupeWindow] so a follow-up `_fetchPage(1)` triggered
+  /// within that window returns the same payload without a network call.
+  ///
+  /// Out of scope: filtered/themed/source-scoped fetches, pagination,
+  /// and `forceFresh` calls. The pull-to-refresh gesture must always
+  /// produce a real network call.
+  ///
+  /// Static so it survives the throwaway provider rebuilds; no per-user
+  /// keying is needed because [ApiClient] is per-session and userId is
+  /// implicit in the auth header. Cleared on logout via
+  /// [clearDefaultViewCache].
+  static Future<({FeedResponse feed, dynamic raw})>? _defaultViewInflight;
+  static DateTime? _defaultViewLastFetchAt;
+  static ({FeedResponse feed, dynamic raw})? _defaultViewLastResult;
+  static const Duration _defaultViewDedupeWindow = Duration(seconds: 5);
+
+  /// Reset the static dedupe state. Call on logout / user switch to avoid
+  /// leaking another user's feed across sessions.
+  static void clearDefaultViewCache() {
+    _defaultViewInflight = null;
+    _defaultViewLastFetchAt = null;
+    _defaultViewLastResult = null;
+  }
+
   /// Parse the `pagination` block from a `GET /feed` response.
   ///
   /// - Legacy shape (raw `List`): falls back to `hasNext = itemsCount > 0`
@@ -60,6 +88,7 @@ class FeedRepository {
     String? entity,
     String? keyword,
     bool serein = false,
+    bool forceFresh = false,
   }) async {
     final result = await getFeedWithRaw(
       page: page,
@@ -74,6 +103,7 @@ class FeedRepository {
       entity: entity,
       keyword: keyword,
       serein: serein,
+      forceFresh: forceFresh,
     );
     return result.feed;
   }
@@ -83,9 +113,97 @@ class FeedRepository {
   /// response can persist the exact shape that [parseFeedData] expects.
   ///
   /// Regular UI code should prefer [getFeed] which throws away the raw data.
+  ///
+  /// `forceFresh` bypasses the R5.1 default-view dedupe (use for explicit
+  /// pull-to-refresh).
   Future<({FeedResponse feed, dynamic raw})> getFeedWithRaw({
     int page = 1,
     int limit = 20,
+    String? contentType,
+    bool savedOnly = false,
+    String? mode,
+    String? theme,
+    String? topic,
+    bool hasNote = false,
+    String? sourceId,
+    String? entity,
+    String? keyword,
+    bool serein = false,
+    bool forceFresh = false,
+  }) async {
+    // R5.1 — single-flight + dedupe gate for the default view only.
+    final bool isDefaultView = page == 1 &&
+        limit == 20 &&
+        !serein &&
+        !savedOnly &&
+        !hasNote &&
+        contentType == null &&
+        mode == null &&
+        theme == null &&
+        topic == null &&
+        sourceId == null &&
+        entity == null &&
+        keyword == null;
+    if (isDefaultView && !forceFresh) {
+      final inflight = _defaultViewInflight;
+      if (inflight != null) {
+        return inflight;
+      }
+      final lastAt = _defaultViewLastFetchAt;
+      final lastResult = _defaultViewLastResult;
+      if (lastAt != null &&
+          lastResult != null &&
+          DateTime.now().difference(lastAt) < _defaultViewDedupeWindow) {
+        return lastResult;
+      }
+      final future = _doFetch(
+        page: page,
+        limit: limit,
+        contentType: contentType,
+        savedOnly: savedOnly,
+        mode: mode,
+        theme: theme,
+        topic: topic,
+        hasNote: hasNote,
+        sourceId: sourceId,
+        entity: entity,
+        keyword: keyword,
+        serein: serein,
+      );
+      _defaultViewInflight = future;
+      try {
+        final result = await future;
+        _defaultViewLastResult = result;
+        _defaultViewLastFetchAt = DateTime.now();
+        return result;
+      } finally {
+        // Always clear the in-flight Future, success or failure, so the
+        // next call doesn't get stuck on a settled Future and a transient
+        // failure doesn't poison subsequent retries.
+        if (identical(_defaultViewInflight, future)) {
+          _defaultViewInflight = null;
+        }
+      }
+    }
+    return _doFetch(
+      page: page,
+      limit: limit,
+      contentType: contentType,
+      savedOnly: savedOnly,
+      mode: mode,
+      theme: theme,
+      topic: topic,
+      hasNote: hasNote,
+      sourceId: sourceId,
+      entity: entity,
+      keyword: keyword,
+      serein: serein,
+    );
+  }
+
+  Future<({FeedResponse feed, dynamic raw})> _doFetch({
+    required int page,
+    required int limit,
     String? contentType,
     bool savedOnly = false,
     String? mode,

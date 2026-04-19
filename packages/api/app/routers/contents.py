@@ -24,6 +24,7 @@ from app.schemas.content import (
 from app.services.collection_service import CollectionService
 from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
+from app.services.feed_cache import FEED_CACHE
 
 logger = structlog.get_logger()
 
@@ -176,6 +177,7 @@ async def update_content_status(
     )
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "current_status": updated_status.status}
 
 
@@ -202,6 +204,7 @@ async def save_content(
         )
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_saved": True}
 
 
@@ -220,6 +223,7 @@ async def unsave_content(
     )
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_saved": False}
 
 
@@ -252,6 +256,7 @@ async def like_content(
     await collection_service.add_to_collection(user_uuid, liked_col.id, content_id)
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_liked": True, "is_saved": True}
 
 
@@ -277,6 +282,7 @@ async def unlike_content(
     await collection_service.remove_from_collection(user_uuid, liked_col.id, content_id)
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_liked": False}
 
 
@@ -298,6 +304,7 @@ async def hide_content(
     )
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_hidden": True, "reason": reason}
 
 
@@ -314,6 +321,7 @@ async def unhide_content(
     await service.unset_hide_status(user_id=user_uuid, content_id=content_id)
 
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "is_hidden": False}
 
 
@@ -410,6 +418,7 @@ async def impress_content(
     )
     await db.execute(stmt)
     await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
     return {"status": "ok", "manually_impressed": True}
 
 
@@ -524,6 +533,7 @@ async def submit_article_feedback(
         await service._adjust_subtopic_weights(user_uuid, content_id, delta)
 
         await db.commit()
+        FEED_CACHE.invalidate(user_uuid)
 
         logger.info(
             "article_feedback_recorded",

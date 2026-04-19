@@ -26,6 +26,7 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user import UserSubtopic
 from app.models.user_topic_profile import UserTopicProfile
+from app.services.feed_cache import FEED_CACHE
 from app.services.ml.classification_service import (
     SLUG_TO_LABEL,
     VALID_ENTITY_TYPES,
@@ -288,6 +289,8 @@ async def create_topic(
     db.add(topic)
     await db.flush()
     await db.refresh(topic)
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_created",
@@ -454,6 +457,8 @@ async def update_topic(
     topic.priority_multiplier = request.priority_multiplier
     await db.flush()
     await db.refresh(topic)
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_updated",
@@ -494,6 +499,9 @@ async def delete_topic(
                 UserSubtopic.topic_slug == slug,
             )
         )
+
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
 
     logger.info(
         "custom_topic_deleted",
