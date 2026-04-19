@@ -58,7 +58,7 @@ class _LoadingViewState extends State<LoadingView> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(FacteurSpacing.space6),
-          child: FacteurLoader(width: 72, height: 72),
+          child: FacteurLoader(width: 88, height: 88),
         ),
       );
     }

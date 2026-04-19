@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
 import '../../data/loader_blurbs.dart';
@@ -59,13 +60,13 @@ class _EditorialLoaderCardState extends State<EditorialLoaderCard> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final isCitation = _current.kind == LoaderBlurbKind.citation;
-    final textStyle = isCitation
-        ? FacteurTypography.bodyMedium(colors.textSecondary).copyWith(
-            fontStyle: FontStyle.italic,
-            height: 1.55,
-          )
-        : FacteurTypography.bodyMedium(colors.textSecondary)
-            .copyWith(height: 1.55);
+    final textStyle = GoogleFonts.fraunces(
+      fontSize: 15,
+      fontWeight: FontWeight.w400,
+      color: colors.textSecondary,
+      height: 1.55,
+      fontStyle: isCitation ? FontStyle.italic : FontStyle.normal,
+    );
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 450),
@@ -102,8 +103,12 @@ class _EditorialLoaderCardState extends State<EditorialLoaderCard> {
               const SizedBox(height: FacteurSpacing.space2),
               Text(
                 '— ${_current.attribution!}',
-                style:
-                    FacteurTypography.labelSmall(colors.textTertiary),
+                style: GoogleFonts.fraunces(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colors.textTertiary,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ],
