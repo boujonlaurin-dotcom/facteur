@@ -1,8 +1,10 @@
 import asyncio
 import datetime
+import hashlib
 import re
 import time
 import unicodedata
+from dataclasses import dataclass, field
 from uuid import UUID
 
 import structlog
@@ -16,6 +18,42 @@ from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class InterestContext:
+    """User interest signals used to weight chronological quotas.
+
+    Chrono mode has no scoring; these sets are consulted to halve the quota
+    of sources whose candidates don't match anything the user follows.
+    """
+
+    user_interests: set[str] = field(default_factory=set)
+    user_subtopics: set[str] = field(default_factory=set)
+    custom_topic_keywords: list[str] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (
+            self.user_interests or self.user_subtopics or self.custom_topic_keywords
+        )
+
+
+def _article_matches_interests(
+    article: Content, interest_context: InterestContext
+) -> bool:
+    theme = getattr(article, "theme", None)
+    if theme and theme.lower().strip() in interest_context.user_interests:
+        return True
+    if article.topics and interest_context.user_subtopics:
+        article_topics = {t.lower().strip() for t in article.topics if t}
+        if article_topics & interest_context.user_subtopics:
+            return True
+    if interest_context.custom_topic_keywords:
+        haystack = f"{article.title or ''} {article.description or ''}".lower()
+        for kw in interest_context.custom_topic_keywords:
+            if kw and kw in haystack:
+                return True
+    return False
 
 
 async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
@@ -465,19 +503,8 @@ class RecommendationService:
                 mode="chronological",
             )
 
-            # Phase 1: Chronological diversification with expanded pool for Phase 2
-            # Request more articles than limit so Phase 2 has room to compress neutrals
-            phase1_limit = limit * 3
-            result, source_overflow = self._apply_chronological_diversification(
-                candidates, source_priority_multipliers, phase1_limit, offset
-            )
-            self.source_overflow = source_overflow
-            await self._hydrate_user_status(result, user_id, followed_source_ids)
-
-            # Source interleaving: avoid consecutive articles from same source
-            result = self._apply_source_interleaving(result)
-
-            # Load custom topics for cluster building (reuse by caller)
+            # Story 12.8: load custom topics BEFORE diversification so we can
+            # build an InterestContext (halve quotas of sources with zero match).
             from app.models.user_topic_profile import UserTopicProfile
 
             custom_topics_stmt = select(UserTopicProfile).where(
@@ -486,6 +513,38 @@ class RecommendationService:
             async with async_session_maker() as s:
                 user_custom_topics = list((await s.scalars(custom_topics_stmt)).all())
             self.user_custom_topics = user_custom_topics
+
+            ct_slugs: set[str] = set()
+            ct_keywords: list[str] = []
+            for tp in user_custom_topics:
+                if tp.slug_parent:
+                    ct_slugs.add(tp.slug_parent.lower().strip())
+                if tp.keywords:
+                    ct_keywords.extend(
+                        kw.lower().strip() for kw in tp.keywords if kw
+                    )
+            interest_context = InterestContext(
+                user_interests={s.lower().strip() for s in user_interests if s},
+                user_subtopics={s.lower().strip() for s in user_subtopics if s}
+                | ct_slugs,
+                custom_topic_keywords=ct_keywords,
+            )
+
+            # Phase 1: Chronological diversification with expanded pool for Phase 2
+            # Request more articles than limit so Phase 2 has room to compress neutrals
+            phase1_limit = limit * 3
+            result, source_overflow = self._apply_chronological_diversification(
+                candidates,
+                source_priority_multipliers,
+                phase1_limit,
+                offset,
+                interest_context=interest_context,
+            )
+            self.source_overflow = source_overflow
+            await self._hydrate_user_status(result, user_id, followed_source_ids)
+
+            # Source interleaving: avoid consecutive articles from same source
+            result = self._apply_source_interleaving(result)
 
             # Snapshot all articles before regroupement removes hidden ones
             pre_regroup_map = {a.id: a for a in result}
@@ -761,16 +820,20 @@ class RecommendationService:
         source_priority_multipliers: dict[UUID, float],
         limit: int,
         offset: int,
+        interest_context: InterestContext | None = None,
     ) -> tuple[list[Content], dict[UUID, int]]:
         """
         Epic 12: Algorithme "Ratio Normalisé" — chronological feed with source diversification.
 
         Pipeline:
         1. Group by source, compute relative frequency
-        2. Compute quota per source: ceil(frequency × (offset+limit) × priority_multiplier), min 1
-        3. Keep the N most recent articles per source (up to quota)
-        4. Sort all retained articles by published_at DESC
-        5. Paginate with offset (quotas cover offset+limit so slice is never empty)
+        2. Compute quota per source: ceil(frequency × (offset+limit) × priority_multiplier²), min 1
+           - Story 12.8: squared multiplier so "moins" (0.5) ↦ ×0.25 and "plus" (2.0) ↦ ×4.
+        3. Story 12.8: halve the quota for sources whose candidates don't match any
+           user interest (theme / subtopic / custom topic keyword).
+        4. Keep the N most recent articles per source (up to quota)
+        5. Sort all retained articles by published_at DESC
+        6. Paginate with offset (quotas cover offset+limit so slice is never empty)
         """
         from math import ceil
 
@@ -785,12 +848,20 @@ class RecommendationService:
         total = len(candidates)
         effective_limit = offset + limit  # Cover all pages up to current request
 
-        # PASS 2: Compute quotas with user multipliers
+        apply_interest_halving = (
+            interest_context is not None and not interest_context.is_empty()
+        )
+
+        # PASS 2: Compute quotas with user multipliers (squared) and interest halving
         quotas: dict[UUID, int] = {}
         for source_id, articles_src in by_source.items():
             ratio = len(articles_src) / total
             multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
-            quota = max(1, ceil(ratio * effective_limit * multiplier))
+            quota = max(1, ceil(ratio * effective_limit * (multiplier**2)))
+            if apply_interest_halving and not any(
+                _article_matches_interests(a, interest_context) for a in articles_src
+            ):
+                quota = max(1, quota // 2)
             quotas[source_id] = quota
 
         logger.debug(
@@ -801,12 +872,13 @@ class RecommendationService:
             },
         )
 
-        # PASS 2b: Diversity cap — no source gets more than 4× min_quota (× its multiplier)
+        # PASS 2b: Diversity cap — no source gets more than MAX_SOURCE_RATIO × min_quota
+        # (scaled by the same squared multiplier we use in PASS 2).
         MAX_SOURCE_RATIO = 8
         min_quota = min(quotas.values())
         for source_id in quotas:
             multiplier = max(0.1, source_priority_multipliers.get(source_id, 1.0))
-            cap = max(1, ceil(MAX_SOURCE_RATIO * min_quota * multiplier))
+            cap = max(1, ceil(MAX_SOURCE_RATIO * min_quota * (multiplier**2)))
             quotas[source_id] = min(quotas[source_id], cap)
 
         # PASS 2c: Normalize quotas so total ≈ limit (prevent overflow
@@ -1005,6 +1077,38 @@ class RecommendationService:
                 updated[source_id] = count
         self.source_overflow = updated
 
+    # Story 12.8: business-ordered base positions for carousel types
+    # (favorite > new_source > community > saved > hot > deep).
+    # `decale` is only emitted in serein mode, which excludes hot/community,
+    # so it sits at community's slot.
+    _CAROUSEL_BASE_POSITIONS: dict[str, int] = {
+        "favorite": 3,
+        "new_source": 6,
+        "community": 9,
+        "decale": 9,
+        "saved": 12,
+        "hot": 15,
+        "deep": 18,
+    }
+
+    @staticmethod
+    def _jitter_carousel_position(
+        carousel_type: str,
+        user_id: UUID | None,
+        today: datetime.date,
+    ) -> int:
+        """Return base position ± 2, seeded by (user_id, today, carousel_type).
+
+        Story 12.8: deterministic daily jitter so the feed visually varies across
+        days but stays stable within a single day's reloads.
+        """
+        base = RecommendationService._CAROUSEL_BASE_POSITIONS.get(carousel_type, 15)
+        if user_id is None:
+            return base
+        seed = f"{user_id}|{today.isoformat()}|{carousel_type}".encode()
+        jitter = int(hashlib.md5(seed).hexdigest(), 16) % 5 - 2  # {-2,-1,0,+1,+2}
+        return max(1, base + jitter)
+
     async def _build_carousels(
         self,
         result: list[Content],
@@ -1017,12 +1121,10 @@ class RecommendationService:
         Promote overflow groups to horizontal carousels.
 
         Phase A: up to 3 carousels from entity/keyword overflow (hot/favorite/deep).
-        Phase B: up to 3 DB-driven carousels (new_source/gems/saved).
+        Phase B: up to 3 DB-driven carousels (new_source/community/saved).
 
         Returns: (filtered_result, carousel_dicts)
         """
-        import random as _random
-
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
@@ -1030,6 +1132,7 @@ class RecommendationService:
         carousels: list[dict] = []
         promoted_ids: set[UUID] = set()
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
+        today = datetime.date.today()
 
         # T2: Fetch consumed content IDs to exclude from carousels
         consumed_ids: set[UUID] = set()
@@ -1083,7 +1186,9 @@ class RecommendationService:
                             "carousel_type": "hot",
                             "title": f"Actu chaude : {display_name}",
                             "emoji": "\U0001f50d",
-                            "position": 5,
+                            "position": self._jitter_carousel_position(
+                                "hot", user_id, today
+                            ),
                             "items": hot_articles,
                             "badges": badges,
                         }
@@ -1127,7 +1232,9 @@ class RecommendationService:
                     "carousel_type": "favorite",
                     "title": f"Focus sur {topic_name}",
                     "emoji": "\U0001f3af",
-                    "position": 10,
+                    "position": self._jitter_carousel_position(
+                        "favorite", user_id, today
+                    ),
                     "items": items,
                     "badges": [badge] * len(items),
                 }
@@ -1181,7 +1288,9 @@ class RecommendationService:
                             "carousel_type": "deep",
                             "title": "Ouvrir ses horizons",
                             "emoji": "\U0001f30d",
-                            "position": 15,
+                            "position": self._jitter_carousel_position(
+                                "deep", user_id, today
+                            ),
                             "items": items,
                             "badges": badges,
                         }
@@ -1227,7 +1336,9 @@ class RecommendationService:
                         "carousel_type": "decale",
                         "title": "L'actu décalée",
                         "emoji": "\U0001f604",
-                        "position": 12,
+                        "position": self._jitter_carousel_position(
+                            "decale", user_id, today
+                        ),
                         "items": decale_articles,
                         "badges": badges,
                     }
@@ -1303,7 +1414,9 @@ class RecommendationService:
                     if len(items) < MIN_NEW_SOURCE_ITEMS:
                         continue
 
-                    # T3D: Dynamic position based on source age
+                    # T3D: Dynamic position based on source age.
+                    # Very-recent sources keep priority slots (1 / 3); older
+                    # ones fall back on the Story 12.8 jittered business slot.
                     now = datetime.datetime.now(datetime.UTC)
                     source_age_seconds = (now - src_row.added_at).total_seconds()
                     if source_age_seconds < 24 * 3600:  # < 24h
@@ -1311,7 +1424,9 @@ class RecommendationService:
                     elif source_age_seconds < 3 * 24 * 3600:  # < 3 days
                         position = 3
                     else:
-                        position = 20
+                        position = self._jitter_carousel_position(
+                            "new_source", user_id, today
+                        )
 
                     logger.info(
                         "carousel_new_source_selected",
@@ -1431,7 +1546,9 @@ class RecommendationService:
                             "carousel_type": "community",
                             "title": "Recos de la communauté",
                             "emoji": "\U0001f33b",
-                            "position": 15,
+                            "position": self._jitter_carousel_position(
+                                "community", user_id, today
+                            ),
                             "items": items,
                             "badges": badges,
                         }
@@ -1504,7 +1621,9 @@ class RecommendationService:
                             "carousel_type": "saved",
                             "title": "Plus tard, c\u2019est maintenant !",
                             "emoji": "\U0001f4cc",
-                            "position": 20,
+                            "position": self._jitter_carousel_position(
+                                "saved", user_id, today
+                            ),
                             "items": items,
                             "badges": badges,
                         }
@@ -1516,22 +1635,32 @@ class RecommendationService:
         if promoted_ids:
             result = [a for a in result if a.id not in promoted_ids]
 
-        # --- Daily slot shuffle (B2) ---
-        # Assign carousels to shuffled slot positions for variety.
-        # Slots define position ranges; each day the carousel-to-slot mapping changes.
-        # Deterministic per user+day so pull-to-refresh stays stable.
-        CAROUSEL_SLOTS = [(4, 6), (8, 11), (14, 17)]
-        if daily_seed is not None and len(carousels) > 0:
-            rng = _random.Random(daily_seed)
-            # Build slot assignments: shuffle slot order, assign to carousels
-            slot_indices = list(range(len(CAROUSEL_SLOTS)))
-            rng.shuffle(slot_indices)
-            for i, c in enumerate(carousels):
-                if i < len(slot_indices):
-                    slot_min, slot_max = CAROUSEL_SLOTS[slot_indices[i]]
-                    c["position"] = rng.randint(slot_min, slot_max)
-                # Carousels beyond slot count keep their original position
-        # --- End daily slot shuffle ---
+        # Story 12.8 — Collision resolver: if two carousels land on the same
+        # position after jitter, bump later ones (in business order) so each
+        # carousel occupies a unique slot. Business order is derived from the
+        # base position map; earlier base = higher priority.
+        business_rank = {
+            t: i
+            for i, t in enumerate(
+                sorted(
+                    self._CAROUSEL_BASE_POSITIONS,
+                    key=self._CAROUSEL_BASE_POSITIONS.get,
+                )
+            )
+        }
+        carousels.sort(
+            key=lambda c: (
+                c["position"],
+                business_rank.get(c["carousel_type"], 99),
+            )
+        )
+        taken: set[int] = set()
+        for c in carousels:
+            pos = max(c["position"], MIN_CAROUSEL_POSITION)
+            while pos in taken:
+                pos += 1
+            c["position"] = pos
+            taken.add(pos)
 
         # Convert Content objects to serializable dicts for CarouselInfo
         carousel_dicts = []
